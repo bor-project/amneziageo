@@ -628,6 +628,9 @@
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Level</value>
   </data>
+  <data name="Main_CacheKindTitle" xml:space="preserve">
+    <value>Record kind</value>
+  </data>
   <data name="Main_LoginLabel" xml:space="preserve">
     <value>LOGIN</value>
   </data>
@@ -1586,26 +1589,11 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>The app stays in the tray after closing.</value>
   </data>
-  <data name="Main_DiagTabLog" xml:space="preserve">
-    <value>Log</value>
-  </data>
-  <data name="Main_DiagTabConfig" xml:space="preserve">
-    <value>Config</value>
-  </data>
-  <data name="Main_ConfigTabValues" xml:space="preserve">
-    <value>Configuration</value>
-  </data>
-  <data name="Main_ConfigTabCache" xml:space="preserve">
-    <value>Cache</value>
-  </data>
   <data name="Main_ConfigEmptyTitle" xml:space="preserve">
     <value>No data</value>
   </data>
   <data name="Main_CacheEmptyHint" xml:space="preserve">
     <value>The cache fills while the tunnel is up: addresses of tracked domains and per-address verdicts. There are no verdicts when the Direct list is installed in full at connect instead of on demand.</value>
-  </data>
-  <data name="Main_CacheFilterWatermark" xml:space="preserve">
-    <value>Filter by text</value>
   </data>
   <data name="MainVm_CacheShown" xml:space="preserve">
     <value>{0} of {1}</value>
@@ -1913,18 +1901,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="MainVm_UpdateRestartApp" xml:space="preserve">
     <value>Updated. Restart the app to finish.</value>
   </data>
-  <data name="Main_DiagTabCheck" xml:space="preserve">
-    <value>Check</value>
-  </data>
-  <data name="Check_RunChannel" xml:space="preserve">
-    <value>Check the channel</value>
-  </data>
-  <data name="Check_RunServers" xml:space="preserve">
-    <value>Measure the servers</value>
-  </data>
-  <data name="Check_RunSessions" xml:space="preserve">
-    <value>What is going now</value>
-  </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
     <value>{0} destination(s), {1} undecided, {2} without movement, {3} carried.</value>
   </data>
@@ -1955,173 +1931,8 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_Verdict_undecided" xml:space="preserve">
     <value>undecided</value>
   </data>
-  <data name="Check_SweepLive" xml:space="preserve">
-    <value>running now</value>
-  </data>
-  <data name="Check_RunTarget" xml:space="preserve">
-    <value>Check</value>
-  </data>
-  <data name="Check_TargetWatermark" xml:space="preserve">
-    <value>domain, address, app:pkg=... or geosite:...</value>
-  </data>
-  <data name="Check_Running" xml:space="preserve">
-    <value>measuring; this takes about twenty seconds</value>
-  </data>
-  <data name="Check_EmptyTitle" xml:space="preserve">
-    <value>Nothing measured yet</value>
-  </data>
-  <data name="Check_EmptyHint" xml:space="preserve">
-    <value>The channel check walks from the router out to the server and names the leg at fault.</value>
-  </data>
-  <data name="Check_Leg_gateway" xml:space="preserve">
-    <value>to the router</value>
-  </data>
-  <data name="Check_Leg_endpoint" xml:space="preserve">
-    <value>to server, outside tunnel</value>
-  </data>
-  <data name="Check_Leg_handshake" xml:space="preserve">
-    <value>tunnel session</value>
-  </data>
-  <data name="Check_Leg_peer" xml:space="preserve">
-    <value>server inside tunnel</value>
-  </data>
-  <data name="Check_Leg_beyond" xml:space="preserve">
-    <value>internet past the server</value>
-  </data>
-  <data name="Check_Leg_tunnel" xml:space="preserve">
-    <value>speed through tunnel</value>
-  </data>
-  <data name="Check_Leg_source" xml:space="preserve">
-    <value>speed to your host</value>
-  </data>
-  <data name="Check_Leg_direct" xml:space="preserve">
-    <value>speed beside tunnel</value>
-  </data>
-  <data name="Check_State_ok" xml:space="preserve">
-    <value>ok</value>
-  </data>
-  <data name="Check_State_weak" xml:space="preserve">
-    <value>lossy</value>
-  </data>
-  <data name="Check_State_bad" xml:space="preserve">
-    <value>broken</value>
-  </data>
-  <data name="Check_State_unknown" xml:space="preserve">
-    <value>no answer</value>
-  </data>
-  <data name="Check_State_skipped" xml:space="preserve">
-    <value>skipped</value>
-  </data>
-  <data name="Check_Rtt" xml:space="preserve">
-    <value>rtt {0} ms</value>
-  </data>
-  <data name="Check_Loss" xml:space="preserve">
-    <value>loss {0}%</value>
-  </data>
-  <data name="Check_Size" xml:space="preserve">
-    <value>packets up to {0} B pass</value>
-  </data>
-  <data name="Check_Age" xml:space="preserve">
-    <value>handshake {0} s ago</value>
-  </data>
-  <data name="Check_Rekeys" xml:space="preserve">
-    <value>{0} rekey(s) per minute</value>
-  </data>
   <data name="Check_Rate" xml:space="preserve">
     <value>{0} Mbit/s</value>
-  </data>
-  <data name="Check_NotConnected" xml:space="preserve">
-    <value>Nothing is connected, so only the legs in front of the tunnel were measured.</value>
-  </data>
-  <data name="Check_NoMeasurement" xml:space="preserve">
-    <value>Nothing answered, so this run says nothing about the link.</value>
-  </data>
-  <data name="Check_LocalLoss" xml:space="preserve">
-    <value>The local network loses {0}% of what is sent: the fault is between this device and the router.</value>
-  </data>
-  <data name="Check_PathLoss" xml:space="preserve">
-    <value>The path to the server loses {0}%: the fault is between the router and the server.</value>
-  </data>
-  <data name="Check_PathMtu" xml:space="preserve">
-    <value>The path cuts packets above {0} bytes: set the tunnel MTU to {1}.</value>
-  </data>
-  <data name="Check_MtuAdvice" xml:space="preserve">
-    <value>The path carries payloads up to {0} bytes, and the tunnel runs at MTU {1}, which does not fit through it: set MTU {2}.</value>
-  </data>
-  <data name="Check_Rekeying" xml:space="preserve">
-    <value>The session is re-established {0} time(s) a minute: the carrier keeps dropping the handshake.</value>
-  </data>
-  <data name="Check_ServerLoss" xml:space="preserve">
-    <value>The far side of the tunnel loses {0}% while the path to it is clean: the fault is the server.</value>
-  </data>
-  <data name="Check_BeyondLoss" xml:space="preserve">
-    <value>The path past the exit loses {0}% while the tunnel to the server is clean: the fault is behind the server, not the channel.</value>
-  </data>
-  <data name="Check_ServerSlow" xml:space="preserve">
-    <value>The tunnel delivers {0} Mbit/s while the server answers: change the server.</value>
-  </data>
-  <data name="Check_TunnelBehindDirect" xml:space="preserve">
-    <value>The tunnel delivers {0} Mbit/s where the same download beside it delivers {1}: the fault is the server, not the home channel.</value>
-  </data>
-  <data name="Check_SourceBehindTunnel" xml:space="preserve">
-    <value>The destination your traffic goes to delivers {0} Mbit/s where a neutral download over the same tunnel delivers {1}: the fault is the source, not the tunnel.</value>
-  </data>
-  <data name="Check_Healthy" xml:space="preserve">
-    <value>Nothing to blame: the tunnel delivers {0} Mbit/s without loss.</value>
-  </data>
-  <data name="Check_HealthyOutsideTunnel" xml:space="preserve">
-    <value>Nothing to blame on the legs measured; the {0} Mbit/s belongs to the path beside the tunnel, which is where this download went.</value>
-  </data>
-  <data name="Check_SweepEmpty" xml:space="preserve">
-    <value>There is no saved server to measure.</value>
-  </data>
-  <data name="Check_SweepSilent" xml:space="preserve">
-    <value>No saved server answered, so this sweep says nothing about any of them.</value>
-  </data>
-  <data name="Check_SweepBest" xml:space="preserve">
-    <value>The server to be on right now is "{0}": {1} ms, {2}% loss.</value>
-  </data>
-  <data name="Check_SweepInTunnel" xml:space="preserve">
-    <value>The best of what was measured is "{0}" ({1} ms, {2}% loss), but the tunnel was up and the probes rode it: disconnect and measure again to compare the servers themselves.</value>
-  </data>
-  <data name="Check_SweepSwitch" xml:space="preserve">
-    <value>"{0}" is the one running, while "{1}" answers better ({2} ms, {3}% loss): change the server.</value>
-  </data>
-  <data name="Check_TargetNoRules" xml:space="preserve">
-    <value>No routing list is in force, so every destination follows the tunnel's own AllowedIPs.</value>
-  </data>
-  <data name="Check_TargetUnresolved" xml:space="preserve">
-    <value>"{0}" resolves to no address, so nothing can be routed for it: the resolver is the fault.</value>
-  </data>
-  <data name="Check_TargetBlocked" xml:space="preserve">
-    <value>Dropped by the block rule "{0}".</value>
-  </data>
-  <data name="Check_TargetDirect" xml:space="preserve">
-    <value>Kept out of the tunnel by the direct rule "{0}".</value>
-  </data>
-  <data name="Check_TargetProxy" xml:space="preserve">
-    <value>Carried by the tunnel under the rule "{0}".</value>
-  </data>
-  <data name="Check_TargetUnreachable" xml:space="preserve">
-    <value>In the tunnel by rule and still nothing answers at {0}: the fault is past the tunnel.</value>
-  </data>
-  <data name="Check_TargetAppUnlisted" xml:space="preserve">
-    <value>"{0}" is in no list, so its traffic follows the default route.</value>
-  </data>
-  <data name="Check_TargetAppOutside" xml:space="preserve">
-    <value>"{0}" is named by no app rule, and the tunnel carries only the {1} named application(s), so it leaves beside the tunnel past every rule in the list.</value>
-  </data>
-  <data name="Check_TargetProxyAppsOnly" xml:space="preserve">
-    <value>Carried by the tunnel under the rule "{0}", but only for the {1} named application(s); every other application leaves beside the tunnel.</value>
-  </data>
-  <data name="Check_TargetAppBareIp" xml:space="preserve">
-    <value>"{0}" talks to {1} address(es) no rule covers: a rule by application is reactive and never catches a bare address, so add a geoip rule for the service.</value>
-  </data>
-  <data name="Check_TargetUnlistedSplit" xml:space="preserve">
-    <value>No rule covers "{0}" and the tunnel carries only what is listed, so it leaves through the physical path.</value>
-  </data>
-  <data name="Check_TargetUnlistedFull" xml:space="preserve">
-    <value>No rule covers "{0}" and the tunnel is the default route, so it rides the tunnel.</value>
   </data>
   <data name="Main_CopyShownButton" xml:space="preserve">
     <value>Copy what is shown</value>

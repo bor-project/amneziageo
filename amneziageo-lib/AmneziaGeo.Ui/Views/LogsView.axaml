@@ -58,6 +58,13 @@
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                        ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
            </StackPanel>
+           <!-- The cache is narrowed by the verdict a row carries. It takes the level's slot: only one of the
+                two is ever shown. -->
+           <StackPanel Grid.Column="1" Spacing="4" Width="132" Margin="10,0,0,0" IsVisible="{Binding IsCacheLog}">
+             <TextBlock Text="{l:Tr Main_CacheKindTitle}" FontWeight="SemiBold" FontSize="15" />
+             <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                       ItemsSource="{Binding CacheKinds}" SelectedItem="{Binding SelectedCacheKind, Mode=TwoWay}" />
+           </StackPanel>
          </Grid>
 
          <!-- The probe journal names the server it is measured through, so source and server share the row in
@@ -138,7 +145,7 @@
              to clear or to page through, so it carries the export alone. -->
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
           <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
-                   IsVisible="{Binding IsStoredLog}"
+                   IsVisible="{Binding ShowSearch}"
                    Watermark="{l:Tr Main_LogSearchWatermark}">
             <TextBox.InnerLeftContent>
               <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
@@ -202,7 +209,7 @@
                    Foreground="{DynamicResource AgFgBrush}" />
 
         <!-- Log body (shared): text / cards / empty state / loader. Fills the pane width. -->
-        <Border Grid.Row="3" Classes="logbody" Classes.bare="{Binding IsNarrow}">
+        <Border Grid.Row="3" Classes="logbody" Classes.bare="{Binding BareBody}">
           <Panel>
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           IsVisible="{Binding ShowStoredText}">
@@ -213,9 +220,10 @@
                                    TextWrapping="Wrap" Margin="16,13" />
             </ScrollViewer>
 
-            <!-- The destinations as a padded table: the columns only line up without wrapping. -->
+            <!-- A padded table: the destinations, the configuration report, the cache rows. The columns only
+                 line up without wrapping, so this one carries its own sideways scroll. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                          IsVisible="{Binding ShowLiveText}">
+                          IsVisible="{Binding ShowTableText}">
               <SelectableTextBlock Text="{Binding LogText}"
                                    FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
                                    FontSize="{svc:Unscaled 11.5}" LineHeight="{svc:Unscaled 18}"
@@ -317,9 +325,18 @@
               <PathIcon Data="{StaticResource AgDocGeometry}" Width="42" Height="42"
                         Foreground="{DynamicResource AgMuted2Brush}" HorizontalAlignment="Center" />
               <TextBlock Text="{l:Tr Main_LogEmptyTitle}" FontSize="14" FontWeight="SemiBold"
+                         IsVisible="{Binding !IsRuntimeLog}"
+                         Foreground="{DynamicResource AgMutedBrush}" HorizontalAlignment="Center" />
+              <TextBlock Text="{l:Tr Main_ConfigEmptyTitle}" FontSize="14" FontWeight="SemiBold"
+                         IsVisible="{Binding IsRuntimeLog}"
                          Foreground="{DynamicResource AgMutedBrush}" HorizontalAlignment="Center" />
               <TextBlock Text="{l:Tr Main_LogEmptyHint}" Classes="muted" FontSize="12"
+                         IsVisible="{Binding !IsCacheLog}"
                          HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="280" />
+              <!-- Why the cache can stand empty while the tunnel is up. -->
+              <TextBlock Text="{l:Tr Main_CacheEmptyHint}" Classes="muted" FontSize="12"
+                         IsVisible="{Binding IsCacheLog}"
+                         HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320" />
             </StackPanel>
             <!-- Loader while a window loads. -->
             <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">

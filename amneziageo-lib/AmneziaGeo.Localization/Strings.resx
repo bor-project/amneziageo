@@ -1964,6 +1964,48 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Probe_PathBypass" xml:space="preserve">
     <value>Past</value>
   </data>
+  <data name="Probe_LegReach" xml:space="preserve">
+    <value>reach</value>
+  </data>
+  <data name="Probe_LegReceive" xml:space="preserve">
+    <value>receive</value>
+  </data>
+  <data name="Probe_LegSend" xml:space="preserve">
+    <value>send</value>
+  </data>
+  <data name="Probe_StateOk" xml:space="preserve">
+    <value>ok</value>
+  </data>
+  <data name="Probe_StateWeak" xml:space="preserve">
+    <value>weak</value>
+  </data>
+  <data name="Probe_StateBad" xml:space="preserve">
+    <value>bad</value>
+  </data>
+  <data name="Probe_StateUnknown" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="Probe_StateSkipped" xml:space="preserve">
+    <value>skipped</value>
+  </data>
+  <data name="Probe_TakenTunnelRule" xml:space="preserve">
+    <value>tunnel by rule</value>
+  </data>
+  <data name="Probe_TakenTunnelDefault" xml:space="preserve">
+    <value>tunnel by default</value>
+  </data>
+  <data name="Probe_TakenBypassRule" xml:space="preserve">
+    <value>bypass by rule</value>
+  </data>
+  <data name="Probe_TakenBypassDefault" xml:space="preserve">
+    <value>bypass by default</value>
+  </data>
+  <data name="Probe_TakenBlocked" xml:space="preserve">
+    <value>blocked by rule</value>
+  </data>
+  <data name="Probe_TakenNoRouting" xml:space="preserve">
+    <value>bypass, no live routing to ask</value>
+  </data>
   <data name="Probe_RunButton" xml:space="preserve">
     <value>Measure</value>
   </data>

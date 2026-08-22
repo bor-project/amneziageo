@@ -36,6 +36,34 @@
       <Setter Property="CornerRadius" Value="0" />
       <Setter Property="Margin" Value="0,10,0,0" />
     </Style>
+
+    <!-- How a probe came out, said by the stripe down its card: measured, paid for, died. -->
+    <Style Selector="Border.probemark">
+      <Setter Property="Width" Value="3" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="Border.probemark.warn">
+      <Setter Property="Background" Value="{DynamicResource AgWarnBrush}" />
+    </Style>
+    <Style Selector="Border.probemark.alarm">
+      <Setter Property="Background" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+
+    <!-- How a probe leg came out, said by colour: what it carries, what it pays for, where it dies. -->
+    <Style Selector="TextBlock.legstate">
+      <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
+    </Style>
+    <Style Selector="TextBlock.legstate.good">
+      <Setter Property="Foreground" Value="{DynamicResource AgUpBrush}" />
+    </Style>
+    <Style Selector="TextBlock.legstate.weak">
+      <Setter Property="Foreground" Value="{DynamicResource AgWarnBrush}" />
+    </Style>
+    <Style Selector="TextBlock.legstate.bad">
+      <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
+    </Style>
   </UserControl.Styles>
    <!-- Source and what it records over one viewer; only the log body scrolls. One frame around both at every width
         above the card breakpoint; below it the hairline carries the boundary. -->
@@ -273,6 +301,74 @@
                         <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
                                              Foreground="{DynamicResource AgFgBrush}" />
                       </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Narrow: a card per probe — the destination over its path, a row per leg, the verdict under
+                 them. The block they are rendered as is a padded table, which no phone reads. -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          IsVisible="{Binding ShowProbeCards}">
+              <ItemsControl ItemsSource="{Binding ProbeEntries}" Margin="0,0,0,2">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ProbeEntryItem">
+                    <Border Margin="0,0,0,8" Padding="12,9" CornerRadius="8"
+                            Background="{DynamicResource AgPanel2Brush}"
+                            BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
+                      <Grid ColumnDefinitions="Auto,*">
+                        <Border Grid.Column="0" Classes="probemark" Classes.warn="{Binding Warning}"
+                                Classes.alarm="{Binding Alarm}" />
+                        <StackPanel Grid.Column="1" Spacing="5">
+                          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBlock Grid.Column="0" Text="{Binding Target}" FontWeight="SemiBold"
+                                       FontSize="{svc:Unscaled 13}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource AgFgBrush}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Time}" FontSize="{svc:Unscaled 11}"
+                                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource AgMuted2Brush}" />
+                            <!-- A finger scrolls the card rather than selecting inside it, so the whole probe
+                                 goes to the clipboard by button. -->
+                            <Button Grid.Column="2" Classes="icon" Click="OnCopyProbe"
+                                    VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
+                              <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                            </Button>
+                          </Grid>
+                          <TextBlock Text="{Binding PathText}" FontSize="{svc:Unscaled 11.5}" TextWrapping="Wrap"
+                                     IsVisible="{Binding HasPath}"
+                                     Foreground="{DynamicResource AgAccentBrush}" />
+                          <ItemsControl ItemsSource="{Binding Legs}" Margin="0,2,0,0">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:ProbeLegItem">
+                                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,3">
+                                  <TextBlock Grid.Column="0" Text="{Binding NameText}" Width="{svc:Unscaled 62}"
+                                             FontSize="{svc:Unscaled 11.5}"
+                                             Foreground="{DynamicResource AgMutedBrush}" />
+                                  <TextBlock Grid.Column="1" Text="{Binding StateText}" Width="{svc:Unscaled 54}"
+                                             FontSize="{svc:Unscaled 11.5}" FontWeight="SemiBold"
+                                             Classes="legstate" Classes.good="{Binding IsGood}"
+                                             Classes.weak="{Binding IsWeak}" Classes.bad="{Binding IsBad}" />
+                                  <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap"
+                                             FontSize="{svc:Unscaled 11.5}" IsVisible="{Binding HasDetail}"
+                                             Foreground="{DynamicResource AgFgBrush}" />
+                                </Grid>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Border Classes="hairline" IsVisible="{Binding HasVerdict}" />
+                          <TextBlock Text="{Binding Verdict}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
+                                     IsVisible="{Binding HasVerdict}"
+                                     Foreground="{DynamicResource AgFgBrush}" />
+                        </StackPanel>
+                      </Grid>
                     </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

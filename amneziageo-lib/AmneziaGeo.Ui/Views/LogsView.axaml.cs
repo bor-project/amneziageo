@@ -130,6 +130,17 @@ internal sealed partial class LogsView : UserControl
         await ExportActions.CopyToClipboardAsync(this, entry.Line);
     }
 
+    // Puts one probe on the clipboard whole: the head, every leg and the verdict.
+    private async void OnCopyProbe(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ProbeEntryItem probe)
+        {
+            return;
+        }
+
+        await ExportActions.CopyToClipboardAsync(this, probe.Line);
+    }
+
     // Puts one destination on the clipboard: the address, its name, where it goes and what it holds.
     private async void OnCopyRow(object? sender, RoutedEventArgs e)
     {

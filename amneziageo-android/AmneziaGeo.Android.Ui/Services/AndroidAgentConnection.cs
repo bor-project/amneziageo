@@ -2490,9 +2490,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return (new TargetInspector(list, !full, AppMode(list, settings)), _selectedRoutingList is null || full);
     }
 
-    // Measures one destination over the path asked for. The tun fixes its routes at establish, so nothing can be
-    // put into a tunnel that does not carry everything, and a socket is excused from it only inside the process
-    // that owns it - that run is handed to the tunnel instead.
+    // Measures one destination over the path asked for. The tun fixes its routes at establish, so the tunnel
+    // path holds only where the rules take the target there anyway, and a socket is excused from it only inside
+    // the process that owns it - that run is handed to the tunnel instead.
     private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -2510,14 +2510,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var (inspector, whole) = await RulesAsync(ct).ConfigureAwait(false);
-        if (running && path == ProbePaths.Tunnel && !whole)
+        var forced = running && path == ProbePaths.Tunnel && !whole;
+        var routed = path == ProbePaths.Auto || forced
+            ? await RoutedPathAsync(inspector, target, ct).ConfigureAwait(false)
+            : (Taken: string.Empty, ViaTunnel: false);
+
+        // The target the rules keep outside the tun cannot be put back into it: the run says so itself, so the
+        // path stays on offer and the refusal lands in the journal beside the runs that measured.
+        if (forced && !routed.ViaTunnel)
         {
             return ProbeAck(TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable));
         }
 
-        var taken = path == ProbePaths.Auto
-            ? await TakenPathAsync(inspector, target, ct).ConfigureAwait(false)
-            : path;
+        var taken = path == ProbePaths.Auto ? routed.Taken : path;
         if (running && path == ProbePaths.Bypass)
         {
             return ProbeAck(await HandOverAsync(target, path, taken, upload, ct).ConfigureAwait(false));
@@ -2527,20 +2532,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
     }
 
-    // Where the rules in force send a destination, said the way the desktops say it.
-    private async Task<string> TakenPathAsync(TargetInspector inspector, string target, CancellationToken ct)
+    // Where the rules in force send a destination, said the way the desktops say it, and whether that is the
+    // tunnel.
+    private async Task<(string Taken, bool ViaTunnel)> RoutedPathAsync(TargetInspector inspector, string target, CancellationToken ct)
     {
         var report = await inspector
             .InspectAsync(target, _selectedTarget ?? string.Empty, new TargetProbes(), ct)
             .ConfigureAwait(false);
         return report.VerdictKey switch
         {
-            TargetVerdicts.Proxy or TargetVerdicts.ProxyAppsOnly => "tunnel by rule",
-            TargetVerdicts.UnlistedFull => "tunnel by default",
-            TargetVerdicts.Direct => "bypass by rule",
-            TargetVerdicts.UnlistedSplit or TargetVerdicts.AppOutside or TargetVerdicts.AppUnlisted => "bypass by default",
-            TargetVerdicts.Blocked => "blocked by rule",
-            _ => string.Empty,
+            TargetVerdicts.Proxy or TargetVerdicts.ProxyAppsOnly => ("tunnel by rule", true),
+            TargetVerdicts.UnlistedFull => ("tunnel by default", true),
+            TargetVerdicts.Direct => ("bypass by rule", false),
+            TargetVerdicts.UnlistedSplit or TargetVerdicts.AppOutside or TargetVerdicts.AppUnlisted => ("bypass by default", false),
+            TargetVerdicts.Blocked => ("blocked by rule", false),
+            _ => (string.Empty, false),
         };
     }
 

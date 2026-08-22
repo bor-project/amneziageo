@@ -375,6 +375,13 @@ public static class IpcContract
     public const string OpGetSessions = "get-sessions";
 
     /// <summary>
+    /// Command to read every destination the agent can put a name to: what it resolved for the selected config
+    /// before, which outlives a disconnect, and what the tunnel carries right now. No args. The ack message
+    /// holds one name per line.
+    /// </summary>
+    public const string OpKnownHosts = "known-hosts";
+
+    /// <summary>
     /// Command for the UI to record a diagnostic line in the agent log (the UI process keeps no log of its
     /// own). Args: [0] message. Logged at warning level.
     /// </summary>

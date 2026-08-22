@@ -273,6 +273,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
                 IpcContract.OpGetSessions => await GetSessionsAsync(ct),
+                IpcContract.OpKnownHosts => await KnownHostsAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
@@ -1108,6 +1109,28 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, applied && config.Length > 0
             ? inspector.HeldSessions(config).ToPayload()
             : SessionReport.Empty.ToPayload());
+    }
+
+    // Every destination the agent can put a name to: what it resolved for this config before, which outlives a
+    // disconnect, and what the tunnel carries right now.
+    private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
+    {
+        var (config, _) = await InspectTargetAsync(ct);
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (config.Length > 0)
+        {
+            foreach (var resolution in await store.ListDomainResolutionsAsync(config, ct))
+            {
+                names.Add(resolution.Domain);
+            }
+
+            foreach (var held in inspector.HeldSessions(config).Sessions)
+            {
+                names.Add(held.Name.Length > 0 ? held.Name : held.Host);
+            }
+        }
+
+        return new IpcAck(true, string.Join('\n', names.Where(name => name.Length > 0)));
     }
 
     // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config

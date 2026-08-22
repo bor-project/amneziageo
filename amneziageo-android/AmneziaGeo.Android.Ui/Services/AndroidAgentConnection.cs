@@ -399,6 +399,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpGetSessions:
                 return GetSessions();
 
+            case IpcContract.OpKnownHosts:
+                return await KnownHostsAsync(CancellationToken.None).ConfigureAwait(false);
+
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, CancellationToken.None).ConfigureAwait(false);
 
@@ -2400,6 +2403,27 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // What the relay holds, as it left it: the tunnel runs in another process, so this is read whole rather
     // than asked for, and a snapshot older than the window answers about a session that is already gone.
+    // Every destination the agent can put a name to: what it resolved for this config before, which outlives a
+    // disconnect, and what the tunnel carries right now.
+    private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
+    {
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_selectedTarget is { Length: > 0 } config)
+        {
+            foreach (var resolution in await _store.ListDomainResolutionsAsync(config, ct).ConfigureAwait(false))
+            {
+                names.Add(resolution.Domain);
+            }
+        }
+
+        foreach (var held in VpnBridge.ReadSessions(SessionWindowSeconds).Sessions)
+        {
+            names.Add(held.Name.Length > 0 ? held.Name : held.Host);
+        }
+
+        return new IpcAck(true, string.Join('\n', names.Where(name => name.Length > 0)));
+    }
+
     private static IpcAck GetSessions()
     {
         return new IpcAck(true, VpnBridge.ReadSessions(SessionWindowSeconds).ToPayload());
@@ -2546,7 +2570,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         var rendered = report.Render().TrimEnd();
         _log.Store.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
-        _log.Info("probe", rendered.Split('\n')[^1].Trim());
+        var rows = rendered.Split('\n');
+        _log.Info("probe", rows[0].Trim());
+        _log.Info("probe", rows[^1].Trim());
         return new IpcAck(true, report.ToPayload());
     }
 

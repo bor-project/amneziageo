@@ -168,6 +168,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ResetAndReload();
         if (IsProbeLog)
         {
+            _knownFor = (TunnelUp, string.Empty);
             _ = LoadKnownAsync();
         }
     }
@@ -281,6 +282,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Everything the agent knows a name for, filtered as the field is typed in.
     private IReadOnlyList<string> _known = [];
 
+    // The tunnel state and the server the offered names were read for.
+    private (bool Up, string Server) _knownFor = (false, string.Empty);
+
     // Suggestions offered at once; a longer list would push the journal off the pane.
     private const int MaxSuggestions = 6;
 
@@ -352,33 +356,29 @@ internal sealed partial class LogsViewModel : ViewModelBase
         LogTypes.Remove(ProbeType);
     }
 
-    // What the agent already has a name for: the names it resolved and the hosts the tunnel carries.
+    // What the agent has a name for. Read on opening the journal and again whenever the tunnel or the server
+    // behind the names changes, because a run past the tunnel is measured exactly when neither is up.
     private async Task LoadKnownAsync()
     {
-        var names = new List<string>();
         try
         {
-            var cached = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetCacheEntries, []));
-            if (cached.Ok && JsonSerializer.Deserialize<CacheSnapshot>(cached.Message, LogJson) is { Entries: { } entries })
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpKnownHosts, []));
+            if (!ack.Ok)
             {
-                names.AddRange(entries.Select(entry => entry.Key));
+                return;
             }
 
-            var carried = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetSessions, []));
-            if (carried.Ok)
-            {
-                names.AddRange(SessionReport.Parse(carried.Message).Sessions.Select(session => session.Host));
-            }
+            _known = [.. ack.Message
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)];
         }
         catch
         {
             return;
         }
 
-        _known = [.. names
-            .Where(name => name.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)];
         RefreshSuggestions();
     }
 
@@ -586,6 +586,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ListRouting = snapshot.SelectedRoutingList is not null;
         ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
         SyncProbeSource(snapshot.Configs.Count > 0);
+        var picked = snapshot.SelectedTarget ?? string.Empty;
+        if (IsProbeLog && _knownFor != (TunnelUp, picked))
+        {
+            _knownFor = (TunnelUp, picked);
+            _ = LoadKnownAsync();
+        }
     }
 
     /// <summary>
@@ -1031,12 +1037,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
             _ => DefaultCaptureLevel,
         };
     }
-
-    // OpGetCacheEntries ack row: which cache holds the value, its key and its content.
-    private sealed record CacheEntry(string Kind, string Key, string Value);
-
-    // OpGetCacheEntries ack payload: the rows with the total held before the agent's cap.
-    private sealed record CacheSnapshot(int Total, bool Capped, IReadOnlyList<CacheEntry> Entries);
 
     // OpReadLog ack payload: a window of rendered lines newest first, with the paging cursor and match total.
     private sealed record LogWindowPayload(

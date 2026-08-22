@@ -122,73 +122,25 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             return new IpcAck(true, refused.ToPayload());
         }
 
-        var cache = session.Cache;
-        var address = await AddressAsync(target, ct).ConfigureAwait(false);
-        var held = Hold(cache, address, path);
-        try
-        {
-            var options = new TargetProbeOptions(target, path, Taken(cache, address, path), uploadUrl);
-            var report = await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
-            await RecordProbeAsync(report, ct).ConfigureAwait(false);
-            return new IpcAck(true, report.ToPayload());
-        }
-        finally
-        {
-            Release(cache, address, held);
-        }
+        // The cache that decides where an address goes belongs to the process running the tunnel; when that is
+        // the tunnel's own service, the run is handed over to it whole.
+        var report = Connected(config) && !inspector.HasLiveSession
+            ? await HandOverAsync(config, target, path, uploadUrl, ct).ConfigureAwait(false)
+            : await ProbeRoute.RunAsync(session.Cache, target, path, uploadUrl, ct).ConfigureAwait(false);
+        await RecordProbeAsync(report, ct).ConfigureAwait(false);
+        return new IpcAck(true, report.ToPayload());
     }
 
-    // Holds the address on the path asked for; auto holds nothing, and without a live cache there is nothing to
-    // hold it with.
-    private static bool Hold(RoutingCache? cache, IPAddress? address, string path)
+    // Hands the run to the tunnel's service process and reads its report back.
+    private async Task<ProbeReport> HandOverAsync(
+        string config, string target, string path, string uploadUrl, CancellationToken ct)
     {
-        if (cache is null || address is null || path == ProbePaths.Auto)
-        {
-            return false;
-        }
-
-        cache.Note(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
-        return true;
-    }
-
-    // Puts the address back under the rules that own it.
-    private static void Release(RoutingCache? cache, IPAddress? address, bool held)
-    {
-        if (!held || cache is null || address is null)
-        {
-            return;
-        }
-
-        cache.Note(address, cache.Classify(address));
-    }
-
-    // Where the run went: the path forced, or - for auto - what the rules in force make of the address.
-    private static string Taken(RoutingCache? cache, IPAddress? address, string path)
-    {
-        if (path != ProbePaths.Auto)
-        {
-            return path;
-        }
-
-        if (cache is null || address is null)
-        {
-            return ProbePaths.Bypass;
-        }
-
-        return cache.Classify(address) switch
-        {
-            RouteVerdict.Proxy => "tunnel by rule",
-            RouteVerdict.Direct => "bypass by rule",
-            RouteVerdict.Block => "blocked by rule",
-            _ => cache.Split ? "bypass by default" : "tunnel by default",
-        };
-    }
-
-    // The address a target stands for, as the tunnel resolves it.
-    private static async Task<IPAddress?> AddressAsync(string target, CancellationToken ct)
-    {
-        var found = await ResolveAsync(target, ct).ConfigureAwait(false);
-        return IPAddress.TryParse(found, out var address) ? address : null;
+        var served = await Task.Run(
+            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl), logger),
+            ct).ConfigureAwait(false);
+        return served is { Length: > 0 }
+            ? ProbeReport.Parse(served, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+            : TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable);
     }
 
     // Stores the probe in its own journal, which the capture floor never reaches, and puts its closing line in
@@ -198,7 +150,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var rendered = report.Render().TrimEnd();
         logStore.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
         await logStore.FlushAsync(ct).ConfigureAwait(false);
-        logger.LogInformation("probe: {Verdict}", rendered.Split('\n')[^1].Trim());
+        var rows = rendered.Split('\n');
+        logger.LogInformation("probe: {Header}", rows[0].Trim());
+        logger.LogInformation("probe: {Verdict}", rows[^1].Trim());
     }
 
     // Stores the whole run in the checks table - the capture floor never reaches it - and puts its closing line

@@ -686,6 +686,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpGetSessions:
                 return GetSessions();
 
+            case IpcContract.OpKnownHosts:
+                return await KnownHostsAsync(ct).ConfigureAwait(false);
+
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, ct).ConfigureAwait(false);
 
@@ -1530,6 +1533,32 @@ internal sealed class LinuxAgent : IDisposable
 
     // What the tunnel carries right now. Nothing here relays connections, so a destination is a live route with
     // its verdict, and there are no bytes on it to count.
+    // Every destination the agent can put a name to: what it resolved for this config before, which outlives a
+    // disconnect, and what the tunnel carries right now.
+    private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
+    {
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_selectedTarget is { Length: > 0 } config)
+        {
+            foreach (var resolution in await _store.ListDomainResolutionsAsync(config, ct).ConfigureAwait(false))
+            {
+                names.Add(resolution.Domain);
+            }
+        }
+
+        foreach (var host in _tunnel.Tunneled)
+        {
+            names.Add(host);
+        }
+
+        foreach (var host in _tunnel.Bypassed)
+        {
+            names.Add(host);
+        }
+
+        return new IpcAck(true, string.Join('\n', names.Where(name => name.Length > 0)));
+    }
+
     private IpcAck GetSessions()
     {
         var rows = new List<LiveSession>();
@@ -1824,7 +1853,9 @@ internal sealed class LinuxAgent : IDisposable
     {
         var rendered = report.Render().TrimEnd();
         _log.Store.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
-        _log.Info("probe", rendered.Split('\n')[^1].Trim());
+        var rows = rendered.Split('\n');
+        _log.Info("probe", rows[0].Trim());
+        _log.Info("probe", rows[^1].Trim());
     }
 
     // What the running tunnel holds for an address right now.

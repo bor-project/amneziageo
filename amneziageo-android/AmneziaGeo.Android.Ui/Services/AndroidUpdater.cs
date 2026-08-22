@@ -29,7 +29,7 @@ internal sealed class AndroidUpdater : IDisposable
     private readonly Lock _gate = new();
 
     private string _name = string.Empty;
-    private string _downloadedVersion = string.Empty;
+    private string _offeredVersion = string.Empty;
     private CancellationTokenSource? _download;
     private bool _disposed;
 
@@ -199,7 +199,11 @@ internal sealed class AndroidUpdater : IDisposable
         var version = Version;
         var url = SetupUrl;
         var name = _name;
-        _ = Task.Run(() => RunDownloadAsync(url, name, version, source.Token), CancellationToken.None);
+        var sha = Sha256;
+
+        // Гаснущий экран замораживает процесс вместе с загрузкой; служба переднего плана держит его до конца.
+        UpdateDownloadService.Start(Application.Context);
+        _ = Task.Run(() => RunDownloadAsync(url, name, version, sha, source.Token), CancellationToken.None);
         return new IpcAck(true, IpcMessage.Key("Agent_UpdateDownloadStarted", version));
     }
 
@@ -208,19 +212,12 @@ internal sealed class AndroidUpdater : IDisposable
     /// </summary>
     public IpcAck Cancel()
     {
-        var source = default(CancellationTokenSource);
-        lock (_gate)
+        if (!Downloading)
         {
-            if (!Downloading)
-            {
-                return new IpcAck(false, IpcMessage.Key("Agent_UpdateNoDownloadRunning"));
-            }
-
-            CancelRequested = true;
-            source = _download;
+            return new IpcAck(false, IpcMessage.Key("Agent_UpdateNoDownloadRunning"));
         }
 
-        source?.Cancel();
+        StopDownload();
         return new IpcAck(true, IpcMessage.Key("Agent_UpdateDownloadCancelled"));
     }
 
@@ -292,11 +289,20 @@ internal sealed class AndroidUpdater : IDisposable
         Sha256 = asset.Sha256 ?? string.Empty;
         _name = name;
 
-        // A newly offered version invalidates what was downloaded for the previous one.
-        if (Downloaded && !string.Equals(Version, _downloadedVersion, StringComparison.Ordinal))
+        // Другая версия обесценивает всё, что скачано для прошлой: идущая загрузка останавливается, готовый
+        // пакет и черновик уходят. Первая сверка после запуска версию не меняет - иначе чужой процесс уносил бы
+        // черновик, который как раз и предстоит докачать.
+        var changed = _offeredVersion.Length > 0 && !string.Equals(Version, _offeredVersion, StringComparison.Ordinal);
+        _offeredVersion = Version;
+        if (changed)
         {
+            StopDownload();
             DropDownloads();
         }
+
+        // В каталоге остаётся только предложенный релиз: остальное падало бы на сверке хеша.
+        SweepDownloads(FileFor(Version, name));
+        await AdoptAsync(FileFor(Version, name), ct).ConfigureAwait(false);
 
         _log.Info("update", $"{Version} published as {name} (installed {_installed})");
         return Available
@@ -325,14 +331,17 @@ internal sealed class AndroidUpdater : IDisposable
         return UpdateFeed.ParseManifest(json) is { } manifest ? (manifest, new Uri(Url)) : null;
     }
 
-    private async Task RunDownloadAsync(string url, string name, string version, CancellationToken ct)
+    private async Task RunDownloadAsync(string url, string name, string version, string sha, CancellationToken ct)
     {
-        var path = System.IO.Path.Combine(_directory, name);
+        var path = System.IO.Path.Combine(_directory, FileFor(version, name));
         try
         {
             System.IO.Directory.CreateDirectory(_directory);
             await DownloadFileAsync(url, path, ct).ConfigureAwait(false);
-            if (!await VerifyAsync(path, Sha256, ct).ConfigureAwait(false))
+
+            // Хеш берётся тот, что был объявлен на старте: за время загрузки сверка могла предложить другой
+            // релиз, и целый пакет объявлялся бы битым.
+            if (!await VerifyAsync(path, sha, ct).ConfigureAwait(false))
             {
                 throw new InvalidOperationException($"{name}: checksum mismatch");
             }
@@ -340,20 +349,21 @@ internal sealed class AndroidUpdater : IDisposable
             Downloaded = true;
             Percent = 100;
             SetupPath = path;
-            _downloadedVersion = version;
             _log.Info("update", $"downloaded {version}: {name}");
         }
         catch (System.OperationCanceledException)
         {
+            // Отмену просил человек либо смена версии - в обоих случаях докачивать нечего.
             Percent = 0;
             DropPending(path);
             _log.Info("update", $"download of {version} cancelled");
         }
         catch (Exception ex)
         {
+            // Черновик остаётся: обрыв связи не повод качать сначала.
             Failed = true;
             Percent = 0;
-            DropPending(path);
+            Remove(path);
             _log.Error("update", $"download of {version} failed", ex);
         }
         finally
@@ -366,20 +376,49 @@ internal sealed class AndroidUpdater : IDisposable
                 _download = null;
             }
 
+            UpdateDownloadService.Stop(Application.Context);
             _push();
         }
     }
 
+    // Продолжает черновик с того байта, на котором его бросили: заголовок Range, дозапись в конец файла.
     private async Task DownloadFileAsync(string url, string path, CancellationToken ct)
     {
         var partial = path + ".part";
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var length = response.Content.Headers.ContentLength ?? 0;
+        var have = DraftLength(partial);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (have > 0)
+        {
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
+        }
+
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+
+        // Черновик длиннее самого пакета - он не от этого файла; начинаем заново.
+        if (have > 0 && response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)
+        {
+            Remove(partial);
+            await DownloadFileAsync(url, path, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // Диапазон приняли только при 206; на обычный ответ черновик обнуляется.
+        var resumed = response.StatusCode == System.Net.HttpStatusCode.PartialContent;
+        if (!resumed)
+        {
+            response.EnsureSuccessStatusCode();
+            have = 0;
+        }
+
+        var length = (response.Content.Headers.ContentLength ?? 0) + have;
         var buffer = new byte[81920];
-        var written = 0L;
+        var written = have;
         await using (var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-        await using (var target = System.IO.File.Create(partial))
+        await using (var target = new System.IO.FileStream(
+            partial,
+            resumed ? System.IO.FileMode.Append : System.IO.FileMode.Create,
+            System.IO.FileAccess.Write))
         {
             var read = await source.ReadAsync(buffer, ct).ConfigureAwait(false);
             while (read > 0)
@@ -396,6 +435,19 @@ internal sealed class AndroidUpdater : IDisposable
         }
 
         System.IO.File.Move(partial, path, true);
+    }
+
+    private static long DraftLength(string partial)
+    {
+        try
+        {
+            var file = new System.IO.FileInfo(partial);
+            return file.Exists ? file.Length : 0;
+        }
+        catch (System.IO.IOException)
+        {
+            return 0;
+        }
     }
 
     // Holds the shown percent below 100 until the package is on disk and verified.
@@ -527,18 +579,58 @@ internal sealed class AndroidUpdater : IDisposable
         }
     }
 
+    // Целый пакет этой версии уже лежит в кеше: после перезапуска приложения качать его снова незачем.
+    private async Task AdoptAsync(string file, CancellationToken ct)
+    {
+        if (!Available || Downloading || Downloaded)
+        {
+            return;
+        }
+
+        var path = System.IO.Path.Combine(_directory, file);
+        if (!await VerifyAsync(path, Sha256, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        Downloaded = true;
+        Percent = 100;
+        SetupPath = path;
+        _log.Info("update", $"{Version} is already in the cache: {file}");
+    }
+
+    // Имя пакета помечено версией: черновик прошлого релиза иначе дописывался бы в нынешний.
+    private static string FileFor(string version, string name)
+    {
+        return version.Length == 0 ? name : version + "-" + name;
+    }
+
     private void DropDownloads()
     {
         Downloaded = false;
         Percent = 0;
         SetupPath = string.Empty;
-        _downloadedVersion = string.Empty;
+        SweepDownloads(string.Empty);
+    }
+
+    // Оставляет пакет предложенной версии и его черновик, остальное удаляет.
+    private void SweepDownloads(string keep)
+    {
         try
         {
-            foreach (var file in System.IO.Directory.EnumerateFiles(_directory, "*.apk"))
+            foreach (var file in System.IO.Directory.EnumerateFiles(_directory))
             {
-                Remove(file);
+                var name = System.IO.Path.GetFileName(file);
+                if (keep.Length == 0
+                    || (!string.Equals(name, keep, StringComparison.Ordinal)
+                        && !string.Equals(name, keep + ".part", StringComparison.Ordinal)))
+                {
+                    Remove(file);
+                }
             }
+        }
+        catch (System.IO.DirectoryNotFoundException)
+        {
         }
         catch (System.IO.IOException)
         {
@@ -546,6 +638,24 @@ internal sealed class AndroidUpdater : IDisposable
         catch (UnauthorizedAccessException)
         {
         }
+    }
+
+    // Останавливает загрузку без ответа вызывающему: смена версии обрывает её сама.
+    private void StopDownload()
+    {
+        var source = default(CancellationTokenSource);
+        lock (_gate)
+        {
+            if (!Downloading)
+            {
+                return;
+            }
+
+            CancelRequested = true;
+            source = _download;
+        }
+
+        source?.Cancel();
     }
 
     // Nothing half-fetched or unverified is kept: the next attempt starts from scratch.

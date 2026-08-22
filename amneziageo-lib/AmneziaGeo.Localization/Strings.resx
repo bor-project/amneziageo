@@ -1628,6 +1628,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Allow AmneziaGeo to install applications, then press Install again.</value>
   </data>
+  <data name="Android_UpdateDownloadNotification" xml:space="preserve">
+    <value>Downloading the update</value>
+  </data>
   <data name="Android_UpdateReopen" xml:space="preserve">
     <value>The update is installed. Tap to open AmneziaGeo.</value>
   </data>

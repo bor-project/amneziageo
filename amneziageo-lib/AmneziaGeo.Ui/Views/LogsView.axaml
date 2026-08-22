@@ -143,14 +143,14 @@
            </StackPanel>
 
            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-             <controls:SegmentedSelector Grid.Column="0" Align="Stretch" IsCompact="{Binding IsNarrow}"
-                       Command="{Binding SelectProbePathCommand}"
-                       Item1Text="{l:Tr Probe_PathAuto}" Item1Param="auto"
-                       Item1Active="{Binding IsProbeAuto}" Item1Enabled="{Binding CanProbeAuto}"
-                       Item2Text="{l:Tr Probe_PathTunnel}" Item2Param="tunnel"
-                       Item2Active="{Binding IsProbeTunnel}" Item2Enabled="{Binding CanProbeTunnel}"
-                       Item3Text="{l:Tr Probe_PathBypass}" Item3Param="bypass"
-                       Item3Active="{Binding IsProbeBypass}" />
+             <!-- Which way the run is taken: a picker, so the desktop opens its own list and the phone the
+                  platform sheet. A path no tunnel can carry stays greyed out in both. -->
+             <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+                       VerticalAlignment="Center" SelectedIndex="{Binding ProbePathIndex, Mode=TwoWay}">
+               <ComboBoxItem Content="{l:Tr Probe_PathAuto}" IsEnabled="{Binding CanProbeAuto}" />
+               <ComboBoxItem Content="{l:Tr Probe_PathTunnel}" IsEnabled="{Binding CanProbeTunnel}" />
+               <ComboBoxItem Content="{l:Tr Probe_PathBypass}" />
+             </controls:AdaptiveComboBox>
              <Button Grid.Column="1" x:Name="ProbeRunButton" Classes="accent" Padding="16,7"
                      VerticalAlignment="Center"
                      Command="{Binding RunProbeCommand}" Content="{l:Tr Probe_RunButton}" />

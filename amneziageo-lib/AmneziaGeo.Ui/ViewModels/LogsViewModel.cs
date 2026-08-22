@@ -270,32 +270,34 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnProbePathChanged(string value)
     {
-        OnPropertyChanged(nameof(IsProbeAuto));
-        OnPropertyChanged(nameof(IsProbeTunnel));
+        OnPropertyChanged(nameof(ProbePathIndex));
         OnPropertyChanged(nameof(IsProbeBypass));
         OnPropertyChanged(nameof(ServerOpacity));
     }
 
     /// <summary>
-    /// Whether the routing in force decides the path.
+    /// The path as the picker holds it: auto, tunnel, bypass.
     /// </summary>
-    public bool IsProbeAuto => ProbePath == ProbePaths.Auto;
-
-    /// <summary>
-    /// Whether the destination is held in the tunnel for the run.
-    /// </summary>
-    public bool IsProbeTunnel => ProbePath == ProbePaths.Tunnel;
+    public int ProbePathIndex
+    {
+        get => ProbePath switch
+        {
+            ProbePaths.Tunnel => 1,
+            ProbePaths.Bypass => 2,
+            _ => 0,
+        };
+        set => ProbePath = value switch
+        {
+            1 => ProbePaths.Tunnel,
+            2 => ProbePaths.Bypass,
+            _ => ProbePaths.Auto,
+        };
+    }
 
     /// <summary>
     /// Whether the destination is held past the tunnel for the run.
     /// </summary>
     public bool IsProbeBypass => ProbePath == ProbePaths.Bypass;
-
-    [RelayCommand]
-    private void SelectProbePath(string path)
-    {
-        ProbePath = path;
-    }
 
     // Whether a tunnel is up. Without one only the way past it can be measured, and the run is not allowed to
     // raise one: a probe measures what is there, it does not change it.
@@ -319,11 +321,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
     }
 
-    // Whether a routing list decides what the tunnel carries.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanProbeTunnel))]
-    private bool _listRouting;
-
     // Whether a server is picked to measure through.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
@@ -335,10 +332,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool CanProbeAuto => TunnelUp;
 
     /// <summary>
-    /// Whether the tunnel path is offered: some systems fix what the tun carries when they raise it, so a
-    /// destination the list leaves out cannot be put in it afterwards.
+    /// Whether the tunnel path is offered: it is offered for a tunnel that runs. Where the target actually
+    /// goes is the routing's to say, and a path it cannot hold comes back as the run's own verdict.
     /// </summary>
-    public bool CanProbeTunnel => TunnelUp && (UiPlatform.CanForceTunnelUnderList || !ListRouting);
+    public bool CanProbeTunnel => TunnelUp;
 
     /// <summary>
     /// How strongly the server picker is drawn: a run past the tunnel does not go through the server at all.
@@ -716,7 +713,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         RouteLogEnabled = snapshot.RouteLog;
         _suppressSettingPush = false;
         TunnelUp = snapshot.BoundStatus == ConnectionStatus.Connected;
-        ListRouting = snapshot.SelectedRoutingList is not null;
         ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
         DropPathWithoutTunnel();
         SyncProbeSource(snapshot.Configs.Count > 0);

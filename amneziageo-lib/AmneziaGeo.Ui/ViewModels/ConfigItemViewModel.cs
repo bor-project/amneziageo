@@ -313,9 +313,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// Отклик сервера: время последнего замера, «нет ответа» у потерянной связи и «N/A», пока мерить было
     /// нечего. Замер живёт отдельно от туннеля и подключением не сбрасывается.
     /// </summary>
-    public string ProbeText => Probing
-        ? "..."
-        : HasProbeTime
+    public string ProbeText => HasProbeTime
         ? RoundTripText
         : ProbeUnreachable
         ? Loc.Instance.Get(ProbeState == ProbeOutcome.NoAddress ? "Main_ProbeNoAddress" : "Main_ProbeNoAnswer")

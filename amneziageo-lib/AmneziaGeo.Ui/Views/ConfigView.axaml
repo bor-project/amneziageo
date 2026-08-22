@@ -44,7 +44,8 @@
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">
-            <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+            <PathIcon Classes.spin="{Binding Home.ProbeRunning}" Data="{DynamicResource AgRefreshGeometry}"
+                      Width="14" Height="14" VerticalAlignment="Center" />
             <TextBlock Text="{l:Tr Main_ProbeButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>

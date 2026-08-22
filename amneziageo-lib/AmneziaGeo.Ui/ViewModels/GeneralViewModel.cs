@@ -314,8 +314,27 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Seed backing fields from prefs without echoing OnChanged.
         _selectedThemeIndex = IndexForTheme(prefs.Theme);
         _selectedLanguageIndex = IndexForLanguage(prefs.Language);
+        _probeUploadUrl = prefs.ProbeUploadUrl;
         Loc.Instance.CultureChanged += OnCultureChanged;
     }
+
+    /// <summary>
+    /// Speed service the send leg of a probe uploads to; empty measures against the built-in one, and an
+    /// arbitrary destination is never uploaded to because it owes nobody an upload.
+    /// </summary>
+    [ObservableProperty]
+    private string _probeUploadUrl = string.Empty;
+
+    partial void OnProbeUploadUrlChanged(string value)
+    {
+        _prefs.ProbeUploadUrl = value.Trim();
+        _prefs.Save();
+    }
+
+    /// <summary>
+    /// The service a probe uploads to while the field is left empty.
+    /// </summary>
+    public string ProbeUploadDefault => AmneziaGeo.Ipc.ChannelProbe.DefaultUploadUrl;
 
     /// <summary>
     /// Engine version label, or the localized placeholder when the agent reports none.

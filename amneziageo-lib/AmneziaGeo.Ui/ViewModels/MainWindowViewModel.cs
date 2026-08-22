@@ -92,7 +92,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _connection = connection;
         _prefs = prefs;
-        Diagnostics = new DiagnosticsViewModel(connection);
+        Diagnostics = new DiagnosticsViewModel(this, connection);
         General = new GeneralViewModel(this, connection, prefs);
         Config = new ConfigViewModel(this, connection);
         Routing = new RoutingViewModel(this, connection, prefs);

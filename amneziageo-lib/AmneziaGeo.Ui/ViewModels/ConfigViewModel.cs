@@ -174,6 +174,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public ObservableCollection<ConfigChoice> HomeConfigOptions { get; } = [ConfigChoice.None];
 
     /// <summary>
+    /// The same catalogue for the probe picker, which offers real configurations alone: a probe is measured
+    /// through a server, so «не выбрано» would name nothing to measure through.
+    /// </summary>
+    public ObservableCollection<ConfigChoice> ProbeConfigOptions { get; } = [];
+
+    /// <summary>
     /// The names of the configurations currently known.
     /// </summary>
     public IReadOnlyList<string> ConfigNames => _configNames;
@@ -810,6 +816,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void ReconcileConfigOptions()
     {
         ReconcileOptions(HomeConfigOptions, 1);
+        ReconcileOptions(ProbeConfigOptions, 0);
     }
 
     // Mirrors the config names onto an option list, leaving the synthetic rows before head untouched.

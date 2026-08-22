@@ -34,6 +34,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Age past which the tunnel's own snapshot of what it carries is no longer an answer about what runs now.
     private const int SessionWindowSeconds = 60;
 
+    // How long a probe handed to the tunnel is waited for, and how often its result is looked for.
+    private const int ProbeWaitMs = 40_000;
+    private const int ProbePollMs = 250;
+
     // Leaves the start-up rush to the interface before the first geo check goes out.
     private const int GeoStartDelaySeconds = 5;
     private const int GeoTickSeconds = 60;
@@ -403,6 +407,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
+
+            case IpcContract.OpProbeTarget:
+                return await ProbeTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -2433,20 +2440,113 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "check-target requires a domain, an address, an app token or a geo rule");
         }
 
+        var (inspector, _) = await RulesAsync(ct).ConfigureAwait(false);
+        var report = await inspector
+            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
+            .ConfigureAwait(false);
+
+        Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // The rules in force: the inspector that answers under them, and whether they put everything in the tunnel.
+    // A named application is added to the rules where the relay can name the owner of a connection, and below
+    // that the tunnel is built as an allow list of them instead - the answer follows the mode in force.
+    private async Task<(TargetInspector Inspector, bool Whole)> RulesAsync(CancellationToken ct)
+    {
         var list = _selectedRoutingList is { } listId
             ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
             : null;
         var settings = _selectedRoutingList is { } id
             ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
             : null;
-        // A named application is added to the rules where the relay can name the owner of a connection, and below
-        // that the tunnel is built as an allow list of them instead - the check answers under the mode in force.
-        var report = await new TargetInspector(list, !(settings?.UseGlobalProxy ?? false),
-                AppMode(list, settings))
-            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
-            .ConfigureAwait(false);
+        var full = settings?.UseGlobalProxy ?? false;
+        // Without a list the tun carries everything, so nothing is left outside it to be put back in.
+        return (new TargetInspector(list, !full, AppMode(list, settings)), _selectedRoutingList is null || full);
+    }
 
-        Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
+    // Measures one destination over the path asked for. The tun fixes its routes at establish, so nothing can be
+    // put into a tunnel that does not carry everything, and a socket is excused from it only inside the process
+    // that owns it - that run is handed to the tunnel instead.
+    private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        var target = args[0];
+        var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
+        var upload = args.Count > 2 ? args[2] : string.Empty;
+        var running = VpnBridge.IsRunning(Application.Context);
+        if (!running && path != ProbePaths.Bypass)
+        {
+            return ProbeAck(TargetProbe.Refused(target, path, ProbeVerdicts.NotConnected));
+        }
+
+        var (inspector, whole) = await RulesAsync(ct).ConfigureAwait(false);
+        if (running && path == ProbePaths.Tunnel && !whole)
+        {
+            return ProbeAck(TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable));
+        }
+
+        var taken = path == ProbePaths.Auto
+            ? await TakenPathAsync(inspector, target, ct).ConfigureAwait(false)
+            : path;
+        if (running && path == ProbePaths.Bypass)
+        {
+            return ProbeAck(await HandOverAsync(target, path, taken, upload, ct).ConfigureAwait(false));
+        }
+
+        var options = new TargetProbeOptions(target, path, taken, upload);
+        return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
+    }
+
+    // Where the rules in force send a destination, said the way the desktops say it.
+    private async Task<string> TakenPathAsync(TargetInspector inspector, string target, CancellationToken ct)
+    {
+        var report = await inspector
+            .InspectAsync(target, _selectedTarget ?? string.Empty, new TargetProbes(), ct)
+            .ConfigureAwait(false);
+        return report.VerdictKey switch
+        {
+            TargetVerdicts.Proxy or TargetVerdicts.ProxyAppsOnly => "tunnel by rule",
+            TargetVerdicts.UnlistedFull => "tunnel by default",
+            TargetVerdicts.Direct => "bypass by rule",
+            TargetVerdicts.UnlistedSplit or TargetVerdicts.AppOutside or TargetVerdicts.AppUnlisted => "bypass by default",
+            TargetVerdicts.Blocked => "blocked by rule",
+            _ => string.Empty,
+        };
+    }
+
+    // Hands the run to the tunnel and waits for what it measured; a tunnel that never answers leaves the path
+    // unmeasured rather than the caller waiting on it.
+    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, CancellationToken ct)
+    {
+        VpnBridge.ClearProbeResult();
+        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload));
+        VpnBridge.RequestProbe(Application.Context);
+        for (var waited = 0; waited < ProbeWaitMs; waited += ProbePollMs)
+        {
+            await Task.Delay(ProbePollMs, ct).ConfigureAwait(false);
+            var payload = VpnBridge.ReadProbeResult();
+            if (payload.Length > 0)
+            {
+                VpnBridge.ClearProbeResult();
+                return ProbeReport.Parse(payload, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            }
+        }
+
+        VpnBridge.ClearProbe();
+        return TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable);
+    }
+
+    // Stores a probe in its own journal, which no capture floor reaches, and puts its closing line in the agent log.
+    private IpcAck ProbeAck(ProbeReport report)
+    {
+        var rendered = report.Render().TrimEnd();
+        _log.Store.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
+        _log.Info("probe", rendered.Split('\n')[^1].Trim());
         return new IpcAck(true, report.ToPayload());
     }
 
@@ -3029,7 +3129,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new IpcAck(true, JsonSerializer.Serialize(new { total, capped, entries }));
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable
+        or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
 
     private static string KnownLogLevel(string token)
     {

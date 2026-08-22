@@ -4,6 +4,7 @@
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              x:Class="AmneziaGeo.Ui.Views.LogsView"
              x:CompileBindings="True"
              x:DataType="vm:LogsViewModel">
@@ -59,6 +60,61 @@
          <controls:SettingSwitchRow IsVisible="{Binding IsRouteLog}"
              Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
              IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+         <!-- What fills the probe journal: the server to measure through, the destination, and how to take it
+              there. The field takes the whole row of its own, because at the narrowest pane a shared row leaves
+              it too small to read what is typed in it. -->
+         <StackPanel Spacing="10" IsVisible="{Binding IsProbeLog}">
+           <StackPanel Spacing="4" Opacity="{Binding ServerOpacity}">
+             <TextBlock Text="{l:Tr Main_HomeServerLabel}" FontWeight="SemiBold" FontSize="15" />
+             <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                       ItemsSource="{Binding Shell.Config.ProbeConfigOptions}"
+                       SelectedItem="{Binding Shell.Home.ActiveConfigChoice, Mode=TwoWay}">
+               <controls:AdaptiveComboBox.ItemTemplate>
+                 <DataTemplate x:DataType="vm:ConfigChoice">
+                   <TextBlock Text="{Binding Name}" />
+                 </DataTemplate>
+               </controls:AdaptiveComboBox.ItemTemplate>
+             </controls:AdaptiveComboBox>
+           </StackPanel>
+
+           <StackPanel Spacing="6">
+             <TextBox Classes="field" Text="{Binding ProbeTarget, Mode=TwoWay}"
+                      Watermark="{l:Tr Probe_TargetWatermark}" />
+             <!-- What the agent already knows, offered as a list under the field: a drop-down would cover the
+                  text being typed, which is what the offers are made from. -->
+             <ItemsControl ItemsSource="{Binding ProbeSuggestions}" IsVisible="{Binding ShowProbeSuggestions}">
+               <ItemsControl.ItemTemplate>
+                 <DataTemplate x:DataType="sys:String">
+                   <Button Classes="rowselect" Padding="12,6" Margin="0,0,0,4"
+                           HorizontalContentAlignment="Left" Click="OnPickSuggestion">
+                     <TextBlock Text="{Binding}" FontSize="12.5" TextTrimming="CharacterEllipsis"
+                                Foreground="{DynamicResource AgFgBrush}" />
+                   </Button>
+                 </DataTemplate>
+               </ItemsControl.ItemTemplate>
+             </ItemsControl>
+           </StackPanel>
+
+           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+             <controls:SegmentedSelector Grid.Column="0" Align="Stretch" IsCompact="{Binding IsNarrow}"
+                       Command="{Binding SelectProbePathCommand}"
+                       Item1Text="{l:Tr Probe_PathAuto}" Item1Param="auto"
+                       Item1Active="{Binding IsProbeAuto}" Item1Enabled="{Binding CanProbeAuto}"
+                       Item2Text="{l:Tr Probe_PathTunnel}" Item2Param="tunnel"
+                       Item2Active="{Binding IsProbeTunnel}" Item2Enabled="{Binding CanProbeTunnel}"
+                       Item3Text="{l:Tr Probe_PathBypass}" Item3Param="bypass"
+                       Item3Active="{Binding IsProbeBypass}" />
+             <Button Grid.Column="1" Classes="accent" Padding="16,7" VerticalAlignment="Center"
+                     Command="{Binding RunProbeCommand}" Content="{l:Tr Probe_RunButton}" />
+           </Grid>
+
+           <!-- A probe takes about ten seconds; the block says so while it runs. -->
+           <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ProbeRunning}">
+             <ProgressBar IsIndeterminate="True" Width="120" VerticalAlignment="Center" />
+             <TextBlock Text="{l:Tr Probe_Running}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
+           </StackPanel>
+         </StackPanel>
          <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
          <Border Classes="hairline" />
        </StackPanel>
@@ -134,7 +190,7 @@
                    Foreground="{DynamicResource AgFgBrush}" />
 
         <!-- Log body (shared): text / cards / empty state / loader. Fills the pane width. -->
-        <Border Grid.Row="3" Classes="logbody" Classes.bare="{Binding IsCompact}">
+        <Border Grid.Row="3" Classes="logbody" Classes.bare="{Binding IsNarrow}">
           <Panel>
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           IsVisible="{Binding ShowStoredText}">

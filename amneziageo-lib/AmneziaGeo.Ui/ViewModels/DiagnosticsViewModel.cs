@@ -7,17 +7,17 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Diagnostics screen: a tab per pane — the agent log and the configuration the agent runs on. The check pane
-/// is built but not offered. Only the pane on screen reads the agent.
+/// Diagnostics screen: a tab per pane — the agent log, the configuration the agent runs on, and the checks
+/// against it. Only the pane on screen reads the agent.
 /// </summary>
 internal sealed partial class DiagnosticsViewModel : ViewModelBase
 {
     /// <summary>
     /// ctor
     /// </summary>
-    public DiagnosticsViewModel(IAgentConnection connection)
+    public DiagnosticsViewModel(MainWindowViewModel host, IAgentConnection connection)
     {
-        Logs = new LogsViewModel(connection);
+        Logs = new LogsViewModel(host, connection);
         Config = new RuntimeConfigViewModel(connection);
         Check = new CheckViewModel(connection);
     }
@@ -41,6 +41,10 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     /// Whether the diagnostics section is the one currently shown.
     /// </summary>
     public bool IsActive { get; private set; }
+
+    // Whether there is a configuration to check at all; without one the check pane has nothing to measure.
+    [ObservableProperty]
+    private bool _hasConfigs;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
@@ -94,7 +98,18 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTab(string target)
     {
-        Tab = target == "config" && ShowConfigTab ? "config" : "log";
+        if (!ShowConfigTab)
+        {
+            Tab = "log";
+            return;
+        }
+
+        Tab = target switch
+        {
+            "config" => "config",
+            "check" when HasConfigs => "check",
+            _ => "log",
+        };
     }
 
     /// <summary>
@@ -118,6 +133,12 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
     {
+        HasConfigs = snapshot.Configs.Count > 0;
+        if (!HasConfigs && IsCheckTab)
+        {
+            Tab = "log";
+        }
+
         Logs.Apply(snapshot);
     }
 

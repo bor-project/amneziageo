@@ -695,6 +695,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpProbeTarget:
+                return await ProbeTargetAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
 
@@ -1731,6 +1734,99 @@ internal sealed class LinuxAgent : IDisposable
         return new IpcAck(true, report.ToPayload());
     }
 
+    // Measures one destination over the path asked for; the routing cache holds it there for the run only.
+    private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        var target = args[0];
+        var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
+        if (!_tunnel.Running && path != ProbePaths.Bypass)
+        {
+            var refused = TargetProbe.Refused(target, path, ProbeVerdicts.NotConnected);
+            RecordProbe(refused);
+            return new IpcAck(true, refused.ToPayload());
+        }
+
+        var cache = _tunnel.Cache;
+        var address = await ProbeAddressAsync(target, ct).ConfigureAwait(false);
+        var held = HoldProbe(cache, address, path);
+        try
+        {
+            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), args.Count > 2 ? args[2] : string.Empty);
+            var report = await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
+            RecordProbe(report);
+            return new IpcAck(true, report.ToPayload());
+        }
+        finally
+        {
+            ReleaseProbe(cache, address, held);
+        }
+    }
+
+    // Holds the address on the path asked for; auto holds nothing.
+    private static bool HoldProbe(RoutingCache? cache, System.Net.IPAddress? address, string path)
+    {
+        if (cache is null || address is null || path == ProbePaths.Auto)
+        {
+            return false;
+        }
+
+        cache.Note(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
+        return true;
+    }
+
+    // Puts a held address back under the rules that own it.
+    private static void ReleaseProbe(RoutingCache? cache, System.Net.IPAddress? address, bool held)
+    {
+        if (!held || cache is null || address is null)
+        {
+            return;
+        }
+
+        cache.Note(address, cache.Classify(address));
+    }
+
+    // Where the run went: the path forced, or - for auto - what the rules in force make of the address.
+    private static string TakenPath(RoutingCache? cache, System.Net.IPAddress? address, string path)
+    {
+        if (path != ProbePaths.Auto)
+        {
+            return path;
+        }
+
+        if (cache is null || address is null)
+        {
+            return ProbePaths.Bypass;
+        }
+
+        return cache.Classify(address) switch
+        {
+            RouteVerdict.Proxy => "tunnel by rule",
+            RouteVerdict.Direct => "bypass by rule",
+            RouteVerdict.Block => "blocked by rule",
+            _ => cache.Split ? "bypass by default" : "tunnel by default",
+        };
+    }
+
+    // The address a target stands for, as the tunnel resolves it.
+    private static async Task<System.Net.IPAddress?> ProbeAddressAsync(string target, CancellationToken ct)
+    {
+        var found = await ResolveAsync(target, ct).ConfigureAwait(false);
+        return System.Net.IPAddress.TryParse(found, out var address) ? address : null;
+    }
+
+    // Stores a probe in its own journal and puts its closing line in the agent log.
+    private void RecordProbe(ProbeReport report)
+    {
+        var rendered = report.Render().TrimEnd();
+        _log.Store.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
+        _log.Info("probe", rendered.Split('\n')[^1].Trim());
+    }
+
     // What the running tunnel holds for an address right now.
     private HeldRoute? Held(System.Net.IPAddress address)
     {
@@ -1977,7 +2073,8 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable
+        or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
 
     // Reconnect interval in seconds, clamped to a sane window.
     private static int ReconnectInterval(string? value) =>

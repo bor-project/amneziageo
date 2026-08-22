@@ -43,6 +43,11 @@ public sealed class SqliteLogStore : IDisposable
     /// </summary>
     public const string ChecksTable = "checks";
 
+    /// <summary>
+    /// Table for the target probes (levelless; one row carries a whole rendered probe of one destination).
+    /// </summary>
+    public const string ProbeTable = "probe";
+
     // Enqueued append not yet written; id is assigned by the table AUTOINCREMENT on insert. LevelId applies to
     // the agent table only (0 for routes).
     private readonly record struct Pending(string Table, long UnixMs, int LevelId, string? Source, string Message, TaskCompletionSource? Flush = null);
@@ -187,6 +192,12 @@ public sealed class SqliteLogStore : IDisposable
                         ts  INTEGER NOT NULL,
                         msg TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS probe (
+                        id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ts  INTEGER NOT NULL,
+                        msg TEXT NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -216,6 +227,14 @@ public sealed class SqliteLogStore : IDisposable
     public void AppendCheck(long unixMs, string message)
     {
         _queue.Writer.TryWrite(new Pending(ChecksTable, unixMs, 0, null, message));
+    }
+
+    /// <summary>
+    /// Queues one target probe; like a check it is run by hand and no capture floor applies to it.
+    /// </summary>
+    public void AppendProbe(long unixMs, string message)
+    {
+        _queue.Writer.TryWrite(new Pending(ProbeTable, unixMs, 0, null, message));
     }
 
     /// <summary>
@@ -620,6 +639,10 @@ public sealed class SqliteLogStore : IDisposable
                             {
                                 command.CommandText = "INSERT INTO checks (ts, msg) VALUES ($ts, $msg);";
                             }
+                            else if (row.Table == ProbeTable)
+                            {
+                                command.CommandText = "INSERT INTO probe (ts, msg) VALUES ($ts, $msg);";
+                            }
                             else
                             {
                                 continue;
@@ -720,7 +743,7 @@ public sealed class SqliteLogStore : IDisposable
 
     private static string Validate(string table)
     {
-        return table is AgentTable or RoutesTable or ChecksTable
+        return table is AgentTable or RoutesTable or ChecksTable or ProbeTable
             ? table
             : throw new ArgumentException($"unknown log table: {table}", nameof(table));
     }

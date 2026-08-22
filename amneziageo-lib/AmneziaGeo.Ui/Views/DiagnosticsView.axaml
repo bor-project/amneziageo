@@ -12,13 +12,16 @@
 
     <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}" />
 
-    <!-- Pane tabs: log or configuration. Left when wide, gone in compact, where the log is the only pane. Down
-         steps into the pane shown below, which directional focus walks past into the window header (#201). -->
+    <!-- Pane tabs: log, configuration or checks. Left when wide, gone in compact, where the log is the only
+         pane. The checks need a configuration to run against, so without one the tab is closed. Down steps into
+         the pane shown below, which directional focus walks past into the window header (#201). -->
     <StackPanel Grid.Row="1" Spacing="14" IsVisible="{Binding ShowConfigTab}">
       <controls:SegmentedSelector x:Name="PaneTabs" KeyDown="OnTabsKeyDown"
                             Command="{Binding SelectTabCommand}" IsCompact="{Binding IsCompact}"
                             Item1Text="{l:Tr Main_DiagTabLog}" Item1Param="log" Item1Active="{Binding IsLogTab}"
-                            Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}" />
+                            Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}"
+                            Item3Text="{l:Tr Main_DiagTabCheck}" Item3Param="check" Item3Active="{Binding IsCheckTab}"
+                            Item3Enabled="{Binding HasConfigs}" />
 
       <!-- Divider between the tabs and the pane. -->
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" />

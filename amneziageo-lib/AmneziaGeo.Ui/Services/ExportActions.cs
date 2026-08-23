@@ -169,36 +169,6 @@ internal static class ExportActions
     }
 
     /// <summary>
-    /// Asks for a save path on disk; returns null when the user backs out or the target has no local path.
-    /// </summary>
-    public static async Task<string?> PickSavePathAsync(
-        Visual source,
-        string title,
-        string suggestedName,
-        string extension,
-        string typeName)
-    {
-        if (FileSaverHost.SaveAsync(title, suggestedName) is { } builtIn)
-        {
-            return await builtIn;
-        }
-
-        if (TopLevel.GetTopLevel(source) is not { } top)
-        {
-            return null;
-        }
-
-        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = title,
-            SuggestedFileName = suggestedName,
-            DefaultExtension = extension,
-            FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = [$"*.{extension}"] }],
-        });
-        return file?.TryGetLocalPath();
-    }
-
-    /// <summary>
     /// Ограничивает доступ к сохранённому файлу владельцем: выгрузки несут приватные ключи.
     /// </summary>
     public static void RestrictToOwner(IStorageFile file)

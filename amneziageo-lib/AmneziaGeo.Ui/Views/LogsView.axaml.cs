@@ -182,7 +182,8 @@ internal sealed partial class LogsView : UserControl
         await ExportActions.CopyToClipboardAsync(this, vm.VisibleText());
     }
 
-    // Exports the whole selected log table to a text file the user picks; the agent writes it.
+    // Exports the whole selected log table to a text file the user picks. A phone hands back a document and
+    // no path at all, so the text goes into the stream the picker opens.
     private async void OnExportLog(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LogsViewModel vm)
@@ -190,18 +191,10 @@ internal sealed partial class LogsView : UserControl
             return;
         }
 
-        var path = await ExportActions.PickSavePathAsync(
-            this,
-            string.Empty,
-            vm.SelectedLogType + ".log",
-            "log",
-            "Log");
-        if (string.IsNullOrEmpty(path))
+        if (await vm.BuildExportTextAsync() is { } text)
         {
-            return;
+            await ExportActions.SaveTextAsync(this, text, string.Empty, vm.SelectedLogType + ".log");
         }
-
-        await vm.ExportToAsync(path);
     }
 
     // Hands the whole selected log table to another application.

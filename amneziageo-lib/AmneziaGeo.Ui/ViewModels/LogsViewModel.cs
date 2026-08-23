@@ -970,27 +970,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Exports the whole selected table to the file the view chose: the agent renders the text, the UI writes
-    /// it under the user account.
-    /// </summary>
-    public async Task ExportToAsync(string path)
-    {
-        if (await BuildExportTextAsync() is not { } text)
-        {
-            return;
-        }
-
-        try
-        {
-            await File.WriteAllTextAsync(path, text);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [$"log export write failed: {ex.Message}"]));
-        }
-    }
-
-    /// <summary>
     /// Renders the whole selected table through the agent; null when the agent did not answer.
     /// </summary>
     /// <summary>

@@ -307,17 +307,6 @@
 
            <Border Classes="hairline" />
 
-           <!-- Speed service the send leg of a probe uploads to: an arbitrary destination owes nobody an
-                upload, so the rate out is measured against a service that accepts one. -->
-           <StackPanel Spacing="8">
-             <TextBlock Text="{l:Tr General_ProbeSection}" FontWeight="SemiBold" FontSize="15" />
-             <TextBlock Text="{l:Tr General_ProbeUploadHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
-             <TextBox Classes="field" Text="{Binding ProbeUploadUrl, Mode=TwoWay}"
-                      Watermark="{Binding ProbeUploadDefault}" />
-           </StackPanel>
-
-           <Border Classes="hairline" />
-
            <!-- Import / export (full width): hint left, actions right. Opens the bundle sub-views inline. -->
            <!-- The export / import buttons stand under the hint. -->
            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">

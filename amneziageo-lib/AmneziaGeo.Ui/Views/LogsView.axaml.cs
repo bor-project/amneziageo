@@ -1,3 +1,5 @@
+using System;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -27,6 +29,7 @@ internal sealed partial class LogsView : UserControl
         InitializeComponent();
         SizeChanged += (_, e) => PushPaneWidth(e.NewSize.Width);
         DataContextChanged += (_, _) => PushPaneWidth(Bounds.Width);
+        LayoutUpdated += (_, _) => PushChrome();
     }
 
     // The card breakpoint is measured against the panel the viewer sits in, not the window around it.
@@ -35,6 +38,22 @@ internal sealed partial class LogsView : UserControl
         if (DataContext is LogsViewModel vm)
         {
             vm.PaneWidth = width;
+        }
+    }
+
+    // Height everything but the body takes. The section grows by what the body is short of it, so the head is
+    // measured rather than counted: it changes with the source, the offers and the width.
+    private void PushChrome()
+    {
+        if (DataContext is not LogsViewModel vm || Bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var chrome = Bounds.Height - BodyFrame.Bounds.Height;
+        if (Math.Abs(chrome - vm.ChromeHeight) > 0.5)
+        {
+            vm.ChromeHeight = chrome;
         }
     }
 

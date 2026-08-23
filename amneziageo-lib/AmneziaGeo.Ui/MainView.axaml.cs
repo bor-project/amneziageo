@@ -34,6 +34,7 @@ public sealed partial class MainView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         SizeChanged += OnViewSizeChanged;
+        ContentScroll.SizeChanged += OnContentSizeChanged;
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -49,6 +50,7 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.WindowWidth = Bounds.Width > 0 ? Bounds.Width : 987;
+            _vm.Diagnostics.Logs.ViewportHeight = ContentScroll.Bounds.Height;
             _vm.PropertyChanged += OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged += OnHomePropertyChanged;
             _vm.Sheet.PropertyChanged += OnSheetPropertyChanged;
@@ -119,6 +121,16 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.WindowWidth = e.NewSize.Width;
+        }
+    }
+
+    // Height of the pane the sections stand in. The diagnostics viewer lays its head and body out against it,
+    // and it is read here because the pane does not depend on what any section puts in it.
+    private void OnContentSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (_vm is not null)
+        {
+            _vm.Diagnostics.Logs.ViewportHeight = e.NewSize.Height;
         }
     }
 

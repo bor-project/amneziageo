@@ -430,6 +430,9 @@
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Более поздние записи</value>
   </data>
+  <data name="Main_LogSearchWatermarkShort" xml:space="preserve">
+    <value>Поиск</value>
+  </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Поиск в логе</value>
   </data>
@@ -2096,10 +2099,13 @@
   <data name="Probe_Running" xml:space="preserve">
     <value>идёт замер…</value>
   </data>
-  <data name="General_ProbeSection" xml:space="preserve">
-    <value>Сервис замера</value>
+  <data name="Probe_SettingsSection" xml:space="preserve">
+    <value>Замер</value>
   </data>
-  <data name="General_ProbeUploadHint" xml:space="preserve">
-    <value>На него замеряется отдача: произвольный адрес загрузку не принимает. Пусто - встроенный сервис.</value>
+  <data name="Probe_UploadServiceTitle" xml:space="preserve">
+    <value>Сервис для проверки скорости передачи данных</value>
+  </data>
+  <data name="Probe_UploadServiceHint" xml:space="preserve">
+    <value>Адрес для проверки скорости. По умолчанию: https://speed.cloudflare.com/__up.</value>
   </data>
 </root>

@@ -7,6 +7,7 @@ using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 
+using Avalonia;
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -91,6 +92,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(SearchSummary));
+        OnPropertyChanged(nameof(SearchWatermark));
     }
 
     /// <summary>
@@ -125,6 +127,81 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// </summary>
     public bool IsNarrow => PaneWidth > 0 ? PaneWidth < CardBreakpoint : IsCompact;
 
+    // Height of the pane the section is laid out in, pushed by the shell. It is the pane, not the section, so
+    // what the layout below does with it cannot come back as a new value.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsShort))]
+    [NotifyPropertyChangedFor(nameof(SectionHeight))]
+    [NotifyPropertyChangedFor(nameof(HeadSpacing))]
+    [NotifyPropertyChangedFor(nameof(SectionSpacing))]
+    [NotifyPropertyChangedFor(nameof(BarMargin))]
+    [NotifyPropertyChangedFor(nameof(ShowControlBarRow))]
+    [NotifyPropertyChangedFor(nameof(ShowBarNav))]
+    [NotifyPropertyChangedFor(nameof(ShowShortNav))]
+    private double _viewportHeight;
+
+    // Height everything but the body takes, measured by the view: the head changes with the source, with the
+    // offers under the target field and with the pane width, so it is read rather than counted.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SectionHeight))]
+    private double _chromeHeight;
+
+    // Pane height the head stops fitting over a readable body at.
+    private const double ShortViewport = 520;
+
+    // Height the body is never laid out below.
+    private const double BodyFloor = 180;
+
+    // Gap the section leaves over the body once the head is compact.
+    private const double ShortGap = 8;
+
+    // Inset the shell keeps around the section.
+    private const double PaneInset = 16;
+
+    /// <summary>
+    /// Whether the head is compact: the pane is too low to spend rows on labels and on a bar of its own.
+    /// </summary>
+    public bool IsShort => ViewportHeight > 0 && ViewportHeight < ShortViewport;
+
+    /// <summary>
+    /// Height the section is laid out at: the pane it sits in, or more when the body would otherwise be
+    /// squeezed under its floor - the screen around it scrolls for the difference.
+    /// </summary>
+    public double SectionHeight => ViewportHeight > 0
+        ? Math.Max(ViewportHeight - PaneInset, ChromeHeight + BodyFloor + ShortGap)
+        : double.NaN;
+
+    /// <summary>
+    /// Gap between the rows of the head.
+    /// </summary>
+    public double HeadSpacing => IsShort ? 6 : 10;
+
+    /// <summary>
+    /// Gap between the head and the viewer under it.
+    /// </summary>
+    public double SectionSpacing => IsShort ? ShortGap : 14;
+
+    /// <summary>
+    /// Gap over the control bar.
+    /// </summary>
+    public Thickness BarMargin => IsShort ? new Thickness(0, 4, 0, 0) : new Thickness(0, 10, 0, 0);
+
+    /// <summary>
+    /// Whether the control bar takes a row of its own: a low pane carries its controls in the search row and
+    /// keeps the row for the frozen hint alone.
+    /// </summary>
+    public bool ShowControlBarRow => IsFrozen || (ShowControlBar && !IsShort);
+
+    /// <summary>
+    /// Whether paging and following stand in the control bar.
+    /// </summary>
+    public bool ShowBarNav => IsStoredLog && !IsShort;
+
+    /// <summary>
+    /// Whether paging and following stand in the search row, which is where a low pane carries them.
+    /// </summary>
+    public bool ShowShortNav => IsStoredLog && IsShort;
+
     private void NotifyShape()
     {
         OnPropertyChanged(nameof(IsNarrow));
@@ -134,6 +211,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowStoredCards));
         OnPropertyChanged(nameof(ShowProbeCards));
         OnPropertyChanged(nameof(ShowLiveCards));
+        OnPropertyChanged(nameof(SearchWatermark));
         Render();
     }
 
@@ -226,6 +304,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowSearch));
         OnPropertyChanged(nameof(SearchSummary));
         OnPropertyChanged(nameof(ShowControlBar));
+        OnPropertyChanged(nameof(ShowControlBarRow));
+        OnPropertyChanged(nameof(ShowBarNav));
+        OnPropertyChanged(nameof(ShowShortNav));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(BareBody));
         OnPropertyChanged(nameof(ShowStoredText));
@@ -371,6 +452,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowProbeSuggestions));
     }
 
+    // Ссылка «Замер» рядом с запуском: сервис, на котором меряется скорость, живёт своим экраном.
+    [RelayCommand]
+    private void OpenProbeSettings()
+    {
+        _host.ShowProbeSettings();
+    }
+
     // Whether a probe is in flight.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
@@ -391,7 +479,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         try
         {
             await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeTarget,
-                [target, ProbePath, _host.General.ProbeUploadUrl.Trim()]));
+                [target, ProbePath, _host.Probe.UploadUrl.Trim()]));
         }
         catch
         {
@@ -554,6 +642,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private int _searchMatchCount;
 
     /// <summary>
+    /// The hint in the search field. A narrow pane leaves it no room for what is searched through, so there it
+    /// names the verb alone.
+    /// </summary>
+    public string SearchWatermark =>
+        Loc.Instance.Get(IsNarrow ? "Main_LogSearchWatermarkShort" : "Main_LogSearchWatermark");
+
+    /// <summary>
     /// What the field beside it came to: the matches in a stored table, the rows left of the cache.
     /// </summary>
     public string SearchSummary
@@ -602,6 +697,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Held Ctrl: the viewer stops taking new rows, so a selection survives long enough to be copied.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowControlBar))]
+    [NotifyPropertyChangedFor(nameof(ShowControlBarRow))]
     private bool _isFrozen;
 
     partial void OnIsFrozenChanged(bool value)

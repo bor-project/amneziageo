@@ -8,9 +8,10 @@
              x:DataType="vm:DiagnosticsViewModel">
   <!-- Title, then the viewer; only the viewer body scrolls. Every source is picked in the viewer itself, so the
        screen carries nothing to switch between. -->
-  <Grid RowDefinitions="Auto,*" RowSpacing="14">
+  <Grid RowDefinitions="Auto,*" RowSpacing="{Binding Logs.SectionSpacing}">
 
-    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}" />
+    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}"
+               IsVisible="{Binding !Logs.IsShort}" />
 
     <views:LogsView Grid.Row="1" DataContext="{Binding Logs}" />
 

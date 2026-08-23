@@ -12,9 +12,9 @@ internal sealed class DiagnosticsViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public DiagnosticsViewModel(MainWindowViewModel host, IAgentConnection connection)
+    public DiagnosticsViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
     {
-        Logs = new LogsViewModel(host, connection);
+        Logs = new LogsViewModel(host, connection, prefs);
     }
 
     /// <summary>

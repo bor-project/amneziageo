@@ -24,6 +24,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
+    private readonly UiPreferences _prefs;
 
     // Verbosity shown for the agent capture level when the agent reports nothing usable.
     private const string DefaultCaptureLevel = "error";
@@ -67,10 +68,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public LogsViewModel(MainWindowViewModel host, IAgentConnection connection)
+    public LogsViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
     {
         _host = host;
         _connection = connection;
+        _prefs = prefs;
+        // Seed backing field from prefs without echoing OnChanged.
+        _probePath = prefs.ProbePath;
         Loc.Instance.CultureChanged += OnCultureChanged;
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _pollTimer.Tick += (_, _) => OnPollTick();
@@ -344,9 +348,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Path a probe is measured over: auto, tunnel or bypass.
+    /// Path a probe is measured over: auto, tunnel or bypass. Kept across launches.
     /// </summary>
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
     private string _probePath = ProbePaths.Auto;
 
     partial void OnProbePathChanged(string value)
@@ -354,6 +359,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ProbePathIndex));
         OnPropertyChanged(nameof(IsProbeBypass));
         OnPropertyChanged(nameof(ServerOpacity));
+        OnPropertyChanged(nameof(PathNeedsTunnel));
+        OnPropertyChanged(nameof(ProbeFormEnabled));
+        _prefs.ProbePath = value;
+        _prefs.Save();
     }
 
     /// <summary>
@@ -383,24 +392,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Whether a tunnel is up. Without one only the way past it can be measured, and the run is not allowed to
     // raise one: a probe measures what is there, it does not change it.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanProbeAuto))]
-    [NotifyPropertyChangedFor(nameof(CanProbeTunnel))]
+    [NotifyPropertyChangedFor(nameof(PathNeedsTunnel))]
+    [NotifyPropertyChangedFor(nameof(ProbeFormEnabled))]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
     private bool _tunnelUp;
-
-    partial void OnTunnelUpChanged(bool value)
-    {
-        DropPathWithoutTunnel();
-    }
-
-    // Leaves the path no tunnel can carry: the journal opens on auto, and a run over it is turned down while
-    // nothing is up.
-    private void DropPathWithoutTunnel()
-    {
-        if (!TunnelUp && !IsProbeBypass)
-        {
-            ProbePath = ProbePaths.Bypass;
-        }
-    }
 
     // Whether a server is picked to measure through.
     [ObservableProperty]
@@ -408,15 +403,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private bool _serverPicked;
 
     /// <summary>
-    /// Whether the routing may decide the path: it decides for a tunnel that runs.
+    /// Whether the picked path asks for a tunnel that is not up: the pick stands, the run behind it does not.
     /// </summary>
-    public bool CanProbeAuto => TunnelUp;
+    public bool PathNeedsTunnel => !TunnelUp && !IsProbeBypass;
 
     /// <summary>
-    /// Whether the tunnel path is offered: it is offered for a tunnel that runs. Where the target actually
-    /// goes is the routing's to say, and a path it cannot hold comes back as the run's own verdict.
+    /// Whether the destination and the run behind it are open to the finger.
     /// </summary>
-    public bool CanProbeTunnel => TunnelUp;
+    public bool ProbeFormEnabled => !PathNeedsTunnel;
 
     /// <summary>
     /// How strongly the server picker is drawn: a run past the tunnel does not go through the server at all.
@@ -493,7 +487,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ResetAndReload();
     }
 
-    private bool CanRunProbe => !ProbeRunning && ServerPicked && ProbeTarget.Trim().Length > 0;
+    private bool CanRunProbe => !ProbeRunning && ServerPicked && !PathNeedsTunnel && ProbeTarget.Trim().Length > 0;
 
     // The probe journal is offered only where there is a server to measure through.
     private void SyncProbeSource(bool hasServers)
@@ -810,7 +804,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         _suppressSettingPush = false;
         TunnelUp = snapshot.BoundStatus == ConnectionStatus.Connected;
         ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
-        DropPathWithoutTunnel();
         SyncProbeSource(snapshot.Configs.Count > 0);
         var picked = snapshot.SelectedTarget ?? string.Empty;
         if (IsProbeLog && _knownFor != (TunnelUp, picked))

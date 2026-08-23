@@ -138,7 +138,10 @@
              <!-- The service the speed is measured against stands behind a link beside the destination it is
                   measured to; a row of its own would take one off the journal. -->
              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+               <!-- A path the system cannot hold leaves the destination closed until it is changed; the
+                    service behind the link is not part of that path and stays open. -->
                <TextBox Grid.Column="0" Classes="field" Text="{Binding ProbeTarget, Mode=TwoWay}"
+                        IsEnabled="{Binding ProbeFormEnabled}"
                         Watermark="{l:Tr Probe_TargetWatermark}" />
                <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center"
                        Command="{Binding OpenProbeSettingsCommand}">
@@ -168,17 +171,21 @@
 
            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
              <!-- Which way the run is taken: a picker, so the desktop opens its own list and the phone the
-                  platform sheet. A path no tunnel can carry stays greyed out in both. -->
+                  platform sheet. Every path is pickable; one no tunnel can carry closes the run behind it. -->
              <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
                        VerticalAlignment="Center" SelectedIndex="{Binding ProbePathIndex, Mode=TwoWay}">
-               <ComboBoxItem Content="{l:Tr Probe_PathAuto}" IsEnabled="{Binding CanProbeAuto}" />
-               <ComboBoxItem Content="{l:Tr Probe_PathTunnel}" IsEnabled="{Binding CanProbeTunnel}" />
+               <ComboBoxItem Content="{l:Tr Probe_PathAuto}" />
+               <ComboBoxItem Content="{l:Tr Probe_PathTunnel}" />
                <ComboBoxItem Content="{l:Tr Probe_PathBypass}" />
              </controls:AdaptiveComboBox>
              <Button Grid.Column="1" x:Name="ProbeRunButton" Classes="accent" Padding="16,7"
                      VerticalAlignment="Center"
                      Command="{Binding RunProbeCommand}" Content="{l:Tr Probe_RunButton}" />
            </Grid>
+
+           <!-- Says what the closed form waits for. -->
+           <TextBlock Text="{l:Tr Probe_NotConnected}" Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                      IsVisible="{Binding PathNeedsTunnel}" />
 
            <!-- A probe takes about ten seconds; the block says so while it runs. -->
            <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ProbeRunning}">

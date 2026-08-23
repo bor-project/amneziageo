@@ -482,20 +482,45 @@ internal sealed partial class MobileSelectHost : UserControl
                 return;
             }
 
-            for (var scope = lost.GetVisualParent() as Control; scope is not null; scope = scope.GetVisualParent() as Control)
-            {
-                if (!scope.IsEffectivelyVisible || scope.GetVisualRoot() is null)
-                {
-                    continue;
-                }
-
-                if (KeyboardNavigationHandler.GetNext(scope, NavigationDirection.Next) is { } next)
-                {
-                    next.Focus(NavigationMethod.Directional);
-                    return;
-                }
-            }
+            FocusNearest(lost);
         });
+    }
+
+    // A pick that rebuilds the head it was made from - the source list swaps the pickers under it - leaves the
+    // sheet with no picker to hand the ring back to, and the remote starts over from the header.
+    private void RestoreFocus(ComboBox? comboBox)
+    {
+        if (comboBox is null)
+        {
+            return;
+        }
+
+        if (comboBox is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true }
+            && comboBox.GetVisualRoot() is not null)
+        {
+            comboBox.Focus(NavigationMethod.Directional);
+            return;
+        }
+
+        FocusNearest(comboBox);
+    }
+
+    // Puts the ring on what the nearest standing ancestor offers first.
+    private void FocusNearest(Control lost)
+    {
+        for (var scope = lost.GetVisualParent() as Control; scope is not null; scope = scope.GetVisualParent() as Control)
+        {
+            if (!scope.IsEffectivelyVisible || scope.GetVisualRoot() is null)
+            {
+                continue;
+            }
+
+            if (KeyboardNavigationHandler.GetNext(scope, NavigationDirection.Next) is { } next)
+            {
+                next.Focus(NavigationMethod.Directional);
+                return;
+            }
+        }
     }
 
     // Dismisses the topmost overlay in stacking order; the keyboard covers everything and goes first.
@@ -609,7 +634,7 @@ internal sealed partial class MobileSelectHost : UserControl
             SelectOverlay.IsVisible = false;
             OptionsPanel.Children.Clear();
             _sheetFocus = null;
-            comboBox?.Focus(NavigationMethod.Directional);
+            RestoreFocus(comboBox);
         }, _transitionDuration);
     }
 
@@ -618,7 +643,7 @@ internal sealed partial class MobileSelectHost : UserControl
     {
         var comboBox = _activeComboBox;
         CloseImmediately();
-        comboBox?.Focus(NavigationMethod.Directional);
+        RestoreFocus(comboBox);
     }
 
     private void CloseImmediately()

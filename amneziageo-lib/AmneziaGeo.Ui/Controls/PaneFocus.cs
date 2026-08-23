@@ -74,6 +74,21 @@ internal static class PaneFocus
         return false;
     }
 
+    /// <summary>
+    /// Стоят ли контролы в одной строке; вложенный в строке не стоит, а входит в неё.
+    /// </summary>
+    public static bool SharesRow(Visual root, Visual first, Visual second)
+    {
+        if (first is not Control one || second is not Control other
+            || one.IsVisualAncestorOf(other) || other.IsVisualAncestorOf(one)
+            || Place(one, root) is not { } area || Place(other, root) is not { } otherArea)
+        {
+            return false;
+        }
+
+        return Crosses(area.Y, area.Bottom, otherArea.Y, otherArea.Bottom);
+    }
+
     private static IEnumerable<(Control Control, Rect Area)> Focusables(Visual root)
     {
         foreach (var control in root.GetVisualDescendants().OfType<Control>())

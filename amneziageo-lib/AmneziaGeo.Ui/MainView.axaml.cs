@@ -419,6 +419,14 @@ public sealed partial class MainView : UserControl
 
             if (pane.IsVisualAncestorOf(next))
             {
+                // A row is crossed by up and down and walked by left and right: a neighbour beside the control
+                // the key was pressed on is not a stop on the way out of the row.
+                if (Controls.PaneFocus.SharesRow(pane, focused, next))
+                {
+                    step = next;
+                    continue;
+                }
+
                 next.BringIntoView();
                 return next.Focus(NavigationMethod.Directional);
             }

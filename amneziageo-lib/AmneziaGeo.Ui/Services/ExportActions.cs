@@ -100,11 +100,11 @@ internal static class ExportActions
             return false;
         }
 
+        // Расширение несёт само имя: пикер документов на Android приписывает DefaultExtension второй раз.
         var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
             SuggestedFileName = suggestedName,
-            DefaultExtension = extension,
             FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = [$"*.{extension}"] }],
         });
         if (file is null)

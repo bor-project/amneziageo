@@ -79,6 +79,30 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Could not start the repair.</value>
   </data>
+  <data name="General_DiagnosticsSection" xml:space="preserve">
+    <value>Diagnostics archive</value>
+  </data>
+  <data name="General_DiagnosticsHint" xml:space="preserve">
+    <value>Packs the logs, the settings and the state of the tunnel into one zip to send to support. Keys and credentials in it are masked.</value>
+  </data>
+  <data name="General_DiagnosticsButton" xml:space="preserve">
+    <value>Collect archive</value>
+  </data>
+  <data name="General_DiagnosticsSaveTitle" xml:space="preserve">
+    <value>Save archive</value>
+  </data>
+  <data name="General_DiagnosticsRunning" xml:space="preserve">
+    <value>Collecting the archive...</value>
+  </data>
+  <data name="General_DiagnosticsAt" xml:space="preserve">
+    <value>The archive is ready: {0}</value>
+  </data>
+  <data name="General_DiagnosticsSaved" xml:space="preserve">
+    <value>The archive is saved.</value>
+  </data>
+  <data name="General_DiagnosticsFailed" xml:space="preserve">
+    <value>Could not collect the archive.</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Show notifications</value>
   </data>
@@ -964,6 +988,9 @@
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Save routing list</value>
   </data>
+  <data name="MainCode_SaveLogTitle" xml:space="preserve">
+    <value>Save log</value>
+  </data>
   <data name="MainCode_Saved" xml:space="preserve">
     <value>Saved.</value>
   </data>
@@ -1663,6 +1690,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="FileBrowser_ScopedHint" xml:space="preserve">
     <value>Android hides files this app does not own. Allow access to all files, or copy the configuration into the app folder:</value>
+  </data>
+  <data name="FileBrowser_ScopedSaveHint" xml:space="preserve">
+    <value>Android hides folders this app does not own. Allow access to all files, or save into the app folder:</value>
   </data>
   <data name="FileBrowser_AppFolder" xml:space="preserve">
     <value>App folder</value>

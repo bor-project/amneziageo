@@ -970,9 +970,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Renders the whole selected table through the agent; null when the agent did not answer.
-    /// </summary>
-    /// <summary>
     /// What the viewer shows right now, as text for the clipboard.
     /// </summary>
     public string VisibleText()
@@ -985,6 +982,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
         return LogText.Length > 0 ? LogText : string.Join('\n', _lines);
     }
 
+    /// <summary>
+    /// Renders the whole selected table through the agent; null when the agent did not answer.
+    /// </summary>
     public async Task<string?> BuildExportTextAsync()
     {
         if (IsRuntimeLog)

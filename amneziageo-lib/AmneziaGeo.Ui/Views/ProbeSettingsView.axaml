@@ -6,10 +6,8 @@
              x:CompileBindings="True"
              x:DataType="vm:ProbeSettingsViewModel">
   <!-- What a probe measures the speed against. A screen of its own: the journal head carries the run, not the
-       settings behind it. -->
-  <StackPanel Spacing="14">
-    <TextBlock Classes="section" Text="{l:Tr Probe_SettingsSection}" />
-
+       settings behind it. With no section heading above it, the card carries the top inset itself. -->
+  <StackPanel Spacing="14" Margin="0,8,0,0">
     <Border Classes="sect">
       <StackPanel Spacing="8">
         <TextBlock Text="{l:Tr Probe_UploadServiceTitle}" FontWeight="SemiBold" FontSize="15"

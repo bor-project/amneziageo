@@ -2100,7 +2100,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>measuring…</value>
   </data>
   <data name="Probe_SettingsSection" xml:space="preserve">
-    <value>Probe</value>
+    <value>Settings</value>
   </data>
   <data name="Probe_UploadServiceTitle" xml:space="preserve">
     <value>Data transfer speed test service</value>

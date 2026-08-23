@@ -338,8 +338,9 @@ jobs:
           echo "--- update.json ---"; cat release/update.json
 
       # A table of every asset, so the reader picks a platform instead of a file name: the Assets block
-      # GitHub renders below the notes is a flat list and takes no layout of ours. A row shows up only when
-      # its target built, and an arch that did not build gets a dash instead of a dead link. The closing
+      # GitHub renders below the notes is a flat list and takes no layout of ours. The platform name stands
+      # once over its own rows, every cell carries the file size, and a row shows up only when its target
+      # built, so an arch that did not build gets a dash instead of a dead link. The closing
       # marker proves the table was written whole; without it the notes fall back to the bare version line,
       # so a broken row costs a table and never the release.
       - name: Compose the release notes
@@ -348,24 +349,33 @@ jobs:
           set -uo pipefail
           VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
           BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
-          cell() {
-            if [ -e "release/$1" ]; then printf '[%s](%s/%s)' "$1" "$BASE" "$1"; else printf -- '-'; fi
+          GROUP=''
+          size() {
+            awk -v b="$(stat -c %s "release/$1")" 'BEGIN { printf "%.1f MB", b / 1000000 }'
           }
+          cell() {
+            if [ -e "release/$1" ]; then printf '[%s](%s/%s)<br>%s' "$1" "$BASE" "$1" "$(size "$1")"; else printf -- '-'; fi
+          }
+          group() { GROUP="$1"; }
           row() {
             if [ -e "release/$2" ] || [ -e "release/$3" ]; then
-              printf '| %s | %s | %s |\n' "$1" "$(cell "$2")" "$(cell "$3")"
+              printf '| %s | %s | %s | %s |\n' "$GROUP" "$1" "$(cell "$2")" "$(cell "$3")"
+              GROUP=''
             fi
           }
           {
             echo "## AmneziaGeo $VER"
             echo
-            echo '| Package | x64 / amd64 | arm64 |'
-            echo '| --- | --- | --- |'
-            row 'Windows installer, needs .NET 10 Desktop Runtime' "AmneziaGeo-$VER-win-x64-fdd.exe" "AmneziaGeo-$VER-win-arm64-fdd.exe"
-            row 'Windows installer, runtime included' "AmneziaGeo-$VER-win-x64.exe" "AmneziaGeo-$VER-win-arm64.exe"
-            row 'Linux service, deb' "amneziageo_${VER}_amd64.deb" "amneziageo_${VER}_arm64.deb"
-            row 'Linux application, deb' "amneziageo-gui_${VER}_amd64.deb" "amneziageo-gui_${VER}_arm64.deb"
-            row 'Android apk, every ABI in one package' "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk"
+            echo '| Platform | Package | x64 / amd64 | arm64 |'
+            echo '| --- | --- | --- | --- |'
+            group '**Windows**'
+            row 'installer, needs .NET 10 Desktop Runtime' "AmneziaGeo-$VER-win-x64-fdd.exe" "AmneziaGeo-$VER-win-arm64-fdd.exe"
+            row 'installer, runtime included' "AmneziaGeo-$VER-win-x64.exe" "AmneziaGeo-$VER-win-arm64.exe"
+            group '**Linux**'
+            row 'service, deb' "amneziageo_${VER}_amd64.deb" "amneziageo_${VER}_arm64.deb"
+            row 'application, deb' "amneziageo-gui_${VER}_amd64.deb" "amneziageo-gui_${VER}_arm64.deb"
+            group '**Android**'
+            row 'apk, every ABI in one package' "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk"
             echo
             echo '<details><summary>SHA-256</summary>'
             echo

@@ -41,7 +41,7 @@
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">
-      <_Parameter1>windows</_Parameter1>
+      <_Parameter1>windows10.0.19041.0</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 
@@ -107,7 +107,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.2.<build> so the
          running app reports the same version the self-update check compares against. -->
     <Version>0.0.1</Version>

@@ -2100,7 +2100,7 @@
     <value>идёт замер…</value>
   </data>
   <data name="Probe_SettingsSection" xml:space="preserve">
-    <value>Замер</value>
+    <value>Настройки</value>
   </data>
   <data name="Probe_UploadServiceTitle" xml:space="preserve">
     <value>Сервис для проверки скорости передачи данных</value>

@@ -43,17 +43,18 @@
       <Setter Property="Margin" Value="0,6,0,0" />
     </Style>
 
-    <!-- How a probe came out, said by the stripe down its card: measured, paid for, died. -->
-    <Style Selector="Border.probemark">
-      <Setter Property="Width" Value="3" />
-      <Setter Property="CornerRadius" Value="2" />
-      <Setter Property="Margin" Value="0,0,10,0" />
+    <!-- How a row came out, said by the dot before its destination: it went, it strained, it died. -->
+    <Style Selector="Border.statedot">
+      <Setter Property="Width" Value="7" />
+      <Setter Property="Height" Value="7" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
     </Style>
-    <Style Selector="Border.probemark.warn">
+    <Style Selector="Border.statedot.warn">
       <Setter Property="Background" Value="{DynamicResource AgWarnBrush}" />
     </Style>
-    <Style Selector="Border.probemark.alarm">
+    <Style Selector="Border.statedot.alarm">
       <Setter Property="Background" Value="{DynamicResource AgDownBrush}" />
     </Style>
 
@@ -363,53 +364,51 @@
                     <Border Margin="0,0,0,8" Padding="12,9" CornerRadius="8"
                             Background="{DynamicResource AgPanel2Brush}"
                             BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
-                      <Grid ColumnDefinitions="Auto,*">
-                        <Border Grid.Column="0" Classes="probemark" Classes.warn="{Binding Warning}"
-                                Classes.alarm="{Binding Alarm}" />
-                        <StackPanel Grid.Column="1" Spacing="5">
-                          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                            <TextBlock Grid.Column="0" Text="{Binding Target}" FontWeight="SemiBold"
-                                       FontSize="{svc:Unscaled 13}" TextTrimming="CharacterEllipsis"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource AgFgBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Time}" FontSize="{svc:Unscaled 11}"
-                                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource AgMuted2Brush}" />
-                            <!-- A finger scrolls the card rather than selecting inside it, so the whole probe
-                                 goes to the clipboard by button. -->
-                            <Button Grid.Column="2" Classes="icon" Click="OnCopyProbe"
-                                    VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
-                              <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
-                            </Button>
-                          </Grid>
-                          <TextBlock Text="{Binding PathText}" FontSize="{svc:Unscaled 11.5}" TextWrapping="Wrap"
-                                     IsVisible="{Binding HasPath}"
-                                     Foreground="{DynamicResource AgAccentBrush}" />
-                          <ItemsControl ItemsSource="{Binding Legs}" Margin="0,2,0,0">
-                            <ItemsControl.ItemTemplate>
-                              <DataTemplate x:DataType="vm:ProbeLegItem">
-                                <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,3">
-                                  <TextBlock Grid.Column="0" Text="{Binding NameText}" Width="{svc:Unscaled 62}"
-                                             FontSize="{svc:Unscaled 11.5}"
-                                             Foreground="{DynamicResource AgMutedBrush}" />
-                                  <TextBlock Grid.Column="1" Text="{Binding StateText}" Width="{svc:Unscaled 54}"
-                                             FontSize="{svc:Unscaled 11.5}" FontWeight="SemiBold"
-                                             Classes="legstate" Classes.good="{Binding IsGood}"
-                                             Classes.weak="{Binding IsWeak}" Classes.bad="{Binding IsBad}" />
-                                  <TextBlock Grid.Column="2" Text="{Binding DetailText}" TextWrapping="Wrap"
-                                             FontSize="{svc:Unscaled 11.5}" IsVisible="{Binding HasDetail}"
-                                             Foreground="{DynamicResource AgFgBrush}" />
-                                </Grid>
-                              </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                          </ItemsControl>
-                          <Border Classes="hairline" IsVisible="{Binding HasVerdict}" />
-                          <TextBlock Text="{Binding VerdictText}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
-                                     IsVisible="{Binding HasVerdict}"
+                      <StackPanel Spacing="5">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                          <Border Grid.Column="0" Classes="statedot" Classes.warn="{Binding Warning}"
+                                  Classes.alarm="{Binding Alarm}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Target}" FontWeight="SemiBold"
+                                     FontSize="{svc:Unscaled 13}" TextTrimming="CharacterEllipsis"
+                                     VerticalAlignment="Center"
                                      Foreground="{DynamicResource AgFgBrush}" />
-                        </StackPanel>
-                      </Grid>
+                          <TextBlock Grid.Column="2" Text="{Binding Time}" FontSize="{svc:Unscaled 11}"
+                                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource AgMuted2Brush}" />
+                          <!-- A finger scrolls the card rather than selecting inside it, so the whole probe
+                               goes to the clipboard by button. -->
+                          <Button Grid.Column="3" Classes="icon" Click="OnCopyProbe"
+                                  VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
+                            <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                          </Button>
+                        </Grid>
+                        <TextBlock Text="{Binding PathText}" FontSize="{svc:Unscaled 11.5}" TextWrapping="Wrap"
+                                   IsVisible="{Binding HasPath}"
+                                   Foreground="{DynamicResource AgAccentBrush}" />
+                        <ItemsControl ItemsSource="{Binding Legs}" Margin="0,2,0,0">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ProbeLegItem">
+                              <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,0,0,3">
+                                <TextBlock Grid.Column="0" Text="{Binding NameText}" Width="{svc:Unscaled 62}"
+                                           FontSize="{svc:Unscaled 11.5}"
+                                           Foreground="{DynamicResource AgMutedBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding StateText}" Width="{svc:Unscaled 54}"
+                                           FontSize="{svc:Unscaled 11.5}" FontWeight="SemiBold"
+                                           Classes="legstate" Classes.good="{Binding IsGood}"
+                                           Classes.weak="{Binding IsWeak}" Classes.bad="{Binding IsBad}" />
+                                <TextBlock Grid.Column="2" Text="{Binding DetailText}" TextWrapping="Wrap"
+                                           FontSize="{svc:Unscaled 11.5}" IsVisible="{Binding HasDetail}"
+                                           Foreground="{DynamicResource AgFgBrush}" />
+                              </Grid>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Border Classes="hairline" IsVisible="{Binding HasVerdict}" />
+                        <TextBlock Text="{Binding VerdictText}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
+                                   IsVisible="{Binding HasVerdict}"
+                                   Foreground="{DynamicResource AgFgBrush}" />
+                      </StackPanel>
                     </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -425,32 +424,29 @@
                     <Border Margin="0,0,0,8" Padding="12,9" CornerRadius="8"
                             Background="{DynamicResource AgPanel2Brush}"
                             BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
-                      <Grid ColumnDefinitions="Auto,*">
-                        <!-- A destination something is connected to that carries nothing wears the stripe. -->
-                        <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
-                                Background="{DynamicResource AgWarnBrush}" IsVisible="{Binding Stalled}" />
-                        <StackPanel Grid.Column="1" Spacing="4">
-                          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                            <TextBlock Grid.Column="0" Text="{Binding Host}" FontSize="13" FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis"
-                                       Foreground="{DynamicResource AgFgBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Route}" FontSize="11.5"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource AgAccentBrush}" />
-                            <!-- A finger scrolls the card rather than selecting inside it, so the whole row goes
-                                 to the clipboard by button. -->
-                            <Button Grid.Column="2" Classes="icon" Click="OnCopyRow"
-                                    VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
-                              <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
-                            </Button>
-                          </Grid>
-                          <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                     IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                      <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                          <!-- A destination something is connected to that carries nothing wears the warn dot. -->
+                          <Border Grid.Column="0" Classes="statedot" Classes.warn="{Binding Stalled}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Host}" FontSize="13" FontWeight="SemiBold"
+                                     TextTrimming="CharacterEllipsis"
                                      Foreground="{DynamicResource AgFgBrush}" />
-                          <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="11.5"
-                                     Foreground="{DynamicResource AgMutedBrush}" />
-                        </StackPanel>
-                      </Grid>
+                          <TextBlock Grid.Column="2" Text="{Binding Route}" FontSize="11.5"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource AgAccentBrush}" />
+                          <!-- A finger scrolls the card rather than selecting inside it, so the whole row goes
+                               to the clipboard by button. -->
+                          <Button Grid.Column="3" Classes="icon" Click="OnCopyRow"
+                                  VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
+                            <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                          </Button>
+                        </Grid>
+                        <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                   IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{DynamicResource AgFgBrush}" />
+                        <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="11.5"
+                                   Foreground="{DynamicResource AgMutedBrush}" />
+                      </StackPanel>
                     </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

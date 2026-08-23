@@ -151,6 +151,12 @@ public static class CliRunner
               proxy on [--socks <port>] [--http <port>] [--anon on|off] [--auth <user:password>|off]
               proxy off
 
+            access point
+              hotspot show                      what the access point carries and who is on it
+              hotspot on [--ssid <name>] [--password <password>] [--band auto|2.4|5]
+              hotspot off
+              The proxy switch governs both: "proxy off" takes the access point down as well.
+
             logs and diagnostics
               log tail [--table ageo|routes|checks] [--limit <n>] [--level <token>] [--search <text>]
               log follow [--table ...] [--level ...] [--search ...] [--interval <sec>]
@@ -198,6 +204,7 @@ public static class CliRunner
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "proxy" => await ProxyCommands.RunAsync(agent, arguments).ConfigureAwait(false),
+            "hotspot" => await HotspotCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "log" or "runtime" or "cache" or "sessions" or "subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
             "bundle" => await BundleCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "ipc" or "ops" or "apps" or "update" => await OpsCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),

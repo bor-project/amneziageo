@@ -116,10 +116,10 @@
     <value>Offer beta builds in the update check, not only stable releases.</value>
   </data>
   <data name="General_ProxySection" xml:space="preserve">
-    <value>Local proxy</value>
+    <value>Connections</value>
   </data>
   <data name="General_ProxyEnabled" xml:space="preserve">
-    <value>Allow connections from the LAN</value>
+    <value>Allow connections</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
     <value>Open to this device and to the local network: SOCKS5 {0}, HTTP {1}.</value>
@@ -158,7 +158,7 @@
     <value>Accounts</value>
   </data>
   <data name="General_ProxyClients" xml:space="preserve">
-    <value>Connections</value>
+    <value>Proxy clients</value>
   </data>
   <data name="General_ProxyClientsTooltip" xml:space="preserve">
     <value>Show who is connected</value>
@@ -174,6 +174,93 @@
   </data>
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
+  </data>
+  <data name="General_ShareMode" xml:space="preserve">
+    <value>Sharing</value>
+  </data>
+  <data name="General_ShareModeLan" xml:space="preserve">
+    <value>Local network</value>
+  </data>
+  <data name="General_ShareModeWifi" xml:space="preserve">
+    <value>Wi-Fi access point</value>
+  </data>
+  <data name="General_ShareModeBoth" xml:space="preserve">
+    <value>Both</value>
+  </data>
+  <data name="General_ShareEnabledHint" xml:space="preserve">
+    <value>Other devices take the tunnel from this machine.</value>
+  </data>
+  <data name="General_ShareEthernet" xml:space="preserve">
+    <value>Share over a wired link</value>
+  </data>
+  <data name="General_ShareEthernetHint" xml:space="preserve">
+    <value>Serve a wired subnet from this machine.</value>
+  </data>
+  <data name="General_ShareEthernetPending" xml:space="preserve">
+    <value>Wired sharing is not built yet.</value>
+  </data>
+  <data name="General_HotspotSsid" xml:space="preserve">
+    <value>Network name</value>
+  </data>
+  <data name="General_HotspotPassword" xml:space="preserve">
+    <value>Network password</value>
+  </data>
+  <data name="General_HotspotBand" xml:space="preserve">
+    <value>Band</value>
+  </data>
+  <data name="General_HotspotBandAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="General_HotspotBand24" xml:space="preserve">
+    <value>2.4 GHz</value>
+  </data>
+  <data name="General_HotspotBand5" xml:space="preserve">
+    <value>5 GHz</value>
+  </data>
+  <data name="General_HotspotBandActual" xml:space="preserve">
+    <value>Running on {0}.</value>
+  </data>
+  <data name="General_HotspotNoAdapter" xml:space="preserve">
+    <value>No Wi-Fi adapter found. Connect one.</value>
+  </data>
+  <data name="General_HotspotRadioOff" xml:space="preserve">
+    <value>Wi-Fi is off. Turn the adapter on.</value>
+  </data>
+  <data name="General_HotspotNoApMode" xml:space="preserve">
+    <value>This adapter does not run as an access point.</value>
+  </data>
+  <data name="General_HotspotNoTools" xml:space="preserve">
+    <value>hostapd and dnsmasq are not installed. Install them.</value>
+  </data>
+  <data name="General_HotspotServiceOff" xml:space="preserve">
+    <value>The Internet Connection Sharing service is stopped. Start it.</value>
+  </data>
+  <data name="General_HotspotNoPlatform" xml:space="preserve">
+    <value>An access point is not available on this system.</value>
+  </data>
+  <data name="General_HotspotNeedsName" xml:space="preserve">
+    <value>Set a network name and a password, and the access point comes up.</value>
+  </data>
+  <data name="General_HotspotBadSsid" xml:space="preserve">
+    <value>The name takes 1 to 32 bytes.</value>
+  </data>
+  <data name="General_HotspotBadPassword" xml:space="preserve">
+    <value>The password takes 8 to 63 characters.</value>
+  </data>
+  <data name="General_HotspotClients" xml:space="preserve">
+    <value>Devices on the access point</value>
+  </data>
+  <data name="General_HotspotClientsOf" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="General_HotspotRunning" xml:space="preserve">
+    <value>The access point is up.</value>
+  </data>
+  <data name="General_HotspotAccountsNote" xml:space="preserve">
+    <value>Accounts admit clients to the proxy; the access point takes the one network password.</value>
+  </data>
+  <data name="General_HotspotRevealTooltip" xml:space="preserve">
+    <value>Show the network password</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>

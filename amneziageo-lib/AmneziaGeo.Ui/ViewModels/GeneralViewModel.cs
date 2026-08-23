@@ -59,6 +59,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // When the accounts were last edited here.
     private long _accountsTouchedAt;
 
+    // When the name or the password of the access point was last edited here.
+    private long _hotspotTouchedAt;
+
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowConnectionDivider))]
@@ -265,7 +268,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// <summary>
     /// Who may use the proxy and on which ports.
     /// </summary>
-    public string ProxyEnabledHint => Loc.Instance.Get("General_ProxyEnabledHint", ProxySocksPort, ProxyHttpPort);
+    public string ProxyEnabledHint => ShareOverLan
+        ? Loc.Instance.Get("General_ProxyEnabledHint", ProxySocksPort, ProxyHttpPort)
+        : Loc.Instance.Get("General_ShareEnabledHint");
 
     /// <summary>
     /// Whether the proxy only carries traffic while the tunnel is up, as it does on Android.
@@ -276,6 +281,234 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Whether the proxy admits nobody: a password is asked for and no account answers it.
     /// </summary>
     public bool ProxyAdmitsNobody => !ProxyAnonymous && !ProxyAccounts.Any(account => account.User.Trim().Length > 0);
+
+    /// <summary>
+    /// Ways the tunnel reaches other devices.
+    /// </summary>
+    public ObservableCollection<string> ShareOptions { get; } =
+    [
+        Loc.Instance.Get("General_ShareModeLan"),
+        Loc.Instance.Get("General_ShareModeWifi"),
+        Loc.Instance.Get("General_ShareModeBoth"),
+    ];
+
+    /// <summary>
+    /// Bands the access point may ask for.
+    /// </summary>
+    public ObservableCollection<string> BandOptions { get; } =
+    [
+        Loc.Instance.Get("General_HotspotBandAuto"),
+        Loc.Instance.Get("General_HotspotBand24"),
+        Loc.Instance.Get("General_HotspotBand5"),
+    ];
+
+    /// <summary>
+    /// Way the tunnel reaches other devices.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShareOverLan))]
+    [NotifyPropertyChangedFor(nameof(ShareOverWifi))]
+    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
+    private int _selectedShareIndex = BothShareIndex;
+
+    /// <summary>
+    /// Band the access point asks for.
+    /// </summary>
+    [ObservableProperty]
+    private int _selectedBandIndex;
+
+    /// <summary>
+    /// Network name of the access point.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    private string _hotspotSsid = string.Empty;
+
+    /// <summary>
+    /// Password of the access point.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    private string _hotspotPassword = string.Empty;
+
+    /// <summary>
+    /// Whether the network password is shown.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isHotspotPasswordRevealed;
+
+    /// <summary>
+    /// Whether a wired subnet is asked for.
+    /// </summary>
+    [ObservableProperty]
+    private bool _shareEthernet;
+
+    /// <summary>
+    /// Whether this machine can raise an access point.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotBlocked))]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    private bool _hotspotSupported;
+
+    /// <summary>
+    /// What keeps it from coming up; empty while nothing does.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotBlockedText))]
+    private string _hotspotReason = HotspotReasons.Ready;
+
+    /// <summary>
+    /// Whether the access point is up.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    private bool _hotspotRunning;
+
+    /// <summary>
+    /// Why the access point is down; empty while it holds.
+    /// </summary>
+    [ObservableProperty]
+    private string _hotspotErrorText = string.Empty;
+
+    /// <summary>
+    /// Band the access point took.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    private string _hotspotBandActual = string.Empty;
+
+    /// <summary>
+    /// Devices on the access point right now.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotClientsText))]
+    private int _hotspotClientCount;
+
+    /// <summary>
+    /// How many devices the access point admits.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotClientsText))]
+    private int _hotspotMaxClients;
+
+    /// <summary>
+    /// Whether this system raises an access point at all; elsewhere the section carries the proxy alone.
+    /// </summary>
+    public bool CanShareHotspot => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
+
+    /// <summary>
+    /// Whether the proxy body is shown.
+    /// </summary>
+    public bool ShareOverLan => !CanShareHotspot || ShareModes.CarriesLan(ShareToken);
+
+    /// <summary>
+    /// Whether the access point body is shown.
+    /// </summary>
+    public bool ShareOverWifi => CanShareHotspot && ShareModes.CarriesWifi(ShareToken);
+
+    /// <summary>
+    /// Whether the access point fields are locked out.
+    /// </summary>
+    public bool HotspotBlocked => !HotspotSupported;
+
+    /// <summary>
+    /// What stands in the way of an access point on this machine. Each cause has its own remedy, so each
+    /// carries its own line.
+    /// </summary>
+    public string HotspotBlockedText => HotspotReason switch
+    {
+        HotspotReasons.NoAdapter => Loc.Instance.Get("General_HotspotNoAdapter"),
+        HotspotReasons.RadioOff => Loc.Instance.Get("General_HotspotRadioOff"),
+        HotspotReasons.NoApMode => Loc.Instance.Get("General_HotspotNoApMode"),
+        HotspotReasons.NoTools => Loc.Instance.Get("General_HotspotNoTools"),
+        HotspotReasons.ServiceOff => Loc.Instance.Get("General_HotspotServiceOff"),
+        HotspotReasons.NoPlatform => Loc.Instance.Get("General_HotspotNoPlatform"),
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// The line under the access point fields: what it still needs, or the band it took.
+    /// </summary>
+    public string HotspotHintText
+    {
+        get
+        {
+            if (!HotspotSupported)
+            {
+                return string.Empty;
+            }
+
+            if (HotspotSsid.Length == 0 || HotspotPassword.Length == 0)
+            {
+                return Loc.Instance.Get("General_HotspotNeedsName");
+            }
+
+            if (!SettingKeys.IsValidHotspotSsid(HotspotSsid))
+            {
+                return Loc.Instance.Get("General_HotspotBadSsid");
+            }
+
+            if (!SettingKeys.IsValidHotspotPassword(HotspotPassword))
+            {
+                return Loc.Instance.Get("General_HotspotBadPassword");
+            }
+
+            if (!HotspotRunning)
+            {
+                return string.Empty;
+            }
+
+            return HotspotBandActual.Length > 0
+                ? Loc.Instance.Get("General_HotspotBandActual", BandLabel(HotspotBandActual))
+                : Loc.Instance.Get("General_HotspotRunning");
+        }
+    }
+
+    /// <summary>
+    /// How many devices are on the access point, against how many it admits.
+    /// </summary>
+    public string HotspotClientsText => Loc.Instance.Get("General_HotspotClientsOf", HotspotClientCount, HotspotMaxClients);
+
+    // Row "both" stands on in the sharing options.
+    private const int BothShareIndex = 2;
+
+    // Mode the picked row stands for.
+    private string ShareToken => SelectedShareIndex switch
+    {
+        0 => ShareModes.Lan,
+        1 => ShareModes.Wifi,
+        _ => ShareModes.Both,
+    };
+
+    // Band the picked row stands for.
+    private string BandToken => SelectedBandIndex switch
+    {
+        1 => HotspotBands.TwoPointFour,
+        2 => HotspotBands.Five,
+        _ => HotspotBands.Auto,
+    };
+
+    private static int ShareIndex(string mode) => ShareModes.Of(mode) switch
+    {
+        ShareModes.Lan => 0,
+        ShareModes.Wifi => 1,
+        _ => BothShareIndex,
+    };
+
+    private static int BandIndex(string band) => HotspotBands.Of(band) switch
+    {
+        HotspotBands.TwoPointFour => 1,
+        HotspotBands.Five => 2,
+        _ => 0,
+    };
+
+    private static string BandLabel(string band) => HotspotBands.Of(band) switch
+    {
+        HotspotBands.TwoPointFour => Loc.Instance.Get("General_HotspotBand24"),
+        HotspotBands.Five => Loc.Instance.Get("General_HotspotBand5"),
+        _ => Loc.Instance.Get("General_HotspotBandAuto"),
+    };
 
     /// <summary>
     /// The interval input is editable only while periodic reconnect is on.
@@ -445,10 +678,21 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         ProxySocksPort = snapshot.ProxySocksPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ProxyHttpPort = snapshot.ProxyHttpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ApplyProxyAccounts(snapshot.ProxyCredentials);
+        SelectedShareIndex = ShareIndex(snapshot.ShareMode);
+        SelectedBandIndex = BandIndex(snapshot.HotspotBand);
+        ShareEthernet = snapshot.ShareEthernet;
+        ApplyHotspotSecrets(snapshot);
         _suppressSettingPush = false;
         ApplyProxyEndpoints(snapshot);
         ApplyProxyClients(snapshot);
         ProxyErrorText = snapshot.ProxyEnabled ? snapshot.ProxyError : string.Empty;
+        HotspotSupported = snapshot.HotspotSupported;
+        HotspotReason = snapshot.HotspotReason;
+        HotspotRunning = snapshot.HotspotRunning;
+        HotspotErrorText = snapshot.HotspotError;
+        HotspotBandActual = snapshot.HotspotBandActual;
+        HotspotClientCount = snapshot.HotspotClients;
+        HotspotMaxClients = snapshot.HotspotMaxClients;
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -1187,6 +1431,68 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
+    partial void OnSelectedShareIndexChanged(int value)
+    {
+        if (!_suppressSettingPush && value >= 0)
+        {
+            _ = SetSettingAsync(SettingKeys.ShareMode, ShareToken);
+        }
+    }
+
+    partial void OnSelectedBandIndexChanged(int value)
+    {
+        if (!_suppressSettingPush && value >= 0)
+        {
+            _ = SetSettingAsync(SettingKeys.HotspotBand, BandToken);
+        }
+    }
+
+    partial void OnShareEthernetChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.ShareEthernet, value ? "on" : "off");
+        }
+    }
+
+    // A half-typed name is not a name; an empty one takes the access point down.
+    partial void OnHotspotSsidChanged(string value)
+    {
+        if (_suppressSettingPush)
+        {
+            return;
+        }
+
+        _hotspotTouchedAt = Environment.TickCount64;
+        if (value.Length == 0 || SettingKeys.IsValidHotspotSsid(value))
+        {
+            _ = SetSettingAsync(SettingKeys.HotspotSsid, value);
+        }
+    }
+
+    partial void OnHotspotPasswordChanged(string value)
+    {
+        if (_suppressSettingPush)
+        {
+            return;
+        }
+
+        _hotspotTouchedAt = Environment.TickCount64;
+        if (value.Length == 0 || SettingKeys.IsValidHotspotPassword(value))
+        {
+            _ = SetSettingAsync(SettingKeys.HotspotPassword, value);
+        }
+    }
+
+    /// <summary>
+    /// Shows or hides the network password.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleHotspotReveal()
+    {
+        IsHotspotPasswordRevealed = !IsHotspotPasswordRevealed;
+    }
+
     partial void OnProxySocksPortChanged(string value)
     {
         PushPort(SettingKeys.ProxySocksPort, value);
@@ -1274,6 +1580,18 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(ProxyAdmitsNobody));
+    }
+
+    // The name and the password come back from the agent only when nothing was typed here in the last seconds.
+    private void ApplyHotspotSecrets(StatusSnapshot snapshot)
+    {
+        if (Environment.TickCount64 - _hotspotTouchedAt < AccountEditWindowMs)
+        {
+            return;
+        }
+
+        HotspotSsid = snapshot.HotspotSsid;
+        HotspotPassword = snapshot.HotspotPassword;
     }
 
     // Where a client points: every address of this machine the neighbours can reach, and loopback only where
@@ -1394,8 +1712,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Replacing the selected item string resets the index-bound ComboBox to -1; capture and restore it.
         var language = SelectedLanguageIndex;
         var theme = SelectedThemeIndex;
+        var share = SelectedShareIndex;
+        var band = SelectedBandIndex;
 
         _syncingCombos = true;
+        _suppressSettingPush = true;
         try
         {
             // Refresh the localized "System" entry in the language combo.
@@ -1412,12 +1733,31 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 Themes[2] = Loc.Instance.Get("Theme_Dark");
             }
 
+            // Re-localize the sharing options.
+            if (ShareOptions.Count >= 3)
+            {
+                ShareOptions[0] = Loc.Instance.Get("General_ShareModeLan");
+                ShareOptions[1] = Loc.Instance.Get("General_ShareModeWifi");
+                ShareOptions[2] = Loc.Instance.Get("General_ShareModeBoth");
+            }
+
+            // Re-localize the band options.
+            if (BandOptions.Count >= 3)
+            {
+                BandOptions[0] = Loc.Instance.Get("General_HotspotBandAuto");
+                BandOptions[1] = Loc.Instance.Get("General_HotspotBand24");
+                BandOptions[2] = Loc.Instance.Get("General_HotspotBand5");
+            }
+
             SelectedLanguageIndex = language;
             SelectedThemeIndex = theme;
+            SelectedShareIndex = share;
+            SelectedBandIndex = band;
         }
         finally
         {
             _syncingCombos = false;
+            _suppressSettingPush = false;
         }
 
         // Re-raise all computed labels on a language change.

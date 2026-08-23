@@ -79,6 +79,30 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Не удалось запустить сброс.</value>
   </data>
+  <data name="General_DiagnosticsSection" xml:space="preserve">
+    <value>Архив диагностики</value>
+  </data>
+  <data name="General_DiagnosticsHint" xml:space="preserve">
+    <value>Складывает журналы, настройки и состояние туннеля в один zip для отправки в поддержку. Ключи и учётные данные в нём скрыты.</value>
+  </data>
+  <data name="General_DiagnosticsButton" xml:space="preserve">
+    <value>Собрать архив</value>
+  </data>
+  <data name="General_DiagnosticsSaveTitle" xml:space="preserve">
+    <value>Сохранить архив</value>
+  </data>
+  <data name="General_DiagnosticsRunning" xml:space="preserve">
+    <value>Собираем архив...</value>
+  </data>
+  <data name="General_DiagnosticsAt" xml:space="preserve">
+    <value>Архив собран: {0}</value>
+  </data>
+  <data name="General_DiagnosticsSaved" xml:space="preserve">
+    <value>Архив сохранён.</value>
+  </data>
+  <data name="General_DiagnosticsFailed" xml:space="preserve">
+    <value>Не удалось собрать архив.</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
   </data>
@@ -961,6 +985,9 @@
   <data name="MainCode_RoutingListTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
   </data>
+  <data name="MainCode_SaveLogTitle" xml:space="preserve">
+    <value>Сохранить журнал</value>
+  </data>
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Сохранить список маршрутизации</value>
   </data>
@@ -1663,6 +1690,9 @@
   </data>
   <data name="FileBrowser_ScopedHint" xml:space="preserve">
     <value>Android скрывает файлы, которые не принадлежат приложению. Разрешите доступ ко всем файлам или скопируйте конфигурацию в папку приложения:</value>
+  </data>
+  <data name="FileBrowser_ScopedSaveHint" xml:space="preserve">
+    <value>Android скрывает папки, которые не принадлежат приложению. Разрешите доступ ко всем файлам или сохраните в папку приложения:</value>
   </data>
   <data name="FileBrowser_AppFolder" xml:space="preserve">
     <value>Папка приложения</value>

@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -193,7 +194,8 @@ internal sealed partial class LogsView : UserControl
 
         if (await vm.BuildExportTextAsync() is { } text)
         {
-            await ExportActions.SaveTextAsync(this, text, string.Empty, vm.SelectedLogType + ".log");
+            await ExportActions.SaveTextAsync(
+                this, text, Loc.Instance.Get("MainCode_SaveLogTitle"), vm.SelectedLogType + ".log");
         }
     }
 

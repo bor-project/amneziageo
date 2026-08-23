@@ -79,6 +79,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettingsRouting))]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsProbe))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
     [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
@@ -98,6 +99,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Routing = new RoutingViewModel(this, connection, prefs);
         Home = new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
+        Probe = new ProbeSettingsViewModel(prefs);
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
         UpdateActiveSection();
@@ -148,6 +150,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Geo sources screen.
     /// </summary>
     public SourcesViewModel Sources { get; }
+
+    /// <summary>
+    /// Probe screen: the service the speed is measured against.
+    /// </summary>
+    public ProbeSettingsViewModel Probe { get; }
 
     /// <summary>
     /// Whether the home (connect) view is shown.
@@ -201,6 +208,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     public bool IsSettingsSources => SettingsSection == "sources";
 
+    public bool IsSettingsProbe => SettingsSection == "probe";
+
     /// <summary>
     /// Whether the floating app-update banner shows. Hidden only on the settings General page, which already
     /// carries the update section (#186); shown on home and every other settings section. A television carries
@@ -229,6 +238,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 _ => false,
             }
             || IsSettingsSources
+            || IsSettingsProbe
             || (IsCompact && SettingsDetailOpen));
 
     /// <summary>
@@ -321,6 +331,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        // Замер открывается ссылкой из журнала пробы и возвращает туда же.
+        if (IsSettings && IsSettingsProbe)
+        {
+            SettingsSection = "logs";
+            RefreshLogsActive();
+            return;
+        }
+
         if (IsCompact && SettingsDetailOpen)
         {
             SettingsDetailOpen = false;
@@ -363,7 +381,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var slash = view.IndexOf('/');
         var section = slash > 0 ? view[(slash + 1)..] : string.Empty;
-        if (section is "config" or "routing" or "general" or "sources" or "logs")
+        if (section is "config" or "routing" or "general" or "sources" or "logs" or "probe")
         {
             SettingsSection = section;
         }
@@ -392,6 +410,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         Nav = "settings";
         SettingsSection = "sources";
+        SettingsDetailOpen = true;
+        RefreshLogsActive();
+    }
+
+    /// <summary>
+    /// Открывает настройки замера.
+    /// </summary>
+    public void ShowProbeSettings()
+    {
+        Nav = "settings";
+        SettingsSection = "probe";
         SettingsDetailOpen = true;
         RefreshLogsActive();
     }

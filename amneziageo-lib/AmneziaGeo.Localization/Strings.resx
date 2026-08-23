@@ -430,6 +430,9 @@
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Later entries</value>
   </data>
+  <data name="Main_LogSearchWatermarkShort" xml:space="preserve">
+    <value>Search</value>
+  </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Search in log</value>
   </data>
@@ -2096,10 +2099,13 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Probe_Running" xml:space="preserve">
     <value>measuring…</value>
   </data>
-  <data name="General_ProbeSection" xml:space="preserve">
-    <value>Speed service</value>
+  <data name="Probe_SettingsSection" xml:space="preserve">
+    <value>Probe</value>
   </data>
-  <data name="General_ProbeUploadHint" xml:space="preserve">
-    <value>The send leg of a probe uploads here, because an arbitrary destination accepts no upload. Left empty it measures against the built-in service.</value>
+  <data name="Probe_UploadServiceTitle" xml:space="preserve">
+    <value>Data transfer speed test service</value>
+  </data>
+  <data name="Probe_UploadServiceHint" xml:space="preserve">
+    <value>The address the speed is checked against. Default: https://speed.cloudflare.com/__up.</value>
   </data>
 </root>

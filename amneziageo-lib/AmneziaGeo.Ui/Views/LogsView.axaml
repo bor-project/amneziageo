@@ -248,7 +248,7 @@
             <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="14" Height="14" />
           </Button>
           <ToggleSwitch Grid.Column="7" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center"
-                        Margin="10,0,0,0" IsVisible="{Binding ShowShortNav}"
+                        Margin="10,0,-12,0" IsVisible="{Binding ShowShortNav}"
                         ToolTip.Tip="{l:Tr Main_LogFollowLabel}" />
         </Grid>
 

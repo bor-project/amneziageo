@@ -123,6 +123,21 @@ internal sealed record AppSettings
     public int PeriodicReconnectIntervalSeconds { get; init; } = 30;
 
     /// <summary>
+    /// Whether the default route moves to the next server when the one carrying it stops answering.
+    /// </summary>
+    public bool FailoverEnabled { get; init; }
+
+    /// <summary>
+    /// Minutes a higher-priority server answers before the default route goes back to it; 0 leaves it where it is.
+    /// </summary>
+    public int FailoverReturnMinutes { get; init; }
+
+    /// <summary>
+    /// Configurations auto-switching passes over, one name per line.
+    /// </summary>
+    public string FailoverSkipped { get; init; } = string.Empty;
+
+    /// <summary>
     /// Show tray notifications for connection state changes.
     /// </summary>
     public bool ShowNotifications { get; init; } = true;

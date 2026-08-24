@@ -145,7 +145,9 @@ public static class CliRunner
               settings set <key> <value>
               Known keys: log-level (error|warning|info|debug|trace), route-log (on|off),
               survive-reboot (on|off, connect at agent start), periodic-reconnect-enabled (on|off),
-              periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds.
+              periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds,
+              failover-enabled (on|off, carry the default route off a server that stopped answering),
+              failover-return-minutes (0..1440, 0 leaves the route where it is).
 
             local proxy
               proxy show                        where it listens and what it asks for

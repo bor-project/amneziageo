@@ -1624,6 +1624,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         await store.SetSettingAsync(StateKeys.DefaultRouteOwner, name, ct);
+        await RaisePickedAsync(name, ct);
 
         // Ownership is settled at bring-up, so the tunnels that could change hands are dialled again.
         foreach (var running in control.Desired)
@@ -1636,6 +1637,23 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         logger.LogInformation("{Config} now carries everything the other tunnels do not name", name.Length > 0 ? name : "the first tunnel up");
         return new IpcAck(true, name.Length > 0 ? $"default route: {name} (applies on reconnect)" : "default route: the first tunnel up");
+    }
+
+    // A server picked by hand heads the priority list; a server auto-switching moves to keeps its place.
+    private async Task RaisePickedAsync(string name, CancellationToken ct)
+    {
+        if (name.Length == 0 || !(await settingsStore.LoadAsync(ct)).FailoverEnabled)
+        {
+            return;
+        }
+
+        var order = await configRepo.ListAsync(ct);
+        var raised = FailoverPolicy.Raise(order, name);
+        if (!raised.SequenceEqual(order, StringComparer.Ordinal))
+        {
+            await configRepo.ReorderAsync(raised, ct);
+            logger.LogInformation("{Config} heads the auto-switching list now: it was picked by hand", name);
+        }
     }
 
     // Takes one tunnel down, or every tunnel this user raised when none is named.
@@ -2704,7 +2722,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             DnsUnreachable: mine.Any(tunnel => tunnel.DnsUnreachable),
             DefaultRouteOwner: await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct) ?? string.Empty,
             DefaultRouteHeld: control.DefaultRouteOwner ?? string.Empty,
-            MultiTunnel: true);
+            MultiTunnel: true,
+            FailoverEnabled: settings.FailoverEnabled,
+            FailoverReturnMinutes: settings.FailoverReturnMinutes,
+            FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)));
     }
 
     private static string DisplayStatus(string profileStatus)

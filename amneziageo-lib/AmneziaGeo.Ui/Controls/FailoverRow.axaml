@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Controls.FailoverRow"
+             x:CompileBindings="True"
+             x:DataType="vm:FailoverRowViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgGripGeometry">M7,19V17H9V19H7M11,19V17H13V19H11M15,19V17H17V19H15M7,15V13H9V15H7M11,15V13H13V15H11M15,15V13H17V15H15M7,11V9H9V11H7M11,11V9H13V11H11M15,11V9H17V11H15M7,7V5H9V7H7M11,7V5H13V7H11M15,7V5H17V7H15Z</StreamGeometry>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- Строка, которую ведут: та же заливка, что у выбранной строки списка. -->
+    <Style Selector="Border.movingrow">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="Transparent" CornerRadius="8" Padding="2,0" Classes.movingrow="{Binding IsMoving}">
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8" MinHeight="34">
+      <!-- Ручка: мышь и палец тянут ею строку, клавиатура и пульт входят в режим перемещения. -->
+      <Button x:Name="GripPart" Grid.Column="0" Classes="icon" VerticalAlignment="Center"
+              Command="{Binding ToggleMoveCommand}" ToolTip.Tip="{l:Tr General_FailoverMove}">
+        <PathIcon Data="{StaticResource AgGripGeometry}" Width="13" Height="13"
+                  Foreground="{DynamicResource AgMutedBrush}" />
+      </Button>
+      <TextBlock Grid.Column="1" Text="{Binding Number}" Classes="muted mono" FontSize="12.5"
+                 MinWidth="16" TextAlignment="Right" VerticalAlignment="Center" />
+      <TextBlock Grid.Column="2" Text="{Binding Name}" FontSize="13.5" VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" />
+      <Border Grid.Column="3" Classes="cardchip cardtag" IsVisible="{Binding IsCurrent}">
+        <TextBlock Text="{l:Tr General_FailoverCurrent}" FontSize="11.5" FontWeight="SemiBold" />
+      </Border>
+      <CheckBox Grid.Column="4" MinWidth="0" VerticalAlignment="Center"
+                IsChecked="{Binding Participates, Mode=TwoWay}"
+                ToolTip.Tip="{l:Tr General_FailoverSkip}" />
+    </Grid>
+  </Border>
+</UserControl>

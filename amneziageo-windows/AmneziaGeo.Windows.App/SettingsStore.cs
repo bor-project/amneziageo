@@ -30,6 +30,9 @@ internal sealed class SettingsStore(IStateStore store)
             SurviveReboot = ReadBool(values, "survive-reboot", defaults.SurviveReboot),
             PeriodicReconnect = ReadBool(values, "periodic-reconnect-enabled", defaults.PeriodicReconnect),
             PeriodicReconnectIntervalSeconds = ReadInt(values, "periodic-reconnect-interval-seconds", defaults.PeriodicReconnectIntervalSeconds),
+            FailoverEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.FailoverEnabled, defaults.FailoverEnabled),
+            FailoverReturnMinutes = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.FailoverReturnMinutes, defaults.FailoverReturnMinutes),
+            FailoverSkipped = ReadText(values, AmneziaGeo.Ipc.SettingKeys.FailoverSkipped, defaults.FailoverSkipped),
             ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
             AllowPrerelease = ReadBool(values, "allow-prerelease", defaults.AllowPrerelease),
             ProxyEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, defaults.ProxyEnabled),
@@ -141,19 +144,19 @@ internal sealed class SettingsStore(IStateStore store)
     }
 
     private static readonly string[] IntKeys =
-        [AppSettings.RouteTtlKey, "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds"];
+        [AppSettings.RouteTtlKey, "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds", AmneziaGeo.Ipc.SettingKeys.FailoverReturnMinutes];
 
     // Integer settings that accept 0.
-    private static readonly string[] ZeroableIntKeys = [AppSettings.RouteTtlKey];
+    private static readonly string[] ZeroableIntKeys = [AppSettings.RouteTtlKey, AmneziaGeo.Ipc.SettingKeys.FailoverReturnMinutes];
 
     // Listening ports, which take their own range instead of the positive-integer rule.
     private static readonly string[] ProxyPortKeys =
         [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.FailoverEnabled];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
-    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials];
+    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials, AmneziaGeo.Ipc.SettingKeys.FailoverSkipped];
 
     private static int ReadInt(IReadOnlyDictionary<string, string> values, string key, int fallback)
         => values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;

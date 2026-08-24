@@ -193,6 +193,39 @@
   <data name="General_Seconds" xml:space="preserve">
     <value>с</value>
   </data>
+  <data name="General_FailoverSection" xml:space="preserve">
+    <value>Автопереключение</value>
+  </data>
+  <data name="General_FailoverEnabled" xml:space="preserve">
+    <value>Переключать сервер сам</value>
+  </data>
+  <data name="General_FailoverEnabledHint" xml:space="preserve">
+    <value>Переносить дефолтный маршрут на следующий сервер списка, когда нынешний перестаёт отвечать.</value>
+  </data>
+  <data name="General_FailoverOrderHint" xml:space="preserve">
+    <value>Порядок списка — порядок приоритета, тот же, в котором стоят карточки конфигураций. Строку можно перетащить или подвинуть ручкой слева.</value>
+  </data>
+  <data name="General_FailoverMove" xml:space="preserve">
+    <value>Переместить</value>
+  </data>
+  <data name="General_FailoverCurrent" xml:space="preserve">
+    <value>сейчас</value>
+  </data>
+  <data name="General_FailoverSkip" xml:space="preserve">
+    <value>Участвует в переключении</value>
+  </data>
+  <data name="General_FailoverReturn" xml:space="preserve">
+    <value>Возвращаться на приоритетный</value>
+  </data>
+  <data name="General_FailoverReturnHint" xml:space="preserve">
+    <value>Когда сервер выше по списку снова отвечает, вернуть маршрут ему, но только в тишине: смена туннеля рвёт живые соединения.</value>
+  </data>
+  <data name="General_FailoverReturnAfter" xml:space="preserve">
+    <value>Держится здоровым</value>
+  </data>
+  <data name="General_FailoverMinutes" xml:space="preserve">
+    <value>мин</value>
+  </data>
   <data name="Main_AppearanceTitle" xml:space="preserve">
     <value>Оформление</value>
   </data>

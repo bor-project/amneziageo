@@ -48,6 +48,21 @@ public static class SettingKeys
     public const string ProxyPassword = "proxy-password";
 
     /// <summary>
+    /// Whether the default route moves to the next server when the one carrying it stops answering.
+    /// </summary>
+    public const string FailoverEnabled = "failover-enabled";
+
+    /// <summary>
+    /// Minutes a higher-priority server answers before the default route goes back to it; 0 leaves it where it is.
+    /// </summary>
+    public const string FailoverReturnMinutes = "failover-return-minutes";
+
+    /// <summary>
+    /// Configurations auto-switching passes over, one name per line.
+    /// </summary>
+    public const string FailoverSkipped = "failover-skipped";
+
+    /// <summary>
     /// Reads a route lifetime: whole seconds, 0 (hold nothing) to int.MaxValue. Both processes decide by this, so
     /// what the editor accepts is exactly what the agent stores.
     /// </summary>

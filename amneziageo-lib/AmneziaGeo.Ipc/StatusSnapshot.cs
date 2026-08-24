@@ -111,4 +111,10 @@ public sealed record StatusSnapshot(
     // Config that carries the default route right now; empty while none does.
     string DefaultRouteHeld = "",
     // Whether this platform raises more than one tunnel at a time.
-    bool MultiTunnel = false);
+    bool MultiTunnel = false,
+    // Whether the default route moves to the next server when the one carrying it stops answering.
+    bool FailoverEnabled = false,
+    // Minutes a higher-priority server answers before the default route goes back to it; 0 leaves it where it is.
+    int FailoverReturnMinutes = 0,
+    // Configurations auto-switching passes over, one name per line.
+    string FailoverSkipped = "");

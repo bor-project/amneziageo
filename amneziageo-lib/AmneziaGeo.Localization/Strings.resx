@@ -193,6 +193,39 @@
   <data name="General_Seconds" xml:space="preserve">
     <value>sec</value>
   </data>
+  <data name="General_FailoverSection" xml:space="preserve">
+    <value>Auto-switching</value>
+  </data>
+  <data name="General_FailoverEnabled" xml:space="preserve">
+    <value>Switch the server automatically</value>
+  </data>
+  <data name="General_FailoverEnabledHint" xml:space="preserve">
+    <value>Move the default route to the next server on the list when the one carrying it stops answering.</value>
+  </data>
+  <data name="General_FailoverOrderHint" xml:space="preserve">
+    <value>The list order is the priority order, the same one the configuration cards stand in. Drag a row, or move it with the handle on its left.</value>
+  </data>
+  <data name="General_FailoverMove" xml:space="preserve">
+    <value>Move</value>
+  </data>
+  <data name="General_FailoverCurrent" xml:space="preserve">
+    <value>now</value>
+  </data>
+  <data name="General_FailoverSkip" xml:space="preserve">
+    <value>Walked by auto-switching</value>
+  </data>
+  <data name="General_FailoverReturn" xml:space="preserve">
+    <value>Return to the priority server</value>
+  </data>
+  <data name="General_FailoverReturnHint" xml:space="preserve">
+    <value>Once a server higher on the list answers again, take the route back to it, but only while the traffic is quiet: switching a tunnel breaks live connections.</value>
+  </data>
+  <data name="General_FailoverReturnAfter" xml:space="preserve">
+    <value>Healthy for</value>
+  </data>
+  <data name="General_FailoverMinutes" xml:space="preserve">
+    <value>min</value>
+  </data>
   <data name="Main_AppearanceTitle" xml:space="preserve">
     <value>Appearance</value>
   </data>

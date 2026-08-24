@@ -45,6 +45,8 @@ internal static class SettingsCommands
             (_periodicReconnectKey, snapshot.PeriodicReconnect ? "on" : "off"),
             (_reconnectIntervalKey, snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)),
             (SettingKeys.RouteTtl, snapshot.RouteTtlSeconds.ToString(CultureInfo.InvariantCulture)),
+            (SettingKeys.FailoverEnabled, snapshot.FailoverEnabled ? "on" : "off"),
+            (SettingKeys.FailoverReturnMinutes, snapshot.FailoverReturnMinutes.ToString(CultureInfo.InvariantCulture)),
         };
 
         if (Output.Json)
@@ -103,7 +105,7 @@ internal static class SettingsCommands
 
                 return true;
 
-            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey:
+            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.FailoverEnabled:
                 if (!Toggle.TryParse(raw, out var on))
                 {
                     error = $"{key} takes on or off";
@@ -121,6 +123,16 @@ internal static class SettingsCommands
                 }
 
                 value = seconds.ToString(CultureInfo.InvariantCulture);
+                return true;
+
+            case SettingKeys.FailoverReturnMinutes:
+                if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) || minutes is < 0 or > 1440)
+                {
+                    error = $"{key} takes whole minutes between 0 and 1440";
+                    return false;
+                }
+
+                value = minutes.ToString(CultureInfo.InvariantCulture);
                 return true;
 
             case SettingKeys.RouteTtl:

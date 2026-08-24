@@ -62,6 +62,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowConnectionDivider))]
+    [NotifyPropertyChangedFor(nameof(ShowFailoverDivider))]
     [NotifyPropertyChangedFor(nameof(ShowRepairDivider))]
     private bool _isCompact;
 
@@ -299,6 +300,21 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool ShowConnectionDivider => IsCompact && CanConfigureConnection;
 
     /// <summary>
+    /// Автопереключение серверов: порядок очереди и его настройки.
+    /// </summary>
+    public FailoverViewModel Failover { get; }
+
+    /// <summary>
+    /// Показывает раздел автопереключения только на Windows: несколько туннелей сразу поднимает только она.
+    /// </summary>
+    public bool CanConfigureFailover => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Ставит разделитель перед разделом автопереключения.
+    /// </summary>
+    public bool ShowFailoverDivider => IsCompact && CanConfigureFailover;
+
+    /// <summary>
     /// Ставит разделитель перед карточкой починки сети.
     /// </summary>
     public bool ShowRepairDivider => IsCompact && CanRepairNetwork;
@@ -329,6 +345,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _host = host;
         _connection = connection;
         _prefs = prefs;
+        Failover = new FailoverViewModel(SetSettingAsync, SaveConfigOrderAsync);
         // Seed backing fields from prefs without echoing OnChanged.
         _selectedThemeIndex = IndexForTheme(prefs.Theme);
         _selectedLanguageIndex = IndexForLanguage(prefs.Language);
@@ -449,6 +466,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         ApplyProxyEndpoints(snapshot);
         ApplyProxyClients(snapshot);
         ProxyErrorText = snapshot.ProxyEnabled ? snapshot.ProxyError : string.Empty;
+        Failover.Apply(snapshot);
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -1387,6 +1405,13 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private async Task SetSettingAsync(string key, string value)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value]));
+    }
+
+    // Stores the order the auto-switching list was left in: the servers keep one order across the app.
+    private async Task<bool> SaveConfigOrderAsync(IReadOnlyList<string> names)
+    {
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderConfigs, names));
+        return ack.Ok;
     }
 
     private void OnCultureChanged()

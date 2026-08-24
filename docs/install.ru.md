@@ -1,12 +1,14 @@
 # Установка
 
-Готовые сборки для всех платформ - на странице [Releases](../../releases).
+[English](install.md) | **Русский**
+
+Готовые сборки для всех платформ - на странице [Releases](https://github.com/bor-project/amneziageo/releases).
 
 ## Windows
 
 Нужны Windows 7, 10 или 11 (x64 или arm64) и права администратора: установщик ставит системную службу.
 
-1. Скачайте установщик со страницы [Releases](../../releases). Обычная сборка несёт в себе всё необходимое, вариант поменьше требует установленного [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
+1. Скачайте установщик со страницы [Releases](https://github.com/bor-project/amneziageo/releases). Обычная сборка несёт в себе всё необходимое, вариант поменьше требует установленного [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
 2. Запустите его: установятся служба и приложение.
 3. Откройте AmneziaGeo и импортируйте конфигурацию - файл `.conf`, QR-код или общий файл настроек.
 4. Выберите список правил или полный туннель и подключитесь.
@@ -36,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/bor-project/amneziageo/master/amnez
 
 ### Пакеты вручную
 
-Возьмите пакеты своей архитектуры со страницы [Releases](../../releases) - собираются amd64 и arm64 - и поставьте через apt, он подтянет названные ими библиотеки:
+Возьмите пакеты своей архитектуры со страницы [Releases](https://github.com/bor-project/amneziageo/releases) - собираются amd64 и arm64 - и поставьте через apt, он подтянет названные ими библиотеки:
 
 ```bash
 # сервер
@@ -72,7 +74,7 @@ sudo amneziageo settings set periodic-reconnect-enabled on
 
 Нужен Android 7.0 или новее.
 
-1. Скачайте `AmneziaGeo-<версия>-android.apk` со страницы [Releases](../../releases) и разрешите установку из этого источника, когда система спросит.
+1. Скачайте `AmneziaGeo-<версия>-android.apk` со страницы [Releases](https://github.com/bor-project/amneziageo/releases) и разрешите установку из этого источника, когда система спросит.
 2. Откройте приложение и импортируйте конфигурацию.
 3. При первом подключении Android спросит разрешение на VPN - его нужно выдать.
 

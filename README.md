@@ -273,6 +273,13 @@ this platform's agent.
 
 GPL-3.0 or later, see [LICENSE](LICENSE). Uses the AmneziaWG engine under its authors' license.
 
+## Code signing
+
+Windows builds are signed through SignPath.io, see [CODE_SIGNING.md](CODE_SIGNING.md). Free code signing
+provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+The application collects nothing, see [PRIVACY.md](PRIVACY.md).
+
 ## Support
 
 If AmneziaGeo is useful to you and you would like to support its development, you can donate in one of the crypto networks:

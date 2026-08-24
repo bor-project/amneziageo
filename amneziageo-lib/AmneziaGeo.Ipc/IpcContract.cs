@@ -136,9 +136,17 @@ public static class IpcContract
     public const string OpGetRoutingSettings = "get-routing-settings";
 
     /// <summary>
-    /// Command to set the agent's desired connection state. Args: "connect" or "disconnect".
+    /// Command to set the agent's desired connection state. Args: "connect" or "disconnect", then an optional
+    /// config name. Without a name a connect raises the selected config and a disconnect takes down every
+    /// tunnel this user raised. "takeover" claims a config another user is already running.
     /// </summary>
     public const string OpSetConnection = "set-connection";
+
+    /// <summary>
+    /// Command to pick the config that carries the default route while several tunnels are up. Args: a config
+    /// name, or "none" to leave it to the first tunnel that carries everything.
+    /// </summary>
+    public const string OpSetDefaultRoute = "set-default-route";
 
     /// <summary>
     /// Command to set a named agent setting. Args: key, value. Used for the kill-switch and LAN toggles.

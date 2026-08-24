@@ -108,9 +108,9 @@ internal sealed partial class RouteManager
     /// Removes endpoint-exclusion routes left by a previous run. <paramref name="abortIf"/> stands the cleanup
     /// down once a tunnel bring-up is requested, so a boot pass cannot remove a connect's live exclusion.
     /// </summary>
-    public void RestoreSavedExclusions(Func<bool>? abortIf = null)
+    public void RestoreSavedExclusions(Func<bool>? abortIf = null, string? only = null)
     {
-        foreach (var file in TunnelPaths.RouteStateFiles())
+        foreach (var file in StateFiles(only, TunnelPaths.RouteStateFile, TunnelPaths.RouteStateFiles))
         {
             if (abortIf?.Invoke() == true)
             {
@@ -500,9 +500,9 @@ internal sealed partial class RouteManager
     /// Removes LAN-bypass exclusion routes left by a previous run. <paramref name="abortIf"/> stands the cleanup
     /// down once a tunnel bring-up is requested, so a boot pass cannot remove a connect's live exclusions.
     /// </summary>
-    public void RestoreSavedLanExclusions(Func<bool>? abortIf = null)
+    public void RestoreSavedLanExclusions(Func<bool>? abortIf = null, string? only = null)
     {
-        foreach (var file in TunnelPaths.LanStateFiles())
+        foreach (var file in StateFiles(only, TunnelPaths.LanStateFile, TunnelPaths.LanStateFiles))
         {
             if (abortIf?.Invoke() == true)
             {
@@ -516,6 +516,12 @@ internal sealed partial class RouteManager
 
             TryDelete(file);
         }
+    }
+
+    // The records to revert: one tunnel's own, or every tunnel's when none is named.
+    private static IEnumerable<string> StateFiles(string? only, Func<string, string> one, Func<IEnumerable<string>> all)
+    {
+        return only is { Length: > 0 } ? new[] { one(only) } : all();
     }
 
     private static void DeleteCidrRoute(string cidr)

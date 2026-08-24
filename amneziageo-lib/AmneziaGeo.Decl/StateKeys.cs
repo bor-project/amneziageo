@@ -20,4 +20,15 @@ public static class StateKeys
     /// Marks that the move to per-config routing has stamped the configs that predate it.
     /// </summary>
     public const string ConfigRoutingStamped = "config-routing-stamped";
+
+    /// <summary>
+    /// Names of the tunnels the agent keeps up, one per line; read back after a restart.
+    /// </summary>
+    public const string DesiredTunnels = "desired-tunnels";
+
+    /// <summary>
+    /// Name of the config the user wants to own the default route; empty leaves it to the first tunnel that
+    /// carries everything.
+    /// </summary>
+    public const string DefaultRouteOwner = "default-route-owner";
 }

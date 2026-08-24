@@ -105,4 +105,10 @@ public sealed record StatusSnapshot(
     // Clients holding a connection to the local proxy right now.
     IReadOnlyList<ProxyClientEntry>? ProxyClients = null,
     // Whether the resolver this machine sends its lookups to stopped answering, so rules by domain no longer apply.
-    bool DnsUnreachable = false);
+    bool DnsUnreachable = false,
+    // Config the user picked to carry the default route; empty leaves it to the first tunnel that carries everything.
+    string DefaultRouteOwner = "",
+    // Config that carries the default route right now; empty while none does.
+    string DefaultRouteHeld = "",
+    // Whether this platform raises more than one tunnel at a time.
+    bool MultiTunnel = false);

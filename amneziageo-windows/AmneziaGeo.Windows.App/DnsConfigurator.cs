@@ -191,10 +191,10 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     /// <paramref name="abortIf"/> stands the cleanup down the moment a tunnel bring-up is requested, so a boot
     /// pass cannot revert a connect's live redirect out from under it.
     /// </summary>
-    public void RestoreSaved(Func<bool>? abortIf = null)
+    public void RestoreSaved(Func<bool>? abortIf = null, string? only = null)
     {
         var restored = false;
-        foreach (var file in TunnelPaths.DnsStateFiles())
+        foreach (var file in StateFiles(only))
         {
             if (abortIf?.Invoke() == true)
             {
@@ -239,6 +239,12 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             logger.LogDebug("the adapters' own DNS settings are back in place");
         }
+    }
+
+    // The records to revert: one tunnel's own, or every tunnel's when none is named.
+    private static IEnumerable<string> StateFiles(string? only)
+    {
+        return only is { Length: > 0 } ? new[] { TunnelPaths.DnsStateFile(only) } : TunnelPaths.DnsStateFiles();
     }
 
     /// <summary>

@@ -59,6 +59,11 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         ? RoutingListName
         : Loc.Instance.Get("Main_CardTagRoutingOff");
 
+    // Несёт ли эта конфигурация всё, что не назвали остальные туннели.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _carriesDefault;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private int _mtu;
@@ -102,6 +107,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public IReadOnlyList<CardTag> Tags =>
     [
         new(RoutingLabel, RoutingListId is not null),
+        new(Loc.Instance.Get("Main_CardTagDefaultRoute"), CarriesDefault),
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
         new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", Mtu) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),

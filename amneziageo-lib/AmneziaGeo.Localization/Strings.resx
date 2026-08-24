@@ -1886,6 +1886,21 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_CardTagRoutingOff" xml:space="preserve">
     <value>full tunnel</value>
   </data>
+  <data name="Main_ConfigDefaultRouteTitle" xml:space="preserve">
+    <value>Everything else</value>
+  </data>
+  <data name="Main_ConfigDefaultRouteSubtitle" xml:space="preserve">
+    <value>Carry every destination no other tunnel names. Only one tunnel can.</value>
+  </data>
+  <data name="Main_ConfigDefaultRouteHeld" xml:space="preserve">
+    <value>Carried by {0} right now.</value>
+  </data>
+  <data name="Main_ConfigDefaultRouteFree" xml:space="preserve">
+    <value>No tunnel carries it right now.</value>
+  </data>
+  <data name="Main_CardTagDefaultRoute" xml:space="preserve">
+    <value>everything else</value>
+  </data>
   <data name="Main_ConfigRoutingTitle" xml:space="preserve">
     <value>Routing list</value>
   </data>

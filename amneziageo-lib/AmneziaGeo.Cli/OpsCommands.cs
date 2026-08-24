@@ -15,6 +15,7 @@ internal static class OpsCommands
     {
         [IpcContract.OpSetConnection] = "up / down",
         [IpcContract.OpSelectConfig] = "select",
+        [IpcContract.OpSetDefaultRoute] = "default-route",
         [IpcContract.OpGetConfig] = "config show / config link",
         [IpcContract.OpImportConfig] = "config import",
         [IpcContract.OpEditConfig] = "config edit",
@@ -300,7 +301,7 @@ internal static class OpsCommands
 
     // Operations that need no arguments to do their work: sending them is not a probe but the act itself.
     private static bool Skipped(string op) =>
-        op is IpcContract.OpSetConnection or IpcContract.OpSelectConfig or IpcContract.OpLogClient
+        op is IpcContract.OpSetConnection or IpcContract.OpSelectConfig or IpcContract.OpSetDefaultRoute or IpcContract.OpLogClient
             or IpcContract.OpUpdateSources or IpcContract.OpUpdateSource
             or IpcContract.OpDownloadGeo or IpcContract.OpCollectDiagnostics or IpcContract.OpClearLog
             or IpcContract.OpAddConfig or IpcContract.OpImportConfig or IpcContract.OpEditConfig

@@ -23,6 +23,12 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     private bool _toggleInFlight;
 
+    // Состояние каждого туннеля по имени конфигурации.
+    private readonly Dictionary<string, string> _configStatus = new(StringComparer.Ordinal);
+
+    // Поднимает ли эта платформа несколько туннелей сразу.
+    private bool _multiTunnel;
+
     // The configuration a dial is heading for, until the tunnel binds it.
     private string? _dialTarget;
     private CancellationTokenSource? _probeCts;
@@ -447,6 +453,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         RetryAttempt = snapshot.RetryAttempt;
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
+        _multiTunnel = snapshot.MultiTunnel;
+        _configStatus.Clear();
+        foreach (var entry in snapshot.Configs)
+        {
+            _configStatus[entry.Name] = entry.Status;
+        }
+
+        PushCardPower();
         if (!_toggleInFlight)
         {
             IsTunnelActive = snapshot.Active;
@@ -632,17 +646,19 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         PushCardPower();
     }
 
-    // Ставит состояние подключения на карточки: цель носит состояние кнопки в шапке, остальные выключены.
+    // Ставит состояние подключения на карточки: каждая несёт своё, набираемая - состояние набора.
     private void PushCardPower()
     {
-        var target = _dialTarget ?? BoundTarget;
         foreach (var row in _host.Config.Configs)
         {
-            row.Status = string.Equals(row.Name, target, StringComparison.Ordinal)
+            row.Status = string.Equals(row.Name, _dialTarget, StringComparison.Ordinal)
                 ? CardStatus
-                : ConnectionStatus.Disconnected;
+                : _configStatus.GetValueOrDefault(row.Name, ConnectionStatus.Disconnected);
         }
     }
+
+    // Сколько туннелей стоит прямо сейчас.
+    private int LiveConfigCount => _host.Config.Configs.Count(row => row.ShowStatusFrame);
 
     // Состояние цели словами: то же, что показывает кнопка в шапке.
     private string CardStatus => ConnState switch
@@ -715,7 +731,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         // Живой туннель едет за выбором: смена сервера на главной переносит его так же, как кнопка карточки.
         if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
         {
-            _ = ConnectConfig(row);
+            _ = _multiTunnel ? MoveTunnelAsync(row) : ConnectConfig(row);
             return;
         }
 
@@ -729,11 +745,24 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     {
         if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
         {
-            return ConnectConfig(row);
+            return _multiTunnel ? MoveTunnelAsync(row) : ConnectConfig(row);
         }
 
         ActiveConfig = row;
         return Task.CompletedTask;
+    }
+
+    // Переносит туннель шапки на другую конфигурацию: прежняя уходит, новая поднимается.
+    private async Task MoveTunnelAsync(ConfigItemViewModel row)
+    {
+        var previous = BoundTarget;
+        ActiveConfig = row;
+        if (previous is { Length: > 0 })
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect", previous]));
+        }
+
+        await ToggleConfigConnectionAsync(row.Name, true);
     }
 
     /// <summary>
@@ -903,9 +932,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 return;
             }
 
-            // Снос не удался: цель остаётся прежней, иначе выбор уехал бы на конфигурацию, которую поднять
-            // всё равно не вышло.
-            if (ConnState != 0 && !await StopTunnelAsync())
+            // Один туннель на машину: живой уходит целиком перед сменой цели. Снос не удался -
+            // цель остаётся прежней, иначе выбор уехал бы на конфигурацию, которую поднять всё равно не вышло.
+            if (!_multiTunnel && ConnState != 0 && !await StopTunnelAsync())
             {
                 return;
             }
@@ -920,8 +949,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     // Стоит ли туннель на этой конфигурации.
-    private bool IsLiveConfig(ConfigItemViewModel item) =>
-        IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
+    private bool IsLiveConfig(ConfigItemViewModel item) => _multiTunnel
+        ? item.ShowStatusFrame
+        : IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
 
     // Кнопка карточки: её запирают отсутствие агента, зависший снос и идущий перенос. Свой туннель карточка
     // снимает и посреди подъёма, чужой берёт только с закончившегося перехода.
@@ -1059,8 +1089,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // header power control does not flicker while the switch is in flight.
     internal async Task ToggleConfigConnectionAsync(string config, bool connect)
     {
-        IsTunnelActive = connect;
-        BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
+        // Шапка гаснет только с последним туннелем: остальные продолжают стоять.
+        var last = !connect && (!_multiTunnel || LiveConfigCount <= 1);
+        if (connect || last)
+        {
+            IsTunnelActive = connect;
+            BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
+        }
+
         _toggleInFlight = true;
         try
         {
@@ -1069,11 +1105,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 SetDialTarget(config);
                 await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
                 var ack = await _connection.SendCommandAsync(
-                    new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
+                    new IpcCommand(IpcContract.OpSetConnection, ["connect", config]));
                 if (!ack.Ok)
                 {
                     SetDialTarget(null);
-                    IsTunnelActive = false;
+                    IsTunnelActive = LiveConfigCount > 0;
                     if (OwnedByOtherAck(ack))
                     {
                         PromptTakeover();
@@ -1083,7 +1119,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             else
             {
                 var ack = await _connection.SendCommandAsync(
-                    new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
+                    new IpcCommand(IpcContract.OpSetConnection, ["disconnect", config]));
                 if (!ack.Ok)
                 {
                     IsTunnelActive = true;

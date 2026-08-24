@@ -34,6 +34,15 @@ internal static class StatusCommands
             case "down" when args.Count == 0:
                 return Reply.Report(await agent.SendAsync(IpcContract.OpSetConnection, "disconnect").ConfigureAwait(false), "disconnected");
 
+            case "down" when args.Count == 1:
+                return Reply.Report(await agent.SendAsync(IpcContract.OpSetConnection, "disconnect", args[0]).ConfigureAwait(false), $"disconnected {args[0]}");
+
+            case "default-route" when args.Count == 1:
+                return Reply.Report(await agent.SendAsync(IpcContract.OpSetDefaultRoute, args[0]).ConfigureAwait(false), $"default route: {args[0]}");
+
+            case "default-route":
+                return Reply.Usage("usage: amneziageo default-route <config>|none");
+
             default:
                 return Reply.Usage($"usage: amneziageo {command}");
         }
@@ -54,11 +63,18 @@ internal static class StatusCommands
             ? $"on, every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s"
             : "off";
 
+        var up = snapshot.Configs
+            .Where(config => config.Status is ConnectionStatus.Connected or ConnectionStatus.Connecting)
+            .Select(config => config.Name)
+            .ToList();
+
         var pairs = new List<(string, string)>
         {
             ("agent", snapshot.AgentVersion),
             ("state", snapshot.BoundStatus),
             ("tunnel", snapshot.Active ? "up" : "down"),
+            ("tunnels up", up.Count > 0 ? string.Join(", ", up) : "-"),
+            ("default route", DefaultRouteLabel(snapshot)),
             ("bound to", snapshot.BoundTarget ?? "-"),
             ("selected", snapshot.SelectedTarget ?? "-"),
             ("routing", RoutingLabel(snapshot, Current(snapshot)?.RoutingListId ?? snapshot.SelectedRoutingList)),
@@ -96,6 +112,13 @@ internal static class StatusCommands
         return name is null ? null : snapshot.Configs.FirstOrDefault(config => config.Name == name);
     }
 
+    // Who carries everything the other tunnels do not name, and the config picked to.
+    private static string DefaultRouteLabel(StatusSnapshot snapshot)
+    {
+        var held = snapshot.DefaultRouteHeld.Length > 0 ? snapshot.DefaultRouteHeld : "-";
+        return snapshot.DefaultRouteOwner.Length > 0 ? $"{held} (picked: {snapshot.DefaultRouteOwner})" : held;
+    }
+
     private static string RoutingLabel(StatusSnapshot snapshot, long? routingListId)
     {
         if (routingListId is not { } id)
@@ -116,11 +139,7 @@ internal static class StatusCommands
 
         if (args.Count == 1)
         {
-            var selected = await agent.SendAsync(IpcContract.OpSelectConfig, args[0]).ConfigureAwait(false);
-            if (!selected.Ok)
-            {
-                return Reply.Report(selected);
-            }
+            return Reply.Report(await agent.SendAsync(IpcContract.OpSetConnection, "connect", args[0]).ConfigureAwait(false), $"connected {args[0]}");
         }
 
         return Reply.Report(await agent.SendAsync(IpcContract.OpSetConnection, "connect").ConfigureAwait(false), "connected");

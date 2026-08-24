@@ -1886,6 +1886,21 @@
   <data name="Main_CardTagRoutingOff" xml:space="preserve">
     <value>весь трафик</value>
   </data>
+  <data name="Main_ConfigDefaultRouteTitle" xml:space="preserve">
+    <value>Весь прочий трафик</value>
+  </data>
+  <data name="Main_ConfigDefaultRouteSubtitle" xml:space="preserve">
+    <value>Уводить всё, что не назвали другие туннели. Нести это может только один.</value>
+  </data>
+  <data name="Main_ConfigDefaultRouteHeld" xml:space="preserve">
+    <value>Сейчас его несёт {0}.</value>
+  </data>
+  <data name="Main_ConfigDefaultRouteFree" xml:space="preserve">
+    <value>Сейчас его не несёт никто.</value>
+  </data>
+  <data name="Main_CardTagDefaultRoute" xml:space="preserve">
+    <value>прочий трафик</value>
+  </data>
   <data name="Main_ConfigRoutingTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
   </data>

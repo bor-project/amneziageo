@@ -98,9 +98,16 @@ internal sealed class DnsHealthService(
         await ReportAsync(true, ct).ConfigureAwait(false);
     }
 
+    // The resolver a machine uses is chosen per machine, so the verdict lands on every tunnel that is up.
     private async Task ReportAsync(bool unreachable, CancellationToken ct)
     {
-        if (control.SetDnsUnreachable(unreachable))
+        var moved = false;
+        foreach (var tunnel in control.Desired)
+        {
+            moved |= tunnel.SetDnsUnreachable(unreachable);
+        }
+
+        if (moved)
         {
             await broker.BroadcastIfChangedAsync(ct).ConfigureAwait(false);
         }

@@ -40,9 +40,9 @@ internal static class InstallerMaintenance
     }
 
     /// <summary>
-    /// Stops and deletes transient "AmneziaGeo$*" tunnel services except the one for keepBareName; returns the removed bare names.
+    /// Stops and deletes transient "AmneziaGeo$*" tunnel services except those of keepBareNames; returns the removed bare names.
     /// </summary>
-    public static IReadOnlyList<string> ReapTransientServices(string? keepBareName)
+    public static IReadOnlyList<string> ReapTransientServices(IReadOnlyCollection<string>? keepBareNames)
     {
         var removed = new List<string>();
         var scm = OpenSCManager(null, null, ScManagerConnect | ScManagerEnumerateService);
@@ -51,7 +51,9 @@ internal static class InstallerMaintenance
             return removed;
         }
 
-        var keepServiceName = keepBareName is null ? null : TransientPrefix + keepBareName;
+        var keepServiceNames = keepBareNames is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(keepBareNames.Select(bare => TransientPrefix + bare), StringComparer.Ordinal);
         try
         {
             foreach (var name in EnumerateServiceNames(scm))
@@ -61,7 +63,7 @@ internal static class InstallerMaintenance
                     continue;
                 }
 
-                if (keepServiceName is not null && string.Equals(name, keepServiceName, StringComparison.Ordinal))
+                if (keepServiceNames.Contains(name))
                 {
                     continue;
                 }

@@ -19,7 +19,8 @@ internal sealed class Cli(
     UapiClient uapi,
     NetworkReconciler reconciler,
     TunnelRunner tunnelRunner,
-    ConfigRunner configRunner,
+    AgentControl control,
+    ConfigRunnerFactory configRunners,
     BackupService backupService,
     GeoConfigurator geoConfigurator,
     IGeoFileStore geoFiles,
@@ -456,7 +457,9 @@ internal sealed class Cli(
                 e.Cancel = true;
                 cts.Cancel();
             };
-            await configRunner.RunAsync(name, cts.Token);
+            var tunnel = control.For(name);
+            tunnel.SetRunning(true);
+            await configRunners.Create(tunnel).RunAsync(cts.Token);
         }
 
         return 0;

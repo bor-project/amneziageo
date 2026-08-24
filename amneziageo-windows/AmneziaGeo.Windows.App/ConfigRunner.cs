@@ -10,19 +10,20 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Runs the selected config and re-runs on each change.
+/// Runs one tunnel and re-runs it on each change. One instance per configuration the agent keeps up.
 /// </summary>
 internal sealed class ConfigRunner(
+    TunnelControl tunnel,
     ServiceManager serviceManager,
     UapiClient uapi,
     NetworkReconciler reconciler,
     SettingsStore settingsStore,
     AgentControl control,
-    ActiveTunnelScope activeScope,
+    ScopedStoreFactory stores,
     ILogger<ConfigRunner> logger)
 {
-    private IStateStore store => activeScope.Store;
-    private ConfigRepository configRepo => activeScope.ConfigRepo;
+    private IStateStore store => stores.For(tunnel.OwnerRoot);
+    private ConfigRepository configRepo => new(store, serviceManager);
 
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
@@ -68,23 +69,22 @@ internal sealed class ConfigRunner(
     private LinkLossProbe? _loss;
 
     /// <summary>
-    /// Runs sessions per target change.
+    /// Runs sessions until this tunnel is no longer wanted.
     /// </summary>
-    public async Task RunAsync(string initial, CancellationToken ct)
+    public async Task RunAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
-            var changeToken = control.ChangeToken;
+            var changeToken = tunnel.ChangeToken;
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, changeToken))
             {
-                var config = await ResolveAsync(initial, ct);
+                var config = await ResolveAsync(ct);
                 _config = config;
 
-                if (!control.Running)
+                if (!tunnel.Running)
                 {
                     await TeardownForDisconnectAsync(config);
-                    await IdleAsync(linked.Token);
-                    continue;
+                    return;
                 }
 
                 try
@@ -111,36 +111,24 @@ internal sealed class ConfigRunner(
         }
     }
 
-    private async Task<string> ResolveAsync(string initial, CancellationToken ct)
+    private async Task<string> ResolveAsync(CancellationToken ct)
     {
-        // Latch the running target so a new selection doesn't switch until reconnect; teardown follows the same
-        // latch, otherwise a disconnect after a mid-session switch stops the service of the wrong config.
-        var name = control.RunningTarget ?? control.Target ?? initial;
+        var name = tunnel.Config;
         if (await configRepo.ExistsAsync(name, ct))
         {
             return name;
         }
 
-        // Broken binding: clear the dangling selection and idle.
-        if (!string.IsNullOrEmpty(name))
+        // Broken binding: the config is gone, so the tunnel stops being wanted.
+        logger.LogInformation("configuration '{Config}' no longer exists; its tunnel is dropped and nothing will connect until you pick another one", name);
+        if (string.Equals(control.Target, name, StringComparison.Ordinal))
         {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
             control.ClearTarget();
-            logger.LogInformation("the selected configuration '{Config}' no longer exists; the selection is cleared and nothing will connect until you pick another one", name);
         }
 
+        tunnel.SetRunning(false);
         return string.Empty;
-    }
-
-    private static async Task IdleAsync(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
     }
 
     private async Task RunSessionAsync(string config, CancellationToken ct)
@@ -152,12 +140,11 @@ internal sealed class ConfigRunner(
             await SetStateAsync("disconnected");
 
             // Fail the connect instead of perpetual "connecting…".
-            if (control.Running)
+            if (tunnel.Running)
             {
-                control.FailConnect(ConnectFailureReason.NoTargetSelected, string.Empty);
+                tunnel.FailConnect(ConnectFailureReason.NoTargetSelected, string.Empty);
             }
 
-            await IdleAsync(ct);
             return;
         }
 
@@ -167,17 +154,16 @@ internal sealed class ConfigRunner(
             await SetStateAsync("disconnected");
 
             // Missing .conf: fail the connect.
-            if (control.Running)
+            if (tunnel.Running)
             {
-                control.FailConnect(ConnectFailureReason.ConfigMissing, string.Empty);
+                tunnel.FailConnect(ConnectFailureReason.ConfigMissing, string.Empty);
             }
 
-            await IdleAsync(ct);
             return;
         }
 
         await ProjectRoutingAsync(config, ct);
-        ReapForeignTunnels(config);
+        ReapForeignTunnels();
         Stop(config);
 
         _launchStreak = 0;
@@ -250,7 +236,7 @@ internal sealed class ConfigRunner(
         {
             // A user disconnect announces "disconnecting", then tears down and reports the outcome (clean, or a
             // stuck teardown kept as connected); a re-run (reconfigure/re-dial) just drops to disconnected.
-            if (!control.Running)
+            if (!tunnel.Running)
             {
                 await SetStateAsync("disconnecting");
                 await TeardownForDisconnectAsync(config);
@@ -274,7 +260,7 @@ internal sealed class ConfigRunner(
             var outcome = await TryConnectAsync(config, ct);
             if (outcome.Ok)
             {
-                control.ClearRetry();
+                tunnel.ClearRetry();
                 _launchStreak = 0;
                 return true;
             }
@@ -290,11 +276,11 @@ internal sealed class ConfigRunner(
                 logger.LogWarning("could not connect through {Config}: {Reason} {Detail}; a retry does not get past this, so dialling stops here", config, outcome.Reason, outcome.Detail);
                 Stop(config);
                 await SetStateAsync("disconnected");
-                control.FailConnect(outcome.Reason, outcome.Detail);
+                tunnel.FailConnect(outcome.Reason, outcome.Detail);
                 return false;
             }
 
-            var attempt = control.NextRetry();
+            var attempt = tunnel.NextRetry();
             var delay = RetryDelay(attempt);
             logger.LogWarning("could not reach the server of {Config}: {Reason}; trying again in {Delay}s, attempt {Attempt}",
                 config, outcome.Reason, (int)delay.TotalSeconds, attempt);
@@ -309,7 +295,7 @@ internal sealed class ConfigRunner(
     // change token, or the supervisor re-enters from the top and dials again immediately (#206).
     private async Task WaitRetryAsync(TimeSpan delay, CancellationToken ct)
     {
-        var wake = control.BeginRetryWait();
+        var wake = tunnel.BeginRetryWait();
         try
         {
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, wake))
@@ -319,7 +305,7 @@ internal sealed class ConfigRunner(
         }
         finally
         {
-            control.EndRetryWait();
+            tunnel.EndRetryWait();
         }
     }
 
@@ -351,7 +337,7 @@ internal sealed class ConfigRunner(
     // The retargeted latch after a live rename moved the config.
     private async Task<string> ReresolveConfigAsync(string current, CancellationToken ct)
     {
-        var latched = control.RunningTarget;
+        var latched = tunnel.Config;
         if (!string.IsNullOrEmpty(latched) && await configRepo.ExistsAsync(latched, ct))
         {
             return latched;
@@ -379,6 +365,8 @@ internal sealed class ConfigRunner(
         }
 
         await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, list.Id, ct);
+        var routingSettings = await store.GetRoutingSettingsAsync(list.Id, ct);
+        await ClaimMachineRolesAsync(config, routingSettings?.UseGlobalProxy ?? false, ct);
         logger.LogInformation("routing list '{List}' now applies to {Config}: only what it names goes through the tunnel", list.Name, config);
     }
 
@@ -386,7 +374,61 @@ internal sealed class ConfigRunner(
     {
         // geoSplit=false -> full tunnel via config AllowedIPs.
         await store.SaveTunnelProjectionAsync(config, false, [], [], [], null, ct);
+        await ClaimMachineRolesAsync(config, true, ct);
         logger.LogInformation("routing rules are off for {Config}: all traffic goes through the tunnel", config);
+    }
+
+    // Settles what only one tunnel on the machine can hold: the default route and the machine's name lookups.
+    private async Task ClaimMachineRolesAsync(string config, bool wantsDefault, CancellationToken ct)
+    {
+        await ClaimDefaultRouteAsync(config, wantsDefault, ct);
+        await ClaimResolverAsync(config, ct);
+    }
+
+    // Decides whether this tunnel carries the default route. The config the user picked always takes it; without
+    // a pick the tunnel that is already up keeps it, and this one is raised with only the ranges it names.
+    private async Task ClaimDefaultRouteAsync(string config, bool wantsDefault, CancellationToken ct)
+    {
+        if (!wantsDefault)
+        {
+            control.ReleaseDefaultRoute(config);
+            await store.SetSettingAsync(TunnelPaths.DefaultRouteKey(config), string.Empty, ct);
+            return;
+        }
+
+        var picked = await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct);
+        var claim = control.ClaimDefaultRoute(config, string.Equals(picked, config, StringComparison.Ordinal));
+        await store.SetSettingAsync(TunnelPaths.DefaultRouteKey(config), claim.Granted ? string.Empty : TunnelPaths.ClipDefaultRoute, ct);
+        if (claim.Displaced is { } displaced)
+        {
+            logger.LogInformation("{Config} was picked to carry everything, so {Other} gives it up and is dialled again with only the ranges it names", config, displaced.Config);
+            displaced.Invalidate();
+            return;
+        }
+
+        if (!claim.Granted)
+        {
+            logger.LogInformation("{Config} would carry everything, but {Other} already does, so it is raised with only the ranges it names", config, control.DefaultRouteOwner);
+        }
+    }
+
+    // Decides whether this tunnel answers the machine's name lookups. There is one resolver per machine, so a
+    // tunnel that does not get it decides by address alone - its rules by domain never see a query.
+    private async Task ClaimResolverAsync(string config, CancellationToken ct)
+    {
+        var claim = control.ClaimResolver(config);
+        await store.SetSettingAsync(TunnelPaths.ResolverKey(config), claim.Granted ? TunnelPaths.OwnsResolver : string.Empty, ct);
+        if (claim.Displaced is { } displaced)
+        {
+            logger.LogInformation("{Config} carries everything, so it answers this machine's name lookups; {Other} is dialled again without them", config, displaced.Config);
+            displaced.Invalidate();
+            return;
+        }
+
+        if (!claim.Granted)
+        {
+            logger.LogWarning("{Config}: this machine's name lookups already go to {Other}, so only rules by address apply here - rules by domain never see a query", config, control.ResolverOwner);
+        }
     }
 
     private async Task SetStateAsync(string status)
@@ -394,7 +436,7 @@ internal sealed class ConfigRunner(
         try
         {
             await store.SaveTunnelStateAsync(new TunnelState(_config, status, DateTimeOffset.UtcNow));
-            control.SignalStatus();
+            tunnel.SignalStatus();
         }
         catch (Exception ex)
         {
@@ -413,13 +455,15 @@ internal sealed class ConfigRunner(
         if (state == "RUNNING")
         {
             logger.LogWarning("the tunnel of {Config} is still {State} after being asked to stop, so the disconnect did not finish; it stays shown as connected — try again", config, state);
-            control.FailDisconnect(state);
+            tunnel.FailDisconnect(state);
             await SetStateAsync("connected");
             return;
         }
 
-        control.ClearDisconnectFail();
-        control.ClearRunningTarget();
+        control.ReleaseDefaultRoute(config);
+        control.ReleaseResolver(config);
+        tunnel.ClearDisconnectFail();
+        tunnel.ClearReadings();
         await SetStateAsync("disconnected");
 
         // Return the connect-session transient before the agent idles.
@@ -449,7 +493,7 @@ internal sealed class ConfigRunner(
         }
 
         logger.LogInformation("{Member}: starting the tunnel process", member);
-        var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
+        var created = serviceManager.CreateService(member, tunnel.OwnerRoot);
         var started = serviceManager.StartQuiet(member);
         var startFailed = created != 0 || started != 0;
         if (startFailed)
@@ -668,16 +712,16 @@ internal sealed class ConfigRunner(
         var handshakeAge = status.HandshakeSec > 0
             ? HandshakeAge.Step(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec)
             : -1;
-        if (control.SetHandshakeAge(handshakeAge))
+        if (tunnel.SetHandshakeAge(handshakeAge))
         {
-            control.SignalStatus();
+            tunnel.SignalStatus();
         }
 
         var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1);
         LogLink(member, reading);
-        if (control.SetLink(reading))
+        if (tunnel.SetLink(reading))
         {
-            control.SignalStatus();
+            tunnel.SignalStatus();
         }
 
         var moved = new LinkSample(
@@ -819,23 +863,27 @@ internal sealed class ConfigRunner(
         _ = Task.Run(() => probe.RunAsync(ct), ct);
     }
 
-    private void ReapForeignTunnels(string keep)
+    private void ReapForeignTunnels()
     {
+        var keep = control.Desired.Select(desired => desired.Config).ToArray();
         var reaped = InstallerMaintenance.ReapTransientServices(keep);
         if (reaped.Count > 0)
         {
             logger.LogInformation("removed {Count} tunnel(s) left over from an earlier run ({Names}), so they cannot fight over the routes", reaped.Count, string.Join(", ", reaped));
-            reconciler.Reconcile();
+            foreach (var name in reaped)
+            {
+                reconciler.Reconcile(name);
+            }
         }
     }
 
     private void Stop(string member)
     {
-        control.SetHandshakeAge(-1);
+        tunnel.SetHandshakeAge(-1);
         _meter.Reset();
         _loss?.Reset();
         _churnLogged = false;
-        control.SetLink(LinkReading.Empty);
+        tunnel.SetLink(LinkReading.Empty);
 
         if (string.IsNullOrEmpty(member))
         {
@@ -844,7 +892,7 @@ internal sealed class ConfigRunner(
 
         StopService(member);
         serviceManager.DeleteService(member);
-        reconciler.Reconcile();
+        reconciler.Reconcile(member);
     }
 
     // Stops the tunnel and leaves the service installed for the next retry.
@@ -856,7 +904,7 @@ internal sealed class ConfigRunner(
         }
 
         StopService(member);
-        reconciler.Reconcile();
+        reconciler.Reconcile(member);
     }
 
     // Stops the service and waits for it to die. A service still starting refuses the stop, so it is re-issued

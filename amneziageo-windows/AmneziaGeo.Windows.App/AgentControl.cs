@@ -1,10 +1,12 @@
+using System.Collections.Concurrent;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Control surface shared between the IPC broker and the config runner.
+/// Control surface shared between the IPC broker and the tunnel supervisors. Holds one entry per tunnel the
+/// agent has been asked to raise.
 /// </summary>
 internal sealed class AgentControl
 {
@@ -14,79 +16,37 @@ internal sealed class AgentControl
     public const string SelectedTargetKey = StateKeys.SelectedTarget;
 
     private readonly Lock _gate = new();
-    private volatile bool _running;
-    private volatile bool _restartRequired;
+    private readonly ConcurrentDictionary<string, TunnelControl> _tunnels = new(StringComparer.Ordinal);
     private volatile string? _target;
-    private volatile string? _runningTarget;
-    private volatile bool _connectFailed;
-    private volatile ConnectFailureReason _connectFailReason;
-    private volatile string? _connectFailDetail;
-    private volatile bool _disconnectFailed;
-    private volatile string? _disconnectFailDetail;
-    private volatile int _retryAttempt;
-    private volatile int _handshakeAge = -1;
-    private volatile LinkReading _link = LinkReading.Empty;
-    private volatile bool _awaitingRetry;
-    private volatile bool _dnsUnreachable;
-    private volatile bool _wakePending;
-    private CancellationTokenSource _change = new();
-    private CancellationTokenSource _wake = new();
+    private volatile string? _defaultOwner;
+    private volatile string? _resolverOwner;
+    private CancellationTokenSource _membership = new();
     private CancellationTokenSource _status = new();
 
     /// <summary>
-    /// Whether the agent keeps a tunnel up.
+    /// Every tunnel the agent knows of, desired or torn down.
     /// </summary>
-    public bool Running => _running;
+    public IReadOnlyList<TunnelControl> Tunnels => [.. _tunnels.Values.OrderBy(tunnel => tunnel.Sequence)];
 
     /// <summary>
-    /// How long ago the running tunnel's peer last answered, in reporting steps; -1 before it ever has.
+    /// The tunnels the agent keeps up.
     /// </summary>
-    public int HandshakeAge => _handshakeAge;
+    public IReadOnlyList<TunnelControl> Desired => [.. _tunnels.Values.Where(tunnel => tunnel.Running).OrderBy(tunnel => tunnel.Sequence)];
 
     /// <summary>
-    /// Records the running tunnel's handshake age and reports whether the step moved.
+    /// Whether the agent keeps any tunnel up.
     /// </summary>
-    public bool SetHandshakeAge(int seconds)
-    {
-        var moved = _handshakeAge != seconds;
-        _handshakeAge = seconds;
-        return moved;
-    }
+    public bool Running => _tunnels.Values.Any(tunnel => tunnel.Running);
 
     /// <summary>
-    /// The running tunnel's throughput and handshake rate.
+    /// The tunnel a machine-wide reading is taken from: the first one still desired.
     /// </summary>
-    public LinkReading Link => _link;
+    public TunnelControl? Primary => Desired.FirstOrDefault();
 
     /// <summary>
-    /// Records the running tunnel's link reading and reports whether it moved enough to show.
+    /// The config the running tunnel is bound to; the first one when several are up.
     /// </summary>
-    public bool SetLink(LinkReading reading)
-    {
-        var previous = _link;
-        _link = reading;
-        return reading.DiffersFrom(previous);
-    }
-
-    /// <summary>
-    /// Whether the resolver this machine sends its lookups to stopped answering while a tunnel is up.
-    /// </summary>
-    public bool DnsUnreachable => _dnsUnreachable;
-
-    /// <summary>
-    /// Records the resolver verdict and reports whether it moved.
-    /// </summary>
-    public bool SetDnsUnreachable(bool unreachable)
-    {
-        var moved = _dnsUnreachable != unreachable;
-        _dnsUnreachable = unreachable;
-        return moved;
-    }
-
-    /// <summary>
-    /// A connected tunnel must be reconnected to apply a changed setting.
-    /// </summary>
-    public bool RestartRequired => _restartRequired;
+    public string? RunningTarget => Primary?.Config;
 
     /// <summary>
     /// The user-selected config (radio).
@@ -94,56 +54,41 @@ internal sealed class AgentControl
     public string? Target => _target;
 
     /// <summary>
-    /// The config the running tunnel is bound to.
+    /// Any tunnel must be reconnected to apply a changed setting.
     /// </summary>
-    public string? RunningTarget => _runningTarget;
+    public bool RestartRequired => _tunnels.Values.Any(tunnel => tunnel.Running && tunnel.RestartRequired);
 
     /// <summary>
-    /// One-shot flag: the last connect attempt gave up.
+    /// How long ago the peer of the first running tunnel last answered; -1 when none is up.
     /// </summary>
-    public bool ConnectFailed => _connectFailed;
+    public int HandshakeAge => Primary?.HandshakeAge ?? -1;
 
     /// <summary>
-    /// Structured reason for the last failed connect.
+    /// Throughput and handshake rate of the first running tunnel.
     /// </summary>
-    public ConnectFailureReason ConnectFailReason => _connectFailReason;
+    public LinkReading Link => Primary?.Link ?? LinkReading.Empty;
 
     /// <summary>
-    /// Short cause label for the last failed connect.
+    /// Whether the resolver this machine sends its lookups to stopped answering while a tunnel is up.
     /// </summary>
-    public string? ConnectFailDetail => _connectFailDetail;
+    public bool DnsUnreachable => _tunnels.Values.Any(tunnel => tunnel.Running && tunnel.DnsUnreachable);
 
     /// <summary>
-    /// One-shot flag: the last disconnect left the tunnel service running.
+    /// Fires when the set of desired tunnels changes.
     /// </summary>
-    public bool DisconnectFailed => _disconnectFailed;
-
-    /// <summary>
-    /// Short cause label for the last failed disconnect (service state).
-    /// </summary>
-    public string? DisconnectFailDetail => _disconnectFailDetail;
-
-    /// <summary>
-    /// Transient-failure retry count for the current dial; 0 when not retrying.
-    /// </summary>
-    public int RetryAttempt => _retryAttempt;
-
-    /// <summary>
-    /// Fires when the desired state or persisted configuration changes.
-    /// </summary>
-    public CancellationToken ChangeToken
+    public CancellationToken MembershipToken
     {
         get
         {
             lock (_gate)
             {
-                return _change.Token;
+                return _membership.Token;
             }
         }
     }
 
     /// <summary>
-    /// Fires when a status change should be pushed to UI clients, without waking the supervisor.
+    /// Fires when a status change should be pushed to UI clients, without waking a supervisor.
     /// </summary>
     public CancellationToken StatusToken
     {
@@ -153,6 +98,200 @@ internal sealed class AgentControl
             {
                 return _status.Token;
             }
+        }
+    }
+
+    /// <summary>
+    /// The tunnel that carries the default route right now; null while none does.
+    /// </summary>
+    public string? DefaultRouteOwner => _defaultOwner;
+
+    /// <summary>
+    /// Hands the default route to a config. The config the user picked takes it from whoever holds it; without
+    /// a pick the first claim wins and the rest carry only the ranges they name.
+    /// </summary>
+    public TunnelClaim ClaimDefaultRoute(string config, bool preferred)
+    {
+        lock (_gate)
+        {
+            var held = _defaultOwner;
+            if (held is null || string.Equals(held, config, StringComparison.Ordinal))
+            {
+                _defaultOwner = config;
+                return new TunnelClaim(true, null);
+            }
+
+            if (!preferred)
+            {
+                return new TunnelClaim(false, null);
+            }
+
+            _defaultOwner = config;
+            return new TunnelClaim(true, Find(held));
+        }
+    }
+
+    /// <summary>
+    /// Gives the default route back when the tunnel holding it goes down.
+    /// </summary>
+    public void ReleaseDefaultRoute(string config)
+    {
+        lock (_gate)
+        {
+            if (string.Equals(_defaultOwner, config, StringComparison.Ordinal))
+            {
+                _defaultOwner = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tunnel every lookup on this machine goes to; null while the resolvers are the machine's own.
+    /// </summary>
+    public string? ResolverOwner => _resolverOwner;
+
+    /// <summary>
+    /// Hands the machine's name lookups to a tunnel. There is one resolver per machine, so the first claim
+    /// wins and the tunnel carrying the default route takes it - it is the one every lookup would follow.
+    /// </summary>
+    public TunnelClaim ClaimResolver(string config)
+    {
+        lock (_gate)
+        {
+            var held = _resolverOwner;
+            if (held is null || string.Equals(held, config, StringComparison.Ordinal))
+            {
+                _resolverOwner = config;
+                return new TunnelClaim(true, null);
+            }
+
+            if (!string.Equals(_defaultOwner, config, StringComparison.Ordinal))
+            {
+                return new TunnelClaim(false, null);
+            }
+
+            _resolverOwner = config;
+            return new TunnelClaim(true, Find(held));
+        }
+    }
+
+    /// <summary>
+    /// Gives the machine's name lookups back when the tunnel holding them goes down.
+    /// </summary>
+    public void ReleaseResolver(string config)
+    {
+        lock (_gate)
+        {
+            if (string.Equals(_resolverOwner, config, StringComparison.Ordinal))
+            {
+                _resolverOwner = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns the control of a config, creating it on first use.
+    /// </summary>
+    public TunnelControl For(string config, string? ownerRoot = null, string? ownerSid = null)
+    {
+        var tunnel = _tunnels.GetOrAdd(
+            config,
+            name => new TunnelControl(name, ownerRoot ?? AppDataRoot.Base(), ownerSid, SignalStatus, SignalMembership));
+        if (ownerRoot is not null)
+        {
+            tunnel.SetOwner(ownerRoot, ownerSid);
+        }
+
+        return tunnel;
+    }
+
+    /// <summary>
+    /// Returns the control of a config when the agent already knows it.
+    /// </summary>
+    public TunnelControl? Find(string? config)
+    {
+        return config is { Length: > 0 } && _tunnels.TryGetValue(config, out var tunnel) ? tunnel : null;
+    }
+
+    /// <summary>
+    /// Returns whether the named config is desired.
+    /// </summary>
+    public bool IsRunning(string? config)
+    {
+        return Find(config) is { Running: true };
+    }
+
+    /// <summary>
+    /// Drops a torn-down tunnel from the set. One holding a latched failure stays: the entry is what carries
+    /// the reason to the screen until the next connect clears it.
+    /// </summary>
+    public void Forget(string config)
+    {
+        if (_tunnels.TryGetValue(config, out var tunnel)
+            && !tunnel.Running
+            && !tunnel.ConnectFailed
+            && !tunnel.DisconnectFailed)
+        {
+            _tunnels.TryRemove(config, out _);
+        }
+    }
+
+    /// <summary>
+    /// Selects the active target config without changing running state.
+    /// </summary>
+    public void SetTarget(string name)
+    {
+        // No signal: selecting does not switch a live tunnel.
+        _target = name;
+    }
+
+    /// <summary>
+    /// Clears the selected target.
+    /// </summary>
+    public void ClearTarget()
+    {
+        _target = null;
+    }
+
+    /// <summary>
+    /// Follows a config rename in the selection and in the live binding.
+    /// </summary>
+    public void RetargetName(string oldName, string newName)
+    {
+        if (string.Equals(_target, oldName, StringComparison.Ordinal))
+        {
+            _target = newName;
+        }
+
+        if (_tunnels.TryRemove(oldName, out var tunnel))
+        {
+            tunnel.Rename(newName);
+            _tunnels[newName] = tunnel;
+        }
+    }
+
+    /// <summary>
+    /// Signals every tunnel that persisted configuration changed and must be re-applied.
+    /// </summary>
+    public void Invalidate()
+    {
+        foreach (var tunnel in _tunnels.Values)
+        {
+            tunnel.Invalidate();
+        }
+
+        SignalMembership();
+        SignalStatus();
+    }
+
+    /// <summary>
+    /// Ends the backoff wait of every dialling tunnel early on a network change.
+    /// </summary>
+    public void WakeIfRetrying()
+    {
+        foreach (var tunnel in _tunnels.Values)
+        {
+            tunnel.WakeIfRetrying();
         }
     }
 
@@ -177,14 +316,14 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Completes once a tunnel is desired, idling on the change signal until then.
+    /// Completes once any tunnel is desired, idling on the membership signal until then.
     /// </summary>
     public async Task WaitUntilRunningAsync(CancellationToken ct)
     {
         while (true)
         {
-            var token = ChangeToken;
-            if (_running)
+            var token = MembershipToken;
+            if (Running)
             {
                 return;
             }
@@ -204,215 +343,15 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Sets the desired connection state and signals the runner.
+    /// Wakes the supervisor after the set of desired tunnels changed.
     /// </summary>
-    public void SetRunning(bool value)
-    {
-        _running = value;
-        _connectFailed = false;
-        _connectFailReason = ConnectFailureReason.Unknown;
-        _connectFailDetail = null;
-        _disconnectFailed = false;
-        _disconnectFailDetail = null;
-        _retryAttempt = 0;
-        _wakePending = false;
-        if (value)
-        {
-            _runningTarget = _target;
-        }
-
-        _restartRequired = false;
-        Signal();
-        SignalStatus();
-    }
-
-    /// <summary>
-    /// Selects the active target config without changing running state.
-    /// </summary>
-    public void SetTarget(string name)
-    {
-        // No signal: selecting does not switch a live tunnel.
-        _target = name;
-    }
-
-    /// <summary>
-    /// Clears the selected target.
-    /// </summary>
-    public void ClearTarget()
-    {
-        _target = null;
-    }
-
-    /// <summary>
-    /// Drops the running binding after a clean teardown.
-    /// </summary>
-    public void ClearRunningTarget()
-    {
-        _runningTarget = null;
-    }
-
-    /// <summary>
-    /// Follows a config rename in the live binding without switching the tunnel, so the supervisor keeps
-    /// resolving the running config - a stale target reads as a broken binding on the next re-dial.
-    /// </summary>
-    public void RetargetName(string oldName, string newName)
-    {
-        if (string.Equals(_target, oldName, StringComparison.Ordinal))
-        {
-            _target = newName;
-        }
-
-        if (string.Equals(_runningTarget, oldName, StringComparison.Ordinal))
-        {
-            _runningTarget = newName;
-        }
-    }
-
-    /// <summary>
-    /// Signals that persisted configuration changed and must be re-applied.
-    /// </summary>
-    public void Invalidate()
-    {
-        Signal();
-        SignalStatus();
-    }
-
-    /// <summary>
-    /// Latches a failed connect with its classified reason and drops to stopped.
-    /// </summary>
-    public void FailConnect(ConnectFailureReason reason, string? detail)
-    {
-        _connectFailReason = reason;
-        _connectFailDetail = detail;
-        _connectFailed = true;
-        _running = false;
-        _runningTarget = null;
-        _restartRequired = false;
-        _retryAttempt = 0;
-        Signal();
-        SignalStatus();
-    }
-
-    /// <summary>
-    /// Latches a failed disconnect: the teardown left the tunnel service running, so the connected state is
-    /// kept and the user can retry.
-    /// </summary>
-    public void FailDisconnect(string? detail)
-    {
-        // A concurrent connect (SetRunning(true)) supersedes the disconnect, so don't latch a failure the user
-        // no longer wants - it would otherwise stick through the whole healthy session.
-        if (_running)
-        {
-            return;
-        }
-
-        _disconnectFailDetail = detail;
-        _disconnectFailed = true;
-    }
-
-    /// <summary>
-    /// Clears a latched disconnect failure after a clean teardown.
-    /// </summary>
-    public void ClearDisconnectFail()
-    {
-        _disconnectFailed = false;
-        _disconnectFailDetail = null;
-    }
-
-    /// <summary>
-    /// Flags a connected tunnel as needing reconnect.
-    /// </summary>
-    public void SetRestartRequired()
-    {
-        _restartRequired = true;
-    }
-
-    /// <summary>
-    /// Advances the transient-failure retry count and returns the new value.
-    /// </summary>
-    public int NextRetry()
-    {
-        lock (_gate)
-        {
-            return ++_retryAttempt;
-        }
-    }
-
-    /// <summary>
-    /// Clears the retry count after a successful connect.
-    /// </summary>
-    public void ClearRetry()
-    {
-        _retryAttempt = 0;
-        _awaitingRetry = false;
-        _wakePending = false;
-    }
-
-    /// <summary>
-    /// Opens a retry backoff and returns the token that ends the wait early.
-    /// </summary>
-    public CancellationToken BeginRetryWait()
-    {
-        lock (_gate)
-        {
-            _wake = new CancellationTokenSource();
-            _awaitingRetry = true;
-            if (_wakePending)
-            {
-                _wakePending = false;
-                _wake.Cancel();
-            }
-
-            return _wake.Token;
-        }
-    }
-
-    /// <summary>
-    /// Closes the retry backoff.
-    /// </summary>
-    public void EndRetryWait()
-    {
-        _awaitingRetry = false;
-    }
-
-    /// <summary>
-    /// Ends the backoff wait early on a network change. Deliberately not a change signal: a wake shortens the
-    /// wait without aborting an in-flight connect attempt, re-entering the supervisor or tearing down a tunnel.
-    /// </summary>
-    public void WakeIfRetrying()
-    {
-        var wake = TakeWake();
-        wake?.Cancel();
-    }
-
-    // Returns the open backoff, or null after latching the change for the next one - a network that recovers
-    // mid-attempt must still shorten the backoff that follows the failure.
-    private CancellationTokenSource? TakeWake()
-    {
-        lock (_gate)
-        {
-            if (!_running)
-            {
-                return null;
-            }
-
-            if (!_awaitingRetry)
-            {
-                _wakePending = true;
-                return null;
-            }
-
-            return _wake;
-        }
-    }
-
-    private void Signal()
+    public void SignalMembership()
     {
         CancellationTokenSource old;
         lock (_gate)
         {
-            old = _change;
-            _change = new CancellationTokenSource();
+            old = _membership;
+            _membership = new CancellationTokenSource();
         }
 
         old.Cancel();
@@ -420,7 +359,7 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Wakes status waiters after a state change, without re-entering the supervisor.
+    /// Wakes status waiters after a state change, without re-entering a supervisor.
     /// </summary>
     public void SignalStatus()
     {
@@ -435,3 +374,9 @@ internal sealed class AgentControl
         old.Dispose();
     }
 }
+
+/// <summary>
+/// Outcome of a claim on something only one tunnel can hold: whether it was granted, and the tunnel that had
+/// to give it up.
+/// </summary>
+internal sealed record TunnelClaim(bool Granted, TunnelControl? Displaced);

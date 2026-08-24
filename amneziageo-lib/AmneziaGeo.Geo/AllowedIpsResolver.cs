@@ -17,4 +17,18 @@ public static class AllowedIpsResolver
 
         return activeRoutes;
     }
+
+    /// <summary>
+    /// Drops the default routes from an AllowedIPs set, leaving a tunnel that carries only the ranges it names.
+    /// </summary>
+    public static IReadOnlyList<string> WithoutDefaults(IReadOnlyList<string> allowedIps)
+    {
+        return [.. allowedIps.Where(entry => !IsDefault(entry))];
+    }
+
+    // The default route as written by a config or after the /1 split.
+    private static bool IsDefault(string cidr)
+    {
+        return cidr.Trim() is "0.0.0.0/0" or "::/0" or "0.0.0.0/1" or "128.0.0.0/1" or "::/1" or "8000::/1";
+    }
 }

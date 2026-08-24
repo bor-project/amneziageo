@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -87,6 +87,49 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     /// Config reflected on the connection card.
     /// </summary>
     public string? BoundTarget => control.Running ? (control.RunningTarget ?? control.Target) : control.Target;
+
+    // Whether this user raised any of the tunnels that are up.
+    private bool OwnsRunningTunnel(BrokerScope scope)
+    {
+        return control.Desired.Any(tunnel => tunnel.IsOwnedBy(scope.UserRoot, scope.Sid));
+    }
+
+    // Flags a reconnect on the tunnel of one config.
+    private void FlagRestart(string config)
+    {
+        control.Find(config)?.SetRestartRequired();
+    }
+
+    // Flags a reconnect on every tunnel that routes through a list.
+    private async Task FlagRestartOnListAsync(long listId, CancellationToken ct)
+    {
+        foreach (var running in control.Desired)
+        {
+            if (await RoutingBinding.ResolveAsync(storeFactory.For(running.OwnerRoot), running.Config, ct) == listId)
+            {
+                running.SetRestartRequired();
+            }
+        }
+    }
+
+    // Flags a reconnect on every tunnel that follows the default list.
+    private async Task FlagRestartOnDefaultAsync(CancellationToken ct)
+    {
+        foreach (var running in control.Desired)
+        {
+            if (await storeFactory.For(running.OwnerRoot).GetConfigRoutingAsync(running.Config, ct) is null)
+            {
+                running.SetRestartRequired();
+            }
+        }
+    }
+
+    // Records the tunnels that are up, so a restart can bring the same set back.
+    private async Task RememberDesiredAsync(CancellationToken ct)
+    {
+        var names = control.Desired.Select(tunnel => tunnel.Config);
+        await store.SetSettingAsync(StateKeys.DesiredTunnels, string.Join(Environment.NewLine, names), ct);
+    }
 
     /// <summary>
     /// Handles a connected client: sends the current snapshot, then reads until the client disconnects.
@@ -242,6 +285,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
                 IpcContract.OpSetConnection => await SetConnectionAsync(command.Args, ct),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
+                IpcContract.OpSetDefaultRoute => await SetDefaultRouteAsync(command.Args, ct),
                 IpcContract.OpSelectConfig => await SelectConfigAsync(command.Args, ct),
                 IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
                 IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
@@ -361,10 +405,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         await configRepo.EditFromTextAsync(args[0], args[1], ct);
 
-        // Config text applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && IsRunningMember(args[0]))
+        // Config text applies on a fresh tunnel; flag a reconnect when its own tunnel is up.
+        if (IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            FlagRestart(args[0]);
         }
 
         logger.LogInformation("edited config {Name}", args[0]);
@@ -384,8 +428,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, $"unknown config: {name}");
         }
 
-        // Refuse while the config is the running target.
-        if (control.Running && string.Equals(name, BoundTarget, StringComparison.Ordinal))
+        // Refuse while the config is running.
+        if (control.IsRunning(name))
         {
             return new IpcAck(false, $"config {name} is running; disconnect first");
         }
@@ -896,7 +940,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
-        if (!control.Running || activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid))
+        if (!control.Running || OwnsRunningTunnel(CurrentScope))
         {
             control.SetTarget(name);
         }
@@ -967,9 +1011,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
-        if (previous != updated && control.Running && IsRunningMember(args[0]))
+        if (previous != updated && IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            FlagRestart(args[0]);
         }
 
         logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu}, IPv6 allowed: {V6} — takes effect on reconnect",
@@ -1003,9 +1047,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // DNS applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && IsRunningMember(args[0]))
+        if (IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            FlagRestart(args[0]);
         }
 
         logger.LogInformation("{Name}: names outside the tunnel will be resolved by '{Servers}' (empty means your provider's own servers) — takes effect on reconnect", args[0], servers);
@@ -1031,9 +1075,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await store.SetConfigExclusionsAsync(new ConfigExclusions(args[0], exclusions), ct);
 
         // Exclusions apply on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && IsRunningMember(args[0]))
+        if (IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            FlagRestart(args[0]);
         }
 
         logger.LogInformation("{Name}: the list of addresses and names kept out of the tunnel was saved ({Len} characters) — takes effect on reconnect", args[0], exclusions.Length);
@@ -1048,7 +1092,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private bool IsRunningMember(string config)
     {
-        return string.Equals(BoundTarget, config, StringComparison.Ordinal);
+        return control.IsRunning(config);
     }
 
     private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
@@ -1171,11 +1215,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     private async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
     {
         var scope = CurrentScope;
-        var applied = control.Running && activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
-        var name = applied
-            ? control.RunningTarget ?? control.Target ?? string.Empty
-            : await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
-        return (name, applied);
+        var mine = control.Desired.FirstOrDefault(tunnel => tunnel.IsOwnedBy(scope.UserRoot, scope.Sid));
+        var name = mine?.Config ?? await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        return (name, mine is not null);
     }
 
     // Apps + services for per-app tunneling; enumerated as SYSTEM to read restricted paths. Rows are tab-separated: kind, label, value, detail.
@@ -1269,16 +1311,12 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
-        // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
-        if (control.Running && BoundTarget is { } running)
+        // Flag a reconnect on every tunnel routing through this list when a connect-time rule changed.
+        var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
+        var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
+        if (!newReconnect.SetEquals(previousReconnect))
         {
-            var listId = await RoutingBinding.ResolveAsync(store, running, ct);
-            var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
-            var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
-            if (listId == resultId && !newReconnect.SetEquals(previousReconnect))
-            {
-                control.SetRestartRequired();
-            }
+            await FlagRestartOnListAsync(resultId, ct);
         }
 
         AnnounceRules();
@@ -1292,12 +1330,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private void Announce(string op)
     {
-        if (!control.Running || control.RunningTarget is not { Length: > 0 } tunnel)
+        foreach (var running in control.Desired)
         {
-            return;
+            var name = running.Config;
+            _ = Task.Run(() => RuntimeSnapshotPipe.Send(name, op, logger));
         }
-
-        _ = Task.Run(() => RuntimeSnapshotPipe.Send(tunnel, op, logger));
     }
 
     // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
@@ -1388,13 +1425,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useGlobalProxy), ct);
         }
 
-        // Settings apply on a fresh tunnel; flag a reconnect when the running tunnel routes through this list.
-        if (changed && control.Running && BoundTarget is { } running)
+        // Settings apply on a fresh tunnel; flag a reconnect on every tunnel routing through this list.
+        if (changed)
         {
-            if (await RoutingBinding.ResolveAsync(store, running, ct) == id)
-            {
-                control.SetRestartRequired();
-            }
+            await FlagRestartOnListAsync(id, ct);
         }
 
         logger.LogInformation("routing list {Id} saved: exclusions {Len} characters, all UDP through the tunnel: {Udp}, mode {Mode}, everything through the tunnel except the direct list: {Global}", id, exclusions.Length, allUdp, mode, useGlobalProxy);
@@ -1462,10 +1496,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var currentList = await store.GetSelectedRoutingListAsync(ct);
         Journal(SwitchLog.RoutingList(await ListNameAsync(currentList, ct), await ListNameAsync(listId, ct)));
         await store.SetSelectedRoutingListAsync(listId, ct);
-        if (currentList != listId && control.Running)
+        if (currentList != listId)
         {
             // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
-            control.SetRestartRequired();
+            await FlagRestartOnDefaultAsync(ct);
         }
 
         logger.LogInformation("routing list {List} is now the default; a config without one of its own follows it, and with none picked all traffic goes through the tunnel", listId);
@@ -1491,11 +1525,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var resolved = await RoutingBinding.ResolveAsync(store, config, ct);
-        if (current != resolved && control.Running && string.Equals(BoundTarget, config, StringComparison.Ordinal))
+        if (current != resolved && control.IsRunning(config))
         {
             Journal(SwitchLog.RoutingList(await ListNameAsync(current, ct), await ListNameAsync(resolved, ct)));
             // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
-            control.SetRestartRequired();
+            FlagRestart(config);
         }
 
         logger.LogInformation("routing list {List} now applies to {Config}", resolved, config);
@@ -1531,35 +1565,94 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var scope = CurrentScope;
-
-        // The single machine-wide tunnel belongs to one user; another user's request needs an explicit takeover.
-        if (control.Running && !activeScope.IsOwnedBy(scope.UserRoot, scope.Sid))
+        var named = args.Skip(1).FirstOrDefault(a => !a.Equals("takeover", StringComparison.OrdinalIgnoreCase));
+        if (!connect)
         {
-            var takeover = connect && args.Any(a => a.Equals("takeover", StringComparison.OrdinalIgnoreCase));
-            if (!takeover)
+            return await DisconnectAsync(scope, named, ct);
+        }
+
+        var target = !string.IsNullOrWhiteSpace(named) ? named! : await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return new IpcAck(false, "no configuration selected");
+        }
+
+        if (!await configRepo.ExistsAsync(target, ct))
+        {
+            return new IpcAck(false, $"unknown config: {target}");
+        }
+
+        // A tunnel of this configuration raised by another user is theirs; taking it needs an explicit takeover.
+        if (control.Find(target) is { Running: true } live
+            && !live.IsOwnedBy(scope.UserRoot, scope.Sid)
+            && !args.Any(a => a.Equals("takeover", StringComparison.OrdinalIgnoreCase)))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_TunnelOwnedByOther"));
+        }
+
+        if (string.IsNullOrWhiteSpace(named))
+        {
+            control.SetTarget(target);
+        }
+
+        await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
+        await store.SetSettingAsync("last-owner-target", target, ct);
+        control.For(target, scope.UserRoot, scope.Sid).SetRunning(true);
+        await RememberDesiredAsync(ct);
+        logger.LogInformation("connect requested by {Root} for {Config}", scope.UserRoot, target);
+        return new IpcAck(true, "connecting");
+    }
+
+    // Picks the config that carries the default route while several tunnels are up.
+    private async Task<IpcAck> SetDefaultRouteAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1)
+        {
+            return new IpcAck(false, "set-default-route requires a config name or none");
+        }
+
+        var name = args[0].Equals("none", StringComparison.OrdinalIgnoreCase) ? string.Empty : args[0];
+        if (name.Length > 0 && !await configRepo.ExistsAsync(name, ct))
+        {
+            return new IpcAck(false, $"unknown config: {name}");
+        }
+
+        var previous = await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct) ?? string.Empty;
+        if (string.Equals(previous, name, StringComparison.Ordinal))
+        {
+            return new IpcAck(true, name.Length > 0 ? $"already carrying everything: {name}" : "already free");
+        }
+
+        await store.SetSettingAsync(StateKeys.DefaultRouteOwner, name, ct);
+
+        // Ownership is settled at bring-up, so the tunnels that could change hands are dialled again.
+        foreach (var running in control.Desired)
+        {
+            if (string.Equals(running.Config, name, StringComparison.Ordinal) || string.Equals(running.Config, previous, StringComparison.Ordinal))
             {
-                return new IpcAck(false, IpcMessage.Key("Agent_TunnelOwnedByOther"));
+                running.SetRestartRequired();
             }
         }
 
-        if (connect)
-        {
-            activeScope.SetOwner(scope.UserRoot, scope.Sid);
-            var target = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
-            if (!string.IsNullOrEmpty(target))
-            {
-                control.SetTarget(target);
-            }
+        logger.LogInformation("{Config} now carries everything the other tunnels do not name", name.Length > 0 ? name : "the first tunnel up");
+        return new IpcAck(true, name.Length > 0 ? $"default route: {name} (applies on reconnect)" : "default route: the first tunnel up");
+    }
 
-            await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
-            await store.SetSettingAsync("last-owner-target", target ?? string.Empty, ct);
-            control.SetRunning(true);
-            logger.LogInformation("connect requested by {Root}", scope.UserRoot);
-            return new IpcAck(true, "connecting");
+    // Takes one tunnel down, or every tunnel this user raised when none is named.
+    private async Task<IpcAck> DisconnectAsync(BrokerScope scope, string? named, CancellationToken ct)
+    {
+        // Only what this user raised: another user's tunnel is theirs to take down.
+        var going = control.Desired
+            .Where(tunnel => tunnel.IsOwnedBy(scope.UserRoot, scope.Sid)
+                && (string.IsNullOrWhiteSpace(named) || string.Equals(tunnel.Config, named, StringComparison.Ordinal)))
+            .ToList();
+        foreach (var tunnel in going)
+        {
+            tunnel.SetRunning(false);
         }
 
-        control.SetRunning(false);
-        logger.LogInformation("disconnect requested by {Root}", scope.UserRoot);
+        await RememberDesiredAsync(ct);
+        logger.LogInformation("disconnect requested by {Root} for {Config}", scope.UserRoot, string.IsNullOrWhiteSpace(named) ? "every tunnel it raised" : named);
         return new IpcAck(true, "disconnecting");
     }
 
@@ -1586,7 +1679,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         // Persist the per-user selection; reflect it on the shared control only when this user owns the tunnel or none runs.
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
         Journal(SwitchLog.Config(currentSelection, name));
-        if (!control.Running || activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid))
+        if (!control.Running || OwnsRunningTunnel(CurrentScope))
         {
             control.SetTarget(name);
         }
@@ -1604,15 +1697,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var previous = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
         Journal(SwitchLog.Config(previous, null));
-        var owned = activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid);
-        if (!control.Running || owned)
+        var mine = control.Desired.Where(tunnel => tunnel.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid)).ToList();
+        if (!control.Running || mine.Count > 0)
         {
             control.ClearTarget();
         }
 
-        if (control.Running && owned)
+        if (previous is { Length: > 0 } && mine.FirstOrDefault(tunnel => string.Equals(tunnel.Config, previous, StringComparison.Ordinal)) is { } bound)
         {
-            control.SetRunning(false);
+            bound.SetRunning(false);
+            await RememberDesiredAsync(ct);
             logger.LogInformation("no configuration selected, so the tunnel bound to it is being taken down");
             return new IpcAck(true, "selection cleared, disconnecting");
         }
@@ -2489,20 +2583,20 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var configRepo = scope.ConfigRepo;
         var states = await store.ListTunnelStatesAsync(ct);
 
-        // The live connection view belongs to the tunnel owner; other users see their own idle library.
-        var owned = activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
+        // The live connection view belongs to the users who raised the tunnels; other users see their own library.
+        var ours = control.Tunnels.Where(tunnel => tunnel.IsOwnedBy(scope.UserRoot, scope.Sid)).ToList();
+        var mine = ours.Where(tunnel => tunnel.Running).ToList();
+        var owned = mine.Count > 0 || !control.Running;
         var selectedTarget = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
         var selectedRouting = await store.GetSelectedRoutingListAsync(ct);
-        var boundTarget = owned ? BoundTarget : null;
+        var primary = mine.FirstOrDefault();
+        var boundTarget = primary?.Config ?? (owned ? control.Target : null);
 
-        // Derive each config's status from the bound tunnel's state alone.
+        // The card at the top reports on the first of this user's tunnels.
         var boundState = boundTarget is not null ? states.FirstOrDefault(s => s.Name == boundTarget) : null;
-        var boundConfig = boundState?.Name;
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
-
-        // Keepalive view of the running tunnel: how long ago its peer last answered.
-        var handshakeAge = boundState is not null ? control.HandshakeAge : -1;
-        var link = boundState is not null ? control.Link : LinkReading.Empty;
+        var failed = ours.FirstOrDefault(tunnel => tunnel.ConnectFailed);
+        var stuck = ours.FirstOrDefault(tunnel => tunnel.DisconnectFailed);
 
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
@@ -2518,13 +2612,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var configRouting = await store.GetConfigRoutingAsync(name, ct);
             // No row -> show the runtime default LAN bypass; saving freezes it.
             var exclusions = configEx?.Exclusions ?? (defaultExclusions ??= string.Join('\n', routes.DefaultExclusionEntries()));
-            var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
-                ? DisplayStatus(boundState.Status)
-                : ConnectionStatus.Idle;
+            // Every config reports on its own tunnel; one this user did not raise reads as idle.
+            var live = ours.FirstOrDefault(tunnel => string.Equals(tunnel.Config, name, StringComparison.Ordinal) && tunnel.Running);
+            var state = live is not null ? states.FirstOrDefault(s => s.Name == name) : null;
+            var status = state is not null ? DisplayStatus(state.Status) : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            var bound = string.Equals(name, boundConfig, StringComparison.Ordinal);
-            var handshake = bound ? handshakeAge : -1;
-            var reading = bound ? link : LinkReading.Empty;
+            var handshake = live?.HandshakeAge ?? -1;
+            var reading = live?.Link ?? LinkReading.Empty;
             configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, configRouting?.RoutingListId ?? selectedRouting));
         }
 
@@ -2560,9 +2654,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var downloadedForCurrent = updateState.DownloadPhase == UpdateDownloadPhase.Downloaded
             && update is not null
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
-        var connectFailed = owned && control.ConnectFailed;
-        var disconnectFailed = owned && control.DisconnectFailed;
-        return new StatusSnapshot(Version(), boundTarget, configs, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
+        var connectFailed = failed is not null;
+        var disconnectFailed = stuck is not null;
+        return new StatusSnapshot(Version(), boundTarget, configs, routingLists, mine.Count > 0, boundStatus, mine.Any(tunnel => tunnel.RestartRequired), selectedTarget, selectedRouting, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -2576,9 +2670,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             settings.TunnelAllUdp,
             settings.LogLevel,
             settings.RouteLog,
-            connectFailed ? control.ConnectFailReason.ToString() : string.Empty,
-            connectFailed ? (control.ConnectFailDetail ?? string.Empty) : string.Empty,
-            owned ? control.RetryAttempt : 0,
+            connectFailed ? failed!.ConnectFailReason.ToString() : string.Empty,
+            connectFailed ? (failed!.ConnectFailDetail ?? string.Empty) : string.Empty,
+            ours.Count > 0 ? ours.Max(tunnel => tunnel.RetryAttempt) : 0,
             settings.SurviveReboot,
             settings.PeriodicReconnect,
             settings.PeriodicReconnectIntervalSeconds,
@@ -2591,7 +2685,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             updateState.DownloadPercent,
             downloadedForCurrent ? updateState.DownloadedSetupPath : string.Empty,
             disconnectFailed,
-            disconnectFailed ? (control.DisconnectFailDetail ?? string.Empty) : string.Empty,
+            disconnectFailed ? (stuck!.DisconnectFailDetail ?? string.Empty) : string.Empty,
             updateState.DownloadFailed,
             updateState.CancelRequested,
             updateState.Checking,
@@ -2607,7 +2701,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             ProxyError: proxy.Error,
             ProxyAddresses: proxy.Addresses,
             ProxyClients: ProxyClientNames.Describe(proxy.Peers()),
-            DnsUnreachable: owned && control.Running && control.DnsUnreachable);
+            DnsUnreachable: mine.Any(tunnel => tunnel.DnsUnreachable),
+            DefaultRouteOwner: await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct) ?? string.Empty,
+            DefaultRouteHeld: control.DefaultRouteOwner ?? string.Empty,
+            MultiTunnel: true);
     }
 
     private static string DisplayStatus(string profileStatus)

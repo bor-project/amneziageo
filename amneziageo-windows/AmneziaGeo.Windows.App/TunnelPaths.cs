@@ -38,6 +38,32 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Value of the default-route key for a tunnel that carries only the ranges it names.
+    /// </summary>
+    public const string ClipDefaultRoute = "clip";
+
+    /// <summary>
+    /// Value of the resolver key for the tunnel every lookup on this machine goes to.
+    /// </summary>
+    public const string OwnsResolver = "own";
+
+    /// <summary>
+    /// Settings key saying whether a tunnel answers this machine's name lookups.
+    /// </summary>
+    public static string ResolverKey(string name)
+    {
+        return $"resolver:{name}";
+    }
+
+    /// <summary>
+    /// Settings key saying whether a tunnel gives up the default route.
+    /// </summary>
+    public static string DefaultRouteKey(string name)
+    {
+        return $"default-route:{name}";
+    }
+
+    /// <summary>
     /// Settings key carrying the last-known-good resolved endpoint IP for a tunnel.
     /// </summary>
     public static string EndpointIpKey(string name)

@@ -5,19 +5,25 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Drives the config runner for the agent's selected config.
+/// Keeps a runner for every tunnel the agent is asked to raise, and reaps it once the tunnel is torn down.
 /// </summary>
 internal sealed class AgentBackgroundService(
     AgentTarget target,
-    ConfigRunner runner,
+    ConfigRunnerFactory runners,
     AgentControl control,
     SettingsStore settingsStore,
     NetworkReconciler reconciler,
-    ActiveTunnelScope activeScope,
+    ScopedStoreFactory stores,
+    ServiceManager serviceManager,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
-    private IStateStore store => activeScope.Store;
-    private ConfigRepository configRepo => activeScope.ConfigRepo;
+    // Budget the runners get to tear their tunnels down while the agent shuts down.
+    private static readonly TimeSpan _shutdownTimeout = TimeSpan.FromSeconds(30);
+
+    private string _bootRoot = AppDataRoot.Base();
+
+    private IStateStore store => stores.For(_bootRoot);
+    private ConfigRepository configRepo => new(store, serviceManager);
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,7 +47,7 @@ internal sealed class AgentBackgroundService(
         var lastOwnerRoot = await store.GetSettingAsync("last-owner-root", stoppingToken);
         if (!string.IsNullOrEmpty(lastOwnerRoot) && !AppDataRoot.IsMachineRoot(lastOwnerRoot))
         {
-            activeScope.SetOwner(lastOwnerRoot, null);
+            _bootRoot = lastOwnerRoot;
         }
 
         // Persisted selection wins over the launch arg; a dangling selection is dropped.
@@ -59,15 +65,6 @@ internal sealed class AgentBackgroundService(
             {
                 await store.SetSettingAsync(AgentControl.SelectedTargetKey, config, stoppingToken);
             }
-
-            // Survive-reboot: dial the selected config on start; the supervisor's retry engine waits out a
-            // missing network (backoff + a NetworkWatcher wake) until the host answers or rejects the config.
-            var settings = await settingsStore.LoadAsync(stoppingToken);
-            if (settings.SurviveReboot)
-            {
-                logger.LogInformation("'stay connected after a restart' is on, so configuration '{Config}' is being connected without waiting for you", config);
-                control.SetRunning(true);
-            }
         }
         else
         {
@@ -79,8 +76,122 @@ internal sealed class AgentBackgroundService(
             logger.LogInformation("the background service is up, but no configuration is selected; nothing will connect until you pick one");
         }
 
-        await runner.RunAsync(config, stoppingToken);
+        // Survive-reboot: dial every tunnel that was up on the way down; the retry engine waits out a missing
+        // network (backoff + a NetworkWatcher wake) until the host answers or rejects the config.
+        var settings = await settingsStore.LoadAsync(stoppingToken);
+        if (settings.SurviveReboot)
+        {
+            await RaiseSurvivorsAsync(config, stoppingToken);
+        }
+
+        await SuperviseAsync(stoppingToken);
         logger.LogInformation("the background service is stopping; no tunnel is kept up while it is down");
+    }
+
+    // Brings back the tunnels that were up before the restart, falling back to the selected one for a machine
+    // that predates the stored set.
+    private async Task RaiseSurvivorsAsync(string selected, CancellationToken ct)
+    {
+        var stored = await store.GetSettingAsync(StateKeys.DesiredTunnels, ct) ?? string.Empty;
+        var names = stored
+            .Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        if (names.Count == 0 && selected.Length > 0)
+        {
+            names.Add(selected);
+        }
+
+        foreach (var name in names)
+        {
+            if (!await configRepo.ExistsAsync(name, ct))
+            {
+                logger.LogInformation("configuration '{Config}' was up before the restart but is no longer in the library, so it is not dialled", name);
+                continue;
+            }
+
+            logger.LogInformation("'stay connected after a restart' is on, so configuration '{Config}' is being connected without waiting for you", name);
+            control.For(name, _bootRoot).SetRunning(true);
+        }
+    }
+
+    // Starts a runner for every tunnel that has become desired and drops the ones that have finished tearing down.
+    private async Task SuperviseAsync(CancellationToken ct)
+    {
+        var live = new Dictionary<TunnelControl, RunnerHandle>();
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var membership = control.MembershipToken;
+
+                // Reaped before the spawn: a tunnel raised again while its last runner was finishing must find
+                // its slot free, or it waits for a signal that has already been spent.
+                foreach (var (tunnel, handle) in live.Where(entry => entry.Value.Task.IsCompleted).ToList())
+                {
+                    live.Remove(tunnel);
+                    handle.Cancellation.Dispose();
+                    control.Forget(tunnel.Config);
+                    logger.LogDebug("the tunnel of {Config} is down; its supervisor is gone", tunnel.Config);
+                }
+
+                foreach (var tunnel in control.Desired)
+                {
+                    if (live.ContainsKey(tunnel))
+                    {
+                        continue;
+                    }
+
+                    var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    var runner = runners.Create(tunnel);
+                    live[tunnel] = new RunnerHandle(Task.Run(() => runner.RunAsync(cts.Token), CancellationToken.None), cts);
+                    logger.LogDebug("a supervisor is now watching the tunnel of {Config}", tunnel.Config);
+                }
+
+                await IdleAsync(membership, ct);
+            }
+        }
+        finally
+        {
+            await DrainAsync(live);
+        }
+    }
+
+    // Lets every runner finish its teardown before the agent goes down; one that hangs is left to the service
+    // control manager rather than holding the stop open.
+    private async Task DrainAsync(Dictionary<TunnelControl, RunnerHandle> live)
+    {
+        if (live.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.WhenAll(live.Values.Select(handle => handle.Task)).WaitAsync(_shutdownTimeout);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "one of the tunnels did not finish tearing down while the agent was stopping");
+        }
+
+        foreach (var handle in live.Values)
+        {
+            handle.Cancellation.Dispose();
+        }
+    }
+
+    private static async Task IdleAsync(CancellationToken membership, CancellationToken ct)
+    {
+        using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, membership))
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, linked.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
     }
 
     // Retries the boot reconcile while no tunnel is desired: RestoreSaved is a no-op once the leftover DNS state
@@ -106,4 +217,7 @@ internal sealed class AgentBackgroundService(
             reconciler.Reconcile(() => control.Running);
         }
     }
+
+    // A running supervisor and the token that ends it.
+    private sealed record RunnerHandle(Task Task, CancellationTokenSource Cancellation);
 }

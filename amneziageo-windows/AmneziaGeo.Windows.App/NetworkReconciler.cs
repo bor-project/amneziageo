@@ -13,9 +13,22 @@ internal sealed class NetworkReconciler(DnsConfigurator dns, RouteManager routes
     /// </summary>
     public void Reconcile(Func<bool>? abortIf = null)
     {
-        Step(() => dns.RestoreSaved(abortIf), "dns restore");
-        Step(() => routes.RestoreSavedExclusions(abortIf), "route exclusion restore");
-        Step(() => routes.RestoreSavedLanExclusions(abortIf), "lan exclusion restore");
+        Revert(null, abortIf);
+    }
+
+    /// <summary>
+    /// Restores what one tunnel changed, leaving every other tunnel's records alone.
+    /// </summary>
+    public void Reconcile(string tunnel)
+    {
+        Revert(tunnel, null);
+    }
+
+    private void Revert(string? tunnel, Func<bool>? abortIf)
+    {
+        Step(() => dns.RestoreSaved(abortIf, tunnel), "dns restore");
+        Step(() => routes.RestoreSavedExclusions(abortIf, tunnel), "route exclusion restore");
+        Step(() => routes.RestoreSavedLanExclusions(abortIf, tunnel), "lan exclusion restore");
         logger.LogDebug("network state reconciled");
     }
 

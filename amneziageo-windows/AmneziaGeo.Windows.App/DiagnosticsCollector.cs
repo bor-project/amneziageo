@@ -64,9 +64,11 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         sb.AppendLine($"all-udp:         {s.TunnelAllUdp}");
         sb.AppendLine();
         sb.AppendLine("[state]");
+        var running = control.Desired.Select(tunnel => tunnel.Config).ToList();
+        var failed = control.Tunnels.Where(tunnel => tunnel.ConnectFailed).Select(tunnel => tunnel.Config).ToList();
         sb.AppendLine($"selected target: {control.Target ?? "-"}");
-        sb.AppendLine($"running:         {control.Running}");
-        sb.AppendLine($"connect failed:  {control.ConnectFailed}");
+        sb.AppendLine($"running:         {(running.Count > 0 ? string.Join(", ", running) : "-")}");
+        sb.AppendLine($"connect failed:  {(failed.Count > 0 ? string.Join(", ", failed) : "-")}");
         sb.AppendLine();
         return sb.ToString();
     }

@@ -43,8 +43,8 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             !split,
             true,
-            connected ? control.HandshakeAge : -1,
-            connected ? control.Link.HandshakesPerMinute : -1,
+            connected ? control.Find(config)?.HandshakeAge ?? -1 : -1,
+            connected ? control.Find(config)?.Link.HandshakesPerMinute ?? -1 : -1,
             SourceHost: source,
             ConfiguredMtu: TunnelRunner.EffectiveMtu(transport?.Mtu ?? 0),
             CarrierPort: carrier.Port);
@@ -179,7 +179,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
 
     private bool Connected(string config)
     {
-        return control.Running && string.Equals(control.RunningTarget ?? control.Target, config, StringComparison.Ordinal);
+        return control.IsRunning(config);
     }
 
     // The list the tunnel decides by: the one the running tunnel materialized, else the one the next connect uses.

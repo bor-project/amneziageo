@@ -72,7 +72,6 @@ internal static class AppHost
         // Shared machine store: geo sources/files and machine settings.
         services.AddSingleton(_ => new SqliteStateStore(TunnelPaths.MachineDbFile()));
         services.AddSingleton(sp => new ScopedStoreFactory(sp.GetRequiredService<SqliteStateStore>(), sp.GetRequiredService<UserStoreRegistry>()));
-        services.AddSingleton<ActiveTunnelScope>();
         // Default composite store for this process: the machine store paired with this session's user library.
         services.AddSingleton<IStateStore>(sp => sp.GetRequiredService<ScopedStoreFactory>().For(userRoot));
         services.AddSingleton<AgentControl>();
@@ -96,7 +95,7 @@ internal static class AppHost
         services.AddSingleton<LiveSession>();
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<RuntimeInspector>();
-        services.AddSingleton<ConfigRunner>();
+        services.AddSingleton<ConfigRunnerFactory>();
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();
         services.AddSingleton<CheckService>();

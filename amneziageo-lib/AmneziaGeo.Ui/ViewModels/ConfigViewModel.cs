@@ -23,6 +23,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     // Каталог списков маршрутизации из снимка: из него выбирают для конфигурации.
     private IReadOnlyList<RoutingListEntry> _routingLists = [];
 
+    // Конфигурация, выбранная нести весь прочий трафик, и та, что несёт его сейчас.
+    private string _defaultRouteOwner = string.Empty;
+    private string _defaultRouteHeld = string.Empty;
+
     // The order a drag just sent; held until a snapshot arrives carrying it.
     private IReadOnlyList<string>? _pendingOrder;
     private string? _pendingOpenConfig;
@@ -567,6 +571,38 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         : null;
 
     /// <summary>
+    /// Поднимает ли эта платформа несколько туннелей сразу.
+    /// </summary>
+    [ObservableProperty]
+    private bool _multiTunnel;
+
+    /// <summary>
+    /// Несёт ли открытая конфигурация всё, что не назвали остальные туннели.
+    /// </summary>
+    public bool CarriesDefaultRoute
+    {
+        get => OpenConfig is { Length: > 0 } name && string.Equals(_defaultRouteOwner, name, StringComparison.Ordinal);
+        set
+        {
+            if (OpenConfig is not { Length: > 0 } name || value == CarriesDefaultRoute)
+            {
+                return;
+            }
+
+            _defaultRouteOwner = value ? name : string.Empty;
+            OnPropertyChanged();
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetDefaultRoute, [value ? name : "none"]));
+        }
+    }
+
+    /// <summary>
+    /// Какой туннель несёт прочий трафик сейчас.
+    /// </summary>
+    public string DefaultRouteHeldText => _defaultRouteHeld.Length > 0
+        ? Loc.Instance.Get("Main_ConfigDefaultRouteHeld", _defaultRouteHeld)
+        : Loc.Instance.Get("Main_ConfigDefaultRouteFree");
+
+    /// <summary>
     /// Переводит открытую конфигурацию на список маршрутизации: null уводит в туннель весь трафик,
     /// toDefault возвращает её на общий список.
     /// </summary>
@@ -604,6 +640,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         var entries = snapshot.Configs;
         _routingLists = snapshot.RoutingLists ?? [];
+        _defaultRouteOwner = snapshot.DefaultRouteOwner;
+        _defaultRouteHeld = snapshot.DefaultRouteHeld;
+        MultiTunnel = snapshot.MultiTunnel;
+        OnPropertyChanged(nameof(CarriesDefaultRoute));
+        OnPropertyChanged(nameof(DefaultRouteHeldText));
 
         // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
         // every snapshot push would regenerate every row's controls, flickering the list each tick even
@@ -663,6 +704,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.LinkRttMs = entry.RttMs;
             existing.RoutingListId = entry.RoutingListId;
             existing.RoutingListName = ListName(entry.RoutingListId);
+            existing.CarriesDefault = string.Equals(snapshot.DefaultRouteHeld, entry.Name, StringComparison.Ordinal);
         }
 
         OnPropertyChanged(nameof(OpenRow));

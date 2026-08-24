@@ -94,8 +94,9 @@ public static class CliRunner
               status                            what the agent runs and what it would run
               watch                             follow status changes until interrupted
               select <config>                   choose what the next connect binds to
-              up [<config>]                     connect (optionally selecting first)
-              down                              disconnect
+              up [<config>]                     connect the named config, else the selected one
+              down [<config>]                   disconnect one tunnel, else all of them
+              default-route <config>|none       pick what carries everything the others do not name
 
             configurations
               config list
@@ -192,7 +193,7 @@ public static class CliRunner
         var arguments = (IReadOnlyList<string>)[.. rest.Skip(1)];
         return rest[0] switch
         {
-            "status" or "watch" or "select" or "up" or "down" => await StatusCommands.RunAsync(agent, rest[0], arguments, ct).ConfigureAwait(false),
+            "status" or "watch" or "select" or "up" or "down" or "default-route" => await StatusCommands.RunAsync(agent, rest[0], arguments, ct).ConfigureAwait(false),
             "config" => await ConfigCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),

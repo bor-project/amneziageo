@@ -257,6 +257,14 @@ internal sealed class TunnelRunner(
         // /32 on contact. Materializing a geo database up front is what put thousands of routes on the adapter.
         var startupRoutes = geoSplit ? resolverRoutes.ToList() : geoRoutes;
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), startupRoutes);
+
+        // Only one tunnel carries the default route; the rest keep the ranges they name and leave it alone.
+        if (await store.GetSettingAsync(TunnelPaths.DefaultRouteKey(name)) == TunnelPaths.ClipDefaultRoute)
+        {
+            allowedIps = AllowedIpsResolver.WithoutDefaults(allowedIps);
+            logger.LogInformation("{Name}: another tunnel carries everything, so this one takes only the ranges it names", name);
+        }
+
         if (stripV6)
         {
             // v4-only tunnel: strip IPv6 routes and the IPv6 interface Address so the adapter is purely v4
@@ -548,6 +556,14 @@ internal sealed class TunnelRunner(
             // Loopback :53 busy - fall back to direct resolvers.
             redirectServers = configDns.Count > 0 ? configDns : upstream;
             logger.LogWarning("port 53 on this machine is taken by another program, so names cannot be handled here; the resolvers are used directly and rules by domain name will not apply — only rules by address will");
+        }
+
+        // One resolver per machine: a tunnel that does not hold it leaves the adapters where they are, so two
+        // tunnels never take the lookups from each other.
+        if (await store.GetSettingAsync(TunnelPaths.ResolverKey(name)) != TunnelPaths.OwnsResolver)
+        {
+            redirectServers = [];
+            logger.LogInformation("{Name}: another tunnel answers this machine's name lookups, so the adapters keep their resolvers and this tunnel decides by address alone", name);
         }
 
         logger.LogDebug("{Name}: name handling {State}, domain tracking {Tracker} [{Elapsed} ms in]",

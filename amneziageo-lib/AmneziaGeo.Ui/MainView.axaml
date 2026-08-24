@@ -562,9 +562,10 @@
                   Content="{Binding Home.NoticeActionText}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                   Margin="10,0,0,0" VerticalAlignment="Center" IsVisible="{Binding Home.ReconnectAvailable}" />
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding Home.DismissNoticeCommand}"
-                  Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}"
-                  IsVisible="{Binding Home.CanDismissNotice}" />
+                  Margin="9,0,0,0" VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}"
+                  IsVisible="{Binding Home.CanDismissNotice}">
+            <PathIcon Data="{StaticResource AgCloseGeometry}" Width="11" Height="11" Foreground="White" />
+          </Button>
         </Grid>
       </Border>
 
@@ -594,8 +595,9 @@
                     IsEnabled="{Binding !General.UpdateInstalling}" />
           </StackPanel>
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding General.DismissUpdateBannerCommand}"
-                  Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
+                  Margin="6,0,0,0" VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}">
+            <PathIcon Data="{StaticResource AgCloseGeometry}" Width="11" Height="11" Foreground="White" />
+          </Button>
         </Grid>
       </Border>
 

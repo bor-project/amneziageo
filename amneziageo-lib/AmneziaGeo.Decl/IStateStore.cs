@@ -96,6 +96,26 @@ public interface IStateStore
     Task RemoveConfigExclusionsAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns the routing list bound to a config, or null when it carries no binding of its own.
+    /// </summary>
+    Task<ConfigRouting?> GetConfigRoutingAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Binds a config to a routing list; a null id sends every destination through the tunnel.
+    /// </summary>
+    Task SetConfigRoutingAsync(ConfigRouting routing, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a config's routing binding, leaving it on the default list.
+    /// </summary>
+    Task RemoveConfigRoutingAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns whether any config is bound to a routing list.
+    /// </summary>
+    Task<bool> AnyConfigRoutingAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Returns whether a stored configuration (wg-quick text) with the given name exists.
     /// </summary>
     Task<bool> ConfigExistsAsync(string name, CancellationToken ct = default);
@@ -236,12 +256,12 @@ public interface IStateStore
     Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the globally selected routing list id, or null when routing is off.
+    /// Returns the default routing list id every unbound config falls back to, or null when routing is off.
     /// </summary>
     Task<long?> GetSelectedRoutingListAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Sets the globally selected routing list id, or null to turn routing off.
+    /// Sets the default routing list id, or null to turn routing off for every unbound config.
     /// </summary>
     Task SetSelectedRoutingListAsync(long? routingListId, CancellationToken ct = default);
 

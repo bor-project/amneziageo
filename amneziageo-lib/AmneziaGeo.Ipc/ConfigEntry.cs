@@ -29,7 +29,10 @@ public sealed record ConfigEntry(
     int LossPercent = LinkHealth.LossUnknown,
     // Round trip to the far end of the running tunnel, timed inside it; -1 on every config that is not running
     // and until the first echo comes back.
-    int RttMs = -1);
+    int RttMs = -1,
+    // Routing list this config routes through, already resolved against the default one; null sends every
+    // destination through the tunnel.
+    long? RoutingListId = null);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

@@ -116,7 +116,8 @@ public static class IpcContract
     public const string OpCountRoutes = "count-routes";
 
     /// <summary>
-    /// Command to pick the routing list every config uses. Args: list id, or "none" to turn routing off.
+    /// Command to pick a routing list. Args: list id, "none" to turn routing off, or "default" to put a config
+    /// back on the default list; an optional config name binds that config alone, without it the default moves.
     /// </summary>
     public const string OpAssignRouting = "assign-routing";
 

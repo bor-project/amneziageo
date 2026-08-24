@@ -171,6 +171,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         await store.RemoveConfigTransportAsync(name, ct);
         await store.RemoveConfigDnsAsync(name, ct);
         await store.RemoveConfigExclusionsAsync(name, ct);
+        await store.RemoveConfigRoutingAsync(name, ct);
         await store.RemoveDomainResolutionsAsync(name, ct);
 
         RemoveLegacyConfigFile(name);

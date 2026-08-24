@@ -51,6 +51,12 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSelected;
 
+    // Сколько конфигураций ходит по этому списку.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UsedByText))]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private int _usedByCount;
+
     // Whether the tunnel runs on this list, so its rules are the ones in force.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
@@ -77,10 +83,18 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string BlockRulesText => Loc.Instance.Get("Main_CardRulesBlock", BlockRuleCount);
 
     /// <summary>
-    /// Mode labels on the card: everything through the tunnel and all UDP.
+    /// Сколько серверов ходит по списку.
+    /// </summary>
+    public string UsedByText => UsedByCount > 0
+        ? Loc.Instance.Get("Main_CardUsedBy", UsedByCount)
+        : Loc.Instance.Get("Main_CardUsedByNone");
+
+    /// <summary>
+    /// Mode labels on the card: who routes by it, everything through the tunnel and all UDP.
     /// </summary>
     public IReadOnlyList<CardTag> Tags =>
     [
+        new(UsedByText, UsedByCount > 0),
         new(Loc.Instance.Get("Main_CardTagGlobal"), UseGlobalProxy),
         new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp),
     ];
@@ -107,6 +121,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(UsedByText));
         OnPropertyChanged(nameof(ProxyRulesText));
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));

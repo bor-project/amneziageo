@@ -362,10 +362,10 @@ internal sealed class ConfigRunner(
 
     private async Task ProjectRoutingAsync(string config, CancellationToken ct)
     {
-        var listId = await store.GetSelectedRoutingListAsync(ct);
+        var listId = await RoutingBinding.ResolveAsync(store, config, ct);
         if (listId is null)
         {
-            // No list picked: project full tunnel, override config set-geo.
+            // No list bound: project full tunnel, override config set-geo.
             await ProjectFullTunnelAsync(config, ct);
             return;
         }

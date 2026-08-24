@@ -12,7 +12,8 @@ public sealed record StatusSnapshot(
     string BoundStatus = ConnectionStatus.Disconnected,
     bool RestartRequired = false,
     string? SelectedTarget = null,
-    // Routing list every config uses; null routes everything through the tunnel.
+    // Routing list a config falls back to while it carries no binding of its own; null routes everything
+    // through the tunnel.
     long? SelectedRoutingList = null,
     IReadOnlyList<SourceEntry>? Sources = null,
     string UpdateUrl = "",

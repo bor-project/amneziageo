@@ -20,6 +20,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private IReadOnlyList<string> _configNames = [];
 
+    // Каталог списков маршрутизации из снимка: из него выбирают для конфигурации.
+    private IReadOnlyList<RoutingListEntry> _routingLists = [];
+
     // The order a drag just sent; held until a snapshot arrives carrying it.
     private IReadOnlyList<string>? _pendingOrder;
     private string? _pendingOpenConfig;
@@ -551,6 +554,40 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         OpenConfig = name;
     }
 
+    /// <summary>
+    /// Списки маршрутизации, среди которых выбирают для конфигурации.
+    /// </summary>
+    public IReadOnlyList<RoutingListEntry> RoutingChoices => _routingLists;
+
+    /// <summary>
+    /// Строка каталога, чьи настройки открыты.
+    /// </summary>
+    public ConfigItemViewModel? OpenRow => OpenConfig is { } name
+        ? Configs.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal))
+        : null;
+
+    /// <summary>
+    /// Переводит открытую конфигурацию на список маршрутизации: null уводит в туннель весь трафик,
+    /// toDefault возвращает её на общий список.
+    /// </summary>
+    public async Task AssignRoutingAsync(long? listId, bool toDefault)
+    {
+        if (OpenConfig is not { } name)
+        {
+            return;
+        }
+
+        var token = toDefault
+            ? "default"
+            : listId is { } id ? id.ToString(System.Globalization.CultureInfo.InvariantCulture) : "none";
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, [token, name]));
+    }
+
+    // Имя списка маршрутизации по его номеру; пустое, когда списка нет.
+    private string ListName(long? listId) => listId is { } id
+        ? _routingLists.FirstOrDefault(list => list.Id == id)?.Name ?? string.Empty
+        : string.Empty;
+
     // Discard an in-progress draft before switching to Config / Export.
     private void LeaveImport()
     {
@@ -563,8 +600,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Reconciles the config catalogue from the snapshot.
     /// </summary>
-    public void Apply(IReadOnlyList<ConfigEntry> entries)
+    public void Apply(StatusSnapshot snapshot)
     {
+        var entries = snapshot.Configs;
+        _routingLists = snapshot.RoutingLists ?? [];
+
         // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
         // every snapshot push would regenerate every row's controls, flickering the list each tick even
         // though usually only the status field moves during a connect. Update the existing rows instead.
@@ -621,7 +661,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.HandshakesPerMinute = entry.HandshakesPerMinute;
             existing.LinkLossPercent = entry.LossPercent;
             existing.LinkRttMs = entry.RttMs;
+            existing.RoutingListId = entry.RoutingListId;
+            existing.RoutingListName = ListName(entry.RoutingListId);
         }
+
+        OnPropertyChanged(nameof(OpenRow));
 
         _configNames = [.. entries.Select(e => e.Name)];
         ReconcileConfigOptions();
@@ -732,6 +776,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     partial void OnOpenConfigChanged(string? value)
     {
+        OnPropertyChanged(nameof(OpenRow));
+
         // Возврат из настроек в каталог - то же открытие списка.
         if (value is null)
         {

@@ -69,7 +69,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
             var dns = await store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
             var exclusions = await store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
-            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions));
+            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions, await RoutingNameAsync(name, ct).ConfigureAwait(false)));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -120,6 +120,19 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         return new IpcAck(true, PortableBundle.Serialize(bundle));
     }
 
+    // Имя списка, к которому привязана конфигурация; null оставляет её на списке по умолчанию.
+    private async Task<string?> RoutingNameAsync(string config, CancellationToken ct)
+    {
+        if (await store.GetConfigRoutingAsync(config, ct).ConfigureAwait(false) is not { } binding)
+        {
+            return null;
+        }
+
+        return binding.RoutingListId is { } listId
+            ? (await store.GetRoutingListAsync(listId, ct).ConfigureAwait(false))?.Name
+            : PortableBundle.NoRoutingList;
+    }
+
     /// <summary>
     /// Writes a bundle into the library. The policy decides what a name already taken means:
     /// new (numbered copy), replace, skip, or merge.
@@ -162,6 +175,8 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         var configNames = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
         var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
+        var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var routingMap = new Dictionary<string, long>(StringComparer.Ordinal);
         var renames = new List<string>();
         var importedConfigs = 0;
         var importedLists = 0;
@@ -180,6 +195,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
                 await store.SaveConfigAsync(incoming, block.ConfigText, ct).ConfigureAwait(false);
                 await ApplyConfigExtrasAsync(incoming, block, policy, ct).ConfigureAwait(false);
+                configNameMap[block.Name] = incoming;
                 importedConfigs++;
                 continue;
             }
@@ -193,6 +209,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
             await store.SaveConfigAsync(freeName, block.ConfigText, ct).ConfigureAwait(false);
             await ApplyConfigExtrasAsync(freeName, block, "new", ct).ConfigureAwait(false);
+            configNameMap[block.Name] = freeName;
             importedConfigs++;
         }
 
@@ -216,6 +233,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                     await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, existingSettings.Exclusions, existingSettings.AllUdp, existingSettings.Mode, existingSettings.UseGlobalProxy), ct).ConfigureAwait(false);
                 }
 
+                routingMap[block.Name] = existingList.Id;
                 importedLists++;
                 continue;
             }
@@ -233,7 +251,26 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                 await store.SetRoutingSettingsAsync(new RoutingSettings(newId, settings.Exclusions, settings.AllUdp, settings.Mode, settings.UseGlobalProxy), ct).ConfigureAwait(false);
             }
 
+            routingMap[block.Name] = newId;
             importedLists++;
+        }
+
+        // Список каждой конфигурации, когда оба пространства имён уже уложены.
+        foreach (var block in bundle.Configs)
+        {
+            if (block.RoutingList is not { Length: > 0 } wanted || !configNameMap.TryGetValue(block.Name, out var config))
+            {
+                continue;
+            }
+
+            if (string.Equals(wanted, PortableBundle.NoRoutingList, StringComparison.Ordinal))
+            {
+                await store.SetConfigRoutingAsync(new ConfigRouting(config, null), ct).ConfigureAwait(false);
+            }
+            else if (routingMap.TryGetValue(wanted, out var listId))
+            {
+                await store.SetConfigRoutingAsync(new ConfigRouting(config, listId), ct).ConfigureAwait(false);
+            }
         }
 
         var shown = renames.Distinct(StringComparer.Ordinal).ToList();

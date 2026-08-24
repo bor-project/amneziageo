@@ -39,16 +39,26 @@ internal static class RoutingCommands
         };
     }
 
-    // Picks the routing list every config uses; "none" routes everything through the tunnel.
+    // Picks the routing list a config uses, or the default one for those without a binding; "none" routes
+    // everything through the tunnel, "default" puts a config back on the default list.
     private static async Task<int> UseAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count != 1)
+        if (args.Count is < 1 or > 2)
         {
-            return Reply.Usage("usage: amneziageo routing use <id|name|none>");
+            return Reply.Usage("usage: amneziageo routing use <id|name|none|default> [<config>]");
         }
 
         var listId = "none";
-        if (args[0] != "none" && args[0] != "0")
+        if (args[0] == "default")
+        {
+            if (args.Count != 2)
+            {
+                return Reply.Usage("usage: amneziageo routing use default <config>");
+            }
+
+            listId = "default";
+        }
+        else if (args[0] != "none" && args[0] != "0")
         {
             if (Resolve(agent, args[0]) is not { } list)
             {
@@ -58,7 +68,8 @@ internal static class RoutingCommands
             listId = list.Id.ToString(CultureInfo.InvariantCulture);
         }
 
-        return Reply.Report(await agent.SendAsync(IpcContract.OpAssignRouting, listId).ConfigureAwait(false));
+        var payload = args.Count == 2 ? new[] { listId, args[1] } : new[] { listId };
+        return Reply.Report(await agent.SendAsync(IpcContract.OpAssignRouting, payload).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -213,9 +224,10 @@ internal static class RoutingCommands
             return Reply.Usage("usage: amneziageo routing remove <id|name>");
         }
 
-        if (agent.Snapshot.SelectedRoutingList == list.Id)
+        if (agent.Snapshot.SelectedRoutingList == list.Id
+            || agent.Snapshot.Configs.Any(config => config.RoutingListId == list.Id))
         {
-            return Reply.Usage($"'{list.Name}' is the one in use; pick another with 'routing use' first");
+            return Reply.Usage($"'{list.Name}' is in use; pick another with 'routing use' first");
         }
 
         return Reply.Report(await agent.SendAsync(IpcContract.OpRemoveRoutingList, list.Id.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false), $"removed {list.Name}");

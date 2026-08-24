@@ -1851,7 +1851,13 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
-    <value>Selected</value>
+    <value>Default</value>
+  </data>
+  <data name="Main_CardUsedBy" xml:space="preserve">
+    <value>{0} servers</value>
+  </data>
+  <data name="Main_CardUsedByNone" xml:space="preserve">
+    <value>unused</value>
   </data>
   <data name="Main_ProbeUnknown" xml:space="preserve">
     <value>N/A</value>
@@ -1877,6 +1883,24 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_CardTagMtuAuto" xml:space="preserve">
     <value>MTU auto</value>
   </data>
+  <data name="Main_CardTagRoutingOff" xml:space="preserve">
+    <value>full tunnel</value>
+  </data>
+  <data name="Main_ConfigRoutingTitle" xml:space="preserve">
+    <value>Routing list</value>
+  </data>
+  <data name="Main_ConfigRoutingSubtitle" xml:space="preserve">
+    <value>Which destinations this configuration takes through the tunnel.</value>
+  </data>
+  <data name="Main_ConfigRoutingPickSubtitle" xml:space="preserve">
+    <value>Pick the list this configuration routes by.</value>
+  </data>
+  <data name="Main_ConfigRoutingNone" xml:space="preserve">
+    <value>Full tunnel</value>
+  </data>
+  <data name="Main_ConfigRoutingDefault" xml:space="preserve">
+    <value>Default list</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Settings</value>
   </data>
@@ -1887,7 +1911,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Disconnect</value>
   </data>
   <data name="Main_InUseToggle" xml:space="preserve">
-    <value>In use</value>
+    <value>Default list</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>On</value>

@@ -70,6 +70,40 @@ internal sealed partial class ConfigView : UserControl
             options);
     }
 
+    // Списки маршрутизации: по какому ходит эта конфигурация.
+    private void OnRoutingOptions(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ConfigViewModel vm)
+        {
+            return;
+        }
+
+        var options = new List<ActionOption>
+        {
+            new(
+                Loc.Instance.Get("Main_ConfigRoutingDefault"),
+                Glyphs.Route,
+                () => _ = vm.AssignRoutingAsync(null, toDefault: true)),
+            new(
+                Loc.Instance.Get("Main_ConfigRoutingNone"),
+                Glyphs.Route,
+                () => _ = vm.AssignRoutingAsync(null, toDefault: false)),
+        };
+
+        foreach (var list in vm.RoutingChoices)
+        {
+            var id = list.Id;
+            options.Add(new(list.Name, Glyphs.Route, () => _ = vm.AssignRoutingAsync(id, toDefault: false)));
+        }
+
+        ActionOptions.Present(
+            sender as Control,
+            vm.Sheet,
+            Loc.Instance.Get("Main_ConfigRoutingTitle"),
+            Loc.Instance.Get("Main_ConfigRoutingPickSubtitle"),
+            options);
+    }
+
     // Копирует ссылку vpn:// открытой конфигурации.
     private async void CopyExportLink()
     {

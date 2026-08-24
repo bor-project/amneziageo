@@ -39,6 +39,13 @@ public static class ConfigRename
             await store.RemoveConfigExclusionsAsync(oldName, ct).ConfigureAwait(false);
         }
 
+        var routing = await store.GetConfigRoutingAsync(oldName, ct).ConfigureAwait(false);
+        if (routing is not null)
+        {
+            await store.SetConfigRoutingAsync(routing with { Name = newName }, ct).ConfigureAwait(false);
+            await store.RemoveConfigRoutingAsync(oldName, ct).ConfigureAwait(false);
+        }
+
         foreach (var resolution in await store.ListDomainResolutionsAsync(oldName, ct).ConfigureAwait(false))
         {
             await store.SaveDomainResolutionAsync(newName, resolution, 0, ct).ConfigureAwait(false);

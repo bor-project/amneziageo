@@ -1851,7 +1851,13 @@
     <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
-    <value>Выбран</value>
+    <value>По умолчанию</value>
+  </data>
+  <data name="Main_CardUsedBy" xml:space="preserve">
+    <value>серверов: {0}</value>
+  </data>
+  <data name="Main_CardUsedByNone" xml:space="preserve">
+    <value>не используется</value>
   </data>
   <data name="Main_ProbeUnknown" xml:space="preserve">
     <value>N/A</value>
@@ -1877,6 +1883,24 @@
   <data name="Main_CardTagMtuAuto" xml:space="preserve">
     <value>MTU авто</value>
   </data>
+  <data name="Main_CardTagRoutingOff" xml:space="preserve">
+    <value>весь трафик</value>
+  </data>
+  <data name="Main_ConfigRoutingTitle" xml:space="preserve">
+    <value>Список маршрутизации</value>
+  </data>
+  <data name="Main_ConfigRoutingSubtitle" xml:space="preserve">
+    <value>Какие адреса эта конфигурация уводит в туннель.</value>
+  </data>
+  <data name="Main_ConfigRoutingPickSubtitle" xml:space="preserve">
+    <value>Выберите список, по которому ходит эта конфигурация.</value>
+  </data>
+  <data name="Main_ConfigRoutingNone" xml:space="preserve">
+    <value>Весь трафик</value>
+  </data>
+  <data name="Main_ConfigRoutingDefault" xml:space="preserve">
+    <value>Список по умолчанию</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Настройки</value>
   </data>
@@ -1887,7 +1911,7 @@
     <value>Отключиться</value>
   </data>
   <data name="Main_InUseToggle" xml:space="preserve">
-    <value>Используется</value>
+    <value>Список по умолчанию</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>Вкл</value>

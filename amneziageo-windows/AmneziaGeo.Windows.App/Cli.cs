@@ -120,7 +120,9 @@ internal sealed class Cli(
             case ["routing-list-add", var listName, .. var listRules]:
                 return await RoutingListAddAsync(listName, listRules);
             case ["assign-routing", var list]:
-                return await AssignRoutingAsync(list);
+                return await AssignRoutingAsync(list, string.Empty);
+            case ["assign-routing", var list, var configName]:
+                return await AssignRoutingAsync(list, configName);
             case ["set-websocket", var name, var toggle, var port]:
                 return await SetWebSocketAsync(name, toggle, port, string.Empty);
             case ["set-websocket", var name, var toggle, var port, var host]:
@@ -516,7 +518,7 @@ internal sealed class Cli(
             Console.WriteLine($"settings\trestart-required={snapshot.RestartRequired}");
             foreach (var config in snapshot.Configs)
             {
-                Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");
+                Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\trouting={config.RoutingListId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"}\t{config.Status}");
             }
 
             Console.WriteLine($"routing\t{snapshot.SelectedRoutingList?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"}");
@@ -610,10 +612,17 @@ internal sealed class Cli(
         return 0;
     }
 
-    private async Task<int> AssignRoutingAsync(string list)
+    private async Task<int> AssignRoutingAsync(string list, string config)
     {
+        var toDefault = list.Equals("default", StringComparison.OrdinalIgnoreCase);
+        if (toDefault && config.Length == 0)
+        {
+            Console.WriteLine("assign-routing default requires a config");
+            return 1;
+        }
+
         long? listId = null;
-        if (!list.Equals("none", StringComparison.OrdinalIgnoreCase))
+        if (!toDefault && !list.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
             var routingList = await store.GetRoutingListByNameAsync(list);
             if (routingList is null)
@@ -625,8 +634,29 @@ internal sealed class Cli(
             listId = routingList.Id;
         }
 
-        await store.SetSelectedRoutingListAsync(listId);
-        Console.WriteLine($"routing: {(listId is null ? "off" : list)}");
+        if (config.Length == 0)
+        {
+            await store.SetSelectedRoutingListAsync(listId);
+            Console.WriteLine($"routing: {(listId is null ? "off" : list)}");
+            return 0;
+        }
+
+        if (!await configRepo.ExistsAsync(config))
+        {
+            Console.WriteLine($"unknown config: {config}");
+            return 1;
+        }
+
+        if (toDefault)
+        {
+            await store.RemoveConfigRoutingAsync(config);
+        }
+        else
+        {
+            await store.SetConfigRoutingAsync(new ConfigRouting(config, listId));
+        }
+
+        Console.WriteLine($"routing for {config}: {(toDefault ? "default" : listId is null ? "off" : list)}");
         return 0;
     }
 

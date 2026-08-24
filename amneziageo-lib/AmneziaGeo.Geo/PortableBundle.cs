@@ -18,6 +18,11 @@ public static class PortableBundle
     /// </summary>
     public const int CurrentVersion = 2;
 
+    /// <summary>
+    /// Routing list name standing for a config bound to no list at all.
+    /// </summary>
+    public const string NoRoutingList = "none";
+
     private static readonly JsonSerializerOptions _options = new()
     {
         WriteIndented = true,
@@ -40,7 +45,9 @@ public static class PortableBundle
         string? ActiveRoutingList = null);
 
     /// <summary>
-    /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.
+    /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries, and the name
+    /// of the routing list it routes by. An absent name leaves the config on the default list; <see
+    /// cref="NoRoutingList"/> carries one bound to none, which sends everything through the tunnel.
     /// </summary>
     public sealed record ConfigBlock(
         string Name,
@@ -48,7 +55,8 @@ public static class PortableBundle
         TransportBlock? Transport,
         GeoBlock? Geo,
         string? Dns = null,
-        string? Exclusions = null);
+        string? Exclusions = null,
+        string? RoutingList = null);
 
     /// <summary>
     /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.

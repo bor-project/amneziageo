@@ -157,6 +157,18 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task RemoveConfigExclusionsAsync(string name, CancellationToken ct = default) => user.RemoveConfigExclusionsAsync(name, ct);
 
     /// <inheritdoc/>
+    public Task<ConfigRouting?> GetConfigRoutingAsync(string name, CancellationToken ct = default) => user.GetConfigRoutingAsync(name, ct);
+
+    /// <inheritdoc/>
+    public Task SetConfigRoutingAsync(ConfigRouting routing, CancellationToken ct = default) => user.SetConfigRoutingAsync(routing, ct);
+
+    /// <inheritdoc/>
+    public Task RemoveConfigRoutingAsync(string name, CancellationToken ct = default) => user.RemoveConfigRoutingAsync(name, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> AnyConfigRoutingAsync(CancellationToken ct = default) => user.AnyConfigRoutingAsync(ct);
+
+    /// <inheritdoc/>
     public Task<bool> ConfigExistsAsync(string name, CancellationToken ct = default) => user.ConfigExistsAsync(name, ct);
 
     /// <inheritdoc/>

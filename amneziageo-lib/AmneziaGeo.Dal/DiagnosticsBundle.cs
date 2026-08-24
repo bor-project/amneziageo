@@ -173,6 +173,12 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
                 : exclusions!.Exclusions.Split(['\n', '\r', ',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Length;
             sb.AppendLine($"    exclusions: {(exclusions is null ? "default (RFC1918 + local subnets)" : $"{count} entr(ies)")}");
 
+            var binding = await store.GetConfigRoutingAsync(config, ct).ConfigureAwait(false);
+            var routing = binding is null
+                ? "default list"
+                : binding.RoutingListId is { } boundList ? $"list {boundList}" : "off (no list)";
+            sb.AppendLine($"    routing:    {routing}");
+
             var line = note is null ? null : await note(config, ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(line))
             {
@@ -193,7 +199,7 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
 
         var selected = await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
         sb.AppendLine();
-        sb.AppendLine($"[routing] {(selected is null ? "off (no list)" : $"list {selected}")}");
+        sb.AppendLine($"[routing] default {(selected is null ? "off (no list)" : $"list {selected}")}");
 
         var sources = await store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
         if (sources.Count > 0)

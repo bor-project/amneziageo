@@ -134,6 +134,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at       TEXT NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS config_routing (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name            TEXT NOT NULL UNIQUE,
+                        routing_list_id INTEGER,
+                        updated_at      TEXT NOT NULL
+                    );
+
                     CREATE TABLE IF NOT EXISTS configs (
                         name       TEXT PRIMARY KEY,
                         text       TEXT NOT NULL,
@@ -271,7 +278,58 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
+            await BindConfigRoutingAsync(connection, ct).ConfigureAwait(false);
+
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <remarks>
+    /// One-time move to per-config routing: every configuration that predates it is stamped with the default
+    /// routing list, so each stays on the set it already routes through. The marker is the guard - afterwards a
+    /// configuration without a binding follows the default list until the user picks one for it.
+    /// </remarks>
+    private async Task BindConfigRoutingAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        if (await ReadSettingAsync(connection, StateKeys.ConfigRoutingStamped, ct).ConfigureAwait(false) is { Length: > 0 })
+        {
+            return;
+        }
+
+        var stamp = connection.CreateCommand();
+        await using (stamp.ConfigureAwait(false))
+        {
+            stamp.CommandText =
+                """
+                INSERT INTO config_routing (name, routing_list_id, updated_at)
+                SELECT c.name,
+                       (SELECT CAST(s.value AS INTEGER) FROM settings s WHERE s.key = $key AND s.value <> ''),
+                       $updated
+                FROM configs c
+                WHERE NOT EXISTS (SELECT 1 FROM config_routing r WHERE r.name = c.name);
+
+                INSERT INTO settings (key, value, updated_at)
+                VALUES ($marker, '1', $updated)
+                ON CONFLICT(key) DO UPDATE SET
+                    value      = excluded.value,
+                    updated_at = excluded.updated_at;
+                """;
+            stamp.Parameters.AddWithValue("$key", StateKeys.SelectedRoutingList);
+            stamp.Parameters.AddWithValue("$marker", StateKeys.ConfigRoutingStamped);
+            stamp.Parameters.AddWithValue("$updated", Timestamp());
+            await stamp.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    // Reads a setting on a connection the schema step already holds open.
+    private static async Task<string?> ReadSettingAsync(SqliteConnection connection, string key, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = "SELECT value FROM settings WHERE key = $key;";
+            command.Parameters.AddWithValue("$key", key);
+            return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
         }
     }
 
@@ -970,6 +1028,96 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText = "DELETE FROM config_exclusions WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<ConfigRouting?> GetConfigRoutingAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT routing_list_id FROM config_routing WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    return new ConfigRouting(name, reader.IsDBNull(0) ? null : reader.GetInt64(0));
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetConfigRoutingAsync(ConfigRouting routing, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO config_routing (name, routing_list_id, updated_at)
+                    VALUES ($name, $list, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        routing_list_id = excluded.routing_list_id,
+                        updated_at      = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$name", routing.Name);
+                command.Parameters.AddWithValue("$list", (object?)routing.RoutingListId ?? DBNull.Value);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveConfigRoutingAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM config_routing WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> AnyConfigRoutingAsync(CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT EXISTS(SELECT 1 FROM config_routing WHERE routing_list_id IS NOT NULL);";
+                return Convert.ToInt64(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture) != 0;
             }
         }
     }
@@ -2062,6 +2210,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     clearSelection.Parameters.AddWithValue("$id", id.ToString(CultureInfo.InvariantCulture));
                     clearSelection.Parameters.AddWithValue("$updated", Timestamp());
                     await clearSelection.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                var clearBindings = connection.CreateCommand();
+                await using (clearBindings.ConfigureAwait(false))
+                {
+                    // Turns routing off on every config the removed list was bound to.
+                    clearBindings.Transaction = transaction;
+                    clearBindings.CommandText = "UPDATE config_routing SET routing_list_id = NULL, updated_at = $updated WHERE routing_list_id = $id;";
+                    clearBindings.Parameters.AddWithValue("$id", id);
+                    clearBindings.Parameters.AddWithValue("$updated", Timestamp());
+                    await clearBindings.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
                 var deleteRules = connection.CreateCommand();

@@ -62,6 +62,12 @@ internal static class Glyphs
         "M5.12,5H18.87L17.93,3H5.93L5.12,5M20.54,5.23C20.83,5.57 21,6 21,6.5V19A2,2 0 0,1 19,21H5A2,2 0 0,1 3,19V6.5C3,6 3.17,5.57 3.46,5.23L4.84,3.55C5.11,3.22 5.53,3 6,3H18C18.47,3 18.89,3.22 19.15,3.55L20.54,5.23M12,18L16.5,13.5H13.75V10H10.25V13.5H7.5L12,18Z");
 
     /// <summary>
+    /// Развилка маршрутов.
+    /// </summary>
+    public static Geometry Route { get; } = Geometry.Parse(
+        "M14,4L16.29,6.29L13.41,9.17L14.83,10.59L17.71,7.71L20,10V4M10,4H4V10L6.29,7.71L11,12.41V20H13V11.59L7.71,6.29L10,4Z");
+
+    /// <summary>
     /// Отказ.
     /// </summary>
     public static Geometry Close { get; } = Geometry.Parse(

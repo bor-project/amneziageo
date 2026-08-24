@@ -61,7 +61,7 @@ internal static class StatusCommands
             ("tunnel", snapshot.Active ? "up" : "down"),
             ("bound to", snapshot.BoundTarget ?? "-"),
             ("selected", snapshot.SelectedTarget ?? "-"),
-            ("routing", RoutingLabel(snapshot)),
+            ("routing", RoutingLabel(snapshot, Current(snapshot)?.RoutingListId ?? snapshot.SelectedRoutingList)),
             ("survive reboot", snapshot.SurviveReboot ? "on" : "off"),
             ("auto reconnect", reconnect),
             ("log level", snapshot.LogLevel),
@@ -80,17 +80,25 @@ internal static class StatusCommands
                 config.Name == snapshot.SelectedTarget ? "*" : " ",
                 config.Name,
                 config.Endpoint,
+                RoutingLabel(snapshot, config.RoutingListId),
                 config.Status,
             ])
             .ToList();
 
         Output.Line();
-        Output.Table([" ", "CONFIG", "ENDPOINT", "STATE"], rows, "no configurations yet");
+        Output.Table([" ", "CONFIG", "ENDPOINT", "ROUTING", "STATE"], rows, "no configurations yet");
     }
 
-    private static string RoutingLabel(StatusSnapshot snapshot)
+    // The config the status block speaks for: the running one, else the one the next connect takes.
+    private static ConfigEntry? Current(StatusSnapshot snapshot)
     {
-        if (snapshot.SelectedRoutingList is not { } id)
+        var name = snapshot.BoundTarget ?? snapshot.SelectedTarget;
+        return name is null ? null : snapshot.Configs.FirstOrDefault(config => config.Name == name);
+    }
+
+    private static string RoutingLabel(StatusSnapshot snapshot, long? routingListId)
+    {
+        if (routingListId is not { } id)
         {
             return "off";
         }

@@ -29,6 +29,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     // Состояние туннеля из снимка: по нему видно, идёт ли маршрутизация по выбранному списку прямо сейчас.
     private string _boundStatus = ConnectionStatus.Disconnected;
 
+    // Список, по которому ходит поднятый туннель.
+    private long? _liveRoutingListId;
+
     // Set while the section waits for that first report.
     private bool _enterDeferred;
     // The list open before "+ Импорт" so Cancel restores it.
@@ -331,6 +334,10 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         SelectedRoutingListId = snapshot.SelectedRoutingList;
+        _liveRoutingListId = snapshot.BoundTarget is { } bound
+            ? snapshot.Configs.FirstOrDefault(config => string.Equals(config.Name, bound, StringComparison.Ordinal))?.RoutingListId
+            : null;
+        MarkUsage(snapshot.Configs);
         MarkSelectedList();
         RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
     }
@@ -371,13 +378,13 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Whether the open list is the one every config routes by.
+    /// Whether the open list is the default one.
     /// </summary>
     public bool IsOpenListActive => EditRoutingList is { } open && SelectedRoutingListId == open.Id;
 
     /// <summary>
-    /// Whether every config routes by the open list. Setting it makes the open list the picked one, or leaves
-    /// every config on its own settings.
+    /// Whether the open list is the one a config without a list of its own routes by. Setting it makes the open
+    /// list the default, clearing it leaves those configs routing everything through the tunnel.
     /// </summary>
     public bool UseOpenList
     {
@@ -532,17 +539,26 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
     }
 
-    // Отмечает в каталоге выбранный список и тот, по которому маршрутизация идёт на самом деле.
+    // Отмечает в каталоге список по умолчанию и тот, по которому идёт поднятый туннель.
     private void MarkSelectedList()
     {
         var live = string.Equals(_boundStatus, ConnectionStatus.Connected, StringComparison.Ordinal);
         foreach (var row in RoutingLists)
         {
             row.IsSelected = SelectedRoutingListId is { } id && row.Id == id;
-            row.IsLive = row.IsSelected && live;
+            row.IsLive = live && _liveRoutingListId is { } running && row.Id == running;
         }
 
         EnsurePickedCard();
+    }
+
+    // Сколько конфигураций ходит по каждому списку.
+    private void MarkUsage(IReadOnlyList<ConfigEntry> configs)
+    {
+        foreach (var row in RoutingLists)
+        {
+            row.UsedByCount = configs.Count(config => config.RoutingListId == row.Id);
+        }
     }
 
     // Landing on the Routing section with nothing open: open the list that routes so it never opens empty, and

@@ -41,6 +41,24 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private string _exclusions = string.Empty;
 
+    // Список маршрутизации конфигурации; пустой уводит в туннель весь трафик.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    [NotifyPropertyChangedFor(nameof(RoutingLabel))]
+    private long? _routingListId;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    [NotifyPropertyChangedFor(nameof(RoutingLabel))]
+    private string _routingListName = string.Empty;
+
+    /// <summary>
+    /// Маршрутизация словом: имя списка либо «весь трафик», когда списка нет.
+    /// </summary>
+    public string RoutingLabel => RoutingListId is not null && RoutingListName.Length > 0
+        ? RoutingListName
+        : Loc.Instance.Get("Main_CardTagRoutingOff");
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private int _mtu;
@@ -78,11 +96,12 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
 
     /// <summary>
-    /// Метки настроек карточки: прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край первым, когда
-    /// ширины не хватает.
+    /// Метки настроек карточки: маршрутизация, прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край
+    /// первым, когда ширины не хватает.
     /// </summary>
     public IReadOnlyList<CardTag> Tags =>
     [
+        new(RoutingLabel, RoutingListId is not null),
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
         new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", Mtu) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),
@@ -96,6 +115,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public void RefreshLocalizedLabels()
     {
+        OnPropertyChanged(nameof(RoutingLabel));
         OnPropertyChanged(nameof(Tags));
         OnPropertyChanged(nameof(CardActionText));
         OnPropertyChanged(nameof(ProbeText));

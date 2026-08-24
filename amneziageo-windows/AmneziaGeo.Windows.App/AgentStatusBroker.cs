@@ -546,7 +546,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
             var dns = await store.GetConfigDnsAsync(name, ct);
             var exclusions = await store.GetConfigExclusionsAsync(name, ct);
-            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions));
+            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions, await RoutingNameAsync(name, ct)));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -758,6 +758,25 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             importedLists++;
         }
 
+        // The list each config routes by, once both name spaces are settled: the bundle names the list its own
+        // side had, and a list it does not carry leaves the config on the default one.
+        foreach (var block in bundle.Configs)
+        {
+            if (block.RoutingList is not { Length: > 0 } wanted || !configNameMap.TryGetValue(block.Name, out var config))
+            {
+                continue;
+            }
+
+            if (string.Equals(wanted, PortableBundle.NoRoutingList, StringComparison.Ordinal))
+            {
+                await store.SetConfigRoutingAsync(new ConfigRouting(config, null), ct);
+            }
+            else if (routingMap.TryGetValue(wanted, out var list))
+            {
+                await store.SetConfigRoutingAsync(new ConfigRouting(config, list.Id), ct);
+            }
+        }
+
         if (bundle.Profiles is { Count: > 0 } legacy)
         {
             logger.LogInformation("the bundle carries {Count} profile(s) from an older build; their pairings are dropped, the configs and routing lists above came through", legacy.Count);
@@ -790,6 +809,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             "Agent_BundleImportedRenamedMany",
             importedConfigs,
             importedLists));
+    }
+
+    // The name of the list a config is bound to; null leaves it on the default one.
+    private async Task<string?> RoutingNameAsync(string config, CancellationToken ct)
+    {
+        if (await store.GetConfigRoutingAsync(config, ct) is not { } binding)
+        {
+            return null;
+        }
+
+        return binding.RoutingListId is { } listId
+            ? (await store.GetRoutingListAsync(listId, ct))?.Name
+            : PortableBundle.NoRoutingList;
     }
 
     // DNS and bypass entries a bundle carries for a config.
@@ -1238,9 +1270,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
         // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
-        if (control.Running && BoundTarget is not null)
+        if (control.Running && BoundTarget is { } running)
         {
-            var listId = await store.GetSelectedRoutingListAsync(ct);
+            var listId = await RoutingBinding.ResolveAsync(store, running, ct);
             var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
             var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
             if (listId == resultId && !newReconnect.SetEquals(previousReconnect))
@@ -1357,9 +1389,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // Settings apply on a fresh tunnel; flag a reconnect when the running tunnel routes through this list.
-        if (changed && control.Running && BoundTarget is not null)
+        if (changed && control.Running && BoundTarget is { } running)
         {
-            if (await store.GetSelectedRoutingListAsync(ct) == id)
+            if (await RoutingBinding.ResolveAsync(store, running, ct) == id)
             {
                 control.SetRestartRequired();
             }
@@ -1396,11 +1428,18 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     {
         if (args.Count < 1)
         {
-            return new IpcAck(false, "assign-routing requires a list id (or 'none')");
+            return new IpcAck(false, "assign-routing requires a list id (or 'none'), and optionally a config");
+        }
+
+        var config = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var toDefault = args[0].Equals("default", StringComparison.OrdinalIgnoreCase);
+        if (toDefault && config.Length == 0)
+        {
+            return new IpcAck(false, "assign-routing 'default' requires a config");
         }
 
         long? listId = null;
-        if (!args[0].Equals("none", StringComparison.OrdinalIgnoreCase))
+        if (!toDefault && !args[0].Equals("none", StringComparison.OrdinalIgnoreCase))
         {
             if (!long.TryParse(args[0], out var id) || id <= 0)
             {
@@ -1415,6 +1454,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             listId = id;
         }
 
+        if (config.Length > 0)
+        {
+            return await BindRoutingAsync(config, listId, toDefault, ct);
+        }
+
         var currentList = await store.GetSelectedRoutingListAsync(ct);
         Journal(SwitchLog.RoutingList(await ListNameAsync(currentList, ct), await ListNameAsync(listId, ct)));
         await store.SetSelectedRoutingListAsync(listId, ct);
@@ -1424,8 +1468,38 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("routing list {List} now applies to every configuration; with none picked, all traffic goes through the tunnel", listId);
+        logger.LogInformation("routing list {List} is now the default; a config without one of its own follows it, and with none picked all traffic goes through the tunnel", listId);
         return new IpcAck(true, $"routing: {listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} (applies on reconnect)");
+    }
+
+    // Binds one configuration to a routing list; a restart is flagged only when the running tunnel was the one moved.
+    private async Task<IpcAck> BindRoutingAsync(string config, long? listId, bool toDefault, CancellationToken ct)
+    {
+        if (!await store.ConfigExistsAsync(config, ct))
+        {
+            return new IpcAck(false, $"unknown config: {config}");
+        }
+
+        var current = await RoutingBinding.ResolveAsync(store, config, ct);
+        if (toDefault)
+        {
+            await store.RemoveConfigRoutingAsync(config, ct);
+        }
+        else
+        {
+            await store.SetConfigRoutingAsync(new ConfigRouting(config, listId), ct);
+        }
+
+        var resolved = await RoutingBinding.ResolveAsync(store, config, ct);
+        if (current != resolved && control.Running && string.Equals(BoundTarget, config, StringComparison.Ordinal))
+        {
+            Journal(SwitchLog.RoutingList(await ListNameAsync(current, ct), await ListNameAsync(resolved, ct)));
+            // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
+            control.SetRestartRequired();
+        }
+
+        logger.LogInformation("routing list {List} now applies to {Config}", resolved, config);
+        return new IpcAck(true, $"routing: {resolved?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} (applies on reconnect)");
     }
 
     // Keeps a switchover in the log whatever the capture floor is: it is what a support thread reads first.
@@ -2001,7 +2075,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // Only refresh when something consumes geo routing.
-        if (await store.GetSelectedRoutingListAsync(ct) is null && !control.Running)
+        if (await store.GetSelectedRoutingListAsync(ct) is null && !await store.AnyConfigRoutingAsync(ct) && !control.Running)
         {
             return;
         }
@@ -2440,6 +2514,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var transport = await store.GetConfigTransportAsync(name, ct);
             var configDns = await store.GetConfigDnsAsync(name, ct);
             var configEx = await store.GetConfigExclusionsAsync(name, ct);
+            // No binding of its own -> the config follows the default list.
+            var configRouting = await store.GetConfigRoutingAsync(name, ct);
             // No row -> show the runtime default LAN bypass; saving freezes it.
             var exclusions = configEx?.Exclusions ?? (defaultExclusions ??= string.Join('\n', routes.DefaultExclusionEntries()));
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
@@ -2449,7 +2525,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var bound = string.Equals(name, boundConfig, StringComparison.Ordinal);
             var handshake = bound ? handshakeAge : -1;
             var reading = bound ? link : LinkReading.Empty;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, configRouting?.RoutingListId ?? selectedRouting));
         }
 
         var routingLists = new List<RoutingListEntry>();

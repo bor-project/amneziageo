@@ -30,11 +30,11 @@ internal sealed record TunnelRouting(
         || BlockRoutes.Count > 0 || BlockDomains.Count > 0;
 
     /// <summary>
-    /// Reads the globally selected list and the mode it runs in.
+    /// Reads the list a config routes through and the mode it runs in.
     /// </summary>
-    public static async Task<TunnelRouting> LoadAsync(IStateStore store, CancellationToken ct)
+    public static async Task<TunnelRouting> LoadAsync(IStateStore store, string config, CancellationToken ct)
     {
-        var listId = await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        var listId = await RoutingBinding.ResolveAsync(store, config, ct).ConfigureAwait(false);
         if (listId is null)
         {
             return None;

@@ -64,7 +64,7 @@ sudo amneziageo settings set periodic-reconnect-enabled on
 
 Import also takes `--link` with a `vpn://` URL or `--stdin`.
 
-`up <config>` selects the configuration and connects on it; `select <config>` only remembers it for the next connect. The routing list is one setting for the whole machine, not a per-configuration pairing: `routing use <name>` picks it, `routing use none` leaves the configuration's own `AllowedIPs` to decide what the tunnel carries.
+`up <config>` selects the configuration and connects on it; `select <config>` only remembers it for the next connect. Each configuration routes by its own list: `routing use <name> <config>` binds one, `routing use none <config>` leaves the configuration's own `AllowedIPs` to decide what the tunnel carries, and `routing use default <config>` puts it back on the default list. Without a configuration the same command moves the default itself, which every configuration without a list of its own follows.
 
 `survive-reboot` dials at agent start, `periodic-reconnect-enabled` redials when the tunnel dies. Without them a reboot or a crashed engine leaves the server without a tunnel.
 

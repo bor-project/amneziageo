@@ -183,10 +183,14 @@ internal sealed class Shell : Window
             Action(Localized("Tui_Refresh"), Refresh));
     }
 
-    // The globally selected routing list, or the off label when none is picked.
+    // The routing list the connection runs by, or the off label when it takes none.
     private string RoutingLabel(StatusSnapshot snapshot)
     {
-        if (snapshot.SelectedRoutingList is not { } id)
+        var target = snapshot.BoundTarget ?? snapshot.SelectedTarget;
+        var current = target is null
+            ? null
+            : snapshot.Configs.FirstOrDefault(config => string.Equals(config.Name, target, StringComparison.Ordinal));
+        if ((current?.RoutingListId ?? snapshot.SelectedRoutingList) is not { } id)
         {
             return Localized("Main_RoutingOffState");
         }

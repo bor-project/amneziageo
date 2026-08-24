@@ -70,6 +70,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private string? _selectedTarget;
     private long? _selectedRoutingList;
+
+    // Список маршрутизации каждой конфигурации: пустая строка уводит в туннель весь трафик, отсутствие
+    // записи оставляет её на списке по умолчанию.
+    private readonly Dictionary<string, string> _configRouting = new(StringComparer.Ordinal);
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
     private long _handshakeUnix;
@@ -744,10 +748,40 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Конфигурация, чьими правилами решает агент: поднятая, иначе выбранная.
+    private string CurrentConfig => _boundTarget ?? _selectedTarget ?? string.Empty;
+
+    // Имя списка, к которому привязана конфигурация; null оставляет её на списке по умолчанию.
+    private string? RoutingName(string config)
+    {
+        if (!_configRouting.TryGetValue(config, out var raw))
+        {
+            return null;
+        }
+
+        if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+        {
+            return PortableBundle.NoRoutingList;
+        }
+
+        return _routingSummaries?.FirstOrDefault(summary => summary.Id == id)?.Name;
+    }
+
+    // Список маршрутизации конфигурации: свой, иначе список по умолчанию.
+    private long? RoutingFor(string config)
+    {
+        if (!_configRouting.TryGetValue(config, out var raw))
+        {
+            return _selectedRoutingList;
+        }
+
+        return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : null;
+    }
+
     // A live tun keeps the routes establish() was given, so an edited list only reaches the tunnel on a reconnect.
     private void MarkRoutingChanged(long listId)
     {
-        if (_active && _selectedRoutingList == listId)
+        if (_active && RoutingFor(CurrentConfig) == listId)
         {
             _restartRequired = true;
             _log.Info("agent", "the edited routing list applies on the next connect");
@@ -876,7 +910,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             TxBitsPerSecond: reading.TxBitsPerSecond,
             HandshakesPerMinute: reading.HandshakesPerMinute,
             LossPercent: reading.LossPercent,
-            RttMs: reading.RttMs);
+            RttMs: reading.RttMs,
+            RoutingListId: RoutingFor(name));
     }
 
     private string StatusFor(string target)
@@ -1437,12 +1472,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.RemoveRoutingListAsync(id).ConfigureAwait(false);
         MarkRoutingChanged(id);
 
-        // Turns routing off when the removed list was the selected one.
+        // Turns routing off when the removed list was the selected one, and on every config bound to it.
+        var removed = id.ToString(CultureInfo.InvariantCulture);
+        foreach (var name in _configRouting.Where(pair => pair.Value == removed).Select(pair => pair.Key).ToList())
+        {
+            _configRouting[name] = string.Empty;
+        }
+
         if (_selectedRoutingList == id)
         {
             _selectedRoutingList = null;
-            Save();
         }
+
+        Save();
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
@@ -1545,7 +1587,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.WebSocketPort,
                         transport.Mtu,
                         transport.UseIpv6),
-                null));
+                null,
+                RoutingList: RoutingName(name)));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -1706,6 +1749,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _log.Info("agent", $"the bundle carries {legacy.Count} profile(s) from an older build; their pairings are dropped");
         }
 
+        // Список каждой конфигурации, когда оба пространства имён уже уложены.
+        foreach (var block in bundle.Configs)
+        {
+            if (block.RoutingList is not { Length: > 0 } wanted || !importedConfigs.TryGetValue(block.Name, out var config))
+            {
+                continue;
+            }
+
+            if (string.Equals(wanted, PortableBundle.NoRoutingList, StringComparison.Ordinal))
+            {
+                _configRouting[config] = string.Empty;
+            }
+            else if (importedLists.TryGetValue(wanted, out var listId))
+            {
+                _configRouting[config] = listId.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
         RestoreBundleSelection(bundle, importedConfigs, importedLists);
         Save();
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
@@ -1854,14 +1915,28 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _transports = transports;
     }
 
-    // Picks the routing list every config uses. Args: list id, or "none" to turn routing off.
+    // Picks a routing list. Args: list id, "none" to turn routing off, or "default" to put a config back on the
+    // default list; an optional config name binds that config alone, without it the default moves.
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args)
     {
         var listArg = args.Count > 0 ? args[0] : "none";
-        var picked = string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
+        var config = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var toDefault = string.Equals(listArg, "default", StringComparison.OrdinalIgnoreCase);
+        if (toDefault && config.Length == 0)
+        {
+            return Fail();
+        }
+
+        var picked = toDefault
+            || string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
             || !long.TryParse(listArg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId)
                 ? null
                 : (long?)listId;
+
+        if (config.Length > 0)
+        {
+            return BindRouting(config, picked, toDefault);
+        }
 
         Journal(SwitchLog.RoutingList(await ListNameAsync(_selectedRoutingList).ConfigureAwait(false), await ListNameAsync(picked).ConfigureAwait(false)));
         _selectedRoutingList = picked;
@@ -1875,11 +1950,39 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
+    // Переводит одну конфигурацию на список; поднятый туннель пересобирается, только если сдвинули его.
+    private IpcAck BindRouting(string config, long? listId, bool toDefault)
+    {
+        if (!_configs.ContainsKey(config))
+        {
+            return Fail();
+        }
+
+        var current = RoutingFor(config);
+        if (toDefault)
+        {
+            _configRouting.Remove(config);
+        }
+        else
+        {
+            _configRouting[config] = listId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        Save();
+        PushSnapshot();
+        if (_active && current != RoutingFor(config) && string.Equals(_boundTarget, config, StringComparison.Ordinal))
+        {
+            _ = SetConnectionAsync("connect");
+        }
+
+        return Ok();
+    }
+
     // The rules the session routes by. Addresses stay ranges and names stay names: a name resolved to a fresh
     // address keeps its verdict, which a set of host routes fixed at connect never could.
     private async Task<GeoRoutingPlan> BuildPlanAsync()
     {
-        if (_selectedRoutingList is not { } listId)
+        if (RoutingFor(CurrentConfig) is not { } listId)
         {
             return GeoRoutingPlan.Full;
         }
@@ -2000,6 +2103,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             using var document = JsonDocument.Parse(System.IO.File.ReadAllText(_storePath));
             LoadMap(document.RootElement, "Configs", _configs);
+            LoadMap(document.RootElement, "ConfigRouting", _configRouting);
             _order = [.. _configs.Keys];
             if (document.RootElement.TryGetProperty("SelectedRouting", out var selectedList)
                 && selectedList.ValueKind == JsonValueKind.Number
@@ -2145,6 +2249,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
+            builder.Append(",\"ConfigRouting\":");
+            AppendMap(builder, [.. _configRouting.Keys], _configRouting);
             builder.Append('}');
             System.IO.File.WriteAllText(_storePath, builder.ToString());
         }
@@ -2213,6 +2319,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _configs[destination] = text;
+        if (_configRouting.TryGetValue(source, out var routing))
+        {
+            _configRouting[destination] = routing;
+        }
+
         Save();
         await EnsureInitAsync().ConfigureAwait(false);
         if (await _store.GetConfigTransportAsync(source).ConfigureAwait(false) is { } transport)
@@ -2479,15 +2590,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // that the tunnel is built as an allow list of them instead - the answer follows the mode in force.
     private async Task<(TargetInspector Inspector, bool Whole)> RulesAsync(CancellationToken ct)
     {
-        var list = _selectedRoutingList is { } listId
+        var routingList = RoutingFor(CurrentConfig);
+        var list = routingList is { } listId
             ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
             : null;
-        var settings = _selectedRoutingList is { } id
+        var settings = routingList is { } id
             ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
             : null;
         var full = settings?.UseGlobalProxy ?? false;
         // Without a list the tun carries everything, so nothing is left outside it to be put back in.
-        return (new TargetInspector(list, !full, AppMode(list, settings)), _selectedRoutingList is null || full);
+        return (new TargetInspector(list, !full, AppMode(list, settings)), routingList is null || full);
     }
 
     // Measures one destination over the path asked for. The tun fixes its routes at establish, so the tunnel
@@ -2729,6 +2841,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _order[place] = newName;
         }
 
+        if (_configRouting.Remove(oldName, out var routing))
+        {
+            _configRouting[newName] = routing;
+        }
+
         RetargetSelection(oldName, newName);
         Save();
         await EnsureInitAsync().ConfigureAwait(false);
@@ -2795,6 +2912,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _configs.Remove(args[0]);
+        _configRouting.Remove(args[0]);
         if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
         {
             _selectedTarget = null;
@@ -2831,7 +2949,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // a connection cannot be traced to its owner; ("off", []) when none.
     private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync()
     {
-        if (_selectedRoutingList is not { } listId)
+        if (RoutingFor(CurrentConfig) is not { } listId)
         {
             return ("off", []);
         }
@@ -3103,7 +3221,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Appends the selected routing list and its rule counts to the runtime report.
     private void AppendRoutingReport(System.Text.StringBuilder report)
     {
-        if (_selectedRoutingList is not { } listId)
+        if (RoutingFor(CurrentConfig) is not { } listId)
         {
             report.Append("routing list : (off)\n");
             return;
@@ -3121,7 +3239,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         await EnsureInitAsync().ConfigureAwait(false);
         var rows = new List<object>();
-        if (_selectedRoutingList is { } listId
+        if (RoutingFor(CurrentConfig) is { } listId
             && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } list)
         {
             AddRoutes(rows, "proxy", list.Routes);

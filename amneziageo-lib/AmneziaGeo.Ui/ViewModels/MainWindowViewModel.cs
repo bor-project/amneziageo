@@ -618,7 +618,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void Apply(StatusSnapshot snapshot)
     {
-        Config.Apply(snapshot.Configs);
+        Config.Apply(snapshot);
         Routing.Apply(snapshot);
         Sources.Apply(snapshot);
         HasConfigs = Config.Configs.Count > 0;

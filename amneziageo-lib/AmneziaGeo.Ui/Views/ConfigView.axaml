@@ -14,6 +14,7 @@
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
     <StreamGeometry x:Key="AgEyeGeometry">M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z</StreamGeometry>
+    <StreamGeometry x:Key="AgRouteGeometry">M14,4L16.29,6.29L13.41,9.17L14.83,10.59L17.71,7.71L20,10V4M10,4H4V10L6.29,7.71L11,12.41V20H13V11.59L7.71,6.29L10,4Z</StreamGeometry>
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Last row stars to fill the pane with the card catalogue. Cards stretch the full pane width. -->
@@ -178,6 +179,26 @@
 
           <!-- Proxy (WebSocket). -->
           <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
+
+          <Border Classes="hairline" />
+
+          <!-- Маршрутизация: список, по которому эта конфигурация решает, что уводить в туннель. -->
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{l:Tr Main_ConfigRoutingTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+              <TextBlock Text="{l:Tr Main_ConfigRoutingSubtitle}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button Grid.Row="1" Grid.Column="0" Classes="methodpick" VerticalAlignment="Center"
+                    Click="OnRoutingOptions"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+              <StackPanel Orientation="Horizontal" Spacing="6"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                <PathIcon Data="{StaticResource AgRouteGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding OpenRow.RoutingLabel}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </Grid>
 
           <Border Classes="hairline" />
 

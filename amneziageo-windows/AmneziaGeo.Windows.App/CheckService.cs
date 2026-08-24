@@ -186,7 +186,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     private static async Task<(RoutingList? List, bool Split)> ActiveListAsync(IStateStore store, string config, CancellationToken ct)
     {
         var listId = await store.GetActiveRoutingListIdAsync(config, ct).ConfigureAwait(false)
-            ?? await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+            ?? await RoutingBinding.ResolveAsync(store, config, ct).ConfigureAwait(false);
         var list = listId is long id ? await store.GetRoutingListAsync(id, ct).ConfigureAwait(false) : null;
         var routing = listId is long settings ? await store.GetRoutingSettingsAsync(settings, ct).ConfigureAwait(false) : null;
         var geo = await store.GetActiveTunnelGeoAsync(config, ct).ConfigureAwait(false);

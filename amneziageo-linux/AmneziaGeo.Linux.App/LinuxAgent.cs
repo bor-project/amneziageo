@@ -779,7 +779,7 @@ internal sealed class LinuxAgent : IDisposable
         _boundStatus = ConnectionStatus.Connecting;
         await PushAsync(ct).ConfigureAwait(false);
 
-        var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
+        var routing = await TunnelRouting.LoadAsync(_store, configName, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport);
@@ -902,6 +902,7 @@ internal sealed class LinuxAgent : IDisposable
         await _store.RemoveConfigTransportAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigDnsAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigExclusionsAsync(args[0], ct).ConfigureAwait(false);
+        await _store.RemoveConfigRoutingAsync(args[0], ct).ConfigureAwait(false);
         if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
         {
             await StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);
@@ -1003,12 +1004,24 @@ internal sealed class LinuxAgent : IDisposable
     // Picks the routing list every config uses; a missing or unparsable id turns routing off.
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        var listId = args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+        var config = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var toDefault = args.Count > 0 && args[0].Equals("default", StringComparison.OrdinalIgnoreCase);
+        if (toDefault && config.Length == 0)
+        {
+            return Fail();
+        }
+
+        var listId = !toDefault && args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
             ? parsed
             : (long?)null;
         if (listId is not null && await _store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false) is null)
         {
             return NotFound(args[0]);
+        }
+
+        if (config.Length > 0)
+        {
+            return await BindRoutingAsync(config, listId, toDefault, ct).ConfigureAwait(false);
         }
 
         var currentList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
@@ -1021,6 +1034,37 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
+    // Binds one configuration to a routing list; the running tunnel takes it only when it is the one moved.
+    private async Task<IpcAck> BindRoutingAsync(string config, long? listId, bool toDefault, CancellationToken ct)
+    {
+        if (!await _store.ConfigExistsAsync(config, ct).ConfigureAwait(false))
+        {
+            return NotFound(config);
+        }
+
+        var current = await RoutingBinding.ResolveAsync(_store, config, ct).ConfigureAwait(false);
+        if (toDefault)
+        {
+            await _store.RemoveConfigRoutingAsync(config, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await _store.SetConfigRoutingAsync(new ConfigRouting(config, listId), ct).ConfigureAwait(false);
+        }
+
+        var resolved = await RoutingBinding.ResolveAsync(_store, config, ct).ConfigureAwait(false);
+        if (current != resolved && string.Equals(_boundTarget, config, StringComparison.Ordinal))
+        {
+            Journal(SwitchLog.RoutingList(
+                await ListNameAsync(current, ct).ConfigureAwait(false),
+                await ListNameAsync(resolved, ct).ConfigureAwait(false)));
+            await ApplyRoutingAsync(ct).ConfigureAwait(false);
+        }
+
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
+    }
+
     // Hands the edited rules to the running tunnel; what a live session cannot take raises the reconnect banner.
     private async Task ApplyRoutingAsync(CancellationToken ct)
     {
@@ -1029,7 +1073,7 @@ internal sealed class LinuxAgent : IDisposable
             return;
         }
 
-        var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
+        var routing = await TunnelRouting.LoadAsync(_store, _boundTarget ?? string.Empty, ct).ConfigureAwait(false);
         if (!_tunnel.ApplyRules(routing))
         {
             _restartRequired = true;
@@ -1486,7 +1530,7 @@ internal sealed class LinuxAgent : IDisposable
             report.Append("mtu          : ").Append(WgConfigEditor.GetMtu(text)).Append('\n');
         }
 
-        var selectedList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } selectedId
+        var selectedList = await RoutingBinding.ResolveAsync(_store, configName ?? string.Empty, ct).ConfigureAwait(false) is { } selectedId
             ? await _store.GetRoutingListAsync(selectedId, ct).ConfigureAwait(false)
             : null;
         report.Append("routing list : ").Append(selectedList?.Name ?? "(off)").Append('\n');
@@ -1584,7 +1628,7 @@ internal sealed class LinuxAgent : IDisposable
         var rows = new List<object>();
         rows.AddRange(_tunnel.Tunneled.Select(host => (object)new { kind = "live", key = host, value = "tunnel" }));
         rows.AddRange(_tunnel.Bypassed.Select(host => (object)new { kind = "live", key = host, value = "direct" }));
-        if (await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
+        if (await RoutingBinding.ResolveAsync(_store, _boundTarget ?? _selectedTarget ?? string.Empty, ct).ConfigureAwait(false) is { } listId
             && await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false) is { } list)
         {
             rows.AddRange(list.Routes.Select(route => (object)new { kind = "proxy", key = route, value = "geoip" }));
@@ -1751,7 +1795,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, "check-target requires a domain, an address, an app token or a geo rule");
         }
 
-        var list = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
+        var list = await RoutingBinding.ResolveAsync(_store, _boundTarget ?? _selectedTarget ?? string.Empty, ct).ConfigureAwait(false) is { } listId
             ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
             : null;
         var split = !string.Equals(_tunnel.Mode, "full", StringComparison.OrdinalIgnoreCase);
@@ -1991,6 +2035,7 @@ internal sealed class LinuxAgent : IDisposable
         var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
         var dns = await _store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
         var exclusions = await _store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
+        var routingList = await RoutingBinding.ResolveAsync(_store, name, ct).ConfigureAwait(false);
         var bound = string.Equals(name, _boundTarget, StringComparison.Ordinal);
         var handshake = bound ? _handshakeAge : -1;
         var reading = bound ? _link : LinkReading.Empty;
@@ -2012,7 +2057,8 @@ internal sealed class LinuxAgent : IDisposable
             reading.TxBitsPerSecond,
             reading.HandshakesPerMinute,
             reading.LossPercent,
-            reading.RttMs);
+            reading.RttMs,
+            routingList);
     }
 
     private async Task<IReadOnlyList<SourceEntry>> BuildSourcesAsync(CancellationToken ct)

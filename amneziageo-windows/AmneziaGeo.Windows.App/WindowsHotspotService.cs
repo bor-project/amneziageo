@@ -10,16 +10,33 @@ namespace AmneziaGeo.Windows.App;
 /// so what its clients send leaves the way this machine's own traffic does. While no point is asked for, this
 /// reads the settings and stops there - the adapters and the tethering stack are not touched at all.
 /// </summary>
-internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<WindowsHotspotService> logger) : BackgroundService
+internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager routes, ServiceManager services, ILogger<WindowsHotspotService> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
     // Polls between two readings of the tethering stack while no point of ours stands.
     private const int ProbeTicks = 6;
 
+    // Polls the sharing is given to settle on the connection asked for before the point is raised again.
+    private const int StaleTicks = 2;
+
+    // Times the point is raised again over a sharing that will not move, before it is only reported.
+    private const int StaleRepairs = 3;
+
+    // Polls a sharing with no resolver of its own is given before it is put through a stop and a start.
+    private const int WedgeTicks = 4;
+
+    // Service the sharing runs as, and the port its resolver answers on.
+    private const string SharingService = "SharedAccess";
+    private const int Domain = 53;
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private HotspotOptions _applied = new();
     private int _probeTicks;
+    private int _stale;
+    private int _repairs;
+    private int _wedge;
+    private bool _recycled;
 
     // Name the point of this agent carries. A point under any other name was raised by the user through Windows
     // itself and is never touched here.
@@ -104,11 +121,45 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
             Take(state);
             var carrier = WindowsTethering.Carrier();
             var moved = Running && _raisedSsid.Length > 0 && !string.Equals(carrier, _carrier, StringComparison.Ordinal);
-            if (wanted != _applied || Running != wanted.Wanted || moved)
+            if (!Running || _raisedSsid.Length == 0 || Carried(carrier))
+            {
+                _stale = 0;
+                _repairs = 0;
+            }
+            else if (!moved)
+            {
+                _stale++;
+            }
+
+            if (!Running || _raisedSsid.Length == 0 || Resolving())
+            {
+                _wedge = 0;
+                _recycled = false;
+            }
+            else
+            {
+                _wedge++;
+            }
+
+            var stuck = _stale >= StaleTicks && _repairs < StaleRepairs;
+            var wedged = _wedge >= WedgeTicks && !_recycled;
+            if (wanted != _applied || Running != wanted.Wanted || moved || stuck || wedged)
             {
                 if (moved)
                 {
                     logger.LogInformation("the access point moves onto '{Carrier}', so what its clients send takes the path this machine's own traffic takes", carrier);
+                }
+
+                if (stuck)
+                {
+                    _stale = 0;
+                    _repairs++;
+                    logger.LogWarning("the sharing is not carried over '{Carrier}' but over the connection the point stood on before, so its clients leave past the rules of this machine; the point is raised again", carrier);
+                }
+
+                if (wedged)
+                {
+                    await RecycleAsync(ct).ConfigureAwait(false);
                 }
 
                 _applied = wanted;
@@ -156,6 +207,24 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
     {
         _gate.Dispose();
         base.Dispose();
+    }
+
+    // Takes the point down and puts the sharing through a stop and a start, leaving the point to be raised
+    // again on the settings that follow.
+    private async Task RecycleAsync(CancellationToken ct)
+    {
+        _wedge = 0;
+        _stale = 0;
+        _repairs = 0;
+        _recycled = true;
+        logger.LogWarning("the sharing hands its clients no resolver, so the names they look up go nowhere while bare addresses still travel; the sharing is put through a stop and a start");
+        await WindowsTethering.StopAsync(_raisedSsid, ct).ConfigureAwait(false);
+        _raisedSsid = string.Empty;
+        _carrier = string.Empty;
+        if (!await Task.Run(() => services.Recycle(SharingService), ct).ConfigureAwait(false))
+        {
+            logger.LogWarning("the sharing did not come back up after a stop and a start");
+        }
     }
 
     // Raises the point or takes it down, whichever the settings now ask for.
@@ -214,6 +283,33 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
     {
         return NetworkInterface.GetAllNetworkInterfaces()
             .Any(nic => nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211);
+    }
+
+    // Whether the sharing has a resolver of its own standing. It answers the clients on the address it hands
+    // them and holds that port on the link of the point as well; wedged, it holds nothing there and hands
+    // the clients no resolver at all, so their names go nowhere while bare addresses still travel.
+    private static bool Resolving()
+    {
+        foreach (var listener in IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners())
+        {
+            if (listener.Port == Domain && listener.Address.IsIPv6LinkLocal)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Whether the sharing carries the point out over the connection named. Raising the point over a
+    // connection is asked for and not answered: the sharing can keep the one it stood on before and say
+    // nothing. What it took shows in forwarding, which it turns on for the pair it bridges and nothing
+    // else on this machine does. A name no adapter carries - the Wi-Fi profile is named after its
+    // network - is taken as carried, so only the gateway is ever put back.
+    private bool Carried(string carrier)
+    {
+        var index = routes.FindInterfaceIndex(carrier);
+        return index is null || routes.Forwards(index.Value);
     }
 
     // The point does not outlive the agent: a machine left tethering after the service stopped would carry its

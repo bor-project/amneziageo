@@ -153,6 +153,45 @@ internal sealed record AppSettings
     public string ProxyCredentials { get; init; } = string.Empty;
 
     /// <summary>
+    /// How the tunnel reaches other devices: lan, wifi, or both.
+    /// </summary>
+    public string ShareMode { get; init; } = AmneziaGeo.Ipc.ShareModes.Default;
+
+    /// <summary>
+    /// Whether a wired subnet is asked for.
+    /// </summary>
+    public bool ShareEthernet { get; init; }
+
+    /// <summary>
+    /// Network name of the access point.
+    /// </summary>
+    public string HotspotSsid { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Password of the access point.
+    /// </summary>
+    public string HotspotPassword { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Band the access point asks for: auto, 2.4, or 5.
+    /// </summary>
+    public string HotspotBand { get; init; } = AmneziaGeo.Ipc.HotspotBands.Auto;
+
+    /// <summary>
+    /// The access point as the agent takes it; it stands on its own switch, apart from the proxy.
+    /// </summary>
+    public AmneziaGeo.Ipc.HotspotOptions Hotspot()
+    {
+        return new AmneziaGeo.Ipc.HotspotOptions
+        {
+            Enabled = AmneziaGeo.Ipc.ShareModes.CarriesWifi(ShareMode),
+            Ssid = HotspotSsid,
+            Password = HotspotPassword,
+            Band = HotspotBand,
+        };
+    }
+
+    /// <summary>
     /// The local proxy as the listener takes it.
     /// </summary>
     public LocalProxyOptions Proxy()

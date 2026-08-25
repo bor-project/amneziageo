@@ -37,6 +37,11 @@ internal sealed class SettingsStore(IStateStore store)
             ProxyHttpPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort, defaults.ProxyHttpPort),
             ProxyAnonymous = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, defaults.ProxyAnonymous),
             ProxyCredentials = ReadCredentials(values, defaults.ProxyCredentials),
+            ShareMode = AmneziaGeo.Ipc.ShareModes.Of(ReadText(values, AmneziaGeo.Ipc.SettingKeys.ShareMode, defaults.ShareMode)),
+            ShareEthernet = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ShareEthernet, defaults.ShareEthernet),
+            HotspotSsid = ReadText(values, AmneziaGeo.Ipc.SettingKeys.HotspotSsid, defaults.HotspotSsid),
+            HotspotPassword = ReadText(values, AmneziaGeo.Ipc.SettingKeys.HotspotPassword, defaults.HotspotPassword),
+            HotspotBand = AmneziaGeo.Ipc.HotspotBands.Of(ReadText(values, AmneziaGeo.Ipc.SettingKeys.HotspotBand, defaults.HotspotBand)),
         };
     }
 
@@ -81,6 +86,52 @@ internal sealed class SettingsStore(IStateStore store)
             }
 
             await store.SetSettingAsync(key, port.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
+            return true;
+        }
+
+        if (key == AmneziaGeo.Ipc.SettingKeys.ShareMode)
+        {
+            if (!AmneziaGeo.Ipc.ShareModes.IsKnown(value))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, AmneziaGeo.Ipc.ShareModes.Of(value), ct);
+            return true;
+        }
+
+        if (key == AmneziaGeo.Ipc.SettingKeys.HotspotBand)
+        {
+            if (!AmneziaGeo.Ipc.HotspotBands.IsKnown(value))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, AmneziaGeo.Ipc.HotspotBands.Of(value), ct);
+            return true;
+        }
+
+        // The name and the password of the access point are stored as they came: a trim would take a space
+        // the user meant out of a password. An empty value clears the setting and drops the point.
+        if (key == AmneziaGeo.Ipc.SettingKeys.HotspotSsid)
+        {
+            if (value.Length > 0 && !AmneziaGeo.Ipc.SettingKeys.IsValidHotspotSsid(value))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, value, ct);
+            return true;
+        }
+
+        if (key == AmneziaGeo.Ipc.SettingKeys.HotspotPassword)
+        {
+            if (value.Length > 0 && !AmneziaGeo.Ipc.SettingKeys.IsValidHotspotPassword(value))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, value, ct);
             return true;
         }
 
@@ -137,7 +188,7 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys];
+        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. ShareKeys];
     }
 
     private static readonly string[] IntKeys =
@@ -150,7 +201,11 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] ProxyPortKeys =
         [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.ShareEthernet];
+
+    // Sharing settings, each with a rule of its own.
+    private static readonly string[] ShareKeys =
+        [AmneziaGeo.Ipc.SettingKeys.ShareMode, AmneziaGeo.Ipc.SettingKeys.HotspotSsid, AmneziaGeo.Ipc.SettingKeys.HotspotPassword, AmneziaGeo.Ipc.SettingKeys.HotspotBand];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials];

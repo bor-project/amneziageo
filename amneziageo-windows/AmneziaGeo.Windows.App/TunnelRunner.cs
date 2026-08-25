@@ -472,6 +472,16 @@ internal sealed class TunnelRunner(
         var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing);
         session.SetProxy(proxy);
 
+        // The clients of the access point go out under the rules of this machine: what they open is terminated
+        // on an adapter of ours and opened again here, so the routing table decides it and the sharing NAT does
+        // not. The gateway follows the point up and down, and goes away with this session.
+        if (proxy is not null)
+        {
+            var gateway = new HotspotGateway(proxy, routes, new DirectProxyOutbound(), effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>());
+            sessionCts.Token.Register(gateway.Dispose);
+            _ = Task.Run(() => gateway.RunAsync(sessionCts.Token));
+        }
+
         // Per-app DNS: a name queried by a matched app resolves through the tunnel and routes its answer. On
         // learn, drop the proxy's pre-mark answer AND flush the OS resolver cache so the app's retry re-queries
         // through the proxy instead of Dnscache's cached pre-mark result (mirrors the geo live-add flush). The

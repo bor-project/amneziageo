@@ -3,6 +3,9 @@
   <!-- Native engine deps (tunnel.dll/wintun.dll): arch mapping + not-built guard. -->
   <Import Project="..\Engine.targets" />
 
+  <!-- gateway.exe: arch mapping + not-built guard. -->
+  <Import Project="..\Gateway.targets" />
+
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
@@ -25,6 +28,10 @@
          x64-only for now; an arm64 build ships without it (WebSocket transport unavailable) until an
          arm64 wstunnel is added. -->
     <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
+    <!-- gateway.exe: the adapter and userspace stack the shared access point's clients are carried through,
+         so what they open is opened again by this machine under its own routing. Built by
+         tools\build-gateway.ps1; the $(GatewayArch) mapping and the not-built guard live in Gateway.targets. -->
+    <None Include="..\gateway\bin\$(GatewayArch)\gateway.exe" Link="gateway.exe" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,7 +48,7 @@
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">
-      <_Parameter1>windows</_Parameter1>
+      <_Parameter1>windows10.0.19041.0</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 
@@ -107,7 +114,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.2.<build> so the
          running app reports the same version the self-update check compares against. -->
     <Version>0.0.1</Version>

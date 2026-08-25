@@ -120,7 +120,7 @@
            <Border Classes="hairline" />
 
            <!-- Connections: how other devices take the tunnel from this machine (#238). -->
-           <StackPanel x:Name="ShareSection" Spacing="12">
+           <StackPanel Spacing="12">
              <TextBlock Text="{l:Tr General_ProxySection}" FontWeight="SemiBold" FontSize="15" />
 
              <!-- One tab per way out of this machine; each stands on its own switch and works on its own.

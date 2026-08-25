@@ -20,14 +20,6 @@ public static partial class Program
         OpenLog();
         ClientLog.Info($"GUI starting: pid {Environment.ProcessId}, args [{string.Join(' ', args)}]");
 
-        // Снимки секции подключений.
-        var shots = Array.IndexOf(args, "--shots");
-        if (shots >= 0 && shots + 1 < args.Length)
-        {
-            BuildAvaloniaApp().Start((_, _) => AmneziaGeo.Ui.Design.Shots.Run(args[shots + 1]), args);
-            return;
-        }
-
         // Single-instance: a second launch surfaces the existing window, asks it to download (--update) or
         // install (--apply) the update, or raises the tunnel-takeover prompt (--takeover), then exits.
         var requestUpdate = Array.IndexOf(args, "--update") >= 0;

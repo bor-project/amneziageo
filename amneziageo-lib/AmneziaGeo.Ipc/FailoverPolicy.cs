@@ -130,6 +130,28 @@ public sealed class FailoverPolicy
     }
 
     /// <summary>
+    /// The participants standing higher in the priority list than the named one, in the order they stand in. A
+    /// name the list does not carry has nothing above it.
+    /// </summary>
+    public static IReadOnlyList<string> Above(IEnumerable<string> participants, string name)
+    {
+        var names = participants.ToList();
+        var at = names.FindIndex(one => string.Equals(one, name, StringComparison.Ordinal));
+        return at < 0 ? [] : names[..at];
+    }
+
+    /// <summary>
+    /// The servers kept dialled beside the tunnel so the route has somewhere measured to go back to: the ones
+    /// standing higher than the holder, while the route may go back at all and the holder answers. A holder that
+    /// answers nothing means the search for a live server is on, and a reserve would only dial into the same
+    /// silence.
+    /// </summary>
+    public static IReadOnlyList<string> Reserves(IEnumerable<string> participants, string holder, bool holderUp, FailoverSettings settings)
+    {
+        return settings.Enabled && settings.ReturnMinutes > 0 && holderUp ? Above(participants, holder) : [];
+    }
+
+    /// <summary>
     /// Folds one round of readings into what is known of each server and says where the route belongs. The
     /// readings are the participants in priority order, the holder is the server carrying the route now.
     /// </summary>

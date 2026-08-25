@@ -99,8 +99,14 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RemoveEndpointExclusion(string name, IPAddress endpoint)
     {
-        DeleteManagedRoutes(endpoint, ifIndex: null);
         UpdateState(name, endpoint.ToString(), add: false);
+        if (HeldByAnother(TunnelPaths.RouteStateFiles(), TunnelPaths.RouteStateFile(name), endpoint.ToString()))
+        {
+            RouteLog.Write("keep endpoint", $"{endpoint}/32", "another tunnel", ok: true);
+            return;
+        }
+
+        DeleteManagedRoutes(endpoint, ifIndex: null);
         RouteLog.Write("rm endpoint", $"{endpoint}/32", "physical", ok: true);
     }
 
@@ -117,15 +123,17 @@ internal sealed partial class RouteManager
                 return;
             }
 
-            foreach (var endpoint in ReadStateFile(file))
+            var endpoints = ReadStateFile(file);
+            TryDelete(file);
+            foreach (var endpoint in endpoints)
             {
-                if (IPAddress.TryParse(endpoint, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+                if (IPAddress.TryParse(endpoint, out var ip)
+                    && ip.AddressFamily == AddressFamily.InterNetwork
+                    && !HeldByAnother(TunnelPaths.RouteStateFiles(), file, endpoint))
                 {
                     DeleteManagedRoutes(ip, ifIndex: null);
                 }
             }
-
-            TryDelete(file);
         }
     }
 
@@ -487,13 +495,19 @@ internal sealed partial class RouteManager
     public void RemoveLanExclusions(string name)
     {
         var path = TunnelPaths.LanStateFile(name);
-        foreach (var cidr in ReadStateFile(path))
+        var saved = ReadStateFile(path);
+        TryDelete(path);
+        foreach (var cidr in saved)
         {
+            if (HeldByAnother(TunnelPaths.LanStateFiles(), path, cidr))
+            {
+                RouteLog.Write("keep lan-excl", cidr, "another tunnel", ok: true);
+                continue;
+            }
+
             DeleteCidrRoute(cidr);
             RouteLog.Write("rm lan-excl", cidr, "physical", ok: true);
         }
-
-        TryDelete(path);
     }
 
     /// <summary>
@@ -509,12 +523,15 @@ internal sealed partial class RouteManager
                 return;
             }
 
-            foreach (var cidr in ReadStateFile(file))
-            {
-                DeleteCidrRoute(cidr);
-            }
-
+            var saved = ReadStateFile(file);
             TryDelete(file);
+            foreach (var cidr in saved)
+            {
+                if (!HeldByAnother(TunnelPaths.LanStateFiles(), file, cidr))
+                {
+                    DeleteCidrRoute(cidr);
+                }
+            }
         }
     }
 
@@ -522,6 +539,27 @@ internal sealed partial class RouteManager
     private static IEnumerable<string> StateFiles(string? only, Func<string, string> one, Func<IEnumerable<string>> all)
     {
         return only is { Length: > 0 } ? new[] { one(only) } : all();
+    }
+
+    // A route laid for one tunnel is the same route for another: two configurations naming one server, or the
+    // same local network, share it. It goes when the last tunnel holding it lets go, not the first.
+    private static bool HeldByAnother(IEnumerable<string> files, string own, string entry)
+    {
+        var mine = Path.GetFileName(own);
+        foreach (var file in files)
+        {
+            if (string.Equals(Path.GetFileName(file), mine, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (ReadStateFile(file).Contains(entry, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void DeleteCidrRoute(string cidr)
@@ -700,6 +738,33 @@ internal sealed partial class RouteManager
         }
 
         RouteLog.Write("tunnel -cidr", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok: true);
+    }
+
+    /// <summary>
+    /// Removes an on-link prefix route from the tunnel interface whoever laid it. A route the engine put there
+    /// at bring-up is not among the ones remembered here, and a lookup by destination answers with the machine's
+    /// own default instead of it, so the row is named outright.
+    /// </summary>
+    public void DropTunnelCidr(string cidr, uint tunnelInterfaceIndex)
+    {
+        var slash = cidr.IndexOf('/');
+        var network = slash >= 0 ? cidr[..slash] : cidr;
+        if (!IPAddress.TryParse(network, out var ip))
+        {
+            return;
+        }
+
+        var v6 = ip.AddressFamily == AddressFamily.InterNetworkV6;
+        var prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : (byte)(v6 ? 128 : 32);
+        if (!TryDeleteRemembered(ip, prefix, tunnelInterfaceIndex))
+        {
+            var row = v6
+                ? NewRowV6(ip, prefix, tunnelInterfaceIndex, nextHop: null)
+                : NewRow(ip, prefix, tunnelInterfaceIndex, nextHop: null);
+            DeleteIpForwardEntry2(ref row);
+        }
+
+        RouteLog.Write("tunnel drop", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok: true);
     }
 
     /// <summary>

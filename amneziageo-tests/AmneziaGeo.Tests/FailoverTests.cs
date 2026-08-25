@@ -83,6 +83,58 @@ public sealed class FailoverTests
     }
 
     [Fact]
+    public void Above_NamesTheServersStandingHigherInTheOrderTheyStandIn()
+    {
+        Assert.Equal(["a", "b"], FailoverPolicy.Above(["a", "b", "c"], "c"));
+        Assert.Empty(FailoverPolicy.Above(["a", "b", "c"], "a"));
+    }
+
+    [Fact]
+    public void Above_LeavesNothingAboveAServerTheListDoesNotCarry()
+    {
+        Assert.Empty(FailoverPolicy.Above(["a", "b"], "z"));
+    }
+
+    [Fact]
+    public void Reserves_KeepTheServersTheRouteCanGoBackTo()
+    {
+        Assert.Equal(["a", "b"], FailoverPolicy.Reserves(["a", "b", "c"], "c", true, new FailoverSettings(true, 5)));
+    }
+
+    [Fact]
+    public void Reserves_StandDownWhileTheRouteIsNotComingBack()
+    {
+        Assert.Empty(FailoverPolicy.Reserves(["a", "b", "c"], "c", true, new FailoverSettings(true, 0)));
+        Assert.Empty(FailoverPolicy.Reserves(["a", "b", "c"], "c", true, new FailoverSettings(false, 5)));
+    }
+
+    [Fact]
+    public void Reserves_StandDownWhileTheServerCarryingTheRouteAnswersNothing()
+    {
+        Assert.Empty(FailoverPolicy.Reserves(["a", "b", "c"], "c", false, new FailoverSettings(true, 5)));
+    }
+
+    [Fact]
+    public void Overlap_NamesTwoServersHandingOutTheSameSubnet()
+    {
+        Assert.True(TunnelOverlap.Same(["10.8.1.2/32"], ["10.8.1.3/32"]));
+        Assert.True(TunnelOverlap.Same(["10.8.1.2/24"], ["10.8.1.2/32"]));
+    }
+
+    [Fact]
+    public void Overlap_LeavesServersInSubnetsOfTheirOwnAlone()
+    {
+        Assert.False(TunnelOverlap.Same(["10.8.1.2/32"], ["10.9.1.2/32"]));
+    }
+
+    [Fact]
+    public void Overlap_SaysNothingWhereThereIsNoAddressToMeasureBy()
+    {
+        Assert.False(TunnelOverlap.Same([], ["10.8.1.2/32"]));
+        Assert.False(TunnelOverlap.Same(["fd00::2/64"], ["fd00::3/64"]));
+    }
+
+    [Fact]
     public void Decide_LeavesTheServerThatStoppedAnsweringOnTheThirdReading()
     {
         var policy = new FailoverPolicy();

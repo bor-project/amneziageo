@@ -558,6 +558,10 @@ internal sealed class TunnelRunner(
             logger.LogWarning("port 53 on this machine is taken by another program, so names cannot be handled here; the resolvers are used directly and rules by domain name will not apply — only rules by address will");
         }
 
+        // Kept aside for a route that arrives later: the machine's lookups follow the default route, and these
+        // are the resolvers they would move to.
+        var ownResolvers = redirectServers;
+
         // One resolver per machine: a tunnel that does not hold it leaves the adapters where they are, so two
         // tunnels never take the lookups from each other.
         if (await store.GetSettingAsync(TunnelPaths.ResolverKey(name)) != TunnelPaths.OwnsResolver)
@@ -599,6 +603,21 @@ internal sealed class TunnelRunner(
         var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, bypassCidrs);
         logger.LogDebug("{Name}: routes in place — the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
+
+        // The default route can arrive here and leave again while the session stands: the peer is handed the
+        // ranges, the adapter is given their routes, and nothing is dialled.
+        var peerKey = WgConfigEditor.GetPeerPublicKey(config);
+        session.SetCarry(async (take, token) =>
+        {
+            if (!await CarryAsync(name, peerKey, !stripV6, ownResolvers, proxy?.BoundV4, take, token))
+            {
+                return false;
+            }
+
+            // The teardown puts the machine's resolvers back only for the tunnel they point at now.
+            applied = take && ownResolvers.Count > 0;
+            return true;
+        });
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
@@ -1002,6 +1021,70 @@ internal sealed class TunnelRunner(
         }
     }
 
+    // Ranges that carry everything, as the halves the engine is given so its blanket kill-switch is not armed.
+    private static IReadOnlyList<string> DefaultHalves(bool dualStack)
+    {
+        return dualStack ? ["0.0.0.0/1", "128.0.0.0/1", "::/1", "8000::/1"] : ["0.0.0.0/1", "128.0.0.0/1"];
+    }
+
+    // Takes the default route onto this tunnel, or gives it up, while the session stands. The peer is told which
+    // ranges it carries and the adapter is given the routes for them, and the machine's lookups follow, a tunnel
+    // carrying everything being the one every lookup would leave by. Nothing is dialled, so what is already open
+    // through the tunnel stays open.
+    private async Task<bool> CarryAsync(string name, string? peerKey, bool dualStack, IReadOnlyList<string> resolvers, IPAddress? proxyAddress, bool take, CancellationToken ct)
+    {
+        if (peerKey is null || routes.FindInterfaceIndex(name) is not { } index)
+        {
+            logger.LogWarning("{Name}: the route cannot be moved here without dialling — the tunnel names no peer, or its adapter is gone", name);
+            return false;
+        }
+
+        var halves = DefaultHalves(dualStack);
+        if (!take)
+        {
+            foreach (var half in halves)
+            {
+                routes.DropTunnelCidr(half, index);
+            }
+
+            uapi.RemoveAllowedIps(name, peerKey, halves);
+            await store.SetSettingAsync(TunnelPaths.DefaultRouteKey(name), TunnelPaths.ClipDefaultRoute, ct);
+            if (await store.GetSettingAsync(TunnelPaths.ResolverKey(name), ct) == TunnelPaths.OwnsResolver)
+            {
+                await store.SetSettingAsync(TunnelPaths.ResolverKey(name), string.Empty, ct);
+                dns.Restore();
+                dns.FlushCache();
+            }
+
+            logger.LogInformation("{Name}: everything goes through another tunnel now, so this one keeps only the ranges it names and the machine's lookups leave it", name);
+            return true;
+        }
+
+        if (!uapi.AddAllowedIps(name, peerKey, halves))
+        {
+            logger.LogWarning("{Name}: the peer would not take the ranges that carry everything, so the route stays where it is", name);
+            return false;
+        }
+
+        foreach (var half in halves)
+        {
+            routes.AddTunnelCidr(half, index);
+        }
+
+        await store.SetSettingAsync(TunnelPaths.DefaultRouteKey(name), string.Empty, ct);
+        if (resolvers.Count > 0 && proxyAddress is not null && await DnsHealthProbe.AnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
+        {
+            await store.SetSettingAsync(TunnelPaths.ResolverKey(name), TunnelPaths.OwnsResolver, ct);
+            dns.Apply(name, resolvers);
+            dns.FlushCache();
+            logger.LogInformation("{Name}: everything goes through this tunnel now and the machine's name lookups with it, without it being dialled again", name);
+            return true;
+        }
+
+        logger.LogWarning("{Name}: everything goes through this tunnel now, but its name proxy answers nothing, so the adapters keep their own resolvers and only rules by address apply", name);
+        return true;
+    }
+
     // How long the proxy has to answer its own health query, and how often the answer is asked for again.
     private const int DnsProbeTimeoutMs = 2000;
     private static readonly TimeSpan DnsProbeRetryDelay = TimeSpan.FromSeconds(15);
@@ -1077,6 +1160,12 @@ internal sealed class TunnelRunner(
         if (op == RuntimeSnapshotPipe.OpSessions)
         {
             return inspector.Sessions().ToPayload();
+        }
+
+        if (op.StartsWith(RuntimeSnapshotPipe.OpCarry, StringComparison.Ordinal))
+        {
+            var way = op.Split('\t');
+            return session.Carry is { } carry && await carry(way.Length > 1 && way[1] == "take", ct) ? "ok" : "no";
         }
 
         if (op.StartsWith(RuntimeSnapshotPipe.OpProbe, StringComparison.Ordinal))

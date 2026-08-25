@@ -49,6 +49,20 @@ internal static class RuntimeSnapshotPipe
     public const string OpProbe = "probe";
 
     /// <summary>
+    /// Asks a tunnel to take the default route onto itself or to give it up. Only the process running the tunnel
+    /// can hand its peer the ranges and lay their routes, so the move happens there.
+    /// </summary>
+    public const string OpCarry = "carry";
+
+    /// <summary>
+    /// Composes a carry request: the op and which way the route goes.
+    /// </summary>
+    public static string Carry(bool take)
+    {
+        return string.Join('\t', OpCarry, take ? "take" : "give");
+    }
+
+    /// <summary>
     /// Composes a probe request: the op, the target, the path and the speed service.
     /// </summary>
     public static string Probe(string target, string path, string uploadUrl)

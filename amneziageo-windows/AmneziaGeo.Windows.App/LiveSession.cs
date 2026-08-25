@@ -13,6 +13,7 @@ internal sealed class LiveSession
     private volatile RoutingCache? _cache;
     private volatile DomainTracker? _tracker;
     private volatile DnsProxy? _proxy;
+    private volatile Func<bool, CancellationToken, Task<bool>>? _carry;
 
     /// <summary>
     /// Per-destination verdict cache of the session in flight.
@@ -28,6 +29,11 @@ internal sealed class LiveSession
     /// Name proxy of the session in flight.
     /// </summary>
     public DnsProxy? Proxy => _proxy;
+
+    /// <summary>
+    /// Takes the default route onto the session in flight or gives it up, leaving the session standing.
+    /// </summary>
+    public Func<bool, CancellationToken, Task<bool>>? Carry => _carry;
 
     /// <summary>
     /// Publishes the session's verdict cache.
@@ -54,6 +60,14 @@ internal sealed class LiveSession
     }
 
     /// <summary>
+    /// Publishes the session's route handover.
+    /// </summary>
+    public void SetCarry(Func<bool, CancellationToken, Task<bool>>? carry)
+    {
+        _carry = carry;
+    }
+
+    /// <summary>
     /// Drops every slot at teardown.
     /// </summary>
     public void Clear()
@@ -61,5 +75,6 @@ internal sealed class LiveSession
         _cache = null;
         _tracker = null;
         _proxy = null;
+        _carry = null;
     }
 }

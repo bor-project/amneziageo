@@ -98,6 +98,17 @@ public static class CliRunner
               down [<config>]                   disconnect one tunnel, else all of them
               default-route <config>|none       pick what carries everything the others do not name
 
+            auto switching
+              failover                          the priority list and what carries the route now
+              failover on|off                   whether the route leaves a server that stopped answering
+              failover return <minutes>|off     minutes a server standing higher must answer before the
+                                                route goes back to it, once the tunnel falls silent
+              failover skip <config>            leave a server out of the list
+              failover use <config>             put it back in
+
+            The priority list is the configuration order itself; 'config order' rewrites it, and
+            'default-route <config>' puts the one it names at the head.
+
             configurations
               config list
               config show <name>                print the stored wg-quick text
@@ -107,6 +118,7 @@ public static class CliRunner
               config rename <name> <new-name>
               config copy <name> <new-name>
               config remove <name>
+              config order <name> [<name>...]   the order the list is kept and walked in
               config dns <name> [<servers>]     preferred resolvers; omit to clear
               config exclusions <name> (--file <path> | --stdin | --list a,b,c | --clear)
               config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off]
@@ -196,6 +208,7 @@ public static class CliRunner
         return rest[0] switch
         {
             "status" or "watch" or "select" or "up" or "down" or "default-route" => await StatusCommands.RunAsync(agent, rest[0], arguments, ct).ConfigureAwait(false),
+            "failover" => await FailoverCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "config" => await ConfigCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),

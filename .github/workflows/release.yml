@@ -47,6 +47,13 @@ jobs:
         shell: pwsh
         run: ./amneziageo-windows/tools/build-engine-win7.ps1 -Arch ${{ matrix.arch }}
 
+      - name: Build the access point gateway (gateway.exe)
+        # gateway.exe is a build output of the gateway Go module, which stands on the sing-tun
+        # submodule; it is gitignored and the App project stops the build without it. Go comes from
+        # the runner's PATH, and failing that from the .deps the engine build above filled.
+        shell: pwsh
+        run: ./amneziageo-windows/tools/build-gateway.ps1 -Arch ${{ matrix.arch }}
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:

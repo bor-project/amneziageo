@@ -7,7 +7,8 @@ namespace AmneziaGeo.Linux.App;
 
 /// <summary>
 /// Access point of this machine: hostapd on the wireless adapter, dnsmasq behind it, and the subnet they serve
-/// masqueraded into the tunnel. Nothing leaves that subnet except through the tunnel.
+/// masqueraded on whichever link the routing table picks. Clients go out under the rules this machine goes
+/// out under.
 /// </summary>
 internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisposable
 {
@@ -338,23 +339,22 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         return false;
     }
 
-    // One table of our own: masquerade into the tunnel, the two directions the clients need, the MSS a tunnel
-    // fits, and a drop for everything else out of that subnet so a downed tunnel leaks nothing.
+    // One table of our own: masquerade on the link the routing table picks, the two directions the clients
+    // need, and the MSS a tunnel fits on the leg that goes through one.
     private async Task WriteRulesAsync(CancellationToken ct)
     {
         var rules = new StringBuilder();
         rules.Append(CultureInfo.InvariantCulture, $"table inet {Table} {{\n");
         rules.Append("  chain postrouting {\n");
         rules.Append("    type nat hook postrouting priority srcnat; policy accept;\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    ip saddr {_subnet}.0/24 oifname \"{tunnelInterface}\" masquerade\n");
+        rules.Append(CultureInfo.InvariantCulture, $"    ip saddr {_subnet}.0/24 oifname != \"{_iface}\" masquerade\n");
         rules.Append("  }\n");
         rules.Append("  chain forward {\n");
         rules.Append("    type filter hook forward priority filter; policy accept;\n");
         rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{_iface}\" oifname \"{tunnelInterface}\" tcp flags syn / syn,rst tcp option maxseg size set 1380\n");
         rules.Append(CultureInfo.InvariantCulture, $"    oifname \"{_iface}\" iifname \"{tunnelInterface}\" tcp flags syn / syn,rst tcp option maxseg size set 1380\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{_iface}\" oifname \"{tunnelInterface}\" accept\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{tunnelInterface}\" oifname \"{_iface}\" ct state established,related accept\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{_iface}\" drop\n");
+        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{_iface}\" accept\n");
+        rules.Append(CultureInfo.InvariantCulture, $"    oifname \"{_iface}\" ct state established,related accept\n");
         rules.Append("  }\n");
         rules.Append("}\n");
 

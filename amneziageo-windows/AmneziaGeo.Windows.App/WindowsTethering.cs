@@ -37,6 +37,10 @@ internal static class WindowsTethering
     // The tethering rides on the Internet Connection Sharing service; stopped, it answers with this.
     private const int ServiceNotActive = unchecked((int)0x80070426);
 
+    // Name the gateway adapter carries. The sharing hands every client packet to the connection the point was
+    // raised over, so raising it over the gateway is what puts the clients under the rules of this machine.
+    public const string GatewayProfile = "AmneziaGeo Gateway";
+
     /// <summary>
     /// Reads what the machine can do and what stands, counting a point as up only under the name given.
     /// </summary>
@@ -113,10 +117,38 @@ internal static class WindowsTethering
         }
     }
 
-    // The tethering of the connection this machine reaches the internet by, and the reason there is none.
+    /// <summary>
+    /// Connection the point is shared over right now; empty while there is none.
+    /// </summary>
+    public static string Carrier()
+    {
+        return Carried()?.ProfileName ?? string.Empty;
+    }
+
+    // The connection the point is raised over: the gateway while it stands, so what the clients send is
+    // terminated here and opened again under the rules of this machine; the internet connection otherwise.
+    private static ConnectionProfile? Carried()
+    {
+        try
+        {
+            var gateway = NetworkInformation.GetConnectionProfiles()
+                .FirstOrDefault(profile => string.Equals(profile.ProfileName, GatewayProfile, StringComparison.Ordinal));
+            if (gateway is not null)
+            {
+                return gateway;
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return NetworkInformation.GetInternetConnectionProfile();
+    }
+
+    // The tethering of the connection the point is shared over, and the reason there is none.
     private static (NetworkOperatorTetheringManager? Manager, string Reason) Manager()
     {
-        var profile = NetworkInformation.GetInternetConnectionProfile();
+        var profile = Carried();
         if (profile is null)
         {
             return (null, HotspotReasons.NoApMode);

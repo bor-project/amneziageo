@@ -25,6 +25,10 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
     // itself and is never touched here.
     private string _raisedSsid = string.Empty;
 
+    // Connection the point was raised over. It moves onto the gateway when that comes up and back off it when
+    // it goes, and a point standing over the wrong one carries its clients out past the rules of this machine.
+    private string _carrier = string.Empty;
+
     /// <summary>
     /// Whether the access point is up.
     /// </summary>
@@ -98,8 +102,15 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
 
             var state = await WindowsTethering.ReadAsync(_raisedSsid.Length > 0 ? _raisedSsid : wanted.Ssid).ConfigureAwait(false);
             Take(state);
-            if (wanted != _applied || Running != wanted.Wanted)
+            var carrier = WindowsTethering.Carrier();
+            var moved = Running && _raisedSsid.Length > 0 && !string.Equals(carrier, _carrier, StringComparison.Ordinal);
+            if (wanted != _applied || Running != wanted.Wanted || moved)
             {
+                if (moved)
+                {
+                    logger.LogInformation("the access point moves onto '{Carrier}', so what its clients send takes the path this machine's own traffic takes", carrier);
+                }
+
                 _applied = wanted;
                 await MoveAsync(wanted, ct).ConfigureAwait(false);
                 Take(await WindowsTethering.ReadAsync(_raisedSsid).ConfigureAwait(false));
@@ -160,6 +171,7 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
             }
 
             _raisedSsid = string.Empty;
+            _carrier = string.Empty;
             Error = string.Empty;
             return;
         }
@@ -168,12 +180,14 @@ internal sealed class WindowsHotspotService(SettingsStore settings, ILogger<Wind
         if (fault.Length == 0)
         {
             _raisedSsid = options.Ssid;
+            _carrier = WindowsTethering.Carrier();
             Error = string.Empty;
-            logger.LogInformation("the access point '{Ssid}' is up", options.Ssid);
+            logger.LogInformation("the access point '{Ssid}' is up, shared over '{Carrier}'", options.Ssid, _carrier);
             return;
         }
 
         _raisedSsid = string.Empty;
+        _carrier = string.Empty;
         Error = fault;
         logger.LogWarning("the access point did not come up: {Fault}", fault);
     }

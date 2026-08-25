@@ -119,6 +119,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
                     PermitLan(engine, extraLanCidrs ?? []);
+
+                    // Stand-in addresses of the shared access point. Nothing leaves the machine to them: the
+                    // gateway adapter terminates them and this process opens the name again, which the leak
+                    // protection already permits. Without this the first packet of every client is dropped here.
+                    PermitV4Cidr(engine, HotspotNames.Prefix);
                     if (dualStack)
                     {
                         PermitLanV6(engine);

@@ -79,6 +79,30 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Не удалось запустить сброс.</value>
   </data>
+  <data name="General_DiagnosticsSection" xml:space="preserve">
+    <value>Архив диагностики</value>
+  </data>
+  <data name="General_DiagnosticsHint" xml:space="preserve">
+    <value>Складывает журналы, настройки и состояние туннеля в один zip для отправки в поддержку. Ключи и учётные данные в нём скрыты.</value>
+  </data>
+  <data name="General_DiagnosticsButton" xml:space="preserve">
+    <value>Собрать архив</value>
+  </data>
+  <data name="General_DiagnosticsSaveTitle" xml:space="preserve">
+    <value>Сохранить архив</value>
+  </data>
+  <data name="General_DiagnosticsRunning" xml:space="preserve">
+    <value>Собираем архив...</value>
+  </data>
+  <data name="General_DiagnosticsAt" xml:space="preserve">
+    <value>Архив собран: {0}</value>
+  </data>
+  <data name="General_DiagnosticsSaved" xml:space="preserve">
+    <value>Архив сохранён.</value>
+  </data>
+  <data name="General_DiagnosticsFailed" xml:space="preserve">
+    <value>Не удалось собрать архив.</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
   </data>
@@ -430,6 +454,9 @@
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Более поздние записи</value>
   </data>
+  <data name="Main_LogSearchWatermarkShort" xml:space="preserve">
+    <value>Поиск</value>
+  </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Поиск в логе</value>
   </data>
@@ -627,6 +654,9 @@
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Уровень</value>
+  </data>
+  <data name="Main_CacheKindTitle" xml:space="preserve">
+    <value>Тип записи</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
     <value>ЛОГИН</value>
@@ -955,6 +985,9 @@
   <data name="MainCode_RoutingListTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
   </data>
+  <data name="MainCode_SaveLogTitle" xml:space="preserve">
+    <value>Сохранить журнал</value>
+  </data>
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Сохранить список маршрутизации</value>
   </data>
@@ -1188,6 +1221,12 @@
   </data>
   <data name="Source_DetailLoaded" xml:space="preserve">
     <value>{0} · {1} категорий · {2}</value>
+  </data>
+  <data name="Source_DownloadProgress" xml:space="preserve">
+    <value>{0} из {1} МБ</value>
+  </data>
+  <data name="Source_DownloadProgressUnknown" xml:space="preserve">
+    <value>{0} МБ</value>
   </data>
   <data name="Source_DetailNotLoaded" xml:space="preserve">
     <value>{0} · не загружен</value>
@@ -1595,26 +1634,11 @@
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>После закрытия приложение останется в трее.</value>
   </data>
-  <data name="Main_DiagTabLog" xml:space="preserve">
-    <value>Журнал</value>
-  </data>
-  <data name="Main_DiagTabConfig" xml:space="preserve">
-    <value>Конфиг</value>
-  </data>
-  <data name="Main_ConfigTabValues" xml:space="preserve">
-    <value>Конфигурация</value>
-  </data>
-  <data name="Main_ConfigTabCache" xml:space="preserve">
-    <value>Кеш</value>
-  </data>
   <data name="Main_ConfigEmptyTitle" xml:space="preserve">
     <value>Данных нет</value>
   </data>
   <data name="Main_CacheEmptyHint" xml:space="preserve">
     <value>Кеш наполняется, пока туннель поднят: адреса отслеживаемых доменов и вердикты по адресам. Вердиктов не будет, если список Direct ставится целиком при подключении, а не по требованию.</value>
-  </data>
-  <data name="Main_CacheFilterWatermark" xml:space="preserve">
-    <value>Фильтр по тексту</value>
   </data>
   <data name="MainVm_CacheShown" xml:space="preserve">
     <value>{0} из {1}</value>
@@ -1649,6 +1673,9 @@
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Разрешите AmneziaGeo устанавливать приложения и нажмите «Установить» ещё раз.</value>
   </data>
+  <data name="Android_UpdateDownloadNotification" xml:space="preserve">
+    <value>Загружается обновление</value>
+  </data>
   <data name="Android_UpdateReopen" xml:space="preserve">
     <value>Обновление установлено. Нажмите, чтобы открыть AmneziaGeo.</value>
   </data>
@@ -1678,6 +1705,9 @@
   </data>
   <data name="FileBrowser_ScopedHint" xml:space="preserve">
     <value>Android скрывает файлы, которые не принадлежат приложению. Разрешите доступ ко всем файлам или скопируйте конфигурацию в папку приложения:</value>
+  </data>
+  <data name="FileBrowser_ScopedSaveHint" xml:space="preserve">
+    <value>Android скрывает папки, которые не принадлежат приложению. Разрешите доступ ко всем файлам или сохраните в папку приложения:</value>
   </data>
   <data name="FileBrowser_AppFolder" xml:space="preserve">
     <value>Папка приложения</value>
@@ -1835,9 +1865,6 @@
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
   </data>
-  <data name="Main_IsActiveBadge" xml:space="preserve">
-    <value>Активна</value>
-  </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Выбран</value>
   </data>
@@ -1859,6 +1886,12 @@
   <data name="Main_CardTagUdp" xml:space="preserve">
     <value>UDP</value>
   </data>
+  <data name="Main_CardTagMtu" xml:space="preserve">
+    <value>MTU {0}</value>
+  </data>
+  <data name="Main_CardTagMtuAuto" xml:space="preserve">
+    <value>MTU авто</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Настройки</value>
   </data>
@@ -1868,17 +1901,8 @@
   <data name="Main_DisconnectNowLink" xml:space="preserve">
     <value>Отключиться</value>
   </data>
-  <data name="Main_UseRoutingToggle" xml:space="preserve">
-    <value>Использовать этот список</value>
-  </data>
-  <data name="Main_RoutingActiveNotice" xml:space="preserve">
-    <value>Действуют</value>
-  </data>
-  <data name="Main_RoutingIdleNotice" xml:space="preserve">
-    <value>Пока не действуют</value>
-  </data>
-  <data name="Main_ConfigIdleNotice" xml:space="preserve">
-    <value>Пока не активна</value>
+  <data name="Main_InUseToggle" xml:space="preserve">
+    <value>Используется</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>Вкл</value>
@@ -1934,18 +1958,6 @@
   <data name="MainVm_UpdateRestartApp" xml:space="preserve">
     <value>Обновлено. Перезапустите приложение.</value>
   </data>
-  <data name="Main_DiagTabCheck" xml:space="preserve">
-    <value>Проверка</value>
-  </data>
-  <data name="Check_RunChannel" xml:space="preserve">
-    <value>Проверить канал</value>
-  </data>
-  <data name="Check_RunServers" xml:space="preserve">
-    <value>Замерить серверы</value>
-  </data>
-  <data name="Check_RunSessions" xml:space="preserve">
-    <value>Что идёт сейчас</value>
-  </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
     <value>Назначений: {0}, не определено {1}, без движения {2}, передано {3}.</value>
   </data>
@@ -1976,173 +1988,8 @@
   <data name="Check_Verdict_undecided" xml:space="preserve">
     <value>не определено</value>
   </data>
-  <data name="Check_SweepLive" xml:space="preserve">
-    <value>сейчас поднят</value>
-  </data>
-  <data name="Check_RunTarget" xml:space="preserve">
-    <value>Проверить</value>
-  </data>
-  <data name="Check_TargetWatermark" xml:space="preserve">
-    <value>домен, адрес, app:pkg=... или geosite:...</value>
-  </data>
-  <data name="Check_Running" xml:space="preserve">
-    <value>идёт замер, это около двадцати секунд</value>
-  </data>
-  <data name="Check_EmptyTitle" xml:space="preserve">
-    <value>Замеров ещё нет</value>
-  </data>
-  <data name="Check_EmptyHint" xml:space="preserve">
-    <value>Проверка канала проходит путь от роутера до сервера и называет виноватый участок.</value>
-  </data>
-  <data name="Check_Leg_gateway" xml:space="preserve">
-    <value>до роутера</value>
-  </data>
-  <data name="Check_Leg_endpoint" xml:space="preserve">
-    <value>до сервера мимо туннеля</value>
-  </data>
-  <data name="Check_Leg_handshake" xml:space="preserve">
-    <value>сессия туннеля</value>
-  </data>
-  <data name="Check_Leg_peer" xml:space="preserve">
-    <value>сервер внутри туннеля</value>
-  </data>
-  <data name="Check_Leg_beyond" xml:space="preserve">
-    <value>интернет за сервером</value>
-  </data>
-  <data name="Check_Leg_tunnel" xml:space="preserve">
-    <value>скорость через туннель</value>
-  </data>
-  <data name="Check_Leg_source" xml:space="preserve">
-    <value>скорость до вашего хоста</value>
-  </data>
-  <data name="Check_Leg_direct" xml:space="preserve">
-    <value>скорость мимо туннеля</value>
-  </data>
-  <data name="Check_State_ok" xml:space="preserve">
-    <value>в порядке</value>
-  </data>
-  <data name="Check_State_weak" xml:space="preserve">
-    <value>с потерями</value>
-  </data>
-  <data name="Check_State_bad" xml:space="preserve">
-    <value>не работает</value>
-  </data>
-  <data name="Check_State_unknown" xml:space="preserve">
-    <value>нет ответа</value>
-  </data>
-  <data name="Check_State_skipped" xml:space="preserve">
-    <value>пропущено</value>
-  </data>
-  <data name="Check_Rtt" xml:space="preserve">
-    <value>задержка {0} мс</value>
-  </data>
-  <data name="Check_Loss" xml:space="preserve">
-    <value>потери {0}%</value>
-  </data>
-  <data name="Check_Size" xml:space="preserve">
-    <value>проходят пакеты до {0} Б</value>
-  </data>
-  <data name="Check_Age" xml:space="preserve">
-    <value>хендшейк {0} с назад</value>
-  </data>
-  <data name="Check_Rekeys" xml:space="preserve">
-    <value>{0} переустановок в минуту</value>
-  </data>
   <data name="Check_Rate" xml:space="preserve">
     <value>{0} Мбит/с</value>
-  </data>
-  <data name="Check_NotConnected" xml:space="preserve">
-    <value>Подключения нет, поэтому измерены только участки до туннеля.</value>
-  </data>
-  <data name="Check_NoMeasurement" xml:space="preserve">
-    <value>Ничего не ответило, поэтому прогон ничего не говорит о канале.</value>
-  </data>
-  <data name="Check_LocalLoss" xml:space="preserve">
-    <value>Локальная сеть теряет {0}% отправленного: виноват участок между устройством и роутером.</value>
-  </data>
-  <data name="Check_PathLoss" xml:space="preserve">
-    <value>Канал до сервера теряет {0}%: виноват участок между роутером и сервером.</value>
-  </data>
-  <data name="Check_PathMtu" xml:space="preserve">
-    <value>Путь режет пакеты больше {0} байт: поставьте MTU туннеля {1}.</value>
-  </data>
-  <data name="Check_MtuAdvice" xml:space="preserve">
-    <value>Путь несёт полезную нагрузку не больше {0} байт, а туннель работает с MTU {1} - он в путь не проходит: поставьте MTU {2}.</value>
-  </data>
-  <data name="Check_Rekeying" xml:space="preserve">
-    <value>Сессия переустанавливается {0} раз в минуту: канал рвёт хендшейк.</value>
-  </data>
-  <data name="Check_ServerLoss" xml:space="preserve">
-    <value>Дальняя сторона туннеля теряет {0}% при чистом канале до неё: виноват сервер.</value>
-  </data>
-  <data name="Check_BeyondLoss" xml:space="preserve">
-    <value>Путь за сервером выхода теряет {0}% при чистом туннеле до сервера: виновато то, что за сервером, а не канал.</value>
-  </data>
-  <data name="Check_ServerSlow" xml:space="preserve">
-    <value>Туннель отдаёт {0} Мбит/с при живом сервере: смените сервер.</value>
-  </data>
-  <data name="Check_TunnelBehindDirect" xml:space="preserve">
-    <value>Туннель отдаёт {0} Мбит/с, а то же скачивание мимо него - {1}: виноват сервер, а не домашний канал.</value>
-  </data>
-  <data name="Check_SourceBehindTunnel" xml:space="preserve">
-    <value>Адрес, куда идёт ваш трафик, отдаёт {0} Мбит/с, а нейтральное скачивание по тому же туннелю - {1}: виноват источник, а не туннель.</value>
-  </data>
-  <data name="Check_Healthy" xml:space="preserve">
-    <value>Винить нечего: туннель отдаёт {0} Мбит/с без потерь.</value>
-  </data>
-  <data name="Check_HealthyOutsideTunnel" xml:space="preserve">
-    <value>На измеренных участках всё в порядке; {0} Мбит/с - это путь мимо туннеля, по нему и пошло скачивание.</value>
-  </data>
-  <data name="Check_SweepEmpty" xml:space="preserve">
-    <value>Сохранённых серверов нет - замерять нечего.</value>
-  </data>
-  <data name="Check_SweepSilent" xml:space="preserve">
-    <value>Ни один сохранённый сервер не ответил: сравнивать нечего.</value>
-  </data>
-  <data name="Check_SweepBest" xml:space="preserve">
-    <value>Сейчас лучше всех отвечает «{0}»: {1} мс, потери {2}%.</value>
-  </data>
-  <data name="Check_SweepInTunnel" xml:space="preserve">
-    <value>Лучший из замеренных - «{0}» ({1} мс, потери {2}%), но туннель был поднят и пробы шли через него: отключитесь и замерьте снова, чтобы сравнить сами серверы.</value>
-  </data>
-  <data name="Check_SweepSwitch" xml:space="preserve">
-    <value>Сейчас поднят «{0}», а «{1}» отвечает лучше ({2} мс, потери {3}%): смените сервер.</value>
-  </data>
-  <data name="Check_TargetNoRules" xml:space="preserve">
-    <value>Список маршрутизации не выбран, поэтому всё идёт по AllowedIPs самого туннеля.</value>
-  </data>
-  <data name="Check_TargetUnresolved" xml:space="preserve">
-    <value>«{0}» не разрешается ни в один адрес, маршрутизировать нечего: виноват резолвер.</value>
-  </data>
-  <data name="Check_TargetBlocked" xml:space="preserve">
-    <value>Отбрасывается правилом блокировки «{0}».</value>
-  </data>
-  <data name="Check_TargetDirect" xml:space="preserve">
-    <value>Идёт мимо туннеля по правилу «{0}» из списка «Директ».</value>
-  </data>
-  <data name="Check_TargetProxy" xml:space="preserve">
-    <value>Идёт через туннель по правилу «{0}».</value>
-  </data>
-  <data name="Check_TargetUnreachable" xml:space="preserve">
-    <value>Правило кладёт в туннель, но по адресу {0} никто не отвечает: проблема за туннелем.</value>
-  </data>
-  <data name="Check_TargetAppUnlisted" xml:space="preserve">
-    <value>«{0}» не входит ни в один список, поэтому трафик идёт по маршруту по умолчанию.</value>
-  </data>
-  <data name="Check_TargetAppOutside" xml:space="preserve">
-    <value>«{0}» не назван ни одним правилом приложений, а туннель несёт только названные ({1}), поэтому трафик идёт мимо туннеля и правила списка к нему не применяются.</value>
-  </data>
-  <data name="Check_TargetProxyAppsOnly" xml:space="preserve">
-    <value>Правило «{0}» ведёт через туннель, но только для названных приложений ({1}); остальные идут мимо туннеля.</value>
-  </data>
-  <data name="Check_TargetAppBareIp" xml:space="preserve">
-    <value>«{0}» ходит на {1} адрес(ов), не покрытых ни одним правилом: правило по приложению реактивно и не ловит голые адреса, добавьте правило geoip для этого сервиса.</value>
-  </data>
-  <data name="Check_TargetUnlistedSplit" xml:space="preserve">
-    <value>Правил для «{0}» нет, а туннель несёт только перечисленное, поэтому трафик уходит напрямую.</value>
-  </data>
-  <data name="Check_TargetUnlistedFull" xml:space="preserve">
-    <value>Правил для «{0}» нет, но туннель - маршрут по умолчанию, поэтому трафик идёт через него.</value>
   </data>
   <data name="Main_CopyShownButton" xml:space="preserve">
     <value>Копировать показанное</value>
@@ -2152,5 +1999,158 @@
   </data>
   <data name="Check_SessionNoRule" xml:space="preserve">
     <value>нет правила</value>
+  </data>
+  <data name="Probe_TargetWatermark" xml:space="preserve">
+    <value>домен или адрес</value>
+  </data>
+  <data name="Probe_PathAuto" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="Probe_PathTunnel" xml:space="preserve">
+    <value>Туннель</value>
+  </data>
+  <data name="Probe_PathBypass" xml:space="preserve">
+    <value>Мимо</value>
+  </data>
+  <data name="Probe_LegReach" xml:space="preserve">
+    <value>отклик</value>
+  </data>
+  <data name="Probe_LegReceive" xml:space="preserve">
+    <value>приём</value>
+  </data>
+  <data name="Probe_LegSend" xml:space="preserve">
+    <value>отдача</value>
+  </data>
+  <data name="Probe_StateOk" xml:space="preserve">
+    <value>норма</value>
+  </data>
+  <data name="Probe_StateWeak" xml:space="preserve">
+    <value>слабо</value>
+  </data>
+  <data name="Probe_StateBad" xml:space="preserve">
+    <value>обрыв</value>
+  </data>
+  <data name="Probe_StateUnknown" xml:space="preserve">
+    <value>молчит</value>
+  </data>
+  <data name="Probe_StateSkipped" xml:space="preserve">
+    <value>пропуск</value>
+  </data>
+  <data name="Probe_TakenTunnelRule" xml:space="preserve">
+    <value>туннель по правилу</value>
+  </data>
+  <data name="Probe_TakenTunnelDefault" xml:space="preserve">
+    <value>туннель по умолчанию</value>
+  </data>
+  <data name="Probe_TakenBypassRule" xml:space="preserve">
+    <value>мимо по правилу</value>
+  </data>
+  <data name="Probe_TakenBypassDefault" xml:space="preserve">
+    <value>мимо по умолчанию</value>
+  </data>
+  <data name="Probe_TakenBlocked" xml:space="preserve">
+    <value>блок по правилу</value>
+  </data>
+  <data name="Probe_TakenNoRouting" xml:space="preserve">
+    <value>мимо, маршрутизация не отвечает</value>
+  </data>
+  <data name="Probe_Measured" xml:space="preserve">
+    <value>{0} Мбит/с приём, {1} Мбит/с отдача против {2}</value>
+  </data>
+  <data name="Probe_MeasuredPlain" xml:space="preserve">
+    <value>{0} Мбит/с приём, {1} Мбит/с отдача</value>
+  </data>
+  <data name="Probe_NoRate" xml:space="preserve">
+    <value>{0} отвечает, но отдаёт слишком мало, чтобы замерить скорость</value>
+  </data>
+  <data name="Probe_Unreachable" xml:space="preserve">
+    <value>{0} не ответил</value>
+  </data>
+  <data name="Probe_PathUnavailable" xml:space="preserve">
+    <value>система не может пустить трафик {0}, замер не состоялся</value>
+  </data>
+  <data name="Probe_NotConnected" xml:space="preserve">
+    <value>туннель не поднят, этот путь не замерить</value>
+  </data>
+  <data name="Probe_SideThrough" xml:space="preserve">
+    <value>в туннель</value>
+  </data>
+  <data name="Probe_SidePast" xml:space="preserve">
+    <value>мимо туннеля</value>
+  </data>
+  <data name="Probe_MetricRtt" xml:space="preserve">
+    <value>отклик {0} мс</value>
+  </data>
+  <data name="Probe_MetricJitter" xml:space="preserve">
+    <value>джиттер {0} мс</value>
+  </data>
+  <data name="Probe_MetricLoss" xml:space="preserve">
+    <value>потери {0}%</value>
+  </data>
+  <data name="Probe_MetricPackets" xml:space="preserve">
+    <value>проходят пакеты {0} байт</value>
+  </data>
+  <data name="Probe_MetricAge" xml:space="preserve">
+    <value>возраст {0} с</value>
+  </data>
+  <data name="Probe_MetricRekeys" xml:space="preserve">
+    <value>{0} пересогласований в минуту</value>
+  </data>
+  <data name="Probe_MetricRate" xml:space="preserve">
+    <value>{0} Мбит/с</value>
+  </data>
+  <data name="Probe_MetricTraffic" xml:space="preserve">
+    <value>принято {0}, отдано {1}</value>
+  </data>
+  <data name="Probe_NoteThin" xml:space="preserve">
+    <value>отдал {0}, мало для замера</value>
+  </data>
+  <data name="Probe_NoteNothing" xml:space="preserve">
+    <value>ничего не отдал для замера</value>
+  </data>
+  <data name="Probe_NoteAgainst" xml:space="preserve">
+    <value>против {0}</value>
+  </data>
+  <data name="Probe_NoteNoResolve" xml:space="preserve">
+    <value>имя не разрешается</value>
+  </data>
+  <data name="Probe_NoteAnswersOn" xml:space="preserve">
+    <value>{0} отвечает на порту {1}</value>
+  </data>
+  <data name="Probe_NoteNoConnection" xml:space="preserve">
+    <value>{0} не принял соединение</value>
+  </data>
+  <data name="Probe_NoteNeverAnswered" xml:space="preserve">
+    <value>{0} не ответил</value>
+  </data>
+  <data name="Probe_NoteNotAddress" xml:space="preserve">
+    <value>не адрес</value>
+  </data>
+  <data name="Probe_NoteNoAddress" xml:space="preserve">
+    <value>нет адреса для замера</value>
+  </data>
+  <data name="Probe_NoteNoDownload" xml:space="preserve">
+    <value>загрузка не началась</value>
+  </data>
+  <data name="Probe_NoteNoUpload" xml:space="preserve">
+    <value>отправка не началась</value>
+  </data>
+  <data name="Probe_NoteNoTime" xml:space="preserve">
+    <value>нечего замерять</value>
+  </data>
+  <data name="Probe_RunButton" xml:space="preserve">
+    <value>Проверить</value>
+  </data>
+  <data name="Probe_Running" xml:space="preserve">
+    <value>идёт замер…</value>
+  </data>
+  <data name="Probe_SettingsSection" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Probe_UploadServiceTitle" xml:space="preserve">
+    <value>Сервис для проверки скорости передачи данных</value>
+  </data>
+  <data name="Probe_UploadServiceHint" xml:space="preserve">
+    <value>Адрес для проверки скорости. По умолчанию: https://speed.cloudflare.com/__up.</value>
   </data>
 </root>

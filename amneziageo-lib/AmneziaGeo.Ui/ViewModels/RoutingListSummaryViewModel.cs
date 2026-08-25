@@ -40,10 +40,12 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     // Whether the list carries everything instead of its own rules.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useGlobalProxy;
 
     // Whether the list carries all UDP.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _allUdp;
 
     [ObservableProperty]
@@ -75,6 +77,15 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string BlockRulesText => Loc.Instance.Get("Main_CardRulesBlock", BlockRuleCount);
 
     /// <summary>
+    /// Mode labels on the card: everything through the tunnel and all UDP.
+    /// </summary>
+    public IReadOnlyList<CardTag> Tags =>
+    [
+        new(Loc.Instance.Get("Main_CardTagGlobal"), UseGlobalProxy),
+        new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp),
+    ];
+
+    /// <summary>
     /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге.
     /// </summary>
     public bool ShowCardFrame => IsPicked;
@@ -99,5 +110,6 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         OnPropertyChanged(nameof(ProxyRulesText));
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));
+        OnPropertyChanged(nameof(Tags));
     }
 }

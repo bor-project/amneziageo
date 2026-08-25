@@ -16,7 +16,7 @@ internal static class RoutingCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|delete-rule|remove|settings|configure>");
+            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|delete-rule|remove|order|settings|configure>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -30,6 +30,9 @@ internal static class RoutingCommands
             "add" => await AmendAsync(agent, rest, add: true).ConfigureAwait(false),
             "delete-rule" => await AmendAsync(agent, rest, add: false).ConfigureAwait(false),
             "remove" => await RemoveAsync(agent, rest).ConfigureAwait(false),
+            "order" => rest.Count > 0
+                ? Reply.Report(await agent.SendAsync(IpcContract.OpReorderRoutingLists, [.. rest]).ConfigureAwait(false), "order saved")
+                : Reply.Usage("usage: amneziageo routing order <name> [<name>...]"),
             "settings" => await SettingsAsync(agent, rest).ConfigureAwait(false),
             "configure" => await ConfigureAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown routing command '{args[0]}'"),

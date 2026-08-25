@@ -100,11 +100,11 @@ internal static class ExportActions
             return false;
         }
 
+        // Расширение несёт само имя: пикер документов на Android приписывает DefaultExtension второй раз.
         var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
             SuggestedFileName = suggestedName,
-            DefaultExtension = extension,
             FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = [$"*.{extension}"] }],
         });
         if (file is null)
@@ -166,36 +166,6 @@ internal static class ExportActions
         using var buffer = new MemoryStream();
         image.Save(buffer);
         return buffer.ToArray();
-    }
-
-    /// <summary>
-    /// Asks for a save path on disk; returns null when the user backs out or the target has no local path.
-    /// </summary>
-    public static async Task<string?> PickSavePathAsync(
-        Visual source,
-        string title,
-        string suggestedName,
-        string extension,
-        string typeName)
-    {
-        if (FileSaverHost.SaveAsync(title, suggestedName) is { } builtIn)
-        {
-            return await builtIn;
-        }
-
-        if (TopLevel.GetTopLevel(source) is not { } top)
-        {
-            return null;
-        }
-
-        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = title,
-            SuggestedFileName = suggestedName,
-            DefaultExtension = extension,
-            FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = [$"*.{extension}"] }],
-        });
-        return file?.TryGetLocalPath();
     }
 
     /// <summary>

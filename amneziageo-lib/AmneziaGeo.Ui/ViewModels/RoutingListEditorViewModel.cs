@@ -635,9 +635,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             _seeding = false;
             RebuildRuleItems();
             CaptureBaseline();
-
-            // Prime the default "running" source so the app picker works without first re-choosing it from the menu.
-            await LoadRunningAsync();
         }
         finally
         {
@@ -956,6 +953,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private void SelectAddMethod(string method)
     {
         AddMethod = method;
+    }
+
+    // The running-app census costs an agent round-trip over every process and service, so it is taken when the
+    // per-app picker is first opened rather than on every list open. Android picks apps through its own sheet.
+    partial void OnAddMethodChanged(string value)
+    {
+        if (value == "app" && IsAppSourceWindows && AppMode == "running" && AppSuggestions.Count == 0)
+        {
+            _ = LoadRunningAsync();
+        }
     }
 
     /// <summary>

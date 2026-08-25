@@ -5,6 +5,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AmneziaGeo.Dal;
+using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Ui.Services;
 
@@ -74,6 +75,16 @@ internal sealed class UiPreferences
     /// The update version whose banner has already been offered; empty until the first one.
     /// </summary>
     public string ShownUpdateVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Speed service the send leg of a probe uploads to; empty measures against the built-in one.
+    /// </summary>
+    public string ProbeUploadUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Path a probe is measured over: auto, tunnel or bypass.
+    /// </summary>
+    public string ProbePath { get; set; } = ProbePaths.Auto;
 
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -146,6 +157,8 @@ internal sealed class UiPreferences
             ["last-routing-list"] = LastRoutingList.ToString(CultureInfo.InvariantCulture),
             ["always-on-mode"] = AlwaysOnMode ? "1" : "0",
             ["shown-update"] = ShownUpdateVersion,
+            ["probe-upload"] = ProbeUploadUrl,
+            ["probe-path"] = ProbePath,
         };
     }
 
@@ -207,6 +220,16 @@ internal sealed class UiPreferences
             prefs.LastConfig = lastConfig;
         }
 
+        if (values.TryGetValue("probe-upload", out var probeUpload))
+        {
+            prefs.ProbeUploadUrl = probeUpload;
+        }
+
+        if (values.TryGetValue("probe-path", out var probePath) && IsProbePath(probePath))
+        {
+            prefs.ProbePath = probePath;
+        }
+
         if (values.TryGetValue("last-routing-list", out var lastList)
             && long.TryParse(lastList, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId))
         {
@@ -214,6 +237,12 @@ internal sealed class UiPreferences
         }
 
         return prefs;
+    }
+
+    // Paths a probe is measured over; anything else in the store falls back to the default.
+    private static bool IsProbePath(string value)
+    {
+        return value is ProbePaths.Auto or ProbePaths.Tunnel or ProbePaths.Bypass;
     }
 
     // One-time import of the pre-DB ui-prefs.json, then delete it so the settings folder is left clean.

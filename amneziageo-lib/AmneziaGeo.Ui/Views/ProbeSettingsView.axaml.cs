@@ -3,14 +3,14 @@ using Avalonia.Controls;
 namespace AmneziaGeo.Ui.Views;
 
 /// <summary>
-/// Diagnostics config pane: the configuration in force and the caches behind it.
+/// Probe screen view.
 /// </summary>
-internal sealed partial class RuntimeConfigView : UserControl
+internal sealed partial class ProbeSettingsView : UserControl
 {
     /// <summary>
     /// ctor
     /// </summary>
-    public RuntimeConfigView()
+    public ProbeSettingsView()
     {
         InitializeComponent();
     }

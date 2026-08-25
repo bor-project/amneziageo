@@ -22,6 +22,12 @@ public sealed record VpnRequest(
     int WsPort);
 
 /// <summary>
+/// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that
+/// owns it, so the run happens there and its payload comes back through a file.
+/// </summary>
+public sealed record ProbeRequest(string Target, string Path, string Taken, string UploadUrl);
+
+/// <summary>
 /// Carries the routing rules and the tunnel stage between the head and the tunnel, which run in separate
 /// processes: the head can then be unloaded whole while the tunnel keeps running.
 /// </summary>
@@ -107,11 +113,18 @@ public static class VpnBridge
     /// </summary>
     public const string ActionProxy = "org.amneziageo.android.VPN_PROXY";
 
+    /// <summary>
+    /// Broadcast that makes a running tunnel measure the destination the head left for it.
+    /// </summary>
+    public const string ActionProbe = "org.amneziageo.android.VPN_PROBE";
+
     private const string PlanFile = "plan.json";
     private const string ProxyFile = "proxy.json";
     private const string ProxyStateFile = "proxy-state.json";
     private const string SessionsFile = "sessions.txt";
     private const string RequestFile = "session.json";
+    private const string ProbeFile = "probe.json";
+    private const string ProbeResultFile = "probe-result.txt";
     private const string ProcessSuffix = ":vpn";
 
     /// <summary>
@@ -435,6 +448,113 @@ public static class VpnBridge
         }
     }
 
+    /// <summary>
+    /// Leaves the probe for the tunnel to run.
+    /// </summary>
+    public static void WriteProbe(ProbeRequest request)
+    {
+        try
+        {
+            using var stream = File.Create(ProbePath());
+            JsonSerializer.Serialize(stream, request);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the probe failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the probe the head left, nothing when there is none.
+    /// </summary>
+    public static ProbeRequest? ReadProbe()
+    {
+        try
+        {
+            var path = ProbePath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            using var stream = File.OpenRead(path);
+            var request = JsonSerializer.Deserialize<ProbeRequest>(stream);
+            return request is { Target.Length: > 0 } ? request : null;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the probe failed: " + ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Drops the probe, so a tunnel that starts later does not run it again.
+    /// </summary>
+    public static void ClearProbe()
+    {
+        try
+        {
+            File.Delete(ProbePath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the probe failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Writes what the probe measured for the head to read.
+    /// </summary>
+    public static void WriteProbeResult(string payload)
+    {
+        try
+        {
+            File.WriteAllText(ProbeResultPath(), payload);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the probe result failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads what the probe measured, an empty string while it is still running.
+    /// </summary>
+    public static string ReadProbeResult()
+    {
+        try
+        {
+            var path = ProbeResultPath();
+            return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the probe result failed: " + ex);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Drops the result, so the next probe is not answered with the last one.
+    /// </summary>
+    public static void ClearProbeResult()
+    {
+        try
+        {
+            File.Delete(ProbeResultPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the probe result failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Asks a running tunnel to take the probe the head left.
+    /// </summary>
+    public static void RequestProbe(Context context) => context.SendBroadcast(Broadcast(context, ActionProbe));
+
     private static Intent Broadcast(Context context, string action)
     {
         var intent = new Intent(action);
@@ -456,6 +576,12 @@ public static class VpnBridge
 
     private static string RequestPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RequestFile);
+
+    private static string ProbePath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProbeFile);
+
+    private static string ProbeResultPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProbeResultFile);
 
     /// <summary>
     /// Receiver handing every broadcast to a delegate.

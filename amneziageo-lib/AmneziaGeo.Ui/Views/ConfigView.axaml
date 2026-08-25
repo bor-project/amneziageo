@@ -44,7 +44,8 @@
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">
-            <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+            <PathIcon Classes.spin="{Binding Home.ProbeRunning}" Data="{DynamicResource AgRefreshGeometry}"
+                      Width="14" Height="14" VerticalAlignment="Center" />
             <TextBlock Text="{l:Tr Main_ProbeButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
@@ -55,7 +56,8 @@
                  Text="{l:Tr Main_ConfigCatalogueEmpty}" IsVisible="{Binding ShowNoConfigsHint}" />
     </StackPanel>
 
-    <!-- Каталог карточек: нажатие открывает настройки своей конфигурации. -->
+    <!-- Каталог карточек: кнопка на карточке и двойной щелчок по ней открывают настройки своей
+         конфигурации, драг переставляет карточки. -->
     <Panel Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding IsSectionCatalogue}">
       <!-- Узкий экран: карточки стоят одной колонкой во всю ширину. -->
       <ScrollViewer IsVisible="{Binding ShowCardStack}"
@@ -109,26 +111,19 @@
       <!-- One frame around the whole settings block; below the card width it goes and the hairlines carry the boundaries. -->
       <Border Classes="sect">
         <StackPanel Spacing="14">
-          <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-          <Border Classes="hairline" />
-
-          <!-- Действует ли конфигурация: строка состояния со ссылкой на подключение. Цель ставит само
-               подключение, отдельного переключателя нет. -->
-          <WrapPanel>
-            <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
-                     Fill="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsOpenConfigActive}" />
-            <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
-                     Fill="{DynamicResource AgWarnBrush}" IsVisible="{Binding !IsOpenConfigActive}" />
-            <TextBlock Text="{l:Tr Main_IsActiveBadge}" FontSize="12" VerticalAlignment="Center"
-                       Foreground="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsOpenConfigActive}" />
-            <TextBlock Text="{l:Tr Main_ConfigIdleNotice}" FontSize="12" VerticalAlignment="Center"
-                       Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding !IsOpenConfigActive}" />
-            <Button Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
+          <!-- Используется ли конфигурация: тумблер делает её целью, ссылка рядом поднимает туннель. -->
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+            <TextBlock Grid.Column="0" Text="{l:Tr Main_InUseToggle}" FontWeight="SemiBold" FontSize="15"
+                       TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
+                    HorizontalAlignment="Left"
                     IsVisible="{Binding ShowConnectOpenConfig}"
                     Command="{Binding ConnectOpenConfigCommand}">
               <TextBlock Text="{l:Tr Main_ConnectNowLink}" />
             </Button>
-          </WrapPanel>
+            <ToggleSwitch Grid.Column="2" MinWidth="0" VerticalAlignment="Center"
+                          IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
+          </Grid>
 
           <Border Classes="hairline" />
 

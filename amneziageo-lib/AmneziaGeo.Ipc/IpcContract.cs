@@ -98,6 +98,11 @@ public static class IpcContract
     public const string OpRemoveRoutingList = "remove-routing-list";
 
     /// <summary>
+    /// Command to set the order the routing lists are listed in. Args: the names, in the order they are shown.
+    /// </summary>
+    public const string OpReorderRoutingLists = "reorder-routing-lists";
+
+    /// <summary>
     /// Command to fetch a routing list's full rules. Args: id. The ack message holds newline-separated
     /// role-tagged rule tokens ("proxy|geosite:openai", "block|domain:x" etc).
     /// </summary>
@@ -178,6 +183,12 @@ public static class IpcContract
     /// (SourceEntry.UpdateAvailable); the ack message holds a human-readable summary.
     /// </summary>
     public const string OpCheckSources = "check-sources";
+
+    /// <summary>
+    /// Re-reads the geo sources and their file state from the store and pushes a snapshot. No args. Sent when
+    /// the settings screen opens: the state lives in the store, not on the agent's heap.
+    /// </summary>
+    public const string OpRefreshSources = "refresh-sources";
 
     /// <summary>
     /// Command to check a single geo data source for a newer remote file without downloading it. Args: name.
@@ -312,6 +323,15 @@ public static class IpcContract
     public const string OpCheckTarget = "check-target";
 
     /// <summary>
+    /// Command to measure one destination: args are [0] the target - a domain or an address; [1] the path to
+    /// measure it over - "auto" (leave the routing alone), "tunnel" (force the target through the tunnel) or
+    /// "bypass" (force it past the tunnel); [2] optional URL of the service the send leg uploads to (empty =
+    /// the built-in one). The ack message holds tab-separated "leg" rows and a closing "verdict" row. The run
+    /// is stored in the probe journal, which travels in the diagnostics archive on its own.
+    /// </summary>
+    public const string OpProbeTarget = "probe-target";
+
+    /// <summary>
     /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");
     /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
     /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less
@@ -353,6 +373,13 @@ public static class IpcContract
     /// bytes to count.
     /// </summary>
     public const string OpGetSessions = "get-sessions";
+
+    /// <summary>
+    /// Command to read every destination the agent can put a name to: what it resolved for the selected config
+    /// before, which outlives a disconnect, and what the tunnel carries right now. No args. The ack message
+    /// holds one name per line.
+    /// </summary>
+    public const string OpKnownHosts = "known-hosts";
 
     /// <summary>
     /// Command for the UI to record a diagnostic line in the agent log (the UI process keeps no log of its

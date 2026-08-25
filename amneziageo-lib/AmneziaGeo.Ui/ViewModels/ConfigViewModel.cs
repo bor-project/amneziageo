@@ -52,6 +52,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
+    [NotifyPropertyChangedFor(nameof(UseOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
     [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
@@ -148,6 +149,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private void OnCultureChanged()
     {
+        foreach (var config in Configs)
+        {
+            config.RefreshLocalizedLabels();
+        }
+
         OnPropertyChanged(nameof(DeleteConfigPrompt));
     }
 
@@ -171,6 +177,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// at all, while the settings picker always shows one.
     /// </summary>
     public ObservableCollection<ConfigChoice> HomeConfigOptions { get; } = [ConfigChoice.None];
+
+    /// <summary>
+    /// The same catalogue for the probe picker, which offers real configurations alone: a probe is measured
+    /// through a server, so «не выбрано» would name nothing to measure through.
+    /// </summary>
+    public ObservableCollection<ConfigChoice> ProbeConfigOptions { get; } = [];
 
     /// <summary>
     /// The names of the configurations currently known.
@@ -320,6 +332,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public void NotifyActiveConfigChanged()
     {
         OnPropertyChanged(nameof(IsOpenConfigActive));
+        OnPropertyChanged(nameof(UseOpenConfig));
         OnPropertyChanged(nameof(ShowConnectOpenConfig));
     }
 
@@ -328,6 +341,38 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool IsOpenConfigActive =>
         OpenConfig is { Length: > 0 } && string.Equals(OpenConfig, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Используется ли открытая конфигурация. Тумблер ставит её целью или снимает выбор.
+    /// </summary>
+    public bool UseOpenConfig
+    {
+        get => IsOpenConfigActive;
+        set
+        {
+            if (value == IsOpenConfigActive)
+            {
+                return;
+            }
+
+            _ = UseOpenConfigAsync(value);
+        }
+    }
+
+    // Отправляет выбор и перечитывает тумблер из состояния, которое вышло.
+    private async Task UseOpenConfigAsync(bool used)
+    {
+        if (!used)
+        {
+            await _host.Home.ClearActiveConfigAsync();
+        }
+        else if (Configs.FirstOrDefault(row => string.Equals(row.Name, OpenConfig, StringComparison.Ordinal)) is { } target)
+        {
+            await _host.Home.UseConfigAsync(target);
+        }
+
+        OnPropertyChanged(nameof(UseOpenConfig));
+    }
 
     /// <summary>
     /// Whether the open config offers to be dialled: the agent is there and no tunnel runs yet. Dialling is how
@@ -566,10 +611,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
                 }
             }
 
+            // Состояние подключения ставит ConnectionViewModel: круг карточки идёт за кнопкой в шапке.
             existing.Endpoint = entry.Endpoint;
             existing.GeoSplit = entry.GeoSplit;
             existing.Rules = entry.Rules;
-            existing.Status = entry.Status;
             existing.UseWebSocket = entry.WebSocket;
             existing.WebSocketHost = entry.WebSocketHost;
             existing.WebSocketPort = entry.WebSocketPort;
@@ -802,6 +847,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void ReconcileConfigOptions()
     {
         ReconcileOptions(HomeConfigOptions, 1);
+        ReconcileOptions(ProbeConfigOptions, 0);
     }
 
     // Mirrors the config names onto an option list, leaving the synthetic rows before head untouched.

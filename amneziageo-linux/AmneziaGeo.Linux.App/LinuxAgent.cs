@@ -24,7 +24,15 @@ internal sealed class LinuxAgent : IDisposable
     private const string PeriodicReconnectKey = "periodic-reconnect-enabled";
     private const string ReconnectIntervalKey = "periodic-reconnect-interval-seconds";
     private const string RouteTtlKey = SettingKeys.RouteTtl;
+    private const string GeoAutoCheckKey = "geo-auto-check";
+    private const string GeoIntervalKey = "geo-check-interval-hours";
     private const int SupervisorTickSeconds = 5;
+    private const int GeoTickSeconds = 60;
+    private const int MinGeoIntervalHours = 1;
+    private const int MaxGeoIntervalHours = 24 * 7;
+
+    // Leaves the start-up rush to the tunnel before the first check goes out.
+    private static readonly TimeSpan _geoInitialDelay = TimeSpan.FromMinutes(2);
 
     private readonly SqliteStateStore _store;
     private readonly LinuxGeoFileStore _geoFiles;
@@ -41,7 +49,9 @@ internal sealed class LinuxAgent : IDisposable
     private readonly SemaphoreSlim _commandGate = new(1, 1);
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
+
+    // Per-source download volume while a base is being fetched.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> _sourceProgress = new(StringComparer.Ordinal);
     private readonly LocalProxyServer _proxy;
 
     private LocalProxyOptions _proxyOptions = new();
@@ -54,6 +64,8 @@ internal sealed class LinuxAgent : IDisposable
     private bool _periodicReconnect;
     private int _reconnectIntervalSeconds = 30;
     private int _routeTtlSeconds = TunnelOptions.DefaultRouteTtlSeconds;
+    private bool _geoAutoCheck = true;
+    private int _geoCheckIntervalHours = 24;
     private bool _desiredConnected;
     private int _handshakeAge = -1;
     private readonly LinkMeter _meter = new();
@@ -121,6 +133,8 @@ internal sealed class LinuxAgent : IDisposable
         _periodicReconnect = settings.TryGetValue(PeriodicReconnectKey, out var periodic) && IsOn(periodic);
         _reconnectIntervalSeconds = ReconnectInterval(settings.TryGetValue(ReconnectIntervalKey, out var interval) ? interval : null);
         _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
+        _geoAutoCheck = !settings.TryGetValue(GeoAutoCheckKey, out var geoAuto) || IsOn(geoAuto);
+        _geoCheckIntervalHours = GeoInterval(settings.TryGetValue(GeoIntervalKey, out var geoInterval) ? geoInterval : null);
         _proxyOptions = ReadProxyOptions(settings);
         _proxy.Apply(_proxyOptions);
         _log.SetCaptureLevel(_logLevel);
@@ -130,7 +144,7 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     /// <summary>
-    /// Connects at start when the tunnel is set to survive a reboot, then keeps it up until cancellation.
+    /// Connects at start when the tunnel is set to survive a reboot, then keeps it up and the rule databases current.
     /// </summary>
     public async Task RunSupervisorAsync(CancellationToken ct)
     {
@@ -144,10 +158,46 @@ internal sealed class LinuxAgent : IDisposable
             }
         }
 
+        await Task.WhenAll(SuperviseLoopAsync(ct), CheckGeoUpdatesAsync(ct)).ConfigureAwait(false);
+    }
+
+    // Ticks the supervisor until cancellation.
+    private async Task SuperviseLoopAsync(CancellationToken ct)
+    {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(SupervisorTickSeconds));
         while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
         {
             await SuperviseAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    // Pulls the newest rule databases on a schedule while the tunnel stands: geo data only feeds an active tunnel,
+    // and a base that did not change costs one conditional request.
+    private async Task CheckGeoUpdatesAsync(CancellationToken ct)
+    {
+        var due = DateTime.UtcNow + _geoInitialDelay;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(GeoTickSeconds));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                if (!_geoAutoCheck || !_tunnel.Running || DateTime.UtcNow < due)
+                {
+                    continue;
+                }
+
+                _log.Info("geo", "checking the rule databases for a newer version");
+                var ack = await DispatchAsync(new IpcCommand(IpcContract.OpUpdateSources, []), ct).ConfigureAwait(false);
+                if (!ack.Ok)
+                {
+                    _log.Warn("geo", $"the rule databases could not be updated: {ack.Message}");
+                }
+
+                due = DateTime.UtcNow.AddHours(ack.Ok ? _geoCheckIntervalHours : 1);
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -206,6 +256,8 @@ internal sealed class LinuxAgent : IDisposable
             ConnectFailed: _connectFailed,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
+            GeoAutoCheck: _geoAutoCheck,
+            GeoCheckIntervalHours: _geoCheckIntervalHours,
             ConnectFailReason: _connectFailReason,
             ConnectFailDetail: _connectFailDetail,
             SurviveReboot: _surviveReboot,
@@ -568,6 +620,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpReorderRoutingLists:
+                return await ReorderRoutingListsAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpGetRoutingSettings:
                 return await GetRoutingSettingsAsync(args, ct).ConfigureAwait(false);
 
@@ -595,6 +650,10 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpCheckSources:
                 return await CheckSourcesAsync(ct).ConfigureAwait(false);
+
+            case IpcContract.OpRefreshSources:
+                await PushAsync(ct).ConfigureAwait(false);
+                return Ok();
 
             case IpcContract.OpCountRoutes:
                 return await CountRoutesAsync(args, ct).ConfigureAwait(false);
@@ -627,6 +686,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpGetSessions:
                 return GetSessions();
 
+            case IpcContract.OpKnownHosts:
+                return await KnownHostsAsync(ct).ConfigureAwait(false);
+
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, ct).ConfigureAwait(false);
 
@@ -635,6 +697,9 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpProbeTarget:
+                return await ProbeTargetAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
@@ -1111,6 +1176,27 @@ internal sealed class LinuxAgent : IDisposable
             : new IpcAck(true, string.Join('\n', list.Rules.Select(GeoConfigurator.FormatWithRole)));
     }
 
+    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return Fail();
+        }
+
+        var stored = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
+            .Select(summary => summary.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (args.Any(name => !stored.Contains(name)))
+        {
+            return Fail();
+        }
+
+        await _store.SetRoutingListOrderAsync(args, ct).ConfigureAwait(false);
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
+    }
+
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || !long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
@@ -1230,11 +1316,13 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await PushAsync(ct).ConfigureAwait(false);
+        var pump = new CancellationTokenSource();
+        var ticker = ProgressPumpAsync(pump.Token);
         foreach (var source in targets)
         {
             try
             {
-                var meta = await _geoUpdater.UpdateAsync(source, null, ct).ConfigureAwait(false);
+                var meta = await _geoUpdater.UpdateAsync(source, new SourceProgress(_sourceProgress, source.Name), ct).ConfigureAwait(false);
                 _sourceErrors[source.Name] = null;
                 _log.Info("geo", $"{source.Name}: {meta.CategoryCount} categories");
             }
@@ -1247,9 +1335,13 @@ internal sealed class LinuxAgent : IDisposable
             finally
             {
                 _updatingSources.Remove(source.Name);
+                _sourceProgress.TryRemove(source.Name, out _);
             }
         }
 
+        pump.Cancel();
+        await ticker.ConfigureAwait(false);
+        pump.Dispose();
         await _geo.RematerializeAllRoutingListsAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return failures.Count == 0
@@ -1297,6 +1389,14 @@ internal sealed class LinuxAgent : IDisposable
                 _routeTtlSeconds = ttlSeconds;
                 _tunnel.SetRouteTtl(ttlSeconds);
                 await _store.SetSettingAsync(RouteTtlKey, _routeTtlSeconds.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
+                break;
+            case GeoAutoCheckKey:
+                _geoAutoCheck = IsOn(args[1]);
+                await _store.SetSettingAsync(GeoAutoCheckKey, _geoAutoCheck ? "on" : "off", ct).ConfigureAwait(false);
+                break;
+            case GeoIntervalKey:
+                _geoCheckIntervalHours = GeoInterval(args[1]);
+                await _store.SetSettingAsync(GeoIntervalKey, _geoCheckIntervalHours.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
                 break;
             case SettingKeys.ProxyEnabled:
             case SettingKeys.ProxyAnonymous:
@@ -1433,6 +1533,32 @@ internal sealed class LinuxAgent : IDisposable
 
     // What the tunnel carries right now. Nothing here relays connections, so a destination is a live route with
     // its verdict, and there are no bytes on it to count.
+    // Every destination the agent can put a name to: what it resolved for this config before, which outlives a
+    // disconnect, and what the tunnel carries right now.
+    private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
+    {
+        var hosts = new List<string>(await _log.Store.ListProbeTargetsAsync(KnownHostList.HistoryRows, ct).ConfigureAwait(false));
+        if (_selectedTarget is { Length: > 0 } config)
+        {
+            foreach (var resolution in await _store.ListDomainResolutionsAsync(config, ct).ConfigureAwait(false))
+            {
+                hosts.Add(resolution.Domain);
+            }
+        }
+
+        foreach (var host in _tunnel.Tunneled)
+        {
+            hosts.Add(host);
+        }
+
+        foreach (var host in _tunnel.Bypassed)
+        {
+            hosts.Add(host);
+        }
+
+        return new IpcAck(true, KnownHostList.Payload(hosts));
+    }
+
     private IpcAck GetSessions()
     {
         var rows = new List<LiveSession>();
@@ -1528,7 +1654,7 @@ internal sealed class LinuxAgent : IDisposable
             var status = await _geoChecker.CheckAsync(source, budget.Token).ConfigureAwait(false);
             if (status != GeoUpdateChecker.Status.Unknown)
             {
-                _updateAvailable[source.Name] = status == GeoUpdateChecker.Status.Available;
+                await _store.SetGeoUpdateAvailableAsync(source.Name, status == GeoUpdateChecker.Status.Available, ct).ConfigureAwait(false);
             }
 
             return status;
@@ -1635,6 +1761,101 @@ internal sealed class LinuxAgent : IDisposable
 
         Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
         return new IpcAck(true, report.ToPayload());
+    }
+
+    // Measures one destination over the path asked for; the routing cache holds it there for the run only.
+    private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        var target = args[0];
+        var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
+        if (!_tunnel.Running && path != ProbePaths.Bypass)
+        {
+            var refused = TargetProbe.Refused(target, path, ProbeVerdicts.NotConnected);
+            RecordProbe(refused);
+            return new IpcAck(true, refused.ToPayload());
+        }
+
+        var cache = _tunnel.Cache;
+        var address = await ProbeAddressAsync(target, ct).ConfigureAwait(false);
+        var held = HoldProbe(cache, address, path);
+        try
+        {
+            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), args.Count > 2 ? args[2] : string.Empty);
+            var report = await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
+            RecordProbe(report);
+            return new IpcAck(true, report.ToPayload());
+        }
+        finally
+        {
+            ReleaseProbe(cache, address, held);
+        }
+    }
+
+    // Holds the address on the path asked for; auto holds nothing.
+    private static bool HoldProbe(RoutingCache? cache, System.Net.IPAddress? address, string path)
+    {
+        if (cache is null || address is null || path == ProbePaths.Auto)
+        {
+            return false;
+        }
+
+        cache.Note(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
+        return true;
+    }
+
+    // Puts a held address back under the rules that own it.
+    private static void ReleaseProbe(RoutingCache? cache, System.Net.IPAddress? address, bool held)
+    {
+        if (!held || cache is null || address is null)
+        {
+            return;
+        }
+
+        cache.Note(address, cache.Classify(address));
+    }
+
+    // Where the run went: the path forced, or - for auto - what the rules in force make of the address.
+    private static string TakenPath(RoutingCache? cache, System.Net.IPAddress? address, string path)
+    {
+        if (path != ProbePaths.Auto)
+        {
+            return path;
+        }
+
+        if (cache is null || address is null)
+        {
+            return ProbePaths.Bypass;
+        }
+
+        return cache.Classify(address) switch
+        {
+            RouteVerdict.Proxy => "tunnel by rule",
+            RouteVerdict.Direct => "bypass by rule",
+            RouteVerdict.Block => "blocked by rule",
+            _ => cache.Split ? "bypass by default" : "tunnel by default",
+        };
+    }
+
+    // The address a target stands for, as the tunnel resolves it.
+    private static async Task<System.Net.IPAddress?> ProbeAddressAsync(string target, CancellationToken ct)
+    {
+        var found = await ResolveAsync(target, ct).ConfigureAwait(false);
+        return System.Net.IPAddress.TryParse(found, out var address) ? address : null;
+    }
+
+    // Stores a probe in its own journal and puts its closing line in the agent log.
+    private void RecordProbe(ProbeReport report)
+    {
+        var rendered = report.Render().TrimEnd();
+        _log.Store.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
+        var rows = rendered.Split('\n');
+        _log.Info("probe", rows[0].Trim());
+        _log.Info("probe", rows[^1].Trim());
     }
 
     // What the running tunnel holds for an address right now.
@@ -1802,6 +2023,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var meta = metaByName.GetValueOrDefault(source.Name);
             var updating = _updatingSources.Contains(source.Name);
+            var volume = _sourceProgress.GetValueOrDefault(source.Name);
             entries.Add(new SourceEntry(
                 source.Name,
                 source.Kind,
@@ -1809,9 +2031,11 @@ internal sealed class LinuxAgent : IDisposable
                 meta?.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
                 meta?.CategoryCount ?? 0,
                 updating,
-                0,
-                _updateAvailable.GetValueOrDefault(source.Name),
-                updating ? null : _sourceErrors.GetValueOrDefault(source.Name)));
+                updating ? volume.Percent : 0,
+                meta?.UpdateAvailable ?? false,
+                updating ? null : _sourceErrors.GetValueOrDefault(source.Name),
+                updating ? volume.Read : 0,
+                updating ? volume.Total : 0));
         }
 
         return entries;
@@ -1826,6 +2050,30 @@ internal sealed class LinuxAgent : IDisposable
     private string StatusFor(string name)
     {
         return string.Equals(name, _boundTarget, StringComparison.Ordinal) ? _boundStatus : ConnectionStatus.Idle;
+    }
+
+    // Пушит снимок, пока идут загрузки: иначе объём в списке источников стоит на месте.
+    private async Task ProgressPumpAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(700), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            await PushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    // Складывает ход загрузки одного источника.
+    private sealed class SourceProgress(System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> map, string name) : IProgress<GeoDownload>
+    {
+        public void Report(GeoDownload value) => map[name] = value;
     }
 
     private async Task PushAsync(CancellationToken ct)
@@ -1856,13 +2104,19 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable
+        or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
 
     // Reconnect interval in seconds, clamped to a sane window.
     private static int ReconnectInterval(string? value) =>
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
             ? Math.Clamp(seconds, 5, 3600)
             : 30;
+
+    private static int GeoInterval(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
+            ? Math.Clamp(hours, MinGeoIntervalHours, MaxGeoIntervalHours)
+            : 24;
 
     private static bool IsOn(string? token) => token is "on" or "true" or "1";
 

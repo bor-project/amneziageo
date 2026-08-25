@@ -240,6 +240,11 @@ internal sealed class TunnelController : IDisposable
     }
 
     /// <summary>
+    /// The routing cache of the running tunnel, or none when nothing runs.
+    /// </summary>
+    public RoutingCache? Cache => _cache;
+
+    /// <summary>
     /// Applies edited rules to the running tunnel and drops every verdict taken under the old ones; false when
     /// only a fresh tunnel can carry the change, because the mode decides what the engine was told to accept.
     /// </summary>

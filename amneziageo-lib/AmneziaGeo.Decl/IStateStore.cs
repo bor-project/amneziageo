@@ -189,7 +189,7 @@ public interface IStateStore
     Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns all stored routing lists ordered by name.
+    /// Returns all stored routing lists, in the order the user set them, then by name.
     /// </summary>
     Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default);
 
@@ -198,6 +198,11 @@ public interface IStateStore
     /// rule rows or the materialized JSON. Backs the status snapshot, which needs only the summary.
     /// </summary>
     Task<IReadOnlyList<RoutingListSummary>> ListRoutingListSummariesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores the order the routing lists are listed in. Names left out keep their own place.
+    /// </summary>
+    Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default);
 
     /// <summary>
     /// Removes a routing list by id. The global selection is cleared when it named this list.
@@ -254,6 +259,11 @@ public interface IStateStore
     /// Returns metadata for all stored geo files.
     /// </summary>
     Task<IReadOnlyList<GeoFileMetadata>> ListGeoFilesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Records what the last update check found for a geo file. Does nothing for a file never downloaded.
+    /// </summary>
+    Task SetGeoUpdateAvailableAsync(string name, bool available, CancellationToken ct = default);
 
     /// <summary>
     /// Returns a stored application setting value, or null if absent.

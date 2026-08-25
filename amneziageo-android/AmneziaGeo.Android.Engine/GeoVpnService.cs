@@ -115,6 +115,7 @@ public sealed class GeoVpnService : VpnService
     private ProxyRelay? _relay;
     private LocalProxyServer? _proxy;
     private VpnBridge.Listener? _proxySettings;
+    private VpnBridge.Listener? _probes;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
     private VpnBridge.Listener? _queries;
@@ -142,6 +143,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
         _proxySettings = new VpnBridge.Listener { Handler = _ => ApplyProxy() };
         VpnBridge.Listen(this, _proxySettings, VpnBridge.ActionProxy);
+        _probes = new VpnBridge.Listener { Handler = _ => RunProbe() };
+        VpnBridge.Listen(this, _probes, VpnBridge.ActionProbe);
         WatchUnderlay();
     }
 
@@ -217,6 +220,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_stops);
             _stops = null;
+        }
+
+        if (_probes is not null)
+        {
+            UnregisterReceiver(_probes);
+            _probes = null;
         }
 
         DropUnderlayWatch();
@@ -474,6 +483,36 @@ public sealed class GeoVpnService : VpnService
             global::Android.Util.Log.Error("GeoVpnService", "bring-up failed: " + ex);
             Teardown(VpnStage.Failed, ex.Message, ReasonFor(ex));
         }
+    }
+
+    // Measures the destination the head left here. Only this process can excuse a socket from the tunnel, so a
+    // run past it is handed over instead of attempted there.
+    private void RunProbe()
+    {
+        var request = VpnBridge.ReadProbe();
+        if (request is null)
+        {
+            return;
+        }
+
+        VpnBridge.ClearProbe();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var options = new TargetProbeOptions(request.Target, request.Path, request.Taken, request.UploadUrl,
+                    socket => Protect(socket.Handle.ToInt32()));
+                var report = await TargetProbe.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
+                VpnBridge.WriteProbeResult(report.ToPayload());
+            }
+            catch (Exception ex)
+            {
+                global::Android.Util.Log.Warn("GeoVpnService", "the probe failed: " + ex);
+                VpnBridge.WriteProbeResult(TargetProbe
+                    .Refused(request.Target, request.Path, ProbeVerdicts.PathUnavailable)
+                    .ToPayload());
+            }
+        });
     }
 
     // Names the causes worth telling apart; the rest stay unclassified and get the generic notice.

@@ -245,6 +245,9 @@
               <TextBlock Text="{l:Tr Main_DiagnosticsSection}" IsVisible="{Binding IsSettingsLogs}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr Probe_SettingsSection}" IsVisible="{Binding IsSettingsProbe}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
               <TextBlock Text="{l:Tr General_Section}" IsVisible="{Binding IsSettingsGeneral}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
@@ -421,10 +424,22 @@
               </ContentControl.ContentTemplate>
             </ContentControl>
 
-            <!-- DIAGNOSTICS SECTION: fixed to the viewport (minus the Grid's 16px inset) so only the pane body scrolls. -->
+            <!-- PROBE SECTION: opened by the link beside the probe run, and stepped back to the journal. -->
+            <ContentControl IsVisible="{Binding IsSettingsProbe}" Content="{Binding Probe}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:ProbeSettingsViewModel">
+                  <views:ProbeSettingsView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+
+            <!-- DIAGNOSTICS SECTION: the viewport (minus the Grid's 16px inset) so only the pane body scrolls,
+                 and more than the viewport when the pane is too low for a readable body - then this screen
+                 scrolls for the difference. The viewer holds the height, since only it knows what its head takes. -->
             <ContentControl IsVisible="{Binding IsSettingsLogs}" Content="{Binding Diagnostics}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=16}">
+                            Height="{Binding Diagnostics.Logs.SectionHeight}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:DiagnosticsViewModel">
                   <views:DiagnosticsView />
@@ -548,9 +563,10 @@
                   Content="{Binding Home.NoticeActionText}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                   Margin="10,0,0,0" VerticalAlignment="Center" IsVisible="{Binding Home.ReconnectAvailable}" />
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding Home.DismissNoticeCommand}"
-                  Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}"
-                  IsVisible="{Binding Home.CanDismissNotice}" />
+                  Margin="9,0,0,0" VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}"
+                  IsVisible="{Binding Home.CanDismissNotice}">
+            <PathIcon Data="{StaticResource AgCloseGeometry}" Width="11" Height="11" Foreground="White" />
+          </Button>
         </Grid>
       </Border>
 
@@ -576,11 +592,13 @@
                     VerticalAlignment="Center" IsVisible="{Binding General.DownloadActive}" />
             <Button Classes="radiopick" Command="{Binding General.ApplyUpdateCommand}"
                     Content="{l:Tr Main_InstallButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                    VerticalAlignment="Center" IsVisible="{Binding General.UpdateDownloaded}" />
+                    VerticalAlignment="Center" IsVisible="{Binding General.UpdateDownloaded}"
+                    IsEnabled="{Binding !General.UpdateInstalling}" />
           </StackPanel>
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding General.DismissUpdateBannerCommand}"
-                  Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
+                  Margin="6,0,0,0" VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}">
+            <PathIcon Data="{StaticResource AgCloseGeometry}" Width="11" Height="11" Foreground="White" />
+          </Button>
         </Grid>
       </Border>
 

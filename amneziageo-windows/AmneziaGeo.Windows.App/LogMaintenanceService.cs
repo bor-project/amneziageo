@@ -43,6 +43,7 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
             var agent = await store.PruneAsync(SqliteLogStore.AgentTable, settings.MaxRowsPerTable, ct);
             var routes = await store.PruneAsync(SqliteLogStore.RoutesTable, settings.MaxRowsPerTable, ct);
             await store.PruneAsync(SqliteLogStore.ChecksTable, ChecksKept, ct);
+            await store.PruneAsync(SqliteLogStore.ProbeTable, ChecksKept, ct);
             if (agent + routes > 0)
             {
                 logger.LogDebug("dropped the oldest {Agent} log entries and {Routes} routing entries past the retention limit", agent, routes);

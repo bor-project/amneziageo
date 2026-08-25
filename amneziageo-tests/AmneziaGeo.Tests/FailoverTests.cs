@@ -4,10 +4,14 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// Auto-switching: the servers it walks, the ones it passes over and the place a picked server takes.
+/// Auto-switching: the servers it walks, the ones it passes over, the place a picked server takes and when the
+/// default route moves.
 /// </summary>
 public sealed class FailoverTests
 {
+    private static readonly DateTimeOffset Origin = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly TimeSpan Step = TimeSpan.FromSeconds(15);
+
     [Fact]
     public void Names_ReadOneToALineWithoutTheBlanks()
     {
@@ -45,5 +49,198 @@ public sealed class FailoverTests
     {
         Assert.Equal(["a", "b"], FailoverPolicy.Raise(["a", "b"], "z"));
         Assert.Equal(["a", "b"], FailoverPolicy.Raise(["a", "b"], "A"));
+    }
+
+    [Fact]
+    public void Walk_PassesOverTheServersLeftOutAndKeepsTheOrderOfTheRest()
+    {
+        Assert.Equal(["a", "c"], FailoverPolicy.Participants(["a", "b", "c"], "b"));
+        Assert.Equal(["a", "b"], FailoverPolicy.Participants(["a", "b"], null));
+    }
+
+    [Fact]
+    public void Walk_TakesTheServerTheDecisionNames()
+    {
+        Assert.Equal("b", FailoverPolicy.Walk(["a", "b", "c"], "a", "b", []));
+    }
+
+    [Fact]
+    public void Walk_PassesOverTheServersAlreadyDialledInThisSearch()
+    {
+        Assert.Equal("c", FailoverPolicy.Walk(["a", "b", "c"], "b", "a", ["a"]));
+    }
+
+    [Fact]
+    public void Walk_NeverNamesTheServerCarryingTheRouteNow()
+    {
+        Assert.Equal("b", FailoverPolicy.Walk(["a", "b", "c"], "c", "a", ["a"]));
+    }
+
+    [Fact]
+    public void Walk_SaysTheLapIsDoneWhenEveryServerHasBeenDialled()
+    {
+        Assert.Equal(string.Empty, FailoverPolicy.Walk(["a", "b", "c"], "c", "a", ["a", "b", "c"]));
+    }
+
+    [Fact]
+    public void Decide_LeavesTheServerThatStoppedAnsweringOnTheThirdReading()
+    {
+        var policy = new FailoverPolicy();
+        var at = Origin;
+
+        Assert.Equal(FailoverDecision.Stay, Round(policy, [Dying("a"), Healthy("b")], "a", at));
+        Assert.Equal(FailoverDecision.Stay, Round(policy, [Dying("a"), Healthy("b")], "a", at += Step));
+        Assert.Equal(FailoverDecision.SwitchTo("b"), Round(policy, [Dying("a"), Healthy("b")], "a", at + Step));
+    }
+
+    [Fact]
+    public void Decide_CountsAHolderWithNoTunnelUnderItAsFallen()
+    {
+        var policy = new FailoverPolicy();
+        var at = Origin;
+
+        for (var round = 0; round < FailoverPolicy.FallSamples - 1; round++)
+        {
+            Round(policy, [Down("a"), Healthy("b")], "a", at += Step);
+        }
+
+        Assert.Equal(FailoverDecision.SwitchTo("b"), Round(policy, [Down("a"), Healthy("b")], "a", at + Step));
+    }
+
+    [Fact]
+    public void Decide_StaysWhenEveryRaisedServerWentBadAtOnce()
+    {
+        var policy = new FailoverPolicy();
+        var at = Origin;
+
+        for (var round = 0; round < FailoverPolicy.FallSamples + 1; round++)
+        {
+            Assert.Equal(FailoverDecision.Stay, Round(policy, [Dying("a"), Dying("b")], "a", at += Step));
+        }
+    }
+
+    [Fact]
+    public void Decide_StaysWhenTheFallenServerHasNowhereToHandTheRouteTo()
+    {
+        var policy = new FailoverPolicy();
+        var at = Origin;
+
+        for (var round = 0; round < FailoverPolicy.FallSamples + 1; round++)
+        {
+            Assert.Equal(FailoverDecision.Stay, Round(policy, [Dying("a")], "a", at += Step));
+        }
+    }
+
+    [Fact]
+    public void Decide_TakesALossShareNobodyMeasuredForNoComplaint()
+    {
+        var policy = new FailoverPolicy();
+        var unmeasured = new FailoverReading("a", true, new LinkReading(1_000_000, 200_000, 0, LinkHealth.LossUnknown, 30));
+        var at = Origin;
+
+        for (var round = 0; round < FailoverPolicy.FallSamples + 1; round++)
+        {
+            Assert.Equal(FailoverDecision.Stay, Round(policy, [unmeasured, Healthy("b")], "a", at += Step));
+        }
+    }
+
+    [Fact]
+    public void Decide_CarriesTheRouteBackOnceThePriorityServerAnsweredAndTheTunnelWentQuiet()
+    {
+        var policy = new FailoverPolicy();
+        Round(policy, [Silent("a"), Silent("b")], "b", Origin, returnMinutes: 5);
+
+        Assert.Equal(
+            FailoverDecision.ReturnTo("a"),
+            Round(policy, [Silent("a"), Silent("b")], "b", Origin.AddMinutes(5), returnMinutes: 5));
+    }
+
+    [Fact]
+    public void Decide_KeepsTheRouteWhileTheTunnelIsCarryingTraffic()
+    {
+        var policy = new FailoverPolicy();
+        Round(policy, [Silent("a"), Healthy("b")], "b", Origin, returnMinutes: 5);
+
+        Assert.Equal(
+            FailoverDecision.Stay,
+            Round(policy, [Silent("a"), Healthy("b")], "b", Origin.AddMinutes(5), returnMinutes: 5));
+    }
+
+    [Fact]
+    public void Decide_KeepsTheRouteUntilThePriorityServerHasAnsweredLongEnough()
+    {
+        var policy = new FailoverPolicy();
+        Round(policy, [Silent("a"), Silent("b")], "b", Origin, returnMinutes: 5);
+
+        Assert.Equal(
+            FailoverDecision.Stay,
+            Round(policy, [Silent("a"), Silent("b")], "b", Origin.AddMinutes(1), returnMinutes: 5));
+    }
+
+    [Fact]
+    public void Decide_KeepsTheRouteWhereItIsWhenTheReturnIsSwitchedOff()
+    {
+        var policy = new FailoverPolicy();
+        Round(policy, [Silent("a"), Silent("b")], "b", Origin);
+
+        Assert.Equal(FailoverDecision.Stay, Round(policy, [Silent("a"), Silent("b")], "b", Origin.AddHours(1)));
+    }
+
+    [Fact]
+    public void Decide_DoesNotSendTheRouteStraightBackToTheServerThatFell()
+    {
+        var policy = new FailoverPolicy();
+        var at = Origin;
+        for (var round = 0; round < FailoverPolicy.FallSamples - 1; round++)
+        {
+            Round(policy, [Dying("a"), Silent("b")], "a", at += Step, returnMinutes: 5);
+        }
+
+        Assert.Equal(
+            FailoverDecision.SwitchTo("b"),
+            Round(policy, [Dying("a"), Silent("b")], "a", at += Step, returnMinutes: 5));
+
+        // The server is back on its feet, but the route stays until it has stood for the whole wait.
+        Assert.Equal(FailoverDecision.Stay, Round(policy, [Silent("a"), Silent("b")], "b", at += Step, returnMinutes: 5));
+        Assert.Equal(FailoverDecision.Stay, Round(policy, [Silent("a"), Silent("b")], "b", at + Step, returnMinutes: 5));
+    }
+
+    [Fact]
+    public void Decide_StaysOutOfItWhileAutoSwitchingIsOff()
+    {
+        var policy = new FailoverPolicy();
+        var at = Origin;
+
+        for (var round = 0; round < FailoverPolicy.FallSamples + 1; round++)
+        {
+            var decision = policy.Decide([Dying("a"), Healthy("b")], new FailoverSettings(false, 5), "a", at += Step);
+            Assert.Equal(FailoverDecision.Stay, decision);
+        }
+    }
+
+    private static FailoverDecision Round(FailoverPolicy policy, IReadOnlyList<FailoverReading> readings, string holder, DateTimeOffset at, int returnMinutes = 0)
+    {
+        return policy.Decide(readings, new FailoverSettings(true, returnMinutes), holder, at);
+    }
+
+    private static FailoverReading Healthy(string name)
+    {
+        return new FailoverReading(name, true, new LinkReading(1_000_000, 200_000, 0, 0, 30));
+    }
+
+    private static FailoverReading Silent(string name)
+    {
+        return new FailoverReading(name, true, new LinkReading(0, 0, 0, 0, 30));
+    }
+
+    // Nothing arrives while the session is re-established over and over: the far end is gone.
+    private static FailoverReading Dying(string name)
+    {
+        return new FailoverReading(name, true, new LinkReading(0, 400_000, LinkHealth.ChurnPerMinute + 3, LinkHealth.LossUnknown, -1));
+    }
+
+    private static FailoverReading Down(string name)
+    {
+        return new FailoverReading(name, false, LinkReading.Empty);
     }
 }

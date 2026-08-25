@@ -58,6 +58,7 @@ internal static class AppHost
             builder.Services.AddHostedService<GeoUpdateCheckService>();
             builder.Services.AddHostedService<GeoBootstrapService>();
             builder.Services.AddHostedService<DnsHealthService>();
+            builder.Services.AddHostedService<FailoverService>();
             builder.Services.AddHostedService<LogLevelBackgroundWatcher>();
             builder.Services.AddHostedService<LogMaintenanceService>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<LocalProxyService>());

@@ -28,6 +28,12 @@ public static class LinkHealth
     public const int LossyPercent = 5;
 
     /// <summary>
+    /// Round trip at which the link is called slow: ITU-T G.114 puts the bearable one-way delay at 150 ms, and
+    /// a probe times the way there and back.
+    /// </summary>
+    public const int SlowMs = 300;
+
+    /// <summary>
     /// Whether the rate names a link that keeps re-establishing.
     /// </summary>
     public static bool Churning(int handshakesPerMinute)

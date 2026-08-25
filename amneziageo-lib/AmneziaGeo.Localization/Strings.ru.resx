@@ -197,13 +197,13 @@
     <value>Автопереключение</value>
   </data>
   <data name="General_FailoverEnabled" xml:space="preserve">
-    <value>Переключать сервер сам</value>
+    <value>Переключать сервер автоматически</value>
   </data>
   <data name="General_FailoverEnabledHint" xml:space="preserve">
-    <value>Переносить дефолтный маршрут на следующий сервер списка, когда нынешний перестаёт отвечать.</value>
+    <value>Если текущий сервер недоступен, использовать следующий по приоритету.</value>
   </data>
   <data name="General_FailoverOrderHint" xml:space="preserve">
-    <value>Порядок списка — порядок приоритета, тот же, в котором стоят карточки конфигураций. Строку можно перетащить или подвинуть ручкой слева.</value>
+    <value>Серверы проверяются сверху вниз. Чтобы изменить приоритет, перетащите карточку или укажите номер слева.</value>
   </data>
   <data name="General_FailoverMove" xml:space="preserve">
     <value>Переместить</value>
@@ -218,10 +218,10 @@
     <value>Возвращаться на приоритетный</value>
   </data>
   <data name="General_FailoverReturnHint" xml:space="preserve">
-    <value>Когда сервер выше по списку снова отвечает, вернуть маршрут ему, но только в тишине: смена туннеля рвёт живые соединения.</value>
+    <value>Когда приоритетный сервер снова доступен, вернуть маршрут на него.</value>
   </data>
   <data name="General_FailoverReturnAfter" xml:space="preserve">
-    <value>Держится здоровым</value>
+    <value>Период проверки доступности</value>
   </data>
   <data name="General_FailoverMinutes" xml:space="preserve">
     <value>мин</value>
@@ -1920,19 +1920,22 @@
     <value>весь трафик</value>
   </data>
   <data name="Main_ConfigDefaultRouteTitle" xml:space="preserve">
-    <value>Весь прочий трафик</value>
+    <value>Приложения</value>
   </data>
   <data name="Main_ConfigDefaultRouteSubtitle" xml:space="preserve">
-    <value>Уводить всё, что не назвали другие туннели. Нести это может только один.</value>
+    <value>Использовать конфигурацию для VPN и туннелирования приложений.</value>
   </data>
   <data name="Main_ConfigDefaultRouteHeld" xml:space="preserve">
-    <value>Сейчас его несёт {0}.</value>
+    <value>Сейчас маршрут несёт {0}.</value>
   </data>
   <data name="Main_ConfigDefaultRouteFree" xml:space="preserve">
-    <value>Сейчас его не несёт никто.</value>
+    <value>Сейчас маршрут не несёт никто.</value>
   </data>
-  <data name="Main_CardTagDefaultRoute" xml:space="preserve">
-    <value>прочий трафик</value>
+  <data name="Main_ConfigDefaultTitle" xml:space="preserve">
+    <value>Использовать по умолчанию</value>
+  </data>
+  <data name="Main_ConfigDefaultSubtitle" xml:space="preserve">
+    <value>Кнопка подключения на главной поднимает этот сервер.</value>
   </data>
   <data name="Main_ConfigRoutingTitle" xml:space="preserve">
     <value>Список маршрутизации</value>

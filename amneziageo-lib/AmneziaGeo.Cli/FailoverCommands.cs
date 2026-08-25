@@ -21,6 +21,12 @@ internal static class FailoverCommands
             return Show(agent.Snapshot);
         }
 
+        // Everything below writes a setting nothing reads where only one tunnel goes up.
+        if (!Available(agent.Snapshot))
+        {
+            return Unavailable();
+        }
+
         switch (args[0])
         {
             case "return":
@@ -37,6 +43,20 @@ internal static class FailoverCommands
         }
 
         return Reply.Usage(_usage);
+    }
+
+    /// <summary>
+    /// Whether this agent raises the several tunnels the default route is carried between.
+    /// </summary>
+    public static bool Available(StatusSnapshot snapshot) => snapshot.MultiTunnel;
+
+    /// <summary>
+    /// Refuses a change this agent would store and never read.
+    /// </summary>
+    public static int Unavailable()
+    {
+        Output.Error("this agent raises one tunnel at a time, so nothing carries the route off a server here");
+        return Exit.Unsupported;
     }
 
     // The priority list is the configuration order, so the table keeps that order whole and numbers only the

@@ -94,7 +94,7 @@ public static class CliRunner
               status                            what the agent runs and what it would run
               watch                             follow status changes until interrupted
               select <config>                   choose what the next connect binds to
-              up [<config>]                     connect the named config, else the selected one
+              up [<config>]                     connect the named config, else the set last left up
               down [<config>]                   disconnect one tunnel, else all of them
               default-route <config>|none       pick what carries everything the others do not name
 
@@ -107,7 +107,8 @@ public static class CliRunner
               failover use <config>             put it back in
 
             The priority list is the configuration order itself; 'config order' rewrites it, and
-            'default-route <config>' puts the one it names at the head.
+            'default-route <config>' puts the one it names at the head. An agent that raises one
+            tunnel at a time refuses these commands.
 
             configurations
               config list

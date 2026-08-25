@@ -69,6 +69,7 @@
               <controls:CatalogCard Margin="0,0,0,8"
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
+                      DefaultCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).MakeDefaultCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}" />
             </DataTemplate>
@@ -90,6 +91,7 @@
               <controls:CatalogCard Margin="0,0,10,10" VerticalAlignment="Top"
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
+                      DefaultCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).MakeDefaultCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}" />
             </DataTemplate>
@@ -112,17 +114,20 @@
       <!-- One frame around the whole settings block; below the card width it goes and the hairlines carry the boundaries. -->
       <Border Classes="sect">
         <StackPanel Spacing="14">
-          <!-- Используется ли конфигурация: тумблер делает её целью, ссылка рядом поднимает туннель. -->
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-            <TextBlock Grid.Column="0" Text="{l:Tr Main_InUseToggle}" FontWeight="SemiBold" FontSize="15"
-                       TextWrapping="Wrap" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
-                    HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowConnectOpenConfig}"
-                    Command="{Binding ConnectOpenConfigCommand}">
-              <TextBlock Text="{l:Tr Main_ConnectNowLink}" />
-            </Button>
-            <ToggleSwitch Grid.Column="2" MinWidth="0" VerticalAlignment="Center"
+          <!-- Конфигурация по умолчанию: тумблер делает её целью, ссылка под ним поднимает туннель. -->
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{l:Tr Main_ConfigDefaultTitle}" FontWeight="SemiBold" FontSize="15"
+                         TextWrapping="Wrap" />
+              <TextBlock Text="{l:Tr Main_ConfigDefaultSubtitle}" Classes="muted" FontSize="11.5"
+                         TextWrapping="Wrap" />
+              <Button Classes="linkbtn" FontSize="12" HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowConnectOpenConfig}"
+                      Command="{Binding ConnectOpenConfigCommand}">
+                <TextBlock Text="{l:Tr Main_ConnectNowLink}" />
+              </Button>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
                           IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
           </Grid>
 
@@ -202,7 +207,7 @@
 
           <Border Classes="hairline" IsVisible="{Binding MultiTunnel}" />
 
-          <!-- Весь прочий трафик: какой из туннелей уводит всё, что не назвали остальные. -->
+          <!-- Приложения: какой из туннелей уводит всё, что не назвали остальные. -->
           <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding MultiTunnel}">
             <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
               <TextBlock Text="{l:Tr Main_ConfigDefaultRouteTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />

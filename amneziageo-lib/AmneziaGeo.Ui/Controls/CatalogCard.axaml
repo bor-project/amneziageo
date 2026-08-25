@@ -20,7 +20,7 @@
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
-        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" Margin="12,10">
           <!-- Имя и подключение: имя занимает строку целиком, кнопка жмётся последней. -->
           <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
@@ -81,6 +81,15 @@
                          TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
             </Grid>
           </Grid>
+
+          <!-- Конфигурация по умолчанию: тумблер стоит под кнопкой подключения, подпись - справа от него.
+               Снять выбор карточка не даёт: его снимают в настройках конфигурации. -->
+          <ToggleSwitch x:Name="DefaultPart" Grid.Row="2" Margin="0,8,0,0" MinWidth="0" FontSize="12.5"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        OnContent="{l:Tr Main_CardActiveFlag}" OffContent="{l:Tr Main_CardActiveFlag}"
+                        IsChecked="{Binding IsSelected, Mode=OneWay}"
+                        Command="{Binding $parent[controls:CatalogCard].DefaultCommand}"
+                        CommandParameter="{Binding}" />
         </Grid>
 
         <!-- Подвал карточки: метки настроек слева, настройки конфигурации справа. -->

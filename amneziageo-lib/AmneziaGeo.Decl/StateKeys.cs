@@ -27,6 +27,12 @@ public static class StateKeys
     public const string DesiredTunnels = "desired-tunnels";
 
     /// <summary>
+    /// Names of the tunnels a connect raises when it names none, one per line; a tunnel taken down by name
+    /// leaves the set, a disconnect of everything keeps it.
+    /// </summary>
+    public const string KeptTunnels = "kept-tunnels";
+
+    /// <summary>
     /// Name of the config the user wants to own the default route; empty leaves it to the first tunnel that
     /// carries everything.
     /// </summary>

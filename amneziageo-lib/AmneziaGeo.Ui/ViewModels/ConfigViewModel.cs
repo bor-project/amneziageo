@@ -47,6 +47,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCompact;
 
+    // Wide-window layout flag, pushed by the shell: narrower than that, the cards keep one column.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
+    private bool _isCardsWide;
+
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar so a
     // dirty edit does not bleed the bar over another section.
     [ObservableProperty]
@@ -215,12 +221,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowCardStack => IsSectionCatalogue && HasConfigs && IsCompact;
+    public bool ShowCardStack => IsSectionCatalogue && HasConfigs && !IsCardsWide;
 
     /// <summary>
     /// Замощают ли карточки пану.
     /// </summary>
-    public bool ShowCardGrid => IsSectionCatalogue && HasConfigs && !IsCompact;
+    public bool ShowCardGrid => IsSectionCatalogue && HasConfigs && IsCardsWide;
 
     /// <summary>
     /// Есть ли что экспортировать.
@@ -512,6 +518,22 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             _host.Home.ActiveConfig = item;
         }
+    }
+
+    /// <summary>
+    /// Делает карточку конфигурацией по умолчанию: тумблер выбор только ставит, снимают его в настройках
+    /// конфигурации.
+    /// </summary>
+    [RelayCommand]
+    private void MakeDefault(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        _ = _host.Home.UseConfigAsync(item);
+        item.RefreshSelected();
     }
 
     /// <summary>

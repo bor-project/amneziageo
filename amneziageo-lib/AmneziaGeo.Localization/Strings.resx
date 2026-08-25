@@ -200,10 +200,10 @@
     <value>Switch the server automatically</value>
   </data>
   <data name="General_FailoverEnabledHint" xml:space="preserve">
-    <value>Move the default route to the next server on the list when the one carrying it stops answering.</value>
+    <value>If the current server is unreachable, use the next one by priority.</value>
   </data>
   <data name="General_FailoverOrderHint" xml:space="preserve">
-    <value>The list order is the priority order, the same one the configuration cards stand in. Drag a row, or move it with the handle on its left.</value>
+    <value>Servers are checked top to bottom. To change the priority, drag a card or set the number on its left.</value>
   </data>
   <data name="General_FailoverMove" xml:space="preserve">
     <value>Move</value>
@@ -218,10 +218,10 @@
     <value>Return to the priority server</value>
   </data>
   <data name="General_FailoverReturnHint" xml:space="preserve">
-    <value>Once a server higher on the list answers again, take the route back to it, but only while the traffic is quiet: switching a tunnel breaks live connections.</value>
+    <value>Once the priority server is reachable again, take the route back to it.</value>
   </data>
   <data name="General_FailoverReturnAfter" xml:space="preserve">
-    <value>Healthy for</value>
+    <value>Availability check period</value>
   </data>
   <data name="General_FailoverMinutes" xml:space="preserve">
     <value>min</value>
@@ -1920,19 +1920,22 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>full tunnel</value>
   </data>
   <data name="Main_ConfigDefaultRouteTitle" xml:space="preserve">
-    <value>Everything else</value>
+    <value>Apps</value>
   </data>
   <data name="Main_ConfigDefaultRouteSubtitle" xml:space="preserve">
-    <value>Carry every destination no other tunnel names. Only one tunnel can.</value>
+    <value>Use this configuration for the VPN and for tunnelling apps.</value>
   </data>
   <data name="Main_ConfigDefaultRouteHeld" xml:space="preserve">
-    <value>Carried by {0} right now.</value>
+    <value>The route is carried by {0} right now.</value>
   </data>
   <data name="Main_ConfigDefaultRouteFree" xml:space="preserve">
-    <value>No tunnel carries it right now.</value>
+    <value>No tunnel carries the route right now.</value>
   </data>
-  <data name="Main_CardTagDefaultRoute" xml:space="preserve">
-    <value>everything else</value>
+  <data name="Main_ConfigDefaultTitle" xml:space="preserve">
+    <value>Use by default</value>
+  </data>
+  <data name="Main_ConfigDefaultSubtitle" xml:space="preserve">
+    <value>The connect button on the home screen raises this server.</value>
   </data>
   <data name="Main_ConfigRoutingTitle" xml:space="preserve">
     <value>Routing list</value>

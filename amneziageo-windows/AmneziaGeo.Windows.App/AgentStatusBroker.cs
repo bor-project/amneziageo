@@ -131,6 +131,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await store.SetSettingAsync(StateKeys.DesiredTunnels, string.Join(Environment.NewLine, names), ct);
     }
 
+    // Records the set a connect that names nothing brings back; taking everything down leaves it alone.
+    private async Task KeepDesiredAsync(CancellationToken ct)
+    {
+        var names = control.Desired.Select(tunnel => tunnel.Config);
+        await store.SetSettingAsync(StateKeys.KeptTunnels, NameList.Join(names), ct);
+    }
+
     /// <summary>
     /// Handles a connected client: sends the current snapshot, then reads until the client disconnects.
     /// </summary>
@@ -1571,6 +1578,17 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return await DisconnectAsync(scope, named, ct);
         }
 
+        // A connect that names nothing brings back the set the cards left up; the selected configuration
+        // stands in only while that set is empty.
+        if (string.IsNullOrWhiteSpace(named))
+        {
+            var kept = NameList.Split(await store.GetSettingAsync(StateKeys.KeptTunnels, ct));
+            if (kept.Count > 0)
+            {
+                return await RaiseKeptAsync(scope, kept, ct);
+            }
+        }
+
         var target = !string.IsNullOrWhiteSpace(named) ? named! : await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
         if (string.IsNullOrWhiteSpace(target))
         {
@@ -1599,7 +1617,42 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await store.SetSettingAsync("last-owner-target", target, ct);
         control.For(target, scope.UserRoot, scope.Sid).SetRunning(true);
         await RememberDesiredAsync(ct);
+        await KeepDesiredAsync(ct);
         logger.LogInformation("connect requested by {Root} for {Config}", scope.UserRoot, target);
+        return new IpcAck(true, "connecting");
+    }
+
+    // Raises the set the cards left up; a configuration gone from the library or held by another user is
+    // passed over.
+    private async Task<IpcAck> RaiseKeptAsync(BrokerScope scope, IReadOnlyList<string> kept, CancellationToken ct)
+    {
+        var raised = new List<string>();
+        foreach (var name in kept)
+        {
+            if (!await configRepo.ExistsAsync(name, ct))
+            {
+                continue;
+            }
+
+            if (control.Find(name) is { Running: true } live && !live.IsOwnedBy(scope.UserRoot, scope.Sid))
+            {
+                continue;
+            }
+
+            control.For(name, scope.UserRoot, scope.Sid).SetRunning(true);
+            raised.Add(name);
+        }
+
+        if (raised.Count == 0)
+        {
+            return new IpcAck(false, "no configuration selected");
+        }
+
+        await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
+        await store.SetSettingAsync("last-owner-target", raised[0], ct);
+        await RememberDesiredAsync(ct);
+        await KeepDesiredAsync(ct);
+        logger.LogInformation("connect requested by {Root} for the {Count} tunnels it left up", scope.UserRoot, raised.Count);
         return new IpcAck(true, "connecting");
     }
 
@@ -1670,6 +1723,14 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         await RememberDesiredAsync(ct);
+
+        // A card taken down by name leaves the set the next connect raises; taking everything down keeps it,
+        // so the button that dropped the tunnels is the button that brings them back.
+        if (!string.IsNullOrWhiteSpace(named))
+        {
+            await KeepDesiredAsync(ct);
+        }
+
         logger.LogInformation("disconnect requested by {Root} for {Config}", scope.UserRoot, string.IsNullOrWhiteSpace(named) ? "every tunnel it raised" : named);
         return new IpcAck(true, "disconnecting");
     }
@@ -2725,7 +2786,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             MultiTunnel: true,
             FailoverEnabled: settings.FailoverEnabled,
             FailoverReturnMinutes: settings.FailoverReturnMinutes,
-            FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)));
+            FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)),
+            KeptTunnels: NameList.Prune(await store.GetSettingAsync(StateKeys.KeptTunnels, ct), configs.Select(entry => entry.Name)));
     }
 
     private static string DisplayStatus(string profileStatus)

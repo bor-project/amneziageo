@@ -43,6 +43,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCompact;
 
+    // Wide-window layout flag, pushed by the shell: narrower than that, the cards keep one column.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
+    private bool _isCardsWide;
+
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
@@ -156,12 +162,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && IsCompact;
+    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && !IsCardsWide;
 
     /// <summary>
     /// Замощают ли карточки пану.
     /// </summary>
-    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsCompact;
+    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && IsCardsWide;
 
     /// <summary>
     /// Delete-card prompt naming the open list.

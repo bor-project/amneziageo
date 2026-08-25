@@ -74,6 +74,11 @@ internal static class SettingsCommands
             return Reply.Usage(error);
         }
 
+        if (key is SettingKeys.FailoverEnabled or SettingKeys.FailoverReturnMinutes && !FailoverCommands.Available(agent.Snapshot))
+        {
+            return FailoverCommands.Unavailable();
+        }
+
         var ack = await agent.SendAsync(IpcContract.OpSetSetting, key, value).ConfigureAwait(false);
         if (!ack.Ok)
         {

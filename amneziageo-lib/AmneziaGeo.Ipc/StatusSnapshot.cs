@@ -117,4 +117,6 @@ public sealed record StatusSnapshot(
     // Minutes a higher-priority server answers before the default route goes back to it; 0 leaves it where it is.
     int FailoverReturnMinutes = 0,
     // Configurations auto-switching passes over, one name per line.
-    string FailoverSkipped = "");
+    string FailoverSkipped = "",
+    // Tunnels a connect raises when it names none, one per line: the set the last connection left up.
+    string KeptTunnels = "");

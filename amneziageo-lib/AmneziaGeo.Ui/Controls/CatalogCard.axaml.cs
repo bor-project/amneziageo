@@ -28,6 +28,9 @@ internal sealed partial class CatalogCard : UserControl
     public static readonly StyledProperty<ICommand?> PickCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(PickCommand));
 
+    public static readonly StyledProperty<ICommand?> DefaultCommandProperty =
+        AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(DefaultCommand));
+
     private readonly ListReorder<ConfigItemViewModel> _reorder;
 
     private bool _entered;
@@ -95,6 +98,15 @@ internal sealed partial class CatalogCard : UserControl
     {
         get => GetValue(PickCommandProperty);
         set => SetValue(PickCommandProperty, value);
+    }
+
+    /// <summary>
+    /// Команда тумблера «По умолчанию».
+    /// </summary>
+    public ICommand? DefaultCommand
+    {
+        get => GetValue(DefaultCommandProperty);
+        set => SetValue(DefaultCommandProperty, value);
     }
 
     /// <inheritdoc/>
@@ -262,8 +274,8 @@ internal sealed partial class CatalogCard : UserControl
         grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки строками: подключение сверху, настройки снизу; запертую кнопку туннеля пульт
-    // пропускает.
+    // Контролы карточки строками: подключение сверху, тумблер и настройки ниже; запертую кнопку туннеля
+    // пульт пропускает.
     private List<List<Control>> Rows()
     {
         var rows = new List<List<Control>>();
@@ -272,6 +284,7 @@ internal sealed partial class CatalogCard : UserControl
             rows.Add([ConnectPart]);
         }
 
+        rows.Add([DefaultPart]);
         rows.Add([SettingsPart]);
         return rows;
     }
@@ -281,6 +294,7 @@ internal sealed partial class CatalogCard : UserControl
     {
         var stop = _entered || !UiPlatform.IsTelevision;
         ConnectPart.Focusable = stop;
+        DefaultPart.Focusable = stop;
         SettingsPart.Focusable = stop;
     }
 }

@@ -571,8 +571,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Push the compact-layout flag to every section screen so their rows restack for the narrow window, and
-    // re-gate the card frames the shared styles draw.
+    // Push the compact-layout flag to every section screen so their rows restack for the narrow window, tell
+    // the catalogues whether their cards fit two columns, and re-gate the card frames the shared styles draw.
     partial void OnWindowWidthChanged(double value)
     {
         UiLayout.Instance.Apply(value);
@@ -583,6 +583,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Sources.IsCompact = compact;
         Diagnostics.IsCompact = compact;
         General.IsCompact = compact;
+
+        var cardsWide = value >= UiLayout.CardGridWidth;
+        Config.IsCardsWide = cardsWide;
+        Routing.IsCardsWide = cardsWide;
 
         // A width flip can reveal or hide the logs content (compact rail vs wide content), so re-evaluate.
         RefreshLogsActive();

@@ -29,6 +29,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // Поднимает ли эта платформа несколько туннелей сразу.
     private bool _multiTunnel;
 
+    // Набор, который поднимает большая кнопка: туннели, оставшиеся от прошлого подключения.
+    private IReadOnlyList<string> _kept = [];
+
     // The configuration a dial is heading for, until the tunnel binds it.
     private string? _dialTarget;
     private CancellationTokenSource? _probeCts;
@@ -214,7 +217,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // In always-on mode the button only leads to the system screen, so nothing about the tunnel bars it.
     public bool CanToggleConnection => AlwaysOnRouting
         ? IsConnected
-        : !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || ActiveConfig is not null);
+        : !Reconnecting && !DisconnectFailed && IsConnected
+            && (IsTunnelActive || ActiveConfig is not null || _kept.Count > 0);
 
     // Kept off the screen for now; the switch and everything it drives stay in place.
     private const bool AlwaysOnToggleOffered = false;
@@ -454,6 +458,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
         _multiTunnel = snapshot.MultiTunnel;
+        var kept = NameList.Split(snapshot.KeptTunnels);
+        if (!kept.SequenceEqual(_kept, StringComparer.Ordinal))
+        {
+            _kept = kept;
+            NotifyCanToggleConnection();
+        }
+
         _configStatus.Clear();
         foreach (var entry in snapshot.Configs)
         {
@@ -780,7 +791,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _clearingActive = true;
         try
         {
-            if (IsTunnelActive && !await DisconnectAsync())
+            // Несколько туннелей: снятый выбор их не трогает - карточки держат свои подключения сами.
+            if (!_multiTunnel && IsTunnelActive && !await DisconnectAsync())
             {
                 SyncActiveConfigChoice();
                 return;
@@ -1051,13 +1063,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _toggleInFlight = true;
         try
         {
-            // Select the config shown in the combo BEFORE dialing, so the agent's target is the one the user
-            // sees - not its previously-latched/persisted target (which may be empty, a different config, or
-            // a deleted one). Idempotent if already selected. Mirrors ToggleConfigConnectionAsync.
-            if (connect && ActiveConfig is not null)
+            if (connect)
             {
-                SetDialTarget(ActiveConfig.Name);
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
+                await BeginDialAsync();
             }
 
             var ack = await _connection.SendCommandAsync(
@@ -1075,6 +1083,26 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         finally
         {
             _toggleInFlight = false;
+        }
+    }
+
+    // Ведёт подъём большой кнопкой: набор, оставшийся от прошлого раза, агент поднимает сам, и цель ему
+    // называют, только когда набора нет. Выбор уходит ПЕРЕД подъёмом, чтобы агент взял конфигурацию,
+    // которую видит пользователь, а не ту, что залипла у него с прошлого раза.
+    private async Task BeginDialAsync()
+    {
+        if (_kept.Count > 0)
+        {
+            SetDialTarget(_kept.Contains(ActiveConfig?.Name ?? string.Empty, StringComparer.Ordinal)
+                ? ActiveConfig!.Name
+                : _kept[0]);
+            return;
+        }
+
+        if (ActiveConfig is not null)
+        {
+            SetDialTarget(ActiveConfig.Name);
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
         }
     }
 

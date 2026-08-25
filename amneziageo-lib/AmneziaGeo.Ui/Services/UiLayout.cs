@@ -24,6 +24,11 @@ internal sealed partial class UiLayout : ObservableObject
     public const double FieldRowWidth = 992;
 
     /// <summary>
+    /// Bootstrap lg: below it a catalogue stands its cards in one column across the pane.
+    /// </summary>
+    public const double CardGridWidth = 992;
+
+    /// <summary>
     /// Instance the shared styles bind to.
     /// </summary>
     public static UiLayout Instance { get; } = new();

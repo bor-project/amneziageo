@@ -525,15 +525,24 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void PermitDhcpV4(IntPtr engine)
     {
+        // Client role: this machine takes a lease.
+        PermitDhcpV4Ports(engine, 68, 67, "DHCP client");
+
+        // Server role: shared-connection leases for hotspot clients; the first DISCOVER comes from 0.0.0.0 and matches no address bypass.
+        PermitDhcpV4Ports(engine, 67, 68, "DHCP server");
+    }
+
+    private void PermitDhcpV4Ports(IntPtr engine, ushort localPort, ushort remotePort, string role)
+    {
         var cond = new[]
         {
             Condition(CondIpProtocol, MatchEqual, FwpUint8, ProtocolUdp),
-            Condition(CondIpLocalPort, MatchEqual, FwpUint16, 68),
-            Condition(CondIpRemotePort, MatchEqual, FwpUint16, 67),
+            Condition(CondIpLocalPort, MatchEqual, FwpUint16, localPort),
+            Condition(CondIpRemotePort, MatchEqual, FwpUint16, remotePort),
         };
 
-        Add(engine, LayerAleAuthConnectV4, WeightDhcp, ActionPermit, 0, cond, "Permit outbound DHCP");
-        Add(engine, LayerAleAuthRecvAcceptV4, WeightDhcp, ActionPermit, 0, cond, "Permit inbound DHCP");
+        Add(engine, LayerAleAuthConnectV4, WeightDhcp, ActionPermit, 0, cond, $"Permit outbound {role}");
+        Add(engine, LayerAleAuthRecvAcceptV4, WeightDhcp, ActionPermit, 0, cond, $"Permit inbound {role}");
     }
 
     private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs)

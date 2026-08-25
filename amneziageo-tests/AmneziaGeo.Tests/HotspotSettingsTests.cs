@@ -25,9 +25,9 @@ public sealed class HotspotSettingsTests
     [InlineData("")]
     [InlineData("ethernet")]
     [InlineData(null)]
-    public void ShareMode_FallsBackToBoth(string? text)
+    public void ShareMode_FallsBackToLan(string? text)
     {
-        Assert.Equal(ShareModes.Both, ShareModes.Of(text));
+        Assert.Equal(ShareModes.Lan, ShareModes.Of(text));
         Assert.False(ShareModes.IsKnown(text));
     }
 
@@ -122,7 +122,7 @@ public sealed class HotspotSettingsTests
     }
 
     [Fact]
-    public void Options_StayDownWhileTheProxyIs()
+    public void Options_StandWithoutTheProxy()
     {
         var options = HotspotOptions.Read(new Dictionary<string, string>
         {
@@ -131,8 +131,8 @@ public sealed class HotspotSettingsTests
             [SettingKeys.HotspotPassword] = "12345678",
         });
 
-        Assert.False(options.Enabled);
-        Assert.False(options.Wanted);
+        Assert.True(options.Enabled);
+        Assert.True(options.Wanted);
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public sealed class HotspotSettingsTests
 
     /// <summary>
     /// An installation updated into this version has the proxy on and no access point set. The default mode
-    /// names both ways, and that must not raise a point behind the user's back.
+    /// leaves the point down until it is asked for.
     /// </summary>
     [Fact]
     public void Options_RaiseNothingOnAnUpdate()
@@ -161,8 +161,8 @@ public sealed class HotspotSettingsTests
             [SettingKeys.ProxyEnabled] = "on",
         });
 
-        Assert.Equal(ShareModes.Both, ShareModes.Of(null));
-        Assert.True(options.Enabled);
+        Assert.Equal(ShareModes.Lan, ShareModes.Of(null));
+        Assert.False(options.Enabled);
         Assert.False(options.Complete);
         Assert.False(options.Wanted);
     }

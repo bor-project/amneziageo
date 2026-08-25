@@ -38,7 +38,7 @@ internal static class HotspotCommands
             ("sharing", snapshot.ShareMode),
             ("ssid", snapshot.HotspotSsid.Length > 0 ? snapshot.HotspotSsid : "-"),
             ("password", snapshot.HotspotPassword.Length > 0 ? snapshot.HotspotPassword : "-"),
-            ("band", snapshot.HotspotBandActual.Length > 0 ? $"{snapshot.HotspotBand} ({snapshot.HotspotBandActual} in force)" : snapshot.HotspotBand),
+            ("band", Band(snapshot)),
             ("clients", Clients(snapshot)),
         };
 
@@ -74,7 +74,7 @@ internal static class HotspotCommands
             return;
         }
 
-        if (ShareModes.CarriesWifi(snapshot.ShareMode) && snapshot.ProxyEnabled
+        if (ShareModes.CarriesWifi(snapshot.ShareMode)
             && !(SettingKeys.IsValidHotspotSsid(snapshot.HotspotSsid) && SettingKeys.IsValidHotspotPassword(snapshot.HotspotPassword)))
         {
             Output.Info(string.Empty);
@@ -89,13 +89,21 @@ internal static class HotspotCommands
             : "-";
     }
 
-    private static string State(StatusSnapshot snapshot)
+    // The band in force, named only where the adapter did not take the one asked for.
+    private static string Band(StatusSnapshot snapshot)
     {
-        if (!snapshot.ProxyEnabled)
+        var wanted = HotspotBands.Of(snapshot.HotspotBand);
+        var actual = snapshot.HotspotBandActual;
+        if (actual.Length == 0 || string.Equals(actual, wanted, StringComparison.Ordinal))
         {
-            return "off (connections are not allowed)";
+            return wanted;
         }
 
+        return $"{wanted} ({actual} in force)";
+    }
+
+    private static string State(StatusSnapshot snapshot)
+    {
         if (!ShareModes.CarriesWifi(snapshot.ShareMode))
         {
             return "off";

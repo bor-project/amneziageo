@@ -178,13 +178,13 @@ internal sealed record AppSettings
     public string HotspotBand { get; init; } = AmneziaGeo.Ipc.HotspotBands.Auto;
 
     /// <summary>
-    /// The access point as the agent takes it; one switch governs both ways of sharing.
+    /// The access point as the agent takes it; it stands on its own switch, apart from the proxy.
     /// </summary>
     public AmneziaGeo.Ipc.HotspotOptions Hotspot()
     {
         return new AmneziaGeo.Ipc.HotspotOptions
         {
-            Enabled = ProxyEnabled && AmneziaGeo.Ipc.ShareModes.CarriesWifi(ShareMode),
+            Enabled = AmneziaGeo.Ipc.ShareModes.CarriesWifi(ShareMode),
             Ssid = HotspotSsid,
             Password = HotspotPassword,
             Band = HotspotBand,

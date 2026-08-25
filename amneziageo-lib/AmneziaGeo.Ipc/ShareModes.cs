@@ -23,7 +23,7 @@ public static class ShareModes
     /// <summary>
     /// Mode in force where none was chosen.
     /// </summary>
-    public const string Default = Both;
+    public const string Default = Lan;
 
     /// <summary>
     /// Reads a mode token, answering the default for anything else.

@@ -203,14 +203,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// SOCKS5 port of the local proxy.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
     private string _proxySocksPort = "10808";
 
     /// <summary>
     /// HTTP port of the local proxy.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
     private string _proxyHttpPort = "10809";
 
     /// <summary>
@@ -266,13 +264,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public string ProxyClientsGlyph => IsProxyClientsExpanded ? "▾" : "◂";
 
     /// <summary>
-    /// Who may use the proxy and on which ports.
-    /// </summary>
-    public string ProxyEnabledHint => ShareOverLan
-        ? Loc.Instance.Get("General_ProxyEnabledHint", ProxySocksPort, ProxyHttpPort)
-        : Loc.Instance.Get("General_ShareEnabledHint");
-
-    /// <summary>
     /// Whether the proxy only carries traffic while the tunnel is up, as it does on Android.
     /// </summary>
     public bool ProxyNeedsTunnel => OperatingSystem.IsAndroid();
@@ -281,16 +272,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Whether the proxy admits nobody: a password is asked for and no account answers it.
     /// </summary>
     public bool ProxyAdmitsNobody => !ProxyAnonymous && !ProxyAccounts.Any(account => account.User.Trim().Length > 0);
-
-    /// <summary>
-    /// Ways the tunnel reaches other devices.
-    /// </summary>
-    public ObservableCollection<string> ShareOptions { get; } =
-    [
-        Loc.Instance.Get("General_ShareModeLan"),
-        Loc.Instance.Get("General_ShareModeWifi"),
-        Loc.Instance.Get("General_ShareModeBoth"),
-    ];
 
     /// <summary>
     /// Bands the access point may ask for.
@@ -303,18 +284,25 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     ];
 
     /// <summary>
-    /// Way the tunnel reaches other devices.
+    /// Way of sharing the section shows.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShareOverLan))]
-    [NotifyPropertyChangedFor(nameof(ShareOverWifi))]
-    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
-    private int _selectedShareIndex = BothShareIndex;
+    [NotifyPropertyChangedFor(nameof(IsProxyTab))]
+    [NotifyPropertyChangedFor(nameof(IsWifiTab))]
+    private string _shareTab = ProxyTab;
+
+    /// <summary>
+    /// Whether the access point is asked for.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    private bool _hotspotEnabled;
 
     /// <summary>
     /// Band the access point asks for.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotHintText))]
     private int _selectedBandIndex;
 
     /// <summary>
@@ -336,12 +324,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     private bool _isHotspotPasswordRevealed;
-
-    /// <summary>
-    /// Whether a wired subnet is asked for.
-    /// </summary>
-    [ObservableProperty]
-    private bool _shareEthernet;
 
     /// <summary>
     /// Whether this machine can raise an access point.
@@ -398,14 +380,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool CanShareHotspot => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
 
     /// <summary>
-    /// Whether the proxy body is shown.
+    /// Whether the proxy tab is shown; without an access point it is the whole section.
     /// </summary>
-    public bool ShareOverLan => !CanShareHotspot || ShareModes.CarriesLan(ShareToken);
+    public bool IsProxyTab => !CanShareHotspot || ShareTab == ProxyTab;
 
     /// <summary>
-    /// Whether the access point body is shown.
+    /// Whether the access point tab is shown.
     /// </summary>
-    public bool ShareOverWifi => CanShareHotspot && ShareModes.CarriesWifi(ShareToken);
+    public bool IsWifiTab => CanShareHotspot && ShareTab == WifiTab;
 
     /// <summary>
     /// Whether the access point fields are locked out.
@@ -434,7 +416,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     {
         get
         {
-            if (!HotspotSupported)
+            if (!HotspotSupported || !HotspotEnabled)
             {
                 return string.Empty;
             }
@@ -459,9 +441,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 return string.Empty;
             }
 
-            return HotspotBandActual.Length > 0
-                ? Loc.Instance.Get("General_HotspotBandActual", BandLabel(HotspotBandActual))
-                : Loc.Instance.Get("General_HotspotRunning");
+            if (HotspotBandActual.Length == 0 || string.Equals(HotspotBandActual, BandToken, StringComparison.Ordinal))
+            {
+                return Loc.Instance.Get("General_HotspotRunning");
+            }
+
+            return HotspotBandActual == HotspotBands.Auto
+                ? Loc.Instance.Get("General_HotspotBandAdapter")
+                : Loc.Instance.Get("General_HotspotBandActual", BandLabel(HotspotBandActual));
         }
     }
 
@@ -470,16 +457,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// </summary>
     public string HotspotClientsText => Loc.Instance.Get("General_HotspotClientsOf", HotspotClientCount, HotspotMaxClients);
 
-    // Row "both" stands on in the sharing options.
-    private const int BothShareIndex = 2;
-
-    // Mode the picked row stands for.
-    private string ShareToken => SelectedShareIndex switch
-    {
-        0 => ShareModes.Lan,
-        1 => ShareModes.Wifi,
-        _ => ShareModes.Both,
-    };
+    // Tabs the section stands on.
+    private const string ProxyTab = "proxy";
+    private const string WifiTab = "wifi";
 
     // Band the picked row stands for.
     private string BandToken => SelectedBandIndex switch
@@ -487,13 +467,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         1 => HotspotBands.TwoPointFour,
         2 => HotspotBands.Five,
         _ => HotspotBands.Auto,
-    };
-
-    private static int ShareIndex(string mode) => ShareModes.Of(mode) switch
-    {
-        ShareModes.Lan => 0,
-        ShareModes.Wifi => 1,
-        _ => BothShareIndex,
     };
 
     private static int BandIndex(string band) => HotspotBands.Of(band) switch
@@ -678,9 +651,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         ProxySocksPort = snapshot.ProxySocksPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ProxyHttpPort = snapshot.ProxyHttpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ApplyProxyAccounts(snapshot.ProxyCredentials);
-        SelectedShareIndex = ShareIndex(snapshot.ShareMode);
+        HotspotEnabled = ShareModes.CarriesWifi(snapshot.ShareMode);
         SelectedBandIndex = BandIndex(snapshot.HotspotBand);
-        ShareEthernet = snapshot.ShareEthernet;
         ApplyHotspotSecrets(snapshot);
         _suppressSettingPush = false;
         ApplyProxyEndpoints(snapshot);
@@ -1431,11 +1403,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
-    partial void OnSelectedShareIndexChanged(int value)
+    partial void OnHotspotEnabledChanged(bool value)
     {
-        if (!_suppressSettingPush && value >= 0)
+        if (!_suppressSettingPush)
         {
-            _ = SetSettingAsync(SettingKeys.ShareMode, ShareToken);
+            _ = SetSettingAsync(SettingKeys.ShareMode, value ? ShareModes.Both : ShareModes.Lan);
         }
     }
 
@@ -1444,14 +1416,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         if (!_suppressSettingPush && value >= 0)
         {
             _ = SetSettingAsync(SettingKeys.HotspotBand, BandToken);
-        }
-    }
-
-    partial void OnShareEthernetChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync(SettingKeys.ShareEthernet, value ? "on" : "off");
         }
     }
 
@@ -1482,6 +1446,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             _ = SetSettingAsync(SettingKeys.HotspotPassword, value);
         }
+    }
+
+    /// <summary>
+    /// Turns the section to one of the ways of sharing.
+    /// </summary>
+    [RelayCommand]
+    private void SelectShareTab(string tab)
+    {
+        ShareTab = tab;
     }
 
     /// <summary>
@@ -1712,7 +1685,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Replacing the selected item string resets the index-bound ComboBox to -1; capture and restore it.
         var language = SelectedLanguageIndex;
         var theme = SelectedThemeIndex;
-        var share = SelectedShareIndex;
         var band = SelectedBandIndex;
 
         _syncingCombos = true;
@@ -1733,14 +1705,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 Themes[2] = Loc.Instance.Get("Theme_Dark");
             }
 
-            // Re-localize the sharing options.
-            if (ShareOptions.Count >= 3)
-            {
-                ShareOptions[0] = Loc.Instance.Get("General_ShareModeLan");
-                ShareOptions[1] = Loc.Instance.Get("General_ShareModeWifi");
-                ShareOptions[2] = Loc.Instance.Get("General_ShareModeBoth");
-            }
-
             // Re-localize the band options.
             if (BandOptions.Count >= 3)
             {
@@ -1751,7 +1715,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
             SelectedLanguageIndex = language;
             SelectedThemeIndex = theme;
-            SelectedShareIndex = share;
             SelectedBandIndex = band;
         }
         finally

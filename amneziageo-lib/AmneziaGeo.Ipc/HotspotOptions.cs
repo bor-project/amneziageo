@@ -42,9 +42,7 @@ public sealed record HotspotOptions
     {
         return new HotspotOptions
         {
-            Enabled = settings.TryGetValue(SettingKeys.ProxyEnabled, out var on)
-                && (on.Trim().ToLowerInvariant() is "on" or "true" or "1" or "yes")
-                && ShareModes.CarriesWifi(settings.TryGetValue(SettingKeys.ShareMode, out var mode) ? mode : null),
+            Enabled = ShareModes.CarriesWifi(settings.TryGetValue(SettingKeys.ShareMode, out var mode) ? mode : null),
             Ssid = settings.TryGetValue(SettingKeys.HotspotSsid, out var ssid) ? ssid : string.Empty,
             Password = settings.TryGetValue(SettingKeys.HotspotPassword, out var password) ? password : string.Empty,
             Band = HotspotBands.Of(settings.TryGetValue(SettingKeys.HotspotBand, out var band) ? band : null),

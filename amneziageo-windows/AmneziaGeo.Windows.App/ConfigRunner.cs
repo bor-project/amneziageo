@@ -448,6 +448,14 @@ internal sealed class ConfigRunner(
             return new ConnectOutcome(false, ConnectFailureReason.UnderlayUnreachable, string.Empty);
         }
 
+        // A service left half-started by an earlier run refuses every start with "already running", so the
+        // retry never gets past it and the tunnel never comes up; it is forced down before this attempt.
+        if (serviceManager.QueryState(member) == "PENDING")
+        {
+            logger.LogWarning("{Member}: a tunnel service from an earlier run is stuck starting, so it is forced down first", member);
+            StopService(member);
+        }
+
         logger.LogInformation("{Member}: starting the tunnel process", member);
         var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
         var started = serviceManager.StartQuiet(member);
@@ -597,7 +605,7 @@ internal sealed class ConfigRunner(
 
     // Whether this machine has a network of its own: an adapter that is up, is neither loopback nor a tunnel,
     // and carries an address it can be reached at. A gateway is not asked for - a server on the same network
-    // needs none - so the address is the whole test.
+    // needs none - so the address is the whole test. The machine's own access point is not a way out of it.
     private static bool UnderlayReady()
     {
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
@@ -627,10 +635,14 @@ internal sealed class ConfigRunner(
         return false;
     }
 
+    // The address shared access takes on the machine's own access point: clients hang off it, and nothing
+    // leaves the machine through it.
+    private static readonly IPAddress SharedAccessHost = IPAddress.Parse("192.168.137.1");
+
     // An address the machine gave itself because nothing handed it one is not a network.
     private static bool IsRoutable(IPAddress address)
     {
-        if (address.IsIPv6LinkLocal || IPAddress.IsLoopback(address))
+        if (address.IsIPv6LinkLocal || IPAddress.IsLoopback(address) || address.Equals(SharedAccessHost))
         {
             return false;
         }
@@ -910,6 +922,10 @@ internal sealed class ConfigRunner(
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            logger.LogInformation("{Member}: process {Pid} ended on its own while it was being stopped", member, pid);
         }
         catch (Exception ex)
         {

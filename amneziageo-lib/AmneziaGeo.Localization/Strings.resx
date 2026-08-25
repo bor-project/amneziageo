@@ -61,8 +61,8 @@
   <data name="General_Section" xml:space="preserve">
     <value>General</value>
   </data>
-  <data name="General_ConnectionSection" xml:space="preserve">
-    <value>Connection</value>
+  <data name="General_TunnelSection" xml:space="preserve">
+    <value>Tunnel</value>
   </data>
   <data name="General_NetworkRepairSection" xml:space="preserve">
     <value>Network repair</value>
@@ -122,10 +122,10 @@
     <value>Allow connections</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>Open to this device and to the local network: SOCKS5 {0}, HTTP {1}.</value>
+    <value>Open to this device and the local network.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
-    <value>Here the proxy carries traffic only while the tunnel is up.</value>
+    <value>Works only while the tunnel is up.</value>
   </data>
   <data name="General_ProxySocksPort" xml:space="preserve">
     <value>SOCKS5 port</value>
@@ -137,13 +137,13 @@
     <value>Admit without a password</value>
   </data>
   <data name="General_ProxyAnonymousHint" xml:space="preserve">
-    <value>A client needs no account, only the address and the port. The accounts keep working.</value>
+    <value>The address and the port are enough.</value>
   </data>
   <data name="General_ProxyOpenWarning" xml:space="preserve">
     <value>The proxy is open to everyone on this network.</value>
   </data>
   <data name="General_ProxyNoAccountWarning" xml:space="preserve">
-    <value>No account is set, so nobody can connect.</value>
+    <value>No accounts, so nobody can connect.</value>
   </data>
   <data name="General_ProxyUser" xml:space="preserve">
     <value>User</value>
@@ -158,13 +158,13 @@
     <value>Accounts</value>
   </data>
   <data name="General_ProxyClients" xml:space="preserve">
-    <value>Proxy clients</value>
+    <value>Clients</value>
   </data>
   <data name="General_ProxyClientsTooltip" xml:space="preserve">
     <value>Show who is connected</value>
   </data>
   <data name="General_ProxyNoClients" xml:space="preserve">
-    <value>Nobody is using the proxy right now.</value>
+    <value>Nobody is connected.</value>
   </data>
   <data name="General_ProxyClientConnections" xml:space="preserve">
     <value>{0} connection(s)</value>
@@ -175,35 +175,23 @@
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
   </data>
-  <data name="General_ShareMode" xml:space="preserve">
-    <value>Sharing</value>
+  <data name="General_ShareTabProxy" xml:space="preserve">
+    <value>Proxy</value>
   </data>
-  <data name="General_ShareModeLan" xml:space="preserve">
-    <value>Local network</value>
+  <data name="General_ShareTabWifi" xml:space="preserve">
+    <value>Wi-Fi</value>
   </data>
-  <data name="General_ShareModeWifi" xml:space="preserve">
-    <value>Wi-Fi access point</value>
+  <data name="General_HotspotEnabled" xml:space="preserve">
+    <value>Access point</value>
   </data>
-  <data name="General_ShareModeBoth" xml:space="preserve">
-    <value>Both</value>
-  </data>
-  <data name="General_ShareEnabledHint" xml:space="preserve">
-    <value>Other devices take the tunnel from this machine.</value>
-  </data>
-  <data name="General_ShareEthernet" xml:space="preserve">
-    <value>Share over a wired link</value>
-  </data>
-  <data name="General_ShareEthernetHint" xml:space="preserve">
-    <value>Serve a wired subnet from this machine.</value>
-  </data>
-  <data name="General_ShareEthernetPending" xml:space="preserve">
-    <value>Wired sharing is not built yet.</value>
+  <data name="General_HotspotEnabledHint" xml:space="preserve">
+    <value>Devices join it and go out through the tunnel.</value>
   </data>
   <data name="General_HotspotSsid" xml:space="preserve">
     <value>Network name</value>
   </data>
   <data name="General_HotspotPassword" xml:space="preserve">
-    <value>Network password</value>
+    <value>Password</value>
   </data>
   <data name="General_HotspotBand" xml:space="preserve">
     <value>Band</value>
@@ -217,29 +205,32 @@
   <data name="General_HotspotBand5" xml:space="preserve">
     <value>5 GHz</value>
   </data>
+  <data name="General_HotspotBandAdapter" xml:space="preserve">
+    <value>The adapter picked the band itself.</value>
+  </data>
   <data name="General_HotspotBandActual" xml:space="preserve">
     <value>Running on {0}.</value>
   </data>
   <data name="General_HotspotNoAdapter" xml:space="preserve">
-    <value>No Wi-Fi adapter found. Connect one.</value>
+    <value>No Wi-Fi adapter.</value>
   </data>
   <data name="General_HotspotRadioOff" xml:space="preserve">
-    <value>Wi-Fi is off. Turn the adapter on.</value>
+    <value>Wi-Fi is off.</value>
   </data>
   <data name="General_HotspotNoApMode" xml:space="preserve">
     <value>This adapter does not run as an access point.</value>
   </data>
   <data name="General_HotspotNoTools" xml:space="preserve">
-    <value>hostapd and dnsmasq are not installed. Install them.</value>
+    <value>hostapd and dnsmasq are not installed.</value>
   </data>
   <data name="General_HotspotServiceOff" xml:space="preserve">
-    <value>The Internet Connection Sharing service is stopped. Start it.</value>
+    <value>The Internet Connection Sharing service is stopped.</value>
   </data>
   <data name="General_HotspotNoPlatform" xml:space="preserve">
     <value>An access point is not available on this system.</value>
   </data>
   <data name="General_HotspotNeedsName" xml:space="preserve">
-    <value>Set a network name and a password, and the access point comes up.</value>
+    <value>Set a network name and a password.</value>
   </data>
   <data name="General_HotspotBadSsid" xml:space="preserve">
     <value>The name takes 1 to 32 bytes.</value>
@@ -248,7 +239,7 @@
     <value>The password takes 8 to 63 characters.</value>
   </data>
   <data name="General_HotspotClients" xml:space="preserve">
-    <value>Devices on the access point</value>
+    <value>Devices</value>
   </data>
   <data name="General_HotspotClientsOf" xml:space="preserve">
     <value>{0} of {1}</value>
@@ -256,11 +247,8 @@
   <data name="General_HotspotRunning" xml:space="preserve">
     <value>The access point is up.</value>
   </data>
-  <data name="General_HotspotAccountsNote" xml:space="preserve">
-    <value>Accounts admit clients to the proxy; the access point takes the one network password.</value>
-  </data>
   <data name="General_HotspotRevealTooltip" xml:space="preserve">
-    <value>Show the network password</value>
+    <value>Show the password</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>
@@ -1495,6 +1483,11 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>This is an internal component of the AmneziaGeo installer and does not run on its own.
 
 Run AmneziaGeoSetup.exe - that is the installer.</value>
+  </data>
+  <data name="Installer_WrongArchitecture" xml:space="preserve">
+    <value>This installer is built for an Intel 64-bit machine, and this one is ARM64.
+
+Download the ARM64 installer: the x64 build installs but its tunnel never comes up here.</value>
   </data>
   <data name="InstallerBa_ApplyError" xml:space="preserve">
     <value>Error (0x{0:X8}).</value>

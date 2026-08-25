@@ -155,7 +155,7 @@ public static class CliRunner
               hotspot show                      what the access point carries and who is on it
               hotspot on [--ssid <name>] [--password <password>] [--band auto|2.4|5]
               hotspot off
-              The proxy switch governs both: "proxy off" takes the access point down as well.
+              The access point stands on its own switch, apart from the proxy.
 
             logs and diagnostics
               log tail [--table ageo|routes|checks] [--limit <n>] [--level <token>] [--search <text>]

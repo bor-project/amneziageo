@@ -120,31 +120,31 @@
            <Border Classes="hairline" />
 
            <!-- Connections: how other devices take the tunnel from this machine (#238). -->
-           <StackPanel Spacing="12">
+           <StackPanel x:Name="ShareSection" Spacing="12">
              <TextBlock Text="{l:Tr General_ProxySection}" FontWeight="SemiBold" FontSize="15" />
 
-             <StackPanel Spacing="4">
-               <controls:SettingSwitchRow Label="{l:Tr General_ProxyEnabled}" Description="{Binding ProxyEnabledHint}"
-                                          IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
-               <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                          IsVisible="{Binding ProxyNeedsTunnel}" />
-             </StackPanel>
+             <!-- One tab per way out of this machine; each stands on its own switch and works on its own.
+                  The platforms without an access point carry the proxy alone and never ask. -->
+             <controls:SegmentedSelector IsVisible="{Binding CanShareHotspot}"
+                 Command="{Binding SelectShareTabCommand}"
+                 IsCompact="{Binding IsCompact}"
+                 Item1Text="{l:Tr General_ShareTabProxy}" Item1Param="proxy" Item1Active="{Binding IsProxyTab}"
+                 Item2Text="{l:Tr General_ShareTabWifi}" Item2Param="wifi" Item2Active="{Binding IsWifiTab}" />
 
-             <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
-                        Foreground="{DynamicResource AgWarnBrush}"
-                        IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+             <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->
+             <StackPanel Spacing="12" IsVisible="{Binding IsProxyTab}">
+               <StackPanel Spacing="4">
+                 <controls:SettingSwitchRow Label="{l:Tr General_ProxyEnabled}" Description="{l:Tr General_ProxyEnabledHint}"
+                                            IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
+                 <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                            IsVisible="{Binding ProxyNeedsTunnel}" />
+               </StackPanel>
 
-             <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
-               <!-- Which of the two ways is in force; the platforms without an access point never ask. -->
-               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding CanShareHotspot}">
-                 <TextBlock Grid.Column="0" Text="{l:Tr General_ShareMode}" FontSize="13.5" VerticalAlignment="Center" />
-                 <controls:AdaptiveComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                           ItemsSource="{Binding ShareOptions}"
-                           SelectedIndex="{Binding SelectedShareIndex, Mode=TwoWay}" />
-               </Grid>
+               <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
+                          Foreground="{DynamicResource AgWarnBrush}"
+                          IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-               <!-- The network this machine is already in: the proxy it reaches us by. -->
-               <StackPanel Spacing="12" IsVisible="{Binding ShareOverLan}">
+               <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
                  <!-- Every address a client can be pointed at, each one copyable; the tunnel's own address is not
                       among them - a neighbour told to use it reaches nobody. -->
                  <ItemsControl ItemsSource="{Binding ProxyEndpoints}">
@@ -210,123 +210,118 @@
                      </ItemsControl>
                    </Border>
                  </StackPanel>
-               </StackPanel>
 
-               <!-- Own access point: the network a device joins without being set up at all. -->
-               <StackPanel Spacing="12" IsVisible="{Binding ShareOverWifi}">
-                 <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
-                            Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
+                 <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
+                 <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
+                                            Description="{l:Tr General_ProxyAnonymousHint}"
+                                            IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
 
-                 <StackPanel Spacing="12" IsEnabled="{Binding HotspotSupported}">
-                   <StackPanel Spacing="6">
-                     <TextBlock Text="{l:Tr General_HotspotSsid}" FontSize="13.5" />
-                     <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
-                   </StackPanel>
+                 <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
+                            Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
+                 <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
+                            Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
 
-                   <StackPanel Spacing="6">
-                     <TextBlock Text="{l:Tr General_HotspotPassword}" FontSize="13.5" />
-                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                       <TextBox Grid.Column="0" Classes="field" MaxLength="63" PasswordChar="●"
-                                RevealPassword="{Binding IsHotspotPasswordRevealed}"
-                                Text="{Binding HotspotPassword, Mode=TwoWay}" />
-                       <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
-                               Command="{Binding ToggleHotspotRevealCommand}" ToolTip.Tip="{l:Tr General_HotspotRevealTooltip}">
-                         <Panel>
-                           <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
-                                     IsVisible="{Binding !IsHotspotPasswordRevealed}" />
-                           <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
-                                     IsVisible="{Binding IsHotspotPasswordRevealed}" />
-                         </Panel>
-                       </Button>
-                     </Grid>
-                   </StackPanel>
-
-                   <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                     <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotBand}" FontSize="13.5" VerticalAlignment="Center" />
-                     <controls:AdaptiveComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                               ItemsSource="{Binding BandOptions}"
-                               SelectedIndex="{Binding SelectedBandIndex, Mode=TwoWay}" />
+                 <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
+                 <StackPanel Spacing="6">
+                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                       <TextBlock Text="{l:Tr General_ProxyAccounts}" FontSize="13.5" />
+                       <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                     </StackPanel>
+                     <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
+                             Command="{Binding AddProxyAccountCommand}">
+                       <StackPanel Orientation="Horizontal" Spacing="4">
+                         <TextBlock Text="+" />
+                         <TextBlock Text="{l:Tr Main_AddButton}" />
+                       </StackPanel>
+                     </Button>
                    </Grid>
-
-                   <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                              IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-                   <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
-                              Foreground="{DynamicResource AgWarnBrush}"
-                              IsVisible="{Binding HotspotErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-                   <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding HotspotRunning}">
-                     <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontSize="13.5" VerticalAlignment="Center" />
-                     <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                             Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                       <TextBlock Text="{Binding HotspotClientsText}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-                     </Border>
-                   </Grid>
+                   <ItemsControl ItemsSource="{Binding ProxyAccounts}">
+                     <ItemsControl.ItemTemplate>
+                       <DataTemplate x:DataType="vm:ProxyAccountViewModel">
+                         <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
+                           <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
+                                    Watermark="{l:Tr General_ProxyUser}" />
+                           <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
+                                    PasswordChar="●" RevealPassword="{Binding IsRevealed}"
+                                    Watermark="{l:Tr General_ProxyPassword}" />
+                           <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
+                                   Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
+                             <Panel>
+                               <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
+                                         IsVisible="{Binding !IsRevealed}" />
+                               <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
+                                         IsVisible="{Binding IsRevealed}" />
+                             </Panel>
+                           </Button>
+                           <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center"
+                                   Command="{Binding $parent[ItemsControl].((vm:GeneralViewModel)DataContext).RemoveProxyAccountCommand}"
+                                   CommandParameter="{Binding}">
+                             <PathIcon Data="{StaticResource AgCloseGeometry}" Width="14" Height="14" />
+                           </Button>
+                         </Grid>
+                       </DataTemplate>
+                     </ItemsControl.ItemTemplate>
+                   </ItemsControl>
                  </StackPanel>
                </StackPanel>
+             </StackPanel>
 
-               <!-- Wired subnet: the switch stands here, the gateway behind it is the next task. -->
-               <StackPanel Spacing="4" IsVisible="{Binding CanShareHotspot}">
-                 <controls:SettingSwitchRow Label="{l:Tr General_ShareEthernet}" Description="{l:Tr General_ShareEthernetHint}"
-                                            IsChecked="{Binding ShareEthernet, Mode=TwoWay}" />
-                 <TextBlock Text="{l:Tr General_ShareEthernetPending}" FontSize="12" TextWrapping="Wrap"
-                            Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ShareEthernet}" />
-               </StackPanel>
+             <!-- Own access point: the network a device joins without being set up at all. -->
+             <StackPanel Spacing="12" IsVisible="{Binding IsWifiTab}">
+               <controls:SettingSwitchRow Label="{l:Tr General_HotspotEnabled}"
+                                          Description="{l:Tr General_HotspotEnabledHint}"
+                                          IsChecked="{Binding HotspotEnabled, Mode=TwoWay}"
+                                          IsEnabled="{Binding HotspotSupported}" />
 
-               <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
-               <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
-                                          Description="{l:Tr General_ProxyAnonymousHint}"
-                                          IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
+               <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
+                          Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
 
-               <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
-                          Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
-               <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
-                          Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
+               <StackPanel Spacing="12" IsVisible="{Binding HotspotEnabled}" IsEnabled="{Binding HotspotSupported}">
+                 <StackPanel Spacing="6">
+                   <TextBlock Text="{l:Tr General_HotspotSsid}" FontSize="13.5" />
+                   <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
+                 </StackPanel>
 
-               <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
-               <StackPanel Spacing="6">
-                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                   <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                     <TextBlock Text="{l:Tr General_ProxyAccounts}" FontSize="13.5" />
-                     <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                   </StackPanel>
-                   <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
-                           Command="{Binding AddProxyAccountCommand}">
-                     <StackPanel Orientation="Horizontal" Spacing="4">
-                       <TextBlock Text="+" />
-                       <TextBlock Text="{l:Tr Main_AddButton}" />
-                     </StackPanel>
-                   </Button>
+                 <StackPanel Spacing="6">
+                   <TextBlock Text="{l:Tr General_HotspotPassword}" FontSize="13.5" />
+                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                     <TextBox Grid.Column="0" Classes="field" MaxLength="63" PasswordChar="●"
+                              RevealPassword="{Binding IsHotspotPasswordRevealed}"
+                              Text="{Binding HotspotPassword, Mode=TwoWay}" />
+                     <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
+                             Command="{Binding ToggleHotspotRevealCommand}" ToolTip.Tip="{l:Tr General_HotspotRevealTooltip}">
+                       <Panel>
+                         <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
+                                   IsVisible="{Binding !IsHotspotPasswordRevealed}" />
+                         <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
+                                   IsVisible="{Binding IsHotspotPasswordRevealed}" />
+                       </Panel>
+                     </Button>
+                   </Grid>
+                 </StackPanel>
+
+                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                   <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotBand}" FontSize="13.5" VerticalAlignment="Center" />
+                   <controls:AdaptiveComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                             ItemsSource="{Binding BandOptions}"
+                             SelectedIndex="{Binding SelectedBandIndex, Mode=TwoWay}" />
                  </Grid>
-                 <TextBlock Text="{l:Tr General_HotspotAccountsNote}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                            IsVisible="{Binding ShareOverWifi}" />
-                 <ItemsControl ItemsSource="{Binding ProxyAccounts}">
-                   <ItemsControl.ItemTemplate>
-                     <DataTemplate x:DataType="vm:ProxyAccountViewModel">
-                       <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
-                         <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
-                                  Watermark="{l:Tr General_ProxyUser}" />
-                         <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
-                                  PasswordChar="●" RevealPassword="{Binding IsRevealed}"
-                                  Watermark="{l:Tr General_ProxyPassword}" />
-                         <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                                 Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
-                           <Panel>
-                             <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
-                                       IsVisible="{Binding !IsRevealed}" />
-                             <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
-                                       IsVisible="{Binding IsRevealed}" />
-                           </Panel>
-                         </Button>
-                         <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center"
-                                 Command="{Binding $parent[ItemsControl].((vm:GeneralViewModel)DataContext).RemoveProxyAccountCommand}"
-                                 CommandParameter="{Binding}">
-                           <PathIcon Data="{StaticResource AgCloseGeometry}" Width="14" Height="14" />
-                         </Button>
-                       </Grid>
-                     </DataTemplate>
-                   </ItemsControl.ItemTemplate>
-                 </ItemsControl>
+
+                 <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                            IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                 <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
+                            Foreground="{DynamicResource AgWarnBrush}"
+                            IsVisible="{Binding HotspotErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                 <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding HotspotRunning}">
+                   <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontSize="13.5" VerticalAlignment="Center" />
+                   <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                           Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                     <TextBlock Text="{Binding HotspotClientsText}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+                   </Border>
+                 </Grid>
                </StackPanel>
              </StackPanel>
            </StackPanel>
@@ -336,7 +331,7 @@
            <!-- Connection resilience: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
                 the Android agent does not apply these settings. -->
            <StackPanel Spacing="12" IsVisible="{Binding CanConfigureConnection}">
-             <TextBlock Text="{l:Tr General_ConnectionSection}" FontWeight="SemiBold" FontSize="15" />
+             <TextBlock Text="{l:Tr General_TunnelSection}" FontWeight="SemiBold" FontSize="15" />
 
              <controls:SettingSwitchRow Label="{l:Tr General_ShowNotifications}"
                                         Description="{l:Tr General_ShowNotificationsHint}"

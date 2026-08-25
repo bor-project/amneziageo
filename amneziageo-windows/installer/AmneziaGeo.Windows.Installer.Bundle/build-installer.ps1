@@ -21,9 +21,10 @@
     -l,   -ListOnly           print the resolved matrix and exit (build nothing)
   With no flags and no config, the default is a single x64 fdd build (the prior behaviour).
 
-  NOTE: arm64 publishes the managed code for win-arm64, but the bundled NATIVE deps (tunnel.dll,
-  wintun.dll, wstunnel.exe) currently ship x64-only - an arm64 build is wired end-to-end but is not
-  runtime-correct until arm64 natives are added. x64 is the supported target today.
+  NOTE: tunnel.dll and wintun.dll are published per arch, so a bundle only runs on the architecture it
+  was built for - the x64 build installs on an arm64 machine but never raises a tunnel there, which is
+  why the BA refuses that pairing. wstunnel.exe stays x64-only and is left out of an arm64 build, so a
+  config with WebSocket does not connect on arm64 until an arm64 wstunnel is added.
 
   The Version comes from -Version (the release tag), else 0.0.1.<git-commit-count>, and is stamped on
   both the bundle and the MSI; combined with the MSI MajorUpgrade/@AllowDowngrades this makes

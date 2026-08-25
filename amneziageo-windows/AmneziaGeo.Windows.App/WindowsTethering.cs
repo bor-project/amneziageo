@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <param name="Running">Whether a point under the name asked about is up.</param>
 /// <param name="Clients">Devices on it.</param>
 /// <param name="MaxClients">How many it admits.</param>
-/// <param name="Band">Band it took: 2.4, 5, or empty.</param>
+/// <param name="Band">Band it stands on: 2.4, 5, or auto where the adapter chose; empty while it is down.</param>
 internal sealed record TetheringState(
     bool Supported,
     string Reason,
@@ -173,13 +173,14 @@ internal static class WindowsTethering
         }
     }
 
+    // Windows names the band asked for and never the channel taken, so auto stands for a band the adapter chose.
     private static string Token(TetheringWiFiBand band)
     {
         return band switch
         {
             TetheringWiFiBand.TwoPointFourGigahertz => HotspotBands.TwoPointFour,
             TetheringWiFiBand.FiveGigahertz => HotspotBands.Five,
-            _ => string.Empty,
+            _ => HotspotBands.Auto,
         };
     }
 }

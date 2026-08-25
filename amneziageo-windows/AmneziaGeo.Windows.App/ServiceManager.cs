@@ -7,6 +7,11 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class ServiceManager
 {
+    // Polls while a service settles after a stop or a start.
+    private const int SettleWaitMs = 500;
+    private const int StopAttempts = 6;
+    private const int StartAttempts = 20;
+
     /// <summary>
     /// Creates the tunnel service for an already-stored config, rebinding an existing one to the owner's data root.
     /// </summary>
@@ -152,6 +157,19 @@ internal sealed class ServiceManager
     }
 
     /// <summary>
+    /// Stops a service of the system under the name it carries itself and starts it again. Answers whether
+    /// it stands afterwards; a service its own trigger brings straight back answers that it is running
+    /// already, which is not a fault.
+    /// </summary>
+    public bool Recycle(string service)
+    {
+        Run("stop", service);
+        Await(service, "STOPPED", StopAttempts);
+        Run("start", service);
+        return Await(service, "RUNNING", StartAttempts);
+    }
+
+    /// <summary>
     /// Prints the status of a tunnel service.
     /// </summary>
     public int Status(string name)
@@ -245,6 +263,22 @@ internal sealed class ServiceManager
         }
 
         return code;
+    }
+
+    // Waits for a service to reach a state, and answers whether it got there.
+    private static bool Await(string service, string state, int attempts)
+    {
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            if (Run("query", service).Output.Contains(state, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            Thread.Sleep(SettleWaitMs);
+        }
+
+        return false;
     }
 
     private static (int Code, string Output, string Error) Run(params string[] arguments)

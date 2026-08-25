@@ -730,6 +730,20 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Whether the adapter carries on what it receives for another one. Windows turns this on per adapter
+    /// and the managed reading answers the machine-wide switch instead, which is off here.
+    /// </summary>
+    public bool Forwards(uint interfaceIndex)
+    {
+        var row = new MIB_IPINTERFACE_ROW
+        {
+            Family = AfInet,
+            InterfaceIndex = interfaceIndex,
+        };
+        return GetIpInterfaceEntry(ref row) == NoError && row.ForwardingEnabled != 0;
+    }
+
+    /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
     public uint? FindInterfaceIndex(string adapterName)
@@ -1067,6 +1081,19 @@ internal sealed partial class RouteManager
         public uint Age;
         public uint Origin;
     }
+
+    // Only the fields this reads are named, at the offsets the row has always carried them; the room to spare
+    // takes a longer row from a newer Windows without touching what is around it.
+    [StructLayout(LayoutKind.Explicit, Size = 256)]
+    private struct MIB_IPINTERFACE_ROW
+    {
+        [FieldOffset(0)] public ushort Family;
+        [FieldOffset(16)] public uint InterfaceIndex;
+        [FieldOffset(41)] public byte ForwardingEnabled;
+    }
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint GetIpInterfaceEntry(ref MIB_IPINTERFACE_ROW row);
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint GetBestRoute2(IntPtr interfaceLuid, uint interfaceIndex, IntPtr sourceAddress, ref SOCKADDR_INET destinationAddress, uint addressSortOptions, ref MIB_IPFORWARD_ROW2 bestRoute, ref SOCKADDR_INET bestSourceAddress);

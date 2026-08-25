@@ -1259,19 +1259,22 @@
     <value>Укажите корректный порт WebSocket (1-65535).</value>
   </data>
   <data name="Transport_ProbeRunning" xml:space="preserve">
-    <value>Проверяю фронт WebSocket…</value>
+    <value>Проверяю сервер WebSocket…</value>
   </data>
   <data name="Transport_ProbeNoAddress" xml:space="preserve">
-    <value>Имя фронта WebSocket не разрешается.</value>
+    <value>Адрес сервера WebSocket не определяется: проверьте имя хоста.</value>
   </data>
   <data name="Transport_ProbeNoAnswer" xml:space="preserve">
-    <value>Фронт WebSocket не ответил.</value>
+    <value>Сервер WebSocket не отвечает: проверьте порт и доступность сервера.</value>
   </data>
   <data name="Transport_ProbeTls" xml:space="preserve">
-    <value>TLS на фронте WebSocket не установился.</value>
+    <value>На сервере WebSocket не установился TLS: на этом порту нет HTTPS или сертификат не подошёл.</value>
   </data>
   <data name="Transport_ProbeRefused" xml:space="preserve">
-    <value>Фронт WebSocket отказал: {0}</value>
+    <value>Сервер WebSocket отклонил подключение: {0}</value>
+  </data>
+  <data name="Transport_ProbeDenied" xml:space="preserve">
+    <value>Сервер WebSocket отказал в доступе: не подошёл токен или логин и пароль.</value>
   </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Доступна версия {0}</value>

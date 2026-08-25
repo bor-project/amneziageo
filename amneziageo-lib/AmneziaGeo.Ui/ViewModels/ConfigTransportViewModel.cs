@@ -486,9 +486,20 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     {
         WsFrontOutcome.NoAddress => Loc.Instance.Get("Transport_ProbeNoAddress"),
         WsFrontOutcome.Tls => Loc.Instance.Get("Transport_ProbeTls"),
-        WsFrontOutcome.Refused => Loc.Instance.Get("Transport_ProbeRefused", detail),
+        WsFrontOutcome.Refused => Denied(detail)
+            ? Loc.Instance.Get("Transport_ProbeDenied")
+            : Loc.Instance.Get("Transport_ProbeRefused", detail),
         _ => Loc.Instance.Get("Transport_ProbeNoAnswer"),
     };
+
+    // Codes a front answers with when the token or the login and password did not fit.
+    private static bool Denied(string detail)
+    {
+        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1
+            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code)
+            && code is 400 or 401 or 403 or 404;
+    }
 
     /// <summary>
     /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth, a wss://user:pass@host:port URL for login+password (user/pass percent-escaped), or a wss://host:port/token URL for a token. The port is baked into any URL form so it is not lost to the wss default (443).

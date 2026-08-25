@@ -64,6 +64,11 @@ public sealed class WsCarrier : IDisposable
     private const int MaxHeaderBytes = 8192;
     private const int ConnectTimeoutMs = 8000;
     private const int RetryGapMs = 1000;
+    private const int LoopbackProbeMs = 300;
+
+    // How long the front may say nothing at all before the websocket counts as gone: it pings on its own every
+    // half minute, so silence this long is a connection that stands in name only.
+    private const int SilenceMs = 75000;
 
     private const byte OpBinary = 0x2;
     private const byte OpClose = 0x8;
@@ -84,9 +89,11 @@ public sealed class WsCarrier : IDisposable
     private readonly Socket _local;
     private readonly byte[] _outgoing = new byte[MaxDatagram + FrameOverhead];
     private readonly CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _sending = new(1, 1);
     private Stream? _stream;
     private EndPoint? _engine;
     private long _attempted;
+    private long _heard;
     private bool _disposed;
 
     /// <summary>
@@ -118,6 +125,26 @@ public sealed class WsCarrier : IDisposable
         var carrier = new WsCarrier(front, address, targetPort, bypass, note);
         _ = Task.Run(() => carrier.PumpAsync(carrier._cts.Token));
         return carrier;
+    }
+
+    /// <summary>
+    /// Whether a datagram crosses the loopback. The engine hands the carrier every packet on 127.0.0.1, so a
+    /// firewall that drops UDP there leaves the carrier nothing to carry.
+    /// </summary>
+    public static bool LoopbackCarries()
+    {
+        try
+        {
+            using var listener = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            listener.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            using var sender = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            sender.SendTo(new byte[1], listener.LocalEndPoint!);
+            return listener.Poll(TimeSpan.FromMilliseconds(LoopbackProbeMs), SelectMode.SelectRead);
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -187,31 +214,74 @@ public sealed class WsCarrier : IDisposable
         var from = new IPEndPoint(IPAddress.Loopback, 0);
         while (!ct.IsCancellationRequested)
         {
+            var stream = default(Stream);
             try
             {
                 var received = await _local.ReceiveFromAsync(buffer, SocketFlags.None, from, ct).ConfigureAwait(false);
                 _engine = received.RemoteEndPoint;
-                var stream = await ReadyAsync(ct).ConfigureAwait(false);
+                stream = await ReadyAsync(ct).ConfigureAwait(false);
                 if (stream is null)
                 {
                     continue;
                 }
 
+                if (Environment.TickCount64 - Volatile.Read(ref _heard) > SilenceMs)
+                {
+                    _note?.Invoke($"nothing has come back from {_front.Host}:{_front.Port} for {SilenceMs / 1000} s, so the websocket is opened again", null);
+                    Drop(stream, null);
+                    continue;
+                }
+
                 var length = Encode(_outgoing, buffer.AsSpan(0, received.ReceivedBytes), OpBinary);
-                await stream.WriteAsync(_outgoing.AsMemory(0, length), ct).ConfigureAwait(false);
+                await SendAsync(stream, _outgoing.AsMemory(0, length), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException) when (_disposed)
             {
                 return;
             }
-            catch (Exception ex) when (ex is SocketException or IOException)
+            catch (Exception ex)
             {
-                Drop(ex);
+                // Whatever ends one websocket, the carrier holds its port and opens another one on the next
+                // datagram; only a carrier taken down stops the pump.
+                if (stream is null)
+                {
+                    _note?.Invoke($"the carrier's own port {LocalPort} refused a datagram", ex);
+                }
+
+                Drop(stream, ex);
+                await PauseAsync(ct).ConfigureAwait(false);
             }
+        }
+    }
+
+    // One frame on the wire. Datagrams and the answers to the front's pings come from two loops, and the stream
+    // carries one write at a time.
+    private async Task SendAsync(Stream stream, ReadOnlyMemory<byte> frame, CancellationToken ct)
+    {
+        await _sending.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await stream.WriteAsync(frame, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _sending.Release();
+        }
+    }
+
+    // Waits out the retry gap without turning a carrier taken down into a failure.
+    private static async Task PauseAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(RetryGapMs, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -236,6 +306,7 @@ public sealed class WsCarrier : IDisposable
             return null;
         }
 
+        Volatile.Write(ref _heard, Environment.TickCount64);
         _stream = opened;
         _ = Task.Run(() => DeliverAsync(opened, ct));
         return opened;
@@ -333,6 +404,7 @@ public sealed class WsCarrier : IDisposable
             while (!ct.IsCancellationRequested)
             {
                 await ReadAsync(stream, head.AsMemory(0, 2), ct).ConfigureAwait(false);
+                Volatile.Write(ref _heard, Environment.TickCount64);
                 var final = (head[0] & FinalBit) != 0;
                 var opcode = (byte)(head[0] & 0x0f);
                 var masked = (head[1] & MaskBit) != 0;
@@ -345,7 +417,14 @@ public sealed class WsCarrier : IDisposable
                 else if (length == 127)
                 {
                     await ReadAsync(stream, head.AsMemory(0, 8), ct).ConfigureAwait(false);
-                    length = (int)Math.Min(BinaryPrimitives.ReadUInt64BigEndian(head), MaxDatagram);
+                    var wide = BinaryPrimitives.ReadUInt64BigEndian(head);
+                    if (wide > MaxDatagram)
+                    {
+                        // Reading part of a frame leaves the rest of it to be read as the next one.
+                        throw new IOException($"the websocket front sent a frame of {wide} bytes");
+                    }
+
+                    length = (int)wide;
                 }
 
                 var mask = new byte[4];
@@ -365,14 +444,14 @@ public sealed class WsCarrier : IDisposable
 
                 if (opcode == OpClose)
                 {
-                    Drop(null);
+                    Drop(stream, null);
                     return;
                 }
 
                 if (opcode == OpPing)
                 {
                     var pong = new byte[length + FrameOverhead];
-                    await stream.WriteAsync(pong.AsMemory(0, Encode(pong, payload.AsSpan(0, length), OpPong)), ct).ConfigureAwait(false);
+                    await SendAsync(stream, pong.AsMemory(0, Encode(pong, payload.AsSpan(0, length), OpPong)), ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -402,9 +481,9 @@ public sealed class WsCarrier : IDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+        catch (Exception ex)
         {
-            Drop(ex);
+            Drop(stream, ex);
         }
     }
 
@@ -460,16 +539,17 @@ public sealed class WsCarrier : IDisposable
         return line > 0 ? answer[..line] : answer.Trim();
     }
 
-    // Ends the websocket; the next datagram opens another one.
-    private void Drop(Exception? ex)
+    // Ends one websocket; the next datagram opens another. A stream already replaced is left where it is, or a
+    // loop ending late would take down the connection that replaced it.
+    private void Drop(Stream? ended, Exception? ex)
     {
-        var stream = Interlocked.Exchange(ref _stream, null);
-        if (stream is null)
+        if (ended is null || Interlocked.CompareExchange(ref _stream, null, ended) != ended)
         {
+            ended?.Dispose();
             return;
         }
 
-        stream.Dispose();
+        ended.Dispose();
         if (!_disposed)
         {
             _note?.Invoke($"the websocket to {_front.Host}:{_front.Port} ended; the tunnel opens another one on its next packet", ex);
@@ -486,8 +566,9 @@ public sealed class WsCarrier : IDisposable
 
         _disposed = true;
         _cts.Cancel();
-        Drop(null);
+        Drop(Volatile.Read(ref _stream), null);
         _local.Dispose();
         _cts.Dispose();
+        _sending.Dispose();
     }
 }

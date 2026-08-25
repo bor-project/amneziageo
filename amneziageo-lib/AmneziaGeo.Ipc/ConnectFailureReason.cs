@@ -84,4 +84,9 @@ public enum ConnectFailureReason
     /// The native tunnel engine is missing for this device.
     /// </summary>
     EngineUnavailable,
+
+    /// <summary>
+    /// The firewall drops UDP on the loopback, where the carrier hands the tunnel to the engine.
+    /// </summary>
+    LoopbackBlocked,
 }

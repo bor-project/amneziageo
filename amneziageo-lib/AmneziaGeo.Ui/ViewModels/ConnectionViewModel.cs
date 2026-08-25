@@ -1131,6 +1131,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             "TunnelSetupFailed" => "MainVm_NoticeConnectFailed_TunnelSetupFailed",
             "EngineStartFailed" => "MainVm_NoticeConnectFailed_EngineStartFailed",
             "EngineUnavailable" => "MainVm_NoticeConnectFailed_EngineUnavailable",
+            "LoopbackBlocked" => "MainVm_NoticeConnectFailed_LoopbackBlocked",
             _ => "MainVm_NoticeConnectFailed",
         };
     }

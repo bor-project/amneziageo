@@ -27,6 +27,10 @@ internal sealed class LinuxAgent : IDisposable
     private const string GeoAutoCheckKey = "geo-auto-check";
     private const string GeoIntervalKey = "geo-check-interval-hours";
     private const int SupervisorTickSeconds = 5;
+
+    // How long the connect itself waits for the peer's first answer, and how long the supervisor waits after it.
+    private const int HandshakeGraceSeconds = 3;
+    private const int HandshakeWaitSeconds = 30;
     private const int GeoTickSeconds = 60;
     private const int MinGeoIntervalHours = 1;
     private const int MaxGeoIntervalHours = 24 * 7;
@@ -86,6 +90,7 @@ internal sealed class LinuxAgent : IDisposable
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
     private DateTime _nextRetryUtc = DateTime.MinValue;
+    private DateTime _handshakeDueUtc = DateTime.MaxValue;
     private bool _connectFailed;
     private bool _restartRequired;
     private string _connectFailReason = string.Empty;
@@ -409,17 +414,23 @@ internal sealed class LinuxAgent : IDisposable
             await PushAsync(ct).ConfigureAwait(false);
         }
 
+        if (_desiredConnected && _tunnel.Running && _boundStatus == ConnectionStatus.Connecting)
+        {
+            await SettleConnectingAsync(counters, ct).ConfigureAwait(false);
+        }
+
         if (!_desiredConnected || _tunnel.Running)
         {
             return;
         }
 
-        if (_boundStatus == ConnectionStatus.Connected)
+        if (_boundStatus is ConnectionStatus.Connected or ConnectionStatus.Connecting)
         {
             _log.Warn("agent", "the tunnel went down outside the agent");
             _connectFailed = true;
             _connectFailReason = ConnectFailureReason.Unknown.ToString();
             _connectFailDetail = "engine stopped";
+            _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Failed;
             _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
             await PushAsync(ct).ConfigureAwait(false);
@@ -437,6 +448,37 @@ internal sealed class LinuxAgent : IDisposable
         {
             _log.Warn("agent", $"reconnect failed: {ack.Message}");
         }
+    }
+
+    // Decides a connect that is still waiting: the interface is up from the moment the engine starts, and only
+    // the peer's first answer says the tunnel carries anything. A server that never answers takes the tunnel
+    // down with it, so a machine is not left with its traffic in a tunnel that leads nowhere.
+    private async Task SettleConnectingAsync(PeerCounters? counters, CancellationToken ct)
+    {
+        if (counters is { HandshakeUnix: > 0 })
+        {
+            _handshakeDueUtc = DateTime.MaxValue;
+            _boundStatus = ConnectionStatus.Connected;
+            _log.Info("agent", $"connected: {_boundTarget}");
+            await PushAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (DateTime.UtcNow < _handshakeDueUtc)
+        {
+            return;
+        }
+
+        _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s, so the tunnel is taken down");
+        _handshakeDueUtc = DateTime.MaxValue;
+        _connectFailed = true;
+        _connectFailReason = ConnectFailureReason.NoHandshake.ToString();
+        _connectFailDetail = "no handshake";
+        _boundStatus = ConnectionStatus.Failed;
+        _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
+        StopLossProbe();
+        await _tunnel.DownAsync(ct).ConfigureAwait(false);
+        await PushAsync(ct).ConfigureAwait(false);
     }
 
     // Repairs a tunnel that is up and no longer carrying. The counters alone never say it: a session that keeps
@@ -742,6 +784,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             _desiredConnected = false;
             _restartRequired = false;
+            _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Disconnecting;
             await PushAsync(ct).ConfigureAwait(false);
             await _tunnel.DownAsync(ct).ConfigureAwait(false);
@@ -784,22 +827,49 @@ internal sealed class LinuxAgent : IDisposable
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport);
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
-        if (failure is not null)
+        if (failure is { } refusal)
         {
             _connectFailed = true;
-            _connectFailReason = ConnectFailureReason.ServiceStartFailed.ToString();
-            _connectFailDetail = failure;
+            _connectFailReason = refusal.Reason.ToString();
+            _connectFailDetail = refusal.Detail;
             _boundStatus = ConnectionStatus.Failed;
             _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
             await PushAsync(ct).ConfigureAwait(false);
-            return new IpcAck(false, failure);
+            return new IpcAck(false, refusal.Detail);
         }
 
-        _boundStatus = ConnectionStatus.Connected;
         StartLossProbe(config);
-        _log.Info("agent", $"connected: {_boundTarget}");
+        if (await FirstHandshakeAsync(ct).ConfigureAwait(false))
+        {
+            _boundStatus = ConnectionStatus.Connected;
+            _log.Info("agent", $"connected: {_boundTarget}");
+            await PushAsync(ct).ConfigureAwait(false);
+            return Ok();
+        }
+
+        // The interface stands from the moment the engine starts, and nothing has answered on it yet; the
+        // supervisor carries the state from here.
+        _handshakeDueUtc = DateTime.UtcNow.AddSeconds(HandshakeWaitSeconds);
+        _log.Info("agent", $"{_boundTarget}: the interface is up, waiting for the server's first answer");
         await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
+        return new IpcAck(true, IpcMessage.Key("Agent_ConnectWaiting"));
+    }
+
+    // Waits out the peer's first answer while the connect still holds the floor: a server that is there answers
+    // in well under a second.
+    private async Task<bool> FirstHandshakeAsync(CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < HandshakeGraceSeconds * 4; attempt++)
+        {
+            if (await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) is { HandshakeUnix: > 0 })
+            {
+                return true;
+            }
+
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        }
+
+        return false;
     }
 
     private async Task<IpcAck> GetConfigAsync(IReadOnlyList<string> args, CancellationToken ct)

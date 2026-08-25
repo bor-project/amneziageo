@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- gateway.exe: the userspace stack the shared access point's clients are carried through, keyed off the
+       target arch. It is a build output of the gateway Go module (gitignored), produced by
+       tools\build-gateway.ps1, and stands on the sing-tun submodule next to it. -->
+  <PropertyGroup>
+    <GatewayArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</GatewayArch>
+    <GatewayArch Condition="'$(GatewayArch)' == ''">x64</GatewayArch>
+    <_GatewayDir>$(MSBuildThisFileDirectory)gateway</_GatewayDir>
+    <_GatewayExe>$(_GatewayDir)\bin\$(GatewayArch)\gateway.exe</_GatewayExe>
+  </PropertyGroup>
+
+  <!-- Fail early with actionable guidance instead of a cryptic MSB3030 on the copy. -->
+  <Target Name="EnsureGatewayBuilt" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(MSBuildThisFileDirectory)sing-tun\go.mod')"
+           Text="The sing-tun submodule is missing at $(MSBuildThisFileDirectory)sing-tun.%0aInitialize it and build the gateway, then rebuild:%0a  git submodule update --init --recursive%0a  powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\tools\build-gateway.ps1" />
+    <Error Condition="Exists('$(MSBuildThisFileDirectory)sing-tun\go.mod') and !Exists('$(_GatewayExe)')"
+           Text="The gateway for $(GatewayArch) is not built: $(_GatewayExe) not found.%0aBuild it first, then rebuild:%0a  powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\tools\build-gateway.ps1 -Arch $(GatewayArch)%0aIt takes Go from PATH, or the one the engine build downloaded into amneziawg-windows\.deps." />
+  </Target>
+
+</Project>

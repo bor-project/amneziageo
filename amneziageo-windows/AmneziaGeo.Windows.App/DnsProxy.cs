@@ -32,6 +32,10 @@ internal sealed class DnsProxy
     // Serve-known: TTL on an answer synthesized from tracked IPs. Short so the client re-asks and picks up
     // freshly revalidated IPs, but long enough that repeat queries take the lock-free cache path.
     private const int ServeKnownTtlSeconds = 30;
+    // Serve-stand-in: TTL on an answer given to a client of the access point. Short so the client asks again
+    // while it keeps using the name, which renews the address it holds; the address itself lives far longer, so a
+    // connection opened late still finds the name it stands for.
+    private const int StandInTtlSeconds = 30;
     // Minimum gap between background revalidations of the same domain, so a chatty client cannot storm the
     // (lossy) tunnel resolver.
     private const int RevalidateMinIntervalMs = 60_000;
@@ -116,6 +120,10 @@ internal sealed class DnsProxy
     // Queries the tunnel resolver failed to answer and the local one took over, since it last answered. Kept so
     // the takeover and the recovery are each said once instead of per query.
     private int _rescued;
+    // Names the clients of the access point were given a stand-in address for; empty while no point stands.
+    private HotspotNames? _clientNames;
+    // Socket on the address the access point hands its clients. A query arriving there is a client's.
+    private UdpClient? _clientServer;
 
     /// <summary>
     /// ctor
@@ -192,7 +200,7 @@ internal sealed class DnsProxy
         var threads = new List<Thread>();
         foreach (var server in _servers)
         {
-            var thread = new Thread(() => ServeOne(server))
+            var thread = new Thread(() => ServeOne(server, clients: false))
             {
                 IsBackground = true,
             };
@@ -213,6 +221,54 @@ internal sealed class DnsProxy
     {
         _cache.Clear();
         _bypass.Clear();
+    }
+    /// <summary>
+    /// Serves the clients of the access point on the address it hands them. Windows gives a datagram to the
+    /// closest bind, so queries land here even while the sharing service holds every address on port 53.
+    /// </summary>
+    public bool ServeClients(IPAddress address, HotspotNames names)
+    {
+        if (_clientServer is not null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var server = new UdpClient(new IPEndPoint(address, 53));
+            server.Client.IOControl(SioUdpConnReset, new byte[4], null);
+            _clientNames = names;
+            _clientServer = server;
+            var thread = new Thread(() => ServeOne(server, clients: true))
+            {
+                IsBackground = true,
+            };
+            thread.Start();
+            _logger.LogInformation("the clients of the access point now ask this machine for names, on {Address}:53", address);
+            return true;
+        }
+        catch (SocketException ex)
+        {
+            _logger.LogWarning(ex, "names for the clients of the access point could not be taken over on {Address}:53; what they open keeps leaving past the rules of this machine", address);
+            _clientNames = null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Stops serving the clients of the access point and drops every stand-in address handed out.
+    /// </summary>
+    public void StopServingClients()
+    {
+        var server = Interlocked.Exchange(ref _clientServer, null);
+        if (server is null)
+        {
+            return;
+        }
+
+        _clientNames?.Clear();
+        _clientNames = null;
+        server.Dispose();
     }
 
     /// <summary>
@@ -470,7 +526,7 @@ internal sealed class DnsProxy
         }
     }
 
-    private void ServeOne(UdpClient server)
+    private void ServeOne(UdpClient server, bool clients)
     {
         var anyEndpoint = server.Client.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any;
         try
@@ -491,17 +547,23 @@ internal sealed class DnsProxy
                     }
 
                     var client = remote;
-                    _ = HandleAsync(server, query, client);
+                    _ = HandleAsync(server, query, client, clients);
                 }
             }
         }
         catch (Exception ex)
         {
+            if (clients)
+            {
+                _logger.LogDebug(ex, "names are no longer served to the clients of the access point");
+                return;
+            }
+
             _logger.LogError(ex, "DNS handling stopped on {Address}; names fall back to the system resolver and rules by domain stop applying", anyEndpoint);
         }
     }
 
-    private async Task HandleAsync(UdpClient server, byte[] query, IPEndPoint client)
+    private async Task HandleAsync(UdpClient server, byte[] query, IPEndPoint client, bool isClient)
     {
         try
         {
@@ -536,6 +598,19 @@ internal sealed class DnsProxy
                 if (RouteLog.Enabled)
                 {
                     RouteLog.Note($"block {name} {TypeLabel(type)} -> NXDOMAIN");
+                }
+
+                return;
+            }
+
+            // The clients of the access point take an IPv4 stand-in and nothing else: an IPv6 answer, or one
+            // carrying shortcut addresses, would send them out past this machine.
+            if (isClient && (type == TypeAaaa || type == TypeHttps))
+            {
+                var withheld = DnsMessage.BuildNoData(query);
+                lock (server)
+                {
+                    server.Send(withheld, withheld.Length, client);
                 }
 
                 return;
@@ -760,6 +835,17 @@ internal sealed class DnsProxy
             {
                 _logger.Log(matched ? LogLevel.Debug : LogLevel.Trace, "{Name} {Type}: {Decision}; {Outcome}",
                     name, TypeLabel(type), decision, outcome);
+            }
+
+            // A client of the access point is answered with a stand-in address, so what it opens is terminated
+            // here and opened again as a socket of this machine - carried by the same rules, and leaving with
+            // the address of the path it takes instead of the one the sharing NAT stamps on everything.
+            var names = _clientNames;
+            if (isClient && names is not null && name is not null && type == TypeA && DnsMessage.Addresses(response).Count > 0)
+            {
+                var stand = names.Take(name);
+                response = DnsMessage.BuildAAnswer(query, [stand.ToString()], StandInTtlSeconds);
+                _logger.LogDebug("{Name}: a client of the access point is answered with {Stand}, so this machine carries what it opens", name, stand);
             }
 
             lock (server)

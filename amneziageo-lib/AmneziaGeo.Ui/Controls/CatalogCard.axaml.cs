@@ -5,12 +5,14 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using AmneziaGeo.Ui.Services;
+using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
 /// Карточка каталога настроек: имя, кнопка подключения, замер и настройки. На телевизоре пульт входит
-/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку.
+/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку, двойной щелчок
+/// открывает её настройки.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
 {
@@ -26,7 +28,7 @@ internal sealed partial class CatalogCard : UserControl
     public static readonly StyledProperty<ICommand?> PickCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(PickCommand));
 
-    private readonly ListReorder _reorder;
+    private readonly ListReorder<ConfigItemViewModel> _reorder;
 
     private bool _entered;
 
@@ -38,7 +40,7 @@ internal sealed partial class CatalogCard : UserControl
     public CatalogCard()
     {
         InitializeComponent();
-        _reorder = new ListReorder(this, vertical: false);
+        _reorder = new ListReorder<ConfigItemViewModel>(this, vertical: false);
 
         // Тело карточки берёт фокус только на телевизоре: там оно - вход в её контролы.
         FacePart.Focusable = UiPlatform.IsTelevision;
@@ -108,7 +110,24 @@ internal sealed partial class CatalogCard : UserControl
     private void OnCardPressed(object? sender, PointerPressedEventArgs e)
     {
         Pick();
+        if (CardGesture.OpensSettings(FacePart, e))
+        {
+            _reorder.Cancel();
+            Open();
+            e.Handled = true;
+            return;
+        }
+
         _reorder.Press(e);
+    }
+
+    // Двойной щелчок по телу карточки открывает её настройки - то же, что кнопка в подвале.
+    private void Open()
+    {
+        if (DataContext is { } item && OpenCommand?.CanExecute(item) == true)
+        {
+            OpenCommand.Execute(item);
+        }
     }
 
     private void OnCardGotFocus(object? sender, GotFocusEventArgs e)

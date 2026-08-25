@@ -1,6 +1,8 @@
 using System;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Ui.Controls;
 
@@ -13,6 +15,30 @@ internal sealed class AdaptiveComboBox : ComboBox
 
     /// <inheritdoc/>
     protected override Type StyleKeyOverride => typeof(ComboBox);
+
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Loc.Instance.CultureChanged += RetitleHead;
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        Loc.Instance.CultureChanged -= RetitleHead;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    // The head holds a copy of the picked row's content, taken when the pick was made: a translation that
+    // arrives later reaches the row and never the copy.
+    private void RetitleHead()
+    {
+        if (SelectedItem is ContentControl row)
+        {
+            SelectionBoxItem = row.Content;
+        }
+    }
 
     /// <inheritdoc/>
     protected override void OnPointerReleased(PointerReleasedEventArgs e)

@@ -81,6 +81,7 @@ internal static class DesignData
             WebSocketHost = "vpn.example.com",
             WebSocketPort = 443,
             Mtu = 1280,
+            UseIpv6 = true,
             Dns = "1.1.1.1, 2606:4700:4700::1111",
             Status = ConnectionStatus.Connected,
         };
@@ -177,6 +178,9 @@ internal static class DesignData
         {
             Name = "de-frankfurt",
             Endpoint = "vpn.example.com:9080",
+            UseWebSocket = true,
+            UseIpv6 = true,
+            Mtu = 1280,
             Status = ConnectionStatus.Connected,
             IsSelected = true,
             IsPicked = true,
@@ -190,6 +194,7 @@ internal static class DesignData
         {
             Name = "nl-amsterdam",
             Endpoint = "vpn2.example.com:51820",
+            Mtu = 1420,
             IsSelected = false,
             ProbeState = ProbeOutcome.Alive,
             ProbeMilliseconds = 64,
@@ -198,6 +203,7 @@ internal static class DesignData
         {
             Name = "fi-helsinki",
             Endpoint = "vpn3.example.com:443",
+            UseIpv6 = true,
             Status = ConnectionStatus.Connecting,
         });
         vm.Config.Configs.Add(new ConfigItemViewModel

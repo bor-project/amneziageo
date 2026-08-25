@@ -12,14 +12,14 @@
     <StreamGeometry x:Key="AgListGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
   </UserControl.Resources>
 
-  <!-- Тело карточки ничего не делает: применение берёт флаг, настройки - кнопка в подвале. На телевизоре
-       тело служит входом, дальше пульт ходит по этим же контролам. -->
+  <!-- Тело карточки открывает настройки двойным щелчком, применение берёт флаг, настройки - ещё и кнопка
+       в подвале. На телевизоре тело служит входом, дальше пульт ходит по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
-          <!-- Имя и флаг применения: имя занимает строку целиком, метки режимов ушли к составу списка. -->
-          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <!-- Имя и флаг применения: имя занимает строку целиком, метки режимов ушли в подвал. -->
+          <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             <!-- Флаг применения: та же связка, что и в настройках списка. -->
@@ -30,42 +30,35 @@
                       CommandParameter="{Binding}" />
           </Grid>
 
-          <!-- Состав списка и его режимы: сколько правил уводит в туннель, сколько пускает мимо и сколько
-               глушит; метки режимов стоят справа, счётчики отдают место первыми. -->
-          <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,8,0,0">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgAccentBrush}" />
-                <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"
-                           VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgMutedBrush}" />
-                <TextBlock Text="{Binding DirectRulesText}" FontSize="12" Classes="muted"
-                           VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgDownBrush}" />
-                <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
-                           VerticalAlignment="Center" />
-              </StackPanel>
+          <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
+          <StackPanel Grid.Row="1" Classes="cardinfo" Orientation="Horizontal" Spacing="10"
+                      Margin="0,8,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource AgAccentBrush}" />
+              <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"
+                         VerticalAlignment="Center" />
             </StackPanel>
-            <Border Grid.Column="1" Classes="cardchip cardtag" Classes.off="{Binding !UseGlobalProxy}">
-              <TextBlock Text="{l:Tr Main_CardTagGlobal}" FontSize="11.5" FontWeight="SemiBold" />
-            </Border>
-            <Border Grid.Column="2" Classes="cardchip cardtag" Classes.off="{Binding !AllUdp}">
-              <TextBlock Text="{l:Tr Main_CardTagUdp}" FontSize="11.5" FontWeight="SemiBold" />
-            </Border>
-          </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{Binding DirectRulesText}" FontSize="12" Classes="muted"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource AgDownBrush}" />
+              <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
         </Grid>
 
-        <!-- Подвал карточки: настройки списка. -->
+        <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->
         <Border Grid.Row="1" Classes="cardfoot">
-          <Grid ColumnDefinitions="*,Auto">
-            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7"
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <controls:CardTags Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
+            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick cardgear"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">
               <PathIcon Data="{StaticResource AgListGearGeometry}" Width="15" Height="15" />

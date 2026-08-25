@@ -5,6 +5,7 @@ using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Routing;
 
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +15,7 @@ namespace AmneziaGeo.Windows.App;
 /// Runs the diagnostic checks and keeps their answers where the support archive picks them up. A run is stored
 /// whole rather than logged: the capture floor is errors by default, so a healthy run would leave no trace at all.
 /// </summary>
-internal sealed class CheckService(AgentControl control, RuntimeInspector inspector, SqliteLogStore logStore, ILogger<CheckService> logger)
+internal sealed class CheckService(AgentControl control, RuntimeInspector inspector, LiveSession session, SqliteLogStore logStore, ILogger<CheckService> logger)
 {
     /// <summary>
     /// Runs the ladder from the local gateway out to a download, and returns the measured legs with the verdict.
@@ -101,6 +102,57 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
 
         await RecordAsync(report.Render(), report.VerdictKey != TargetVerdicts.Proxy, null, ct).ConfigureAwait(false);
         return new IpcAck(true, report.ToPayload());
+    }
+
+    /// <summary>
+    /// Measures one destination over the path asked for. The routing cache holds the address there for the run
+    /// and puts it back under its rules afterwards, so a probe leaves the routing as it found it.
+    /// </summary>
+    public async Task<IpcAck> ProbeAsync(IStateStore store, string config, string target, string path, string uploadUrl, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        if (!Connected(config) && path != ProbePaths.Bypass)
+        {
+            var refused = TargetProbe.Refused(target, path, ProbeVerdicts.NotConnected);
+            await RecordProbeAsync(refused, ct).ConfigureAwait(false);
+            return new IpcAck(true, refused.ToPayload());
+        }
+
+        // The cache that decides where an address goes belongs to the process running the tunnel; when that is
+        // the tunnel's own service, the run is handed over to it whole.
+        var report = Connected(config) && !inspector.HasLiveSession
+            ? await HandOverAsync(config, target, path, uploadUrl, ct).ConfigureAwait(false)
+            : await ProbeRoute.RunAsync(session.Cache, target, path, uploadUrl, ct).ConfigureAwait(false);
+        await RecordProbeAsync(report, ct).ConfigureAwait(false);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // Hands the run to the tunnel's service process and reads its report back.
+    private async Task<ProbeReport> HandOverAsync(
+        string config, string target, string path, string uploadUrl, CancellationToken ct)
+    {
+        var served = await Task.Run(
+            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl), logger),
+            ct).ConfigureAwait(false);
+        return served is { Length: > 0 }
+            ? ProbeReport.Parse(served, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+            : TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable);
+    }
+
+    // Stores the probe in its own journal, which the capture floor never reaches, and puts its closing line in
+    // the agent log where a reader following the tunnel sees it in context.
+    private async Task RecordProbeAsync(ProbeReport report, CancellationToken ct)
+    {
+        var rendered = report.Render().TrimEnd();
+        logStore.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
+        await logStore.FlushAsync(ct).ConfigureAwait(false);
+        var rows = rendered.Split('\n');
+        logger.LogInformation("probe: {Header}", rows[0].Trim());
+        logger.LogInformation("probe: {Verdict}", rows[^1].Trim());
     }
 
     // Stores the whole run in the checks table - the capture floor never reaches it - and puts its closing line

@@ -30,6 +30,7 @@ internal static class OpsCommands
         [IpcContract.OpSaveRoutingList] = "routing create / set / add",
         [IpcContract.OpGetRoutingList] = "routing show",
         [IpcContract.OpRemoveRoutingList] = "routing remove",
+        [IpcContract.OpReorderRoutingLists] = "routing order",
         [IpcContract.OpGetRoutingSettings] = "routing settings",
         [IpcContract.OpSetRoutingSettings] = "routing configure",
         [IpcContract.OpListGeo] = "geo list",

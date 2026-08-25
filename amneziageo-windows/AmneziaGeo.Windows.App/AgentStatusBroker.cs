@@ -62,8 +62,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     // Per-source progress: 0-100 while downloading, -1 while re-materializing. Presence means "updating".
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
 
+    // Per-source download volume: bytes taken and the announced size, while a download is in flight.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> _updatingBytes = new(StringComparer.Ordinal);
+
     // Per-source "update available" flag; surfaced on SourceEntry.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
     // Per-source last failure message; surfaced on SourceEntry.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastError = new(StringComparer.Ordinal);
@@ -232,6 +234,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpListProcesses => ListProcesses(),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
+                IpcContract.OpReorderRoutingLists => await ReorderRoutingListsAsync(command.Args, ct),
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
                 IpcContract.OpCountRoutes => await CountRoutesAsync(command.Args, ct),
                 IpcContract.OpSetRoutingSettings => await SetRoutingSettingsAsync(command.Args, ct),
@@ -246,6 +249,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpUpdateSources => await UpdateSourcesAsync(ct),
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 IpcContract.OpCheckSources => await CheckSourcesAsync(ct),
+                IpcContract.OpRefreshSources => await RefreshSourcesAsync(ct),
                 IpcContract.OpCheckSource => await CheckSourceAsync(command.Args, ct),
                 IpcContract.OpGetConfig => await GetConfigAsync(command.Args, ct),
                 IpcContract.OpImportConfig => await ImportConfigAsync(command.Args, ct),
@@ -269,9 +273,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
                 IpcContract.OpGetSessions => await GetSessionsAsync(ct),
+                IpcContract.OpKnownHosts => await KnownHostsAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
+                IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
@@ -1066,6 +1072,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return await checks.TargetAsync(store, config, args[0], ct);
     }
 
+    private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1)
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        var (config, _) = await InspectTargetAsync(ct);
+        var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
+        var upload = args.Count > 2 ? args[2] : string.Empty;
+        return await checks.ProbeAsync(store, config, args[0], path, upload, ct);
+    }
+
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
     {
         var (config, _) = await InspectTargetAsync(ct);
@@ -1090,6 +1109,29 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, applied && config.Length > 0
             ? inspector.HeldSessions(config).ToPayload()
             : SessionReport.Empty.ToPayload());
+    }
+
+    // Every destination the agent can put a name to: what was measured before, what it resolved for this config,
+    // which outlives a disconnect, and what the tunnel carries right now. Only a rule-backed name is ever
+    // resolved, so under a routing list of addresses the journal is the only source that carries names at all.
+    private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
+    {
+        var (config, _) = await InspectTargetAsync(ct);
+        var hosts = new List<string>(await logStore.ListProbeTargetsAsync(KnownHostList.HistoryRows, ct));
+        if (config.Length > 0)
+        {
+            foreach (var resolution in await store.ListDomainResolutionsAsync(config, ct))
+            {
+                hosts.Add(resolution.Domain);
+            }
+
+            foreach (var held in inspector.HeldSessions(config).Sessions)
+            {
+                hosts.Add(held.Name.Length > 0 ? held.Name : held.Host);
+            }
+        }
+
+        return new IpcAck(true, KnownHostList.Payload(hosts));
     }
 
     // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config
@@ -1224,6 +1266,26 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         _ = Task.Run(() => RuntimeSnapshotPipe.Send(tunnel, op, logger));
+    }
+
+    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return new IpcAck(false, "reorder-routing-lists requires the ordered names");
+        }
+
+        var stored = (await store.ListRoutingListSummariesAsync(ct))
+            .Select(summary => summary.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (args.Any(name => !stored.Contains(name)))
+        {
+            return new IpcAck(false, "reorder-routing-lists takes the names of stored lists");
+        }
+
+        await store.SetRoutingListOrderAsync(args, ct);
+        return new IpcAck(true, "reordered routing lists");
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1520,7 +1582,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var name = args[0];
         await store.RemoveGeoSourceAsync(name, ct);
-        _updateAvailable.TryRemove(name, out _);
         _lastError.TryRemove(name, out _);
         try
         {
@@ -1657,6 +1718,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return sources.Count;
     }
 
+    // Republishes what the store holds about the sources; the snapshot is built from it on every push.
+    private async Task<IpcAck> RefreshSourcesAsync(CancellationToken ct)
+    {
+        await BroadcastIfChangedAsync(ct);
+        return new IpcAck(true, string.Empty);
+    }
+
     private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
     {
         var (available, total) = await CheckAllSourcesAsync(ct);
@@ -1714,13 +1782,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return GeoUpdateChecker.Status.Unknown;
         }
 
-        if (status == GeoUpdateChecker.Status.Available)
+        if (status != GeoUpdateChecker.Status.Unknown)
         {
-            _updateAvailable[source.Name] = true;
-        }
-        else if (status == GeoUpdateChecker.Status.UpToDate)
-        {
-            _updateAvailable[source.Name] = false;
+            await store.SetGeoUpdateAvailableAsync(source.Name, status == GeoUpdateChecker.Status.Available, ct);
         }
 
         return status;
@@ -1832,7 +1896,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                     {
                         var srcSw = System.Diagnostics.Stopwatch.StartNew();
                         var before = await store.GetGeoFileAsync(source.Name);
-                        var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
+                        var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, _updatingBytes, source.Name));
                         // Compare by content hash, not timestamp; 304 leaves the hash equal.
                         var srcChanged = before is null || !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal);
                         if (srcChanged)
@@ -1843,8 +1907,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                         logger.LogDebug("geo source {Name}: {State} in {Ms} ms",
                             source.Name, srcChanged ? "changed" : "unchanged (304/same hash)", srcSw.ElapsedMilliseconds);
 
-                        // Downloaded: clear the update flag and prior failure.
-                        _updateAvailable[source.Name] = false;
+                        // Downloaded: the store drops the update flag, the prior failure goes here.
                         _lastError.TryRemove(source.Name, out _);
                         // Indeterminate while re-materializing.
                         _updating[source.Name] = -1;
@@ -1854,6 +1917,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                         logger.LogWarning(ex, "the rule database {Name} could not be downloaded; the copy already on disk stays in use, rules do not change", source.Name);
                         _lastError[source.Name] = ShortError(ex);
                         _updating.TryRemove(source.Name, out _);
+                        _updatingBytes.TryRemove(source.Name, out _);
                     }
                 }));
 
@@ -1879,6 +1943,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 foreach (var source in pending)
                 {
                     _updating.TryRemove(source.Name, out _);
+                    _updatingBytes.TryRemove(source.Name, out _);
                 }
 
                 pump.Cancel();
@@ -1974,11 +2039,15 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
     }
 
-    private sealed class SourceProgress(System.Collections.Concurrent.ConcurrentDictionary<string, int> map, string name) : IProgress<int>
+    private sealed class SourceProgress(
+        System.Collections.Concurrent.ConcurrentDictionary<string, int> map,
+        System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> bytes,
+        string name) : IProgress<GeoDownload>
     {
-        public void Report(int value)
+        public void Report(GeoDownload value)
         {
-            map[name] = value;
+            map[name] = value.Percent;
+            bytes[name] = value;
         }
     }
 
@@ -2104,7 +2173,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private static bool IsKnownTable(string name)
     {
-        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
+        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable
+            or SqliteLogStore.ProbeTable;
     }
 
     private async Task<IpcAck> CheckUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2288,8 +2358,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             {
                 try
                 {
-                    await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name), ct);
-                    _updateAvailable[source.Name] = false;
+                    await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, _updatingBytes, source.Name), ct);
                     _lastError.TryRemove(source.Name, out _);
                 }
                 catch (Exception ex)
@@ -2321,6 +2390,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             foreach (var source in sources)
             {
                 _updating.TryRemove(source.Name, out _);
+                _updatingBytes.TryRemove(source.Name, out _);
             }
 
             pump.Cancel();
@@ -2401,10 +2471,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 ? null
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
             var updating = _updating.TryGetValue(source.Name, out var percent);
-            var updateAvailable = _updateAvailable.TryGetValue(source.Name, out var avail) && avail;
+            var updateAvailable = meta?.UpdateAvailable ?? false;
             // Hide stale errors while a retry is in flight.
             var error = !updating && _lastError.TryGetValue(source.Name, out var err) ? err : null;
-            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable, error));
+            var volume = _updatingBytes.GetValueOrDefault(source.Name);
+            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable, error, updating ? volume.Read : 0, updating ? volume.Total : 0));
         }
 
         var update = updateState.Latest;

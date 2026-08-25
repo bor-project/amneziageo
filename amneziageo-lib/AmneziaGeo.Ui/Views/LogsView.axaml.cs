@@ -1,9 +1,12 @@
+using System;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -25,6 +28,47 @@ internal sealed partial class LogsView : UserControl
     public LogsView()
     {
         InitializeComponent();
+        SizeChanged += (_, e) => PushPaneWidth(e.NewSize.Width);
+        DataContextChanged += (_, _) => PushPaneWidth(Bounds.Width);
+        LayoutUpdated += (_, _) => PushChrome();
+    }
+
+    // The card breakpoint is measured against the panel the viewer sits in, not the window around it.
+    private void PushPaneWidth(double width)
+    {
+        if (DataContext is LogsViewModel vm)
+        {
+            vm.PaneWidth = width;
+        }
+    }
+
+    // Height everything but the body takes. The section grows by what the body is short of it, so the head is
+    // measured rather than counted: it changes with the source, the offers and the width.
+    private void PushChrome()
+    {
+        if (DataContext is not LogsViewModel vm || Bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var chrome = Bounds.Height - BodyFrame.Bounds.Height;
+        if (Math.Abs(chrome - vm.ChromeHeight) > 0.5)
+        {
+            vm.ChromeHeight = chrome;
+        }
+    }
+
+    // An offered destination fills the target field.
+    private void OnPickSuggestion(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LogsViewModel vm && (sender as Control)?.DataContext is string value)
+        {
+            vm.PickSuggestion(value);
+
+            // The list the offer came from closes with it, so the run button takes the ring a remote leaves
+            // nowhere else.
+            ProbeRunButton.Focus(NavigationMethod.Directional);
+        }
     }
 
     /// <inheritdoc/>
@@ -106,6 +150,17 @@ internal sealed partial class LogsView : UserControl
         await ExportActions.CopyToClipboardAsync(this, entry.Line);
     }
 
+    // Puts one probe on the clipboard whole: the head, every leg and the verdict.
+    private async void OnCopyProbe(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ProbeEntryItem probe)
+        {
+            return;
+        }
+
+        await ExportActions.CopyToClipboardAsync(this, probe.Line);
+    }
+
     // Puts one destination on the clipboard: the address, its name, where it goes and what it holds.
     private async void OnCopyRow(object? sender, RoutedEventArgs e)
     {
@@ -128,7 +183,8 @@ internal sealed partial class LogsView : UserControl
         await ExportActions.CopyToClipboardAsync(this, vm.VisibleText());
     }
 
-    // Exports the whole selected log table to a text file the user picks; the agent writes it.
+    // Exports the whole selected log table to a text file the user picks. A phone hands back a document and
+    // no path at all, so the text goes into the stream the picker opens.
     private async void OnExportLog(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LogsViewModel vm)
@@ -136,18 +192,11 @@ internal sealed partial class LogsView : UserControl
             return;
         }
 
-        var path = await ExportActions.PickSavePathAsync(
-            this,
-            string.Empty,
-            vm.SelectedLogType + ".log",
-            "log",
-            "Log");
-        if (string.IsNullOrEmpty(path))
+        if (await vm.BuildExportTextAsync() is { } text)
         {
-            return;
+            await ExportActions.SaveTextAsync(
+                this, text, Loc.Instance.Get("MainCode_SaveLogTitle"), vm.SelectedLogType + ".log");
         }
-
-        await vm.ExportToAsync(path);
     }
 
     // Hands the whole selected log table to another application.

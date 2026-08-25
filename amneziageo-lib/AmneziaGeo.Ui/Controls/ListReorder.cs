@@ -7,7 +7,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Controls;
 
@@ -16,7 +15,8 @@ namespace AmneziaGeo.Ui.Controls;
 /// жест делит ось со свайпом, удержания ждут оба. Список перестраивается под указателем, сложенный порядок
 /// уходит команде.
 /// </summary>
-internal sealed class ListReorder
+internal sealed class ListReorder<TRow>
+    where TRow : class
 {
     // Travel that turns a press into a drag.
     private const double Threshold = 10;
@@ -31,8 +31,8 @@ internal sealed class ListReorder
     private readonly DispatcherTimer _hold;
     private ItemsControl? _list;
     private Panel? _panel;
-    private ObservableCollection<ConfigItemViewModel>? _rows;
-    private ConfigItemViewModel? _dragged;
+    private ObservableCollection<TRow>? _rows;
+    private TRow? _dragged;
     private ICommand? _drop;
     private Point _origin;
     private bool _pressed;
@@ -156,8 +156,8 @@ internal sealed class ListReorder
     private bool Start(PointerEventArgs e)
     {
         if (_item.FindAncestorOfType<ItemsControl>() is not { ItemsPanelRoot: { } panel } list
-            || list.ItemsSource is not ObservableCollection<ConfigItemViewModel> rows
-            || _item.DataContext is not ConfigItemViewModel dragged)
+            || list.ItemsSource is not ObservableCollection<TRow> rows
+            || _item.DataContext is not TRow dragged)
         {
             return false;
         }

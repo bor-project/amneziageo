@@ -128,7 +128,8 @@ internal sealed class FileBrowserOverlay
 
         if (_folder is null)
         {
-            _location.Text = Loc.Instance.Get("FileBrowser_ScopedHint") + "\n" + AppFolderHint();
+            var hint = _saveName is null ? "FileBrowser_ScopedHint" : "FileBrowser_ScopedSaveHint";
+            _location.Text = Loc.Instance.Get(hint) + "\n" + AppFolderHint();
             _location.IsVisible = !HasAllFiles();
             if (!HasAllFiles())
             {

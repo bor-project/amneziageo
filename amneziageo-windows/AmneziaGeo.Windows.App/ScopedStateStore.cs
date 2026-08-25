@@ -62,6 +62,9 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     /// <inheritdoc/>
     public Task<IReadOnlyList<GeoFileMetadata>> ListGeoFilesAsync(CancellationToken ct = default) => machine.ListGeoFilesAsync(ct);
 
+    /// <inheritdoc/>
+    public Task SetGeoUpdateAvailableAsync(string name, bool available, CancellationToken ct = default) => machine.SetGeoUpdateAvailableAsync(name, available, ct);
+
     // Settings: routed per key between the machine and user stores.
     /// <inheritdoc/>
     public Task<string?> GetSettingAsync(string key, CancellationToken ct = default)
@@ -205,6 +208,9 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     /// <inheritdoc/>
     public Task<IReadOnlyList<RoutingListSummary>> ListRoutingListSummariesAsync(CancellationToken ct = default)
         => user.ListRoutingListSummariesAsync(ct);
+
+    /// <inheritdoc/>
+    public Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default) => user.SetRoutingListOrderAsync(names, ct);
 
     /// <inheritdoc/>
     public Task RemoveRoutingListAsync(long id, CancellationToken ct = default) => user.RemoveRoutingListAsync(id, ct);

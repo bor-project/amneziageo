@@ -266,6 +266,20 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
+    <!-- Шапка карточки и строка сведений под ней: высоты держатся одни во всяком каталоге. -->
+    <Style Selector=".cardhead" x:SetterTargetType="Control">
+      <Setter Property="MinHeight" Value="34" />
+    </Style>
+    <Style Selector=".cardinfo" x:SetterTargetType="Control">
+      <Setter Property="MinHeight" Value="20" />
+    </Style>
+
+    <!-- Шестерёнка карточки: один размер во всяком каталоге. -->
+    <Style Selector="Button.cardgear">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Padding" Value="7" />
+    </Style>
+
     <!-- Подвал карточки: действия отделены полосой, фон остаётся карточкин - на нём видны мягкие кнопки. -->
     <Style Selector="Border.cardfoot">
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
@@ -686,11 +700,14 @@
     </Style>
 
     <!-- Compact, text-less toggle: drop the default (untranslated) "On/Off" labels and the
-         WinUI-inherited wide MinWidth, so a switch is just the knob and never widens/clips its row. -->
+         WinUI-inherited wide MinWidth, so a switch is just the knob and never widens/clips its row.
+         The template keeps a 12px column between the knob and the label it no longer carries, and that
+         column held every switch short of the edge its row lines up with; the margin takes it back. -->
     <Style Selector="ToggleSwitch">
       <Setter Property="OnContent" Value="" />
       <Setter Property="OffContent" Value="" />
       <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Margin" Value="0,0,-12,0" />
     </Style>
     <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OnContentPresenter">
       <Setter Property="MinWidth" Value="0" />
@@ -796,6 +813,43 @@
           <KeyFrame Cue="100%">
             <Setter Property="Opacity" Value="1" />
           </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <!-- Bouncing dots: a measurement in flight. -->
+    <Style Selector="Ellipse.dot">
+      <Setter Property="Width" Value="4" />
+      <Setter Property="Height" Value="4" />
+      <Setter Property="RenderTransform" Value="translateY(0px)" />
+    </Style>
+    <Style Selector="Ellipse.dot.d1">
+      <Style.Animations>
+        <Animation Duration="0:0:1.05" Delay="0:0:0" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="TranslateTransform.Y" Value="-4" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.dot.d2">
+      <Style.Animations>
+        <Animation Duration="0:0:1.05" Delay="0:0:0.15" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="TranslateTransform.Y" Value="-4" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.dot.d3">
+      <Style.Animations>
+        <Animation Duration="0:0:1.05" Delay="0:0:0.3" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="TranslateTransform.Y" Value="-4" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
         </Animation>
       </Style.Animations>
     </Style>

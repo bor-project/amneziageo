@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 
+using Avalonia;
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -20,13 +22,18 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal sealed partial class LogsViewModel : ViewModelBase
 {
+    private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
+    private readonly UiPreferences _prefs;
 
     // Verbosity shown for the agent capture level when the agent reports nothing usable.
     private const string DefaultCaptureLevel = "error";
 
     // Rows requested per window.
     private const int LogLimit = 400;
+
+    // Cache rows rendered at most; the rest stay behind the filters.
+    private const int CacheRowLimit = 1000;
 
     private static readonly JsonSerializerOptions LogJson = new() { PropertyNameCaseInsensitive = true };
 
@@ -46,12 +53,28 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Polls the live tail while the section is open on the viewer with follow on (snapshots no longer carry logs).
     private readonly DispatcherTimer _pollTimer;
 
+    // Ticks of the poll, counted so a source that costs the agent more than a tail read is asked less often.
+    private int _tick;
+
+    // The configuration report, as the agent rendered it.
+    private string _report = string.Empty;
+
+    // The cache rows behind the rendered body, their total and whether the agent capped them.
+    private IReadOnlyList<CacheEntry> _cacheRows = [];
+    private int _cacheTotal;
+    private bool _cacheCapped;
+    private string _cacheSummary = string.Empty;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public LogsViewModel(IAgentConnection connection)
+    public LogsViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
     {
+        _host = host;
         _connection = connection;
+        _prefs = prefs;
+        // Seed backing field from prefs without echoing OnChanged.
+        _probePath = prefs.ProbePath;
         Loc.Instance.CultureChanged += OnCultureChanged;
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _pollTimer.Tick += (_, _) => OnPollTick();
@@ -59,7 +82,21 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     private void OnCultureChanged()
     {
+        if (IsCacheLog)
+        {
+            RenderCache();
+        }
+
+        // The probe cards name their tokens in the reader's language: the rows are dropped so they are built
+        // again, since the block behind them did not change.
+        if (IsProbeLog)
+        {
+            ProbeEntries.Clear();
+            Render();
+        }
+
         OnPropertyChanged(nameof(SearchSummary));
+        OnPropertyChanged(nameof(SearchWatermark));
     }
 
     /// <summary>
@@ -73,10 +110,112 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnIsCompactChanged(bool value)
     {
+        NotifyShape();
+    }
+
+    // Width of the panel the viewer sits in, pushed by the view. The pane is narrower than the window around
+    // it, and a table that does not fit the pane is unreadable however wide the window is.
+    [ObservableProperty]
+    private double _paneWidth;
+
+    partial void OnPaneWidthChanged(double value)
+    {
+        NotifyShape();
+    }
+
+    // Pane width the rows stop fitting a table at.
+    private const double CardBreakpoint = 560;
+
+    /// <summary>
+    /// Whether the rows are carried as cards: the panel is too narrow for a table, whatever the window is.
+    /// </summary>
+    public bool IsNarrow => PaneWidth > 0 ? PaneWidth < CardBreakpoint : IsCompact;
+
+    // Height of the pane the section is laid out in, pushed by the shell. It is the pane, not the section, so
+    // what the layout below does with it cannot come back as a new value.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsShort))]
+    [NotifyPropertyChangedFor(nameof(SectionHeight))]
+    [NotifyPropertyChangedFor(nameof(HeadSpacing))]
+    [NotifyPropertyChangedFor(nameof(SectionSpacing))]
+    [NotifyPropertyChangedFor(nameof(BarMargin))]
+    [NotifyPropertyChangedFor(nameof(ShowControlBarRow))]
+    [NotifyPropertyChangedFor(nameof(ShowBarNav))]
+    [NotifyPropertyChangedFor(nameof(ShowShortNav))]
+    private double _viewportHeight;
+
+    // Height everything but the body takes, measured by the view: the head changes with the source, with the
+    // offers under the target field and with the pane width, so it is read rather than counted.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SectionHeight))]
+    private double _chromeHeight;
+
+    // Pane height the head stops fitting over a readable body at.
+    private const double ShortViewport = 520;
+
+    // Height the body is never laid out below.
+    private const double BodyFloor = 180;
+
+    // Gap the section leaves over the body once the head is compact.
+    private const double ShortGap = 8;
+
+    // Inset the shell keeps around the section.
+    private const double PaneInset = 16;
+
+    /// <summary>
+    /// Whether the head is compact: the pane is too low to spend rows on labels and on a bar of its own.
+    /// </summary>
+    public bool IsShort => ViewportHeight > 0 && ViewportHeight < ShortViewport;
+
+    /// <summary>
+    /// Height the section is laid out at: the pane it sits in, or more when the body would otherwise be
+    /// squeezed under its floor - the screen around it scrolls for the difference.
+    /// </summary>
+    public double SectionHeight => ViewportHeight > 0
+        ? Math.Max(ViewportHeight - PaneInset, ChromeHeight + BodyFloor + ShortGap)
+        : double.NaN;
+
+    /// <summary>
+    /// Gap between the rows of the head.
+    /// </summary>
+    public double HeadSpacing => IsShort ? 6 : 10;
+
+    /// <summary>
+    /// Gap between the head and the viewer under it.
+    /// </summary>
+    public double SectionSpacing => IsShort ? ShortGap : 14;
+
+    /// <summary>
+    /// Gap over the control bar.
+    /// </summary>
+    public Thickness BarMargin => IsShort ? new Thickness(0, 4, 0, 0) : new Thickness(0, 10, 0, 0);
+
+    /// <summary>
+    /// Whether the control bar takes a row of its own: a low pane carries its controls in the search row and
+    /// keeps the row for the frozen hint alone.
+    /// </summary>
+    public bool ShowControlBarRow => IsFrozen || (ShowControlBar && !IsShort);
+
+    /// <summary>
+    /// Whether paging and following stand in the control bar.
+    /// </summary>
+    public bool ShowBarNav => IsStoredLog && !IsShort;
+
+    /// <summary>
+    /// Whether paging and following stand in the search row, which is where a low pane carries them.
+    /// </summary>
+    public bool ShowShortNav => IsStoredLog && IsShort;
+
+    private void NotifyShape()
+    {
+        OnPropertyChanged(nameof(IsNarrow));
+        OnPropertyChanged(nameof(BareBody));
         OnPropertyChanged(nameof(ShowStoredText));
-        OnPropertyChanged(nameof(ShowLiveText));
+        OnPropertyChanged(nameof(ShowTableText));
         OnPropertyChanged(nameof(ShowStoredCards));
+        OnPropertyChanged(nameof(ShowProbeCards));
         OnPropertyChanged(nameof(ShowLiveCards));
+        OnPropertyChanged(nameof(SearchWatermark));
         Render();
     }
 
@@ -88,9 +227,24 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public const string LiveType = "active";
 
     /// <summary>
+    /// The probe journal: what measuring one destination left behind.
+    /// </summary>
+    public const string ProbeType = "probe";
+
+    /// <summary>
+    /// The configuration the agent runs on, asked of it instead of read from a table.
+    /// </summary>
+    public const string ConfigType = "config";
+
+    /// <summary>
+    /// The caches the routing decides by, asked of the agent instead of read from a table.
+    /// </summary>
+    public const string CacheType = "cache";
+
+    /// <summary>
     /// The selectable sources. The tokens are the same in every language.
     /// </summary>
-    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType];
+    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType, ConfigType, CacheType];
 
     [ObservableProperty]
     private string _selectedLogType = "ageo";
@@ -106,29 +260,307 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool IsRouteLog => SelectedLogType == "routes";
 
     /// <summary>
+    /// Whether the viewer is on the probe journal, which carries the block that fills it.
+    /// </summary>
+    public bool IsProbeLog => SelectedLogType == ProbeType;
+
+    /// <summary>
     /// Whether the viewer is on what the tunnel carries right now.
     /// </summary>
     public bool IsLiveLog => SelectedLogType == LiveType;
 
     /// <summary>
-    /// Whether the viewer is on a stored table, which is what can be searched, paged, cleared and exported.
+    /// Whether the viewer is on the configuration the agent runs on.
     /// </summary>
-    public bool IsStoredLog => !IsLiveLog;
+    public bool IsConfigLog => SelectedLogType == ConfigType;
+
+    /// <summary>
+    /// Whether the viewer is on the caches, which carry a kind to narrow them by.
+    /// </summary>
+    public bool IsCacheLog => SelectedLogType == CacheType;
+
+    /// <summary>
+    /// Whether the viewer is on a source the agent answers out of what it holds right now: nothing is recorded
+    /// behind it, so there is no history to page through and nothing to clear.
+    /// </summary>
+    public bool IsRuntimeLog => IsLiveLog || IsConfigLog || IsCacheLog;
+
+    /// <summary>
+    /// Whether the viewer is on a stored table, which is what can be searched, paged and cleared.
+    /// </summary>
+    public bool IsStoredLog => !IsRuntimeLog;
+
+    /// <summary>
+    /// Whether the search field is shown: it searches a stored table, and narrows the cache rows where they lie.
+    /// </summary>
+    public bool ShowSearch => IsStoredLog || IsCacheLog;
 
     partial void OnSelectedLogTypeChanged(string value)
     {
         OnPropertyChanged(nameof(IsAgentLog));
         OnPropertyChanged(nameof(IsRouteLog));
+        OnPropertyChanged(nameof(IsProbeLog));
         OnPropertyChanged(nameof(IsLiveLog));
+        OnPropertyChanged(nameof(IsConfigLog));
+        OnPropertyChanged(nameof(IsCacheLog));
+        OnPropertyChanged(nameof(IsRuntimeLog));
         OnPropertyChanged(nameof(IsStoredLog));
+        OnPropertyChanged(nameof(ShowSearch));
+        OnPropertyChanged(nameof(SearchSummary));
         OnPropertyChanged(nameof(ShowControlBar));
+        OnPropertyChanged(nameof(ShowControlBarRow));
+        OnPropertyChanged(nameof(ShowBarNav));
+        OnPropertyChanged(nameof(ShowShortNav));
         OnPropertyChanged(nameof(ShowEmpty));
+        OnPropertyChanged(nameof(BareBody));
         OnPropertyChanged(nameof(ShowStoredText));
-        OnPropertyChanged(nameof(ShowLiveText));
+        OnPropertyChanged(nameof(ShowTableText));
         OnPropertyChanged(nameof(ShowStoredCards));
+        OnPropertyChanged(nameof(ShowProbeCards));
         OnPropertyChanged(nameof(ShowLiveCards));
         ClearView();
         ResetAndReload();
+        if (IsProbeLog)
+        {
+            _knownFor = (TunnelUp, string.Empty);
+            _ = LoadKnownAsync();
+        }
+    }
+
+    // --- Target probe (probe) ---
+
+    /// <summary>
+    /// The shell, for the server the probe is measured through: the picker there is the one the home screen
+    /// carries, so a change here moves a live tunnel exactly as it does there.
+    /// </summary>
+    public MainWindowViewModel Shell => _host;
+
+    /// <summary>
+    /// The destination a probe measures.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private string _probeTarget = string.Empty;
+
+    partial void OnProbeTargetChanged(string value)
+    {
+        RefreshSuggestions();
+    }
+
+    /// <summary>
+    /// Path a probe is measured over: auto, tunnel or bypass. Kept across launches.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private string _probePath = ProbePaths.Auto;
+
+    partial void OnProbePathChanged(string value)
+    {
+        OnPropertyChanged(nameof(ProbePathIndex));
+        OnPropertyChanged(nameof(IsProbeBypass));
+        OnPropertyChanged(nameof(ServerOpacity));
+        OnPropertyChanged(nameof(PathNeedsTunnel));
+        OnPropertyChanged(nameof(ProbeFormEnabled));
+        _prefs.ProbePath = value;
+        _prefs.Save();
+    }
+
+    /// <summary>
+    /// The path as the picker holds it: auto, tunnel, bypass.
+    /// </summary>
+    public int ProbePathIndex
+    {
+        get => ProbePath switch
+        {
+            ProbePaths.Tunnel => 1,
+            ProbePaths.Bypass => 2,
+            _ => 0,
+        };
+        set => ProbePath = value switch
+        {
+            1 => ProbePaths.Tunnel,
+            2 => ProbePaths.Bypass,
+            _ => ProbePaths.Auto,
+        };
+    }
+
+    /// <summary>
+    /// Whether the destination is held past the tunnel for the run.
+    /// </summary>
+    public bool IsProbeBypass => ProbePath == ProbePaths.Bypass;
+
+    // Whether a tunnel is up. Without one only the way past it can be measured, and the run is not allowed to
+    // raise one: a probe measures what is there, it does not change it.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PathNeedsTunnel))]
+    [NotifyPropertyChangedFor(nameof(ProbeFormEnabled))]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private bool _tunnelUp;
+
+    // Whether a server is picked to measure through.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private bool _serverPicked;
+
+    /// <summary>
+    /// Whether the picked path asks for a tunnel that is not up: the pick stands, the run behind it does not.
+    /// </summary>
+    public bool PathNeedsTunnel => !TunnelUp && !IsProbeBypass;
+
+    /// <summary>
+    /// Whether the destination and the run behind it are open to the finger.
+    /// </summary>
+    public bool ProbeFormEnabled => !PathNeedsTunnel;
+
+    /// <summary>
+    /// How strongly the server picker is drawn: a run past the tunnel does not go through the server at all.
+    /// </summary>
+    public double ServerOpacity => IsProbeBypass ? 0.45 : 1;
+
+    /// <summary>
+    /// Destinations offered under the target field: the names the tunnel resolved and the hosts it carries.
+    /// </summary>
+    public ObservableCollection<string> ProbeSuggestions { get; } = [];
+
+    /// <summary>
+    /// Whether anything is offered under the target field.
+    /// </summary>
+    public bool ShowProbeSuggestions => ProbeSuggestions.Count > 0;
+
+    // Everything the agent knows a name for, filtered as the field is typed in.
+    private IReadOnlyList<string> _known = [];
+
+    // The tunnel state and the server the offered names were read for.
+    private (bool Up, string Server) _knownFor = (false, string.Empty);
+
+    // Suggestions offered at once; a longer list would push the journal off the pane.
+    private const int MaxSuggestions = 6;
+
+    /// <summary>
+    /// Takes an offered destination into the field.
+    /// </summary>
+    public void PickSuggestion(string value)
+    {
+        ProbeTarget = value;
+        ProbeSuggestions.Clear();
+        OnPropertyChanged(nameof(ShowProbeSuggestions));
+    }
+
+    // Ссылка «Замер» рядом с запуском: сервис, на котором меряется скорость, живёт своим экраном.
+    [RelayCommand]
+    private void OpenProbeSettings()
+    {
+        _host.ShowProbeSettings();
+    }
+
+    // Whether a probe is in flight.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private bool _probeRunning;
+
+    [RelayCommand(CanExecute = nameof(CanRunProbe))]
+    private async Task RunProbe()
+    {
+        var target = ProbeTarget.Trim();
+        if (target.Length == 0)
+        {
+            return;
+        }
+
+        ProbeSuggestions.Clear();
+        OnPropertyChanged(nameof(ShowProbeSuggestions));
+        ProbeRunning = true;
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeTarget,
+                [target, ProbePath, _host.Probe.UploadUrl.Trim()]));
+        }
+        catch
+        {
+            return;
+        }
+        finally
+        {
+            ProbeRunning = false;
+        }
+
+        ResetAndReload();
+    }
+
+    private bool CanRunProbe => !ProbeRunning && ServerPicked && !PathNeedsTunnel && ProbeTarget.Trim().Length > 0;
+
+    // The probe journal is offered only where there is a server to measure through.
+    private void SyncProbeSource(bool hasServers)
+    {
+        if (hasServers == LogTypes.Contains(ProbeType))
+        {
+            return;
+        }
+
+        if (hasServers)
+        {
+            // Beside the other journals: the sources that are only ever asked for close the list.
+            LogTypes.Insert(LogTypes.IndexOf(ConfigType), ProbeType);
+            return;
+        }
+
+        if (IsProbeLog)
+        {
+            SelectedLogType = "ageo";
+        }
+
+        LogTypes.Remove(ProbeType);
+    }
+
+    // What the agent has a name for. Read on opening the journal and again whenever the tunnel or the server
+    // behind the names changes, because a run past the tunnel is measured exactly when neither is up.
+    private async Task LoadKnownAsync()
+    {
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpKnownHosts, []));
+            if (!ack.Ok)
+            {
+                return;
+            }
+
+            _known = [.. ack.Message
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)];
+        }
+        catch
+        {
+            return;
+        }
+
+        RefreshSuggestions();
+    }
+
+    // Offers what the typed text stands for; an empty field offers nothing, and neither does an exact hit.
+    private void RefreshSuggestions()
+    {
+        var typed = ProbeTarget.Trim();
+        ProbeSuggestions.Clear();
+        if (typed.Length > 0)
+        {
+            foreach (var name in _known)
+            {
+                if (ProbeSuggestions.Count >= MaxSuggestions)
+                {
+                    break;
+                }
+
+                if (name.Contains(typed, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(name, typed, StringComparison.OrdinalIgnoreCase))
+                {
+                    ProbeSuggestions.Add(name);
+                }
+            }
+        }
+
+        OnPropertyChanged(nameof(ShowProbeSuggestions));
     }
 
     // --- Capture level (ageo): none disables capture entirely ---
@@ -146,6 +578,24 @@ internal sealed partial class LogsViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["log-level", value]));
+        }
+    }
+
+    // --- Cache kind (cache): the verdict a row carries, or every row ---
+
+    /// <summary>
+    /// The selectable cache kinds. The tokens are the same in every language.
+    /// </summary>
+    public ObservableCollection<string> CacheKinds { get; } = ["all", "state", "domain", "proxy", "direct", "block", "none"];
+
+    [ObservableProperty]
+    private string _selectedCacheKind = "all";
+
+    partial void OnSelectedCacheKindChanged(string value)
+    {
+        if (IsCacheLog)
+        {
+            RenderCache();
         }
     }
 
@@ -170,6 +620,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnSearchQueryChanged(string value)
     {
+        if (IsCacheLog)
+        {
+            // The cache rows are already held; narrowing them asks the agent for nothing.
+            RenderCache();
+            return;
+        }
+
         // Search updates as you type; no loader (it would flash the body on every keystroke).
         ResetAndReload(showLoader: false);
     }
@@ -179,11 +636,29 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private int _searchMatchCount;
 
     /// <summary>
-    /// Human-readable match count for the log search box; empty when no query is active.
+    /// The hint in the search field. A narrow pane leaves it no room for what is searched through, so there it
+    /// names the verb alone.
     /// </summary>
-    public string SearchSummary => string.IsNullOrWhiteSpace(SearchQuery)
-        ? string.Empty
-        : Loc.Instance.Get("MainVm_LogSearchMatches", SearchMatchCount);
+    public string SearchWatermark =>
+        Loc.Instance.Get(IsNarrow ? "Main_LogSearchWatermarkShort" : "Main_LogSearchWatermark");
+
+    /// <summary>
+    /// What the field beside it came to: the matches in a stored table, the rows left of the cache.
+    /// </summary>
+    public string SearchSummary
+    {
+        get
+        {
+            if (IsCacheLog)
+            {
+                return _cacheSummary;
+            }
+
+            return string.IsNullOrWhiteSpace(SearchQuery)
+                ? string.Empty
+                : Loc.Instance.Get("MainVm_LogSearchMatches", SearchMatchCount);
+        }
+    }
 
     // --- Log body ---
 
@@ -200,6 +675,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public ObservableCollection<LogEntryItem> Entries { get; } = [];
 
     /// <summary>
+    /// Probes as cards, which is what a narrow window shows instead of the block they are rendered as.
+    /// </summary>
+    public ObservableCollection<ProbeEntryItem> ProbeEntries { get; } = [];
+
+    /// <summary>
     /// Destinations as cards, which is what a narrow window shows instead of the text.
     /// </summary>
     public ObservableCollection<LiveRowItem> LiveRows { get; } = [];
@@ -211,6 +691,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Held Ctrl: the viewer stops taking new rows, so a selection survives long enough to be copied.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowControlBar))]
+    [NotifyPropertyChangedFor(nameof(ShowControlBarRow))]
     private bool _isFrozen;
 
     partial void OnIsFrozenChanged(bool value)
@@ -225,8 +706,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowBody))]
     [NotifyPropertyChangedFor(nameof(ShowEmpty))]
     [NotifyPropertyChangedFor(nameof(ShowStoredText))]
-    [NotifyPropertyChangedFor(nameof(ShowLiveText))]
+    [NotifyPropertyChangedFor(nameof(ShowTableText))]
     [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
+    [NotifyPropertyChangedFor(nameof(ShowProbeCards))]
     [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _hasLogs;
 
@@ -235,8 +717,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowBody))]
     [NotifyPropertyChangedFor(nameof(ShowEmpty))]
     [NotifyPropertyChangedFor(nameof(ShowStoredText))]
-    [NotifyPropertyChangedFor(nameof(ShowLiveText))]
+    [NotifyPropertyChangedFor(nameof(ShowTableText))]
     [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
+    [NotifyPropertyChangedFor(nameof(ShowProbeCards))]
     [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _isLoading;
 
@@ -248,22 +731,35 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// <summary>
     /// Whether the stored rows are shown as text, which is what a wide window carries.
     /// </summary>
-    public bool ShowStoredText => ShowBody && !IsCompact && IsStoredLog;
+    public bool ShowStoredText => ShowBody && !IsNarrow && IsStoredLog;
 
     /// <summary>
-    /// Whether the destinations are shown as text, which is what a wide window carries.
+    /// Whether the body frame is dropped: the cards carry one of their own, so it would only take width off
+    /// them. The report text has none, and keeps the frame at every width.
     /// </summary>
-    public bool ShowLiveText => ShowBody && !IsCompact && IsLiveLog;
+    public bool BareBody => IsNarrow && !IsConfigLog && !IsCacheLog;
 
     /// <summary>
-    /// Whether the stored rows are shown as cards, which is what a narrow window carries.
+    /// Whether the body is the padded table: the destinations at a width that fits them, the configuration
+    /// report and the cache rows at any width, because neither reads as a column of cards.
     /// </summary>
-    public bool ShowStoredCards => ShowBody && IsCompact && IsStoredLog;
+    public bool ShowTableText => ShowBody && (IsConfigLog || IsCacheLog || (IsLiveLog && !IsNarrow));
+
+    /// <summary>
+    /// Whether the stored rows are shown as cards, which is what a narrow window carries. The probes are cards
+    /// of their own, laid out from what their block holds.
+    /// </summary>
+    public bool ShowStoredCards => ShowBody && IsNarrow && IsStoredLog && !IsProbeLog;
+
+    /// <summary>
+    /// Whether the probes are shown as cards, which is what a narrow window carries.
+    /// </summary>
+    public bool ShowProbeCards => ShowBody && IsNarrow && IsProbeLog;
 
     /// <summary>
     /// Whether the destinations are shown as cards, which is what a narrow window carries.
     /// </summary>
-    public bool ShowLiveCards => ShowBody && IsCompact && IsLiveLog;
+    public bool ShowLiveCards => ShowBody && IsNarrow && IsLiveLog;
 
     /// <summary>
     /// Whether the empty hint is shown: no content and no load in flight. The live source says the same thing
@@ -306,6 +802,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
         CaptureLevel = KnownCaptureLevel(snapshot.LogLevel);
         RouteLogEnabled = snapshot.RouteLog;
         _suppressSettingPush = false;
+        TunnelUp = snapshot.BoundStatus == ConnectionStatus.Connected;
+        ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
+        SyncProbeSource(snapshot.Configs.Count > 0);
+        var picked = snapshot.SelectedTarget ?? string.Empty;
+        if (IsProbeLog && _knownFor != (TunnelUp, picked))
+        {
+            _knownFor = (TunnelUp, picked);
+            _ = LoadKnownAsync();
+        }
     }
 
     /// <summary>
@@ -348,9 +853,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
         _windowFirstId = 0;
         _lines = [];
         _carried = SessionReport.Empty;
+        _report = string.Empty;
+        _cacheRows = [];
+        _cacheTotal = 0;
+        _cacheCapped = false;
+        _cacheSummary = string.Empty;
         LogText = string.Empty;
         LiveSummary = string.Empty;
-        Entries.Clear();
+        ClearCards();
         LiveRows.Clear();
         HasLogs = false;
         IsLoading = false;
@@ -377,8 +887,16 @@ internal sealed partial class LogsViewModel : ViewModelBase
             return;
         }
 
-        // The live source has no history to walk, so a tick always re-reads it.
-        if (IsLiveLog || (_cursor is null && _cursorStack.Count == 0))
+        // The configuration and the caches cost the agent a round of reads to answer and move far more slowly
+        // than a tail does, so they are re-read every other tick.
+        _tick++;
+        if ((IsConfigLog || IsCacheLog) && _tick % 2 != 0)
+        {
+            return;
+        }
+
+        // A runtime source has no history to walk, so a tick always re-reads it.
+        if (IsRuntimeLog || (_cursor is null && _cursorStack.Count == 0))
         {
             Reload(null, showLoader: false);
         }
@@ -434,7 +952,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [RelayCommand]
     private async Task ClearLog()
     {
-        if (IsLiveLog)
+        if (IsRuntimeLog)
         {
             return;
         }
@@ -452,30 +970,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Exports the whole selected table to the file the view chose: the agent renders the text, the UI writes
-    /// it under the user account.
-    /// </summary>
-    public async Task ExportToAsync(string path)
-    {
-        if (await BuildExportTextAsync() is not { } text)
-        {
-            return;
-        }
-
-        try
-        {
-            await File.WriteAllTextAsync(path, text);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [$"log export write failed: {ex.Message}"]));
-        }
-    }
-
-    /// <summary>
-    /// Renders the whole selected table through the agent; null when the agent did not answer.
-    /// </summary>
-    /// <summary>
     /// What the viewer shows right now, as text for the clipboard.
     /// </summary>
     public string VisibleText()
@@ -488,11 +982,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
         return LogText.Length > 0 ? LogText : string.Join('\n', _lines);
     }
 
+    /// <summary>
+    /// Renders the whole selected table through the agent; null when the agent did not answer.
+    /// </summary>
     public async Task<string?> BuildExportTextAsync()
     {
-        if (IsLiveLog)
+        if (IsRuntimeLog)
         {
-            // Nothing is stored behind the live source: what travels is what is on screen.
+            // Nothing is stored behind a runtime source: what travels is what is on screen.
             return VisibleText();
         }
 
@@ -570,6 +1067,18 @@ internal sealed partial class LogsViewModel : ViewModelBase
         if (IsLiveLog)
         {
             await LoadCarriedAsync();
+            return;
+        }
+
+        if (IsConfigLog)
+        {
+            await LoadRuntimeConfigAsync();
+            return;
+        }
+
+        if (IsCacheLog)
+        {
+            await LoadCacheAsync();
             return;
         }
 
@@ -678,6 +1187,129 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Render();
     }
 
+    // Reads the configuration the agent runs on, or would run on at the next connect.
+    private async Task LoadRuntimeConfigAsync()
+    {
+        IpcAck ack;
+        try
+        {
+            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRuntimeConfig, []));
+        }
+        catch
+        {
+            return;
+        }
+
+        // Source left during the pipe round-trip: drop the reply so the freed state stays freed.
+        if (!IsActive || !IsConfigLog)
+        {
+            return;
+        }
+
+        _report = ack.Ok ? ack.Message : Describe(ack);
+        HasLogs = _report.Length > 0;
+        SearchMatchCount = 0;
+        LogCanPageOlder = false;
+        LogCanPageNewer = false;
+        Render();
+    }
+
+    // Reads the caches the routing decides by; the rows come whole and the filters over them are applied here.
+    private async Task LoadCacheAsync()
+    {
+        IpcAck ack;
+        try
+        {
+            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetCacheEntries, []));
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!IsActive || !IsCacheLog)
+        {
+            return;
+        }
+
+        SearchMatchCount = 0;
+        LogCanPageOlder = false;
+        LogCanPageNewer = false;
+        if (!ack.Ok)
+        {
+            _cacheRows = [];
+            _cacheTotal = 0;
+            _cacheCapped = false;
+            _cacheSummary = string.Empty;
+            LogText = Describe(ack);
+            HasLogs = LogText.Length > 0;
+            OnPropertyChanged(nameof(SearchSummary));
+            return;
+        }
+
+        CacheSnapshot? snapshot;
+        try
+        {
+            snapshot = JsonSerializer.Deserialize<CacheSnapshot>(ack.Message, LogJson);
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        _cacheRows = snapshot?.Entries ?? [];
+        _cacheTotal = snapshot?.Total ?? 0;
+        _cacheCapped = snapshot?.Capped ?? false;
+        Render();
+    }
+
+    // Puts the cache rows on screen through the kind and the text over them.
+    private void RenderCache()
+    {
+        var needle = SearchQuery?.Trim() ?? string.Empty;
+        var text = new StringBuilder();
+        var matched = 0;
+        var shown = 0;
+        foreach (var row in _cacheRows)
+        {
+            if (SelectedCacheKind != "all" && !string.Equals(row.Kind, SelectedCacheKind, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (needle.Length > 0
+                && !row.Key.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                && !row.Value.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            matched++;
+            if (shown >= CacheRowLimit)
+            {
+                continue;
+            }
+
+            shown++;
+            text.Append(row.Kind.PadRight(12)).Append(row.Key.PadRight(34)).Append(row.Value).Append('\n');
+        }
+
+        LogText = text.ToString();
+        HasLogs = LogText.Length > 0;
+        _cacheSummary = _cacheCapped
+            ? Loc.Instance.Get("MainVm_CacheShownCapped", shown, matched, _cacheTotal)
+            : Loc.Instance.Get("MainVm_CacheShown", shown, matched);
+        OnPropertyChanged(nameof(SearchSummary));
+    }
+
+    // Resolves a failed ack to text: the agent sends localization keys, not sentences.
+    private static string Describe(IpcAck ack)
+    {
+        return IpcMessage.TryParse(ack.Message, out var key, out var args)
+            ? Loc.Instance.Get(key, args)
+            : ack.Message;
+    }
+
     // Puts what the viewer holds on screen the way the window is shaped: text when it is wide, cards when narrow.
     private void Render()
     {
@@ -689,14 +1321,36 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
         LiveRows.Clear();
         LiveSummary = string.Empty;
-        if (!IsCompact)
+        if (IsConfigLog)
         {
-            Entries.Clear();
+            ClearCards();
+            LogText = _report;
+            return;
+        }
+
+        if (IsCacheLog)
+        {
+            ClearCards();
+            RenderCache();
+            return;
+        }
+
+        if (!IsNarrow)
+        {
+            ClearCards();
             LogText = _lines.Count > 0 ? string.Join('\n', _lines) : string.Empty;
             return;
         }
 
         LogText = string.Empty;
+        if (IsProbeLog)
+        {
+            Entries.Clear();
+            Fill(ProbeEntries, Probes());
+            return;
+        }
+
+        ProbeEntries.Clear();
         var rows = new List<LogEntryItem>(_lines.Count);
         foreach (var line in _lines)
         {
@@ -706,11 +1360,30 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Fill(Entries, rows);
     }
 
-    private void RenderCarried()
+    // The window as probe cards: one card per rendered probe.
+    private IReadOnlyList<ProbeEntryItem> Probes()
+    {
+        var rows = new List<ProbeEntryItem>(_lines.Count);
+        foreach (var line in _lines)
+        {
+            rows.Add(ProbeEntryItem.Parse(line));
+        }
+
+        return rows;
+    }
+
+    // Drops both card lists: a source fills one of them.
+    private void ClearCards()
     {
         Entries.Clear();
+        ProbeEntries.Clear();
+    }
+
+    private void RenderCarried()
+    {
+        ClearCards();
         LiveSummary = SessionRows.Summary(_carried);
-        if (!IsCompact)
+        if (!IsNarrow)
         {
             LiveRows.Clear();
             LogText = SessionRows.Text(_carried);
@@ -758,4 +1431,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
         long FirstId,
         bool HasOlder,
         int MatchCount);
+
+    // OpGetCacheEntries ack row: which cache holds the value, its key and its content.
+    private sealed record CacheEntry(string Kind, string Key, string Value);
+
+    // OpGetCacheEntries ack payload: the rows with the total held before the agent's cap.
+    private sealed record CacheSnapshot(int Total, bool Capped, IReadOnlyList<CacheEntry> Entries);
 }

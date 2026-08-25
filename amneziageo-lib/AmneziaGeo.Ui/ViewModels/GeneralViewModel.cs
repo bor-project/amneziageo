@@ -133,6 +133,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private bool _updateDownloaded;
 
+    // The system installer holds the package: the download step is over and must not be offered again.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
+    [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
+    private bool _updateInstalling;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private int _updateDownloadPercent;
@@ -304,6 +310,18 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string _networkRepairStatus = string.Empty;
 
     /// <summary>
+    /// Result line for the diagnostics archive: where it was written, or why it was not.
+    /// </summary>
+    [ObservableProperty]
+    private string _diagnosticsStatus = string.Empty;
+
+    /// <summary>
+    /// Whether the archive is being built right now.
+    /// </summary>
+    [ObservableProperty]
+    private bool _diagnosticsRunning;
+
+    /// <summary>
     /// ctor
     /// </summary>
     public GeneralViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
@@ -381,15 +399,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool WasDownloadCancelledByHost { get; private set; }
 
     /// <summary>
-    /// Show the download button only when idle: not while a download runs (then it is Cancel) and not once the
-    /// setup is downloaded (then it is Install).
+    /// Show the download button only when idle: not while a download runs (then it is Cancel), not once the
+    /// setup is downloaded and not while the system installer holds it (then it is Install).
     /// </summary>
-    public bool ShowDownloadButton => !UpdateDownloading && !UpdateDownloaded;
+    public bool ShowDownloadButton => !UpdateDownloading && !UpdateDownloaded && !UpdateInstalling;
 
     /// <summary>
-    /// Hide the check-update button while a setup is downloading or already downloaded (#6).
+    /// Hide the check-update button while a setup is downloading, downloaded or being installed (#6).
     /// </summary>
-    public bool ShowCheckUpdateButton => !UpdateDownloading && !UpdateDownloaded;
+    public bool ShowCheckUpdateButton => !UpdateDownloading && !UpdateDownloaded && !UpdateInstalling;
 
     /// <summary>
     /// Whether a download is actively streaming and not yet ready. Drives the percent label and the cancel
@@ -529,7 +547,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     {
         UpdateDownloading = snapshot.UpdateDownloading;
         UpdateDownloadPercent = snapshot.UpdateDownloadPercent;
-        UpdateDownloaded = snapshot.UpdateDownloaded && !snapshot.UpdateInstalling;
+
+        // The install keeps the downloaded state: dropping it while the system dialogs are up put Download and
+        // Check back on screen under a status line that reads "installing".
+        UpdateDownloaded = snapshot.UpdateDownloaded;
+        UpdateInstalling = snapshot.UpdateInstalling;
         _downloadedSetupPath = snapshot.UpdateSetupPath;
         _downloadedVersion = snapshot.UpdateVersion;
 
@@ -827,7 +849,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [RelayCommand]
     private async Task ApplyUpdate()
     {
-        if (!UpdateDownloaded || string.IsNullOrEmpty(_downloadedSetupPath))
+        if (!UpdateDownloaded || UpdateInstalling || string.IsNullOrEmpty(_downloadedSetupPath))
         {
             return;
         }
@@ -1034,6 +1056,32 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             // The user declined the elevation prompt, or the helper could not start.
             _ = LogToAgentAsync($"network repair launch failed: {ex}");
             NetworkRepairStatus = Loc.Instance.Get("General_NetworkRepairFailed");
+        }
+    }
+
+    /// <summary>
+    /// Asks the agent for a redacted diagnostics archive and returns the path it wrote, null when it wrote none.
+    /// The agent builds it under its own account, so the window offers it for saving instead of moving it.
+    /// </summary>
+    public async Task<string?> CollectDiagnosticsAsync()
+    {
+        DiagnosticsRunning = true;
+        DiagnosticsStatus = Loc.Instance.Get("General_DiagnosticsRunning");
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCollectDiagnostics, []));
+            DiagnosticsStatus = ack.Ok ? Loc.Instance.Get("General_DiagnosticsAt", ack.Message) : ack.Message;
+            return ack.Ok ? ack.Message : null;
+        }
+        catch (Exception ex)
+        {
+            _ = LogToAgentAsync($"diagnostics collect failed: {ex}");
+            DiagnosticsStatus = Loc.Instance.Get("General_DiagnosticsFailed");
+            return null;
+        }
+        finally
+        {
+            DiagnosticsRunning = false;
         }
     }
 

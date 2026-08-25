@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
@@ -32,11 +33,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Age past which the tunnel's own snapshot of what it carries is no longer an answer about what runs now.
     private const int SessionWindowSeconds = 60;
+
+    // How long a probe handed to the tunnel is waited for, and how often its result is looked for.
+    private const int ProbeWaitMs = 40_000;
+    private const int ProbePollMs = 250;
+
+    // Leaves the start-up rush to the interface before the first geo check goes out.
+    private const int GeoStartDelaySeconds = 5;
+    private const int GeoTickSeconds = 60;
+    private const int MinGeoIntervalHours = 1;
+    private const int MaxGeoIntervalHours = 24 * 7;
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
+    private readonly AndroidGeoFileStore _geoFiles;
     private readonly GeoUpdateChecker _geoChecker;
     private readonly AndroidAgentLog _log;
     private readonly GeoHttp _geoHttp;
@@ -49,7 +61,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
+
+    // Per-source download volume while a base is being fetched.
+    private readonly ConcurrentDictionary<string, GeoDownload> _sourceProgress = new(StringComparer.Ordinal);
     private Task? _initTask;
     private Task? _geoFilesTask;
     private VpnBridge.Listener? _events;
@@ -72,6 +86,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _logLevel = "error";
     private bool _routeLog;
     private int _routeTtl = 300;
+    private bool _geoAutoCheck = true;
+    private int _geoCheckIntervalHours = 24;
+    private DateTimeOffset _geoCheckedAt;
+    private readonly CancellationTokenSource _geoChecks = new();
     private bool _alwaysOn;
     private bool _alwaysOnLockdown;
     private LocalProxyOptions _proxyOptions = new();
@@ -110,6 +128,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var dir = Application.Context.FilesDir?.AbsolutePath ?? ".";
         _storePath = System.IO.Path.Combine(dir, "agent.json");
         var geoFiles = new AndroidGeoFileStore(System.IO.Path.Combine(dir, "geo"));
+        _geoFiles = geoFiles;
         _store = new SqliteStateStore(System.IO.Path.Combine(dir, "state.db"));
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, geoFiles);
@@ -138,6 +157,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         PushSnapshot();
         SyncTunnelState();
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
+        _ = CheckGeoUpdatesAsync(_geoChecks.Token);
     }
 
     public Task<IpcAck> SendCommandAsync(IpcCommand command) => DispatchAsync(command);
@@ -169,6 +189,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _disposed = true;
+        _geoChecks.Cancel();
         MainActivity.Resumed -= SyncTunnelState;
         if (_events is not null)
         {
@@ -176,6 +197,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _events = null;
         }
 
+        _geoChecks.Dispose();
         _updater.Dispose();
         _geoHttp.Dispose();
         _httpClient.Dispose();
@@ -279,6 +301,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpCheckSources:
                 return await CheckSourcesAsync();
 
+            case IpcContract.OpRefreshSources:
+                await EnsureInitAsync().ConfigureAwait(false);
+                await RefreshGeoSourcesAsync().ConfigureAwait(false);
+                PushSnapshot();
+                return Ok();
+
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
 
@@ -299,6 +327,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args);
+
+            case IpcContract.OpReorderRoutingLists:
+                return await ReorderRoutingListsAsync(args);
 
             case IpcContract.OpGetRoutingSettings:
                 return await GetRoutingSettingsAsync(args);
@@ -368,6 +399,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpGetSessions:
                 return GetSessions();
 
+            case IpcContract.OpKnownHosts:
+                return await KnownHostsAsync(CancellationToken.None).ConfigureAwait(false);
+
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, CancellationToken.None).ConfigureAwait(false);
 
@@ -376,6 +410,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
+
+            case IpcContract.OpProbeTarget:
+                return await ProbeTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -742,6 +779,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             LogLevel: _logLevel,
             RouteLog: _routeLog,
             RouteTtlSeconds: _routeTtl,
+            GeoAutoCheck: _geoAutoCheck,
+            GeoCheckIntervalHours: _geoCheckIntervalHours,
             UpdateUrl: _updater.Url,
             UpdateAvailable: _updater.Available,
             UpdateVersion: _updater.Version,
@@ -897,7 +936,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             var updating = _updatingSources.Contains(source.Name);
             var error = !updating && _sourceErrors.TryGetValue(source.Name, out var e) ? e : null;
-            list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, 0, _updateAvailable.GetValueOrDefault(source.Name), error));
+            var volume = _sourceProgress.GetValueOrDefault(source.Name);
+            list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating,
+                updating ? volume.Percent : 0, meta?.UpdateAvailable ?? false, error,
+                updating ? volume.Read : 0, updating ? volume.Total : 0));
         }
 
         return list;
@@ -1024,7 +1066,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         try
         {
-            await _geoUpdater.UpdateAsync(source).ConfigureAwait(false);
+            await _geoUpdater.UpdateAsync(source, new SourceProgress(_sourceProgress, source.Name)).ConfigureAwait(false);
             _sourceErrors.Remove(source.Name);
         }
         catch (Exception ex)
@@ -1034,7 +1076,39 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         finally
         {
             _updatingSources.Remove(source.Name);
+            _sourceProgress.TryRemove(source.Name, out _);
         }
+    }
+
+    // Пушит снимок, пока идут загрузки: иначе объём в списке источников стоит на месте.
+    private async Task ProgressPumpAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(700), ct).ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
+                return;
+            }
+
+            PushSnapshot();
+        }
+    }
+
+    // Складывает ход загрузки одного источника.
+    private sealed class SourceProgress(ConcurrentDictionary<string, GeoDownload> map, string name) : IProgress<GeoDownload>
+    {
+        public void Report(GeoDownload value) => map[name] = value;
+    }
+
+    // Есть ли база на диске.
+    private bool HasGeoFile(string name)
+    {
+        using var stream = _geoFiles.OpenRead(name);
+        return stream is not null;
     }
 
     // Re-materializes routing lists against the changed bases, refreshes caches, and pushes a fresh snapshot.
@@ -1051,6 +1125,96 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
+    }
+
+    // Pulls the newest rule databases while the interface is up: the app carries no agent in the background,
+    // so the schedule runs here, and only over a link that costs the user nothing.
+    private async Task CheckGeoUpdatesAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(GeoStartDelaySeconds), ct).ConfigureAwait(false);
+            while (!ct.IsCancellationRequested)
+            {
+                if (_geoAutoCheck
+                    && DateTimeOffset.UtcNow - _geoCheckedAt >= TimeSpan.FromHours(_geoCheckIntervalHours)
+                    && OnFreeLink())
+                {
+                    await RunGeoCheckAsync().ConfigureAwait(false);
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(GeoTickSeconds), ct).ConfigureAwait(false);
+            }
+        }
+        catch (System.OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("geo", "the scheduled check of the rule databases stopped", ex);
+        }
+    }
+
+    // Asks every source whether its file changed and downloads the ones that did.
+    private async Task RunGeoCheckAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var stale = new List<GeoSource>();
+        foreach (var source in _geoSources.ToList())
+        {
+            if (await CheckOneSourceAsync(source).ConfigureAwait(false) == GeoUpdateChecker.Status.Available)
+            {
+                stale.Add(source);
+            }
+        }
+
+        _geoCheckedAt = DateTimeOffset.UtcNow;
+        Save();
+        if (stale.Count == 0)
+        {
+            await RefreshGeoSourcesAsync().ConfigureAwait(false);
+            PushSnapshot();
+            return;
+        }
+
+        _log.Info("geo", $"a newer file stands for {stale.Count} rule database(s), downloading");
+        foreach (var source in stale)
+        {
+            _updatingSources.Add(source.Name);
+        }
+
+        PushSnapshot();
+        foreach (var source in stale)
+        {
+            await UpdateOneSourceAsync(source).ConfigureAwait(false);
+        }
+
+        await AfterSourcesChangedAsync().ConfigureAwait(false);
+    }
+
+    // Whether the device sits on a link that carries no traffic bill: wifi, or the cable a set-top box runs on.
+    private bool OnFreeLink()
+    {
+        try
+        {
+            if (Application.Context.GetSystemService(Context.ConnectivityService) is not ConnectivityManager manager
+                || manager.ActiveNetwork is not { } network
+                || manager.GetNetworkCapabilities(network) is not { } capabilities)
+            {
+                return false;
+            }
+
+            // A tunnel of ours carries the transports of the link under it, so this reads the same either way.
+            return capabilities.HasTransport(TransportType.Wifi) || capabilities.HasTransport(TransportType.Ethernet);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("geo", "the kind of the network link could not be read: " + ex);
+            return false;
+        }
     }
 
     private async Task RefreshRoutingSummariesAsync()
@@ -1082,21 +1246,39 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task DownloadGeoFilesAsync()
     {
         await EnsureInitAsync().ConfigureAwait(false);
-        var sources = await _store.ListGeoSourcesAsync().ConfigureAwait(false);
-        var any = false;
-        foreach (var source in sources)
+        // Только отсутствующие базы: лежащую на диске обновляет экран источников, а не открытие списка.
+        var missing = (await _store.ListGeoSourcesAsync().ConfigureAwait(false))
+            .Where(source => !HasGeoFile(source.Name))
+            .ToList();
+        if (missing.Count == 0)
         {
-            try
-            {
-                await _geoUpdater.UpdateAsync(source).ConfigureAwait(false);
-                any = true;
-            }
-            catch (Exception)
-            {
-            }
+            return;
         }
 
-        if (!any)
+        foreach (var source in missing)
+        {
+            _updatingSources.Add(source.Name);
+        }
+
+        PushSnapshot();
+        var pump = new CancellationTokenSource();
+        var ticker = ProgressPumpAsync(pump.Token);
+        try
+        {
+            foreach (var source in missing)
+            {
+                await UpdateOneSourceAsync(source).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            pump.Cancel();
+            await ticker.ConfigureAwait(false);
+            pump.Dispose();
+        }
+
+        await AfterSourcesChangedAsync().ConfigureAwait(false);
+        if (missing.All(source => _sourceErrors.GetValueOrDefault(source.Name) is not null))
         {
             throw new InvalidOperationException("geo download failed");
         }
@@ -1219,6 +1401,29 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
         var limit = RouteBudget.Applies ? RouteBudget.Max : 0;
         return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)},\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}}}");
+    }
+
+    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var stored = (await _store.ListRoutingListSummariesAsync().ConfigureAwait(false))
+            .Select(summary => summary.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (args.Any(name => !stored.Contains(name)))
+        {
+            return Fail();
+        }
+
+        await _store.SetRoutingListOrderAsync(args).ConfigureAwait(false);
+        await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return Ok();
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args)
@@ -1768,6 +1973,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return long.TryParse(idPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? (id, useRouting) : (null, false);
     }
 
+    private static int GeoInterval(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
+            ? Math.Clamp(hours, MinGeoIntervalHours, MaxGeoIntervalHours)
+            : 24;
+
     private static bool IsOn(string value) =>
         string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)
         || string.Equals(value, "1", StringComparison.Ordinal)
@@ -1814,6 +2024,25 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 && SettingKeys.TryParseRouteTtl(ttl.GetRawText(), out var seconds))
             {
                 _routeTtl = seconds;
+            }
+
+            if (document.RootElement.TryGetProperty("GeoAutoCheck", out var geoAuto)
+                && geoAuto.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _geoAutoCheck = geoAuto.ValueKind == JsonValueKind.True;
+            }
+
+            if (document.RootElement.TryGetProperty("GeoCheckInterval", out var geoInterval)
+                && geoInterval.ValueKind == JsonValueKind.Number)
+            {
+                _geoCheckIntervalHours = GeoInterval(geoInterval.GetRawText());
+            }
+
+            if (document.RootElement.TryGetProperty("GeoCheckedAt", out var geoChecked)
+                && geoChecked.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(geoChecked.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var checkedAt))
+            {
+                _geoCheckedAt = checkedAt;
             }
 
             if (document.RootElement.TryGetProperty("Proxy", out var proxy) && proxy.ValueKind == JsonValueKind.Object)
@@ -1905,6 +2134,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
+            builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
+            builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
+            builder.Append(",\"GeoCheckedAt\":").Append(JsonSerializer.Serialize(_geoCheckedAt.ToString("O", CultureInfo.InvariantCulture)));
             builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
@@ -2037,6 +2269,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
         }
 
+        await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, available == 0
             ? IpcMessage.Key("Agent_CheckedNoUpdates", _geoSources.Count)
@@ -2058,6 +2291,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var status = await CheckOneSourceAsync(source).ConfigureAwait(false);
+        await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, status switch
         {
@@ -2076,7 +2310,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             var status = await _geoChecker.CheckAsync(source, budget.Token).ConfigureAwait(false);
             if (status != GeoUpdateChecker.Status.Unknown)
             {
-                _updateAvailable[source.Name] = status == GeoUpdateChecker.Status.Available;
+                await _store.SetGeoUpdateAvailableAsync(source.Name, status == GeoUpdateChecker.Status.Available).ConfigureAwait(false);
             }
 
             return status;
@@ -2164,6 +2398,28 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // What the relay holds, as it left it: the tunnel runs in another process, so this is read whole rather
     // than asked for, and a snapshot older than the window answers about a session that is already gone.
+    // Every destination the agent can put a name to: what it resolved for this config before, which outlives a
+    // disconnect, and what the tunnel carries right now.
+    private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var hosts = new List<string>(await _log.Store.ListProbeTargetsAsync(KnownHostList.HistoryRows, ct).ConfigureAwait(false));
+        if (_selectedTarget is { Length: > 0 } config)
+        {
+            foreach (var resolution in await _store.ListDomainResolutionsAsync(config, ct).ConfigureAwait(false))
+            {
+                hosts.Add(resolution.Domain);
+            }
+        }
+
+        foreach (var held in VpnBridge.ReadSessions(SessionWindowSeconds).Sessions)
+        {
+            hosts.Add(held.Name.Length > 0 ? held.Name : held.Host);
+        }
+
+        return new IpcAck(true, KnownHostList.Payload(hosts));
+    }
+
     private static IpcAck GetSessions()
     {
         return new IpcAck(true, VpnBridge.ReadSessions(SessionWindowSeconds).ToPayload());
@@ -2204,20 +2460,121 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "check-target requires a domain, an address, an app token or a geo rule");
         }
 
+        var (inspector, _) = await RulesAsync(ct).ConfigureAwait(false);
+        var report = await inspector
+            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
+            .ConfigureAwait(false);
+
+        Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // The rules in force: the inspector that answers under them, and whether they put everything in the tunnel.
+    // A named application is added to the rules where the relay can name the owner of a connection, and below
+    // that the tunnel is built as an allow list of them instead - the answer follows the mode in force.
+    private async Task<(TargetInspector Inspector, bool Whole)> RulesAsync(CancellationToken ct)
+    {
         var list = _selectedRoutingList is { } listId
             ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
             : null;
         var settings = _selectedRoutingList is { } id
             ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
             : null;
-        // A named application is added to the rules where the relay can name the owner of a connection, and below
-        // that the tunnel is built as an allow list of them instead - the check answers under the mode in force.
-        var report = await new TargetInspector(list, !(settings?.UseGlobalProxy ?? false),
-                AppMode(list, settings))
-            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
-            .ConfigureAwait(false);
+        var full = settings?.UseGlobalProxy ?? false;
+        // Without a list the tun carries everything, so nothing is left outside it to be put back in.
+        return (new TargetInspector(list, !full, AppMode(list, settings)), _selectedRoutingList is null || full);
+    }
 
-        Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
+    // Measures one destination over the path asked for. The tun fixes its routes at establish, so the tunnel
+    // path holds only where the rules take the target there anyway, and a socket is excused from it only inside
+    // the process that owns it - that run is handed to the tunnel instead.
+    private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        var target = args[0];
+        var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
+        var upload = args.Count > 2 ? args[2] : string.Empty;
+        var running = VpnBridge.IsRunning(Application.Context);
+        if (!running && path != ProbePaths.Bypass)
+        {
+            return ProbeAck(TargetProbe.Refused(target, path, ProbeVerdicts.NotConnected));
+        }
+
+        var (inspector, whole) = await RulesAsync(ct).ConfigureAwait(false);
+        var forced = running && path == ProbePaths.Tunnel && !whole;
+        var routed = path == ProbePaths.Auto || forced
+            ? await RoutedPathAsync(inspector, target, ct).ConfigureAwait(false)
+            : (Taken: string.Empty, ViaTunnel: false);
+
+        // The target the rules keep outside the tun cannot be put back into it: the run says so itself, so the
+        // path stays on offer and the refusal lands in the journal beside the runs that measured.
+        if (forced && !routed.ViaTunnel)
+        {
+            return ProbeAck(TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable));
+        }
+
+        var taken = path == ProbePaths.Auto ? routed.Taken : path;
+        if (running && path == ProbePaths.Bypass)
+        {
+            return ProbeAck(await HandOverAsync(target, path, taken, upload, ct).ConfigureAwait(false));
+        }
+
+        var options = new TargetProbeOptions(target, path, taken, upload);
+        return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
+    }
+
+    // Where the rules in force send a destination, said the way the desktops say it, and whether that is the
+    // tunnel.
+    private async Task<(string Taken, bool ViaTunnel)> RoutedPathAsync(TargetInspector inspector, string target, CancellationToken ct)
+    {
+        var report = await inspector
+            .InspectAsync(target, _selectedTarget ?? string.Empty, new TargetProbes(), ct)
+            .ConfigureAwait(false);
+        return report.VerdictKey switch
+        {
+            TargetVerdicts.Proxy or TargetVerdicts.ProxyAppsOnly => ("tunnel by rule", true),
+            TargetVerdicts.UnlistedFull => ("tunnel by default", true),
+            TargetVerdicts.Direct => ("bypass by rule", false),
+            TargetVerdicts.UnlistedSplit or TargetVerdicts.AppOutside or TargetVerdicts.AppUnlisted => ("bypass by default", false),
+            TargetVerdicts.Blocked => ("blocked by rule", false),
+            _ => (string.Empty, false),
+        };
+    }
+
+    // Hands the run to the tunnel and waits for what it measured; a tunnel that never answers leaves the path
+    // unmeasured rather than the caller waiting on it.
+    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, CancellationToken ct)
+    {
+        VpnBridge.ClearProbeResult();
+        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload));
+        VpnBridge.RequestProbe(Application.Context);
+        for (var waited = 0; waited < ProbeWaitMs; waited += ProbePollMs)
+        {
+            await Task.Delay(ProbePollMs, ct).ConfigureAwait(false);
+            var payload = VpnBridge.ReadProbeResult();
+            if (payload.Length > 0)
+            {
+                VpnBridge.ClearProbeResult();
+                return ProbeReport.Parse(payload, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            }
+        }
+
+        VpnBridge.ClearProbe();
+        return TargetProbe.Refused(target, path, ProbeVerdicts.PathUnavailable);
+    }
+
+    // Stores a probe in its own journal, which no capture floor reaches, and puts its closing line in the agent log.
+    private IpcAck ProbeAck(ProbeReport report)
+    {
+        var rendered = report.Render().TrimEnd();
+        _log.Store.AppendProbe(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered);
+        var rows = rendered.Split('\n');
+        _log.Info("probe", rows[0].Trim());
+        _log.Info("probe", rows[^1].Trim());
         return new IpcAck(true, report.ToPayload());
     }
 
@@ -2606,6 +2963,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 Save();
                 PushSnapshot();
                 return Ok();
+            case "geo-auto-check":
+                _geoAutoCheck = IsOn(args[1]);
+                Save();
+                PushSnapshot();
+                return Ok();
+            case "geo-check-interval-hours":
+                _geoCheckIntervalHours = GeoInterval(args[1]);
+                Save();
+                PushSnapshot();
+                return Ok();
             case SettingKeys.ProxyEnabled:
             case SettingKeys.ProxyAnonymous:
             case SettingKeys.ProxySocksPort:
@@ -2790,7 +3157,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new IpcAck(true, JsonSerializer.Serialize(new { total, capped, entries }));
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable
+        or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
 
     private static string KnownLogLevel(string token)
     {

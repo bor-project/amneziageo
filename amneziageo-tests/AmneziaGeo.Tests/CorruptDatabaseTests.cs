@@ -51,6 +51,70 @@ public sealed class CorruptDatabaseTests
     }
 
     [Fact]
+    public async Task LogStore_DatabaseTakenAway_WritingResumes()
+    {
+        // What another process's quarantine looks like from here: the file this store writes to is gone. The
+        // rows after it must land in a database that is there, not in the one carried off under its new name.
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-log-gone-{Guid.NewGuid():N}.db");
+        try
+        {
+            using var store = new SqliteLogStore(path);
+            await store.InitializeAsync();
+            store.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", "before");
+            await store.FlushAsync();
+
+            store.ClearPool();
+            CorruptQuarantine.MoveAside(path);
+
+            store.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", "after");
+            await store.FlushAsync();
+
+            Assert.True(File.Exists(path));
+            var page = await store.QueryAsync(SqliteLogStore.AgentTable, null, 10, null, null);
+            Assert.Contains(page.Rows, r => r.Message == "after");
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task LogStore_UnopenableDatabase_TakesRowsOnceItCan()
+    {
+        // A directory in the database's place: nothing can be opened, and initialization used to throw and
+        // leave the writer loop unstarted - every row after it queued up and no log was ever written again.
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-log-blocked-{Guid.NewGuid():N}.db");
+        Directory.CreateDirectory(path);
+        try
+        {
+            using var store = new SqliteLogStore(path);
+            await store.InitializeAsync();
+            Assert.NotNull(store.LastFailure);
+
+            store.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", "queued");
+            await store.FlushAsync();
+
+            Directory.Delete(path);
+            store.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", "after");
+            await store.FlushAsync();
+
+            Assert.Null(store.LastFailure);
+            var page = await store.QueryAsync(SqliteLogStore.AgentTable, null, 10, null, null);
+            Assert.Contains(page.Rows, r => r.Message == "after");
+        }
+        finally
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
     public async Task StateStore_ForeignWalPair_DataSurvives()
     {
         // The field shape: an intact main file next to a -wal/-shm pair from another database generation.

@@ -43,6 +43,20 @@ internal static class RuntimeSnapshotPipe
     public const string OpSessions = "sessions";
 
     /// <summary>
+    /// Asks the tunnel to measure one destination. Only the process holding the cache can put an address on a
+    /// path and take it off again, so the whole run happens there.
+    /// </summary>
+    public const string OpProbe = "probe";
+
+    /// <summary>
+    /// Composes a probe request: the op, the target, the path and the speed service.
+    /// </summary>
+    public static string Probe(string target, string path, string uploadUrl)
+    {
+        return string.Join('\t', OpProbe, target, path, uploadUrl);
+    }
+
+    /// <summary>
     /// Pipe a tunnel's service process serves on.
     /// </summary>
     public static string Name(string tunnel)

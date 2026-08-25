@@ -43,6 +43,11 @@ public sealed class SqliteLogStore : IDisposable
     /// </summary>
     public const string ChecksTable = "checks";
 
+    /// <summary>
+    /// Table for the target probes (levelless; one row carries a whole rendered probe of one destination).
+    /// </summary>
+    public const string ProbeTable = "probe";
+
     // Enqueued append not yet written; id is assigned by the table AUTOINCREMENT on insert. LevelId applies to
     // the agent table only (0 for routes).
     private readonly record struct Pending(string Table, long UnixMs, int LevelId, string? Source, string Message, TaskCompletionSource? Flush = null);
@@ -54,6 +59,15 @@ public sealed class SqliteLogStore : IDisposable
     private Task? _writerLoop;
 
     private readonly string _databasePath;
+
+    // Set while the store cannot be written to, cleared when it can again.
+    private volatile string? _failure;
+
+    // Severity id of WRN in the log_levels dictionary seeded below.
+    private const int WarningLevelId = 4;
+
+    // Suffix of the note left next to the database while it cannot be opened at all.
+    private const string FailureSuffix = ".failure.txt";
 
     /// <summary>
     /// ctor
@@ -71,31 +85,65 @@ public sealed class SqliteLogStore : IDisposable
     /// Creates the tables (WAL), seeds the level dictionary, and starts the writer loop. Corruption
     /// self-heals, escalating: first quarantine only the -wal/-shm sidecars (a stale pair fails recovery of
     /// an intact file - its rows survive), then quarantine the database and recreate it empty - losing old
-    /// log rows must never keep the agent from starting.
+    /// log rows must never keep the agent from starting. The writer loop starts even when none of that
+    /// worked: it opens the database again on its next batch, so a log that could not be opened once does
+    /// not stay dead for the life of the process.
     /// </summary>
     public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        await OpenOrRecreateAsync(ct).ConfigureAwait(false);
+        _writerLoop = Task.Run(() => WriteLoopAsync(_shutdown.Token));
+    }
+
+    /// <summary>
+    /// Why the store is not writing, or null while it is.
+    /// </summary>
+    public string? LastFailure => _failure;
+
+    /// <summary>
+    /// Drops the pooled connections to the database file, so a caller can move it aside.
+    /// </summary>
+    public void ClearPool()
+    {
+        SqliteConnection.ClearAllPools();
+    }
+
+    // Opens the store, quarantining a corrupt file in two steps. Never throws: a failure is recorded and the
+    // next batch tries again.
+    private async Task<bool> OpenOrRecreateAsync(CancellationToken ct)
     {
         try
         {
             await InitializeCoreAsync(ct).ConfigureAwait(false);
+            return true;
         }
         catch (SqliteException)
         {
             SqliteConnection.ClearAllPools();
             CorruptQuarantine.MoveAsideSidecars(_databasePath);
-            try
-            {
-                await InitializeCoreAsync(ct).ConfigureAwait(false);
-            }
-            catch (SqliteException)
-            {
-                SqliteConnection.ClearAllPools();
-                CorruptQuarantine.MoveAside(_databasePath);
-                await InitializeCoreAsync(ct).ConfigureAwait(false);
-            }
         }
 
-        _writerLoop = Task.Run(() => WriteLoopAsync(_shutdown.Token));
+        try
+        {
+            await InitializeCoreAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (SqliteException)
+        {
+            SqliteConnection.ClearAllPools();
+            CorruptQuarantine.MoveAside(_databasePath);
+        }
+
+        try
+        {
+            await InitializeCoreAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RecordFailure(ex);
+            return false;
+        }
     }
 
     private async Task InitializeCoreAsync(CancellationToken ct)
@@ -144,6 +192,12 @@ public sealed class SqliteLogStore : IDisposable
                         ts  INTEGER NOT NULL,
                         msg TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS probe (
+                        id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ts  INTEGER NOT NULL,
+                        msg TEXT NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -173,6 +227,14 @@ public sealed class SqliteLogStore : IDisposable
     public void AppendCheck(long unixMs, string message)
     {
         _queue.Writer.TryWrite(new Pending(ChecksTable, unixMs, 0, null, message));
+    }
+
+    /// <summary>
+    /// Queues one target probe; like a check it is run by hand and no capture floor applies to it.
+    /// </summary>
+    public void AppendProbe(long unixMs, string message)
+    {
+        _queue.Writer.TryWrite(new Pending(ProbeTable, unixMs, 0, null, message));
     }
 
     /// <summary>
@@ -235,6 +297,49 @@ public sealed class SqliteLogStore : IDisposable
                 return result is long count ? (int)Math.Min(count, int.MaxValue) : 0;
             }
         }
+    }
+
+    /// <summary>
+    /// Destinations the probe journal already carries, newest first: what was measured once is what the field
+    /// offers next time, whatever the routing puts a name to.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListProbeTargetsAsync(int limit, CancellationToken ct = default)
+    {
+        await FlushAsync(ct).ConfigureAwait(false);
+        var found = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = $"SELECT msg FROM {ProbeTable} ORDER BY id DESC LIMIT $limit;";
+                command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 2000));
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        var target = TargetOf(reader.IsDBNull(0) ? string.Empty : reader.GetString(0));
+                        if (target.Length > 0 && seen.Add(target))
+                        {
+                            found.Add(target);
+                        }
+                    }
+                }
+            }
+        }
+
+        return found;
+    }
+
+    // The destination a rendered probe opens with: "probe <target> over <path> at <time>".
+    private static string TargetOf(string message)
+    {
+        var end = message.IndexOf('\n');
+        var head = (end >= 0 ? message[..end] : message).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return head.Length > 2 && head[0] == "probe" ? head[1] : string.Empty;
     }
 
     /// <summary>
@@ -485,6 +590,66 @@ public sealed class SqliteLogStore : IDisposable
 
     private async Task WriteBatchAsync(IReadOnlyList<Pending> batch, CancellationToken ct)
     {
+        // The database is gone when another process quarantined it: a connection opened before that still
+        // writes, into the file under its new name, and every row from here on would be lost with it.
+        if (File.Exists(_databasePath) && await TryWriteBatchAsync(batch, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        _failure ??= "the log database was replaced or refused a write";
+        if (!await OpenOrRecreateAsync(ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        if (await TryWriteBatchAsync(batch, ct).ConfigureAwait(false))
+        {
+            ReportRecovery();
+        }
+    }
+
+    // Records that the store cannot be written to, where it is still readable once the log itself is not.
+    private void RecordFailure(Exception ex)
+    {
+        _failure = ex.Message;
+        try
+        {
+            File.WriteAllText(_databasePath + FailureSuffix, $"{DateTimeOffset.Now:O} {ex}");
+        }
+        catch (Exception)
+        {
+            // Nowhere to report to; the flag still marks the gap for a caller that asks.
+        }
+    }
+
+    // Marks the gap in the log itself the moment writing comes back.
+    private void ReportRecovery()
+    {
+        if (_failure is not { } reason)
+        {
+            return;
+        }
+
+        _failure = null;
+        try
+        {
+            File.Delete(_databasePath + FailureSuffix);
+        }
+        catch (Exception)
+        {
+            // The note outliving the failure is harmless.
+        }
+
+        AppendAgent(
+            DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+            WarningLevelId,
+            null,
+            $"the log database was opened again after it stopped taking rows ({reason}); the events from that window are lost");
+    }
+
+    private async Task<bool> TryWriteBatchAsync(IReadOnlyList<Pending> batch, CancellationToken ct)
+    {
         try
         {
             var connection = await OpenAsync(ct).ConfigureAwait(false);
@@ -517,6 +682,10 @@ public sealed class SqliteLogStore : IDisposable
                             {
                                 command.CommandText = "INSERT INTO checks (ts, msg) VALUES ($ts, $msg);";
                             }
+                            else if (row.Table == ProbeTable)
+                            {
+                                command.CommandText = "INSERT INTO probe (ts, msg) VALUES ($ts, $msg);";
+                            }
                             else
                             {
                                 continue;
@@ -529,10 +698,13 @@ public sealed class SqliteLogStore : IDisposable
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
                 }
             }
+
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A log must not break the writer loop; a transient DB error drops this batch.
+            // A log must not break the writer loop; the caller reopens the database and tries once more.
+            return false;
         }
     }
 
@@ -614,7 +786,7 @@ public sealed class SqliteLogStore : IDisposable
 
     private static string Validate(string table)
     {
-        return table is AgentTable or RoutesTable or ChecksTable
+        return table is AgentTable or RoutesTable or ChecksTable or ProbeTable
             ? table
             : throw new ArgumentException($"unknown log table: {table}", nameof(table));
     }

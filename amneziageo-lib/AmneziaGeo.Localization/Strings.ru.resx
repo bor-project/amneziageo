@@ -1060,6 +1060,9 @@
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
     <value>Сервер не ответил (нет рукопожатия) - недоступен или отклонил ключ.</value>
   </data>
+  <data name="MainVm_NoticeConnectFailed_LoopbackBlocked" xml:space="preserve">
+    <value>На этой машине закрыт UDP на петле - перевозчик WebSocket передаёт туннель движку через неё, разрешите UDP на lo.</value>
+  </data>
   <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
     <value>Транспорт отклонил соединение - проверьте TLS-сертификат сервера ({0}).</value>
   </data>
@@ -1322,6 +1325,9 @@
   </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>сохранён {0}</value>
+  </data>
+  <data name="Agent_ConnectWaiting" xml:space="preserve">
+    <value>туннель поднят, ждёт первого ответа сервера</value>
   </data>
   <data name="Agent_RoutingListNameTaken" xml:space="preserve">
     <value>список маршрутизации «{0}» уже есть - выберите другое имя</value>

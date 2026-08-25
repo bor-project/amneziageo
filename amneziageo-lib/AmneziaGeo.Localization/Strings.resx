@@ -1060,6 +1060,9 @@
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
     <value>The server did not answer (no handshake) - unreachable or key rejected.</value>
   </data>
+  <data name="MainVm_NoticeConnectFailed_LoopbackBlocked" xml:space="preserve">
+    <value>UDP on the loopback is blocked on this machine - the websocket carrier hands the tunnel to the engine there, so let UDP through on lo.</value>
+  </data>
   <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
     <value>The transport refused the connection - check the server TLS certificate ({0}).</value>
   </data>
@@ -1322,6 +1325,9 @@ Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>saved {0}</value>
+  </data>
+  <data name="Agent_ConnectWaiting" xml:space="preserve">
+    <value>the tunnel is up, waiting for the server's first answer</value>
   </data>
   <data name="Agent_RoutingListNameTaken" xml:space="preserve">
     <value>a routing list named «{0}» already exists - pick another name</value>

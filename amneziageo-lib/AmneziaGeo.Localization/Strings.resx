@@ -1259,19 +1259,22 @@
     <value>Enter a valid WebSocket port (1-65535).</value>
   </data>
   <data name="Transport_ProbeRunning" xml:space="preserve">
-    <value>Checking the WebSocket front...</value>
+    <value>Checking the WebSocket server...</value>
   </data>
   <data name="Transport_ProbeNoAddress" xml:space="preserve">
-    <value>The WebSocket host does not resolve.</value>
+    <value>The WebSocket server address does not resolve: check the host name.</value>
   </data>
   <data name="Transport_ProbeNoAnswer" xml:space="preserve">
-    <value>The WebSocket front did not answer.</value>
+    <value>The WebSocket server does not answer: check the port and that the server is reachable.</value>
   </data>
   <data name="Transport_ProbeTls" xml:space="preserve">
-    <value>TLS did not come up on the WebSocket front.</value>
+    <value>TLS did not come up on the WebSocket server: no HTTPS on this port, or the certificate did not fit.</value>
   </data>
   <data name="Transport_ProbeRefused" xml:space="preserve">
-    <value>The WebSocket front refused the connection: {0}</value>
+    <value>The WebSocket server turned the connection down: {0}</value>
+  </data>
+  <data name="Transport_ProbeDenied" xml:space="preserve">
+    <value>The WebSocket server denied access: the token, or the login and password, did not fit.</value>
   </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Version {0} available</value>

@@ -32,6 +32,9 @@ internal sealed class LinuxAgent : IDisposable
     private const int HandshakeGraceSeconds = 3;
     private const int HandshakeWaitSeconds = 30;
     private const int GeoTickSeconds = 60;
+
+    // Supervisor ticks between two readings of what the wireless adapter can do.
+    private const int HotspotProbeTicks = 12;
     private const int MinGeoIntervalHours = 1;
     private const int MaxGeoIntervalHours = 24 * 7;
 
@@ -57,8 +60,15 @@ internal sealed class LinuxAgent : IDisposable
     // Per-source download volume while a base is being fetched.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> _sourceProgress = new(StringComparer.Ordinal);
     private readonly LocalProxyServer _proxy;
+    private readonly LinuxHotspot _hotspot;
 
     private LocalProxyOptions _proxyOptions = new();
+    private HotspotOptions _hotspotOptions = new();
+    private string _shareMode = ShareModes.Default;
+    private bool _shareEthernet;
+
+    // Ticks left before the adapter is asked again what it can do.
+    private int _hotspotProbeTicks;
     private string? _selectedTarget;
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
@@ -114,6 +124,7 @@ internal sealed class LinuxAgent : IDisposable
         _bundles = new BundleCommands(_store, _geo);
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
+        _hotspot = new LinuxHotspot(log, interfaceName);
     }
 
     /// <summary>
@@ -142,6 +153,11 @@ internal sealed class LinuxAgent : IDisposable
         _geoCheckIntervalHours = GeoInterval(settings.TryGetValue(GeoIntervalKey, out var geoInterval) ? geoInterval : null);
         _proxyOptions = ReadProxyOptions(settings);
         _proxy.Apply(_proxyOptions);
+        _shareMode = ShareModes.Of(settings.TryGetValue(SettingKeys.ShareMode, out var share) ? share : null);
+        _shareEthernet = settings.TryGetValue(SettingKeys.ShareEthernet, out var wired) && IsOn(wired);
+        _hotspotOptions = HotspotOptions.Read(settings);
+        await _hotspot.ProbeAsync(ct).ConfigureAwait(false);
+        await _hotspot.ApplyAsync(_hotspotOptions, ct).ConfigureAwait(false);
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
         _updater.CollectInstallResult();
@@ -164,6 +180,26 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await Task.WhenAll(SuperviseLoopAsync(ct), CheckGeoUpdatesAsync(ct)).ConfigureAwait(false);
+    }
+
+    // The stations and the band in force are cheap to read every tick; what the adapter can do is not, so it is
+    // asked again only now and then, and a radio switched back on brings the point up by itself.
+    private async Task SuperviseHotspotAsync(CancellationToken ct)
+    {
+        await _hotspot.RefreshAsync(ct).ConfigureAwait(false);
+        if (--_hotspotProbeTicks > 0)
+        {
+            return;
+        }
+
+        _hotspotProbeTicks = HotspotProbeTicks;
+        var was = _hotspot.Supported;
+        await _hotspot.ProbeAsync(ct).ConfigureAwait(false);
+        if (was != _hotspot.Supported || _hotspot.Running != _hotspotOptions.Wanted)
+        {
+            await _hotspot.ApplyAsync(_hotspotOptions, ct).ConfigureAwait(false);
+            await PushAsync(ct).ConfigureAwait(false);
+        }
     }
 
     // Ticks the supervisor until cancellation.
@@ -291,7 +327,19 @@ internal sealed class LinuxAgent : IDisposable
             ProxyRunning: _proxy.Running,
             ProxyError: _proxy.Error,
             ProxyAddresses: _proxy.Running ? LocalProxyServer.UsableAddresses() : [],
-            ProxyClients: ProxyClients());
+            ProxyClients: ProxyClients(),
+            ShareMode: _shareMode,
+            ShareEthernet: _shareEthernet,
+            HotspotSupported: _hotspot.Supported,
+            HotspotReason: _hotspot.Reason,
+            HotspotRunning: _hotspot.Running,
+            HotspotError: _hotspot.Error,
+            HotspotSsid: _hotspotOptions.Ssid,
+            HotspotPassword: _hotspotOptions.Password,
+            HotspotBand: _hotspotOptions.Band,
+            HotspotBandActual: _hotspot.BandActual,
+            HotspotClients: _hotspot.Clients,
+            HotspotMaxClients: LinuxHotspot.MaxClients);
     }
 
     // One proxy setting on top of the ones in force.
@@ -385,6 +433,7 @@ internal sealed class LinuxAgent : IDisposable
     // keepalive view to the clients: nothing else pushes a snapshot while the tunnel just runs.
     private async Task SuperviseAsync(CancellationToken ct)
     {
+        await SuperviseHotspotAsync(ct).ConfigureAwait(false);
         var counters = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
         var age = -1;
         var reading = LinkReading.Empty;
@@ -1481,12 +1530,58 @@ internal sealed class LinuxAgent : IDisposable
                 _proxyOptions = proxy;
                 _proxy.Apply(proxy);
                 await _store.SetSettingAsync(args[0], ProxyValue(args[0], args[1]), ct).ConfigureAwait(false);
+                if (args[0] == SettingKeys.ProxyEnabled)
+                {
+                    await ApplyHotspotAsync(ct).ConfigureAwait(false);
+                }
+
                 if (_proxy.Error.Length > 0)
                 {
                     await PushAsync(ct).ConfigureAwait(false);
                     return new IpcAck(false, $"the local proxy did not start: {_proxy.Error}");
                 }
 
+                break;
+            case SettingKeys.ShareMode:
+                if (!ShareModes.IsKnown(args[1]))
+                {
+                    return Fail();
+                }
+
+                _shareMode = ShareModes.Of(args[1]);
+                await _store.SetSettingAsync(SettingKeys.ShareMode, _shareMode, ct).ConfigureAwait(false);
+                await ApplyHotspotAsync(ct).ConfigureAwait(false);
+                break;
+            case SettingKeys.ShareEthernet:
+                _shareEthernet = IsOn(args[1]);
+                await _store.SetSettingAsync(SettingKeys.ShareEthernet, _shareEthernet ? "on" : "off", ct).ConfigureAwait(false);
+                break;
+            case SettingKeys.HotspotSsid:
+                if (args[1].Length > 0 && !SettingKeys.IsValidHotspotSsid(args[1]))
+                {
+                    return Fail();
+                }
+
+                await _store.SetSettingAsync(SettingKeys.HotspotSsid, args[1], ct).ConfigureAwait(false);
+                await ApplyHotspotAsync(ct).ConfigureAwait(false);
+                break;
+            case SettingKeys.HotspotPassword:
+                if (args[1].Length > 0 && !SettingKeys.IsValidHotspotPassword(args[1]))
+                {
+                    return Fail();
+                }
+
+                await _store.SetSettingAsync(SettingKeys.HotspotPassword, args[1], ct).ConfigureAwait(false);
+                await ApplyHotspotAsync(ct).ConfigureAwait(false);
+                break;
+            case SettingKeys.HotspotBand:
+                if (!HotspotBands.IsKnown(args[1]))
+                {
+                    return Fail();
+                }
+
+                await _store.SetSettingAsync(SettingKeys.HotspotBand, HotspotBands.Of(args[1]), ct).ConfigureAwait(false);
+                await ApplyHotspotAsync(ct).ConfigureAwait(false);
                 break;
             default:
                 await _store.SetSettingAsync(args[0], args[1], ct).ConfigureAwait(false);
@@ -1495,6 +1590,19 @@ internal sealed class LinuxAgent : IDisposable
 
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    // The access point as the stored settings leave it.
+    private async Task ApplyHotspotAsync(CancellationToken ct)
+    {
+        var settings = await _store.GetSettingsAsync(ct).ConfigureAwait(false);
+        _hotspotOptions = HotspotOptions.Read(settings);
+        if (_hotspotOptions.Wanted && !_hotspot.Supported)
+        {
+            await _hotspot.ProbeAsync(ct).ConfigureAwait(false);
+        }
+
+        await _hotspot.ApplyAsync(_hotspotOptions, ct).ConfigureAwait(false);
     }
 
     private async Task<IpcAck> ReadLogAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2216,6 +2324,7 @@ internal sealed class LinuxAgent : IDisposable
         _disposed = true;
         StopLossProbe();
         _proxy.Dispose();
+        _hotspot.Dispose();
         _updater.Dispose();
         _tunnel.Dispose();
         _geoHttp.Dispose();

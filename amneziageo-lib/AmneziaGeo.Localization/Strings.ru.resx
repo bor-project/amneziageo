@@ -61,8 +61,8 @@
   <data name="General_Section" xml:space="preserve">
     <value>Общие</value>
   </data>
-  <data name="General_ConnectionSection" xml:space="preserve">
-    <value>Подключение</value>
+  <data name="General_TunnelSection" xml:space="preserve">
+    <value>Туннель</value>
   </data>
   <data name="General_NetworkRepairSection" xml:space="preserve">
     <value>Восстановление сети</value>
@@ -116,16 +116,16 @@
     <value>Предлагать бета-сборки при проверке обновлений, не только стабильные релизы.</value>
   </data>
   <data name="General_ProxySection" xml:space="preserve">
-    <value>Локальный прокси</value>
+    <value>Подключения</value>
   </data>
   <data name="General_ProxyEnabled" xml:space="preserve">
-    <value>Разрешить подключения из LAN</value>
+    <value>Разрешить подключения</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>Доступен этому устройству и локальной сети: SOCKS5 {0}, HTTP {1}.</value>
+    <value>Доступен этому устройству и локальной сети.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
-    <value>Здесь прокси передаёт трафик только при поднятом туннеле.</value>
+    <value>Работает только при поднятом туннеле.</value>
   </data>
   <data name="General_ProxySocksPort" xml:space="preserve">
     <value>Порт SOCKS5</value>
@@ -137,13 +137,13 @@
     <value>Пускать без пароля</value>
   </data>
   <data name="General_ProxyAnonymousHint" xml:space="preserve">
-    <value>Клиенту не нужна учётная запись — только адрес и порт. Учётные записи продолжают работать.</value>
+    <value>Клиенту хватит адреса и порта.</value>
   </data>
   <data name="General_ProxyOpenWarning" xml:space="preserve">
     <value>Прокси открыт всем в этой сети.</value>
   </data>
   <data name="General_ProxyNoAccountWarning" xml:space="preserve">
-    <value>Ни одной учётной записи — подключиться не сможет никто.</value>
+    <value>Нет учётных записей - никто не подключится.</value>
   </data>
   <data name="General_ProxyUser" xml:space="preserve">
     <value>Пользователь</value>
@@ -158,13 +158,13 @@
     <value>Учётные записи</value>
   </data>
   <data name="General_ProxyClients" xml:space="preserve">
-    <value>Подключения</value>
+    <value>Клиенты</value>
   </data>
   <data name="General_ProxyClientsTooltip" xml:space="preserve">
     <value>Показать, кто подключён</value>
   </data>
   <data name="General_ProxyNoClients" xml:space="preserve">
-    <value>Прокси сейчас никто не использует.</value>
+    <value>Никто не подключён.</value>
   </data>
   <data name="General_ProxyClientConnections" xml:space="preserve">
     <value>подключений: {0}</value>
@@ -173,6 +173,81 @@
     <value>Скопировать адрес</value>
   </data>
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
+    <value>Показать пароль</value>
+  </data>
+  <data name="General_ShareTabProxy" xml:space="preserve">
+    <value>Прокси</value>
+  </data>
+  <data name="General_ShareTabWifi" xml:space="preserve">
+    <value>Wi-Fi</value>
+  </data>
+  <data name="General_HotspotEnabled" xml:space="preserve">
+    <value>Точка доступа</value>
+  </data>
+  <data name="General_HotspotEnabledHint" xml:space="preserve">
+    <value>Устройства подключаются к ней и выходят через туннель.</value>
+  </data>
+  <data name="General_HotspotSsid" xml:space="preserve">
+    <value>Имя сети</value>
+  </data>
+  <data name="General_HotspotPassword" xml:space="preserve">
+    <value>Пароль</value>
+  </data>
+  <data name="General_HotspotBand" xml:space="preserve">
+    <value>Диапазон</value>
+  </data>
+  <data name="General_HotspotBandAuto" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="General_HotspotBand24" xml:space="preserve">
+    <value>2,4 ГГц</value>
+  </data>
+  <data name="General_HotspotBand5" xml:space="preserve">
+    <value>5 ГГц</value>
+  </data>
+  <data name="General_HotspotBandAdapter" xml:space="preserve">
+    <value>Диапазон выбрал адаптер.</value>
+  </data>
+  <data name="General_HotspotBandActual" xml:space="preserve">
+    <value>Работает на {0}.</value>
+  </data>
+  <data name="General_HotspotNoAdapter" xml:space="preserve">
+    <value>Wi-Fi-адаптер не найден.</value>
+  </data>
+  <data name="General_HotspotRadioOff" xml:space="preserve">
+    <value>Wi-Fi выключен.</value>
+  </data>
+  <data name="General_HotspotNoApMode" xml:space="preserve">
+    <value>Адаптер не работает точкой доступа.</value>
+  </data>
+  <data name="General_HotspotNoTools" xml:space="preserve">
+    <value>Не установлены hostapd и dnsmasq.</value>
+  </data>
+  <data name="General_HotspotServiceOff" xml:space="preserve">
+    <value>Служба общего доступа к интернету остановлена.</value>
+  </data>
+  <data name="General_HotspotNoPlatform" xml:space="preserve">
+    <value>Точка доступа на этой системе недоступна.</value>
+  </data>
+  <data name="General_HotspotNeedsName" xml:space="preserve">
+    <value>Задайте имя сети и пароль.</value>
+  </data>
+  <data name="General_HotspotBadSsid" xml:space="preserve">
+    <value>Имя сети - от 1 до 32 байт.</value>
+  </data>
+  <data name="General_HotspotBadPassword" xml:space="preserve">
+    <value>Пароль - от 8 до 63 символов.</value>
+  </data>
+  <data name="General_HotspotClients" xml:space="preserve">
+    <value>Устройства</value>
+  </data>
+  <data name="General_HotspotClientsOf" xml:space="preserve">
+    <value>{0} из {1}</value>
+  </data>
+  <data name="General_HotspotRunning" xml:space="preserve">
+    <value>Точка доступа поднята.</value>
+  </data>
+  <data name="General_HotspotRevealTooltip" xml:space="preserve">
     <value>Показать пароль</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
@@ -1432,6 +1507,11 @@
     <value>Это внутренний компонент установщика AmneziaGeo и не запускается напрямую.
 
 Запустите AmneziaGeoSetup.exe - это и есть установщик.</value>
+  </data>
+  <data name="Installer_WrongArchitecture" xml:space="preserve">
+    <value>Этот установщик собран для 64-разрядной Intel-машины, а у вас ARM64.
+
+Скачайте установщик для ARM64: сборка x64 ставится, но туннель на ней здесь не поднимается.</value>
   </data>
   <data name="InstallerBa_ApplyError" xml:space="preserve">
     <value>Ошибка (0x{0:X8}).</value>

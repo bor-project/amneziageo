@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
@@ -9,18 +10,22 @@ using Microsoft.Win32;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Carries the clients of the access point through this machine. Sharing stamps one address on everything it
-/// forwards - the address of the connection it was raised over - so a client's traffic that belongs in the tunnel
-/// leaves with the wrong source and never comes back. This puts an adapter of its own in front of the clients:
-/// what they open is terminated on it and opened again as a socket of this machine, which the routing table then
-/// carries exactly as it carries this machine's own traffic. It stands only while the access point does.
+/// Carries the clients of the access point through this machine. Sharing forwards what they send over one
+/// connection only - the one the point was raised over - and drops whatever that connection holds no route for.
+/// This puts an adapter of its own in front of the clients: what they open is terminated on it and opened again as
+/// a socket of this machine, which the routing table then carries exactly as it carries this machine's own
+/// traffic. It stands only while the access point does.
 /// </summary>
-internal sealed class HotspotGateway(DnsProxy proxy, IProxyOutbound outbound, int mtu, ILogger<HotspotGateway> logger) : IDisposable
+internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxyOutbound outbound, int mtu, Action<IPAddress> note, ILogger<HotspotGateway> logger) : IDisposable
 {
     private const string AdapterName = "AmneziaGeo Gateway";
-    // Address the adapter answers on. Only the stand-in prefix is routed into it, so nothing but what the clients
-    // open ever reaches it.
+    // Address the adapter answers on.
     private const string AdapterAddress = "172.31.72.1/24";
+    // Hop the adapter answers for, and the one its routes go through.
+    private const string AdapterHop = "172.31.72.2";
+    // Metric of the default route on the gateway. Every other way out of this machine is a better one, so nothing
+    // of its own goes here; sharing has none of the others to choose from and takes this one.
+    private const uint CarriedMetric = 9000;
     // Address sharing hands its clients by default; it is settable, so the machine is asked instead of assumed.
     private const string DefaultScope = "192.168.137.1";
     private const string ScopeKey = @"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters";
@@ -32,6 +37,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, IProxyOutbound outbound, in
     private HotspotProxy? _relay;
     private Process? _process;
     private IPAddress? _served;
+    private uint? _carried;
     private bool _reported;
 
     /// <summary>
@@ -79,6 +85,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, IProxyOutbound outbound, in
                 return;
             }
 
+            Carry();
             var point = Point();
             if (point is null)
             {
@@ -117,7 +124,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, IProxyOutbound outbound, in
             return;
         }
 
-        var relay = new HotspotProxy(_names, outbound, logger);
+        var relay = new HotspotProxy(_names, outbound, logger, note);
         if (!relay.Start())
         {
             relay.Dispose();
@@ -135,9 +142,72 @@ internal sealed class HotspotGateway(DnsProxy proxy, IProxyOutbound outbound, in
         logger.LogInformation("the gateway is up: the access point is shared over it, so what its clients open is opened again here and carried by the rules of this machine (proxy on port {Port})", relay.Port);
     }
 
+    // Gives sharing a way out for everything, not just the addresses this machine hands its clients: a client that
+    // dials an address it was never told - no name looked up, nothing to stand in for - reaches the gateway too and
+    // goes out under the same rules. Held only while this machine has a way out of its own to prefer, so what goes
+    // out of the gateway is never sent back into it.
+    private void Carry()
+    {
+        if (!Uplinked())
+        {
+            Uncarry();
+            return;
+        }
+
+        if (_carried is not null)
+        {
+            return;
+        }
+
+        var index = routes.FindInterfaceIndex(AdapterName);
+        if (index is null || !IPAddress.TryParse(AdapterHop, out var hop))
+        {
+            return;
+        }
+
+        if (routes.AddCarriedDefault(index.Value, hop, CarriedMetric))
+        {
+            _carried = index;
+        }
+    }
+
+    private void Uncarry()
+    {
+        if (_carried is not { } carried)
+        {
+            return;
+        }
+
+        _carried = null;
+        routes.RemoveCarriedDefault(carried);
+    }
+
+    // Whether another adapter of this machine still holds a way out.
+    private static bool Uplinked()
+    {
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up || nic.Name == AdapterName)
+            {
+                continue;
+            }
+
+            foreach (var hop in nic.GetIPProperties().GatewayAddresses)
+            {
+                if (hop.Address.AddressFamily == AddressFamily.InterNetwork && !hop.Address.Equals(IPAddress.Any))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private void Lower()
     {
         proxy.StopServingClients();
+        Uncarry();
         var process = _process;
         _process = null;
         if (process is not null)

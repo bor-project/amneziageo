@@ -134,6 +134,32 @@ public sealed class HotspotProxyTests : IDisposable
     }
 
     [Fact]
+    public async Task DatagramsToTwoDestinations_LeaveFromOnePort()
+    {
+        var proxy = Listen();
+        using var second = new EchoDatagrams();
+        var control = await DialAsync(proxy.Port);
+
+        await GreetAsync(control);
+        await control.SendAsync(Request(IPAddress.Any, 0, command: 3), SocketFlags.None);
+        var reply = await ReadAsync(control, 10);
+        var relay = new IPEndPoint(new IPAddress(reply[4..8]), (reply[8] << 8) | reply[9]);
+
+        using var sender = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var first = Wrap(IPAddress.Loopback, _datagrams.EndPoint.Port, "one"u8.ToArray());
+        await sender.SendAsync(first, first.Length, relay);
+        await sender.ReceiveAsync(timeout.Token);
+        var next = Wrap(IPAddress.Loopback, second.EndPoint.Port, "two"u8.ToArray());
+        await sender.SendAsync(next, next.Length, relay);
+        await sender.ReceiveAsync(timeout.Token);
+
+        // What a call needs: whoever the client talks to, it is seen at the same address.
+        Assert.NotNull(_datagrams.Seen);
+        Assert.Equal(_datagrams.Seen, second.Seen);
+    }
+
+    [Fact]
     public async Task WhenTheConnectionThatAskedForTheRelayGoes_TheRelayGoesWithIt()
     {
         var proxy = Listen();
@@ -362,6 +388,11 @@ public sealed class HotspotProxyTests : IDisposable
         /// </summary>
         public IPEndPoint EndPoint { get; }
 
+        /// <summary>
+        /// Where the last datagram came from.
+        /// </summary>
+        public IPEndPoint? Seen { get; private set; }
+
         /// <inheritdoc/>
         public void Dispose()
         {
@@ -377,6 +408,7 @@ public sealed class HotspotProxyTests : IDisposable
                 try
                 {
                     var received = await _socket.ReceiveAsync(_cts.Token);
+                    Seen = received.RemoteEndPoint;
                     await _socket.SendAsync(received.Buffer, received.RemoteEndPoint, _cts.Token);
                 }
                 catch (Exception)

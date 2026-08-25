@@ -477,7 +477,7 @@ internal sealed class TunnelRunner(
         // not. The gateway follows the point up and down, and goes away with this session.
         if (proxy is not null)
         {
-            var gateway = new HotspotGateway(proxy, new DirectProxyOutbound(), effectiveMtu, loggerFactory.CreateLogger<HotspotGateway>());
+            var gateway = new HotspotGateway(proxy, routes, new DirectProxyOutbound(), effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>());
             sessionCts.Token.Register(gateway.Dispose);
             _ = Task.Run(() => gateway.RunAsync(sessionCts.Token));
         }

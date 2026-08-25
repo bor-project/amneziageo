@@ -45,6 +45,7 @@ internal sealed class HotspotProxy : IDisposable
     private readonly HotspotNames _names;
     private readonly IProxyOutbound _outbound;
     private readonly ILogger _logger;
+    private readonly Action<IPAddress>? _note;
     private readonly object _sync = new();
     private Socket? _listener;
     private CancellationTokenSource? _life;
@@ -52,11 +53,12 @@ internal sealed class HotspotProxy : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public HotspotProxy(HotspotNames names, IProxyOutbound outbound, ILogger logger)
+    public HotspotProxy(HotspotNames names, IProxyOutbound outbound, ILogger logger, Action<IPAddress>? note = null)
     {
         _names = names;
         _outbound = outbound;
         _logger = logger;
+        _note = note;
     }
 
     /// <summary>
@@ -196,6 +198,7 @@ internal sealed class HotspotProxy : IDisposable
     // Opens one destination and carries the connection until either end goes quiet.
     private async Task ConnectAsync(Socket client, Request request, CancellationToken ct)
     {
+        Route(request);
         var target = Target(request);
         _logger.LogDebug("a client of the access point is opening {Target}:{Port}", target, request.Port);
         var (link, outcome) = await _outbound.ConnectAsync(target, request.Port, ct).ConfigureAwait(false);
@@ -313,8 +316,8 @@ internal sealed class HotspotProxy : IDisposable
         }
     }
 
-    // Carries out what the gateway sends, each destination on a socket of its own so an answer can be stamped
-    // with the address the client sent to.
+    // Carries out what the gateway sends. Every destination of one client flow rides one socket, so this machine
+    // is seen at the same address whoever the client talks to - what a call needs for the other side to answer.
     private async Task PumpAsync(UdpClient relay, ConcurrentDictionary<string, Flow> flows, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -334,51 +337,48 @@ internal sealed class HotspotProxy : IDisposable
                 continue;
             }
 
-            var key = string.Concat(received.RemoteEndPoint.ToString(), "|", request.Host, ":", request.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            if (flows.TryGetValue(key, out var flow))
+            var flow = Opened(flows, relay, received.RemoteEndPoint, ct);
+            if (flow is null)
             {
-                await flow.SendAsync(payload, ct).ConfigureAwait(false);
                 continue;
             }
 
-            var opened = new Flow(wrapper, relay, received.RemoteEndPoint);
-            if (!flows.TryAdd(key, opened))
-            {
-                opened.Dispose();
-                continue;
-            }
-
-            // Resolving off this loop keeps one slow name from holding up every other flow of the association.
-            // What arrives for this destination meanwhile is dropped and the client sends it again.
-            _ = OpenAsync(opened, Target(request), request.Port, payload, ct);
+            Route(request);
+            flow.Carry(wrapper, Target(request), request.Port, payload, ct);
         }
     }
 
-    // Resolves the destination, carries the first datagram and reads the answers back.
-    private async Task OpenAsync(Flow flow, string target, int port, byte[] payload, CancellationToken ct)
+    // The flow this port's datagrams ride, opened the first time the port is seen.
+    private Flow? Opened(ConcurrentDictionary<string, Flow> flows, UdpClient relay, IPEndPoint gateway, CancellationToken ct)
     {
-        try
+        var key = gateway.ToString();
+        if (flows.TryGetValue(key, out var known))
         {
-            using var resolving = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            resolving.CancelAfter(ResolveTimeoutMs);
-            var addresses = IPAddress.TryParse(target, out var literal)
-                ? [literal]
-                : await Dns.GetHostAddressesAsync(target, AddressFamily.InterNetwork, resolving.Token).ConfigureAwait(false);
-            if (addresses.Length == 0)
-            {
-                flow.Dispose();
-                return;
-            }
+            return known;
+        }
 
-            flow.Open(new IPEndPoint(addresses[0], port));
-            _logger.LogDebug("a client of the access point sent to {Target}:{Port}", target, port);
-            await flow.SendAsync(payload, ct).ConfigureAwait(false);
-            await flow.ReadAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception)
+        var opened = new Flow(relay, gateway, _logger);
+        if (!flows.TryAdd(key, opened))
         {
-            flow.Dispose();
+            opened.Dispose();
+            return null;
         }
+
+        opened.Start(ct);
+        return opened;
+    }
+
+    // Puts an address the client named under the rules before anything is opened to it. A name is decided by the
+    // resolver on the way in; an address nobody looked up is decided nowhere else, and its first packet would leave
+    // before the route it needs exists.
+    private void Route(Request request)
+    {
+        if (request.Literal is null || HotspotNames.Covers(request.Literal))
+        {
+            return;
+        }
+
+        _note?.Invoke(request.Literal);
     }
 
     // The name a stand-in address was handed out for, or what the client named as it is.
@@ -513,12 +513,14 @@ internal sealed class HotspotProxy : IDisposable
     }
 
     /// <summary>
-    /// One destination of one association: the socket it is reached on and the wrapper its answers carry back.
+    /// One flow of one client: every destination it reaches rides a single socket, so this machine is seen at one
+    /// address whoever it talks to. Each answer carries back the wrapper naming the address the client wrote to.
     /// </summary>
-    private sealed class Flow(byte[] wrapper, UdpClient relay, IPEndPoint gateway) : IDisposable
+    private sealed class Flow(UdpClient relay, IPEndPoint gateway, ILogger logger) : IDisposable
     {
-        private readonly UdpClient _socket = new(new IPEndPoint(IPAddress.Any, 0));
-        private volatile IPEndPoint? _target;
+        private readonly Socket _socket = Bind();
+        private readonly ConcurrentDictionary<string, IPEndPoint> _peers = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<IPEndPoint, byte[]> _wrappers = new();
         private long _touched = Environment.TickCount64;
 
         /// <summary>
@@ -527,55 +529,119 @@ internal sealed class HotspotProxy : IDisposable
         public bool Idle => Environment.TickCount64 - Interlocked.Read(ref _touched) > FlowIdleMs;
 
         /// <summary>
-        /// Points the flow at the destination the name resolved to.
+        /// Starts carrying answers back.
         /// </summary>
-        public void Open(IPEndPoint target)
+        public void Start(CancellationToken ct)
         {
-            _socket.Client.IOControl(SioUdpConnReset, new byte[4], null);
-            _target = target;
+            _ = ReadAsync(ct);
         }
 
         /// <summary>
-        /// Sends one datagram out; nothing leaves before the destination is known.
+        /// Sends one datagram to the destination it names, opening that destination the first time it is seen.
         /// </summary>
-        public async Task SendAsync(byte[] payload, CancellationToken ct)
+        public void Carry(byte[] wrapper, string target, int port, byte[] payload, CancellationToken ct)
         {
-            var target = _target;
-            if (target is null)
+            Interlocked.Exchange(ref _touched, Environment.TickCount64);
+            var key = string.Concat(target, ":", port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (_peers.TryGetValue(key, out var peer))
             {
+                _ = SendAsync(peer, payload, ct);
                 return;
             }
 
-            Interlocked.Exchange(ref _touched, Environment.TickCount64);
-            try
-            {
-                await _socket.SendAsync(payload, target, ct).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        /// <summary>
-        /// Carries answers back to the gateway until the flow is dropped.
-        /// </summary>
-        public async Task ReadAsync(CancellationToken ct)
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                var received = await _socket.ReceiveAsync(ct).ConfigureAwait(false);
-                Interlocked.Exchange(ref _touched, Environment.TickCount64);
-                var answer = new byte[wrapper.Length + received.Buffer.Length];
-                wrapper.CopyTo(answer, 0);
-                received.Buffer.CopyTo(answer, wrapper.Length);
-                await relay.SendAsync(answer, gateway, ct).ConfigureAwait(false);
-            }
+            // Resolving off the pump keeps one slow name from holding up every other flow of the association.
+            // What arrives for this destination meanwhile is dropped and the client sends it again.
+            _ = OpenAsync(key, wrapper, target, port, payload, ct);
         }
 
         /// <inheritdoc/>
         public void Dispose()
         {
             _socket.Dispose();
+        }
+
+        private static Socket Bind()
+        {
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            socket.IOControl(SioUdpConnReset, new byte[4], null);
+            socket.Bind(new IPEndPoint(IPAddress.Any, 0));
+            return socket;
+        }
+
+        // Resolves a destination and remembers both where it is and how the client named it.
+        private async Task OpenAsync(string key, byte[] wrapper, string target, int port, byte[] payload, CancellationToken ct)
+        {
+            try
+            {
+                using var resolving = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                resolving.CancelAfter(ResolveTimeoutMs);
+                var addresses = IPAddress.TryParse(target, out var literal)
+                    ? [literal]
+                    : await Dns.GetHostAddressesAsync(target, AddressFamily.InterNetwork, resolving.Token).ConfigureAwait(false);
+                if (addresses.Length == 0)
+                {
+                    return;
+                }
+
+                var peer = new IPEndPoint(addresses[0], port);
+                _peers[key] = peer;
+                _wrappers[peer] = wrapper;
+                logger.LogDebug("a client of the access point sent to {Target}:{Port}", target, port);
+                await SendAsync(peer, payload, ct).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private async Task SendAsync(IPEndPoint peer, byte[] payload, CancellationToken ct)
+        {
+            Interlocked.Exchange(ref _touched, Environment.TickCount64);
+            try
+            {
+                await _socket.SendToAsync(payload, peer, ct).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        // Carries answers back to the gateway, each stamped with the address the client wrote to, so what it reads
+        // comes from where it sent.
+        private async Task ReadAsync(CancellationToken ct)
+        {
+            var buffer = new byte[RelayBuffer];
+            var any = new IPEndPoint(IPAddress.Any, 0);
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    var received = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, any, ct).ConfigureAwait(false);
+                    Interlocked.Exchange(ref _touched, Environment.TickCount64);
+                    var from = (IPEndPoint)received.RemoteEndPoint;
+                    var wrapper = _wrappers.TryGetValue(from, out var written) ? written : Wrap(from);
+                    var answer = new byte[wrapper.Length + received.ReceivedBytes];
+                    wrapper.CopyTo(answer, 0);
+                    buffer.AsSpan(0, received.ReceivedBytes).CopyTo(answer.AsSpan(wrapper.Length));
+                    await relay.SendAsync(answer, gateway, ct).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+            }
+        }
+
+        // Header naming where a datagram came from, for an answer off an address the client never wrote to.
+        private static byte[] Wrap(IPEndPoint from)
+        {
+            var octets = from.Address.GetAddressBytes();
+            var header = new byte[6 + octets.Length];
+            header[3] = octets.Length == 4 ? AddressIpV4 : AddressIpV6;
+            octets.CopyTo(header, 4);
+            header[^2] = (byte)(from.Port >> 8);
+            header[^1] = (byte)(from.Port & 0xFF);
+            return header;
         }
     }
 

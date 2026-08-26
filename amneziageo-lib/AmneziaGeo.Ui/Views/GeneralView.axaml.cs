@@ -32,15 +32,6 @@ internal sealed partial class GeneralView : UserControl
         await launcher.LaunchUriAsync(new Uri(vm.ProjectUrl));
     }
 
-    // Puts one address on the clipboard, so it can be pasted into the client that has to use it.
-    private async void OnCopyProxyEndpoint(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: ProxyEndpointRow row })
-        {
-            await ExportActions.CopyToClipboardAsync(this, row.Value);
-        }
-    }
-
     // Builds the diagnostics archive and offers it for saving. The agent writes it under its own account, and a
     // copy the user can reach is what support gets.
     private async void OnCollectDiagnostics(object? sender, RoutedEventArgs e)

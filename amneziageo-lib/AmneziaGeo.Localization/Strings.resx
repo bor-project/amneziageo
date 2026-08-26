@@ -175,6 +175,9 @@
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
   </data>
+  <data name="General_ShareSection" xml:space="preserve">
+    <value>Sharing</value>
+  </data>
   <data name="General_ShareTabProxy" xml:space="preserve">
     <value>Proxy</value>
   </data>
@@ -264,6 +267,9 @@
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Retry interval</value>
+  </data>
+  <data name="General_ReconnectIntervalHint" xml:space="preserve">
+    <value>Pause between connection attempts.</value>
   </data>
   <data name="General_Seconds" xml:space="preserve">
     <value>sec</value>
@@ -825,6 +831,12 @@
   </data>
   <data name="Main_RailConfigTitle" xml:space="preserve">
     <value>Configurations</value>
+  </data>
+  <data name="Main_RailConnectionsSubtitle" xml:space="preserve">
+    <value>Tunnel, proxy and access point</value>
+  </data>
+  <data name="Main_RailConnectionsTitle" xml:space="preserve">
+    <value>Connections</value>
   </data>
   <data name="Main_RailGeneralSubtitle" xml:space="preserve">
     <value>Appearance and info</value>

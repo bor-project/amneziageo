@@ -175,6 +175,9 @@
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Показать пароль</value>
   </data>
+  <data name="General_ShareSection" xml:space="preserve">
+    <value>Раздача</value>
+  </data>
   <data name="General_ShareTabProxy" xml:space="preserve">
     <value>Прокси</value>
   </data>
@@ -264,6 +267,9 @@
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Интервал повтора</value>
+  </data>
+  <data name="General_ReconnectIntervalHint" xml:space="preserve">
+    <value>Пауза между попытками подключения.</value>
   </data>
   <data name="General_Seconds" xml:space="preserve">
     <value>с</value>
@@ -825,6 +831,12 @@
   </data>
   <data name="Main_RailConfigTitle" xml:space="preserve">
     <value>Конфигурации</value>
+  </data>
+  <data name="Main_RailConnectionsSubtitle" xml:space="preserve">
+    <value>Туннель, прокси и точка доступа</value>
+  </data>
+  <data name="Main_RailConnectionsTitle" xml:space="preserve">
+    <value>Подключения</value>
   </data>
   <data name="Main_RailGeneralSubtitle" xml:space="preserve">
     <value>Оформление и сведения</value>

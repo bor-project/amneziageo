@@ -239,6 +239,9 @@
               <TextBlock Text="{l:Tr Main_RoutingSection}" IsVisible="{Binding IsSettingsRouting}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr General_ProxySection}" IsVisible="{Binding IsSettingsConnections}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
               <TextBlock Text="{l:Tr Main_SourcesSection}" IsVisible="{Binding IsSettingsSources}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
@@ -314,6 +317,25 @@
                   <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailRoutingTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailRoutingSubtitle}" FontSize="11.5" Classes="muted"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+
+              <Button Classes="rowselect" Classes.active="{Binding IsSettingsConnections}" Margin="0,3"
+                      Command="{Binding SelectSettingsCommand}" CommandParameter="connections">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,7">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
+                    <Ellipse Width="16" Height="16" StrokeThickness="2"
+                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                             IsVisible="{Binding IsSettingsConnections}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Grid>
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
+                    <TextBlock Text="{l:Tr Main_RailConnectionsTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailConnectionsSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -410,6 +432,16 @@
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:RoutingViewModel">
                   <views:RoutingView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+
+            <!-- CONNECTIONS SECTION -->
+            <ContentControl IsVisible="{Binding IsSettingsConnections}" Content="{Binding Connections}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:ConnectionsViewModel">
+                  <views:ConnectionsView />
                 </DataTemplate>
               </ContentControl.ContentTemplate>
             </ContentControl>

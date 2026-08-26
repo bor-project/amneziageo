@@ -160,12 +160,13 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     ];
 
     /// <summary>
-    /// Way of sharing the section shows.
+    /// Tab the section shows.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTunnelTab))]
     [NotifyPropertyChangedFor(nameof(IsProxyTab))]
     [NotifyPropertyChangedFor(nameof(IsWifiTab))]
-    private string _shareTab = ProxyTab;
+    private string _shareTab = DefaultTab();
 
     /// <summary>
     /// Whether the access point is asked for.
@@ -256,9 +257,25 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     public bool CanShareHotspot => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
 
     /// <summary>
-    /// Whether the proxy tab is shown; without an access point it is the whole section.
+    /// Whether the section has more than one tab to switch between.
     /// </summary>
-    public bool IsProxyTab => !CanShareHotspot || ShareTab == ProxyTab;
+    public bool HasConnectionTabs => CanConfigureConnection || CanShareHotspot;
+
+    /// <summary>
+    /// Caption of the tunnel tab; empty where the tunnel settings are not offered, which drops the tab.
+    /// </summary>
+    public string TunnelTabText =>
+        CanConfigureConnection ? Loc.Instance.Get("General_TunnelSection") : string.Empty;
+
+    /// <summary>
+    /// Whether the tunnel tab is shown.
+    /// </summary>
+    public bool IsTunnelTab => CanConfigureConnection && ShareTab == TunnelTab;
+
+    /// <summary>
+    /// Whether the proxy tab is shown; with a single tab it is the whole section.
+    /// </summary>
+    public bool IsProxyTab => !HasConnectionTabs || ShareTab == ProxyTab;
 
     /// <summary>
     /// Whether the access point tab is shown.
@@ -334,8 +351,12 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     public string HotspotClientsText => Loc.Instance.Get("General_HotspotClientsOf", HotspotClientCount, HotspotMaxClients);
 
     // Tabs the section stands on.
+    private const string TunnelTab = "tunnel";
     private const string ProxyTab = "proxy";
     private const string WifiTab = "wifi";
+
+    // Opens the section on the tunnel where it is offered, on the proxy elsewhere.
+    private static string DefaultTab() => OperatingSystem.IsWindows() ? TunnelTab : ProxyTab;
 
     // Band the picked row stands for.
     private string BandToken => SelectedBandIndex switch
@@ -463,7 +484,7 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Turns the section to one of the ways of sharing.
+    /// Turns the section to one of its tabs.
     /// </summary>
     [RelayCommand]
     private void SelectShareTab(string tab)

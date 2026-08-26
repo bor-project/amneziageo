@@ -175,9 +175,6 @@
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
   </data>
-  <data name="General_ShareSection" xml:space="preserve">
-    <value>Sharing</value>
-  </data>
   <data name="General_ShareTabProxy" xml:space="preserve">
     <value>Proxy</value>
   </data>

@@ -62,6 +62,7 @@ internal static class AppHost
             builder.Services.AddHostedService<LogLevelBackgroundWatcher>();
             builder.Services.AddHostedService<LogMaintenanceService>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<LocalProxyService>());
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<WindowsHotspotService>());
         }
 
         return builder.Build();
@@ -101,6 +102,7 @@ internal static class AppHost
         services.AddSingleton<DiagnosticsCollector>();
         services.AddSingleton<CheckService>();
         services.AddSingleton<LocalProxyService>();
+        services.AddSingleton<WindowsHotspotService>();
         services.AddSingleton<AgentStatusBroker>();
         services.AddSingleton<Cli>();
     }

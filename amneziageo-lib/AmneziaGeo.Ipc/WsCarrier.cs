@@ -10,6 +10,37 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
+/// How a websocket front answered an attempt to open a tunnel through it.
+/// </summary>
+public enum WsFrontOutcome
+{
+    /// <summary>
+    /// The front accepted the upgrade.
+    /// </summary>
+    Ok,
+
+    /// <summary>
+    /// The front's name carries no address, or it does not resolve.
+    /// </summary>
+    NoAddress,
+
+    /// <summary>
+    /// Nothing answered before the timeout, or the connection was refused.
+    /// </summary>
+    NoAnswer,
+
+    /// <summary>
+    /// TLS did not come up under the front's own name.
+    /// </summary>
+    Tls,
+
+    /// <summary>
+    /// The front answered and refused the upgrade.
+    /// </summary>
+    Refused,
+}
+
+/// <summary>
 /// Carries a tunnel's UDP inside a websocket to a wstunnel front, so a network that passes nothing but web
 /// traffic still carries the tunnel. The engine dials the loopback port this binds, and every datagram travels
 /// as one websocket message. The carrier opens on the first datagram and reopens itself after a drop, which
@@ -33,6 +64,11 @@ public sealed class WsCarrier : IDisposable
     private const int MaxHeaderBytes = 8192;
     private const int ConnectTimeoutMs = 8000;
     private const int RetryGapMs = 1000;
+    private const int LoopbackProbeMs = 300;
+
+    // How long the front may say nothing at all before the websocket counts as gone: it pings on its own every
+    // half minute, so silence this long is a connection that stands in name only.
+    private const int SilenceMs = 75000;
 
     private const byte OpBinary = 0x2;
     private const byte OpClose = 0x8;
@@ -53,9 +89,11 @@ public sealed class WsCarrier : IDisposable
     private readonly Socket _local;
     private readonly byte[] _outgoing = new byte[MaxDatagram + FrameOverhead];
     private readonly CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _sending = new(1, 1);
     private Stream? _stream;
     private EndPoint? _engine;
     private long _attempted;
+    private long _heard;
     private bool _disposed;
 
     /// <summary>
@@ -87,6 +125,26 @@ public sealed class WsCarrier : IDisposable
         var carrier = new WsCarrier(front, address, targetPort, bypass, note);
         _ = Task.Run(() => carrier.PumpAsync(carrier._cts.Token));
         return carrier;
+    }
+
+    /// <summary>
+    /// Whether a datagram crosses the loopback. The engine hands the carrier every packet on 127.0.0.1, so a
+    /// firewall that drops UDP there leaves the carrier nothing to carry.
+    /// </summary>
+    public static bool LoopbackCarries()
+    {
+        try
+        {
+            using var listener = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            listener.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            using var sender = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            sender.SendTo(new byte[1], listener.LocalEndPoint!);
+            return listener.Poll(TimeSpan.FromMilliseconds(LoopbackProbeMs), SelectMode.SelectRead);
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -156,31 +214,74 @@ public sealed class WsCarrier : IDisposable
         var from = new IPEndPoint(IPAddress.Loopback, 0);
         while (!ct.IsCancellationRequested)
         {
+            var stream = default(Stream);
             try
             {
                 var received = await _local.ReceiveFromAsync(buffer, SocketFlags.None, from, ct).ConfigureAwait(false);
                 _engine = received.RemoteEndPoint;
-                var stream = await ReadyAsync(ct).ConfigureAwait(false);
+                stream = await ReadyAsync(ct).ConfigureAwait(false);
                 if (stream is null)
                 {
                     continue;
                 }
 
+                if (Environment.TickCount64 - Volatile.Read(ref _heard) > SilenceMs)
+                {
+                    _note?.Invoke($"nothing has come back from {_front.Host}:{_front.Port} for {SilenceMs / 1000} s, so the websocket is opened again", null);
+                    Drop(stream, null);
+                    continue;
+                }
+
                 var length = Encode(_outgoing, buffer.AsSpan(0, received.ReceivedBytes), OpBinary);
-                await stream.WriteAsync(_outgoing.AsMemory(0, length), ct).ConfigureAwait(false);
+                await SendAsync(stream, _outgoing.AsMemory(0, length), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException) when (_disposed)
             {
                 return;
             }
-            catch (Exception ex) when (ex is SocketException or IOException)
+            catch (Exception ex)
             {
-                Drop(ex);
+                // Whatever ends one websocket, the carrier holds its port and opens another one on the next
+                // datagram; only a carrier taken down stops the pump.
+                if (stream is null)
+                {
+                    _note?.Invoke($"the carrier's own port {LocalPort} refused a datagram", ex);
+                }
+
+                Drop(stream, ex);
+                await PauseAsync(ct).ConfigureAwait(false);
             }
+        }
+    }
+
+    // One frame on the wire. Datagrams and the answers to the front's pings come from two loops, and the stream
+    // carries one write at a time.
+    private async Task SendAsync(Stream stream, ReadOnlyMemory<byte> frame, CancellationToken ct)
+    {
+        await _sending.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await stream.WriteAsync(frame, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _sending.Release();
+        }
+    }
+
+    // Waits out the retry gap without turning a carrier taken down into a failure.
+    private static async Task PauseAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(RetryGapMs, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -205,47 +306,90 @@ public sealed class WsCarrier : IDisposable
             return null;
         }
 
+        Volatile.Write(ref _heard, Environment.TickCount64);
         _stream = opened;
         _ = Task.Run(() => DeliverAsync(opened, ct));
         return opened;
     }
 
-    // One websocket to the front: a connect to the resolved address, TLS under the front's own name, the upgrade.
-    private async Task<Stream?> OpenAsync(CancellationToken ct)
+    /// <summary>
+    /// Asks a front the same question the carrier asks on its first datagram and drops the answer. Nothing is
+    /// carried, so an address can be checked before a tunnel is built on it.
+    /// </summary>
+    public static async Task<(WsFrontOutcome Outcome, string Detail)> ProbeAsync(
+        WsEndpoint front, IPAddress address, int targetPort, Func<Socket, bool>? bypass, CancellationToken ct)
     {
-        var socket = new Socket(_address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        var dial = await DialAsync(front, address, targetPort, bypass, ct).ConfigureAwait(false);
+        if (dial.Stream is { } stream)
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+
+        return (dial.Outcome, dial.Detail);
+    }
+
+    // One websocket to the front: a connect to the resolved address, TLS under the front's own name, the upgrade.
+    private static async Task<(Stream? Stream, WsFrontOutcome Outcome, string Detail, Exception? Error)> DialAsync(
+        WsEndpoint front, IPAddress address, int targetPort, Func<Socket, bool>? bypass, CancellationToken ct)
+    {
+        var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try
         {
-            _bypass?.Invoke(socket);
+            bypass?.Invoke(socket);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(ConnectTimeoutMs);
-            await socket.ConnectAsync(new IPEndPoint(_address, _front.Port), deadline.Token).ConfigureAwait(false);
+            await socket.ConnectAsync(new IPEndPoint(address, front.Port), deadline.Token).ConfigureAwait(false);
             var tls = new SslStream(new NetworkStream(socket, ownsSocket: true));
-            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = _front.Host }, deadline.Token).ConfigureAwait(false);
+            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = front.Host }, deadline.Token).ConfigureAwait(false);
             var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
-            await tls.WriteAsync(Encoding.ASCII.GetBytes(Handshake(_front, _targetPort, key)), deadline.Token).ConfigureAwait(false);
+            await tls.WriteAsync(Encoding.ASCII.GetBytes(Handshake(front, targetPort, key)), deadline.Token).ConfigureAwait(false);
             var answer = await HeaderAsync(tls, deadline.Token).ConfigureAwait(false);
             if (!Accepted(answer, key))
             {
-                _note?.Invoke($"the websocket front at {_front.Host}:{_front.Port} refused to carry the tunnel: {FirstLine(answer)}", null);
                 await tls.DisposeAsync().ConfigureAwait(false);
-                return null;
+                return (null, WsFrontOutcome.Refused, FirstLine(answer), null);
             }
 
-            _note?.Invoke($"the tunnel is carried inside a websocket to {_front.Host}:{_front.Port} and handed to port {_targetPort} on the server", null);
-            return tls;
+            return (tls, WsFrontOutcome.Ok, string.Empty, null);
         }
         catch (OperationCanceledException)
         {
             socket.Dispose();
-            _note?.Invoke($"the websocket front at {_front.Host}:{_front.Port} did not answer in time", null);
-            return null;
+            return (null, WsFrontOutcome.NoAnswer, string.Empty, null);
         }
-        catch (Exception ex) when (ex is SocketException or IOException or AuthenticationException or ObjectDisposedException)
+        catch (AuthenticationException ex)
         {
             socket.Dispose();
-            _note?.Invoke($"the websocket front at {_front.Host}:{_front.Port} could not be opened", ex);
-            return null;
+            return (null, WsFrontOutcome.Tls, ex.Message, ex);
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+        {
+            socket.Dispose();
+            return (null, WsFrontOutcome.NoAnswer, string.Empty, ex);
+        }
+    }
+
+    // The carrier's own dial, with the outcome written to the log the way the tunnel reads it.
+    private async Task<Stream?> OpenAsync(CancellationToken ct)
+    {
+        var dial = await DialAsync(_front, _address, _targetPort, _bypass, ct).ConfigureAwait(false);
+        var front = $"{_front.Host}:{_front.Port}";
+        switch (dial.Outcome)
+        {
+            case WsFrontOutcome.Ok:
+                _note?.Invoke($"the tunnel is carried inside a websocket to {front} and handed to port {_targetPort} on the server", null);
+                return dial.Stream;
+            case WsFrontOutcome.Refused:
+                _note?.Invoke($"the websocket front at {front} refused to carry the tunnel: {dial.Detail}", null);
+                return null;
+            case WsFrontOutcome.Tls:
+                _note?.Invoke($"the websocket front at {front} did not come up under TLS", dial.Error);
+                return null;
+            default:
+                _note?.Invoke(dial.Error is null
+                    ? $"the websocket front at {front} did not answer in time"
+                    : $"the websocket front at {front} could not be opened", dial.Error);
+                return null;
         }
     }
 
@@ -260,6 +404,7 @@ public sealed class WsCarrier : IDisposable
             while (!ct.IsCancellationRequested)
             {
                 await ReadAsync(stream, head.AsMemory(0, 2), ct).ConfigureAwait(false);
+                Volatile.Write(ref _heard, Environment.TickCount64);
                 var final = (head[0] & FinalBit) != 0;
                 var opcode = (byte)(head[0] & 0x0f);
                 var masked = (head[1] & MaskBit) != 0;
@@ -272,7 +417,14 @@ public sealed class WsCarrier : IDisposable
                 else if (length == 127)
                 {
                     await ReadAsync(stream, head.AsMemory(0, 8), ct).ConfigureAwait(false);
-                    length = (int)Math.Min(BinaryPrimitives.ReadUInt64BigEndian(head), MaxDatagram);
+                    var wide = BinaryPrimitives.ReadUInt64BigEndian(head);
+                    if (wide > MaxDatagram)
+                    {
+                        // Reading part of a frame leaves the rest of it to be read as the next one.
+                        throw new IOException($"the websocket front sent a frame of {wide} bytes");
+                    }
+
+                    length = (int)wide;
                 }
 
                 var mask = new byte[4];
@@ -292,14 +444,14 @@ public sealed class WsCarrier : IDisposable
 
                 if (opcode == OpClose)
                 {
-                    Drop(null);
+                    Drop(stream, null);
                     return;
                 }
 
                 if (opcode == OpPing)
                 {
                     var pong = new byte[length + FrameOverhead];
-                    await stream.WriteAsync(pong.AsMemory(0, Encode(pong, payload.AsSpan(0, length), OpPong)), ct).ConfigureAwait(false);
+                    await SendAsync(stream, pong.AsMemory(0, Encode(pong, payload.AsSpan(0, length), OpPong)), ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -329,9 +481,9 @@ public sealed class WsCarrier : IDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+        catch (Exception ex)
         {
-            Drop(ex);
+            Drop(stream, ex);
         }
     }
 
@@ -387,16 +539,17 @@ public sealed class WsCarrier : IDisposable
         return line > 0 ? answer[..line] : answer.Trim();
     }
 
-    // Ends the websocket; the next datagram opens another one.
-    private void Drop(Exception? ex)
+    // Ends one websocket; the next datagram opens another. A stream already replaced is left where it is, or a
+    // loop ending late would take down the connection that replaced it.
+    private void Drop(Stream? ended, Exception? ex)
     {
-        var stream = Interlocked.Exchange(ref _stream, null);
-        if (stream is null)
+        if (ended is null || Interlocked.CompareExchange(ref _stream, null, ended) != ended)
         {
+            ended?.Dispose();
             return;
         }
 
-        stream.Dispose();
+        ended.Dispose();
         if (!_disposed)
         {
             _note?.Invoke($"the websocket to {_front.Host}:{_front.Port} ended; the tunnel opens another one on its next packet", ex);
@@ -413,8 +566,9 @@ public sealed class WsCarrier : IDisposable
 
         _disposed = true;
         _cts.Cancel();
-        Drop(null);
+        Drop(Volatile.Read(ref _stream), null);
         _local.Dispose();
         _cts.Dispose();
+        _sending.Dispose();
     }
 }

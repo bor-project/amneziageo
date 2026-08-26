@@ -119,4 +119,28 @@ public sealed record StatusSnapshot(
     // Configurations auto-switching passes over, one name per line.
     string FailoverSkipped = "",
     // Tunnels a connect raises when it names none, one per line: the set the last connection left up.
-    string KeptTunnels = "");
+    string KeptTunnels = "",
+    // How the tunnel reaches other devices: lan, wifi, or both.
+    string ShareMode = ShareModes.Default,
+    // Whether a wired subnet is asked for; the gateway behind it is not built yet.
+    bool ShareEthernet = false,
+    // Whether this machine can raise an access point.
+    bool HotspotSupported = false,
+    // Why it cannot (HotspotReasons token); empty while it can.
+    string HotspotReason = HotspotReasons.Ready,
+    // Whether the access point is up.
+    bool HotspotRunning = false,
+    // Why the access point is down; empty while it holds.
+    string HotspotError = "",
+    // Network name of the access point.
+    string HotspotSsid = "",
+    // Password of the access point.
+    string HotspotPassword = "",
+    // Band asked for: auto, 2.4, or 5.
+    string HotspotBand = HotspotBands.Auto,
+    // Band the access point took; differs from the one asked for when the adapter already holds a channel.
+    string HotspotBandActual = "",
+    // Devices on the access point right now.
+    int HotspotClients = 0,
+    // How many devices the access point admits.
+    int HotspotMaxClients = 0);

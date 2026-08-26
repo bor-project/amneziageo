@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -2787,7 +2787,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             FailoverEnabled: settings.FailoverEnabled,
             FailoverReturnMinutes: settings.FailoverReturnMinutes,
             FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)),
-            KeptTunnels: NameList.Prune(await store.GetSettingAsync(StateKeys.KeptTunnels, ct), configs.Select(entry => entry.Name)));
+            KeptTunnels: NameList.Prune(await store.GetSettingAsync(StateKeys.KeptTunnels, ct), configs.Select(entry => entry.Name)),
+            ShareMode: settings.ShareMode,
+            ShareEthernet: settings.ShareEthernet,
+            HotspotSupported: hotspot.Supported,
+            HotspotReason: hotspot.Reason,
+            HotspotRunning: hotspot.Running,
+            HotspotError: hotspot.Error,
+            HotspotSsid: settings.HotspotSsid,
+            HotspotPassword: settings.HotspotPassword,
+            HotspotBand: settings.HotspotBand,
+            HotspotBandActual: hotspot.BandActual,
+            HotspotClients: hotspot.Clients,
+            HotspotMaxClients: hotspot.MaxClients);
     }
 
     private static string DisplayStatus(string profileStatus)

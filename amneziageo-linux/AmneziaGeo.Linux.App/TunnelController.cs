@@ -16,6 +16,11 @@ namespace AmneziaGeo.Linux.App;
 internal readonly record struct PeerCounters(long HandshakeUnix, long RxBytes, long TxBytes);
 
 /// <summary>
+/// A refused connect: what it was refused for, and the text that says it.
+/// </summary>
+internal readonly record struct TunnelFailure(ConnectFailureReason Reason, string Detail);
+
+/// <summary>
 /// Brings the amneziawg-go interface up and down over UAPI and iproute2, and applies the routing rules the
 /// connection runs under.
 /// </summary>
@@ -81,21 +86,21 @@ internal sealed class TunnelController : IDisposable
     /// Brings the tunnel up from a wg-quick config under the given rules; returns null on success or the reason
     /// it was refused.
     /// </summary>
-    public async Task<string?> UpAsync(string configText, TunnelRouting routing, TunnelOptions options, CancellationToken ct)
+    public async Task<TunnelFailure?> UpAsync(string configText, TunnelRouting routing, TunnelOptions options, CancellationToken ct)
     {
-        var blocker = Preflight();
-        if (blocker is not null)
+        var blocker = Preflight(options.Transport);
+        if (blocker is { } refused)
         {
-            _log.Warn("tunnel", $"connect refused: {blocker}");
-            return blocker;
+            _log.Warn("tunnel", $"connect refused: {refused.Detail}");
+            return refused;
         }
 
-        var (resolved, endpointIp) = await ResolveEndpointAsync(configText, ct).ConfigureAwait(false);
+        var (resolved, endpointIp) = await ResolveEndpointAsync(configText, _log, ct).ConfigureAwait(false);
         var carrier = await CarrierAsync(options.Transport, configText, ct).ConfigureAwait(false);
-        if (carrier.Refusal is not null)
+        if (carrier.Refusal is { } refusal)
         {
-            _log.Warn("tunnel", $"connect refused: {carrier.Refusal}");
-            return carrier.Refusal;
+            _log.Warn("tunnel", $"connect refused: {refusal.Detail}");
+            return refusal;
         }
 
         if (carrier.Started is { } started)
@@ -104,6 +109,11 @@ internal sealed class TunnelController : IDisposable
             // tunnel is the front's, not the endpoint's.
             endpointIp = carrier.Address;
             resolved = WgConfigEditor.SetEndpoint(resolved, $"{Loopback}:{started.LocalPort}");
+        }
+        else if (endpointIp is null && WgConfigEditor.GetEndpoint(configText) is { Length: > 0 } named)
+        {
+            // The engine takes an address and nothing else, so a name left unresolved would come back as errno -22.
+            return Refused($"{named} does not resolve, so there is no address to dial");
         }
 
         var split = routing.Split && routing.HasRules;
@@ -118,7 +128,7 @@ internal sealed class TunnelController : IDisposable
         if (uapi is null)
         {
             carrier.Started?.Dispose();
-            return "the configuration carries no usable [Interface] PrivateKey";
+            return Refused("the configuration carries no usable [Interface] PrivateKey");
         }
 
         await DownAsync(ct).ConfigureAwait(false);
@@ -140,7 +150,7 @@ internal sealed class TunnelController : IDisposable
             if (!await WaitForSocketAsync(daemon, ct).ConfigureAwait(false))
             {
                 daemon.Dispose();
-                return $"amneziawg-go did not open {daemon.SocketPath}; its output is on the agent console";
+                return Refused($"amneziawg-go did not open {daemon.SocketPath}; its output is on the agent console");
             }
 
             await daemon.ConfigureAsync(uapi, ct).ConfigureAwait(false);
@@ -151,14 +161,14 @@ internal sealed class TunnelController : IDisposable
         {
             _log.Error("tunnel", "engine start failed", ex);
             daemon.Dispose();
-            return $"engine start failed: {ex.Message}";
+            return Refused($"engine start failed: {ex.Message}");
         }
 
         var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, ct).ConfigureAwait(false);
         if (failure is not null)
         {
             await DownAsync(ct).ConfigureAwait(false);
-            return failure;
+            return Refused(failure);
         }
 
         Advertised = allowedIps;
@@ -218,7 +228,7 @@ internal sealed class TunnelController : IDisposable
             return false;
         }
 
-        var (resolved, endpointIp) = await ResolveEndpointAsync(_sessionConfig, ct).ConfigureAwait(false);
+        var (resolved, endpointIp) = await ResolveEndpointAsync(_sessionConfig, _log, ct).ConfigureAwait(false);
         var endpoint = WgConfigEditor.GetEndpoint(resolved);
         var peer = PeerKeyHex(resolved);
         if (endpointIp is null || string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(peer))
@@ -441,21 +451,30 @@ internal sealed class TunnelController : IDisposable
     }
 
     // Refuses the connect with an actionable reason when the host cannot carry a tunnel.
-    private string? Preflight()
+    private TunnelFailure? Preflight(ConfigTransport? transport)
     {
         if (!File.Exists(_enginePath))
         {
-            return $"the amneziawg-go binary is missing at {_enginePath}; build it with amneziageo-linux/tools/build-engine-linux.sh and rebuild the agent";
+            return Refused($"the amneziawg-go binary is missing at {_enginePath}; build it with amneziageo-linux/tools/build-engine-linux.sh and rebuild the agent");
         }
 
         if (geteuid() != 0)
         {
-            return "creating the tunnel interface needs root; start the agent from \"Debug Linux\" with \"sudo\": true in .vscode/debug.linux.jsonc, or with: sudo dotnet AmneziaGeo.Linux.App.dll";
+            return Refused("creating the tunnel interface needs root; start the agent from \"Debug Linux\" with \"sudo\": true in .vscode/debug.linux.jsonc, or with: sudo dotnet AmneziaGeo.Linux.App.dll");
         }
 
         if (!File.Exists(TunDevice))
         {
-            return $"{TunDevice} is missing; load the module with: sudo modprobe tun";
+            return Refused($"{TunDevice} is missing; load the module with: sudo modprobe tun");
+        }
+
+        // The engine hands the carrier every packet on the loopback, so a firewall that drops UDP there leaves
+        // the tunnel silent with nothing to show for it.
+        if (transport?.UseWebSocket == true && !WsCarrier.LoopbackCarries())
+        {
+            return new TunnelFailure(
+                ConnectFailureReason.LoopbackBlocked,
+                $"UDP does not cross the loopback on this machine, and the engine dials the websocket carrier on {Loopback}; let UDP through on lo");
         }
 
         return null;
@@ -488,10 +507,13 @@ internal sealed class TunnelController : IDisposable
         return gateway is not null && IPAddress.TryParse(gateway, out var address) ? [address] : [];
     }
 
+    // Carries a refusal the agent has no cause of its own for.
+    private static TunnelFailure Refused(string detail) => new(ConnectFailureReason.ServiceStartFailed, detail);
+
     // The websocket carrier a configuration asks for: the engine dials it on the loopback and it wraps the
     // tunnel in web traffic the network lets through. The front is resolved here, before the tunnel takes over
     // the machine's routes, because a lookup made afterwards would travel inside the tunnel it is meant to open.
-    private async Task<(WsCarrier? Started, string? Address, string? Refusal)> CarrierAsync(ConfigTransport? transport, string configText, CancellationToken ct)
+    private async Task<(WsCarrier? Started, string? Address, TunnelFailure? Refusal)> CarrierAsync(ConfigTransport? transport, string configText, CancellationToken ct)
     {
         if (transport?.UseWebSocket != true)
         {
@@ -502,14 +524,14 @@ internal sealed class TunnelController : IDisposable
         var colon = endpoint.LastIndexOf(':');
         if (colon <= 0 || !int.TryParse(endpoint[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetPort))
         {
-            return (null, null, "this configuration asks to be carried inside a websocket, but its Endpoint names no port");
+            return (null, null, Refused("this configuration asks to be carried inside a websocket, but its Endpoint names no port"));
         }
 
         var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, endpoint[..colon].Trim('[', ']'));
         var address = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
         if (address is null || front.Port <= 0)
         {
-            return (null, null, $"the websocket front {front.Host}:{front.Port} has no address to dial");
+            return (null, null, Refused($"the websocket front {front.Host}:{front.Port} has no address to dial"));
         }
 
         var carrier = WsCarrier.Start(front, address, targetPort, null, Note);
@@ -555,7 +577,7 @@ internal sealed class TunnelController : IDisposable
     }
 
     // The engine does not resolve names, so a hostname endpoint is rewritten to its address.
-    private static async Task<(string Config, string? EndpointIp)> ResolveEndpointAsync(string config, CancellationToken ct)
+    private static async Task<(string Config, string? EndpointIp)> ResolveEndpointAsync(string config, AgentLog log, CancellationToken ct)
     {
         var endpoint = WgConfigEditor.GetEndpoint(config);
         var colon = endpoint?.LastIndexOf(':') ?? -1;
@@ -571,7 +593,17 @@ internal sealed class TunnelController : IDisposable
             return (config, literal.ToString());
         }
 
-        var addresses = await Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
+        var addresses = Array.Empty<IPAddress>();
+        try
+        {
+            addresses = await Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
+        }
+        catch (SocketException ex)
+        {
+            log.Warn("tunnel", $"{host} does not resolve: {ex.Message}");
+            return (config, null);
+        }
+
         var resolved = Array.Find(addresses, a => a.AddressFamily == AddressFamily.InterNetwork) ?? Array.Find(addresses, _ => true);
         return resolved is null
             ? (config, null)

@@ -900,7 +900,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : -1;
         var reading = bound ? _link : LinkReading.Empty;
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
-            WebSocket: false,
+            WebSocket: transport?.UseWebSocket ?? false,
             WebSocketHost: transport?.WebSocketHost ?? string.Empty,
             WebSocketPort: transport?.WebSocketPort ?? 443,
             Mtu: transport?.Mtu ?? 0,
@@ -1837,7 +1837,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // Stores the bundle's transport for a config; the websocket carrier stays off on Android.
+    // Stores the bundle's transport for a config.
     private async Task ApplyTransportAsync(string config, PortableBundle.TransportBlock? transport)
     {
         if (transport is null)
@@ -1846,7 +1846,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, false, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1860,18 +1860,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             new RoutingSettings(listId, settings.Exclusions, settings.AllUdp, "split")).ConfigureAwait(false);
     }
 
-    // Stores a config's tunnel MTU and IPv6 opt-in; both reach the tunnel builder on the next connect. The
-    // websocket carrier has no Android engine behind it and is refused rather than saved as a dead setting.
+    // Stores a config's websocket front, tunnel MTU and IPv6 opt-in; all reach the tunnel builder on the
+    // next connect.
     private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 3 || !_configs.ContainsKey(args[0]))
         {
             return Fail();
-        }
-
-        if (IsOn(args[1]))
-        {
-            return new IpcAck(false, Loc.Instance.Get("Android_WebSocketUnsupported"));
         }
 
         if (ParseRange(args[2], 1, 65535) is not { } port)
@@ -1889,7 +1884,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false);
         var useIpv6 = args.Count > 5 ? IsOn(args[5]) : previous?.UseIpv6 ?? false;
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], false, host, port, mtu, useIpv6)).ConfigureAwait(false);
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();

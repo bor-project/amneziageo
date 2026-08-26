@@ -8,9 +8,9 @@ Each platform builds on its own. The tunnel engine always comes first: the app p
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), [WiX](https://wixtoolset.org) for the installer, and git.
 
-### 1. Fetch the engine submodule
+### 1. Fetch the submodules
 
-The Windows AmneziaWG engine (`amneziawg-windows`) is a git submodule and is not part of the main checkout:
+Two things the build needs are git submodules and no part of the main checkout: the Windows AmneziaWG engine (`amneziawg-windows`), and `sing-tun`, the userspace network stack the access point gateway stands on:
 
 ```powershell
 git submodule update --init --recursive
@@ -30,7 +30,19 @@ The first run downloads everything it needs - Go, llvm-mingw and wintun via the 
 - `-Upstream` - build with stock Go, without Windows 7 support;
 - `-Force` - re-download and rebuild the toolchain.
 
-### 3. Build the app and installer
+### 3. Build the access point gateway
+
+`gateway.exe` carries the clients of the shared access point through a userspace stack, so what they send leaves this machine the way its own traffic does. It is a Go module in `amneziageo-windows\gateway` standing on the `sing-tun` submodule next to it:
+
+```powershell
+amneziageo-windows\tools\build-gateway.ps1
+```
+
+Go is taken from `PATH`, and failing that from the toolchain step 2 downloaded into `amneziawg-windows\.deps`. The build lands in `gateway\bin\<arch>\gateway.exe`, where the app picks it up; without it the app build stops and names this step. Options:
+
+- `-Arch x64|arm64|both` - target architecture, both by default.
+
+### 4. Build the app and installer
 
 ```powershell
 # app and service
@@ -52,7 +64,7 @@ By default one variant is built: `x64`, framework-dependent - the target machine
 
 ### Running in development
 
-The launcher brings up the backend agent and the UI in a single process with one command. Run it from an elevated console - it installs the service and the WFP rules and brings up the tunnel; it needs the `tunnel.dll` from step 2.
+The launcher brings up the backend agent and the UI in a single process with one command. Run it from an elevated console - it installs the service and the WFP rules and brings up the tunnel; it needs the `tunnel.dll` from step 2 and the `gateway.exe` from step 3.
 
 ```powershell
 dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher

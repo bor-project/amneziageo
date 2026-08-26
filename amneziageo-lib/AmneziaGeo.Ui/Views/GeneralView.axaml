@@ -119,140 +119,209 @@
            <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
            <Border Classes="hairline" />
 
-           <!-- Local proxy: the port other applications and devices point at (#238). -->
+           <!-- Connections: how other devices take the tunnel from this machine (#238). -->
            <StackPanel Spacing="12">
              <TextBlock Text="{l:Tr General_ProxySection}" FontWeight="SemiBold" FontSize="15" />
 
-             <StackPanel Spacing="4">
-               <controls:SettingSwitchRow Label="{l:Tr General_ProxyEnabled}" Description="{Binding ProxyEnabledHint}"
-                                          IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
-               <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                          IsVisible="{Binding ProxyNeedsTunnel}" />
-             </StackPanel>
+             <!-- One tab per way out of this machine; each stands on its own switch and works on its own.
+                  The platforms without an access point carry the proxy alone and never ask. -->
+             <controls:SegmentedSelector IsVisible="{Binding CanShareHotspot}"
+                 Command="{Binding SelectShareTabCommand}"
+                 IsCompact="{Binding IsCompact}"
+                 Item1Text="{l:Tr General_ShareTabProxy}" Item1Param="proxy" Item1Active="{Binding IsProxyTab}"
+                 Item2Text="{l:Tr General_ShareTabWifi}" Item2Param="wifi" Item2Active="{Binding IsWifiTab}" />
 
-             <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
-                        Foreground="{DynamicResource AgWarnBrush}"
-                        IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-             <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
-               <!-- Every address a client can be pointed at, each one copyable; the tunnel's own address is not
-                    among them - a neighbour told to use it reaches nobody. -->
-               <ItemsControl ItemsSource="{Binding ProxyEndpoints}">
-                 <ItemsControl.ItemTemplate>
-                   <DataTemplate x:DataType="vm:ProxyEndpointRow">
-                     <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
-                       <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="muted" FontSize="12"
-                                  VerticalAlignment="Center" />
-                       <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12.5"
-                                  VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                       <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                               Click="OnCopyProxyEndpoint" ToolTip.Tip="{l:Tr General_ProxyCopyTooltip}">
-                         <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
-                       </Button>
-                     </Grid>
-                   </DataTemplate>
-                 </ItemsControl.ItemTemplate>
-               </ItemsControl>
-
-               <!-- Each port box stands under its label, left-aligned. -->
-               <StackPanel Spacing="6">
-                 <TextBlock Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" />
-                 <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
-                          Text="{Binding ProxySocksPort, Mode=TwoWay}" />
+             <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->
+             <StackPanel Spacing="12" IsVisible="{Binding IsProxyTab}">
+               <StackPanel Spacing="4">
+                 <controls:SettingSwitchRow Label="{l:Tr General_ProxyEnabled}" Description="{l:Tr General_ProxyEnabledHint}"
+                                            IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
+                 <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                            IsVisible="{Binding ProxyNeedsTunnel}" />
                </StackPanel>
 
-               <StackPanel Spacing="6">
-                 <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" />
-                 <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
-                          Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
-               </StackPanel>
+               <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
+                          Foreground="{DynamicResource AgWarnBrush}"
+                          IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-               <!-- Clients: the count first, and who holds them under the arrow. -->
-               <StackPanel Spacing="6">
-                 <Grid ColumnDefinitions="Auto,Auto,*">
-                   <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyClients}" FontSize="13.5" VerticalAlignment="Center" />
-                   <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                           Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                     <TextBlock Text="{Binding ProxyClientCount}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-                   </Border>
-                   <Button Grid.Column="2" Classes="icon" HorizontalAlignment="Left" Margin="2,0,0,0"
-                           VerticalAlignment="Center" IsVisible="{Binding HasProxyClients}"
-                           Command="{Binding ToggleProxyClientsCommand}" ToolTip.Tip="{l:Tr General_ProxyClientsTooltip}">
-                     <TextBlock Text="{Binding ProxyClientsGlyph}" RenderTransform="scale(1.5)" />
-                   </Button>
-                 </Grid>
-                 <TextBlock Text="{l:Tr General_ProxyNoClients}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                            IsVisible="{Binding !HasProxyClients}" />
-                 <Border IsVisible="{Binding IsProxyClientsExpanded}" Padding="10,7"
-                         Background="{DynamicResource AgInsetBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
-                         BorderThickness="1" CornerRadius="8">
-                   <ItemsControl ItemsSource="{Binding ProxyClients}">
-                     <ItemsControl.ItemTemplate>
-                       <DataTemplate x:DataType="vm:ProxyClientRow">
-                         <Grid ColumnDefinitions="Auto,*" Margin="0,1">
-                           <TextBlock Grid.Column="0" Text="{Binding Address}" Classes="mono" FontSize="12.5"
-                                      VerticalAlignment="Center" />
-                           <TextBlock Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="12"
-                                      Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
-                         </Grid>
-                       </DataTemplate>
-                     </ItemsControl.ItemTemplate>
-                   </ItemsControl>
-                 </Border>
-               </StackPanel>
-
-               <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
-               <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
-                                          Description="{l:Tr General_ProxyAnonymousHint}"
-                                          IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
-
-               <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
-                          Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
-               <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
-                          Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
-
-               <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
-               <StackPanel Spacing="6">
-                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                   <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                     <TextBlock Text="{l:Tr General_ProxyAccounts}" FontSize="13.5" />
-                     <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                   </StackPanel>
-                   <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
-                           Command="{Binding AddProxyAccountCommand}">
-                     <StackPanel Orientation="Horizontal" Spacing="4">
-                       <TextBlock Text="+" />
-                       <TextBlock Text="{l:Tr Main_AddButton}" />
-                     </StackPanel>
-                   </Button>
-                 </Grid>
-                 <ItemsControl ItemsSource="{Binding ProxyAccounts}">
+               <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
+                 <!-- Every address a client can be pointed at, each one copyable; the tunnel's own address is not
+                      among them - a neighbour told to use it reaches nobody. -->
+                 <ItemsControl ItemsSource="{Binding ProxyEndpoints}">
                    <ItemsControl.ItemTemplate>
-                     <DataTemplate x:DataType="vm:ProxyAccountViewModel">
-                       <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
-                         <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
-                                  Watermark="{l:Tr General_ProxyUser}" />
-                         <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
-                                  PasswordChar="●" RevealPassword="{Binding IsRevealed}"
-                                  Watermark="{l:Tr General_ProxyPassword}" />
+                     <DataTemplate x:DataType="vm:ProxyEndpointRow">
+                       <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
+                         <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="muted" FontSize="12"
+                                    VerticalAlignment="Center" />
+                         <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12.5"
+                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                          <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                                 Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
-                           <Panel>
-                             <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
-                                       IsVisible="{Binding !IsRevealed}" />
-                             <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
-                                       IsVisible="{Binding IsRevealed}" />
-                           </Panel>
-                         </Button>
-                         <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center"
-                                 Command="{Binding $parent[ItemsControl].((vm:GeneralViewModel)DataContext).RemoveProxyAccountCommand}"
-                                 CommandParameter="{Binding}">
-                           <PathIcon Data="{StaticResource AgCloseGeometry}" Width="14" Height="14" />
+                                 Click="OnCopyProxyEndpoint" ToolTip.Tip="{l:Tr General_ProxyCopyTooltip}">
+                           <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
                          </Button>
                        </Grid>
                      </DataTemplate>
                    </ItemsControl.ItemTemplate>
                  </ItemsControl>
+
+                 <!-- Each port box stands under its label, left-aligned. -->
+                 <StackPanel Spacing="6">
+                   <TextBlock Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" />
+                   <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
+                            Text="{Binding ProxySocksPort, Mode=TwoWay}" />
+                 </StackPanel>
+
+                 <StackPanel Spacing="6">
+                   <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" />
+                   <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
+                            Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
+                 </StackPanel>
+
+                 <!-- Clients: the count first, and who holds them under the arrow. -->
+                 <StackPanel Spacing="6">
+                   <Grid ColumnDefinitions="Auto,Auto,*">
+                     <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyClients}" FontSize="13.5" VerticalAlignment="Center" />
+                     <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                             Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                       <TextBlock Text="{Binding ProxyClientCount}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+                     </Border>
+                     <Button Grid.Column="2" Classes="icon" HorizontalAlignment="Left" Margin="2,0,0,0"
+                             VerticalAlignment="Center" IsVisible="{Binding HasProxyClients}"
+                             Command="{Binding ToggleProxyClientsCommand}" ToolTip.Tip="{l:Tr General_ProxyClientsTooltip}">
+                       <TextBlock Text="{Binding ProxyClientsGlyph}" RenderTransform="scale(1.5)" />
+                     </Button>
+                   </Grid>
+                   <TextBlock Text="{l:Tr General_ProxyNoClients}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                              IsVisible="{Binding !HasProxyClients}" />
+                   <Border IsVisible="{Binding IsProxyClientsExpanded}" Padding="10,7"
+                           Background="{DynamicResource AgInsetBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
+                           BorderThickness="1" CornerRadius="8">
+                     <ItemsControl ItemsSource="{Binding ProxyClients}">
+                       <ItemsControl.ItemTemplate>
+                         <DataTemplate x:DataType="vm:ProxyClientRow">
+                           <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                             <TextBlock Grid.Column="0" Text="{Binding Address}" Classes="mono" FontSize="12.5"
+                                        VerticalAlignment="Center" />
+                             <TextBlock Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="12"
+                                        Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                           </Grid>
+                         </DataTemplate>
+                       </ItemsControl.ItemTemplate>
+                     </ItemsControl>
+                   </Border>
+                 </StackPanel>
+
+                 <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
+                 <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
+                                            Description="{l:Tr General_ProxyAnonymousHint}"
+                                            IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
+
+                 <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
+                            Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
+                 <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
+                            Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
+
+                 <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
+                 <StackPanel Spacing="6">
+                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                       <TextBlock Text="{l:Tr General_ProxyAccounts}" FontSize="13.5" />
+                       <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                     </StackPanel>
+                     <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
+                             Command="{Binding AddProxyAccountCommand}">
+                       <StackPanel Orientation="Horizontal" Spacing="4">
+                         <TextBlock Text="+" />
+                         <TextBlock Text="{l:Tr Main_AddButton}" />
+                       </StackPanel>
+                     </Button>
+                   </Grid>
+                   <ItemsControl ItemsSource="{Binding ProxyAccounts}">
+                     <ItemsControl.ItemTemplate>
+                       <DataTemplate x:DataType="vm:ProxyAccountViewModel">
+                         <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
+                           <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
+                                    Watermark="{l:Tr General_ProxyUser}" />
+                           <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
+                                    PasswordChar="●" RevealPassword="{Binding IsRevealed}"
+                                    Watermark="{l:Tr General_ProxyPassword}" />
+                           <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
+                                   Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
+                             <Panel>
+                               <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
+                                         IsVisible="{Binding !IsRevealed}" />
+                               <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
+                                         IsVisible="{Binding IsRevealed}" />
+                             </Panel>
+                           </Button>
+                           <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center"
+                                   Command="{Binding $parent[ItemsControl].((vm:GeneralViewModel)DataContext).RemoveProxyAccountCommand}"
+                                   CommandParameter="{Binding}">
+                             <PathIcon Data="{StaticResource AgCloseGeometry}" Width="14" Height="14" />
+                           </Button>
+                         </Grid>
+                       </DataTemplate>
+                     </ItemsControl.ItemTemplate>
+                   </ItemsControl>
+                 </StackPanel>
+               </StackPanel>
+             </StackPanel>
+
+             <!-- Own access point: the network a device joins without being set up at all. -->
+             <StackPanel Spacing="12" IsVisible="{Binding IsWifiTab}">
+               <controls:SettingSwitchRow Label="{l:Tr General_HotspotEnabled}"
+                                          Description="{l:Tr General_HotspotEnabledHint}"
+                                          IsChecked="{Binding HotspotEnabled, Mode=TwoWay}"
+                                          IsEnabled="{Binding HotspotSupported}" />
+
+               <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
+                          Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
+
+               <StackPanel Spacing="12" IsVisible="{Binding HotspotEnabled}" IsEnabled="{Binding HotspotSupported}">
+                 <StackPanel Spacing="6">
+                   <TextBlock Text="{l:Tr General_HotspotSsid}" FontSize="13.5" />
+                   <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
+                 </StackPanel>
+
+                 <StackPanel Spacing="6">
+                   <TextBlock Text="{l:Tr General_HotspotPassword}" FontSize="13.5" />
+                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                     <TextBox Grid.Column="0" Classes="field" MaxLength="63" PasswordChar="●"
+                              RevealPassword="{Binding IsHotspotPasswordRevealed}"
+                              Text="{Binding HotspotPassword, Mode=TwoWay}" />
+                     <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
+                             Command="{Binding ToggleHotspotRevealCommand}" ToolTip.Tip="{l:Tr General_HotspotRevealTooltip}">
+                       <Panel>
+                         <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
+                                   IsVisible="{Binding !IsHotspotPasswordRevealed}" />
+                         <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
+                                   IsVisible="{Binding IsHotspotPasswordRevealed}" />
+                       </Panel>
+                     </Button>
+                   </Grid>
+                 </StackPanel>
+
+                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                   <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotBand}" FontSize="13.5" VerticalAlignment="Center" />
+                   <controls:AdaptiveComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                             ItemsSource="{Binding BandOptions}"
+                             SelectedIndex="{Binding SelectedBandIndex, Mode=TwoWay}" />
+                 </Grid>
+
+                 <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                            IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                 <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
+                            Foreground="{DynamicResource AgWarnBrush}"
+                            IsVisible="{Binding HotspotErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                 <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding HotspotRunning}">
+                   <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontSize="13.5" VerticalAlignment="Center" />
+                   <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                           Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                     <TextBlock Text="{Binding HotspotClientsText}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+                   </Border>
+                 </Grid>
                </StackPanel>
              </StackPanel>
            </StackPanel>
@@ -262,7 +331,7 @@
            <!-- Connection resilience: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
                 the Android agent does not apply these settings. -->
            <StackPanel Spacing="12" IsVisible="{Binding CanConfigureConnection}">
-             <TextBlock Text="{l:Tr General_ConnectionSection}" FontWeight="SemiBold" FontSize="15" />
+             <TextBlock Text="{l:Tr General_TunnelSection}" FontWeight="SemiBold" FontSize="15" />
 
              <controls:SettingSwitchRow Label="{l:Tr General_ShowNotifications}"
                                         Description="{l:Tr General_ShowNotificationsHint}"

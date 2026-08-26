@@ -11,8 +11,12 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditScope
 {
+    // Wait before an edited address is tried, so typing does not dial on every keystroke.
+    private const int ProbeDelayMs = 2000;
+
     private readonly IAgentConnection _connection;
     private string _endpoint;
+    private CancellationTokenSource? _probeCts;
 
     // Baseline captured on load / commit / import; the transport is dirty when a field differs from it (#143).
     private bool _baseUseWebSocket;
@@ -66,6 +70,16 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _isCompact;
 
+    // What the front answered the last time the edited address was tried.
+    [ObservableProperty]
+    private string _probeMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _probeFailed;
+
+    [ObservableProperty]
+    private bool _isProbing;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -106,24 +120,48 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     partial void OnUseWebSocketChanged(bool value)
     {
         MarkDirty();
+        ScheduleProbe();
         FireAutoSave();
     }
 
-    partial void OnWebSocketHostChanged(string value) => MarkDirty();
+    partial void OnWebSocketHostChanged(string value)
+    {
+        MarkDirty();
+        ScheduleProbe();
+    }
 
-    partial void OnWebSocketPortChanged(string value) => MarkDirty();
+    partial void OnWebSocketPortChanged(string value)
+    {
+        MarkDirty();
+        ScheduleProbe();
+    }
 
     partial void OnAuthModeChanged(int value)
     {
         MarkDirty();
+        ScheduleProbe();
         FireAutoSave();
     }
 
-    partial void OnWebSocketUserChanged(string value) => MarkDirty();
+    partial void OnWebSocketUserChanged(string value)
+    {
+        MarkDirty();
+        ScheduleProbe();
+    }
 
-    partial void OnWebSocketPasswordChanged(string value) => MarkDirty();
+    partial void OnWebSocketPasswordChanged(string value)
+    {
+        MarkDirty();
+        ScheduleProbe();
+    }
 
-    partial void OnWebSocketTokenChanged(string value) => MarkDirty();
+    partial void OnWebSocketTokenChanged(string value)
+    {
+        MarkDirty();
+        ScheduleProbe();
+    }
+
+    partial void OnProbeFailedChanged(bool value) => ProbeChanged?.Invoke(this, EventArgs.Empty);
 
     partial void OnMtuChanged(string value) => MarkDirty();
 
@@ -371,6 +409,96 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         {
             _committing = false;
         }
+    }
+
+    /// <summary>
+    /// Raised when the front check changed its verdict.
+    /// </summary>
+    public event EventHandler? ProbeChanged;
+
+    /// <summary>
+    /// Drops a pending front check; the editor is being closed. The check itself releases its source once it
+    /// has stopped using the token.
+    /// </summary>
+    public void CancelProbe()
+    {
+        _probeCts?.Cancel();
+        _probeCts = null;
+    }
+
+    // Every edit restarts the wait, so typing dials nothing; the front is asked once the address stands still.
+    private void ScheduleProbe()
+    {
+        CancelProbe();
+        IsProbing = false;
+        ProbeMessage = string.Empty;
+        ProbeFailed = false;
+        if (_applying || !UseWebSocket || !UiPlatform.SupportsWebSocket)
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _probeCts = cts;
+        _ = ProbeAsync(cts);
+    }
+
+    // Asks the front for the upgrade the carrier would ask for. A refusal does not hold the save back: it says
+    // what will not work, and the setting is kept as typed.
+    private async Task ProbeAsync(CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(ProbeDelayMs, cts.Token);
+            if (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
+            {
+                return;
+            }
+
+            IsProbing = true;
+            ProbeMessage = Loc.Instance.Get("Transport_ProbeRunning");
+            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(_endpoint, ComposeAddress(port), port, cts.Token);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            IsProbing = false;
+            ProbeMessage = outcome == WsFrontOutcome.Ok ? string.Empty : Reason(outcome, detail);
+            ProbeFailed = outcome != WsFrontOutcome.Ok;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_probeCts, cts))
+            {
+                _probeCts = null;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    // The front's answer as the editor states it.
+    private static string Reason(WsFrontOutcome outcome, string detail) => outcome switch
+    {
+        WsFrontOutcome.NoAddress => Loc.Instance.Get("Transport_ProbeNoAddress"),
+        WsFrontOutcome.Tls => Loc.Instance.Get("Transport_ProbeTls"),
+        WsFrontOutcome.Refused => Denied(detail)
+            ? Loc.Instance.Get("Transport_ProbeDenied")
+            : Loc.Instance.Get("Transport_ProbeRefused", detail),
+        _ => Loc.Instance.Get("Transport_ProbeNoAnswer"),
+    };
+
+    // Codes a front answers with when the token or the login and password did not fit.
+    private static bool Denied(string detail)
+    {
+        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1
+            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code)
+            && code is 400 or 401 or 403 or 404;
     }
 
     /// <summary>

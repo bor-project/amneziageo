@@ -294,12 +294,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool CanSave => IsCreatingSectionConfig ? CanSaveSectionConfig : IsEditDirty;
 
+    /// <summary>
+    /// Whether Save carries a websocket address the front did not accept: it still saves, dimmed to say what is
+    /// being saved has not answered.
+    /// </summary>
+    public bool SaveUnverified => (ConfigTransport?.ProbeFailed ?? false) || (SectionTransport?.ProbeFailed ?? false);
+
     private void RefreshEditBar()
     {
         OnPropertyChanged(nameof(IsEditDirty));
         OnPropertyChanged(nameof(ShowSaveBar));
         OnPropertyChanged(nameof(ShowSaveButton));
         OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(SaveUnverified));
     }
 
     private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
@@ -893,11 +900,30 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         if (oldValue is not null)
         {
             oldValue.DirtyChanged -= OnEditScopeDirty;
+            oldValue.ProbeChanged -= OnEditScopeDirty;
+            oldValue.CancelProbe();
         }
 
         if (newValue is not null)
         {
             newValue.DirtyChanged += OnEditScopeDirty;
+            newValue.ProbeChanged += OnEditScopeDirty;
+        }
+
+        RefreshEditBar();
+    }
+
+    partial void OnSectionTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.ProbeChanged -= OnEditScopeDirty;
+            oldValue.CancelProbe();
+        }
+
+        if (newValue is not null)
+        {
+            newValue.ProbeChanged += OnEditScopeDirty;
         }
 
         RefreshEditBar();

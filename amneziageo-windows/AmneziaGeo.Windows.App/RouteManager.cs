@@ -649,6 +649,39 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Adds a default route through an adapter at a metric nothing on this machine takes. Sharing looks for a way
+    /// out only on the connection the access point was raised over, so without one it drops what its clients send
+    /// anywhere but the addresses routed into that connection.
+    /// </summary>
+    public bool AddCarriedDefault(uint interfaceIndex, IPAddress nextHop, uint metric)
+    {
+        var row = NewRow(IPAddress.Any, 0, interfaceIndex, nextHop);
+        row.Metric = metric;
+        var result = CreateIpForwardEntry2(ref row);
+        var ok = result is NoError or ErrorObjectAlreadyExists;
+        if (ok)
+        {
+            Remember(IPAddress.Any, 0, interfaceIndex, row);
+        }
+
+        RouteLog.Write("carried +default", $"0.0.0.0/0 metric {metric}", $"if{interfaceIndex}", ok);
+        return ok;
+    }
+
+    /// <summary>
+    /// Removes the default route that carried the clients of the access point.
+    /// </summary>
+    public void RemoveCarriedDefault(uint interfaceIndex)
+    {
+        if (!TryDeleteRemembered(IPAddress.Any, 0, interfaceIndex))
+        {
+            DeleteManagedRoutes(IPAddress.Any, interfaceIndex, 0);
+        }
+
+        RouteLog.Write("carried -default", "0.0.0.0/0", $"if{interfaceIndex}", ok: true);
+    }
+
+    /// <summary>
     /// Removes a host route for an IP from the tunnel interface (v4 /32 or v6 /128).
     /// </summary>
     public void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
@@ -765,6 +798,20 @@ internal sealed partial class RouteManager
         }
 
         RouteLog.Write("tunnel drop", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok: true);
+    }
+
+    /// <summary>
+    /// Whether the adapter carries on what it receives for another one. Windows turns this on per adapter
+    /// and the managed reading answers the machine-wide switch instead, which is off here.
+    /// </summary>
+    public bool Forwards(uint interfaceIndex)
+    {
+        var row = new MIB_IPINTERFACE_ROW
+        {
+            Family = AfInet,
+            InterfaceIndex = interfaceIndex,
+        };
+        return GetIpInterfaceEntry(ref row) == NoError && row.ForwardingEnabled != 0;
     }
 
     /// <summary>
@@ -1105,6 +1152,19 @@ internal sealed partial class RouteManager
         public uint Age;
         public uint Origin;
     }
+
+    // Only the fields this reads are named, at the offsets the row has always carried them; the room to spare
+    // takes a longer row from a newer Windows without touching what is around it.
+    [StructLayout(LayoutKind.Explicit, Size = 256)]
+    private struct MIB_IPINTERFACE_ROW
+    {
+        [FieldOffset(0)] public ushort Family;
+        [FieldOffset(16)] public uint InterfaceIndex;
+        [FieldOffset(41)] public byte ForwardingEnabled;
+    }
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint GetIpInterfaceEntry(ref MIB_IPINTERFACE_ROW row);
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint GetBestRoute2(IntPtr interfaceLuid, uint interfaceIndex, IntPtr sourceAddress, ref SOCKADDR_INET destinationAddress, uint addressSortOptions, ref MIB_IPFORWARD_ROW2 bestRoute, ref SOCKADDR_INET bestSourceAddress);

@@ -46,6 +46,10 @@ internal static class EndpointProbe
 {
     private const int TimeoutMs = 1500;
 
+    // Port the front is asked to hand the tunnel to when the endpoint names none; the upgrade is accepted or
+    // refused before it matters.
+    private const int DefaultTunnelPort = 51820;
+
     // Probes per measurement: enough for a loss reading, few enough to keep a sweep of every server short.
     private const int Probes = 5;
 
@@ -86,6 +90,36 @@ internal static class EndpointProbe
         return answered > 0
             ? new ProbeResult(ProbeOutcome.Alive, (int)(elapsed / answered), (Probes - answered) * 100 / Probes)
             : new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
+    }
+
+    /// <summary>
+    /// Checks the websocket front a config would dial: resolves its name, then asks it for the same upgrade the
+    /// carrier asks for. Says whether an address holds before a tunnel is built on it.
+    /// </summary>
+    public static async Task<(WsFrontOutcome Outcome, string Detail)> CheckFrontAsync(
+        string endpoint,
+        string webSocketHost,
+        int webSocketPort,
+        CancellationToken ct)
+    {
+        var front = WsEndpoint.Parse(webSocketHost, webSocketPort, HostOf(endpoint));
+        var address = await ResolveAsync(front.Host, ct).ConfigureAwait(false);
+        if (address is null)
+        {
+            return (WsFrontOutcome.NoAddress, string.Empty);
+        }
+
+        return await WsCarrier.ProbeAsync(front, address, PortOf(endpoint), null, ct).ConfigureAwait(false);
+    }
+
+    // The port of a "host:port" endpoint; the tunnel's usual port stands in when the endpoint carries none.
+    private static int PortOf(string endpoint)
+    {
+        var value = endpoint.Trim();
+        var colon = value.LastIndexOf(':');
+        return colon > 0 && int.TryParse(value[(colon + 1)..], out var port) && port is > 0 and <= 65535
+            ? port
+            : DefaultTunnelPort;
     }
 
     // The host of a "host:port" endpoint, brackets around an IPv6 literal included; a bare IPv6 literal is

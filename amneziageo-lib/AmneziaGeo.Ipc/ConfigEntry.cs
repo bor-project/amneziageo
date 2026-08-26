@@ -32,7 +32,10 @@ public sealed record ConfigEntry(
     int RttMs = -1,
     // Routing list this config routes through, already resolved against the default one; null sends every
     // destination through the tunnel.
-    long? RoutingListId = null);
+    long? RoutingListId = null,
+    // Dials the peer has not answered since the last one that got through; zero on every config that is not
+    // dialling. Three of them and everything moves to the next server, while this one keeps trying.
+    int ConnectAttempt = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

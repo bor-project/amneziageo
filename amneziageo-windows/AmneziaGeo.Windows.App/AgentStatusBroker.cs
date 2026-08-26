@@ -1610,7 +1610,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
         await store.SetSettingAsync("last-owner-target", target, ct);
         await SwitchCardAsync(target, true, ct);
-        control.For(target, scope.UserRoot, scope.Sid).SetRunning(true);
+        var picked = control.For(target, scope.UserRoot, scope.Sid);
+        picked.ClearRetry();
+        picked.SetRunning(true);
         await RememberDesiredAsync(ct);
         logger.LogInformation("connect requested by {Root} for {Config}", scope.UserRoot, target);
         return new IpcAck(true, "connecting");
@@ -1636,13 +1638,25 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 continue;
             }
 
-            control.For(name, scope.UserRoot, scope.Sid).SetRunning(true);
             raised.Add(name);
         }
 
         if (raised.Count == 0)
         {
             return new IpcAck(false, theirs ? IpcMessage.Key("Agent_TunnelOwnedByOther") : "no configuration selected");
+        }
+
+        // The head of the set takes the default route before anything is raised: the tunnel that comes up first
+        // must not take it by being quickest. Whoever held it is dialled again to carry only what names it.
+        control.ClaimDefaultRoute(raised[0], preferred: true).Displaced?.Invalidate();
+
+        // Raising the set by hand starts its dialling from a clean slate, so a card that ran out of attempts
+        // last time gets them back.
+        foreach (var name in raised)
+        {
+            var tunnel = control.For(name, scope.UserRoot, scope.Sid);
+            tunnel.ClearRetry();
+            tunnel.SetRunning(true);
         }
 
         control.SetTarget(raised[0]);
@@ -2733,7 +2747,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
             var handshake = live?.HandshakeAge ?? -1;
             var reading = live?.Link ?? LinkReading.Empty;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, configRouting?.RoutingListId ?? selectedRouting));
+            var attempt = live?.RetryAttempt ?? 0;
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, configRouting?.RoutingListId ?? selectedRouting, attempt));
         }
 
         var routingLists = new List<RoutingListEntry>();

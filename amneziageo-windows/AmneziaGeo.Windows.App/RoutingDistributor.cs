@@ -117,7 +117,7 @@ internal sealed class RoutingDistributor(
         var geo = new GeoConfigurator(store, geoFiles);
         if (settings.MultiServer)
         {
-            var fleet = new ServerFleet(true, order, up);
+            var fleet = new ServerFleet(true, order, RouteCarrier.Head(up, Elect(up)));
             var selected = await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
             await ShareAsync(store, geo, "*", up, selected, fleet, force, ct).ConfigureAwait(false);
             return await RoleAsync(store, raising, selected, fleet, ct).ConfigureAwait(false);
@@ -158,20 +158,48 @@ internal sealed class RoutingDistributor(
         return Role(raising, listId, fleet, settings, picked);
     }
 
-    // Who the list is split between: the tunnels that are up, plus the one being raised, in priority order. The
-    // tunnel actually carrying the default route heads the list, because that is where a rule addressing no server
-    // rides; a configuration still dialling does not take that place from it.
+    // Who the list is split between: the tunnels that are up, plus the one being raised, in priority order.
     private IReadOnlyList<string> Up(IReadOnlyList<string> order, string? raising)
     {
-        var up = order
-            .Where(name => control.IsRunning(name) || string.Equals(name, raising, StringComparison.Ordinal))
-            .ToList();
-        if (control.DefaultRouteOwner is { Length: > 0 } holder && up.Remove(holder))
+        return [.. order.Where(name => control.IsRunning(name) || string.Equals(name, raising, StringComparison.Ordinal))];
+    }
+
+    // Settles who carries everything before any share is worked out, so the tunnel that comes up first does not
+    // take the default route by being quickest. The server holding it keeps it while its dialling has attempts
+    // left; once they are spent everything moves to the next server up the priority and it keeps trying.
+    private string? Elect(IReadOnlyList<string> up)
+    {
+        var carrier = RouteCarrier.Pick(up, control.DefaultRouteOwner, Spent(up));
+        if (carrier is null || string.Equals(carrier, control.DefaultRouteOwner, StringComparison.Ordinal))
         {
-            up.Insert(0, holder);
+            return carrier;
         }
 
-        return up;
+        var claim = control.ClaimDefaultRoute(carrier, preferred: true);
+        if (claim.Displaced is { } displaced)
+        {
+            logger.LogWarning("{Other} did not answer in {Attempts} dials, so everything moves to {Config}; it stays up and keeps trying",
+                displaced.Config, ConnectDial.Attempts, carrier);
+            displaced.Invalidate();
+        }
+
+        return carrier;
+    }
+
+    // Servers whose dialling is spent: three dials the peer did not answer, or a failure no retry gets past.
+    private IReadOnlySet<string> Spent(IReadOnlyList<string> up)
+    {
+        var spent = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in up)
+        {
+            if (control.Find(name) is { HandshakeAge: < 0 } tunnel
+                && (tunnel.ConnectFailed || tunnel.RetryAttempt >= ConnectDial.Attempts))
+            {
+                spent.Add(name);
+            }
+        }
+
+        return spent;
     }
 
     // Materializes the list against the fleet and writes each share; a tunnel that is up hears about its own.

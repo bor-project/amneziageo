@@ -267,6 +267,32 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
     partial void OnAllUdpActiveChanged(bool value) => RefreshTransfer();
 
+    // Mirrors the multi-server switch, kept in sync by RoutingViewModel: with one server a rule has nowhere else
+    // to ride.
+    [ObservableProperty]
+    private bool _multiServer;
+
+    partial void OnMultiServerChanged(bool value) => RebuildRuleItems();
+
+    /// <summary>
+    /// Configurations the rule fields can name, priority top down.
+    /// </summary>
+    public IReadOnlyList<string> Servers { get; private set; } = [];
+
+    /// <summary>
+    /// Takes the configurations off the snapshot; the same set again leaves the list alone.
+    /// </summary>
+    public void SetServers(IReadOnlyList<string> names)
+    {
+        if (Servers.SequenceEqual(names, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        Servers = names;
+        RebuildRuleItems();
+    }
+
     /// <summary>
     /// The active bucket's rule tokens (geosite:openai etc), selected by <see cref="SelectedRole"/>.
     /// </summary>
@@ -313,10 +339,22 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // Rebuilds the shown bucket's projection, carrying expansion state and already-fetched entries over.
     private void RebuildRuleItems()
     {
+        foreach (var shown in RuleItems)
+        {
+            shown.PropertyChanged -= OnRuleItemChanged;
+        }
+
         RuleItems.Clear();
+        var targets = MultiServer && IsProxyRole;
         foreach (var token in Rules)
         {
-            var item = new RoutingRuleItemViewModel(token);
+            var item = new RoutingRuleItemViewModel(token)
+            {
+                ShowTargets = targets,
+                Servers = Servers,
+            };
+            item.ReadTail(_ruleTails.TryGetValue(token, out var tail) ? tail : string.Empty);
+            item.PropertyChanged += OnRuleItemChanged;
             if (item.CanExpand && _expandedRules.Contains(token))
             {
                 item.IsExpanded = true;
@@ -324,7 +362,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                 {
                     item.ShowDetails(Summarize(cached.Total, cached.Entries.Count), cached.Entries);
                 }
-                else
+                else if (item.HasPreview)
                 {
                     _ = LoadRuleDetailsAsync(item);
                 }
@@ -333,6 +371,33 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             RuleItems.Add(item);
         }
     }
+
+    // A rule now rides a different server: fold both fields back into the token's tail and save the list.
+    private void OnRuleItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_seeding || sender is not RoutingRuleItemViewModel item || !IsTargetField(e.PropertyName))
+        {
+            return;
+        }
+
+        var tail = item.WriteTail();
+        if (tail.Length == 0)
+        {
+            _ruleTails.Remove(item.Token);
+        }
+        else
+        {
+            _ruleTails[item.Token] = tail;
+        }
+
+        MarkDirty();
+        FireAutoSave();
+    }
+
+    private static bool IsTargetField(string? name) => name is nameof(RoutingRuleItemViewModel.ServerMode)
+        or nameof(RoutingRuleItemViewModel.Server)
+        or nameof(RoutingRuleItemViewModel.FallbackMode)
+        or nameof(RoutingRuleItemViewModel.Fallback);
 
     /// <summary>
     /// Expands or collapses a geo rule's entries, fetching them from the agent on the first expand.
@@ -349,7 +414,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         }
 
         _expandedRules.Add(item.Token);
-        if (!item.HasDetails && !item.IsLoading)
+        if (item.HasPreview && !item.HasDetails && !item.IsLoading)
         {
             await LoadRuleDetailsAsync(item);
         }
@@ -469,8 +534,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _ => ProxyRules,
     };
 
-    // Keeps the "|server=…" tail out of the value the editor shows and puts it back when the list is saved;
-    // per-rule selectors arrive with the routing UI.
+    // Keeps the "|server=…" tail out of the value the editor shows and puts it back when the list is saved; the
+    // two fields of an item read and write it.
     private string Detach(string token)
     {
         var bar = token.IndexOf('|');
@@ -1046,6 +1111,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private void RemoveRule(string rule)
     {
         _expandedRules.Remove(rule);
+        _ruleTails.Remove(rule);
         Rules.Remove(rule);
     }
 
@@ -1058,6 +1124,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         foreach (var rule in Rules)
         {
             _expandedRules.Remove(rule);
+            _ruleTails.Remove(rule);
         }
 
         Rules.Clear();

@@ -544,6 +544,30 @@
   <data name="Main_SortRulesTooltip" xml:space="preserve">
     <value>Sort entries by name</value>
   </data>
+  <data name="Main_RuleTargetsTooltip" xml:space="preserve">
+    <value>Choose the servers this rule rides</value>
+  </data>
+  <data name="Main_RuleServerLabel" xml:space="preserve">
+    <value>Rule</value>
+  </data>
+  <data name="Main_RuleFallbackLabel" xml:space="preserve">
+    <value>Fallback</value>
+  </data>
+  <data name="Main_RuleTargetAuto" xml:space="preserve">
+    <value>auto</value>
+  </data>
+  <data name="Main_RuleTargetBest" xml:space="preserve">
+    <value>best</value>
+  </data>
+  <data name="Main_RuleTargetDirect" xml:space="preserve">
+    <value>direct</value>
+  </data>
+  <data name="Main_RuleTargetBlock" xml:space="preserve">
+    <value>block</value>
+  </data>
+  <data name="Main_RuleTargetLockedHint" xml:space="preserve">
+    <value>Matched by name: the default server only, for now</value>
+  </data>
   <data name="Main_RuleEntriesTooltip" xml:space="preserve">
     <value>Show what the category contains</value>
   </data>

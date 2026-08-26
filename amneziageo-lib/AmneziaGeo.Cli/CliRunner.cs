@@ -132,6 +132,8 @@ public static class CliRunner
               routing create <name> [rule...]
               routing set <id|name> [rule...]       replace every rule
               routing add <id|name> <rule...>       append rules
+              routing rule server <id|name> <rule> <auto|best|config>
+              routing rule fallback <id|name> <rule> <auto|best|config|direct|block>
               routing delete-rule <id|name> <rule...>
               routing remove <id|name>
               routing settings <id|name>

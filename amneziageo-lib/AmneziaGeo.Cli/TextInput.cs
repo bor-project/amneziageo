@@ -1,3 +1,5 @@
+using AmneziaGeo.Decl;
+
 namespace AmneziaGeo.Cli;
 
 /// <summary>
@@ -147,6 +149,32 @@ public static class Rules
     /// </summary>
     public static string StripProxyRole(string rule) =>
         rule.StartsWith(_proxyRole, StringComparison.OrdinalIgnoreCase) ? rule[_proxyRole.Length..] : rule;
+
+    /// <summary>
+    /// The bucket a rule belongs to, or "proxy" where it names none.
+    /// </summary>
+    public static string Role(string rule)
+    {
+        var separator = rule.IndexOf('|');
+        var head = separator > 0 ? rule[..separator].Trim().ToLowerInvariant() : string.Empty;
+        return _roles.Contains(head) ? head : "proxy";
+    }
+
+    /// <summary>
+    /// The rule without its role: the token and whatever tail it carries.
+    /// </summary>
+    public static string Bare(string rule)
+    {
+        var separator = rule.IndexOf('|');
+        return separator > 0 && _roles.Contains(rule[..separator].Trim().ToLowerInvariant())
+            ? rule[(separator + 1)..]
+            : rule;
+    }
+
+    /// <summary>
+    /// The token alone, without the role and without the tail: what two spellings of one rule share.
+    /// </summary>
+    public static string Plain(string rule) => RuleFields.Split(Bare(rule)).Token.Trim();
 
     private static string? First(IReadOnlyList<string> rules, bool roles)
     {

@@ -339,6 +339,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             MarkCatalogueKnown();
         }
 
+        _multiServer = snapshot.MultiServer;
+        _serverNames = [.. snapshot.Configs.Select(config => config.Name)];
+        SyncTrafficFlags();
         SelectedRoutingListId = snapshot.SelectedRoutingList;
         _liveRoutingListId = snapshot.BoundTarget is { } bound
             ? snapshot.Configs.FirstOrDefault(config => string.Equals(config.Name, bound, StringComparison.Ordinal))?.RoutingListId
@@ -712,15 +715,22 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     // Feeds the traffic card's flags into the rule editor: the Proxy bucket warns when global proxy makes it
-    // unused, and both flags travel with the exported payload.
+    // unused, and both flags travel with the exported payload. The rule fields ride along - they are offered only
+    // while there are several servers, and they name the configurations there are.
     private void SyncTrafficFlags()
     {
         if (RoutingEditor is { } editor)
         {
             editor.GlobalProxyActive = RoutingSettings?.UseGlobalProxy ?? false;
             editor.AllUdpActive = RoutingSettings?.AllUdp ?? false;
+            editor.MultiServer = _multiServer;
+            editor.SetServers(_serverNames);
         }
     }
+
+    // Multi-server switch and the configurations, off the last snapshot: an editor built later takes them too.
+    private bool _multiServer;
+    private IReadOnlyList<string> _serverNames = [];
 
     private void OnEditCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {

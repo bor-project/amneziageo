@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Cli;
@@ -9,6 +10,9 @@ namespace AmneziaGeo.Cli;
 /// </summary>
 internal static class RoutingCommands
 {
+    private const string _ruleUsage = "usage: amneziageo routing rule server <id|name> <rule> <auto|best|config>\n"
+        + "       amneziageo routing rule fallback <id|name> <rule> <auto|best|config|direct|block>";
+
     /// <summary>
     /// Runs one routing command.
     /// </summary>
@@ -16,7 +20,7 @@ internal static class RoutingCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|delete-rule|remove|order|settings|configure>");
+            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|rule|delete-rule|remove|order|settings|configure>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -28,6 +32,7 @@ internal static class RoutingCommands
             "create" => await CreateAsync(agent, rest).ConfigureAwait(false),
             "set" => await SetAsync(agent, rest).ConfigureAwait(false),
             "add" => await AmendAsync(agent, rest, add: true).ConfigureAwait(false),
+            "rule" => await RuleAsync(agent, rest).ConfigureAwait(false),
             "delete-rule" => await AmendAsync(agent, rest, add: false).ConfigureAwait(false),
             "remove" => await RemoveAsync(agent, rest).ConfigureAwait(false),
             "order" => rest.Count > 0
@@ -128,18 +133,51 @@ internal static class RoutingCommands
         }
 
         var rules = Split(ack.Message);
+        var rows = rules.Select(Read).ToList();
+
+        // The target columns show up where a rule has somewhere else to ride, and wherever one already names a
+        // server: a field set before the switch went off stays in sight.
+        var targets = agent.Snapshot.MultiServer
+            || rows.Any(row => row.ServerMode != RuleTargetMode.Auto || row.FallbackMode != RuleTargetMode.Auto);
+
         if (Output.Json)
         {
-            Output.AsJson(new { id = list.Id, name = list.Name, rules });
+            Output.AsJson(new
+            {
+                id = list.Id,
+                name = list.Name,
+                rules = rows.Select(row => new
+                {
+                    rule = row.Rule,
+                    role = row.Role,
+                    server = RuleFields.Word(row.ServerMode, row.Server),
+                    fallback = RuleFields.Word(row.FallbackMode, row.Fallback),
+                }),
+            });
             return Exit.Ok;
         }
 
         Output.Info($"#{list.Id.ToString(CultureInfo.InvariantCulture)} {list.Name}");
-        foreach (var rule in rules)
+        if (!targets)
         {
-            Output.Line(rule);
+            foreach (var rule in rules)
+            {
+                Output.Line(rule);
+            }
+
+            return Exit.Ok;
         }
 
+        Output.Table(
+            ["RULE", "ROLE", "SERVER", "FALLBACK"],
+            rows.Select(row => (IReadOnlyList<string>)
+            [
+                row.Rule,
+                row.Role,
+                Column(row, row.ServerMode, row.Server),
+                Column(row, row.FallbackMode, row.Fallback),
+            ]).ToList(),
+            "no rules yet");
         return Exit.Ok;
     }
 
@@ -215,6 +253,89 @@ internal static class RoutingCommands
 
         var ack = await agent.SendAsync(IpcContract.OpSaveRoutingList, [list.Id.ToString(CultureInfo.InvariantCulture), list.Name, .. rules]).ConfigureAwait(false);
         return ack.Ok ? Reply.Report(ack with { Message = $"{list.Name}: {rules.Count.ToString(CultureInfo.InvariantCulture)} rules" }) : Reply.Report(ack);
+    }
+
+    // Points one field of one rule: the server it rides, or where it goes while that server is down.
+    private static async Task<int> RuleAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0 || (args[0] != "server" && args[0] != "fallback"))
+        {
+            return Reply.Usage(_ruleUsage);
+        }
+
+        var fallback = args[0] == "fallback";
+        if (args.Count != 4 || Resolve(agent, args[1]) is not { } list)
+        {
+            return Reply.Usage(_ruleUsage);
+        }
+
+        // A field nothing reads while one server carries everything.
+        if (!agent.Snapshot.MultiServer)
+        {
+            Output.Error("this agent runs one server at a time, so a rule has nowhere else to ride");
+            return Exit.Unsupported;
+        }
+
+        if (Target(agent, args[3], fallback) is not { } target)
+        {
+            return Reply.Usage(fallback
+                ? $"'{args[3]}' is not a fallback; expected auto, best, direct, block or a configuration"
+                : $"'{args[3]}' is not a server; expected auto, best or a configuration");
+        }
+
+        var current = await RulesAsync(agent, list.Id).ConfigureAwait(false);
+        if (!current.Ok)
+        {
+            return Reply.Report(current);
+        }
+
+        var rules = Split(current.Message).ToList();
+        var index = rules.FindIndex(rule => Same(rule, args[2]));
+        if (index < 0)
+        {
+            return Reply.Usage($"'{args[2]}' is not a rule of {list.Name}");
+        }
+
+        var row = Read(rules[index]);
+        if (row.Role != "proxy")
+        {
+            return Reply.Usage($"'{row.Rule}' is a {row.Role} rule, and only a proxied rule rides a server");
+        }
+
+        // A name is matched by the machine's one resolver, so it takes the default server until that changes.
+        if (row.Rule.StartsWith("domain:", StringComparison.OrdinalIgnoreCase)
+            || row.Rule.StartsWith("geosite:", StringComparison.OrdinalIgnoreCase))
+        {
+            return Reply.Usage($"'{row.Rule}' is matched by name, and names take the default server for now");
+        }
+
+        var tail = fallback
+            ? RuleFields.Tail(row.ServerMode, row.Server, target.Mode, target.Name)
+            : RuleFields.Tail(target.Mode, target.Name, row.FallbackMode, row.Fallback);
+        rules[index] = $"{row.Role}|{row.Rule}{tail}";
+
+        var ack = await agent.SendAsync(IpcContract.OpSaveRoutingList, [list.Id.ToString(CultureInfo.InvariantCulture), list.Name, .. rules]).ConfigureAwait(false);
+        return ack.Ok
+            ? Reply.Report(ack with { Message = $"{row.Rule}: {args[0]} = {RuleFields.Word(target.Mode, target.Name)}" })
+            : Reply.Report(ack);
+    }
+
+    // Reads the target word, refusing what the field cannot hold and pinning a configuration to its stored spelling.
+    private static (RuleTargetMode Mode, string Name)? Target(IAgentLink agent, string word, bool fallback)
+    {
+        var (mode, name) = RuleFields.Parse(word.Trim());
+        if (!fallback && mode is RuleTargetMode.Direct or RuleTargetMode.Block)
+        {
+            return null;
+        }
+
+        if (mode != RuleTargetMode.Server)
+        {
+            return (mode, name);
+        }
+
+        var config = agent.Snapshot.Configs.FirstOrDefault(entry => string.Equals(entry.Name, name, StringComparison.OrdinalIgnoreCase));
+        return config is null ? null : (mode, config.Name);
     }
 
     private static async Task<int> RemoveAsync(IAgentLink agent, IReadOnlyList<string> args)
@@ -328,15 +449,20 @@ internal static class RoutingCommands
     private static string[] Split(string payload) =>
         payload.Length == 0 ? [] : payload.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    // Rules compare on the token, so "geosite:x" removes "proxy|geosite:x".
+    // Rules compare on the token alone, so "geosite:x" matches "proxy|geosite:x|server=de".
     private static bool Same(string left, string right) =>
-        string.Equals(Token(left), Token(right), StringComparison.OrdinalIgnoreCase);
+        string.Equals(Rules.Plain(left), Rules.Plain(right), StringComparison.OrdinalIgnoreCase);
 
-    private static string Token(string rule)
+    // Reads a stored rule into its parts.
+    private static RuleRow Read(string rule)
     {
-        var separator = rule.IndexOf('|');
-        return separator > 0 ? rule[(separator + 1)..] : rule;
+        var fields = RuleFields.Split(Rules.Bare(rule));
+        return new RuleRow(fields.Token.Trim(), Rules.Role(rule), fields.ServerMode, fields.Server, fields.FallbackMode, fields.Fallback);
     }
+
+    // A bucket that reaches no server has no field to show.
+    private static string Column(RuleRow row, RuleTargetMode mode, string name) =>
+        row.Role == "proxy" ? RuleFields.Word(mode, name) : "-";
 
     private static int Created(string message, string name)
     {
@@ -357,4 +483,15 @@ internal static class RoutingCommands
     /// Traffic settings of a routing list, as the agent reports them.
     /// </summary>
     private sealed record RoutingSettingsPayload(string Exclusions, bool AllUdp, string Mode, bool UseGlobalProxy);
+
+    /// <summary>
+    /// One stored rule read into its parts.
+    /// </summary>
+    private sealed record RuleRow(
+        string Rule,
+        string Role,
+        RuleTargetMode ServerMode,
+        string Server,
+        RuleTargetMode FallbackMode,
+        string Fallback);
 }

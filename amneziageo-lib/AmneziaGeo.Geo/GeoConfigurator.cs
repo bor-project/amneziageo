@@ -258,7 +258,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
     public static GeoRule? ParseRoleRule(string text)
     {
         var (role, tail) = SplitRole(text);
-        var (token, serverMode, server, fallbackMode, fallback) = SplitServer(tail);
+        var (token, serverMode, server, fallbackMode, fallback) = RuleFields.Split(tail);
         var rule = ParseRule(token);
         return rule is null
             ? null
@@ -278,8 +278,8 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
     public static string FormatWithRole(GeoRule rule)
     {
         var normalized = rule.Normalized();
-        var server = FormatField("server", normalized.ServerMode, normalized.Server);
-        var fallback = FormatField("fallback", normalized.FallbackMode, normalized.Fallback);
+        var server = RuleFields.Format("server", normalized.ServerMode, normalized.Server);
+        var fallback = RuleFields.Format("fallback", normalized.FallbackMode, normalized.Fallback);
         return $"{FormatPortable(normalized)}{server}{fallback}";
     }
 
@@ -337,56 +337,4 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 
         return (RouteRole.Proxy, text);
     }
-
-    // Auto is the default and stays out of the token: a rule that addresses no server reads byte for byte as it
-    // did before the field existed.
-    private static string FormatField(string field, RuleTargetMode mode, string name) => mode switch
-    {
-        RuleTargetMode.Best => $"|{field}=best",
-        RuleTargetMode.Server => $"|{field}={name}",
-        RuleTargetMode.Direct => $"|{field}=direct",
-        RuleTargetMode.Block => $"|{field}=block",
-        _ => string.Empty,
-    };
-
-    // Splits the "|server=…|fallback=…" tail off a token; a configuration name carrying a bar does not survive it.
-    private static (string Token, RuleTargetMode ServerMode, string Server, RuleTargetMode FallbackMode, string Fallback) SplitServer(string text)
-    {
-        var parts = text.Split('|');
-        var server = (Mode: RuleTargetMode.Auto, Name: string.Empty);
-        var fallback = (Mode: RuleTargetMode.Auto, Name: string.Empty);
-        foreach (var part in parts.Skip(1))
-        {
-            var separator = part.IndexOf('=');
-            if (separator <= 0)
-            {
-                continue;
-            }
-
-            var value = part[(separator + 1)..].Trim();
-            switch (part[..separator].Trim().ToLowerInvariant())
-            {
-                case "server":
-                    server = ParseField(value);
-                    break;
-
-                case "fallback":
-                    fallback = ParseField(value);
-                    break;
-            }
-        }
-
-        return (parts[0], server.Mode, server.Name, fallback.Mode, fallback.Name);
-    }
-
-    // Anything but a keyword is a configuration name; "none" is how the blocking fallback used to be spelled. A
-    // configuration named after a keyword loses the round trip, as does one carrying a bar.
-    private static (RuleTargetMode Mode, string Name) ParseField(string value) => value.ToLowerInvariant() switch
-    {
-        "" or "auto" => (RuleTargetMode.Auto, string.Empty),
-        "best" => (RuleTargetMode.Best, string.Empty),
-        "direct" => (RuleTargetMode.Direct, string.Empty),
-        "block" or "none" => (RuleTargetMode.Block, string.Empty),
-        _ => (RuleTargetMode.Server, value),
-    };
 }

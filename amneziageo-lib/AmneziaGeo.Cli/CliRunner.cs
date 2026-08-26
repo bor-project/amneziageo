@@ -129,6 +129,7 @@ public static class CliRunner
               routing list
               routing use <id|name|none>
               routing show <id|name>
+              routing plan                          how the list is split across the servers up
               routing create <name> [rule...]
               routing set <id|name> [rule...]       replace every rule
               routing add <id|name> <rule...>       append rules

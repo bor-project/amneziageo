@@ -29,6 +29,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // Поднимает ли эта платформа несколько туннелей сразу.
     private bool _multiTunnel;
 
+    // Работает ли машина несколькими серверами разом.
+    private bool _multiServer;
+
     // Набор, который поднимает большая кнопка: туннели, оставшиеся от прошлого подключения.
     private IReadOnlyList<string> _roster = [];
 
@@ -458,6 +461,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
         _multiTunnel = snapshot.MultiTunnel;
+        _multiServer = snapshot.MultiServer;
         var roster = NameList.Split(snapshot.Roster);
         if (!roster.SequenceEqual(_roster, StringComparer.Ordinal))
         {
@@ -666,10 +670,30 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 ? CardStatus
                 : _configStatus.GetValueOrDefault(row.Name, ConnectionStatus.Disconnected);
         }
+
+        OnPropertyChanged(nameof(ShowReserves));
+        OnPropertyChanged(nameof(ReserveText));
     }
 
     // Сколько туннелей стоит прямо сейчас.
     private int LiveConfigCount => _host.Config.Configs.Count(row => row.ShowStatusFrame);
+
+    // Сколько туннелей стоит помимо основного: одним сервером считать нечего, баннер и так о нём.
+    private int ReserveCount => _multiServer
+        ? _host.Config.Configs.Count(row => row.ShowStatusFrame
+            && !string.Equals(row.Name, BoundTarget, StringComparison.Ordinal))
+        : 0;
+
+    /// <summary>
+    /// Стоят ли туннели помимо основного.
+    /// </summary>
+    public bool ShowReserves => ReserveCount > 0;
+
+    /// <summary>
+    /// Сколько туннелей стоит помимо основного, словами: баннер отчитывается за основной сервер, а резервы
+    /// несут свой трафик и живут на своих карточках.
+    /// </summary>
+    public string ReserveText => Loc.Instance.Get("Main_ReserveTunnels", ReserveCount);
 
     // Состояние цели словами: то же, что показывает кнопка в шапке.
     private string CardStatus => ConnState switch
@@ -740,7 +764,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
 
         // Живой туннель едет за выбором: смена сервера на главной переносит его так же, как кнопка карточки.
-        if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
+        // Несколькими серверами выбор ничего не переносит - он говорит лишь, о ком отчитываются Диагностика и
+        // проба, а поднимают серверы карточки.
+        if (!_multiServer && IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
         {
             _ = _multiTunnel ? MoveTunnelAsync(row) : ConnectConfig(row);
             return;
@@ -754,7 +780,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// </summary>
     internal Task UseConfigAsync(ConfigItemViewModel row)
     {
-        if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
+        if (!_multiServer && IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
         {
             return _multiTunnel ? MoveTunnelAsync(row) : ConnectConfig(row);
         }
@@ -960,8 +986,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
-    // Стоит ли туннель на этой конфигурации.
-    private bool IsLiveConfig(ConfigItemViewModel item) => _multiTunnel
+    // Что снимет клик по кружку: несколькими серверами кружок правит питанием сервера, поэтому включённый
+    // выключается и стоя, а одним туннелем считается только живой.
+    private bool IsLiveConfig(ConfigItemViewModel item) => _multiServer
+        ? !item.SwitchedOff
+        : _multiTunnel
         ? item.ShowStatusFrame
         : IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
 

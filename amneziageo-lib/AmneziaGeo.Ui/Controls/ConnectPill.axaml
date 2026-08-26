@@ -8,6 +8,9 @@
        text carry the state colour (gray off, orange while switching or while the server stays silent, blue
        connected). Shared by the settings header and the compact home header. -->
   <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+    <TextBlock Text="{Binding ReserveText}" FontSize="11"
+               Foreground="{Binding ConnectHintBrush}" VerticalAlignment="Center"
+               IsVisible="{Binding ShowReserves}" />
     <TextBlock Text="{Binding RetryText}" FontSize="11" FontWeight="SemiBold"
                Foreground="{Binding ConnectStatusBrush}" VerticalAlignment="Center"
                IsVisible="{Binding ShowRetry}" />

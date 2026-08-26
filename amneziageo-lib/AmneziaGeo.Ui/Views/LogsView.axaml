@@ -105,6 +105,22 @@
            </StackPanel>
          </Grid>
 
+         <!-- Several servers at once: the live source, the configuration and the caches are read off one tunnel,
+              and no card names it any more, so the screen picks it here. -->
+         <StackPanel Spacing="4" IsVisible="{Binding ShowServerPick}">
+           <TextBlock Text="{l:Tr Main_HomeServerLabel}" FontWeight="SemiBold" FontSize="15"
+                      IsVisible="{Binding !IsShort}" />
+           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                     ItemsSource="{Binding Shell.Config.ProbeConfigOptions}"
+                     SelectedItem="{Binding Shell.Home.ActiveConfigChoice, Mode=TwoWay}">
+             <controls:AdaptiveComboBox.ItemTemplate>
+               <DataTemplate x:DataType="vm:ConfigChoice">
+                 <TextBlock Text="{Binding Name}" />
+               </DataTemplate>
+             </controls:AdaptiveComboBox.ItemTemplate>
+           </controls:AdaptiveComboBox>
+         </StackPanel>
+
          <!-- The probe journal names the server it is measured through, so source and server share the row in
               equal halves: stacked they would take a second row off the journal under them. -->
          <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="{Binding IsProbeLog}">

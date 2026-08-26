@@ -269,33 +269,9 @@ internal sealed class FailoverService(
     }
 
     // Moves the route onto a server that is already standing beside the tunnel, which takes it over without being
-    // dialled: what is open through it stays open, and the move costs a pipe round-trip instead of a handshake.
-    // Only a tunnel raised with the default route clipped off it is asked - that is a tunnel that wanted to carry
-    // everything and was refused, and nothing else is owed the route.
+    // dialled.
     private async Task<bool> HandOverAsync(IStateStore store, TunnelControl holder, string next, CancellationToken ct)
     {
-        if (control.Find(next) is not { Running: true, HandshakeAge: >= 0 })
-        {
-            return false;
-        }
-
-        if (await store.GetSettingAsync(TunnelPaths.DefaultRouteKey(next), ct).ConfigureAwait(false) != TunnelPaths.ClipDefaultRoute)
-        {
-            return false;
-        }
-
-        // Make before break: the one taking over carries everything before the one giving up stops, so no packet
-        // meets a moment with nowhere to go.
-        if (RuntimeSnapshotPipe.Send(next, RuntimeSnapshotPipe.Carry(take: true), logger) != "ok")
-        {
-            logger.LogInformation("{Config} could not take everything over as it stands, so it is dialled again to carry it", next);
-            return false;
-        }
-
-        RuntimeSnapshotPipe.Send(holder.Config, RuntimeSnapshotPipe.Carry(take: false), logger);
-        control.ClaimDefaultRoute(next, preferred: true);
-        control.ClaimResolver(next);
-        logger.LogInformation("{Config} was already standing beside the tunnel, so it took everything over without being dialled and what was open through it stayed open", next);
-        return true;
+        return await RouteHandover.TryAsync(control, store, holder.Config, next, logger, ct).ConfigureAwait(false);
     }
 }

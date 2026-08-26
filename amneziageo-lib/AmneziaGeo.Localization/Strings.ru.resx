@@ -230,7 +230,7 @@
     <value>Несколько серверов</value>
   </data>
   <data name="General_MultiServerHint" xml:space="preserve">
-    <value>Держать несколько серверов сразу: приоритет, основной сервер и сервер на правиле маршрутизации.</value>
+    <value>Держать несколько серверов сразу: приоритет, основной сервер и сервер на правиле маршрутизации. При выключении остаётся основной сервер, остальные отключаются.</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Восстанавливать после перезагрузки</value>
@@ -2055,6 +2055,36 @@
   </data>
   <data name="Main_CardTagRoutingOff" xml:space="preserve">
     <value>весь трафик</value>
+  </data>
+  <data name="Main_CardTagRoutingList" xml:space="preserve">
+    <value>{0}:{1}</value>
+  </data>
+  <data name="Main_CardPrimaryButton" xml:space="preserve">
+    <value>основной</value>
+  </data>
+  <data name="Main_CardPrimaryTip" xml:space="preserve">
+    <value>Сделать основным: карточка встанет первой в приоритете и заберёт весь трафик, который не назвали правила</value>
+  </data>
+  <data name="Main_CardStatePrimary" xml:space="preserve">
+    <value>основной</value>
+  </data>
+  <data name="Main_CardStateReserve" xml:space="preserve">
+    <value>резервный</value>
+  </data>
+  <data name="Main_CardStateIdle" xml:space="preserve">
+    <value>включён, не поднят</value>
+  </data>
+  <data name="Main_CardStateOff" xml:space="preserve">
+    <value>выключен</value>
+  </data>
+  <data name="Main_CardStateSilent" xml:space="preserve">
+    <value>не отвечает</value>
+  </data>
+  <data name="Main_CardStateDialing" xml:space="preserve">
+    <value>подключается {0}/{1}</value>
+  </data>
+  <data name="Main_ReserveTunnels" xml:space="preserve">
+    <value>ещё туннелей: {0}</value>
   </data>
   <data name="Main_ConfigDefaultRouteTitle" xml:space="preserve">
     <value>Приложения</value>

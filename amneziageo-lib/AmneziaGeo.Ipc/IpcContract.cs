@@ -376,6 +376,13 @@ public static class IpcContract
     public const string OpGetCacheEntries = "get-cache-entries";
 
     /// <summary>
+    /// Command to read how the distributor split the routing list across the servers up right now. No args. The
+    /// ack message holds a JSON object { multiServer, list, servers, rules, direct, blocked }, where servers
+    /// carries { server, list, rules, carrier } rows and rules carries { rule, kind, server, reason } rows.
+    /// </summary>
+    public const string OpGetRoutingLayout = "get-routing-layout";
+
+    /// <summary>
     /// Command to read what the tunnel carries right now. No args. The ack message holds the session report: one
     /// "session" row per destination, busiest first, then a closing "held" row with the totals. Where nothing
     /// relays connections, a row is a destination the routing holds, with its verdict and its idle clock and no

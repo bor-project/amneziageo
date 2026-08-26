@@ -230,7 +230,7 @@
     <value>Several servers</value>
   </data>
   <data name="General_MultiServerHint" xml:space="preserve">
-    <value>Run several servers at once: priority, a main server, and a server named on a routing rule.</value>
+    <value>Run several servers at once: priority, a main server, and a server named on a routing rule. Switching it off leaves the main server up and takes the rest down.</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>
@@ -2055,6 +2055,36 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   </data>
   <data name="Main_CardTagRoutingOff" xml:space="preserve">
     <value>full tunnel</value>
+  </data>
+  <data name="Main_CardTagRoutingList" xml:space="preserve">
+    <value>{0}:{1}</value>
+  </data>
+  <data name="Main_CardPrimaryButton" xml:space="preserve">
+    <value>primary</value>
+  </data>
+  <data name="Main_CardPrimaryTip" xml:space="preserve">
+    <value>Make this the primary server: it heads the priority and carries everything the rules do not name</value>
+  </data>
+  <data name="Main_CardStatePrimary" xml:space="preserve">
+    <value>primary</value>
+  </data>
+  <data name="Main_CardStateReserve" xml:space="preserve">
+    <value>reserve</value>
+  </data>
+  <data name="Main_CardStateIdle" xml:space="preserve">
+    <value>on, not up</value>
+  </data>
+  <data name="Main_CardStateOff" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="Main_CardStateSilent" xml:space="preserve">
+    <value>no answer</value>
+  </data>
+  <data name="Main_CardStateDialing" xml:space="preserve">
+    <value>connecting {0}/{1}</value>
+  </data>
+  <data name="Main_ReserveTunnels" xml:space="preserve">
+    <value>more tunnels: {0}</value>
   </data>
   <data name="Main_ConfigDefaultRouteTitle" xml:space="preserve">
     <value>Apps</value>

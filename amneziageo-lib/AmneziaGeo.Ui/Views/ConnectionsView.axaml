@@ -76,15 +76,19 @@
                                        IsChecked="{Binding Failover.Enabled, Mode=TwoWay}" />
 
             <StackPanel Spacing="12" IsEnabled="{Binding Failover.Enabled}">
-              <TextBlock Text="{l:Tr General_FailoverOrderHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
+              <!-- Порядок и участие: несколькими серверами их держат карточки каталога - приоритет
+                   перетаскиванием, участие кружком, - и список отсюда уходит. -->
+              <StackPanel Spacing="12" IsVisible="{Binding !MultiServer}">
+                <TextBlock Text="{l:Tr General_FailoverOrderHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
 
-              <ItemsControl ItemsSource="{Binding Failover.Rows}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:FailoverRowViewModel">
-                    <controls:FailoverRow />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                <ItemsControl ItemsSource="{Binding Failover.Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FailoverRowViewModel">
+                      <controls:FailoverRow />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
 
               <controls:SettingSwitchRow Label="{l:Tr General_FailoverReturn}"
                                          Description="{l:Tr General_FailoverReturnHint}"

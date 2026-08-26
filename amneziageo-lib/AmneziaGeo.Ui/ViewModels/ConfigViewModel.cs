@@ -521,7 +521,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             row.IsPicked = ReferenceEquals(row, item);
         }
 
-        if (item is not null && !_host.Home.IsTunnelActive)
+        // Цель есть только там, где туннель один: несколько серверов работают набором, а не выбором.
+        if (item is not null && !MultiServer && !_host.Home.IsTunnelActive)
         {
             _host.Home.ActiveConfig = item;
         }
@@ -541,6 +542,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         _ = _host.Home.UseConfigAsync(item);
         item.RefreshSelected();
+    }
+
+    /// <summary>
+    /// Делает карточку основной: она уходит в голову приоритета и забирает себе весь трафик, который не
+    /// назвали остальные.
+    /// </summary>
+    [RelayCommand]
+    private void MakePrimary(ConfigItemViewModel? item)
+    {
+        if (item is not null)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetDefaultRoute, [item.Name]));
+        }
     }
 
     /// <summary>
@@ -603,7 +617,21 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// Поднимает ли эта платформа несколько туннелей сразу.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDefaultRouteBlock))]
     private bool _multiTunnel;
+
+    /// <summary>
+    /// Работает ли машина несколькими серверами разом.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDefaultRouteBlock))]
+    private bool _multiServer;
+
+    /// <summary>
+    /// Стоит ли в настройках конфигурации блок «Приложения»: несколькими серверами владельца дефолтного
+    /// маршрута считает распределитель, и выбирать его руками нечем.
+    /// </summary>
+    public bool ShowDefaultRouteBlock => MultiTunnel && !MultiServer;
 
     /// <summary>
     /// Несёт ли открытая конфигурация всё, что не назвали остальные туннели.
@@ -653,6 +681,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ? _routingLists.FirstOrDefault(list => list.Id == id)?.Name ?? string.Empty
         : string.Empty;
 
+    // Сколько правил в списке маршрутизации по его номеру.
+    private int RuleCount(long? listId) => listId is { } id
+        ? _routingLists.FirstOrDefault(list => list.Id == id)?.RuleCount ?? 0
+        : 0;
+
     // Discard an in-progress draft before switching to Config / Export.
     private void LeaveImport()
     {
@@ -672,6 +705,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _defaultRouteOwner = snapshot.DefaultRouteOwner;
         _defaultRouteHeld = snapshot.DefaultRouteHeld;
         MultiTunnel = snapshot.MultiTunnel;
+        MultiServer = snapshot.MultiServer;
+        var switchedOff = NameList.Split(snapshot.FailoverSkipped).ToHashSet(StringComparer.Ordinal);
         OnPropertyChanged(nameof(CarriesDefaultRoute));
         OnPropertyChanged(nameof(DefaultRouteHeldText));
 
@@ -733,7 +768,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.LinkRttMs = entry.RttMs;
             existing.RoutingListId = entry.RoutingListId;
             existing.RoutingListName = ListName(entry.RoutingListId);
+            existing.RoutingRuleCount = RuleCount(entry.RoutingListId);
             existing.CarriesDefault = string.Equals(snapshot.DefaultRouteHeld, entry.Name, StringComparison.Ordinal);
+            existing.ConnectAttempt = entry.ConnectAttempt;
+            existing.MultiServer = snapshot.MultiServer;
+            existing.SwitchedOff = snapshot.MultiServer && switchedOff.Contains(entry.Name);
         }
 
         OnPropertyChanged(nameof(OpenRow));

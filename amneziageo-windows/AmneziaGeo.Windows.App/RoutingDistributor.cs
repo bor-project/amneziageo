@@ -84,6 +84,123 @@ internal sealed class RoutingDistributor(
         return ServerRoster.Build(settings.MultiServer, off is { Length: > 0 }, order, rules, NameList.Split(settings.FailoverSkipped), picked);
     }
 
+    /// <summary>
+    /// Settles the machine on the mode it was just put in. Nothing is raised either way: with several servers on
+    /// every tunnel already up is handed its share of the list, and with them off the server carrying the default
+    /// route stays while this user's other tunnels go down. The priority and the cards switched off are left as
+    /// they are - they are what the mode comes back to.
+    /// </summary>
+    /// <param name="ownerRoot">Library the configurations are read from.</param>
+    /// <param name="sid">User whose tunnels are settled; another user's stay theirs.</param>
+    /// <param name="ct">Cancellation.</param>
+    public async Task<ModeSwitch> SwitchModeAsync(string ownerRoot, string? sid = null, CancellationToken ct = default)
+    {
+        var settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
+        if (settings.MultiServer)
+        {
+            await DistributeAsync(ownerRoot, force: true, ct: ct).ConfigureAwait(false);
+            return new ModeSwitch(control.DefaultRouteOwner ?? string.Empty, []);
+        }
+
+        var order = await new ConfigRepository(stores.For(ownerRoot), serviceManager).ListAsync(ct).ConfigureAwait(false);
+        var mine = control.Desired.Where(tunnel => tunnel.IsOwnedBy(ownerRoot, sid)).Select(tunnel => tunnel.Config).ToList();
+        var settle = ModeSwitch.Settle(order, mine, control.DefaultRouteOwner);
+        foreach (var name in settle.Dropped)
+        {
+            control.Find(name)?.SetRunning(false);
+            logger.LogInformation("{Config} goes down: one server works at a time again, and {Keeper} carries everything on its own", name, settle.Keeper);
+        }
+
+        await DistributeAsync(ownerRoot, force: true, ct: ct).ConfigureAwait(false);
+        return settle;
+    }
+
+    /// <summary>
+    /// How the list came out across the servers up right now: where every proxied rule was sent, what led there,
+    /// and what each server was left carrying. This is a read - it settles nothing and moves nothing.
+    /// </summary>
+    /// <param name="ownerRoot">Library the list and the configurations are read from.</param>
+    /// <param name="ct">Cancellation.</param>
+    public async Task<RoutingLayout> LayoutAsync(string ownerRoot, CancellationToken ct = default)
+    {
+        var store = stores.For(ownerRoot);
+        var settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
+        var order = await new ConfigRepository(store, serviceManager).ListAsync(ct).ConfigureAwait(false);
+        var up = Up(order, null);
+        if (!settings.MultiServer)
+        {
+            return new RoutingLayout(false, string.Empty, await BoundAsync(store, up, ct).ConfigureAwait(false), [], 0, 0);
+        }
+
+        var fleet = new ServerFleet(true, order, RouteCarrier.Head(up, Carrier(up)));
+        var selected = await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        var list = selected is null ? null : await store.GetRoutingListAsync(selected.Value, ct).ConfigureAwait(false);
+        if (list is null)
+        {
+            return new RoutingLayout(true, string.Empty, [.. fleet.Up.Select(server => new ServerLayout(server, string.Empty, 0, Carries(server, fleet)))], [], 0, 0);
+        }
+
+        var plan = RoutingPlan.Build(list.Rules, fleet);
+        return new RoutingLayout(
+            true,
+            list.Name,
+            [.. plan.Servers.Select(share => new ServerLayout(share.Server, list.Name, share.Rules.Count, Carries(share.Server, fleet)))],
+            [.. plan.Verdicts.Select(verdict => new RuleLayout(
+                GeoConfigurator.FormatWithRole(verdict.Rule),
+                Word(verdict.Target.Kind),
+                Where(verdict.Target, fleet),
+                verdict.Target.Reason.ToString()))],
+            plan.Verdicts.Count(verdict => verdict.Target.Kind == TargetKind.Direct),
+            plan.Blocked.Count);
+    }
+
+    // Mode off: nothing is split, so a server is named by the list its own configuration is bound to and by how
+    // much of it it carries.
+    private async Task<IReadOnlyList<ServerLayout>> BoundAsync(IStateStore store, IReadOnlyList<string> up, CancellationToken ct)
+    {
+        var rows = new List<ServerLayout>();
+        foreach (var name in up)
+        {
+            var listId = await RoutingBinding.ResolveAsync(store, name, ct).ConfigureAwait(false);
+            var list = listId is null ? null : await store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false);
+            rows.Add(new ServerLayout(
+                name,
+                list?.Name ?? string.Empty,
+                list?.Rules.Count(rule => rule.Normalized().Role == RouteRole.Proxy) ?? 0,
+                string.Equals(control.DefaultRouteOwner, name, StringComparison.Ordinal)));
+        }
+
+        return rows;
+    }
+
+    // The server the matches ride: the one the verdict names, or whoever carries everything.
+    private static string Where(RuleTarget target, ServerFleet fleet)
+    {
+        return target.Kind switch
+        {
+            TargetKind.Server => target.Server,
+            TargetKind.Auto => fleet.First,
+            _ => string.Empty,
+        };
+    }
+
+    // Whether the server carries everything no other server is named for.
+    private static bool Carries(string server, ServerFleet fleet)
+    {
+        return string.Equals(fleet.First, server, StringComparison.Ordinal);
+    }
+
+    private static string Word(TargetKind kind)
+    {
+        return kind switch
+        {
+            TargetKind.Server => "server",
+            TargetKind.Direct => "direct",
+            TargetKind.Block => "block",
+            _ => "auto",
+        };
+    }
+
     // The rules of the list the whole machine routes through. With the mode off no rule names a server, so none is
     // read: the buckets they expand into are what the tunnel routes by, and they are read where they are applied.
     private static async Task<IReadOnlyList<GeoRule>> RulesAsync(IStateStore store, bool multiServer, CancellationToken ct)
@@ -169,7 +286,7 @@ internal sealed class RoutingDistributor(
     // left; once they are spent everything moves to the next server up the priority and it keeps trying.
     private string? Elect(IReadOnlyList<string> up)
     {
-        var carrier = RouteCarrier.Pick(up, control.DefaultRouteOwner, Spent(up));
+        var carrier = Carrier(up);
         if (carrier is null || string.Equals(carrier, control.DefaultRouteOwner, StringComparison.Ordinal))
         {
             return carrier;
@@ -184,6 +301,13 @@ internal sealed class RoutingDistributor(
         }
 
         return carrier;
+    }
+
+    // Who carries everything as things stand: the server holding the default route while its dialling has
+    // attempts left, the next one up the priority once they are spent.
+    private string? Carrier(IReadOnlyList<string> up)
+    {
+        return RouteCarrier.Pick(up, control.DefaultRouteOwner, Spent(up));
     }
 
     // Servers whose dialling is spent: three dials the peer did not answer, or a failure no retry gets past.

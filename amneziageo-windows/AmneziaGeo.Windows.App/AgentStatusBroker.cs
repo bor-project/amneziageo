@@ -316,6 +316,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
+                IpcContract.OpGetRoutingLayout => await GetRoutingLayoutAsync(ct),
                 IpcContract.OpGetSessions => await GetSessionsAsync(ct),
                 IpcContract.OpKnownHosts => await KnownHostsAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
@@ -1178,6 +1179,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, System.Text.Json.JsonSerializer.Serialize(inspector.Collect()));
     }
 
+    // How the distributor split the list across the servers up right now.
+    private async Task<IpcAck> GetRoutingLayoutAsync(CancellationToken ct)
+    {
+        var layout = await distributor.LayoutAsync(CurrentScope.UserRoot, ct);
+        return new IpcAck(true, System.Text.Json.JsonSerializer.Serialize(layout, IpcJson.Options));
+    }
+
     // What the tunnel carries right now. A tunnel this user does not own carries nothing to report.
     private async Task<IpcAck> GetSessionsAsync(CancellationToken ct)
     {
@@ -1211,13 +1219,24 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     }
 
     // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config
-    // the next connect would raise.
+    // the next connect would raise. Several servers at once: the one picked on the screen itself, since no card
+    // names it any more, and the primary server until one is picked.
     private async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
     {
         var scope = CurrentScope;
-        var mine = control.Desired.FirstOrDefault(tunnel => tunnel.IsOwnedBy(scope.UserRoot, scope.Sid));
-        var name = mine?.Config ?? await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
-        return (name, mine is not null);
+        var mine = control.Desired.Where(tunnel => tunnel.IsOwnedBy(scope.UserRoot, scope.Sid)).ToList();
+        var picked = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        if ((await settingsStore.LoadAsync(ct)).MultiServer)
+        {
+            var named = picked.Length > 0 ? picked : control.DefaultRouteOwner ?? string.Empty;
+            if (named.Length > 0)
+            {
+                return (named, mine.Any(tunnel => string.Equals(tunnel.Config, named, StringComparison.Ordinal)));
+            }
+        }
+
+        var head = mine.FirstOrDefault();
+        return (head?.Config ?? picked, head is not null);
     }
 
     // Apps + services for per-app tunneling; enumerated as SYSTEM to read restricted paths. Rows are tab-separated: kind, label, value, detail.
@@ -1712,6 +1731,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, $"unknown config: {name}");
         }
 
+        // Several servers at once: the card named is made the primary one instead, and nothing is picked by hand
+        // for the distributor - it works the carrier out from the priority and from what is up.
+        if ((await settingsStore.LoadAsync(ct)).MultiServer)
+        {
+            return await MakePrimaryAsync(name, ct);
+        }
+
         var previous = await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct) ?? string.Empty;
         if (string.Equals(previous, name, StringComparison.Ordinal))
         {
@@ -1732,6 +1758,47 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         logger.LogInformation("{Config} now carries everything the other tunnels do not name", name.Length > 0 ? name : "the first tunnel up");
         return new IpcAck(true, name.Length > 0 ? $"default route: {name} (applies on reconnect)" : "default route: the first tunnel up");
+    }
+
+    // Makes a card the primary server: it switches on, heads the priority and takes everything over from
+    // whoever carries it now. The one giving the route up stays up and carries what names it.
+    private async Task<IpcAck> MakePrimaryAsync(string name, CancellationToken ct)
+    {
+        if (name.Length == 0)
+        {
+            return new IpcAck(false, "several servers work at once, so one of them has to carry everything");
+        }
+
+        var scope = CurrentScope;
+        await SwitchCardAsync(name, true, ct);
+
+        // The first card that is on carries everything, so the primary server is the head of the order.
+        var order = await configRepo.ListAsync(ct);
+        var raised = FailoverPolicy.Raise(order, name);
+        if (!raised.SequenceEqual(order, StringComparer.Ordinal))
+        {
+            await configRepo.ReorderAsync(raised, ct);
+        }
+
+        // A card named by hand starts its dialling from a clean slate, so one that ran out of attempts gets
+        // them back.
+        var tunnel = control.For(name, scope.UserRoot, scope.Sid);
+        tunnel.ClearRetry();
+        var holder = control.DefaultRouteOwner;
+        if (!string.Equals(holder, name, StringComparison.Ordinal))
+        {
+            // Standing beside the tunnel, it takes everything over where it is; otherwise the route is claimed
+            // and the one that held it is dialled again to carry only what names it.
+            if (holder is not { Length: > 0 } || !await RouteHandover.TryAsync(control, store, holder, name, logger, ct))
+            {
+                control.ClaimDefaultRoute(name, preferred: true).Displaced?.Invalidate();
+            }
+        }
+
+        tunnel.SetRunning(true);
+        await RememberDesiredAsync(ct);
+        logger.LogInformation("{Config} is the primary server now: it heads the priority and carries everything the rules do not name", name);
+        return new IpcAck(true, $"primary server: {name}");
     }
 
     // A server picked by hand heads the priority list; a server auto-switching moves to keeps its place.
@@ -2355,6 +2422,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var key = args[0];
+
+        // The mode as it stood before the write: what stands on the machine is settled only where it moved.
+        var wasMultiServer = key == SettingKeys.MultiServer && (await settingsStore.LoadAsync(ct)).MultiServer;
         if (!await settingsStore.SetAsync(key, args[1], ct))
         {
             return new IpcAck(false, $"invalid setting or value; keys: {string.Join(", ", SettingsStore.Keys())}");
@@ -2384,6 +2454,12 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(true, $"route lifetime = {args[1]} s");
         }
 
+        // Working several servers at once applies live: the machine settles on what the new mode keeps up.
+        if (key == SettingKeys.MultiServer)
+        {
+            return await SwitchModeAsync(wasMultiServer, ct);
+        }
+
         // The local proxy applies live: the listener moves to the new settings before the answer goes back.
         if (key.StartsWith("proxy-", StringComparison.Ordinal))
         {
@@ -2396,6 +2472,43 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
+    }
+
+    // Settles the machine on the mode it was just put in. Nothing comes up either way: with several servers on
+    // every tunnel already up is handed its share of the list, and with them off the server carrying the default
+    // route stays while this user's other tunnels go down. The priority and the cards switched off are left as
+    // they are - they are what the mode comes back to.
+    private async Task<IpcAck> SwitchModeAsync(bool was, CancellationToken ct)
+    {
+        var scope = CurrentScope;
+        var on = (await settingsStore.LoadAsync(ct)).MultiServer;
+
+        // A window pushes the settings it was seeded with, so the mode is written far more often than it moves.
+        if (on == was)
+        {
+            return new IpcAck(true, on ? "several servers work at once" : "one server at a time");
+        }
+
+        var settle = await distributor.SwitchModeAsync(scope.UserRoot, scope.Sid, ct);
+        Announce(RuntimeSnapshotPipe.OpRules);
+        if (on)
+        {
+            logger.LogInformation("several servers work at once now: {Config} carries everything the rules do not name, and the cards beside it wait for a connect",
+                settle.Keeper.Length > 0 ? settle.Keeper : "nothing that is up");
+            return new IpcAck(true, "several servers work at once");
+        }
+
+        // One server at a time: what is left standing is what the machine reports on and what a connect brings back.
+        if (settle.Keeper.Length > 0)
+        {
+            await store.SetSettingAsync(AgentControl.SelectedTargetKey, settle.Keeper, ct);
+            control.SetTarget(settle.Keeper);
+        }
+
+        await RememberDesiredAsync(ct);
+        logger.LogInformation("one server at a time now: {Config} stays up and {Count} tunnel(s) go down",
+            settle.Keeper.Length > 0 ? settle.Keeper : "nothing", settle.Dropped.Count);
+        return new IpcAck(true, settle.Keeper.Length > 0 ? $"one server at a time: {settle.Keeper} stays up" : "one server at a time");
     }
 
     private async Task<IpcAck> CollectDiagnosticsAsync(CancellationToken ct)
@@ -2717,14 +2830,35 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var owned = mine.Count > 0 || !control.Running;
         var selectedTarget = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
         var selectedRouting = await store.GetSelectedRoutingListAsync(ct);
-        var primary = mine.FirstOrDefault();
+        var settings = await settingsStore.LoadAsync(ct);
+        // Windows raises several tunnels at once, so the several-servers flow is offered here.
+        var multiTunnel = true;
+        var multiServer = multiTunnel && settings.MultiServer;
+
+        // Several servers at once: the card reports on the primary server, the one carrying everything the rules
+        // do not name. One server: the first tunnel that is up, as before.
+        var carrier = multiServer && control.DefaultRouteOwner is { Length: > 0 } held
+            ? ours.FirstOrDefault(tunnel => string.Equals(tunnel.Config, held, StringComparison.Ordinal))
+            : null;
+        var primary = carrier ?? mine.FirstOrDefault();
         var boundTarget = primary?.Config ?? (owned ? control.Target : null);
 
-        // The card at the top reports on the first of this user's tunnels.
+        // The card at the top reports on the tunnel it names.
         var boundState = boundTarget is not null ? states.FirstOrDefault(s => s.Name == boundTarget) : null;
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
-        var failed = ours.FirstOrDefault(tunnel => tunnel.ConnectFailed);
+        // A reserve fails, dials and loses its resolver on its own card: the primary server is what the card at
+        // the top answers for.
+        var failed = carrier is not null
+            ? carrier.ConnectFailed ? carrier : null
+            : ours.FirstOrDefault(tunnel => tunnel.ConnectFailed);
         var stuck = ours.FirstOrDefault(tunnel => tunnel.DisconnectFailed);
+        var active = carrier is not null ? carrier.Running : mine.Count > 0;
+        var retryAttempt = multiServer
+            ? primary?.RetryAttempt ?? 0
+            : ours.Count > 0 ? ours.Max(tunnel => tunnel.RetryAttempt) : 0;
+        var namesUnrouted = multiServer
+            ? primary is { DnsUnreachable: true }
+            : mine.Any(tunnel => tunnel.DnsUnreachable);
 
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
@@ -2759,8 +2893,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 summary.AllUdp, summary.UseGlobalProxy));
         }
 
-        var settings = await settingsStore.LoadAsync(ct);
-
         var geoFiles = (await store.ListGeoFilesAsync(ct)).ToDictionary(f => f.Name, StringComparer.Ordinal);
         var sources = new List<SourceEntry>();
         foreach (var source in await store.ListGeoSourcesAsync(ct))
@@ -2785,9 +2917,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
         var connectFailed = failed is not null;
         var disconnectFailed = stuck is not null;
-        // Windows raises several tunnels at once, so the several-servers flow is offered here.
-        var multiTunnel = true;
-        return new StatusSnapshot(Version(), boundTarget, configs, routingLists, mine.Count > 0, boundStatus, mine.Any(tunnel => tunnel.RestartRequired), selectedTarget, selectedRouting, sources,
+        return new StatusSnapshot(Version(), boundTarget, configs, routingLists, active, boundStatus, mine.Any(tunnel => tunnel.RestartRequired), selectedTarget, selectedRouting, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -2803,7 +2933,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             settings.RouteLog,
             connectFailed ? failed!.ConnectFailReason.ToString() : string.Empty,
             connectFailed ? (failed!.ConnectFailDetail ?? string.Empty) : string.Empty,
-            ours.Count > 0 ? ours.Max(tunnel => tunnel.RetryAttempt) : 0,
+            retryAttempt,
             settings.SurviveReboot,
             settings.PeriodicReconnect,
             settings.PeriodicReconnectIntervalSeconds,
@@ -2832,11 +2962,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             ProxyError: proxy.Error,
             ProxyAddresses: proxy.Addresses,
             ProxyClients: ProxyClientNames.Describe(proxy.Peers()),
-            DnsUnreachable: mine.Any(tunnel => tunnel.DnsUnreachable),
+            DnsUnreachable: namesUnrouted,
             DefaultRouteOwner: await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct) ?? string.Empty,
             DefaultRouteHeld: control.DefaultRouteOwner ?? string.Empty,
             MultiTunnel: multiTunnel,
-            MultiServer: multiTunnel && settings.MultiServer,
+            MultiServer: multiServer,
             FailoverEnabled: settings.FailoverEnabled,
             FailoverReturnMinutes: settings.FailoverReturnMinutes,
             FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)),

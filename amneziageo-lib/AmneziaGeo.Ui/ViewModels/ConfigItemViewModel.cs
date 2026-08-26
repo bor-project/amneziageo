@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -52,16 +53,85 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(RoutingLabel))]
     private string _routingListName = string.Empty;
 
+    // Сколько правил в списке маршрутизации конфигурации.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    [NotifyPropertyChangedFor(nameof(RoutingLabel))]
+    private int _routingRuleCount;
+
     /// <summary>
-    /// Маршрутизация словом: имя списка либо «весь трафик», когда списка нет.
+    /// Маршрутизация словом: имя списка и число правил в нём, либо «весь трафик», когда списка нет.
     /// </summary>
     public string RoutingLabel => RoutingListId is not null && RoutingListName.Length > 0
-        ? RoutingListName
+        ? Loc.Instance.Get("Main_CardTagRoutingList", RoutingListName, RoutingRuleCount)
         : Loc.Instance.Get("Main_CardTagRoutingOff");
 
     // Несёт ли эта конфигурация всё, что не назвали остальные туннели.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPrimary))]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
     private bool _carriesDefault;
+
+    // Выключен ли сервер на карточке: пока выключен, его не поднимают.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardMuted))]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
+    [NotifyPropertyChangedFor(nameof(CardActionText))]
+    private bool _switchedOff;
+
+    // Дозвоны, которые сервер не ответил; обнуляется удавшимся подъёмом и рукой.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
+    private int _connectAttempt;
+
+    // Работает ли машина несколькими серверами разом: от этого зависит, чем правит карточка.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardMuted))]
+    [NotifyPropertyChangedFor(nameof(ShowCardState))]
+    [NotifyPropertyChangedFor(nameof(ShowPrimaryButton))]
+    [NotifyPropertyChangedFor(nameof(ShowDefaultToggle))]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
+    [NotifyPropertyChangedFor(nameof(CardActionText))]
+    private bool _multiServer;
+
+    /// <summary>
+    /// Стоит ли на карточке кнопка «основной»: сервером карточка правит только в мультирежиме.
+    /// </summary>
+    public bool ShowPrimaryButton => MultiServer;
+
+    /// <summary>
+    /// Стоит ли на карточке тумблер «По умолчанию»: в мультирежиме его работу делает кнопка «основной».
+    /// </summary>
+    public bool ShowDefaultToggle => !MultiServer;
+
+    /// <summary>
+    /// Несёт ли карточка сейчас всё, что не назвали остальные.
+    /// </summary>
+    public bool IsPrimary => CarriesDefault;
+
+    /// <summary>
+    /// Приглушена ли карточка: выключенный сервер в мультирежиме, невыбранная конфигурация в одиночном.
+    /// </summary>
+    public bool CardMuted => MultiServer ? SwitchedOff : !IsSelected;
+
+    /// <summary>
+    /// Стоит ли на карточке плашка состояния сервера.
+    /// </summary>
+    public bool ShowCardState => MultiServer;
+
+    /// <summary>
+    /// Состояние сервера словом: выключен, не отвечает, ход дозвона, основной, резервный либо включён, но
+    /// не поднят.
+    /// </summary>
+    public string CardStateText => SwitchedOff
+        ? Loc.Instance.Get("Main_CardStateOff")
+        : ConnectAttempt >= ConnectDial.Attempts
+        ? Loc.Instance.Get("Main_CardStateSilent")
+        : ConnectAttempt > 0
+        ? Loc.Instance.Get("Main_CardStateDialing", ConnectAttempt, ConnectDial.Attempts)
+        : PowerState == 2
+        ? Loc.Instance.Get(IsPrimary ? "Main_CardStatePrimary" : "Main_CardStateReserve")
+        : Loc.Instance.Get("Main_CardStateIdle");
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
@@ -83,6 +153,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(CardLossText))]
     [NotifyPropertyChangedFor(nameof(CardLossBrush))]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
     private string _status = ConnectionStatus.Idle;
 
     /// <summary>
@@ -93,11 +164,13 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         or ConnectionStatus.Disconnecting;
 
     /// <summary>
-    /// Действие кнопки карточки словом: со своей конфигурации карточка туннель снимает, на всякой другой -
-    /// поднимает.
+    /// Действие кружка словом: несколькими серверами он включает и выключает сервер, одним туннелем - снимает
+    /// его со своей конфигурации и поднимает на всякой другой.
     /// </summary>
-    public string CardActionText =>
-        Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
+    public string CardActionText => Loc.Instance.Get(
+        MultiServer
+            ? SwitchedOff ? "Main_ConnectNowLink" : "Main_DisconnectNowLink"
+            : ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
 
     /// <summary>
     /// Метки настроек карточки: маршрутизация, прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край
@@ -122,6 +195,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         OnPropertyChanged(nameof(RoutingLabel));
         OnPropertyChanged(nameof(Tags));
         OnPropertyChanged(nameof(CardActionText));
+        OnPropertyChanged(nameof(CardStateText));
         OnPropertyChanged(nameof(ProbeText));
         OnPropertyChanged(nameof(CardSpeedText));
         OnPropertyChanged(nameof(CardLossText));
@@ -179,6 +253,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
 
     // Whether the tunnel is set to use this configuration.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardMuted))]
     private bool _isSelected;
 
     /// <summary>
@@ -190,6 +265,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
     private bool _isPicked;
+
+    // Ведут ли карточку по приоритету: стрелки двигают её саму, а не ходят по каталогу.
+    [ObservableProperty]
+    private bool _isMoving;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]

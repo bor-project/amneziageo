@@ -339,6 +339,30 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
+    <!-- Кнопка «основной» на карточке: пилюля слева от круга, залита акцентом у того, кто несёт всё. -->
+    <Style Selector="Button.cardprimary">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="11" />
+      <Setter Property="Padding" Value="9,2" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.cardprimary.filled">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.cardprimary:pressed">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+
     <!-- Кнопка подключения на карточке: круг у имени сервера, цвета носит его содержимое. -->
     <Style Selector="Button.cardpower">
       <Setter Property="Width" Value="34" />
@@ -404,6 +428,10 @@
     <!-- Idle card: a dimmer fill than the applied one. -->
     <Style Selector="Button.serverrow.off">
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+    </Style>
+    <!-- Карточка, которую ведут по приоритету: та же заливка, что у ведомой строки списка. -->
+    <Style Selector="Button.serverrow.moving">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
     </Style>
     <Style Selector="Button.serverrow:focus-visible">
       <Setter Property="FocusAdorner">

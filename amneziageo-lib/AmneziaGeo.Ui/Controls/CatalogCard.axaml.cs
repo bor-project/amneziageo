@@ -31,6 +31,9 @@ internal sealed partial class CatalogCard : UserControl
     public static readonly StyledProperty<ICommand?> DefaultCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(DefaultCommand));
 
+    public static readonly StyledProperty<ICommand?> PrimaryCommandProperty =
+        AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(PrimaryCommand));
+
     private readonly ListReorder<ConfigItemViewModel> _reorder;
 
     private bool _entered;
@@ -45,8 +48,8 @@ internal sealed partial class CatalogCard : UserControl
         InitializeComponent();
         _reorder = new ListReorder<ConfigItemViewModel>(this, vertical: false);
 
-        // Тело карточки берёт фокус только на телевизоре: там оно - вход в её контролы.
-        FacePart.Focusable = UiPlatform.IsTelevision;
+        // Тело карточки берёт фокус: на телевизоре оно вход в её контролы, на прочих - область приоритета.
+        FacePart.Focusable = true;
         ApplyStopFocus();
 
         // Тоннельно: жест читается раньше, чем его возьмёт кнопка карточки.
@@ -61,6 +64,22 @@ internal sealed partial class CatalogCard : UserControl
             AddHandler(KeyDownEvent, OnCardKeyDown, RoutingStrategies.Tunnel);
             AddHandler(KeyUpEvent, OnCardKeyUp, RoutingStrategies.Tunnel);
             LostFocus += OnCardLostFocus;
+        }
+        else
+        {
+            AddHandler(KeyDownEvent, OnCardMoveKey, RoutingStrategies.Tunnel);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+
+        // Перестановка пересобирает контейнер: фокус едет за карточкой, которую ведут.
+        if (DataContext is ConfigItemViewModel { IsMoving: true })
+        {
+            FacePart.Focus(NavigationMethod.Directional);
         }
     }
 
@@ -107,6 +126,15 @@ internal sealed partial class CatalogCard : UserControl
     {
         get => GetValue(DefaultCommandProperty);
         set => SetValue(DefaultCommandProperty, value);
+    }
+
+    /// <summary>
+    /// Команда кнопки «Основной».
+    /// </summary>
+    public ICommand? PrimaryCommand
+    {
+        get => GetValue(PrimaryCommandProperty);
+        set => SetValue(PrimaryCommandProperty, value);
     }
 
     /// <inheritdoc/>
@@ -212,6 +240,43 @@ internal sealed partial class CatalogCard : UserControl
         }
     }
 
+    // Enter по телу вводит карточку в режим перемещения, стрелки двигают её по приоритету, Enter и Esc
+    // режим закрывают и складывают порядок.
+    private void OnCardMoveKey(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not ConfigItemViewModel item)
+        {
+            return;
+        }
+
+        if (!item.IsMoving)
+        {
+            if (e.Key is Key.Enter && FacePart.IsFocused)
+            {
+                item.IsMoving = true;
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (e.Key is Key.Up or Key.Left or Key.Down or Key.Right)
+        {
+            _reorder.Step(e.Key is Key.Down or Key.Right ? 1 : -1);
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Enter or Key.Space or Key.Escape)
+        {
+            item.IsMoving = false;
+            if (DropCommand?.CanExecute(null) == true)
+            {
+                DropCommand.Execute(null);
+            }
+
+            e.Handled = true;
+        }
+    }
+
     // Отпускание ключа входа гасится: иначе оно нажимает контрол, на который только что сел фокус.
     private void OnCardKeyUp(object? sender, KeyEventArgs e)
     {
@@ -274,17 +339,32 @@ internal sealed partial class CatalogCard : UserControl
         grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки строками: подключение сверху, тумблер и настройки ниже; запертую кнопку туннеля
-    // пульт пропускает.
+    // Контролы карточки строками: роль и подключение сверху, тумблер и настройки ниже; запертую кнопку
+    // туннеля и спрятанный тумблер пульт пропускает.
     private List<List<Control>> Rows()
     {
         var rows = new List<List<Control>>();
-        if (ConnectPart is { IsVisible: true, IsEnabled: true })
+        var head = new List<Control>();
+        if (PrimaryPart.IsVisible)
         {
-            rows.Add([ConnectPart]);
+            head.Add(PrimaryPart);
         }
 
-        rows.Add([DefaultPart]);
+        if (ConnectPart is { IsVisible: true, IsEnabled: true })
+        {
+            head.Add(ConnectPart);
+        }
+
+        if (head.Count > 0)
+        {
+            rows.Add(head);
+        }
+
+        if (DefaultPart.IsVisible)
+        {
+            rows.Add([DefaultPart]);
+        }
+
         rows.Add([SettingsPart]);
         return rows;
     }
@@ -293,6 +373,7 @@ internal sealed partial class CatalogCard : UserControl
     private void ApplyStopFocus()
     {
         var stop = _entered || !UiPlatform.IsTelevision;
+        PrimaryPart.Focusable = stop;
         ConnectPart.Focusable = stop;
         DefaultPart.Focusable = stop;
         SettingsPart.Focusable = stop;

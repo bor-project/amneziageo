@@ -56,7 +56,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Ticks of the poll, counted so a source that costs the agent more than a tail read is asked less often.
     private int _tick;
 
-    // The configuration report, as the agent rendered it.
+    // The report the agent answered with: the configuration it runs on, or the layout the distributor came to.
     private string _report = string.Empty;
 
     // The cache rows behind the rendered body, their total and whether the agent capped them.
@@ -242,9 +242,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public const string CacheType = "cache";
 
     /// <summary>
+    /// How the routing list came out across the servers up, asked of the agent: it is worked out on every round
+    /// and written down nowhere.
+    /// </summary>
+    public const string PlanType = "plan";
+
+    /// <summary>
     /// The selectable sources. The tokens are the same in every language.
     /// </summary>
-    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType, ConfigType, CacheType];
+    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType, ConfigType, CacheType, PlanType];
 
     [ObservableProperty]
     private string _selectedLogType = "ageo";
@@ -280,10 +286,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool IsCacheLog => SelectedLogType == CacheType;
 
     /// <summary>
+    /// Whether the viewer is on the layout the distributor came to.
+    /// </summary>
+    public bool IsPlanLog => SelectedLogType == PlanType;
+
+    /// <summary>
     /// Whether the viewer is on a source the agent answers out of what it holds right now: nothing is recorded
     /// behind it, so there is no history to page through and nothing to clear.
     /// </summary>
-    public bool IsRuntimeLog => IsLiveLog || IsConfigLog || IsCacheLog;
+    public bool IsRuntimeLog => IsLiveLog || IsConfigLog || IsCacheLog || IsPlanLog;
 
     /// <summary>
     /// Whether the viewer is on a stored table, which is what can be searched, paged and cleared.
@@ -295,6 +306,20 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// </summary>
     public bool ShowSearch => IsStoredLog || IsCacheLog;
 
+    /// <summary>
+    /// Whether the machine works several servers at once.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowServerPick))]
+    private bool _multiServer;
+
+    /// <summary>
+    /// Whether the screen picks the server it reports on: the live source, the configuration and the caches are
+    /// read off one tunnel, and with several servers at once no card names it any more. The layout is the whole
+    /// machine's and names its servers itself, so it picks nothing.
+    /// </summary>
+    public bool ShowServerPick => MultiServer && IsRuntimeLog && !IsPlanLog;
+
     partial void OnSelectedLogTypeChanged(string value)
     {
         OnPropertyChanged(nameof(IsAgentLog));
@@ -303,8 +328,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsLiveLog));
         OnPropertyChanged(nameof(IsConfigLog));
         OnPropertyChanged(nameof(IsCacheLog));
+        OnPropertyChanged(nameof(IsPlanLog));
         OnPropertyChanged(nameof(IsRuntimeLog));
         OnPropertyChanged(nameof(IsStoredLog));
+        OnPropertyChanged(nameof(ShowServerPick));
         OnPropertyChanged(nameof(ShowSearch));
         OnPropertyChanged(nameof(SearchSummary));
         OnPropertyChanged(nameof(ShowControlBar));
@@ -330,8 +357,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // --- Target probe (probe) ---
 
     /// <summary>
-    /// The shell, for the server the probe is measured through: the picker there is the one the home screen
-    /// carries, so a change here moves a live tunnel exactly as it does there.
+    /// The shell, for the server this screen reports on: the picker is the one the home screen carries, so a
+    /// change here moves a live tunnel exactly as it does there - except with several servers at once, where it
+    /// only names the one the screen reads.
     /// </summary>
     public MainWindowViewModel Shell => _host;
 
@@ -737,13 +765,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// Whether the body frame is dropped: the cards carry one of their own, so it would only take width off
     /// them. The report text has none, and keeps the frame at every width.
     /// </summary>
-    public bool BareBody => IsNarrow && !IsConfigLog && !IsCacheLog;
+    public bool BareBody => IsNarrow && !IsConfigLog && !IsCacheLog && !IsPlanLog;
 
     /// <summary>
     /// Whether the body is the padded table: the destinations at a width that fits them, the configuration
-    /// report and the cache rows at any width, because neither reads as a column of cards.
+    /// report, the cache rows and the layout at any width, because none of them reads as a column of cards.
     /// </summary>
-    public bool ShowTableText => ShowBody && (IsConfigLog || IsCacheLog || (IsLiveLog && !IsNarrow));
+    public bool ShowTableText => ShowBody && (IsConfigLog || IsCacheLog || IsPlanLog || (IsLiveLog && !IsNarrow));
 
     /// <summary>
     /// Whether the stored rows are shown as cards, which is what a narrow window carries. The probes are cards
@@ -804,6 +832,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         _suppressSettingPush = false;
         TunnelUp = snapshot.BoundStatus == ConnectionStatus.Connected;
         ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
+        MultiServer = snapshot.MultiServer;
         SyncProbeSource(snapshot.Configs.Count > 0);
         var picked = snapshot.SelectedTarget ?? string.Empty;
         if (IsProbeLog && _knownFor != (TunnelUp, picked))
@@ -887,10 +916,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
             return;
         }
 
-        // The configuration and the caches cost the agent a round of reads to answer and move far more slowly
-        // than a tail does, so they are re-read every other tick.
+        // The configuration, the caches and the layout cost the agent a round of reads to answer and move far
+        // more slowly than a tail does, so they are re-read every other tick.
         _tick++;
-        if ((IsConfigLog || IsCacheLog) && _tick % 2 != 0)
+        if ((IsConfigLog || IsCacheLog || IsPlanLog) && _tick % 2 != 0)
         {
             return;
         }
@@ -1082,6 +1111,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
             return;
         }
 
+        if (IsPlanLog)
+        {
+            await LoadRoutingLayoutAsync();
+            return;
+        }
+
         var type = SelectedLogType;
         var args = new List<string>
         {
@@ -1214,6 +1249,45 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Render();
     }
 
+    // Reads how the distributor split the list across the servers up right now.
+    private async Task LoadRoutingLayoutAsync()
+    {
+        IpcAck ack;
+        try
+        {
+            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingLayout, []));
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!IsActive || !IsPlanLog)
+        {
+            return;
+        }
+
+        _report = ack.Ok ? Layout(ack.Message) : Describe(ack);
+        HasLogs = _report.Length > 0;
+        SearchMatchCount = 0;
+        LogCanPageOlder = false;
+        LogCanPageNewer = false;
+        Render();
+    }
+
+    // The layout as the reader sees it; a payload the viewer cannot read leaves the body empty rather than JSON.
+    private static string Layout(string payload)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<RoutingLayout>(payload, IpcJson.Options)?.Render() ?? string.Empty;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
     // Reads the caches the routing decides by; the rows come whole and the filters over them are applied here.
     private async Task LoadCacheAsync()
     {
@@ -1321,7 +1395,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
         LiveRows.Clear();
         LiveSummary = string.Empty;
-        if (IsConfigLog)
+        if (IsConfigLog || IsPlanLog)
         {
             ClearCards();
             LogText = _report;

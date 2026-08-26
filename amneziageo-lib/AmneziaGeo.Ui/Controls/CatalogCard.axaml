@@ -17,17 +17,26 @@
 
   <!-- Тело карточки открывает настройки двойным щелчком, остальные действия стоят на кнопках.
        На телевизоре тело служит входом, дальше пульт ходит по этим же контролам. -->
-  <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
+  <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding CardMuted}"
+          Classes.moving="{Binding IsMoving}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" Margin="12,10">
           <!-- Имя и подключение: имя занимает строку целиком, кнопка жмётся последней. -->
-          <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <!-- Основной: карточка уходит в голову приоритета и забирает дефолтный маршрут себе. Стоит
+                 только там, где серверов несколько. -->
+            <Button x:Name="PrimaryPart" Grid.Column="1" Classes="cardprimary"
+                    Classes.filled="{Binding IsPrimary}" IsVisible="{Binding ShowPrimaryButton}"
+                    ToolTip.Tip="{l:Tr Main_CardPrimaryTip}"
+                    Command="{Binding $parent[controls:CatalogCard].PrimaryCommand}" CommandParameter="{Binding}">
+              <TextBlock Text="{l:Tr Main_CardPrimaryButton}" />
+            </Button>
             <!-- Подключение: со своей конфигурации туннель снимает, с чужой переносит его сюда. Круг повторяет
                  кнопку в шапке: цвет состояния и дуга на переключении. -->
-            <Button x:Name="ConnectPart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
+            <Button x:Name="ConnectPart" Grid.Column="2" Classes="cardpower" VerticalAlignment="Center"
                     ToolTip.Tip="{Binding CardActionText}"
                     Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
               <Panel Width="28" Height="28">
@@ -82,14 +91,22 @@
             </Grid>
           </Grid>
 
-          <!-- Конфигурация по умолчанию: тумблер стоит под кнопкой подключения, подпись - справа от него.
-               Снять выбор карточка не даёт: его снимают в настройках конфигурации. -->
-          <ToggleSwitch x:Name="DefaultPart" Grid.Row="2" Margin="0,8,0,0" MinWidth="0" FontSize="12.5"
-                        HorizontalAlignment="Right" VerticalAlignment="Center"
-                        OnContent="{l:Tr Main_CardActiveFlag}" OffContent="{l:Tr Main_CardActiveFlag}"
-                        IsChecked="{Binding IsSelected, Mode=OneWay}"
-                        Command="{Binding $parent[controls:CatalogCard].DefaultCommand}"
-                        CommandParameter="{Binding}" />
+          <!-- Строка роли: тумблер «по умолчанию» на одном сервере, состояние сервера словом - на
+               нескольких. Обе стоят под кнопкой подключения. -->
+          <Panel Grid.Row="2" Margin="0,8,0,0" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <!-- Конфигурация по умолчанию: снять выбор карточка не даёт, его снимают в настройках. -->
+            <ToggleSwitch x:Name="DefaultPart" MinWidth="0" FontSize="12.5"
+                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                          IsVisible="{Binding ShowDefaultToggle}"
+                          OnContent="{l:Tr Main_CardActiveFlag}" OffContent="{l:Tr Main_CardActiveFlag}"
+                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                          Command="{Binding $parent[controls:CatalogCard].DefaultCommand}"
+                          CommandParameter="{Binding}" />
+            <Border Classes="cardchip cardtag" IsVisible="{Binding ShowCardState}"
+                    HorizontalAlignment="Right" VerticalAlignment="Center">
+              <TextBlock Text="{Binding CardStateText}" FontSize="11.5" FontWeight="SemiBold" />
+            </Border>
+          </Panel>
         </Grid>
 
         <!-- Подвал карточки: метки настроек слева, настройки конфигурации справа. -->

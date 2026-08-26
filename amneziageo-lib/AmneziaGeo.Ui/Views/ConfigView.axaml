@@ -73,6 +73,7 @@
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DefaultCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).MakeDefaultCommand}"
+                      PrimaryCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).MakePrimaryCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}" />
             </DataTemplate>
@@ -95,6 +96,7 @@
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DefaultCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).MakeDefaultCommand}"
+                      PrimaryCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).MakePrimaryCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}" />
             </DataTemplate>
@@ -208,10 +210,11 @@
             </Button>
           </Grid>
 
-          <Border Classes="hairline" IsVisible="{Binding MultiTunnel}" />
+          <Border Classes="hairline" IsVisible="{Binding ShowDefaultRouteBlock}" />
 
-          <!-- Приложения: какой из туннелей уводит всё, что не назвали остальные. -->
-          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding MultiTunnel}">
+          <!-- Приложения: какой из туннелей уводит всё, что не назвали остальные. Несколькими серверами это
+               считает распределитель, и блок уходит с экрана. -->
+          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowDefaultRouteBlock}">
             <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
               <TextBlock Text="{l:Tr Main_ConfigDefaultRouteTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
               <TextBlock Text="{l:Tr Main_ConfigDefaultRouteSubtitle}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />

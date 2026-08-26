@@ -20,7 +20,7 @@ internal static class RoutingCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|rule|delete-rule|remove|order|settings|configure>");
+            return Reply.Usage("usage: amneziageo routing <list|use|show|plan|create|set|add|rule|delete-rule|remove|order|settings|configure>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -29,6 +29,7 @@ internal static class RoutingCommands
             "list" => List(agent),
             "use" => await UseAsync(agent, rest).ConfigureAwait(false),
             "show" => await ShowAsync(agent, rest).ConfigureAwait(false),
+            "plan" => await PlanAsync(agent).ConfigureAwait(false),
             "create" => await CreateAsync(agent, rest).ConfigureAwait(false),
             "set" => await SetAsync(agent, rest).ConfigureAwait(false),
             "add" => await AmendAsync(agent, rest, add: true).ConfigureAwait(false),
@@ -179,6 +180,74 @@ internal static class RoutingCommands
             ]).ToList(),
             "no rules yet");
         return Exit.Ok;
+    }
+
+    // How the distributor split the list across the servers up right now: what each of them carries and where
+    // every rule came out.
+    private static async Task<int> PlanAsync(IAgentLink agent)
+    {
+        var ack = await agent.SendAsync(IpcContract.OpGetRoutingLayout).ConfigureAwait(false);
+        if (!ack.Ok)
+        {
+            return Reply.Report(ack);
+        }
+
+        if (Layout(ack.Message) is not { } layout)
+        {
+            return Reply.Report(new IpcAck(false, "the agent answered with a layout this console cannot read"));
+        }
+
+        if (Output.Json)
+        {
+            Output.AsJson(layout);
+            return Exit.Ok;
+        }
+
+        Output.Info(layout.Headline);
+        Output.Table(
+            ["SERVER", "LIST", "RULES", "CARRIES"],
+            layout.Servers.Select(server => (IReadOnlyList<string>)
+            [
+                server.Server,
+                server.List,
+                server.Rules.ToString(CultureInfo.InvariantCulture),
+                server.Carrier ? "everything besides" : string.Empty,
+            ]).ToList(),
+            "no server is up");
+        if (!layout.MultiServer)
+        {
+            return Exit.Ok;
+        }
+
+        Output.Table(
+            ["RULE", "GOES", "SERVER", "WHY"],
+            layout.Rules.Select(rule => (IReadOnlyList<string>)
+            [
+                rule.Rule,
+                rule.Kind,
+                rule.Server,
+                rule.Reason,
+            ]).ToList(),
+            "no rule rides a server");
+        if (layout.Direct + layout.Blocked > 0)
+        {
+            Output.Info($"{layout.Direct.ToString(CultureInfo.InvariantCulture)} rule(s) go past the tunnel, {layout.Blocked.ToString(CultureInfo.InvariantCulture)} dropped");
+        }
+
+        return Exit.Ok;
+    }
+
+    // A layout the console cannot read is no answer at all.
+    private static RoutingLayout? Layout(string payload)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<RoutingLayout>(payload, IpcJson.Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static async Task<int> CreateAsync(IAgentLink agent, IReadOnlyList<string> args)

@@ -116,6 +116,29 @@ internal sealed class ListReorder<TRow>
     }
 
     /// <summary>
+    /// Двигает элемент на одно место: то же перестроение списка, только с клавиатуры. Возвращает, сдвинулся
+    /// ли он.
+    /// </summary>
+    public bool Step(int delta)
+    {
+        if (_item.FindAncestorOfType<ItemsControl>() is not { ItemsSource: ObservableCollection<TRow> rows }
+            || _item.DataContext is not TRow row)
+        {
+            return false;
+        }
+
+        var from = rows.IndexOf(row);
+        var to = from + delta;
+        if (from < 0 || to < 0 || to >= rows.Count)
+        {
+            return false;
+        }
+
+        rows.Move(from, to);
+        return true;
+    }
+
+    /// <summary>
     /// Завершает жест на элементе. Возвращает, было ли перетаскивание.
     /// </summary>
     public bool Release()

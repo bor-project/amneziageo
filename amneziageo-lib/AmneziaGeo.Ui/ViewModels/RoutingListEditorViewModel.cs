@@ -53,8 +53,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
-    // Required-field validation ("enter a name", "add at least one entry"), shown in red and cleared on any
-    // edit (#2/#3). Kept separate from StatusMessage so import/success notices stay neutral, not red.
+    // Required-field validation ("enter a name"), shown in red and cleared on any edit (#2/#3). Kept
+    // separate from StatusMessage so import/success notices stay neutral, not red.
     [ObservableProperty]
     private string _validationMessage = string.Empty;
 
@@ -140,11 +140,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// True when the name field is empty.
     /// </summary>
     public bool IsNameMissing => string.IsNullOrWhiteSpace(Name);
-
-    /// <summary>
-    /// True when at least one rule exists in any bucket.
-    /// </summary>
-    public bool HasAnyRule => TotalRules > 0;
 
     // The ceiling belongs to devices that build the tunnel without the relay: android below 10 turns the lists
     // into routes at connect and hands them over in one transaction.
@@ -697,13 +692,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return false;
         }
 
-        // Do not persist a rule-less list; the pre-#143 auto-save refused it too (review regression guard).
-        if (TotalRules == 0)
-        {
-            ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
-            return false;
-        }
-
         // A list this device cannot carry is refused on a fresh count, not on whatever the last edit left behind.
         await RefreshRouteBudgetAsync();
         if (RouteBudgetExceeded)
@@ -787,7 +775,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             DirtyChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        OnPropertyChanged(nameof(HasAnyRule));
         RefreshTransfer();
         _ = RefreshRouteBudgetAsync();
     }
@@ -798,12 +785,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         if (Name.Trim().Length == 0)
         {
             ValidationMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
-            return false;
-        }
-
-        if (TotalRules == 0)
-        {
-            ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return false;
         }
 
@@ -891,7 +872,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
     /// <summary>
     /// Serialized autosave: persists name + rules through the agent, re-running when an edit lands mid-commit. A
-    /// draft with no name or no rules stays unsaved silently - there is nothing to persist yet.
+    /// draft with no name stays unsaved silently - there is nothing to persist yet.
     /// </summary>
     public async Task AutoSaveAsync()
     {
@@ -906,7 +887,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // Persists the list, queueing an edit behind the commit in flight.
     private async Task PersistAsync()
     {
-        if (Name.Trim().Length == 0 || TotalRules == 0)
+        if (Name.Trim().Length == 0)
         {
             return;
         }

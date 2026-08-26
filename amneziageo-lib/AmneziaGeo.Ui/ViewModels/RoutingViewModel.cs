@@ -241,7 +241,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public bool CanSave => RoutingEditor is not { RouteBudgetExceeded: true }
         && (IsCreatingSectionRouting
-            ? RoutingEditor is { IsNameMissing: false, HasAnyRule: true }
+            ? RoutingEditor is { IsNameMissing: false }
             : IsEditDirty);
 
     /// <summary>
@@ -1165,7 +1165,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             return;
         }
 
-        // CommitAsync validates name + at least one rule, then on a new list adopts the real id, clears IsNew,
+        // CommitAsync validates the name, then on a new list adopts the real id, clears IsNew,
         // and calls OnSectionRoutingEditorSaved (retargets the draft settings, selects the created list).
         if (!await RoutingEditor.CommitAsync())
         {

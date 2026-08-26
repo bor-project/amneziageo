@@ -239,6 +239,9 @@
               <TextBlock Text="{l:Tr Main_RoutingSection}" IsVisible="{Binding IsSettingsRouting}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr General_ProxySection}" IsVisible="{Binding IsSettingsConnections}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
               <TextBlock Text="{l:Tr Main_SourcesSection}" IsVisible="{Binding IsSettingsSources}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
@@ -319,6 +322,25 @@
                 </Grid>
               </Button>
 
+              <Button Classes="rowselect" Classes.active="{Binding IsSettingsConnections}" Margin="0,3"
+                      Command="{Binding SelectSettingsCommand}" CommandParameter="connections">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,7">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
+                    <Ellipse Width="16" Height="16" StrokeThickness="2"
+                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                             IsVisible="{Binding IsSettingsConnections}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Grid>
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
+                    <TextBlock Text="{l:Tr Main_RailConnectionsTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailConnectionsSubtitle}" FontSize="11.5" Classes="muted"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+
               <!-- Гео-источники стоят за ссылкой в маршрутизации: собственного пункта у них нет. -->
 
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsLogs}" Margin="0,3"
@@ -393,10 +415,10 @@
                  switching back is free. The viewport-derived sizes stay outside the templates: an element-name
                  binding does not cross a template's name scope. -->
 
-            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 16px inset. -->
+            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 24px inset. -->
             <ContentControl IsVisible="{Binding IsSettingsConfig}" Content="{Binding Config}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=16}">
+                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=24}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:ConfigViewModel">
                   <views:ConfigView />
@@ -410,6 +432,16 @@
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:RoutingViewModel">
                   <views:RoutingView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+
+            <!-- CONNECTIONS SECTION -->
+            <ContentControl IsVisible="{Binding IsSettingsConnections}" Content="{Binding Connections}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:ConnectionsViewModel">
+                  <views:ConnectionsView />
                 </DataTemplate>
               </ContentControl.ContentTemplate>
             </ContentControl>
@@ -434,7 +466,7 @@
               </ContentControl.ContentTemplate>
             </ContentControl>
 
-            <!-- DIAGNOSTICS SECTION: the viewport (minus the Grid's 16px inset) so only the pane body scrolls,
+            <!-- DIAGNOSTICS SECTION: the viewport (minus the Grid's 24px inset) so only the pane body scrolls,
                  and more than the viewport when the pane is too low for a readable body - then this screen
                  scrolls for the difference. The viewer holds the height, since only it knows what its head takes. -->
             <ContentControl IsVisible="{Binding IsSettingsLogs}" Content="{Binding Diagnostics}"

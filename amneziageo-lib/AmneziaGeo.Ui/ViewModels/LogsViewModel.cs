@@ -160,7 +160,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private const double ShortGap = 8;
 
     // Inset the shell keeps around the section.
-    private const double PaneInset = 16;
+    private const double PaneInset = 24;
 
     /// <summary>
     /// Whether the head is compact: the pane is too low to spend rows on labels and on a bar of its own.

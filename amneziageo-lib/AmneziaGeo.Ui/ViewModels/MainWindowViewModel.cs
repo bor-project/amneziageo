@@ -77,6 +77,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
     [NotifyPropertyChangedFor(nameof(IsSettingsRouting))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsConnections))]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsProbe))]
@@ -97,6 +98,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         General = new GeneralViewModel(this, connection, prefs);
         Config = new ConfigViewModel(this, connection);
         Routing = new RoutingViewModel(this, connection, prefs);
+        Connections = new ConnectionsViewModel(connection);
         Home = new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         Probe = new ProbeSettingsViewModel(prefs);
@@ -145,6 +147,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Routing screen.
     /// </summary>
     public RoutingViewModel Routing { get; }
+
+    /// <summary>
+    /// Connections screen: the tunnel settings, the proxy and the access point.
+    /// </summary>
+    public ConnectionsViewModel Connections { get; }
 
     /// <summary>
     /// Geo sources screen.
@@ -201,6 +208,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsSettingsConfig => SettingsSection == "config";
 
     public bool IsSettingsRouting => SettingsSection == "routing";
+
+    public bool IsSettingsConnections => SettingsSection == "connections";
 
     public bool IsSettingsGeneral => SettingsSection == "general";
 
@@ -381,7 +390,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var slash = view.IndexOf('/');
         var section = slash > 0 ? view[(slash + 1)..] : string.Empty;
-        if (section is "config" or "routing" or "general" or "sources" or "logs" or "probe")
+        if (section is "config" or "routing" or "connections" or "general" or "sources" or "logs" or "probe")
         {
             SettingsSection = section;
         }
@@ -580,6 +589,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var compact = value < UiLayout.CompactWidth;
         Config.IsCompact = compact;
         Routing.IsCompact = compact;
+        Connections.IsCompact = compact;
         Sources.IsCompact = compact;
         Diagnostics.IsCompact = compact;
         General.IsCompact = compact;
@@ -630,6 +640,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // The connection card matches the agent's target against the freshly-reconciled config rows, so it
         // runs after Config.Apply.
         Home.Apply(snapshot);
+        Connections.Apply(snapshot);
         General.Apply(snapshot);
         Diagnostics.Apply(snapshot);
     }

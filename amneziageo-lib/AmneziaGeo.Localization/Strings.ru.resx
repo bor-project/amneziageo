@@ -65,43 +65,19 @@
     <value>Туннель</value>
   </data>
   <data name="General_NetworkRepairSection" xml:space="preserve">
-    <value>Восстановление сети</value>
+    <value>Сброс настроек</value>
   </data>
   <data name="General_NetworkRepairHint" xml:space="preserve">
-    <value>Если после неудачного подключения или удаления приложения пропал интернет — сбросьте DNS, который оно прописало адаптерам. Конфигурации и маршруты не затрагиваются.</value>
+    <value>Убирает DNS, прописанный приложением адаптерам, если пропал интернет. Конфигурации и маршруты не трогает.</value>
   </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
-    <value>Починить интернет</value>
+    <value>Сбросить</value>
   </data>
   <data name="General_NetworkRepairDone" xml:space="preserve">
-    <value>Сброс запущен — подтвердите запрос прав.</value>
+    <value>Сброс запущен. Подтвердите запрос прав.</value>
   </data>
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Не удалось запустить сброс.</value>
-  </data>
-  <data name="General_DiagnosticsSection" xml:space="preserve">
-    <value>Архив диагностики</value>
-  </data>
-  <data name="General_DiagnosticsHint" xml:space="preserve">
-    <value>Складывает журналы, настройки и состояние туннеля в один zip для отправки в поддержку. Ключи и учётные данные в нём скрыты.</value>
-  </data>
-  <data name="General_DiagnosticsButton" xml:space="preserve">
-    <value>Собрать архив</value>
-  </data>
-  <data name="General_DiagnosticsSaveTitle" xml:space="preserve">
-    <value>Сохранить архив</value>
-  </data>
-  <data name="General_DiagnosticsRunning" xml:space="preserve">
-    <value>Собираем архив...</value>
-  </data>
-  <data name="General_DiagnosticsAt" xml:space="preserve">
-    <value>Архив собран: {0}</value>
-  </data>
-  <data name="General_DiagnosticsSaved" xml:space="preserve">
-    <value>Архив сохранён.</value>
-  </data>
-  <data name="General_DiagnosticsFailed" xml:space="preserve">
-    <value>Не удалось собрать архив.</value>
   </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
@@ -264,6 +240,9 @@
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Интервал повтора</value>
+  </data>
+  <data name="General_ReconnectIntervalHint" xml:space="preserve">
+    <value>Пауза между попытками подключения.</value>
   </data>
   <data name="General_Seconds" xml:space="preserve">
     <value>с</value>
@@ -441,6 +420,27 @@
   </data>
   <data name="Main_DiagnosticsSection" xml:space="preserve">
     <value>Диагностика</value>
+  </data>
+  <data name="Main_ArchiveHint" xml:space="preserve">
+    <value>Складывает журналы, настройки и состояние туннеля в один zip для отправки в поддержку. Ключи и учётные данные в нём скрыты.</value>
+  </data>
+  <data name="Main_ArchiveButton" xml:space="preserve">
+    <value>Собрать архив</value>
+  </data>
+  <data name="Main_ArchiveSaveTitle" xml:space="preserve">
+    <value>Сохранить архив</value>
+  </data>
+  <data name="Main_ArchiveRunning" xml:space="preserve">
+    <value>Собираем архив...</value>
+  </data>
+  <data name="Main_ArchiveAt" xml:space="preserve">
+    <value>Архив собран: {0}</value>
+  </data>
+  <data name="Main_ArchiveSaved" xml:space="preserve">
+    <value>Архив сохранён.</value>
+  </data>
+  <data name="Main_ArchiveFailed" xml:space="preserve">
+    <value>Не удалось собрать архив.</value>
   </data>
   <data name="Main_LogCaptureTitle" xml:space="preserve">
     <value>Настройки журнала</value>
@@ -859,6 +859,12 @@
   <data name="Main_RailConfigTitle" xml:space="preserve">
     <value>Конфигурации</value>
   </data>
+  <data name="Main_RailConnectionsSubtitle" xml:space="preserve">
+    <value>Туннель, прокси и точка доступа</value>
+  </data>
+  <data name="Main_RailConnectionsTitle" xml:space="preserve">
+    <value>Подключения</value>
+  </data>
   <data name="Main_RailGeneralSubtitle" xml:space="preserve">
     <value>Оформление и сведения</value>
   </data>
@@ -1248,9 +1254,6 @@
   </data>
   <data name="QrScanner_CameraPermissionDenied" xml:space="preserve">
     <value>Доступ к камере запрещён</value>
-  </data>
-  <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
-    <value>Добавьте хотя бы одну запись, чтобы сохранить список.</value>
   </data>
   <data name="RoutingEditor_AppKindApplication" xml:space="preserve">
     <value>{0} · приложение</value>

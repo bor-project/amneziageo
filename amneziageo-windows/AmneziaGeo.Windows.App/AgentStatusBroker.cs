@@ -2735,6 +2735,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
         var connectFailed = failed is not null;
         var disconnectFailed = stuck is not null;
+        // Windows raises several tunnels at once, so the several-servers flow is offered here.
+        var multiTunnel = true;
         return new StatusSnapshot(Version(), boundTarget, configs, routingLists, mine.Count > 0, boundStatus, mine.Any(tunnel => tunnel.RestartRequired), selectedTarget, selectedRouting, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
@@ -2783,7 +2785,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             DnsUnreachable: mine.Any(tunnel => tunnel.DnsUnreachable),
             DefaultRouteOwner: await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct) ?? string.Empty,
             DefaultRouteHeld: control.DefaultRouteOwner ?? string.Empty,
-            MultiTunnel: true,
+            MultiTunnel: multiTunnel,
+            MultiServer: multiTunnel && settings.MultiServer,
             FailoverEnabled: settings.FailoverEnabled,
             FailoverReturnMinutes: settings.FailoverReturnMinutes,
             FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)),

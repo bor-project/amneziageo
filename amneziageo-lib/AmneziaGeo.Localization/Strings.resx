@@ -226,6 +226,12 @@
   <data name="General_HotspotRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
   </data>
+  <data name="General_MultiServer" xml:space="preserve">
+    <value>Several servers</value>
+  </data>
+  <data name="General_MultiServerHint" xml:space="preserve">
+    <value>Run several servers at once: priority, a main server, and a server named on a routing rule.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>
   </data>

@@ -35,6 +35,18 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     private bool _isCompact;
 
     /// <summary>
+    /// Whether several servers work at once: priority, a main server, and a server named on a routing rule.
+    /// </summary>
+    [ObservableProperty]
+    private bool _multiServer;
+
+    /// <summary>
+    /// Whether the several-servers switch is offered: only a platform that raises more than one tunnel shows it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _canConfigureMultiServer;
+
+    /// <summary>
     /// Auto-connect the selected config on service start (survive a reboot).
     /// </summary>
     [ObservableProperty]
@@ -68,6 +80,16 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     /// Whether the tunnel settings are offered (Windows only: the Android agent does not apply them).
     /// </summary>
     public bool CanConfigureConnection => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Auto-switching of servers: the order of the queue and the settings around it.
+    /// </summary>
+    public FailoverViewModel Failover { get; }
+
+    /// <summary>
+    /// Whether auto-switching is offered (Windows only: no other platform raises more than one tunnel at a time).
+    /// </summary>
+    public bool CanConfigureFailover => OperatingSystem.IsWindows();
 
     /// <summary>
     /// Whether the local proxy listens on its ports.
@@ -387,6 +409,7 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     public ConnectionsViewModel(IAgentConnection connection)
     {
         _connection = connection;
+        Failover = new FailoverViewModel(SetSettingAsync, SaveConfigOrderAsync);
         Loc.Instance.CultureChanged += OnCultureChanged;
     }
 
@@ -397,6 +420,7 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     {
         // Seed the settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
+        MultiServer = snapshot.MultiServer;
         ShowNotifications = snapshot.ShowNotifications;
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
@@ -410,6 +434,8 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         SelectedBandIndex = BandIndex(snapshot.HotspotBand);
         ApplyHotspotSecrets(snapshot);
         _suppressSettingPush = false;
+        CanConfigureMultiServer = snapshot.MultiTunnel;
+        Failover.Apply(snapshot);
         ApplyProxyEndpoints(snapshot);
         ApplyProxyClients(snapshot);
         ProxyErrorText = snapshot.ProxyEnabled ? snapshot.ProxyError : string.Empty;
@@ -657,6 +683,14 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         }
     }
 
+    partial void OnMultiServerChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.MultiServer, value ? "on" : "off");
+        }
+    }
+
     partial void OnShowNotificationsChanged(bool value)
     {
         if (!_suppressSettingPush)
@@ -734,6 +768,13 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     private async Task SetSettingAsync(string key, string value)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value]));
+    }
+
+    // Stores the order the auto-switching list was left in: the servers keep one order across the app.
+    private async Task<bool> SaveConfigOrderAsync(IReadOnlyList<string> names)
+    {
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderConfigs, names));
+        return ack.Ok;
     }
 
     private void OnCultureChanged()

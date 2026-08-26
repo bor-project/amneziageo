@@ -49,6 +49,11 @@ public static class SettingKeys
     public const string ProxyPassword = "proxy-password";
 
     /// <summary>
+    /// Whether several servers work at once: priority, a main server, and a server named on a routing rule.
+    /// </summary>
+    public const string MultiServer = "multi-server";
+
+    /// <summary>
     /// Whether the default route moves to the next server when the one carrying it stops answering.
     /// </summary>
     public const string FailoverEnabled = "failover-enabled";

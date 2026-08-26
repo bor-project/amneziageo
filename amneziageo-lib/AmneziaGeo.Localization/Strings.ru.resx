@@ -226,6 +226,12 @@
   <data name="General_HotspotRevealTooltip" xml:space="preserve">
     <value>Показать пароль</value>
   </data>
+  <data name="General_MultiServer" xml:space="preserve">
+    <value>Несколько серверов</value>
+  </data>
+  <data name="General_MultiServerHint" xml:space="preserve">
+    <value>Держать несколько серверов сразу: приоритет, основной сервер и сервер на правиле маршрутизации.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Восстанавливать после перезагрузки</value>
   </data>

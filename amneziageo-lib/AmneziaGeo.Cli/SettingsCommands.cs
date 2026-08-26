@@ -45,6 +45,7 @@ internal static class SettingsCommands
             (_periodicReconnectKey, snapshot.PeriodicReconnect ? "on" : "off"),
             (_reconnectIntervalKey, snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)),
             (SettingKeys.RouteTtl, snapshot.RouteTtlSeconds.ToString(CultureInfo.InvariantCulture)),
+            (SettingKeys.MultiServer, snapshot.MultiServer ? "on" : "off"),
             (SettingKeys.FailoverEnabled, snapshot.FailoverEnabled ? "on" : "off"),
             (SettingKeys.FailoverReturnMinutes, snapshot.FailoverReturnMinutes.ToString(CultureInfo.InvariantCulture)),
         };
@@ -72,6 +73,12 @@ internal static class SettingsCommands
         if (!TryNormalize(key, raw, out var value, out var error))
         {
             return Reply.Usage(error);
+        }
+
+        if (key is SettingKeys.MultiServer && !agent.Snapshot.MultiTunnel)
+        {
+            Output.Error("this agent raises one tunnel at a time, so several servers cannot work here");
+            return Exit.Unsupported;
         }
 
         if (key is SettingKeys.FailoverEnabled or SettingKeys.FailoverReturnMinutes && !FailoverCommands.Available(agent.Snapshot))
@@ -110,7 +117,7 @@ internal static class SettingsCommands
 
                 return true;
 
-            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.FailoverEnabled:
+            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.FailoverEnabled or SettingKeys.MultiServer:
                 if (!Toggle.TryParse(raw, out var on))
                 {
                     error = $"{key} takes on or off";

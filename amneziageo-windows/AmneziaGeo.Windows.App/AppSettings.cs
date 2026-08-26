@@ -123,6 +123,11 @@ internal sealed record AppSettings
     public int PeriodicReconnectIntervalSeconds { get; init; } = 30;
 
     /// <summary>
+    /// Whether several servers work at once: priority, a main server, and a server named on a routing rule.
+    /// </summary>
+    public bool MultiServer { get; init; }
+
+    /// <summary>
     /// Whether the default route moves to the next server when the one carrying it stops answering.
     /// </summary>
     public bool FailoverEnabled { get; init; }

@@ -159,6 +159,7 @@ public static class CliRunner
               Known keys: log-level (error|warning|info|debug|trace), route-log (on|off),
               survive-reboot (on|off, connect at agent start), periodic-reconnect-enabled (on|off),
               periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds,
+              multi-server (on|off, run several servers at once: priority and a server per routing rule),
               failover-enabled (on|off, carry the default route off a server that stopped answering),
               failover-return-minutes (0..1440, 0 leaves the route where it is).
 

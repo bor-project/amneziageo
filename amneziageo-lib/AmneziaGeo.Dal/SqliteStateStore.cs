@@ -194,13 +194,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     );
 
                     CREATE TABLE IF NOT EXISTS routing_list_rules (
-                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                        list_id    INTEGER NOT NULL REFERENCES routing_lists(id) ON DELETE CASCADE,
-                        kind       TEXT NOT NULL,
-                        value      TEXT NOT NULL,
-                        role       TEXT NOT NULL DEFAULT 'Proxy',
-                        position   INTEGER NOT NULL,
-                        updated_at TEXT NOT NULL,
+                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        list_id       INTEGER NOT NULL REFERENCES routing_lists(id) ON DELETE CASCADE,
+                        kind          TEXT NOT NULL,
+                        value         TEXT NOT NULL,
+                        role          TEXT NOT NULL DEFAULT 'Proxy',
+                        server        TEXT NOT NULL DEFAULT '',
+                        fallback_mode TEXT NOT NULL DEFAULT 'Auto',
+                        fallback      TEXT NOT NULL DEFAULT '',
+                        position      INTEGER NOT NULL,
+                        updated_at    TEXT NOT NULL,
                         UNIQUE (list_id, position)
                     );
 
@@ -259,6 +262,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Per-rule role (Proxy/Direct/Block); existing rows default to Proxy.
             await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN role TEXT NOT NULL DEFAULT 'Proxy';", ct).ConfigureAwait(false);
+
+            // Per-rule server and fallback; existing rows ride whichever server carries the default route.
+            await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN server TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN fallback_mode TEXT NOT NULL DEFAULT 'Auto';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN fallback TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
 
             // Materialized Direct/Block buckets alongside the Proxy routes_json/domains_json.
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN direct_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
@@ -2007,20 +2015,23 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
                 for (var position = 0; position < list.Rules.Count; position++)
                 {
-                    var rule = list.Rules[position];
+                    var rule = list.Rules[position].Normalized();
                     var insertRule = connection.CreateCommand();
                     await using (insertRule.ConfigureAwait(false))
                     {
                         insertRule.Transaction = transaction;
                         insertRule.CommandText =
                             """
-                            INSERT INTO routing_list_rules (list_id, kind, value, role, position, updated_at)
-                            VALUES ($list, $kind, $value, $role, $position, $updated);
+                            INSERT INTO routing_list_rules (list_id, kind, value, role, server, fallback_mode, fallback, position, updated_at)
+                            VALUES ($list, $kind, $value, $role, $server, $fallbackMode, $fallback, $position, $updated);
                             """;
                         insertRule.Parameters.AddWithValue("$list", id);
                         insertRule.Parameters.AddWithValue("$kind", rule.Kind.ToString());
                         insertRule.Parameters.AddWithValue("$value", rule.Value);
                         insertRule.Parameters.AddWithValue("$role", rule.Role.ToString());
+                        insertRule.Parameters.AddWithValue("$server", rule.Server);
+                        insertRule.Parameters.AddWithValue("$fallbackMode", rule.FallbackMode.ToString());
+                        insertRule.Parameters.AddWithValue("$fallback", rule.Fallback);
                         insertRule.Parameters.AddWithValue("$position", position);
                         insertRule.Parameters.AddWithValue("$updated", timestamp);
                         await insertRule.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -2515,7 +2526,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         {
             command.CommandText =
                 """
-                SELECT kind, value, role
+                SELECT kind, value, role, server, fallback_mode, fallback
                 FROM routing_list_rules
                 WHERE list_id = $id
                 ORDER BY position;
@@ -2533,7 +2544,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var role = roleText.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
                         ? RouteRole.Direct
                         : Enum.TryParse<RouteRole>(roleText, out var parsed) ? parsed : RouteRole.Proxy;
-                    rules.Add(new GeoRule(kind, reader.GetString(1), role));
+                    var fallbackMode = Enum.TryParse<RuleFallback>(reader.GetString(4), out var mode) ? mode : RuleFallback.Auto;
+                    rules.Add(new GeoRule(kind, reader.GetString(1), role, reader.GetString(3), fallbackMode, reader.GetString(5)).Normalized());
                 }
             }
         }

@@ -30,6 +30,7 @@ internal sealed class SettingsStore(IStateStore store)
             SurviveReboot = ReadBool(values, "survive-reboot", defaults.SurviveReboot),
             PeriodicReconnect = ReadBool(values, "periodic-reconnect-enabled", defaults.PeriodicReconnect),
             PeriodicReconnectIntervalSeconds = ReadInt(values, "periodic-reconnect-interval-seconds", defaults.PeriodicReconnectIntervalSeconds),
+            MultiServer = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.MultiServer, defaults.MultiServer),
             FailoverEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.FailoverEnabled, defaults.FailoverEnabled),
             FailoverReturnMinutes = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.FailoverReturnMinutes, defaults.FailoverReturnMinutes),
             FailoverSkipped = ReadText(values, AmneziaGeo.Ipc.SettingKeys.FailoverSkipped, defaults.FailoverSkipped),
@@ -204,7 +205,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] ProxyPortKeys =
         [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.FailoverEnabled, AmneziaGeo.Ipc.SettingKeys.ShareEthernet];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.MultiServer, AmneziaGeo.Ipc.SettingKeys.FailoverEnabled, AmneziaGeo.Ipc.SettingKeys.ShareEthernet];
 
     // Sharing settings, each with a rule of its own.
     private static readonly string[] ShareKeys =

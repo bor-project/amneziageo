@@ -69,7 +69,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         Row(text, "all udp", (split && (routing?.AllUdp ?? app.TunnelAllUdp)) ? "on" : "off");
         Row(text, "proxy", $"{geo?.Routes.Count ?? 0} ranges, {geo?.Domains.Count ?? 0} domains");
         Row(text, "direct", $"{list?.DirectRoutes.Count ?? 0} ranges, {list?.DirectDomains.Count ?? 0} domains");
-        Row(text, "block", $"{list?.BlockRoutes.Count ?? 0} ranges, {list?.BlockDomains.Count ?? 0} domains");
+        Row(text, "block", $"{materialization?.BlockRoutes.Count ?? 0} ranges, {materialization?.BlockDomains.Count ?? 0} domains");
         Row(text, "resolution", "on demand (nothing materialized at connect)");
         Row(text, "route ttl", $"{session.Cache?.TtlSeconds ?? app.RouteTtlSeconds} s idle");
         Row(text, "cache", Held(config, applied));

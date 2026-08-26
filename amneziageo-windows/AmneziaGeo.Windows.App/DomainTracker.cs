@@ -77,6 +77,8 @@ internal sealed class DomainTracker(
     // Baseline for the poll signal: list materialization generation.
     private long? _knownGeneration;
 
+    private long? _knownShare;
+
     // Live geo-domain sink; rebuilt on materialization generation change so a source refresh takes effect without reconnect.
     private volatile Action<IReadOnlyList<GeoDomain>, CancellationToken>? _onGeoDomainsChanged;
 
@@ -792,11 +794,12 @@ internal sealed class DomainTracker(
 
     /// <summary>
     /// Applies a routing list the agent just persisted: retags persisted rows and rebuilds the domain matcher.
-    /// Newly listed domains are not pre-resolved - they resolve when first queried.
+    /// Newly listed domains are not pre-resolved - they resolve when first queried. An unedited list dealt out
+    /// differently across the servers moves the share stamp, not the generation.
     /// </summary>
     public void ApplyList(AmneziaGeo.Decl.ActiveRoutingListMaterialization current, CancellationToken ct)
     {
-        if (current.Generation == _knownGeneration)
+        if (current.Generation == _knownGeneration && current.Share == _knownShare)
         {
             return;
         }
@@ -817,6 +820,7 @@ internal sealed class DomainTracker(
 
         _onGeoDomainsChanged?.Invoke(current.Domains, ct);
         _knownGeneration = current.Generation;
+        _knownShare = current.Share;
     }
 
     /// <summary>

@@ -225,7 +225,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
                 // A pre-role bundle carries bare tokens; those import as Proxy, as they did before roles existed.
                 var merged = policy == "merge"
-                    ? existingList.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
+                    ? GeoConfigurator.MergeRules(existingList.Rules, block.Rules)
                     : block.Rules.ToList();
                 await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, merged, ct).ConfigureAwait(false);
                 if (block.Settings is { } existingSettings)

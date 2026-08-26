@@ -118,10 +118,10 @@ public sealed record StatusSnapshot(
     bool FailoverEnabled = false,
     // Minutes a higher-priority server answers before the default route goes back to it; 0 leaves it where it is.
     int FailoverReturnMinutes = 0,
-    // Configurations auto-switching passes over, one name per line.
+    // Configurations switched off, one name per line.
     string FailoverSkipped = "",
-    // Tunnels a connect raises when it names none, one per line: the set the last connection left up.
-    string KeptTunnels = "",
+    // Configurations a connect with no name raises, one per line: the set the machine works out.
+    string Roster = "",
     // How the tunnel reaches other devices: lan, wifi, or both.
     string ShareMode = ShareModes.Default,
     // Whether a wired subnet is asked for; the gateway behind it is not built yet.

@@ -186,23 +186,25 @@ internal sealed class TunnelRunner(
         var routingSettings = activeRoutingListId is long activeListId
             ? await store.GetRoutingSettingsAsync(activeListId)
             : null;
-        // The assigned list's Direct/Block buckets (its Proxy bucket already rode the projection into geo).
+        // The assigned list's Direct bucket; its Proxy and Block ones ride the projection.
         var activeList = activeRoutingListId is long bucketListId
             ? await store.GetRoutingListAsync(bucketListId)
             : null;
 
-        // Global proxy on = full tunnel minus the Direct bucket; off = split (tunnel only the Proxy bucket). A
-        // routing list's flag wins over the config's own split; without a list the config's split stands.
-        var geoSplit = activeList is not null
-            ? !(routingSettings?.UseGlobalProxy ?? false)
-            : (geo?.GeoSplit ?? false);
+        // Full tunnel = everything minus the Direct bucket; split = only the share this tunnel was handed. The
+        // distributor settles which of the two this is: one server on the machine carries everything, the rest
+        // carry what the rules name them for.
+        var geoSplit = geo?.GeoSplit ?? false;
 
         logger.LogDebug("{Name}: rules loaded — {Routes} address range(s), {Domains} domain(s), {Apps} app(s); only what they name goes through the tunnel: {Split} [{Elapsed} ms in]",
             name, geoRoutes.Count, domains.Count, apps.Count, geoSplit, connectSw.ElapsedMilliseconds);
 
-        // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN).
-        var blockRoutes = activeList?.BlockRoutes ?? [];
-        var blockDomains = activeList?.BlockDomains ?? [];
+        // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN). Read off
+        // the share, not the list: the distributor tops the list's own bucket with the rules that asked to be
+        // blocked while the server they name is down.
+        var share = await store.GetActiveRoutingListMaterializationAsync(name);
+        var blockRoutes = share?.BlockRoutes ?? [];
+        var blockDomains = share?.BlockDomains ?? [];
 
         // WFP kill-switch: on in both modes. In split it holds a destination off the physical path until its
         // verdict exists - a packet that leaves earlier carries the real address, which is the leak this prevents.
@@ -1227,11 +1229,11 @@ internal sealed class TunnelRunner(
             {
                 // Read before the rebuild: these are the destinations a rule by name has to be applied to.
                 var held = routing.Snapshot();
-                routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
+                routing.Rebuild(current.Routes, list.DirectRoutes, current.BlockRoutes);
 
                 // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
                 // while these two buckets decide in both.
-                if (session.Proxy is { } proxy && proxy.UpdateBuckets(list.BlockDomains, list.DirectDomains))
+                if (session.Proxy is { } proxy && proxy.UpdateBuckets(current.BlockDomains, list.DirectDomains))
                 {
                     dns.FlushCache();
                 }

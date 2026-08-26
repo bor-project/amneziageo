@@ -1722,7 +1722,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 if (policy != "skip")
                 {
                     var merged = policy == "merge"
-                        ? existing.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
+                        ? GeoConfigurator.MergeRules(existing.Rules, block.Rules)
                         : block.Rules.ToList();
                     await _geo.ApplyToRoutingListAsync(existing.Id, existing.Name, merged).ConfigureAwait(false);
                     await ApplyRoutingSettingsAsync(existing.Id, block.Settings).ConfigureAwait(false);

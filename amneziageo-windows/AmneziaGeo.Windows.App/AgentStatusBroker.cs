@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, RoutingDistributor distributor, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -129,13 +129,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     {
         var names = control.Desired.Select(tunnel => tunnel.Config);
         await store.SetSettingAsync(StateKeys.DesiredTunnels, string.Join(Environment.NewLine, names), ct);
-    }
-
-    // Records the set a connect that names nothing brings back; taking everything down leaves it alone.
-    private async Task KeepDesiredAsync(CancellationToken ct)
-    {
-        var names = control.Desired.Select(tunnel => tunnel.Config);
-        await store.SetSettingAsync(StateKeys.KeptTunnels, NameList.Join(names), ct);
     }
 
     /// <summary>
@@ -778,8 +771,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
                 // Role-tagged, so a merge keeps the existing rules in their own buckets. A pre-role bundle carries
                 // bare tokens; those import as Proxy, as they did before roles existed.
-                List<string> rules = policy == "merge"
-                    ? existingList.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
+                var rules = policy == "merge"
+                    ? GeoConfigurator.MergeRules(existingList.Rules, block.Rules)
                     : block.Rules.ToList();
                 await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
                 if (block.Settings is { } sE)
@@ -969,7 +962,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
         var (rules, routes, domains, skipped) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
-        AnnounceRules();
+        await AnnounceRulesAsync(ct);
         logger.LogInformation("{Name}: {Rules} rule(s) saved, giving {Routes} address range(s) and {Domains} domain(s); only the named traffic goes through the tunnel: {On} — takes effect on reconnect", args[0], rules, routes, domains, on);
         var summary = $"saved: {rules} rules, {routes} routes, {domains} domains";
         return new IpcAck(true, skipped > 0 ? $"{summary}, {skipped} tokens ignored (applies on reconnect)" : $"{summary} (applies on reconnect)");
@@ -1312,7 +1305,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var previousEager = DirectIsEager(previous);
         var previousReconnect = previous is null
             ? new HashSet<string>(StringComparer.Ordinal)
-            : previous.Rules.Select(GeoConfigurator.FormatWithRole)
+            : previous.Rules.Select(GeoConfigurator.FormatPortable)
                 .Where(r => RequiresReconnect(r, previousEager))
                 .ToHashSet(StringComparer.Ordinal);
 
@@ -1320,20 +1313,31 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         // Flag a reconnect on every tunnel routing through this list when a connect-time rule changed.
         var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
-        var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
+        // Compared without the server names: moving a rule to another server changes no matcher built at bring-up.
+        var newReconnect = args.Skip(2)
+            .Select(GeoConfigurator.ParseRoleRule)
+            .Where(rule => rule is not null)
+            .Select(rule => GeoConfigurator.FormatPortable(rule!))
+            .Where(r => RequiresReconnect(r, eager))
+            .ToHashSet(StringComparer.Ordinal);
         if (!newReconnect.SetEquals(previousReconnect))
         {
             await FlagRestartOnListAsync(resultId, ct);
         }
 
-        AnnounceRules();
+        await AnnounceRulesAsync(ct);
         logger.LogInformation("saved routing list {Id} '{Name}' ({Rules} rules)", resultId, name, args.Count - 2);
         return new IpcAck(true, resultId.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     // The tunnel runs in its own process and polls for nothing: a rule change is announced to it here, and it
     // decides every destination in use against the new rules.
-    private void AnnounceRules() => Announce(RuntimeSnapshotPipe.OpRules);
+    // The rules changed under the tunnels: the shares are recounted first, then everyone is told to redecide.
+    private async Task AnnounceRulesAsync(CancellationToken ct)
+    {
+        await distributor.DistributeAsync(CurrentScope.UserRoot, force: true, ct: ct);
+        Announce(RuntimeSnapshotPipe.OpRules);
+    }
 
     private void Announce(string op)
     {
@@ -1573,69 +1577,62 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var scope = CurrentScope;
         var named = args.Skip(1).FirstOrDefault(a => !a.Equals("takeover", StringComparison.OrdinalIgnoreCase));
+        var takeover = args.Any(a => a.Equals("takeover", StringComparison.OrdinalIgnoreCase));
         if (!connect)
         {
             return await DisconnectAsync(scope, named, ct);
         }
 
-        // A connect that names nothing brings back the set the cards left up; the selected configuration
-        // stands in only while that set is empty.
+        // Connecting lifts the switch-off: what stands afterwards is worked out from the cards that are on.
+        await store.SetSettingAsync(StateKeys.VpnOff, string.Empty, ct);
+
+        // A connect that names nothing raises the whole set the machine works out; one that names a card raises
+        // that card alone and switches it back on.
         if (string.IsNullOrWhiteSpace(named))
         {
-            var kept = NameList.Split(await store.GetSettingAsync(StateKeys.KeptTunnels, ct));
-            if (kept.Count > 0)
-            {
-                return await RaiseKeptAsync(scope, kept, ct);
-            }
+            return await RaiseRosterAsync(scope, takeover, ct);
         }
 
-        var target = !string.IsNullOrWhiteSpace(named) ? named! : await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            return new IpcAck(false, "no configuration selected");
-        }
-
+        var target = named;
         if (!await configRepo.ExistsAsync(target, ct))
         {
             return new IpcAck(false, $"unknown config: {target}");
         }
 
         // A tunnel of this configuration raised by another user is theirs; taking it needs an explicit takeover.
-        if (control.Find(target) is { Running: true } live
-            && !live.IsOwnedBy(scope.UserRoot, scope.Sid)
-            && !args.Any(a => a.Equals("takeover", StringComparison.OrdinalIgnoreCase)))
+        if (!takeover
+            && control.Find(target) is { Running: true } live
+            && !live.IsOwnedBy(scope.UserRoot, scope.Sid))
         {
             return new IpcAck(false, IpcMessage.Key("Agent_TunnelOwnedByOther"));
         }
 
-        if (string.IsNullOrWhiteSpace(named))
-        {
-            control.SetTarget(target);
-        }
-
         await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
         await store.SetSettingAsync("last-owner-target", target, ct);
+        await SwitchCardAsync(target, true, ct);
         control.For(target, scope.UserRoot, scope.Sid).SetRunning(true);
         await RememberDesiredAsync(ct);
-        await KeepDesiredAsync(ct);
         logger.LogInformation("connect requested by {Root} for {Config}", scope.UserRoot, target);
         return new IpcAck(true, "connecting");
     }
 
-    // Raises the set the cards left up; a configuration gone from the library or held by another user is
-    // passed over.
-    private async Task<IpcAck> RaiseKeptAsync(BrokerScope scope, IReadOnlyList<string> kept, CancellationToken ct)
+    // Raises the set the machine works out: the server carrying everything plus the ones rules name, less the
+    // cards switched off. A configuration gone from the library is passed over, and one another user raised stays
+    // theirs until a connect names it and takes it over.
+    private async Task<IpcAck> RaiseRosterAsync(BrokerScope scope, bool takeover, CancellationToken ct)
     {
         var raised = new List<string>();
-        foreach (var name in kept)
+        var theirs = false;
+        foreach (var name in await distributor.RosterAsync(scope.UserRoot, ct))
         {
             if (!await configRepo.ExistsAsync(name, ct))
             {
                 continue;
             }
 
-            if (control.Find(name) is { Running: true } live && !live.IsOwnedBy(scope.UserRoot, scope.Sid))
+            if (!takeover && control.Find(name) is { Running: true } live && !live.IsOwnedBy(scope.UserRoot, scope.Sid))
             {
+                theirs = true;
                 continue;
             }
 
@@ -1645,15 +1642,46 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         if (raised.Count == 0)
         {
-            return new IpcAck(false, "no configuration selected");
+            return new IpcAck(false, theirs ? IpcMessage.Key("Agent_TunnelOwnedByOther") : "no configuration selected");
         }
 
+        control.SetTarget(raised[0]);
         await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
         await store.SetSettingAsync("last-owner-target", raised[0], ct);
         await RememberDesiredAsync(ct);
-        await KeepDesiredAsync(ct);
-        logger.LogInformation("connect requested by {Root} for the {Count} tunnels it left up", scope.UserRoot, raised.Count);
+        logger.LogInformation("connect requested by {Root} for the {Count} configuration(s) the machine keeps up", scope.UserRoot, raised.Count);
         return new IpcAck(true, "connecting");
+    }
+
+    // Switches a card on or off. The list is read as the cards that are off only while several servers work at
+    // once; with the mode off it says which servers auto-switching passes over, and a tunnel raised or dropped by
+    // hand says nothing about that.
+    private async Task SwitchCardAsync(string config, bool on, CancellationToken ct)
+    {
+        var settings = await settingsStore.LoadAsync(ct);
+        if (!settings.MultiServer)
+        {
+            return;
+        }
+
+        var off = NameList.Split(settings.FailoverSkipped).ToList();
+        var wasOn = !off.Contains(config, StringComparer.Ordinal);
+        if (wasOn == on)
+        {
+            return;
+        }
+
+        if (on)
+        {
+            off.RemoveAll(name => string.Equals(name, config, StringComparison.Ordinal));
+        }
+        else
+        {
+            off.Add(config);
+        }
+
+        await settingsStore.SetAsync(SettingKeys.FailoverSkipped, NameList.Join(off), ct);
+        logger.LogInformation("{Config} is switched {State}: the machine keeps up the cards that are on", config, on ? "on" : "off");
     }
 
     // Picks the config that carries the default route while several tunnels are up.
@@ -1724,11 +1752,15 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         await RememberDesiredAsync(ct);
 
-        // A card taken down by name leaves the set the next connect raises; taking everything down keeps it,
-        // so the button that dropped the tunnels is the button that brings them back.
-        if (!string.IsNullOrWhiteSpace(named))
+        // Taking everything down is remembered, so nothing comes back until a connect asks for it; a card taken
+        // down by name is switched off instead, and the set the machine works out no longer holds it.
+        if (string.IsNullOrWhiteSpace(named))
         {
-            await KeepDesiredAsync(ct);
+            await store.SetSettingAsync(StateKeys.VpnOff, "1", ct);
+        }
+        else
+        {
+            await SwitchCardAsync(named, false, ct);
         }
 
         logger.LogInformation("disconnect requested by {Root} for {Config}", scope.UserRoot, string.IsNullOrWhiteSpace(named) ? "every tunnel it raised" : named);
@@ -1843,6 +1875,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         await geo.RematerializeAllRoutingListsAsync(ct);
+        await AnnounceRulesAsync(ct);
         logger.LogInformation("removed geo source {Name}", name);
         return new IpcAck(true, IpcMessage.Key("Agent_SourceRemoved", name));
     }
@@ -2234,6 +2267,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         {
             await new GeoConfigurator(storeFactory.For(root), geoFiles).RematerializeAllRoutingListsAsync(ct);
         }
+
+        await AnnounceRulesAsync(ct);
     }
 
     /// <summary>
@@ -2790,7 +2825,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             FailoverEnabled: settings.FailoverEnabled,
             FailoverReturnMinutes: settings.FailoverReturnMinutes,
             FailoverSkipped: NameList.Prune(settings.FailoverSkipped, configs.Select(entry => entry.Name)),
-            KeptTunnels: NameList.Prune(await store.GetSettingAsync(StateKeys.KeptTunnels, ct), configs.Select(entry => entry.Name)),
+            Roster: NameList.Join(await distributor.RosterAsync(scope.UserRoot, ct)),
             ShareMode: settings.ShareMode,
             ShareEthernet: settings.ShareEthernet,
             HotspotSupported: hotspot.Supported,

@@ -130,6 +130,7 @@ public static class Rules
     private const string _proxyRole = "proxy|";
     private static readonly string[] _roles = ["proxy", "direct", "block"];
     private static readonly string[] _kinds = ["geosite", "geoip", "domain", "cidr", "app"];
+    private static readonly string[] _fields = ["server", "fallback"];
 
     /// <summary>
     /// The first token a routing list would silently drop, or null when every token parses.
@@ -160,19 +161,38 @@ public static class Rules
         return null;
     }
 
-    // Catches the mistakes the agent would swallow: an unknown role, an unknown kind, an empty value.
+    // Catches the mistakes the agent would swallow: an unknown role, an unknown kind, an empty value, a tail
+    // naming a field no rule carries.
     private static bool IsValid(string rule, bool roles)
     {
-        var separator = rule.IndexOf('|');
-        if (separator > 0 && (!roles || !_roles.Contains(rule[..separator].ToLowerInvariant())))
+        var parts = rule.Split('|');
+        var head = 0;
+        if (parts.Length > 1)
+        {
+            if (!roles || !_roles.Contains(parts[0].ToLowerInvariant()))
+            {
+                return false;
+            }
+
+            head = 1;
+        }
+
+        var token = parts[head];
+        var colon = token.IndexOf(':');
+        if (colon <= 0 || !_kinds.Contains(token[..colon].ToLowerInvariant()) || token[(colon + 1)..].Trim().Length == 0)
         {
             return false;
         }
 
-        var token = rule[(separator + 1)..];
-        var colon = token.IndexOf(':');
-        return colon > 0
-            && _kinds.Contains(token[..colon].ToLowerInvariant())
-            && token[(colon + 1)..].Trim().Length > 0;
+        return parts.Skip(head + 1).All(IsField);
+    }
+
+    // The tail a rule may carry: the server it rides and where it goes while that server is down.
+    private static bool IsField(string part)
+    {
+        var separator = part.IndexOf('=');
+        return separator > 0
+            && _fields.Contains(part[..separator].Trim().ToLowerInvariant())
+            && part[(separator + 1)..].Trim().Length > 0;
     }
 }

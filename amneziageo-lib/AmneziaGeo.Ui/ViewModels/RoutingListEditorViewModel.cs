@@ -469,6 +469,28 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _ => ProxyRules,
     };
 
+    // Keeps the "|server=…" tail out of the value the editor shows and puts it back when the list is saved;
+    // per-rule selectors arrive with the routing UI.
+    private string Detach(string token)
+    {
+        var bar = token.IndexOf('|');
+        if (bar <= 0)
+        {
+            return token;
+        }
+
+        var plain = token[..bar];
+        _ruleTails[plain] = token[bar..];
+        return plain;
+    }
+
+    private string Attach(string plain)
+    {
+        return _ruleTails.TryGetValue(plain, out var tail) ? plain + tail : plain;
+    }
+
+    private readonly Dictionary<string, string> _ruleTails = new(StringComparer.Ordinal);
+
     // Splits a "role|token" into (role, token); a bare token is proxy.
     private static (string Role, string Token) SplitRoleToken(string text)
     {
@@ -619,7 +641,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                     foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
                         var (role, plain) = SplitRoleToken(token);
-                        BucketFor(role).Add(plain);
+                        BucketFor(role).Add(Detach(plain));
                     }
                 }
 
@@ -704,7 +726,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         try
         {
             var args = new List<string> { _id.ToString(CultureInfo.InvariantCulture), trimmed };
-            args.AddRange(ProxyRules.Select(r => $"proxy|{r}"));
+            args.AddRange(ProxyRules.Select(r => $"proxy|{Attach(r)}"));
             args.AddRange(DirectRules.Select(r => $"direct|{r}"));
             args.AddRange(BlockRules.Select(r => $"block|{r}"));
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSaveRoutingList, args));
@@ -1446,7 +1468,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             foreach (var rule in importedRules)
             {
                 var (role, plain) = SplitRoleToken(rule);
-                BucketFor(role).Add(plain);
+                BucketFor(role).Add(Detach(plain));
             }
         }
         finally

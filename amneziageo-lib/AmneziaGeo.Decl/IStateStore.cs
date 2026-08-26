@@ -28,7 +28,7 @@ public interface IStateStore
     /// <summary>
     /// Stores a routing projection and marks it live. routingListId is the source list (null for full-tunnel / no-list).
     /// </summary>
-    Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default);
+    Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, IReadOnlyList<string> blockRoutes, IReadOnlyList<GeoDomain> blockDomains, CancellationToken ct = default);
 
     /// <summary>
     /// Drops the live routing projection, reverting to the config's own split. No-op when no row exists.
@@ -202,6 +202,11 @@ public interface IStateStore
     /// Returns the routing list by id, or null if absent.
     /// </summary>
     Task<RoutingList?> GetRoutingListAsync(long id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the rules of a routing list, without the buckets they expand into.
+    /// </summary>
+    Task<IReadOnlyList<GeoRule>> GetRoutingRulesAsync(long routingListId, CancellationToken ct = default);
 
     /// <summary>
     /// Returns the routing list by name, or null if absent.

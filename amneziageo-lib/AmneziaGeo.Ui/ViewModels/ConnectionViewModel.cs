@@ -30,7 +30,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private bool _multiTunnel;
 
     // Набор, который поднимает большая кнопка: туннели, оставшиеся от прошлого подключения.
-    private IReadOnlyList<string> _kept = [];
+    private IReadOnlyList<string> _roster = [];
 
     // The configuration a dial is heading for, until the tunnel binds it.
     private string? _dialTarget;
@@ -218,7 +218,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     public bool CanToggleConnection => AlwaysOnRouting
         ? IsConnected
         : !Reconnecting && !DisconnectFailed && IsConnected
-            && (IsTunnelActive || ActiveConfig is not null || _kept.Count > 0);
+            && (IsTunnelActive || ActiveConfig is not null || _roster.Count > 0);
 
     // Kept off the screen for now; the switch and everything it drives stay in place.
     private const bool AlwaysOnToggleOffered = false;
@@ -458,10 +458,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
         _multiTunnel = snapshot.MultiTunnel;
-        var kept = NameList.Split(snapshot.KeptTunnels);
-        if (!kept.SequenceEqual(_kept, StringComparer.Ordinal))
+        var roster = NameList.Split(snapshot.Roster);
+        if (!roster.SequenceEqual(_roster, StringComparer.Ordinal))
         {
-            _kept = kept;
+            _roster = roster;
             NotifyCanToggleConnection();
         }
 
@@ -1086,16 +1086,16 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
-    // Ведёт подъём большой кнопкой: набор, оставшийся от прошлого раза, агент поднимает сам, и цель ему
-    // называют, только когда набора нет. Выбор уходит ПЕРЕД подъёмом, чтобы агент взял конфигурацию,
-    // которую видит пользователь, а не ту, что залипла у него с прошлого раза.
+    // Ведёт подъём большой кнопкой: набор агент считает сам, и цель ему называют, только когда набор пуст.
+    // Выбор уходит ПЕРЕД подъёмом, чтобы агент взял конфигурацию, которую видит пользователь, а не ту, что
+    // залипла у него с прошлого раза.
     private async Task BeginDialAsync()
     {
-        if (_kept.Count > 0)
+        if (_roster.Count > 0)
         {
-            SetDialTarget(_kept.Contains(ActiveConfig?.Name ?? string.Empty, StringComparer.Ordinal)
+            SetDialTarget(_roster.Contains(ActiveConfig?.Name ?? string.Empty, StringComparer.Ordinal)
                 ? ActiveConfig!.Name
-                : _kept[0]);
+                : _roster[0]);
             return;
         }
 

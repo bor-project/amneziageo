@@ -64,7 +64,8 @@ public static class SettingKeys
     public const string FailoverReturnMinutes = "failover-return-minutes";
 
     /// <summary>
-    /// Configurations auto-switching passes over, one name per line.
+    /// Configurations switched off, one name per line: auto-switching passes over them, and while several servers
+    /// work at once the machine does not raise them at all.
     /// </summary>
     public const string FailoverSkipped = "failover-skipped";
 

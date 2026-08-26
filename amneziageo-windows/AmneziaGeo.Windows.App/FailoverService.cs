@@ -17,6 +17,7 @@ internal sealed class FailoverService(
     ScopedStoreFactory stores,
     ServiceManager serviceManager,
     AgentStatusBroker broker,
+    RoutingDistributor distributor,
     ILogger<FailoverService> logger) : BackgroundService
 {
     // Rounds are folded at the pace the tunnels are read at: nothing fresher than the liveness poll gets here.
@@ -53,6 +54,12 @@ internal sealed class FailoverService(
             try
             {
                 await RoundAsync(ct).ConfigureAwait(false);
+
+                // A tunnel that came up or went down changes who carries what: the round is when that is recounted.
+                if (control.Primary is { } primary)
+                {
+                    await distributor.DistributeAsync(primary.OwnerRoot, ct: ct).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

@@ -12,6 +12,7 @@ internal sealed class ConfigRunnerFactory(
     SettingsStore settingsStore,
     AgentControl control,
     ScopedStoreFactory stores,
+    RoutingDistributor distributor,
     ILoggerFactory loggerFactory)
 {
     /// <summary>
@@ -27,6 +28,7 @@ internal sealed class ConfigRunnerFactory(
             settingsStore,
             control,
             stores,
+            distributor,
             loggerFactory.CreateLogger<ConfigRunner>());
     }
 }

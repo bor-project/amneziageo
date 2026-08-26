@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Geo;
 
@@ -69,6 +70,28 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         return MaterializeRoutingList(0, string.Empty, rules, index);
+    }
+
+    /// <summary>
+    /// Materializes a plan of the list: every server that is up gets the ranges of the rules resolved onto it, and
+    /// the blocking bucket gains the rules that drop their traffic while the server they name is down.
+    /// </summary>
+    public async Task<FleetProjection> ProjectAsync(RoutingList list, RoutingPlan plan, CancellationToken ct = default)
+    {
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
+        var servers = new List<ServerProjection>(plan.Servers.Count);
+        foreach (var entry in plan.Servers)
+        {
+            var (routes, domains, apps) = GeoMaterializer.Materialize(entry.Rules, index);
+            servers.Add(new ServerProjection(entry.Server, routes, domains, apps));
+        }
+
+        var blocked = GeoMaterializer.Materialize(plan.Blocked, index);
+        return new FleetProjection(
+            servers,
+            [.. list.BlockRoutes, .. blocked.Routes],
+            [.. list.BlockDomains, .. blocked.Domains],
+            plan);
     }
 
     // Bumped whenever a rule token starts covering something else, so stored lists are rebuilt against the new
@@ -229,19 +252,61 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
     }
 
     /// <summary>
-    /// Parses a role-tagged token ("direct|geoip:ru", "block|domain:x"); a bare token defaults to the Proxy role.
+    /// Parses a role-tagged token ("direct|geoip:ru", "proxy|geoip:x|server=de|fallback=block"); a bare token
+    /// defaults to the Proxy role and to whichever server carries the default route.
     /// </summary>
     public static GeoRule? ParseRoleRule(string text)
     {
-        var (role, token) = SplitRole(text);
+        var (role, tail) = SplitRole(text);
+        var (token, serverMode, server, fallbackMode, fallback) = SplitServer(tail);
         var rule = ParseRule(token);
-        return rule is null ? null : rule with { Role = role };
+        return rule is null
+            ? null
+            : (rule with
+            {
+                Role = role,
+                ServerMode = serverMode,
+                Server = server,
+                FallbackMode = fallbackMode,
+                Fallback = fallback,
+            }).Normalized();
     }
 
     /// <summary>
-    /// Formats a typed rule with its role prefix ("proxy|geosite:openai").
+    /// Formats a typed rule with its role prefix and the servers it names ("proxy|geosite:openai|server=de").
     /// </summary>
-    public static string FormatWithRole(GeoRule rule) => $"{RoleToken(rule.Role)}|{Format(rule)}";
+    public static string FormatWithRole(GeoRule rule)
+    {
+        var normalized = rule.Normalized();
+        var server = FormatField("server", normalized.ServerMode, normalized.Server);
+        var fallback = FormatField("fallback", normalized.FallbackMode, normalized.Fallback);
+        return $"{FormatPortable(normalized)}{server}{fallback}";
+    }
+
+    /// <summary>
+    /// Formats a typed rule without the server names, which mean nothing on another machine.
+    /// </summary>
+    public static string FormatPortable(GeoRule rule) => $"{RoleToken(rule.Role)}|{Format(rule)}";
+
+    /// <summary>
+    /// Merges incoming tokens into stored rules, keeping the stored rule wherever both name the same match.
+    /// </summary>
+    public static List<string> MergeRules(IEnumerable<GeoRule> stored, IEnumerable<string> incoming)
+    {
+        var rules = stored.ToList();
+        var merged = rules.Select(FormatWithRole).ToList();
+        var seen = rules.Select(FormatPortable).ToHashSet(StringComparer.Ordinal);
+        foreach (var token in incoming)
+        {
+            var key = ParseRoleRule(token) is { } rule ? FormatPortable(rule) : token;
+            if (seen.Add(key))
+            {
+                merged.Add(token);
+            }
+        }
+
+        return merged;
+    }
 
     private static string RoleToken(RouteRole role) => role switch
     {
@@ -272,4 +337,56 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 
         return (RouteRole.Proxy, text);
     }
+
+    // Auto is the default and stays out of the token: a rule that addresses no server reads byte for byte as it
+    // did before the field existed.
+    private static string FormatField(string field, RuleTargetMode mode, string name) => mode switch
+    {
+        RuleTargetMode.Best => $"|{field}=best",
+        RuleTargetMode.Server => $"|{field}={name}",
+        RuleTargetMode.Direct => $"|{field}=direct",
+        RuleTargetMode.Block => $"|{field}=block",
+        _ => string.Empty,
+    };
+
+    // Splits the "|server=…|fallback=…" tail off a token; a configuration name carrying a bar does not survive it.
+    private static (string Token, RuleTargetMode ServerMode, string Server, RuleTargetMode FallbackMode, string Fallback) SplitServer(string text)
+    {
+        var parts = text.Split('|');
+        var server = (Mode: RuleTargetMode.Auto, Name: string.Empty);
+        var fallback = (Mode: RuleTargetMode.Auto, Name: string.Empty);
+        foreach (var part in parts.Skip(1))
+        {
+            var separator = part.IndexOf('=');
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var value = part[(separator + 1)..].Trim();
+            switch (part[..separator].Trim().ToLowerInvariant())
+            {
+                case "server":
+                    server = ParseField(value);
+                    break;
+
+                case "fallback":
+                    fallback = ParseField(value);
+                    break;
+            }
+        }
+
+        return (parts[0], server.Mode, server.Name, fallback.Mode, fallback.Name);
+    }
+
+    // Anything but a keyword is a configuration name; "none" is how the blocking fallback used to be spelled. A
+    // configuration named after a keyword loses the round trip, as does one carrying a bar.
+    private static (RuleTargetMode Mode, string Name) ParseField(string value) => value.ToLowerInvariant() switch
+    {
+        "" or "auto" => (RuleTargetMode.Auto, string.Empty),
+        "best" => (RuleTargetMode.Best, string.Empty),
+        "direct" => (RuleTargetMode.Direct, string.Empty),
+        "block" or "none" => (RuleTargetMode.Block, string.Empty),
+        _ => (RuleTargetMode.Server, value),
+    };
 }

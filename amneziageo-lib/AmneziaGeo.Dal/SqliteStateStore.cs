@@ -104,6 +104,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         proj_routes_json  TEXT NOT NULL DEFAULT '[]',
                         proj_domains_json TEXT NOT NULL DEFAULT '[]',
                         proj_apps_json    TEXT NOT NULL DEFAULT '[]',
+                        proj_block_routes_json  TEXT NOT NULL DEFAULT '[]',
+                        proj_block_domains_json TEXT NOT NULL DEFAULT '[]',
                         proj_routing_list_id INTEGER,
                         updated_at        TEXT NOT NULL
                     );
@@ -199,6 +201,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         kind          TEXT NOT NULL,
                         value         TEXT NOT NULL,
                         role          TEXT NOT NULL DEFAULT 'Proxy',
+                        server_mode   TEXT NOT NULL DEFAULT 'Auto',
                         server        TEXT NOT NULL DEFAULT '',
                         fallback_mode TEXT NOT NULL DEFAULT 'Auto',
                         fallback      TEXT NOT NULL DEFAULT '',
@@ -227,6 +230,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             // Materialized app matchers for the projection (config path derives apps from rules).
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_apps_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_block_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_block_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
 
             // Routing list a live projection came from (null for full-tunnel / no-list).
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routing_list_id INTEGER;", ct).ConfigureAwait(false);
@@ -264,6 +269,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN role TEXT NOT NULL DEFAULT 'Proxy';", ct).ConfigureAwait(false);
 
             // Per-rule server and fallback; existing rows ride whichever server carries the default route.
+            await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN server_mode TEXT NOT NULL DEFAULT 'Auto';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN server TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN fallback_mode TEXT NOT NULL DEFAULT 'Auto';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN fallback TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
@@ -678,7 +684,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default)
+    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, IReadOnlyList<string> blockRoutes, IReadOnlyList<GeoDomain> blockDomains, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -691,22 +697,26 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 // Insert keeps user columns at defaults; conflict path preserves the config's own split.
                 command.CommandText =
                     """
-                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, proj_routing_list_id, updated_at)
-                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $list, $updated)
+                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, proj_block_routes_json, proj_block_domains_json, proj_routing_list_id, updated_at)
+                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $blockRoutes, $blockDomains, $list, $updated)
                     ON CONFLICT(name) DO UPDATE SET
-                        projected            = 1,
-                        proj_split           = excluded.proj_split,
-                        proj_routes_json     = excluded.proj_routes_json,
-                        proj_domains_json    = excluded.proj_domains_json,
-                        proj_apps_json       = excluded.proj_apps_json,
-                        proj_routing_list_id = excluded.proj_routing_list_id,
-                        updated_at           = excluded.updated_at;
+                        projected               = 1,
+                        proj_split              = excluded.proj_split,
+                        proj_routes_json        = excluded.proj_routes_json,
+                        proj_domains_json       = excluded.proj_domains_json,
+                        proj_apps_json          = excluded.proj_apps_json,
+                        proj_block_routes_json  = excluded.proj_block_routes_json,
+                        proj_block_domains_json = excluded.proj_block_domains_json,
+                        proj_routing_list_id    = excluded.proj_routing_list_id,
+                        updated_at              = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", name);
                 command.Parameters.AddWithValue("$split", split ? 1 : 0);
                 command.Parameters.AddWithValue("$routes", JsonSerializer.Serialize(routes));
                 command.Parameters.AddWithValue("$domains", JsonSerializer.Serialize(domains));
                 command.Parameters.AddWithValue("$apps", JsonSerializer.Serialize(apps));
+                command.Parameters.AddWithValue("$blockRoutes", JsonSerializer.Serialize(blockRoutes));
+                command.Parameters.AddWithValue("$blockDomains", JsonSerializer.Serialize(blockDomains));
                 command.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -2022,13 +2032,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insertRule.Transaction = transaction;
                         insertRule.CommandText =
                             """
-                            INSERT INTO routing_list_rules (list_id, kind, value, role, server, fallback_mode, fallback, position, updated_at)
-                            VALUES ($list, $kind, $value, $role, $server, $fallbackMode, $fallback, $position, $updated);
+                            INSERT INTO routing_list_rules (list_id, kind, value, role, server_mode, server, fallback_mode, fallback, position, updated_at)
+                            VALUES ($list, $kind, $value, $role, $serverMode, $server, $fallbackMode, $fallback, $position, $updated);
                             """;
                         insertRule.Parameters.AddWithValue("$list", id);
                         insertRule.Parameters.AddWithValue("$kind", rule.Kind.ToString());
                         insertRule.Parameters.AddWithValue("$value", rule.Value);
                         insertRule.Parameters.AddWithValue("$role", rule.Role.ToString());
+                        insertRule.Parameters.AddWithValue("$serverMode", rule.ServerMode.ToString());
                         insertRule.Parameters.AddWithValue("$server", rule.Server);
                         insertRule.Parameters.AddWithValue("$fallbackMode", rule.FallbackMode.ToString());
                         insertRule.Parameters.AddWithValue("$fallback", rule.Fallback);
@@ -2052,6 +2063,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         {
             await connection.OpenAsync(ct).ConfigureAwait(false);
             return await ReadRoutingListAsync(connection, "id = $key", "$key", id, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<GeoRule>> GetRoutingRulesAsync(long routingListId, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            return await ReadRoutingListRulesAsync(connection, routingListId, ct).ConfigureAwait(false);
         }
     }
 
@@ -2313,10 +2335,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                // Read the list's current materialization, not the connect-time snapshot.
+                // Read this tunnel's share, which the distributor rewrites whenever the machine state changes.
+                // The generation stays the list's, so a set that did not move is not reinstalled; the share stamp
+                // beside it moves when the same list is dealt out differently.
                 command.CommandText =
                     """
-                    SELECT rl.id, rl.generation, rl.routes_json, rl.domains_json
+                    SELECT rl.id, rl.generation, tg.proj_routes_json, tg.proj_domains_json,
+                           tg.proj_block_routes_json, tg.proj_block_domains_json
                     FROM tunnel_geo tg
                     JOIN routing_lists rl ON rl.id = tg.proj_routing_list_id
                     WHERE tg.name = $name AND tg.projected = 1;
@@ -2333,9 +2358,19 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
                     var listId = reader.GetInt64(0);
                     var generation = reader.GetInt64(1);
-                    var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(2)) ?? [];
-                    var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
-                    return new ActiveRoutingListMaterialization(listId, generation, routes, domains);
+                    var routesJson = reader.GetString(2);
+                    var domainsJson = reader.GetString(3);
+                    var blockRoutesJson = reader.GetString(4);
+                    var blockDomainsJson = reader.GetString(5);
+                    var routes = JsonSerializer.Deserialize<List<string>>(routesJson) ?? [];
+                    var domains = JsonSerializer.Deserialize<List<GeoDomain>>(domainsJson) ?? [];
+                    var blockRoutes = JsonSerializer.Deserialize<List<string>>(blockRoutesJson) ?? [];
+                    var blockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(blockDomainsJson) ?? [];
+
+                    // Stamps the share for the caller to compare against the one it holds; the two are only ever
+                    // compared inside one process, which is what string hashing guarantees.
+                    var share = HashCode.Combine(routesJson, domainsJson, blockRoutesJson, blockDomainsJson);
+                    return new ActiveRoutingListMaterialization(listId, generation, share, routes, domains, blockRoutes, blockDomains);
                 }
             }
         }
@@ -2526,7 +2561,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         {
             command.CommandText =
                 """
-                SELECT kind, value, role, server, fallback_mode, fallback
+                SELECT kind, value, role, server, fallback_mode, fallback, server_mode
                 FROM routing_list_rules
                 WHERE list_id = $id
                 ORDER BY position;
@@ -2544,13 +2579,27 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var role = roleText.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
                         ? RouteRole.Direct
                         : Enum.TryParse<RouteRole>(roleText, out var parsed) ? parsed : RouteRole.Proxy;
-                    var fallbackMode = Enum.TryParse<RuleFallback>(reader.GetString(4), out var mode) ? mode : RuleFallback.Auto;
-                    rules.Add(new GeoRule(kind, reader.GetString(1), role, reader.GetString(3), fallbackMode, reader.GetString(5)).Normalized());
+                    var server = reader.GetString(3);
+                    // Rows written before the mode column carry the name alone.
+                    var serverMode = ParseMode(reader.GetString(6), server.Length > 0 ? RuleTargetMode.Server : RuleTargetMode.Auto);
+                    var fallbackMode = ParseMode(reader.GetString(4), RuleTargetMode.Auto);
+                    rules.Add(new GeoRule(kind, reader.GetString(1), role, serverMode, server, fallbackMode, reader.GetString(5)).Normalized());
                 }
             }
         }
 
         return rules;
+    }
+
+    // "None" is the blocking fallback as it was spelled before the mode carried five values.
+    private static RuleTargetMode ParseMode(string text, RuleTargetMode fallback)
+    {
+        if (text.Equals("None", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuleTargetMode.Block;
+        }
+
+        return Enum.TryParse<RuleTargetMode>(text, out var mode) ? mode : fallback;
     }
 
     private static string Timestamp()

@@ -20,6 +20,7 @@ internal sealed class ConfigRunner(
     SettingsStore settingsStore,
     AgentControl control,
     ScopedStoreFactory stores,
+    RoutingDistributor distributor,
     ILogger<ConfigRunner> logger)
 {
     private IStateStore store => stores.For(tunnel.OwnerRoot);
@@ -346,48 +347,49 @@ internal sealed class ConfigRunner(
         return current;
     }
 
+    // The whole machine is recounted: this tunnel's share of the list is written before it is raised, and the ones
+    // already up are told what moved off them. Only the roles no two tunnels can share are settled here.
     private async Task ProjectRoutingAsync(string config, CancellationToken ct)
     {
-        var listId = await RoutingBinding.ResolveAsync(store, config, ct);
-        if (listId is null)
-        {
-            // No list bound: project full tunnel, override config set-geo.
-            await ProjectFullTunnelAsync(config, ct);
-            return;
-        }
-
-        var list = await store.GetRoutingListAsync(listId.Value, ct);
+        var role = await distributor.DistributeAsync(tunnel.OwnerRoot, config, ct: ct);
+        var list = role.ListId is null ? null : await store.GetRoutingListAsync(role.ListId.Value, ct);
+        await ClaimMachineRolesAsync(config, !role.Split, role.Preferred, ct);
         if (list is null)
         {
-            logger.LogWarning("routing list {Id} no longer exists; until another list is picked, everything goes through the tunnel", listId.Value);
-            await ProjectFullTunnelAsync(config, ct);
+            if (role.ListId is not null)
+            {
+                logger.LogWarning("routing list {Id} no longer exists; until another list is picked, everything goes through the tunnel", role.ListId.Value);
+            }
+
+            if (role.Split)
+            {
+                logger.LogInformation("{Config} stands beside the server that carries everything and no rule names it, so nothing goes through it yet", config);
+                return;
+            }
+
+            logger.LogInformation("routing rules are off for {Config}: all traffic goes through the tunnel", config);
             return;
         }
 
-        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, list.Id, ct);
-        var routingSettings = await store.GetRoutingSettingsAsync(list.Id, ct);
-        await ClaimMachineRolesAsync(config, routingSettings?.UseGlobalProxy ?? false, ct);
-        logger.LogInformation("routing list '{List}' now applies to {Config}: only what it names goes through the tunnel", list.Name, config);
-    }
+        if (role.Split)
+        {
+            logger.LogInformation("routing list '{List}' now applies to {Config}: only what it names goes through the tunnel", list.Name, config);
+            return;
+        }
 
-    private async Task ProjectFullTunnelAsync(string config, CancellationToken ct)
-    {
-        // geoSplit=false -> full tunnel via config AllowedIPs.
-        await store.SaveTunnelProjectionAsync(config, false, [], [], [], null, ct);
-        await ClaimMachineRolesAsync(config, true, ct);
-        logger.LogInformation("routing rules are off for {Config}: all traffic goes through the tunnel", config);
+        logger.LogInformation("routing list '{List}' now applies to {Config}: everything goes through the tunnel except what the list sends elsewhere", list.Name, config);
     }
 
     // Settles what only one tunnel on the machine can hold: the default route and the machine's name lookups.
-    private async Task ClaimMachineRolesAsync(string config, bool wantsDefault, CancellationToken ct)
+    private async Task ClaimMachineRolesAsync(string config, bool wantsDefault, bool preferred, CancellationToken ct)
     {
-        await ClaimDefaultRouteAsync(config, wantsDefault, ct);
+        await ClaimDefaultRouteAsync(config, wantsDefault, preferred, ct);
         await ClaimResolverAsync(config, ct);
     }
 
-    // Decides whether this tunnel carries the default route. The config the user picked always takes it; without
-    // a pick the tunnel that is already up keeps it, and this one is raised with only the ranges it names.
-    private async Task ClaimDefaultRouteAsync(string config, bool wantsDefault, CancellationToken ct)
+    // Decides whether this tunnel carries the default route. The preferred config always takes it; without a
+    // preference the tunnel that is already up keeps it, and this one is raised with only the ranges it names.
+    private async Task ClaimDefaultRouteAsync(string config, bool wantsDefault, bool preferred, CancellationToken ct)
     {
         if (!wantsDefault)
         {
@@ -396,8 +398,7 @@ internal sealed class ConfigRunner(
             return;
         }
 
-        var picked = await store.GetSettingAsync(StateKeys.DefaultRouteOwner, ct);
-        var claim = control.ClaimDefaultRoute(config, string.Equals(picked, config, StringComparison.Ordinal));
+        var claim = control.ClaimDefaultRoute(config, preferred);
         await store.SetSettingAsync(TunnelPaths.DefaultRouteKey(config), claim.Granted ? string.Empty : TunnelPaths.ClipDefaultRoute, ct);
         if (claim.Displaced is { } displaced)
         {

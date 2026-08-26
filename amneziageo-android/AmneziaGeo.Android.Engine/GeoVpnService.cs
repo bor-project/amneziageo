@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.NetworkInformation;
@@ -109,8 +110,11 @@ public sealed class GeoVpnService : VpnService
     // head reads a live tunnel off the process list.
     private static readonly Handler _exit = new(Looper.MainLooper!);
 
+    private readonly ConcurrentDictionary<int, string> _packages = new();
     private int _handle = -1;
     private int _proxyPort;
+    private ConnectivityManager? _connectivity;
+    private InetSocketAddress? _proxyEnd;
     private WsCarrier? _carrier;
     private ProxyRelay? _relay;
     private LocalProxyServer? _proxy;
@@ -395,18 +399,14 @@ public sealed class GeoVpnService : VpnService
             }
 
             var servers = DnsServers(resolved);
-            // A relay the platform cannot hand to the applications decides nothing, so the tunnel is built the old
-            // way instead: the lists become addresses at connect.
-            var relay = Build.VERSION.SdkInt >= BuildVersionCodes.Q
-                ? new ProxyRelay(plan, Protect, Report, ResolveOwner)
-                : null;
+            var relay = NeedsRelay(plan) ? new ProxyRelay(plan, Protect, Report, ResolveOwner) : null;
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
             var rules = await MaterializeAsync(plan, servers, _proxyPort > 0).ConfigureAwait(false);
-            if (RouteBudget.Applies && rules.Tunneled.Count > RouteBudget.Max)
+            if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
                 Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
-                    + "transaction; shorten the routing list or run it on android 10 or newer");
+                    + "transaction; shorten the routing list");
                 Teardown(VpnStage.Failed, $"{rules.Tunneled.Count} of {RouteBudget.Max}",
                     nameof(ConnectFailureReason.TooManyRoutes));
                 return;
@@ -527,6 +527,33 @@ public sealed class GeoVpnService : VpnService
     /// The route lists a session is built from, and the local networks it keeps out of the tun.
     /// </summary>
     private readonly record struct Materialized(IReadOnlyList<string> Tunneled, IReadOnlyList<string> Allowed, IReadOnlyList<string> Local);
+
+    // Whether the session raises the relay. Every byte it carries crosses userspace twice, so it stands only where
+    // the route table cannot say the same thing: a connection to attribute to an application, or more ranges than
+    // establish() takes in one transaction.
+    private static bool NeedsRelay(GeoRoutingPlan plan)
+    {
+        if (!RouteBudget.Relayable)
+        {
+            return false;
+        }
+
+        if (plan.TunnelApps.Count > 0)
+        {
+            return true;
+        }
+
+        var routes = SystemRoutes.Tunneled(plan.FullTunnel, plan.ProxyRoutes, plan.DirectRoutes, plan.BlockRoutes).Count;
+        var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
+        if (RouteBudget.Fits(routes, names))
+        {
+            Report($"{routes} route(s) carry the rules on their own, so the relay stays down and nothing crosses it");
+            return false;
+        }
+
+        Report($"{routes} route(s) are more than establish() takes, so the relay decides the destinations instead");
+        return true;
+    }
 
     // Turns the rules into the two address lists a tunnel is built from. Behind the relay the tun carries everything
     // and every destination is decided while the session runs, so no name is resolved and no range becomes a route at
@@ -854,7 +881,9 @@ public sealed class GeoVpnService : VpnService
         return GeoIpRanges.Format(network) + "/" + prefix;
     }
 
-    // Names the application behind a loopback connection to the proxy; null when the system will not tell.
+    // Names the application behind a loopback connection to the proxy; null when the system will not tell. The
+    // manager, the proxy end of the pair and the packages a uid owns are held: each costs a round trip into another
+    // process, and none of them changes while the tunnel stands.
     private string? ResolveOwner(System.Net.IPEndPoint peer)
     {
         try
@@ -864,22 +893,28 @@ public sealed class GeoVpnService : VpnService
                 return null;
             }
 
-            var manager = (ConnectivityManager?)GetSystemService(ConnectivityService);
+            var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
+            var remote = _proxyEnd ??= new InetSocketAddress(ProxyHost, _proxyPort);
             var local = new InetSocketAddress(peer.Address.ToString(), peer.Port);
-            var remote = new InetSocketAddress(ProxyHost, _proxyPort);
             var uid = manager?.GetConnectionOwnerUid(TcpProtocol, local, remote) ?? -1;
             if (uid < 0)
             {
                 return null;
             }
 
-            var packages = PackageManager?.GetPackagesForUid(uid);
-            return packages is { Length: > 0 } ? packages[0] : "uid:" + uid;
+            return _packages.GetOrAdd(uid, static (id, service) => service.Named(id), this);
         }
         catch (Java.Lang.Exception)
         {
             return null;
         }
+    }
+
+    // The package a uid owns, or the uid itself where the system names none.
+    private string Named(int uid)
+    {
+        var packages = PackageManager?.GetPackagesForUid(uid);
+        return packages is { Length: > 0 } ? packages[0] : "uid:" + uid;
     }
 
     // Logs what the relay carried against what the tunnel carried, so the relayed share can be judged.
@@ -1337,6 +1372,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.WriteProxyState(false, string.Empty);
         VpnBridge.ClearSessions();
         _proxyPort = 0;
+        _proxyEnd = null;
+        _packages.Clear();
         _carrier?.Dispose();
         _carrier = null;
         if (_handle >= 0)

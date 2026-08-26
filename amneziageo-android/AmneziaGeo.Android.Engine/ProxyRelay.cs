@@ -20,7 +20,11 @@ namespace AmneziaGeo.Android.Engine;
 internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 {
     private const int HeadLimit = 8192;
-    private const int BufferSize = 16384;
+    private const int BufferSize = 65536;
+
+    // What one direction carries before it is counted. Counting every read puts an atomic and a clock read on the
+    // byte path; a destination's share stays exact either way, only its rate settles a fraction of a second later.
+    private const int CountEvery = 262144;
     private const int ConnectTimeoutMs = 8000;
     private const int MinSweepMs = 5_000;
     private const int MaxSweepMs = 30_000;
@@ -51,7 +55,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private long _blocked;
     private long _refused;
     private long _released;
-    private long _bytes;
+    private long _retired;
     private bool _disposed;
 
     /// <summary>
@@ -81,9 +85,22 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     public int Port { get; private set; }
 
     /// <summary>
-    /// Payload carried in both directions so far.
+    /// Payload carried in both directions so far. Held per destination rather than in one counter: a single total is
+    /// a cache line every connection on every core writes to, and the sum is read only when a report is rendered.
     /// </summary>
-    public long Bytes => Interlocked.Read(ref _bytes);
+    public long Bytes
+    {
+        get
+        {
+            var total = Interlocked.Read(ref _retired);
+            foreach (var pair in _entries)
+            {
+                total += Volatile.Read(ref pair.Value.Bytes);
+            }
+
+            return total;
+        }
+    }
 
     /// <summary>
     /// Binds the loopback listener and starts serving; 0 when the port could not be taken.
@@ -402,6 +419,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private async Task PumpAsync(Socket from, Socket to, Entry entry, CancellationToken ct)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+        var carried = 0;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -413,7 +431,12 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
                 }
 
                 await to.SendAsync(buffer.AsMemory(0, read), SocketFlags.None, ct).ConfigureAwait(false);
-                Count(entry, read);
+                carried += read;
+                if (carried >= CountEvery)
+                {
+                    Count(entry, carried);
+                    carried = 0;
+                }
             }
         }
         catch (System.OperationCanceledException)
@@ -427,6 +450,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         }
         finally
         {
+            Count(entry, carried);
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
@@ -447,8 +471,12 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private async Task<Socket?> ConnectAsync(Entry entry, int port, string app, CancellationToken ct)
     {
         var addresses = await ResolveAsync(entry, ct).ConfigureAwait(false);
-        foreach (var address in addresses)
+        for (var step = 0; step < addresses.Count; step++)
         {
+            // The address that answered last is tried first: a name whose leading address is a black hole otherwise
+            // costs every connection to it the whole connect timeout before the working one is reached.
+            var index = (Volatile.Read(ref entry.Preferred) + step) % addresses.Count;
+            var address = addresses[index];
             var verdict = Classify(entry.Verdict, address);
             if (verdict == RouteVerdict.Block)
             {
@@ -469,6 +497,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             {
                 await socket.ConnectAsync(new IPEndPoint(address, port), timeout.Token).ConfigureAwait(false);
                 entry.Verdict = verdict;
+                Volatile.Write(ref entry.Preferred, index);
                 return socket;
             }
             catch (Exception)
@@ -562,23 +591,35 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     // Takes the entry a destination holds, deciding it on first contact and extending its life on every later one.
     private Entry Touch(string host)
     {
-        var entry = _entries.GetOrAdd(host, name =>
-        {
-            var started = Environment.TickCount64;
-            var fresh = new Entry(name) { Verdict = ByName(name), LastTouch = started, Since = started, ReportedAt = started };
-            _log($"relay: {name} -> {Word(fresh.Verdict)}");
-            return fresh;
-        });
-
+        var entry = _entries.GetOrAdd(host, static (name, relay) => relay.Decide(name), this);
         Volatile.Write(ref entry.LastTouch, Environment.TickCount64);
         return entry;
     }
 
+    // Decides a destination met for the first time.
+    private Entry Decide(string host)
+    {
+        var started = Environment.TickCount64;
+        var fresh = new Entry(host) { Verdict = ByName(host), LastTouch = started, Since = started, ReportedAt = started };
+        _log($"relay: {host} -> {Word(fresh.Verdict)}");
+        return fresh;
+    }
+
     private void Count(Entry entry, int bytes)
     {
-        Interlocked.Add(ref _bytes, bytes);
+        if (bytes == 0)
+        {
+            return;
+        }
+
         Interlocked.Add(ref entry.Bytes, bytes);
         Volatile.Write(ref entry.LastTouch, Environment.TickCount64);
+    }
+
+    // Keeps what a dropped destination carried in the total.
+    private void Retire(Entry entry)
+    {
+        Interlocked.Add(ref _retired, Volatile.Read(ref entry.Bytes));
     }
 
     // Drops what nothing has used for the idle window; a destination with a live connection is never dropped.
@@ -607,6 +648,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 
                 if (_entries.TryRemove(pair.Key, out _))
                 {
+                    Retire(entry);
                     Interlocked.Increment(ref _released);
                     _log($"relay: {pair.Key} released after {_idleTtlMs / 1000} s idle");
                 }
@@ -617,22 +659,24 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             {
                 foreach (var pair in _entries.OrderBy(item => Volatile.Read(ref item.Value.LastTouch)).Take(_entries.Count - MaxEntries))
                 {
-                    if (Volatile.Read(ref pair.Value.Live) == 0)
+                    if (Volatile.Read(ref pair.Value.Live) == 0 && _entries.TryRemove(pair.Key, out _))
                     {
-                        _entries.TryRemove(pair.Key, out _);
+                        Retire(pair.Value);
                     }
                 }
             }
         }
     }
 
-    // Names the application behind a loopback connection. While the list names applications the lookup runs per
-    // connection, because two of them share a destination and only the owner says where this one belongs; otherwise
-    // it costs a system call once per destination, whose answer does not change while the destination is held.
+    // Names the application behind a loopback connection. The answer places a destination no rule named, so there it
+    // is asked per connection: two applications share a destination and only the owner says which this one is. A
+    // destination a rule decided takes the name for the display alone and asks once, because every answer costs two
+    // round trips into the system.
     private string NoteOwner(Socket client, Entry entry)
     {
-        if (_owner is null || client.RemoteEndPoint is not IPEndPoint peer
-            || (_apps.Count == 0 && entry.App.Length > 0))
+        if (_owner is null
+            || (entry.App.Length > 0 && (_apps.Count == 0 || entry.Verdict != RouteVerdict.None))
+            || client.RemoteEndPoint is not IPEndPoint peer)
         {
             return entry.App;
         }
@@ -851,6 +895,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         public long Reported;
         public long ReportedAt;
         public int Live;
+        public int Preferred;
         public string App = string.Empty;
         public IReadOnlyList<IPAddress> Addresses = [];
     }
@@ -873,8 +918,9 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 
         if (string.Equals(parts[0], "CONNECT", StringComparison.Ordinal))
         {
+            // The head opens the tunnel and is not passed on, so nothing of it is kept.
             var (name, port) = SplitAuthority(parts[1], 443);
-            return name is null ? null : new Request(name, port, true, raw[..length]);
+            return name is null ? null : new Request(name, port, true, []);
         }
 
         if (!parts[1].StartsWith("http://", StringComparison.OrdinalIgnoreCase))

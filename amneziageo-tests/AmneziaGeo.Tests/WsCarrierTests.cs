@@ -79,6 +79,57 @@ public sealed class WsCarrierTests
         Assert.Equal(datagram, frame.AsSpan(4, datagram.Length).ToArray());
     }
 
+    [Fact]
+    public void APayloadReceivedInPlace_TakesItsHeaderInFrontOfItselfWithoutMoving()
+    {
+        var buffer = new byte[1500];
+        var datagram = Encoding.ASCII.GetBytes(new string('x', 1420));
+        datagram.CopyTo(buffer, 4);
+
+        var used = WsCarrier.Frame(buffer, 0, datagram.Length);
+
+        Assert.Equal(datagram.Length + 4, used);
+        Assert.Equal(0x82, buffer[0]);
+        Assert.Equal(126, buffer[1]);
+        Assert.Equal(1420, (buffer[2] << 8) | buffer[3]);
+        Assert.Equal(datagram, buffer.AsSpan(4, datagram.Length).ToArray());
+    }
+
+    [Fact]
+    public void APayloadShortEnoughForATwoByteHeader_MovesBackTheTwoBytesItSaves()
+    {
+        var buffer = new byte[64];
+        var datagram = Encoding.ASCII.GetBytes("a datagram the tunnel sends");
+        datagram.CopyTo(buffer, 4);
+
+        var used = WsCarrier.Frame(buffer, 0, datagram.Length);
+
+        Assert.Equal(datagram.Length + 2, used);
+        Assert.Equal(0x82, buffer[0]);
+        Assert.Equal((byte)datagram.Length, buffer[1]);
+        Assert.Equal(datagram, buffer.AsSpan(2, datagram.Length).ToArray());
+    }
+
+    [Fact]
+    public void DatagramsFramedOneAfterAnother_LeaveNoGapBetweenThem()
+    {
+        var buffer = new byte[4096];
+        var first = Encoding.ASCII.GetBytes(new string('a', 200));
+        var second = Encoding.ASCII.GetBytes(new string('b', 30));
+        first.CopyTo(buffer, 4);
+
+        var used = WsCarrier.Frame(buffer, 0, first.Length);
+        second.CopyTo(buffer, used + 4);
+        var total = WsCarrier.Frame(buffer, used, second.Length);
+
+        Assert.Equal(first.Length + 4, used);
+        Assert.Equal(used + second.Length + 2, total);
+        Assert.Equal(first, buffer.AsSpan(4, first.Length).ToArray());
+        Assert.Equal(0x82, buffer[used]);
+        Assert.Equal((byte)second.Length, buffer[used + 1]);
+        Assert.Equal(second, buffer.AsSpan(used + 2, second.Length).ToArray());
+    }
+
     private static byte[] Web(string value)
     {
         var padded = value.Replace('-', '+').Replace('_', '/');

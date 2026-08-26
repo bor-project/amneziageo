@@ -65,43 +65,19 @@
     <value>Tunnel</value>
   </data>
   <data name="General_NetworkRepairSection" xml:space="preserve">
-    <value>Network repair</value>
+    <value>Reset settings</value>
   </data>
   <data name="General_NetworkRepairHint" xml:space="preserve">
-    <value>If the internet stops working after a failed connection or removing the app, reset the DNS it set on your adapters. Configurations and routes are left untouched.</value>
+    <value>Clears the DNS the app set on the adapters when the internet is gone. Configurations and routes stay.</value>
   </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
-    <value>Repair internet</value>
+    <value>Reset</value>
   </data>
   <data name="General_NetworkRepairDone" xml:space="preserve">
-    <value>Repair started — confirm the elevation prompt.</value>
+    <value>Reset started. Confirm the elevation prompt.</value>
   </data>
   <data name="General_NetworkRepairFailed" xml:space="preserve">
-    <value>Could not start the repair.</value>
-  </data>
-  <data name="General_DiagnosticsSection" xml:space="preserve">
-    <value>Diagnostics archive</value>
-  </data>
-  <data name="General_DiagnosticsHint" xml:space="preserve">
-    <value>Packs the logs, the settings and the state of the tunnel into one zip to send to support. Keys and credentials in it are masked.</value>
-  </data>
-  <data name="General_DiagnosticsButton" xml:space="preserve">
-    <value>Collect archive</value>
-  </data>
-  <data name="General_DiagnosticsSaveTitle" xml:space="preserve">
-    <value>Save archive</value>
-  </data>
-  <data name="General_DiagnosticsRunning" xml:space="preserve">
-    <value>Collecting the archive...</value>
-  </data>
-  <data name="General_DiagnosticsAt" xml:space="preserve">
-    <value>The archive is ready: {0}</value>
-  </data>
-  <data name="General_DiagnosticsSaved" xml:space="preserve">
-    <value>The archive is saved.</value>
-  </data>
-  <data name="General_DiagnosticsFailed" xml:space="preserve">
-    <value>Could not collect the archive.</value>
+    <value>Could not start the reset.</value>
   </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Show notifications</value>
@@ -411,6 +387,27 @@
   </data>
   <data name="Main_DiagnosticsSection" xml:space="preserve">
     <value>Diagnostics</value>
+  </data>
+  <data name="Main_ArchiveHint" xml:space="preserve">
+    <value>Packs the logs, the settings and the state of the tunnel into one zip to send to support. Keys and credentials in it are masked.</value>
+  </data>
+  <data name="Main_ArchiveButton" xml:space="preserve">
+    <value>Collect archive</value>
+  </data>
+  <data name="Main_ArchiveSaveTitle" xml:space="preserve">
+    <value>Save archive</value>
+  </data>
+  <data name="Main_ArchiveRunning" xml:space="preserve">
+    <value>Collecting the archive...</value>
+  </data>
+  <data name="Main_ArchiveAt" xml:space="preserve">
+    <value>The archive is ready: {0}</value>
+  </data>
+  <data name="Main_ArchiveSaved" xml:space="preserve">
+    <value>The archive is saved.</value>
+  </data>
+  <data name="Main_ArchiveFailed" xml:space="preserve">
+    <value>Could not collect the archive.</value>
   </data>
   <data name="Main_LogCaptureTitle" xml:space="preserve">
     <value>Log settings</value>

@@ -415,10 +415,10 @@
                  switching back is free. The viewport-derived sizes stay outside the templates: an element-name
                  binding does not cross a template's name scope. -->
 
-            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 16px inset. -->
+            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 24px inset. -->
             <ContentControl IsVisible="{Binding IsSettingsConfig}" Content="{Binding Config}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=16}">
+                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=24}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:ConfigViewModel">
                   <views:ConfigView />
@@ -466,7 +466,7 @@
               </ContentControl.ContentTemplate>
             </ContentControl>
 
-            <!-- DIAGNOSTICS SECTION: the viewport (minus the Grid's 16px inset) so only the pane body scrolls,
+            <!-- DIAGNOSTICS SECTION: the viewport (minus the Grid's 24px inset) so only the pane body scrolls,
                  and more than the viewport when the pane is too low for a readable body - then this screen
                  scrolls for the difference. The viewer holds the height, since only it knows what its head takes. -->
             <ContentControl IsVisible="{Binding IsSettingsLogs}" Content="{Binding Diagnostics}"

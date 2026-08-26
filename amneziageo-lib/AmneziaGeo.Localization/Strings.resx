@@ -1222,9 +1222,6 @@
   <data name="QrScanner_CameraPermissionDenied" xml:space="preserve">
     <value>Camera access denied</value>
   </data>
-  <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
-    <value>Add at least one entry to save the list.</value>
-  </data>
   <data name="RoutingEditor_AppKindApplication" xml:space="preserve">
     <value>{0} · application</value>
   </data>

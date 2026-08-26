@@ -1222,9 +1222,6 @@
   <data name="QrScanner_CameraPermissionDenied" xml:space="preserve">
     <value>Доступ к камере запрещён</value>
   </data>
-  <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
-    <value>Добавьте хотя бы одну запись, чтобы сохранить список.</value>
-  </data>
   <data name="RoutingEditor_AppKindApplication" xml:space="preserve">
     <value>{0} · приложение</value>
   </data>

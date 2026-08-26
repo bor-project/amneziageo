@@ -174,18 +174,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string _networkRepairStatus = string.Empty;
 
     /// <summary>
-    /// Result line for the diagnostics archive: where it was written, or why it was not.
-    /// </summary>
-    [ObservableProperty]
-    private string _diagnosticsStatus = string.Empty;
-
-    /// <summary>
-    /// Whether the archive is being built right now.
-    /// </summary>
-    [ObservableProperty]
-    private bool _diagnosticsRunning;
-
-    /// <summary>
     /// ctor
     /// </summary>
     public GeneralViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
@@ -908,32 +896,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             // The user declined the elevation prompt, or the helper could not start.
             _ = LogToAgentAsync($"network repair launch failed: {ex}");
             NetworkRepairStatus = Loc.Instance.Get("General_NetworkRepairFailed");
-        }
-    }
-
-    /// <summary>
-    /// Asks the agent for a redacted diagnostics archive and returns the path it wrote, null when it wrote none.
-    /// The agent builds it under its own account, so the window offers it for saving instead of moving it.
-    /// </summary>
-    public async Task<string?> CollectDiagnosticsAsync()
-    {
-        DiagnosticsRunning = true;
-        DiagnosticsStatus = Loc.Instance.Get("General_DiagnosticsRunning");
-        try
-        {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCollectDiagnostics, []));
-            DiagnosticsStatus = ack.Ok ? Loc.Instance.Get("General_DiagnosticsAt", ack.Message) : ack.Message;
-            return ack.Ok ? ack.Message : null;
-        }
-        catch (Exception ex)
-        {
-            _ = LogToAgentAsync($"diagnostics collect failed: {ex}");
-            DiagnosticsStatus = Loc.Instance.Get("General_DiagnosticsFailed");
-            return null;
-        }
-        finally
-        {
-            DiagnosticsRunning = false;
         }
     }
 

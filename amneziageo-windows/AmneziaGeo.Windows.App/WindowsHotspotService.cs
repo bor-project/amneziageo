@@ -8,7 +8,8 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Access point of this machine: the tethering the system raises over the connection it reaches the internet by,
 /// so what its clients send leaves the way this machine's own traffic does. While no point is asked for, this
-/// reads the settings and stops there - the adapters and the tethering stack are not touched at all.
+/// reads the settings and asks the tethering stack one thing every few polls - whether a point stands here at
+/// all - and touches nothing else.
 /// </summary>
 internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager routes, ServiceManager services, ILogger<WindowsHotspotService> logger) : BackgroundService
 {
@@ -91,12 +92,13 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
         {
             var wanted = (await settings.LoadAsync(ct).ConfigureAwait(false)).Hotspot();
 
-            // Nothing asked for and no point of ours standing: nothing of Windows is reached into, so a machine
-            // that never shares pays a settings read and no more.
+            // Nothing asked for and no point of ours standing: Windows is reached into for the one answer the
+            // window locks its switch on, and for nothing else.
             if (!wanted.Enabled && !Running)
             {
                 _applied = wanted;
                 Idle();
+                await ProbeAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -276,6 +278,28 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
         Running = false;
         Clients = 0;
         BandActual = string.Empty;
+    }
+
+    // Reads whether this machine raises a point at all while none is asked for, so the switch that asks for one
+    // is not locked by an answer nothing ever filled in.
+    private async Task ProbeAsync()
+    {
+        if (--_probeTicks > 0)
+        {
+            return;
+        }
+
+        _probeTicks = ProbeTicks;
+        if (!Wireless())
+        {
+            Supported = false;
+            Reason = HotspotReasons.NoAdapter;
+            return;
+        }
+
+        var state = await WindowsTethering.ReadAsync(string.Empty).ConfigureAwait(false);
+        Supported = state.Supported;
+        Reason = state.Reason;
     }
 
     // The cheapest of the three checks, and the only one that does not reach into Windows.

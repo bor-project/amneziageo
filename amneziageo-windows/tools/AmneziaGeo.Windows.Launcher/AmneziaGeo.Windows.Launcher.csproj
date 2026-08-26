@@ -33,12 +33,36 @@
     </ProjectReference>
   </ItemGroup>
 
-  <!-- Stage the tray apphost next to the launcher so RunDesktop spawns it (and it finds Ui.exe co-located). -->
+  <!-- Stage the tray apphost next to the launcher so RunDesktop spawns it (and it finds Ui.exe co-located).
+       The tray carries its own TargetFramework, so take the path from the project instead of composing one. -->
   <Target Name="StageTray" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\..\AmneziaGeo.Windows.Tray\AmneziaGeo.Windows.Tray.csproj"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_TrayTarget" />
+    </MSBuild>
     <ItemGroup>
-      <_TrayOutput Include="$(MSBuildThisFileDirectory)..\..\AmneziaGeo.Windows.Tray\bin\$(Configuration)\$(TargetFramework)\AmneziaGeo.Windows.Tray.*" />
+      <_TrayOutput Include="%(_TrayTarget.RootDir)%(_TrayTarget.Directory)AmneziaGeo.Windows.Tray.*" />
     </ItemGroup>
+    <Error Condition="'@(_TrayOutput)' == ''"
+           Text="Tray build output not found; the launcher would fall back to the in-process GUI." />
     <Copy SourceFiles="@(_TrayOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Stage the GUI build over the launcher output, last. The launcher carries a Windows TargetFramework and
+       so resolves the WinRT flavour of flavoured packages (CommunityToolkit.Mvvm), which the co-located
+       AmneziaGeo.Windows.Ui.exe cannot load: its own deps.json names the plain one. Same rule the installer
+       stage follows - the GUI publishes after the backend. -->
+  <Target Name="StageUi" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\..\AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.csproj"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_UiTarget" />
+    </MSBuild>
+    <ItemGroup>
+      <_UiOutput Include="%(_UiTarget.RootDir)%(_UiTarget.Directory)*.dll;%(_UiTarget.RootDir)%(_UiTarget.Directory)*.exe;%(_UiTarget.RootDir)%(_UiTarget.Directory)*.json" />
+    </ItemGroup>
+    <Error Condition="'@(_UiOutput)' == ''"
+           Text="GUI build output not found; the tray would start a GUI that cannot load." />
+    <Copy SourceFiles="@(_UiOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <ItemGroup>

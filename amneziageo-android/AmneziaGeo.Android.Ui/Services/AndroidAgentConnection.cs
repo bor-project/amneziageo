@@ -1399,7 +1399,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // A name carries no address until connect, where it resolves and cuts or adds about two routes.
         var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
-        var limit = RouteBudget.Applies ? RouteBudget.Max : 0;
+        // A device that can raise the relay has no ceiling: what the route table will not hold, the relay decides.
+        var limit = RouteBudget.Relayable ? 0 : RouteBudget.Max;
         return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)},\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}}}");
     }
 

@@ -61,6 +61,10 @@ public sealed class WsCarrier : IDisposable
 
     private const int MaxDatagram = 65535;
     private const int FrameOverhead = 4;
+    private const int MaxFrameHeader = 14;
+
+    // What a control frame's payload may be, which the protocol keeps under this on its own.
+    private const int ControlBytes = 125;
     private const int MaxHeaderBytes = 8192;
     private const int ConnectTimeoutMs = 8000;
     private const int RetryGapMs = 1000;
@@ -88,10 +92,11 @@ public sealed class WsCarrier : IDisposable
     private readonly Action<string, Exception?>? _note;
     private readonly Socket _local;
     private readonly byte[] _outgoing = new byte[MaxDatagram + FrameOverhead];
+    private readonly SocketAddress _from = new(AddressFamily.InterNetwork);
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _sending = new(1, 1);
     private Stream? _stream;
-    private EndPoint? _engine;
+    private SocketAddress? _engine;
     private long _attempted;
     private long _heard;
     private bool _disposed;
@@ -210,15 +215,12 @@ public sealed class WsCarrier : IDisposable
     // Datagrams from the engine, each one a message on the front.
     private async Task PumpAsync(CancellationToken ct)
     {
-        var buffer = new byte[MaxDatagram];
-        var from = new IPEndPoint(IPAddress.Loopback, 0);
         while (!ct.IsCancellationRequested)
         {
             var stream = default(Stream);
             try
             {
-                var received = await _local.ReceiveFromAsync(buffer, SocketFlags.None, from, ct).ConfigureAwait(false);
-                _engine = received.RemoteEndPoint;
+                var used = await FillAsync(ct).ConfigureAwait(false);
                 stream = await ReadyAsync(ct).ConfigureAwait(false);
                 if (stream is null)
                 {
@@ -232,8 +234,7 @@ public sealed class WsCarrier : IDisposable
                     continue;
                 }
 
-                var length = Encode(_outgoing, buffer.AsSpan(0, received.ReceivedBytes), OpBinary);
-                await SendAsync(stream, _outgoing.AsMemory(0, length), ct).ConfigureAwait(false);
+                await SendAsync(stream, _outgoing.AsMemory(0, used), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -256,6 +257,75 @@ public sealed class WsCarrier : IDisposable
                 await PauseAsync(ct).ConfigureAwait(false);
             }
         }
+    }
+
+    // Frames what the loopback holds into one buffer: the first datagram is waited for and the rest are taken while
+    // they still fit, so a burst leaves as one write instead of one write a packet.
+    private async Task<int> FillAsync(CancellationToken ct)
+    {
+        var received = await _local.ReceiveFromAsync(_outgoing.AsMemory(FrameOverhead), SocketFlags.None, _from, ct)
+            .ConfigureAwait(false);
+        Remember();
+        var used = Frame(_outgoing, 0, received);
+        for (var waiting = Waiting(); waiting > 0 && used + FrameOverhead + waiting <= _outgoing.Length; waiting = Waiting())
+        {
+            var more = await _local.ReceiveFromAsync(_outgoing.AsMemory(used + FrameOverhead), SocketFlags.None, _from, ct)
+                .ConfigureAwait(false);
+            Remember();
+            used = Frame(_outgoing, used, more);
+        }
+
+        return used;
+    }
+
+    // Bytes of the next datagram already on the loopback, none where nothing waits.
+    private int Waiting()
+    {
+        try
+        {
+            return _local.Available;
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Puts a header in front of a payload already lying a frame overhead past the offset and says where the buffer
+    /// now ends. A payload short enough for the two-byte header moves back the two bytes it saves, so the frames
+    /// stay one after another and the whole run leaves as one write.
+    /// </summary>
+    internal static int Frame(Span<byte> buffer, int offset, int length)
+    {
+        var header = length < 126 ? 2 : 4;
+        if (header == 2)
+        {
+            buffer.Slice(offset + FrameOverhead, length).CopyTo(buffer[(offset + header)..]);
+            buffer[offset + 1] = (byte)length;
+        }
+        else
+        {
+            buffer[offset + 1] = 126;
+            BinaryPrimitives.WriteUInt16BigEndian(buffer[(offset + 2)..], (ushort)length);
+        }
+
+        buffer[offset] = (byte)(FinalBit | OpBinary);
+        return offset + header + length;
+    }
+
+    // Where answers go back to. The engine keeps one socket for a session, so this settles on the first datagram and
+    // is copied again only where the engine rebinds.
+    private void Remember()
+    {
+        if (_engine is not null && _engine.Equals(_from))
+        {
+            return;
+        }
+
+        var copy = new SocketAddress(_from.Family, _from.Size);
+        _from.Buffer.Span[.._from.Size].CopyTo(copy.Buffer.Span);
+        _engine = copy;
     }
 
     // One frame on the wire. Datagrams and the answers to the front's pings come from two loops, and the stream
@@ -393,52 +463,54 @@ public sealed class WsCarrier : IDisposable
         }
     }
 
-    // Messages from the front, each one a datagram back to the engine.
+    // Messages from the front, each one a datagram back to the engine. One read fills the buffer and every frame
+    // it holds is taken from there, so a datagram no longer costs a pair of reads through tls.
     private async Task DeliverAsync(Stream stream, CancellationToken ct)
     {
-        var head = new byte[8];
-        var payload = new byte[MaxDatagram];
+        var frames = new Frames(stream);
+        var control = new byte[ControlBytes + FrameOverhead];
+        var mask = new byte[4];
         var message = new List<byte>();
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                await ReadAsync(stream, head.AsMemory(0, 2), ct).ConfigureAwait(false);
+                var head = await frames.TakeAsync(2, ct).ConfigureAwait(false);
                 Volatile.Write(ref _heard, Environment.TickCount64);
-                var final = (head[0] & FinalBit) != 0;
-                var opcode = (byte)(head[0] & 0x0f);
-                var masked = (head[1] & MaskBit) != 0;
-                var length = head[1] & 0x7f;
+                var final = (head.Span[0] & FinalBit) != 0;
+                var opcode = (byte)(head.Span[0] & 0x0f);
+                var masked = (head.Span[1] & MaskBit) != 0;
+                var length = head.Span[1] & 0x7f;
                 if (length == 126)
                 {
-                    await ReadAsync(stream, head.AsMemory(0, 2), ct).ConfigureAwait(false);
-                    length = BinaryPrimitives.ReadUInt16BigEndian(head);
+                    var wide = await frames.TakeAsync(2, ct).ConfigureAwait(false);
+                    length = BinaryPrimitives.ReadUInt16BigEndian(wide.Span);
                 }
                 else if (length == 127)
                 {
-                    await ReadAsync(stream, head.AsMemory(0, 8), ct).ConfigureAwait(false);
-                    var wide = BinaryPrimitives.ReadUInt64BigEndian(head);
-                    if (wide > MaxDatagram)
+                    var wide = await frames.TakeAsync(8, ct).ConfigureAwait(false);
+                    var counted = BinaryPrimitives.ReadUInt64BigEndian(wide.Span);
+                    if (counted > MaxDatagram)
                     {
                         // Reading part of a frame leaves the rest of it to be read as the next one.
-                        throw new IOException($"the websocket front sent a frame of {wide} bytes");
+                        throw new IOException($"the websocket front sent a frame of {counted} bytes");
                     }
 
-                    length = (int)wide;
+                    length = (int)counted;
                 }
 
-                var mask = new byte[4];
                 if (masked)
                 {
-                    await ReadAsync(stream, mask, ct).ConfigureAwait(false);
+                    var key = await frames.TakeAsync(4, ct).ConfigureAwait(false);
+                    key.Span.CopyTo(mask);
                 }
 
-                await ReadAsync(stream, payload.AsMemory(0, length), ct).ConfigureAwait(false);
+                var payload = await frames.TakeAsync(length, ct).ConfigureAwait(false);
                 if (masked)
                 {
                     for (var index = 0; index < length; index++)
                     {
-                        payload[index] ^= mask[index & 3];
+                        payload.Span[index] ^= mask[index & 3];
                     }
                 }
 
@@ -450,8 +522,12 @@ public sealed class WsCarrier : IDisposable
 
                 if (opcode == OpPing)
                 {
-                    var pong = new byte[length + FrameOverhead];
-                    await SendAsync(stream, pong.AsMemory(0, Encode(pong, payload.AsSpan(0, length), OpPong)), ct).ConfigureAwait(false);
+                    if (length <= ControlBytes)
+                    {
+                        var pong = Encode(control, payload.Span, OpPong);
+                        await SendAsync(stream, control.AsMemory(0, pong), ct).ConfigureAwait(false);
+                    }
+
                     continue;
                 }
 
@@ -463,14 +539,14 @@ public sealed class WsCarrier : IDisposable
                 // A front that splits one datagram over several frames is rare, but a half datagram is not a packet.
                 if (!final || message.Count > 0)
                 {
-                    message.AddRange(payload.AsSpan(0, length));
+                    message.AddRange(payload.Span);
                     if (!final)
                     {
                         continue;
                     }
                 }
 
-                ReadOnlyMemory<byte> datagram = message.Count > 0 ? message.ToArray() : payload.AsMemory(0, length);
+                ReadOnlyMemory<byte> datagram = message.Count > 0 ? message.ToArray() : payload;
                 message.Clear();
                 if (_engine is { } engine)
                 {
@@ -484,6 +560,60 @@ public sealed class WsCarrier : IDisposable
         catch (Exception ex)
         {
             Drop(stream, ex);
+        }
+    }
+
+    /// <summary>
+    /// Frames as they arrive from the front. One read fills the buffer and every frame it holds is taken from
+    /// there; the buffer holds the longest frame the carrier accepts, so what is asked for always fits.
+    /// </summary>
+    private sealed class Frames
+    {
+        private readonly Stream _stream;
+        private readonly byte[] _buffer = new byte[MaxDatagram + MaxFrameHeader];
+        private int _start;
+        private int _end;
+
+        /// <summary>
+        /// ctor
+        /// </summary>
+        public Frames(Stream stream)
+        {
+            _stream = stream;
+        }
+
+        /// <summary>
+        /// The next bytes of the stream, held until the call after this one.
+        /// </summary>
+        public async ValueTask<Memory<byte>> TakeAsync(int count, CancellationToken ct)
+        {
+            while (_end - _start < count)
+            {
+                if (_start > 0 && _buffer.Length - _end < count)
+                {
+                    _buffer.AsSpan(_start, _end - _start).CopyTo(_buffer);
+                    _end -= _start;
+                    _start = 0;
+                }
+
+                var read = await _stream.ReadAsync(_buffer.AsMemory(_end), ct).ConfigureAwait(false);
+                if (read <= 0)
+                {
+                    throw new IOException("the websocket front closed the connection");
+                }
+
+                _end += read;
+            }
+
+            var taken = _buffer.AsMemory(_start, count);
+            _start += count;
+            if (_start == _end)
+            {
+                _start = 0;
+                _end = 0;
+            }
+
+            return taken;
         }
     }
 

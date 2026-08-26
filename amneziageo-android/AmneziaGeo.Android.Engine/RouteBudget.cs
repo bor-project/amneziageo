@@ -12,13 +12,21 @@ public static class RouteBudget
 
     private const int ParcelBytes = 1024 * 1024;
 
+    // Addresses one name is given room to come back with, so a rule set still fits once its names are resolved.
+    private const int AddressesPerName = 8;
+
     /// <summary>
     /// Routes such a tunnel takes, leaving room for the addresses a session adds at connect.
     /// </summary>
     public const int Max = ParcelBytes / BytesPerRoute * 9 / 10;
 
     /// <summary>
-    /// Whether this device builds the tunnel without the relay, so the ceiling applies.
+    /// Whether this device can hand a relay to the applications at all.
     /// </summary>
-    public static bool Applies => Build.VERSION.SdkInt < BuildVersionCodes.Q;
+    public static bool Relayable => Build.VERSION.SdkInt >= BuildVersionCodes.Q;
+
+    /// <summary>
+    /// Whether this many routes still fit once these names are resolved to addresses.
+    /// </summary>
+    public static bool Fits(int routes, int names) => routes + (names * AddressesPerName) <= Max;
 }

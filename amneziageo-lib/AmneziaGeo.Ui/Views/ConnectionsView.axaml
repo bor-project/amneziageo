@@ -20,11 +20,17 @@
     <Border Classes="sect">
       <StackPanel Spacing="12">
 
-        <!-- Connection resilience: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
-             the Android agent does not apply these settings. -->
-        <StackPanel Spacing="12" IsVisible="{Binding CanConfigureConnection}">
-          <TextBlock Text="{l:Tr General_TunnelSection}" FontWeight="SemiBold" FontSize="15" />
+        <!-- One tab per subject: the tunnel itself, then each way out of this machine. A tab whose
+             caption is empty is not offered on this platform. -->
+        <controls:SegmentedSelector IsVisible="{Binding HasConnectionTabs}"
+            Command="{Binding SelectShareTabCommand}"
+            IsCompact="{Binding IsCompact}"
+            Item1Text="{Binding TunnelTabText}" Item1Param="tunnel" Item1Active="{Binding IsTunnelTab}"
+            Item2Text="{l:Tr General_ShareTabProxy}" Item2Param="proxy" Item2Active="{Binding IsProxyTab}"
+            Item3Text="{l:Tr General_ShareTabWifi}" Item3Param="wifi" Item3Active="{Binding IsWifiTab}" />
 
+        <!-- Tunnel: what the agent does with the connection itself (#196, #199). -->
+        <StackPanel Spacing="12" IsVisible="{Binding IsTunnelTab}">
           <controls:SettingSwitchRow Label="{l:Tr General_ShowNotifications}"
                                      Description="{l:Tr General_ShowNotificationsHint}"
                                      IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
@@ -52,20 +58,7 @@
               <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
             </StackPanel>
           </Grid>
-
-          <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
-          <Border Classes="hairline" />
         </StackPanel>
-
-        <TextBlock Text="{l:Tr General_ShareSection}" FontWeight="SemiBold" FontSize="15" />
-
-        <!-- One tab per way out of this machine; each stands on its own switch and works on its own.
-             The platforms without an access point carry the proxy alone and never ask. -->
-        <controls:SegmentedSelector IsVisible="{Binding CanShareHotspot}"
-            Command="{Binding SelectShareTabCommand}"
-            IsCompact="{Binding IsCompact}"
-            Item1Text="{l:Tr General_ShareTabProxy}" Item1Param="proxy" Item1Active="{Binding IsProxyTab}"
-            Item2Text="{l:Tr General_ShareTabWifi}" Item2Param="wifi" Item2Active="{Binding IsWifiTab}" />
 
         <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->
         <StackPanel Spacing="12" IsVisible="{Binding IsProxyTab}">

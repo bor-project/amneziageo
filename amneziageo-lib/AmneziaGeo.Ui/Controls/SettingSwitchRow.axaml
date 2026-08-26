@@ -4,28 +4,27 @@
              x:Name="Root">
   <!-- On/off for one setting: label left, switch right, description under the label. The whole label
        row is the hit target - never a switch alone in a card header. -->
-  <StackPanel Spacing="4">
-    <Grid ColumnDefinitions="*,Auto" MinHeight="40">
-      <!-- Both weights share one cell: a row that opens a section carries its heading, the rest a plain label. -->
-      <Panel Grid.Column="0" Margin="0,0,12,0" Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped">
-        <TextBlock Text="{Binding #Root.Label}" FontSize="13.5" IsVisible="{Binding !#Root.Heading}"
-                   Foreground="{DynamicResource AgFgBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-        <!-- A heading keeps its line right under it, so the two read as one block. -->
-        <StackPanel Spacing="2" IsVisible="{Binding #Root.Heading}" VerticalAlignment="Center">
-          <TextBlock Text="{Binding #Root.Label}" FontSize="15" FontWeight="SemiBold"
-                     Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                     IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        </StackPanel>
-      </Panel>
-      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" MinWidth="0"
-                    IsChecked="{Binding #Root.IsChecked, Mode=TwoWay}"
-                    IsEnabled="{Binding #Root.SwitchEnabled}" />
-    </Grid>
-    <Panel IsVisible="{Binding !#Root.Heading}">
-      <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5"
-                 TextWrapping="Wrap" MaxWidth="430" HorizontalAlignment="Left"
-                 IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+    <!-- Both weights share one cell: a row that opens a section carries its heading, the rest a plain
+         label. Either keeps its description right under it, so the two read as one block. -->
+    <Panel Grid.Column="0" Margin="0,0,12,0" Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped">
+      <StackPanel Spacing="2" IsVisible="{Binding !#Root.Heading}" VerticalAlignment="Center">
+        <TextBlock Text="{Binding #Root.Label}" FontSize="13.5"
+                   Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                   MaxWidth="430" HorizontalAlignment="Left"
+                   IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
+      <StackPanel Spacing="2" IsVisible="{Binding #Root.Heading}" VerticalAlignment="Center">
+        <TextBlock Text="{Binding #Root.Label}" FontSize="15" FontWeight="SemiBold"
+                   Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                   MaxWidth="430" HorizontalAlignment="Left"
+                   IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
     </Panel>
-  </StackPanel>
+    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" MinWidth="0"
+                  IsChecked="{Binding #Root.IsChecked, Mode=TwoWay}"
+                  IsEnabled="{Binding #Root.SwitchEnabled}" />
+  </Grid>
 </UserControl>

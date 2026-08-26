@@ -16,12 +16,15 @@
   </UserControl.Resources>
   <!-- Cards stretch the full pane width. -->
   <!-- Брошенный на раздел файл добавляется в каталог: берутся только списки маршрутизации. -->
-  <Grid RowDefinitions="Auto,*" Background="Transparent"
+  <Grid RowDefinitions="Auto,Auto,*" Background="Transparent"
         controls:FileDropBehavior.Command="{Binding DropFilesCommand}">
+
+    <!-- Заголовок раздела: стоит и над каталогом, и над экранами открытого списка. -->
+    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_RoutingSection}" />
 
     <!-- Шапка каталога: добавление списка маршрутизации. Способы «Добавить» выпадают списком у кнопки, а на
          телефоне приходят шторкой снизу. -->
-    <StackPanel x:Name="CatalogueHeader" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
+    <StackPanel x:Name="CatalogueHeader" Grid.Row="1" Margin="0,14,0,0" Spacing="8"
                 IsVisible="{Binding IsSectionCatalogue}">
       <Button x:Name="AddButton" Classes="methodpick" MinHeight="34" Padding="12,6" Click="OnAddOptions"
               HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
@@ -39,7 +42,7 @@
     </StackPanel>
 
     <!-- Content: one section shown at a time. Up from its top row returns to the header, not to the window one. -->
-    <Panel x:Name="Body" Grid.Row="1" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
+    <Panel x:Name="Body" Grid.Row="2" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
 
       <!-- Каталог карточек: кнопка на карточке и двойной щелчок по ней открывают настройки своего списка,
            драг переставляет карточки. -->

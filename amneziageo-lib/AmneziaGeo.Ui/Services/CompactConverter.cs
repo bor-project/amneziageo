@@ -50,8 +50,8 @@ internal sealed class CompactConverter : IValueConverter
             // Width caps that lift in compact so the segment track / catalogue combo fills the row.
             "maxW260" => compact ? double.PositiveInfinity : 260d,
             "maxW480" => compact ? double.PositiveInfinity : 480d,
-            // Insets a narrow screen gives back sideways; the bottom one keeps the last control off the pane edge.
-            "paneInset" => compact ? new Thickness(10, 4, 10, 12) : new Thickness(18, 4, 18, 12),
+            // Insets a narrow screen gives back sideways; the vertical ones keep the section off the pane edges.
+            "paneInset" => compact ? new Thickness(10, 12, 10, 12) : new Thickness(18, 12, 18, 12),
             "shellHome" => compact ? new Thickness(6, 3, 6, 3) : new Thickness(12, 3, 12, 3),
             "shellHead" => compact ? new Thickness(6, 3, 6, 0) : new Thickness(12, 3, 12, 0),
             "shellBody" => compact ? new Thickness(6, 1, 6, 3) : new Thickness(12, 1, 12, 3),

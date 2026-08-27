@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -25,6 +26,13 @@ internal sealed class ListReorder<TRow>
 
     // Hold that arms a drag, leaving shorter presses to the list's own scrolling and swiping.
     private static readonly TimeSpan HoldTime = TimeSpan.FromMilliseconds(450);
+
+    // Перестановка с пульта переживает карточку: перемещение пересобирает её контейнер.
+    private static TRow? _held;
+
+    private static List<TRow>? _before;
+
+    private static ICommand? _heldDrop;
 
     private readonly Control _item;
     private readonly bool _vertical;
@@ -61,10 +69,92 @@ internal sealed class ListReorder<TRow>
     public bool HoldFirst { get; set; }
 
     /// <summary>
+    /// Взят ли этот элемент в перестановку с пульта.
+    /// </summary>
+    public bool Ordering => _held is not null && ReferenceEquals(_held, _item.DataContext);
+
+    /// <summary>
+    /// Список, в котором стоит элемент.
+    /// </summary>
+    public ItemsControl? List => _item.FindAncestorOfType<ItemsControl>();
+
+    /// <summary>
     /// Команда, принимающая сложенный порядок после броска. Берётся в начале жеста: перестановка
     /// пересобирает контейнер элемента и снимает с него привязки.
     /// </summary>
     public ICommand? Dropped { get; set; }
+
+    /// <summary>
+    /// Сколько элементов стоит в строке списка.
+    /// </summary>
+    public int Columns()
+    {
+        return List?.ItemsPanelRoot is UniformGrid { Columns: > 0 } grid ? grid.Columns : 1;
+    }
+
+    /// <summary>
+    /// Берёт элемент в перестановку с пульта, запоминая порядок до неё.
+    /// </summary>
+    public bool Hold()
+    {
+        if (!Bind(out var rows, out var row))
+        {
+            return false;
+        }
+
+        _held = row;
+        _before = [.. rows];
+        _heldDrop = Dropped;
+        return true;
+    }
+
+    /// <summary>
+    /// Двигает взятый элемент на шаг, не записывая порядок. Возвращает новое место или -1.
+    /// </summary>
+    public int Nudge(int delta)
+    {
+        return Ordering ? Shift(delta) : -1;
+    }
+
+    /// <summary>
+    /// Записывает порядок и отпускает элемент. Возвращает место элемента.
+    /// </summary>
+    public int Fix()
+    {
+        var drop = _heldDrop;
+        var moved = Moved();
+        var at = Place();
+        Free();
+        if (moved && drop?.CanExecute(null) == true)
+        {
+            drop.Execute(null);
+        }
+
+        return at;
+    }
+
+    /// <summary>
+    /// Возвращает порядок, что был до взятия, и отпускает элемент. Возвращает место элемента.
+    /// </summary>
+    public int Undo()
+    {
+        var before = _before;
+        if (before is not null && Bind(out var rows, out _))
+        {
+            for (var i = 0; i < before.Count; i++)
+            {
+                var at = rows.IndexOf(before[i]);
+                if (at >= 0 && at != i)
+                {
+                    rows.Move(at, i);
+                }
+            }
+        }
+
+        var place = Place();
+        Free();
+        return place;
+    }
 
     /// <summary>
     /// Принимает нажатие: мышь ждёт смещения, палец - удержания.
@@ -142,6 +232,77 @@ internal sealed class ListReorder<TRow>
         {
             Stop();
         }
+    }
+
+    // Место элемента в списке.
+    private int Place()
+    {
+        return Bind(out var rows, out var row) ? rows.IndexOf(row) : -1;
+    }
+
+    // Порядок разошёлся с тем, что был снят при взятии.
+    private bool Moved()
+    {
+        if (_before is not { } before || !Bind(out var rows, out _))
+        {
+            return false;
+        }
+
+        if (rows.Count != before.Count)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (!ReferenceEquals(rows[i], before[i]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void Free()
+    {
+        _held = null;
+        _before = null;
+        _heldDrop = null;
+    }
+
+    // Переставляет элемент на шаг по списку, упираясь в его края.
+    private int Shift(int delta)
+    {
+        if (delta == 0 || !Bind(out var rows, out var row))
+        {
+            return -1;
+        }
+
+        var from = rows.IndexOf(row);
+        var to = from + delta;
+        if (from < 0 || to < 0 || to >= rows.Count)
+        {
+            return -1;
+        }
+
+        rows.Move(from, to);
+        return to;
+    }
+
+    // Список и строка, за которую держится элемент.
+    private bool Bind(out ObservableCollection<TRow> rows, out TRow row)
+    {
+        if (List is { ItemsSource: ObservableCollection<TRow> found } && _item.DataContext is TRow item)
+        {
+            rows = found;
+            row = item;
+            return true;
+        }
+
+        rows = default!;
+        row = default!;
+        return false;
     }
 
     // The hold arms what a finger's press alone leaves to the list.

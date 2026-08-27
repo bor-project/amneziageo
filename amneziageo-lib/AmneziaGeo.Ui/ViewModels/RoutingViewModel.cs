@@ -40,6 +40,13 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCompact;
 
+    // Width of the pane the catalogue stands in, pushed by the view. The settings screen keeps the rail
+    // beside the pane, so a window wide enough for two columns leaves the pane too narrow for them.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
+    private double _paneWidth;
+
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
@@ -151,14 +158,24 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool IsSectionCatalogue => !IsCreatingSectionRouting && EditRoutingList is null && !ShowCatalogueLoader;
 
     /// <summary>
+    /// Узка ли пана под карточки: меряется пана, а не окно вокруг неё.
+    /// </summary>
+    public bool IsNarrowPane => PaneWidth > 0 ? PaneWidth < UiLayout.CompactWidth : IsCompact;
+
+    /// <summary>
+    /// Сколько карточек стоит в строке каталога.
+    /// </summary>
+    public int CatalogColumns => IsNarrowPane ? 1 : 2;
+
+    /// <summary>
     /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && IsCompact;
+    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && IsNarrowPane;
 
     /// <summary>
     /// Замощают ли карточки пану.
     /// </summary>
-    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsCompact;
+    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsNarrowPane;
 
     /// <summary>
     /// Delete-card prompt naming the open list.
@@ -498,6 +515,33 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         {
             row.IsPicked = ReferenceEquals(row, item);
         }
+    }
+
+    /// <summary>
+    /// Двигает отмеченную карточку на шаг по каталогу и записывает порядок. Возвращает новое место
+    /// или -1.
+    /// </summary>
+    public int MovePicked(int delta)
+    {
+        if (!IsSectionCatalogue || RoutingLists.FirstOrDefault(row => row.IsPicked) is not { } picked)
+        {
+            return -1;
+        }
+
+        var from = RoutingLists.IndexOf(picked);
+        var to = from + delta;
+        if (from < 0 || to < 0 || to >= RoutingLists.Count)
+        {
+            return -1;
+        }
+
+        RoutingLists.Move(from, to);
+        if (ApplyOrderCommand.CanExecute(null))
+        {
+            ApplyOrderCommand.Execute(null);
+        }
+
+        return to;
     }
 
     /// <summary>

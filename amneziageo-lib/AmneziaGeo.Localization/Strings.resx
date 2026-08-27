@@ -1984,6 +1984,9 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_CardTagMtuAuto" xml:space="preserve">
     <value>MTU auto</value>
   </data>
+  <data name="Main_CardReorder" xml:space="preserve">
+    <value>Reorder</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Settings</value>
   </data>

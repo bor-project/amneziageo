@@ -1984,6 +1984,9 @@
   <data name="Main_CardTagMtuAuto" xml:space="preserve">
     <value>MTU авто</value>
   </data>
+  <data name="Main_CardReorder" xml:space="preserve">
+    <value>Изменить порядок</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Настройки</value>
   </data>

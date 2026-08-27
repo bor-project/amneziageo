@@ -40,4 +40,28 @@ public sealed class DefaultRouteShareTests
 
         Assert.Equal(["0.0.0.0/1", "128.0.0.0/1", "192.168.9.0/24"], shaped);
     }
+
+    [Fact]
+    public void HostAddressIsItsOwnGround()
+    {
+        Assert.Equal(["10.0.0.2/32"], TunnelRunner.OwnNetworks(["10.0.0.2/32"]));
+    }
+
+    [Fact]
+    public void AddressWithoutAPrefixIsAHostOfItsOwn()
+    {
+        Assert.Equal(["10.0.0.2/32"], TunnelRunner.OwnNetworks(["10.0.0.2"]));
+    }
+
+    [Fact]
+    public void AddressIsMaskedDownToItsNetwork()
+    {
+        Assert.Equal(["10.8.0.0/24", "fd00::/64"], TunnelRunner.OwnNetworks(["10.8.0.37/24", "fd00::5/64"]));
+    }
+
+    [Fact]
+    public void NonsenseLeavesNothingBehind()
+    {
+        Assert.Empty(TunnelRunner.OwnNetworks(["not-an-address/24", string.Empty]));
+    }
 }

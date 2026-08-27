@@ -2,6 +2,7 @@ using System.Net.Http;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Windows.App.Fleet;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -51,7 +52,20 @@ internal static class AppHost
             builder.Services.AddSingleton(LogSettings.LoadOrCreate(TunnelPaths.LogSettingsFile()));
             builder.Services.AddWindowsService(options => options.ServiceName = TunnelPaths.AgentServiceName());
             builder.Services.AddSingleton(new AgentTarget(agentTarget));
-            builder.Services.AddHostedService<AgentBackgroundService>();
+            builder.Services.AddSingleton<AgentMode>();
+            builder.Services.AddSingleton<AgentBackgroundService>();
+            builder.Services.AddSingleton<FleetControl>();
+            builder.Services.AddSingleton<FleetRunnerFactory>();
+            builder.Services.AddSingleton<FleetHostedService>();
+
+            // The mode is the fork: it picks the supervisor that drives the machine and the arbiter that hands
+            // out the default route and the resolver. Everything below it is wired the same either way.
+            builder.Services.AddSingleton<TunnelDutyRoster>(sp => sp.GetRequiredService<AgentMode>().MultiServer
+                ? sp.GetRequiredService<FleetControl>()
+                : new TunnelDutyRoster());
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentMode>().MultiServer
+                ? (BackgroundService)sp.GetRequiredService<FleetHostedService>()
+                : sp.GetRequiredService<AgentBackgroundService>());
             builder.Services.AddHostedService<NetworkWatcher>();
             builder.Services.AddHostedService<StatusPipeServer>();
             builder.Services.AddHostedService<UpdateCheckService>();
@@ -77,6 +91,8 @@ internal static class AppHost
         // Default composite store for this process: the machine store paired with this session's user library.
         services.AddSingleton<IStateStore>(sp => sp.GetRequiredService<ScopedStoreFactory>().For(userRoot));
         services.AddSingleton<AgentControl>();
+        // Single tunnel: it holds every duty. The agent replaces this with the set's own arbiter when the mode is on.
+        services.AddSingleton<TunnelDutyRoster>();
         services.AddSingleton<HttpClient>();
         services.AddSingleton<ServiceManager>();
         services.AddSingleton<RouteManager>();

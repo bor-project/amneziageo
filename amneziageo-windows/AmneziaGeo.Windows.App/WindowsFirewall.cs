@@ -103,10 +103,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
             try
             {
-                CreateSublayer(engine);
-
                 if (killSwitch)
                 {
+                    CreateSublayer(engine);
                     PermitApp(engine);
 
                     // Permit wstunnel.exe (carries the encrypted underlay in a child process).
@@ -145,7 +144,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
                 _engine = engine;
                 Interlocked.Increment(ref _generation);
-                logger.LogInformation("leak protection is on for adapter {Index}: anything not going through the tunnel, your own network or the allowed programs is now blocked (IPv6 covered too: {DualStack})", tunnelInterfaceIndex, dualStack);
+                if (killSwitch)
+                {
+                    logger.LogInformation("leak protection is on for adapter {Index}: anything not going through the tunnel, your own network or the allowed programs is now blocked (IPv6 covered too: {DualStack})", tunnelInterfaceIndex, dualStack);
+                }
+                else
+                {
+                    logger.LogInformation("adapter {Index} holds no blocking rules of its own; what leaves this machine is decided by the tunnel that carries it", tunnelInterfaceIndex);
+                }
+
                 return true;
             }
             catch (Exception ex)

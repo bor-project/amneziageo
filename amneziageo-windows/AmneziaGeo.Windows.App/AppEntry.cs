@@ -71,6 +71,10 @@ public static class AppEntry
             await EnsureStoreAsync(host.Services, runMigration: !isTunnelProcess);
             if (agentTarget is not null)
             {
+                // Read before the host starts: the supervisor it resolves is the one this answer names.
+                var settings = await host.Services.GetRequiredService<SettingsStore>().LoadAsync(cancellationToken);
+                host.Services.GetRequiredService<AgentMode>().MultiServer = settings.MultiServer;
+
                 // Take over the status pipe before binding: a prior owner's DACL otherwise spins creation on ACCESS_DENIED.
                 var serviceManager = host.Services.GetRequiredService<ServiceManager>();
                 var guardLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SoleAgentGuard");

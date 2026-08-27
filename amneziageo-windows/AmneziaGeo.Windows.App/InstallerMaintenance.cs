@@ -42,6 +42,36 @@ internal static class InstallerMaintenance
     /// <summary>
     /// Stops and deletes transient "AmneziaGeo$*" tunnel services except those for keepBareNames; returns the removed bare names.
     /// </summary>
+    /// <summary>
+    /// The tunnels this machine has a service installed for.
+    /// </summary>
+    public static IReadOnlyList<string> TransientTunnels()
+    {
+        var names = new List<string>();
+        var scm = OpenSCManager(null, null, ScManagerConnect | ScManagerEnumerateService);
+        if (scm == IntPtr.Zero)
+        {
+            return names;
+        }
+
+        try
+        {
+            foreach (var name in EnumerateServiceNames(scm))
+            {
+                if (name.StartsWith(TransientPrefix, StringComparison.Ordinal))
+                {
+                    names.Add(name[TransientPrefix.Length..]);
+                }
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(scm);
+        }
+
+        return names;
+    }
+
     public static IReadOnlyList<string> ReapTransientServices(IEnumerable<string>? keepBareNames)
     {
         var removed = new List<string>();

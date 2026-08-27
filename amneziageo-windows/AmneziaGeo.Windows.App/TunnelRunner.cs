@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Routing;
 using AmneziaGeo.Windows.Engine;
 using Microsoft.Extensions.Logging;
@@ -119,7 +120,9 @@ internal sealed class TunnelRunner(
         // Whatever is left behind the agent reverts on its own pass.
         using (logger.Step("reconcile leftovers"))
         {
-            var cleanup = Task.Run(() => reconciler.Reconcile(keep: [name]));
+            // Every tunnel with a service installed is one the agent keeps up - it reaps the strays before it
+            // connects - so their records are not leftovers and are left where they are.
+            var cleanup = Task.Run(() => reconciler.Reconcile(keep: InstallerMaintenance.TransientTunnels()));
             if (await Task.WhenAny(cleanup, Task.Delay(_reconcileBudget)).ConfigureAwait(false) != cleanup)
             {
                 logger.LogWarning("cleaning up after an earlier session has taken more than {Sec}s, so the tunnel comes up without waiting for it; leftover routes or DNS settings are reverted on a later pass",
@@ -131,6 +134,10 @@ internal sealed class TunnelRunner(
             ?? throw new ConnectFailureException(ConnectFailureReason.ConfigMissing, $"configuration '{name}' is not stored");
         // Log length only - the config carries private keys.
         logger.LogTrace("{Name}: configuration read, {Length} chars [{Elapsed} ms in]", name, config.Length, connectSw.ElapsedMilliseconds);
+
+        // What this tunnel is on the hook for: the default route and the machine's name lookups go to one tunnel,
+        // and the agent names which. A machine running a single tunnel hands it both.
+        var duties = TunnelDuties.Parse(await store.GetSettingAsync(TunnelPaths.DutiesKey(name)));
 
         // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it.
         var transport = await store.GetConfigTransportAsync(name);
@@ -206,8 +213,10 @@ internal sealed class TunnelRunner(
 
         // WFP kill-switch: on in both modes. In split it holds a destination off the physical path until its
         // verdict exists - a packet that leaves earlier carries the real address, which is the leak this prevents.
-        // Resolved here because the on-demand router needs it before the DNS proxy starts.
-        const bool killSwitch = true;
+        // Resolved here because the on-demand router needs it before the DNS proxy starts. It blocks the whole
+        // machine bar what it permits, so there is one of it and it belongs to the tunnel carrying what no rule
+        // sends elsewhere; a second session cannot install its own into a group the first one holds anyway.
+        var killSwitch = duties.CarriesDefault;
 
         // Every bucket is resolved per destination, whatever its size: nothing is materialized at bring-up.
         var listDirect = activeList?.DirectRoutes ?? [];
@@ -266,7 +275,14 @@ internal sealed class TunnelRunner(
         }
 
         // Split /0 into /1 halves so the engine's blanket kill-switch isn't armed.
-        allowedIps = SplitDefaultRoutes(allowedIps, carriesDefault: true);
+        allowedIps = SplitDefaultRoutes(allowedIps, duties.CarriesDefault);
+        if (allowedIps.Count == 0)
+        {
+            // Taking the default off a tunnel whose configuration names nothing else leaves it with no ranges at
+            // all, and the engine refuses to raise it. It stands on its own address instead, ready for a rule.
+            allowedIps = OwnNetworks(WgConfigEditor.GetAddresses(config));
+            logger.LogInformation("{Name}: nothing is routed through it, so it comes up carrying its own address only", name);
+        }
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
         logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried in a websocket: {Ws} [{Elapsed} ms in]",
@@ -474,8 +490,10 @@ internal sealed class TunnelRunner(
 
         // The clients of the access point go out under the rules of this machine: what they open is terminated
         // on an adapter of ours and opened again here, so the routing table decides it and the sharing NAT does
-        // not. The gateway follows the point up and down, and goes away with this session.
-        if (proxy is not null)
+        // not. The gateway follows the point up and down, and goes away with this session. There is one adapter
+        // for it on a machine, and it belongs to the tunnel carrying what no rule sends elsewhere - that is the
+        // path a shared client's traffic takes.
+        if (proxy is not null && duties.CarriesDefault)
         {
             var gateway = new HotspotGateway(proxy, routes, new DirectProxyOutbound(), effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>());
             sessionCts.Token.Register(gateway.Dispose);
@@ -572,10 +590,15 @@ internal sealed class TunnelRunner(
         // Mirror the kill-switch's deferral so a dial that never handshakes leaves the OS resolver working.
         var applied = false;
         var dnsApplyTask = Task.CompletedTask;
-        if (redirectServers.Count > 0)
+        if (redirectServers.Count > 0 && duties.HoldsResolver)
         {
             applied = true;
             dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, proxy?.BoundV4, sessionCts.Token));
+        }
+        else if (!duties.HoldsResolver)
+        {
+            // The machine has one resolver and another tunnel holds it, so this one is reached by address alone.
+            logger.LogInformation("{Name}: another tunnel holds this machine's name lookups, so rules by domain do not apply to it - only rules by address", name);
         }
 
         if (stripV6 && redirectServers.Count > 0)
@@ -971,6 +994,42 @@ internal sealed class TunnelRunner(
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The networks the tunnel's own interface addresses sit in: what it carries when nothing else is routed
+    /// through it.
+    /// </summary>
+    internal static IReadOnlyList<string> OwnNetworks(IReadOnlyList<string> addresses)
+    {
+        var networks = new List<string>();
+        foreach (var address in addresses)
+        {
+            var slash = address.IndexOf('/');
+            if (!IPAddress.TryParse(slash < 0 ? address : address[..slash], out var ip))
+            {
+                continue;
+            }
+
+            var bits = ip.AddressFamily == AddressFamily.InterNetwork ? 32 : 128;
+            var prefix = slash >= 0 && int.TryParse(address[(slash + 1)..], out var declared) && declared >= 0 && declared <= bits
+                ? declared
+                : bits;
+            var octets = ip.GetAddressBytes();
+            for (var index = 0; index < octets.Length; index++)
+            {
+                var kept = Math.Clamp(prefix - (index * 8), 0, 8);
+                octets[index] &= (byte)(kept == 0 ? 0 : 0xFF << (8 - kept));
+            }
+
+            var network = $"{new IPAddress(octets)}/{prefix}";
+            if (!networks.Contains(network))
+            {
+                networks.Add(network);
+            }
+        }
+
+        return networks;
     }
 
     private async Task ConfigureTunnelAdapterDnsAsync(string name, IReadOnlyList<string> servers)

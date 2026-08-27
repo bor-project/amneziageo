@@ -20,6 +20,24 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     /// non-geo queries across all providers - a multi-WAN box where one provider censors a name is answered
     /// by another.
     /// </summary>
+    // A machine sends its lookups to one place, so a record another tunnel left is not the redirect in force.
+    // Left where it is, it would be put back over this one and take the machine's name lookups off the tunnel
+    // holding them.
+    private void DropForeignRecords(string name)
+    {
+        var own = TunnelPaths.DnsStateFile(name);
+        foreach (var file in TunnelPaths.DnsStateFiles())
+        {
+            if (string.Equals(file, own, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            logger.LogDebug("the DNS record {File} was left by another tunnel and is not the redirect in force; it is discarded", Path.GetFileName(file));
+            TryDelete(file);
+        }
+    }
+
     public IReadOnlyList<string> CaptureUpstream()
     {
         var gateway = new List<string>();
@@ -102,6 +120,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
 
         DnsStateFile.Write(TunnelPaths.DnsStateFile(name), saved, proxyServers);
+        DropForeignRecords(name);
 
         foreach (var adapter in Adapters())
         {

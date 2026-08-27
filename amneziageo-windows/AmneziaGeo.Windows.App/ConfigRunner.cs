@@ -19,6 +19,7 @@ internal sealed class ConfigRunner(
     SettingsStore settingsStore,
     AgentControl control,
     ActiveTunnelScope activeScope,
+    TunnelDutyRoster roster,
     ILogger<ConfigRunner> logger)
 {
     private IStateStore store => activeScope.Store;
@@ -177,7 +178,7 @@ internal sealed class ConfigRunner(
         }
 
         await ProjectRoutingAsync(config, ct);
-        ReapForeignTunnels([config]);
+        ReapForeignTunnels(roster.Standing(config));
         Stop(config);
 
         _launchStreak = 0;
@@ -438,6 +439,15 @@ internal sealed class ConfigRunner(
         // Clear prior reason so this run's failure isn't stale.
         await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(member), string.Empty, ct);
         await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(member), string.Empty, ct);
+
+        // Hand the tunnel what it is on the hook for; it reads this at bring-up. The only tunnel on a machine
+        // holds every duty, which is what it has always done.
+        var duties = roster.For(member);
+        await store.SetSettingAsync(TunnelPaths.DutiesKey(member), duties.Format(), ct);
+        if (!duties.HoldsResolver)
+        {
+            logger.LogInformation("{Member}: another tunnel holds this machine's name lookups, so rules by domain do not apply to it - only rules by address", member);
+        }
 
         // Hold the tunnel back while the machine has no network of its own. Right after a restart the agent is
         // up seconds before the adapters are, and a tunnel raised into a machine with nowhere to send its

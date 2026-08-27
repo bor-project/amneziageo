@@ -46,6 +46,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Settings key carrying what a tunnel is on the hook for while several of them are up.
+    /// </summary>
+    public static string DutiesKey(string name)
+    {
+        return $"tunnel-duties:{name}";
+    }
+
+    /// <summary>
     /// Directory holding the stored wg-quick configs.
     /// </summary>
     public static string ConfigurationsDirectory()

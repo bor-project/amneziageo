@@ -53,19 +53,13 @@ internal static class AppHost
             builder.Services.AddWindowsService(options => options.ServiceName = TunnelPaths.AgentServiceName());
             builder.Services.AddSingleton(new AgentTarget(agentTarget));
             builder.Services.AddSingleton<AgentMode>();
-            builder.Services.AddSingleton<AgentBackgroundService>();
             builder.Services.AddSingleton<FleetControl>();
+            builder.Services.AddSingleton<FleetStore>();
             builder.Services.AddSingleton<FleetRunnerFactory>();
-            builder.Services.AddSingleton<FleetHostedService>();
 
-            // The mode is the fork: it picks the supervisor that drives the machine and the arbiter that hands
-            // out the default route and the resolver. Everything below it is wired the same either way.
-            builder.Services.AddSingleton<TunnelDutyRoster>(sp => sp.GetRequiredService<AgentMode>().MultiServer
-                ? sp.GetRequiredService<FleetControl>()
-                : new TunnelDutyRoster());
-            builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentMode>().MultiServer
-                ? (BackgroundService)sp.GetRequiredService<FleetHostedService>()
-                : sp.GetRequiredService<AgentBackgroundService>());
+            // The mode is the fork, and this is the only object that sees it: it raises the supervisor the flag
+            // calls for and changes it over when the flag moves. Everything below is wired the same either way.
+            builder.Services.AddHostedService<ModeSwitchService>();
             builder.Services.AddHostedService<NetworkWatcher>();
             builder.Services.AddHostedService<StatusPipeServer>();
             builder.Services.AddHostedService<UpdateCheckService>();

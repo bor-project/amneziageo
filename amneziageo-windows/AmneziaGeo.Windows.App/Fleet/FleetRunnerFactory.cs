@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.App.Fleet;
 /// <summary>
 /// Builds one tunnel of the set: its own state, its own owner scope and its own supervisor.
 /// </summary>
-internal sealed class FleetRunnerFactory(IServiceProvider services, ActiveTunnelScope owner)
+internal sealed class FleetRunnerFactory(IServiceProvider services, ActiveTunnelScope owner, FleetControl fleet)
 {
     /// <summary>
     /// Raises the named tunnel and returns the member driving it.
@@ -21,7 +21,9 @@ internal sealed class FleetRunnerFactory(IServiceProvider services, ActiveTunnel
         var scope = ActivatorUtilities.CreateInstance<ActiveTunnelScope>(services);
         scope.SetOwner(owner.OwnerRoot, owner.OwnerSid);
 
-        var runner = ActivatorUtilities.CreateInstance<ConfigRunner>(services, control, scope);
+        // The set hands out the duties of its own tunnels; the single-tunnel roster registered in the container
+        // answers for the machine that runs one.
+        var runner = ActivatorUtilities.CreateInstance<ConfigRunner>(services, control, scope, fleet);
         var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Started off the cancellation token: a cancelled member still has to tear its tunnel down.

@@ -9,6 +9,7 @@ namespace AmneziaGeo.Windows.App.Fleet;
 internal sealed class FleetControl : TunnelDutyRoster
 {
     private readonly Lock _gate = new();
+    private readonly List<string> _order = [];
     private readonly List<string> _wanted = [];
     private readonly Dictionary<string, string> _roles = new(StringComparer.Ordinal);
     private CancellationTokenSource _change = new();
@@ -37,6 +38,34 @@ internal sealed class FleetControl : TunnelDutyRoster
             lock (_gate)
             {
                 return _wanted.ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The servers in the order the mode lists them, which is the order it falls back through.
+    /// </summary>
+    public IReadOnlyList<string> Order
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _order.ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The server named to carry the machine, empty while none is.
+    /// </summary>
+    public string Primary
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return PrimaryLocked();
             }
         }
     }
@@ -97,6 +126,62 @@ internal sealed class FleetControl : TunnelDutyRoster
     }
 
     /// <summary>
+    /// Lists the servers in the order the mode keeps them.
+    /// </summary>
+    public void SetOrder(IReadOnlyList<string> names)
+    {
+        lock (_gate)
+        {
+            _order.Clear();
+            Fill(_order, names);
+        }
+
+        Signal();
+    }
+
+    /// <summary>
+    /// Stands the set on what the mode last stored.
+    /// </summary>
+    public void Restore(FleetState state)
+    {
+        lock (_gate)
+        {
+            _order.Clear();
+            Fill(_order, state.Order);
+            _roles.Clear();
+            foreach (var pair in state.Roles)
+            {
+                _roles[pair.Key] = TunnelRoles.Of(pair.Value);
+            }
+
+            if (state.Primary.Length > 0)
+            {
+                PromoteLocked(state.Primary);
+            }
+
+            _wanted.Clear();
+            Fill(_wanted, state.Desired);
+        }
+
+        Signal();
+    }
+
+    /// <summary>
+    /// What the mode stands on, as it is stored.
+    /// </summary>
+    public FleetState Snapshot()
+    {
+        lock (_gate)
+        {
+            return new FleetState(
+                _order.ToArray(),
+                new Dictionary<string, string>(_roles, StringComparer.Ordinal),
+                PrimaryLocked(),
+                _wanted.ToArray());
+        }
+    }
+
+    /// <summary>
     /// The role a tunnel holds.
     /// </summary>
     public string RoleOf(string name)
@@ -117,13 +202,12 @@ internal sealed class FleetControl : TunnelDutyRoster
         {
             if (given == TunnelRoles.Primary)
             {
-                foreach (var other in _roles.Where(r => r.Value == TunnelRoles.Primary).Select(r => r.Key).ToArray())
-                {
-                    _roles[other] = TunnelRoles.Reserve;
-                }
+                PromoteLocked(name);
             }
-
-            _roles[name] = given;
+            else
+            {
+                _roles[name] = given;
+            }
         }
 
         Signal();
@@ -147,11 +231,11 @@ internal sealed class FleetControl : TunnelDutyRoster
         }
     }
 
-    // The primary while it is asked for, else the first reserve in the order the set was asked for. A neutral
-    // tunnel is out of the balancer, so it carries nothing but what names it.
+    // The primary while it is asked for, else the first reserve the mode lists. A neutral tunnel is out of the
+    // balancer, so it carries nothing but what names it.
     private string? CarrierLocked()
     {
-        foreach (var name in _wanted)
+        foreach (var name in PriorityLocked())
         {
             if (RoleLocked(name) == TunnelRoles.Primary)
             {
@@ -159,7 +243,7 @@ internal sealed class FleetControl : TunnelDutyRoster
             }
         }
 
-        foreach (var name in _wanted)
+        foreach (var name in PriorityLocked())
         {
             if (TunnelRoles.Balanced(RoleLocked(name)))
             {
@@ -170,9 +254,65 @@ internal sealed class FleetControl : TunnelDutyRoster
         return null;
     }
 
+    // The set in the order the mode lists its servers; one the order does not name keeps the place it was
+    // asked in, behind those it does.
+    private IEnumerable<string> PriorityLocked()
+    {
+        foreach (var name in _order)
+        {
+            if (_wanted.Contains(name))
+            {
+                yield return name;
+            }
+        }
+
+        foreach (var name in _wanted)
+        {
+            if (!_order.Contains(name))
+            {
+                yield return name;
+            }
+        }
+    }
+
+    private string PrimaryLocked()
+    {
+        foreach (var pair in _roles)
+        {
+            if (pair.Value == TunnelRoles.Primary)
+            {
+                return pair.Key;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    // A machine holds one primary, so naming one puts the one before it back in the balancer.
+    private void PromoteLocked(string name)
+    {
+        foreach (var other in _roles.Where(r => r.Value == TunnelRoles.Primary).Select(r => r.Key).ToArray())
+        {
+            _roles[other] = TunnelRoles.Reserve;
+        }
+
+        _roles[name] = TunnelRoles.Primary;
+    }
+
     private string RoleLocked(string name)
     {
         return _roles.TryGetValue(name, out var role) ? role : TunnelRoles.Default;
+    }
+
+    private static void Fill(List<string> list, IEnumerable<string> names)
+    {
+        foreach (var name in names)
+        {
+            if (!string.IsNullOrEmpty(name) && !list.Contains(name))
+            {
+                list.Add(name);
+            }
+        }
     }
 
     private void Signal()

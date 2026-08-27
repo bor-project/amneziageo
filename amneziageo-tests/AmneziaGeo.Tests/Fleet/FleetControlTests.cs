@@ -103,6 +103,57 @@ public sealed class FleetControlTests
     }
 
     [Fact]
+    public void TheModeStandsBackUpOnWhatItStored()
+    {
+        var fleet = new FleetControl();
+        var stored = new FleetState(
+            ["alpha", "bravo", "charlie"],
+            new Dictionary<string, string> { ["charlie"] = TunnelRoles.Neutral },
+            "bravo",
+            ["bravo", "charlie"]);
+
+        fleet.Restore(stored);
+
+        Assert.Equal(["bravo", "charlie"], fleet.Wanted);
+        Assert.Equal("bravo", fleet.Carrier);
+        Assert.Equal("bravo", fleet.Primary);
+        Assert.Equal(TunnelRoles.Neutral, fleet.RoleOf("charlie"));
+        Assert.Equal(["alpha", "bravo", "charlie"], fleet.Order);
+    }
+
+    [Fact]
+    public void TheOrderTheModeListsDecidesWhoCarries()
+    {
+        var fleet = new FleetControl();
+        fleet.SetOrder(["bravo", "alpha"]);
+        fleet.Add("alpha");
+        fleet.Add("bravo");
+
+        Assert.Equal("bravo", fleet.Carrier);
+
+        fleet.Remove("bravo");
+
+        Assert.Equal("alpha", fleet.Carrier);
+    }
+
+    [Fact]
+    public void WhatIsStoredIsWhatTheSetStandsOn()
+    {
+        var fleet = new FleetControl();
+        fleet.SetOrder(["alpha", "bravo"]);
+        fleet.Add("bravo");
+        fleet.SetRole("bravo", TunnelRoles.Primary);
+
+        var stood = new FleetControl();
+        stood.Restore(fleet.Snapshot());
+
+        Assert.Equal(fleet.Order, stood.Order);
+        Assert.Equal(fleet.Wanted, stood.Wanted);
+        Assert.Equal(fleet.Primary, stood.Primary);
+        Assert.Equal(fleet.Carrier, stood.Carrier);
+    }
+
+    [Fact]
     public void TheSetMovingWakesTheSupervisor()
     {
         var fleet = new FleetControl();

@@ -7,6 +7,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -19,12 +21,83 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class RoutingView : UserControl
 {
+    // Окно, с которого читаются клавиши каталога.
+    private TopLevel? _keys;
+
     /// <summary>
     /// ctor
     /// </summary>
     public RoutingView()
     {
         InitializeComponent();
+        SizeChanged += (_, e) => PushPaneWidth(e.NewSize.Width);
+        DataContextChanged += (_, _) => PushPaneWidth(Bounds.Width);
+    }
+
+    // Колонки каталога меряются по пане, в которой он стоит, а не по окну вокруг неё.
+    private void PushPaneWidth(double width)
+    {
+        if (DataContext is RoutingViewModel vm)
+        {
+            vm.PaneWidth = width;
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _keys = TopLevel.GetTopLevel(this);
+        _keys?.AddHandler(KeyDownEvent, OnCatalogKey, RoutingStrategies.Tunnel);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _keys?.RemoveHandler(KeyDownEvent, OnCatalogKey);
+        _keys = null;
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    // Ctrl со стрелкой двигает отмеченную карточку: тело карточки фокус вне телевизора не берёт,
+    // и клавиша читается с окна. Погружением, а не всплытием: на всплытии стрелку раньше забирает
+    // навигация по фокусу, а модификатора она не различает.
+    private void OnCatalogKey(object? sender, KeyEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) || !IsEffectivelyVisible
+            || DataContext is not RoutingViewModel vm)
+        {
+            return;
+        }
+
+        // В поле ввода Ctrl со стрелкой - шаг по словам, жест туда не лезет.
+        if (e.Source is Visual source && source.FindAncestorOfType<TextBox>(includeSelf: true) is not null)
+        {
+            return;
+        }
+
+        var step = CardGesture.Step(e.Key, vm.CatalogColumns);
+        if (step == 0)
+        {
+            return;
+        }
+
+        var to = vm.MovePicked(step);
+        if (to < 0)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Show(CardStack.IsEffectivelyVisible ? CardStack : CardGrid, to);
+    }
+
+    // Ведёт пану за переехавшей карточкой.
+    private static void Show(ItemsControl list, int index)
+    {
+        Dispatcher.UIThread.Post(
+            () => (list.ContainerFromIndex(index) as Control)?.BringIntoView(),
+            DispatcherPriority.Loaded);
     }
 
     // Returns to the header from the section's top row.

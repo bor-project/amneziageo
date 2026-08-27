@@ -22,4 +22,19 @@ internal static class CardGesture
             && e.Source is Visual source
             && ReferenceEquals(source.FindAncestorOfType<Button>(includeSelf: true), body);
     }
+
+    /// <summary>
+    /// Шаг карточки по каталогу: поперёк на один, вдоль на строку.
+    /// </summary>
+    public static int Step(Key key, int columns)
+    {
+        return key switch
+        {
+            Key.Left => -1,
+            Key.Right => 1,
+            Key.Up => -columns,
+            Key.Down => columns,
+            _ => 0,
+        };
+    }
 }

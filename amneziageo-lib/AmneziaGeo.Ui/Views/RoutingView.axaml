@@ -50,14 +50,15 @@
         <!-- Узкий экран: карточки стоят одной колонкой во всю ширину. -->
         <ScrollViewer IsVisible="{Binding ShowCardStack}"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <ItemsControl ItemsSource="{Binding RoutingLists}">
+          <ItemsControl x:Name="CardStack" ItemsSource="{Binding RoutingLists}" controls:ListMotion.Enabled="True">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
                 <controls:RoutingCard Margin="0,0,0,8"
                         OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
                         SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
                         DropCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ApplyOrderCommand}"
-                        PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}" />
+                        PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).Sheet}" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -66,7 +67,7 @@
         <!-- Широкий экран: карточки стоят в две равные колонки во всю их ширину. -->
         <ScrollViewer IsVisible="{Binding ShowCardGrid}"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <ItemsControl ItemsSource="{Binding RoutingLists}" VerticalAlignment="Top">
+          <ItemsControl x:Name="CardGrid" ItemsSource="{Binding RoutingLists}" VerticalAlignment="Top" controls:ListMotion.Enabled="True">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <UniformGrid Columns="2" />
@@ -78,7 +79,8 @@
                         OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
                         SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
                         DropCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ApplyOrderCommand}"
-                        PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}" />
+                        PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).Sheet}" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

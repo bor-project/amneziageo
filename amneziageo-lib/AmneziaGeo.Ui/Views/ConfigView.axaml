@@ -65,14 +65,15 @@
       <!-- Узкий экран: карточки стоят одной колонкой во всю ширину. -->
       <ScrollViewer IsVisible="{Binding ShowCardStack}"
                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl ItemsSource="{Binding Configs}">
+        <ItemsControl x:Name="CardStack" ItemsSource="{Binding Configs}" controls:ListMotion.Enabled="True">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ConfigItemViewModel">
               <controls:CatalogCard Margin="0,0,0,8"
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
-                      PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}" />
+                      PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -81,7 +82,7 @@
       <!-- Широкий экран: карточки стоят в две равные колонки во всю их ширину, драг переставляет их. -->
       <ScrollViewer IsVisible="{Binding ShowCardGrid}"
                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl ItemsSource="{Binding Configs}" VerticalAlignment="Top">
+        <ItemsControl x:Name="CardGrid" ItemsSource="{Binding Configs}" VerticalAlignment="Top" controls:ListMotion.Enabled="True">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <UniformGrid Columns="2" />
@@ -93,7 +94,8 @@
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
-                      PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}" />
+                      PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

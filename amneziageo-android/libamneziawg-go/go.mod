@@ -2,7 +2,7 @@ module github.com/bor-project/amneziageo/libamneziawg-go
 
 go 1.25.0
 
-require github.com/amnezia-vpn/amneziawg-go v0.0.0
+require github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260814
 
 require (
 	golang.org/x/crypto v0.42.0 // indirect
@@ -11,4 +11,4 @@ require (
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )
 
-replace github.com/amnezia-vpn/amneziawg-go => ../amneziawg-go
+replace github.com/amnezia-vpn/amneziawg-go/v3 => ../amneziawg-go

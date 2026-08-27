@@ -1401,6 +1401,12 @@
   <data name="Agent_ConfigNameTaken" xml:space="preserve">
     <value>конфигурация «{0}» уже есть - выберите другое имя</value>
   </data>
+  <data name="Agent_ConfigRejected" xml:space="preserve">
+    <value>конфигурация отклонена - {0}</value>
+  </data>
+  <data name="Agent_ConfigUnsupportedKey" xml:space="preserve">
+    <value>конфигурации нужен AmneziaWG новее, чем понимает эта версия - незнакомый параметр «{0}»</value>
+  </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>сохранён {0}</value>
   </data>

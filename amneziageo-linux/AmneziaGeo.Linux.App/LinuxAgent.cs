@@ -982,6 +982,12 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
+        var rejected = RejectBadConfig(args[1]);
+        if (rejected is not null)
+        {
+            return rejected;
+        }
+
         await _store.SaveConfigAsync(args[0], args[1], ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
@@ -994,9 +1000,24 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, args.Count < 2 ? "expected a name and a file path" : $"{args[1]} not found");
         }
 
-        await _store.SaveConfigAsync(args[0], await File.ReadAllTextAsync(args[1], ct).ConfigureAwait(false), ct).ConfigureAwait(false);
-        await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
+        var text = await File.ReadAllTextAsync(args[1], ct).ConfigureAwait(false);
+        return await SaveConfigAsync([args[0], text], ct).ConfigureAwait(false);
+    }
+
+    // Отбивает конфиг, который движок отверг бы при подъёме туннеля.
+    private static IpcAck? RejectBadConfig(string text)
+    {
+        try
+        {
+            WgConfigValidator.Validate(text);
+            return null;
+        }
+        catch (WgConfigFormatException ex)
+        {
+            return new IpcAck(false, ex.UnknownKey
+                ? IpcMessage.Key("Agent_ConfigUnsupportedKey", ex.Offender)
+                : IpcMessage.Key("Agent_ConfigRejected", ex.Message));
+        }
     }
 
     private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args, CancellationToken ct)

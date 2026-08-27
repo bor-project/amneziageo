@@ -271,6 +271,18 @@ internal static class DesignData
         H2 = 246741798
         H3 = 599619293
         H4 = 1652909985
+        S3 = 17
+        S4 = 22
+        I1 = <r 128>
+        HeaderProtectionKey = QW1uZXppYUdlbyBkZXNpZ24tdGltZSBzYW1wbGVrZXk=
+        ContentPaddingAddition = 12-44
+        RekeyAfterTime = 100-135
+        RekeyTimeout = 5-6
+        RejectAfterTime = 186-259
+        KeepaliveTimeout = 12-16
+        MaxHandshakeAttempts = 17-33
+        RandomTrailers = on
+        DisableCookies = on
 
         [Peer]
         PublicKey = SAMPLEdesignSERVERpublicKey000000000000000=

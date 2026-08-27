@@ -208,6 +208,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Отбивает конфиг, который движок отверг бы при подъёме туннеля.
+    private static IpcAck? RejectBadConfig(string text)
+    {
+        try
+        {
+            WgConfigValidator.Validate(text);
+            return null;
+        }
+        catch (WgConfigFormatException ex)
+        {
+            return new IpcAck(false, ex.UnknownKey
+                ? IpcMessage.Key("Agent_ConfigUnsupportedKey", ex.Offender)
+                : IpcMessage.Key("Agent_ConfigRejected", ex.Message));
+        }
+    }
+
     private async Task<IpcAck> DispatchAsync(IpcCommand command)
     {
         var args = command.Args;
@@ -218,6 +234,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 if (args.Count < 2)
                 {
                     return Fail();
+                }
+
+                var rejected = RejectBadConfig(args[1]);
+                if (rejected is not null)
+                {
+                    return rejected;
                 }
 
                 // Import creates; replacing the text of an existing configuration is edit-config.

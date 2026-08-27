@@ -1401,6 +1401,12 @@ Renamed on import: several names clashed with existing ones.</value>
   <data name="Agent_ConfigNameTaken" xml:space="preserve">
     <value>a configuration named «{0}» already exists - pick another name</value>
   </data>
+  <data name="Agent_ConfigRejected" xml:space="preserve">
+    <value>configuration rejected - {0}</value>
+  </data>
+  <data name="Agent_ConfigUnsupportedKey" xml:space="preserve">
+    <value>the configuration needs a newer AmneziaWG than this version speaks - unknown setting «{0}»</value>
+  </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>saved {0}</value>
   </data>

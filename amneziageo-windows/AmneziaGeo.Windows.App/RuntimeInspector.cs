@@ -474,7 +474,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
             allowed = [.. allowed.Where(entry => !entry.Contains(':'))];
         }
 
-        return TunnelRunner.SplitDefaultRoutes(allowed);
+        return TunnelRunner.SplitDefaultRoutes(allowed, carriesDefault: true);
     }
 
     // Header comments: what the file leaves out, and whether the prefix line was cut.

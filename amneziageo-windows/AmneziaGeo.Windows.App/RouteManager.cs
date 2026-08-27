@@ -105,11 +105,21 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Removes the endpoint-exclusion routes the named tunnel left.
+    /// </summary>
+    public void RemoveEndpointExclusions(string name)
+    {
+        RestoreExclusionFile(TunnelPaths.RouteStateFile(name));
+    }
+
+    /// <summary>
     /// Removes endpoint-exclusion routes left by a previous run. <paramref name="abortIf"/> stands the cleanup
     /// down once a tunnel bring-up is requested, so a boot pass cannot remove a connect's live exclusion.
+    /// <paramref name="keep"/> names the tunnels whose records the sweep leaves alone.
     /// </summary>
-    public void RestoreSavedExclusions(Func<bool>? abortIf = null)
+    public void RestoreSavedExclusions(Func<bool>? abortIf = null, IEnumerable<string>? keep = null)
     {
+        var owned = TunnelPaths.Owned(keep, TunnelPaths.RouteStateFile);
         foreach (var file in TunnelPaths.RouteStateFiles())
         {
             if (abortIf?.Invoke() == true)
@@ -117,16 +127,27 @@ internal sealed partial class RouteManager
                 return;
             }
 
-            foreach (var endpoint in ReadStateFile(file))
+            if (owned.Contains(file))
             {
-                if (IPAddress.TryParse(endpoint, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    DeleteManagedRoutes(ip, ifIndex: null);
-                }
+                continue;
             }
 
-            TryDelete(file);
+            RestoreExclusionFile(file);
         }
+    }
+
+    // Reverts one endpoint-exclusion record and drops it.
+    private static void RestoreExclusionFile(string path)
+    {
+        foreach (var endpoint in ReadStateFile(path))
+        {
+            if (IPAddress.TryParse(endpoint, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                DeleteManagedRoutes(ip, ifIndex: null);
+            }
+        }
+
+        TryDelete(path);
     }
 
     /// <summary>
@@ -499,14 +520,21 @@ internal sealed partial class RouteManager
     /// <summary>
     /// Removes LAN-bypass exclusion routes left by a previous run. <paramref name="abortIf"/> stands the cleanup
     /// down once a tunnel bring-up is requested, so a boot pass cannot remove a connect's live exclusions.
+    /// <paramref name="keep"/> names the tunnels whose records the sweep leaves alone.
     /// </summary>
-    public void RestoreSavedLanExclusions(Func<bool>? abortIf = null)
+    public void RestoreSavedLanExclusions(Func<bool>? abortIf = null, IEnumerable<string>? keep = null)
     {
+        var owned = TunnelPaths.Owned(keep, TunnelPaths.LanStateFile);
         foreach (var file in TunnelPaths.LanStateFiles())
         {
             if (abortIf?.Invoke() == true)
             {
                 return;
+            }
+
+            if (owned.Contains(file))
+            {
+                continue;
             }
 
             foreach (var cidr in ReadStateFile(file))

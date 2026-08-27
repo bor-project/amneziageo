@@ -177,7 +177,7 @@ internal sealed class ConfigRunner(
         }
 
         await ProjectRoutingAsync(config, ct);
-        ReapForeignTunnels(config);
+        ReapForeignTunnels([config]);
         Stop(config);
 
         _launchStreak = 0;
@@ -831,13 +831,13 @@ internal sealed class ConfigRunner(
         _ = Task.Run(() => probe.RunAsync(ct), ct);
     }
 
-    private void ReapForeignTunnels(string keep)
+    private void ReapForeignTunnels(IReadOnlyCollection<string> keep)
     {
         var reaped = InstallerMaintenance.ReapTransientServices(keep);
         if (reaped.Count > 0)
         {
             logger.LogInformation("removed {Count} tunnel(s) left over from an earlier run ({Names}), so they cannot fight over the routes", reaped.Count, string.Join(", ", reaped));
-            reconciler.Reconcile();
+            reconciler.Reconcile(keep: keep);
         }
     }
 
@@ -856,7 +856,7 @@ internal sealed class ConfigRunner(
 
         StopService(member);
         serviceManager.DeleteService(member);
-        reconciler.Reconcile();
+        reconciler.Reconcile(member);
     }
 
     // Stops the tunnel and leaves the service installed for the next retry.
@@ -868,7 +868,7 @@ internal sealed class ConfigRunner(
         }
 
         StopService(member);
-        reconciler.Reconcile();
+        reconciler.Reconcile(member);
     }
 
     // Stops the service and waits for it to die. A service still starting refuses the stop, so it is re-issued

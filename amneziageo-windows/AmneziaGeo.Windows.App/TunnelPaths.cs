@@ -150,6 +150,20 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// The state files the named tunnels own, so a sweep leaves a live tunnel's record in place.
+    /// </summary>
+    public static IReadOnlySet<string> Owned(IEnumerable<string>? names, Func<string, string> file)
+    {
+        var owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in names ?? [])
+        {
+            owned.Add(file(name));
+        }
+
+        return owned;
+    }
+
+    /// <summary>
     /// Directory holding service log files.
     /// </summary>
     public static string LogDirectory()

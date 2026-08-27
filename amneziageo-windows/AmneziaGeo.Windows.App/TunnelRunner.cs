@@ -119,7 +119,7 @@ internal sealed class TunnelRunner(
         // Whatever is left behind the agent reverts on its own pass.
         using (logger.Step("reconcile leftovers"))
         {
-            var cleanup = Task.Run(() => reconciler.Reconcile());
+            var cleanup = Task.Run(() => reconciler.Reconcile(keep: [name]));
             if (await Task.WhenAny(cleanup, Task.Delay(_reconcileBudget)).ConfigureAwait(false) != cleanup)
             {
                 logger.LogWarning("cleaning up after an earlier session has taken more than {Sec}s, so the tunnel comes up without waiting for it; leftover routes or DNS settings are reverted on a later pass",
@@ -266,7 +266,7 @@ internal sealed class TunnelRunner(
         }
 
         // Split /0 into /1 halves so the engine's blanket kill-switch isn't armed.
-        allowedIps = SplitDefaultRoutes(allowedIps);
+        allowedIps = SplitDefaultRoutes(allowedIps, carriesDefault: true);
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
         logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried in a websocket: {Ws} [{Elapsed} ms in]",
@@ -692,7 +692,7 @@ internal sealed class TunnelRunner(
                 {
                 }
 
-                dns.Restore();
+                dns.Restore(name);
                 // Flush so cached tunnel-routed IPs don't outlive the tunnel.
                 dns.FlushCache();
             }
@@ -921,7 +921,11 @@ internal sealed class TunnelRunner(
         return null;
     }
 
-    internal static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)
+    /// <summary>
+    /// Splits /0 into /1 halves so the engine's blanket kill-switch isn't armed. A tunnel that does not carry
+    /// the default keeps neither the halves nor /0, so what no rule names stays off it.
+    /// </summary>
+    internal static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps, bool carriesDefault)
     {
         var result = new List<string>();
 
@@ -938,12 +942,27 @@ internal sealed class TunnelRunner(
             switch (cidr.Trim())
             {
                 case "0.0.0.0/0":
-                    AddUnique(result, "0.0.0.0/1");
-                    AddUnique(result, "128.0.0.0/1");
+                    if (carriesDefault)
+                    {
+                        AddUnique(result, "0.0.0.0/1");
+                        AddUnique(result, "128.0.0.0/1");
+                    }
+
                     break;
                 case "::/0":
-                    AddUnique(result, "::/1");
-                    AddUnique(result, "8000::/1");
+                    if (carriesDefault)
+                    {
+                        AddUnique(result, "::/1");
+                        AddUnique(result, "8000::/1");
+                    }
+
+                    break;
+                case "0.0.0.0/1" or "128.0.0.0/1" or "::/1" or "8000::/1":
+                    if (carriesDefault)
+                    {
+                        AddUnique(result, cidr);
+                    }
+
                     break;
                 default:
                     AddUnique(result, cidr);

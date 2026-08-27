@@ -15,8 +15,6 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 {
-    private string _name = string.Empty;
-
     /// <summary>
     /// Reads every adapter's resolvers into a deduped pool (gateway adapter's first), so the proxy can race
     /// non-geo queries across all providers - a multi-WAN box where one provider censors a name is answered
@@ -91,7 +89,6 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     /// </summary>
     public void Apply(string name, IReadOnlyList<string> proxyServers)
     {
-        _name = name;
         var saved = new Dictionary<string, SavedDns>(StringComparer.OrdinalIgnoreCase);
         foreach (var adapter in Adapters())
         {
@@ -164,11 +161,11 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     private static extern uint DnsFlushResolverCache();
 
     /// <summary>
-    /// Restores the DNS settings this instance redirected. Keeps the state for a retry if a reset did not take.
+    /// Restores the DNS settings the named tunnel redirected. Keeps the state for a retry if a reset did not take.
     /// </summary>
-    public void Restore()
+    public void Restore(string name)
     {
-        var file = TunnelPaths.DnsStateFile(_name);
+        var file = TunnelPaths.DnsStateFile(name);
         try
         {
             if (RestoreFile(file) != RestoreOutcome.Done)
@@ -189,16 +186,23 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     /// whose adapters are still on our redirect is kept so a later call retries once the adapter is ready
     /// - this is the recovery for a redirect that outlived its proxy (dirty shutdown or reboot with no tunnel).
     /// <paramref name="abortIf"/> stands the cleanup down the moment a tunnel bring-up is requested, so a boot
-    /// pass cannot revert a connect's live redirect out from under it.
+    /// pass cannot revert a connect's live redirect out from under it. <paramref name="keep"/> names the tunnels
+    /// whose records the sweep leaves alone.
     /// </summary>
-    public void RestoreSaved(Func<bool>? abortIf = null)
+    public void RestoreSaved(Func<bool>? abortIf = null, IEnumerable<string>? keep = null)
     {
         var restored = false;
+        var owned = TunnelPaths.Owned(keep, TunnelPaths.DnsStateFile);
         foreach (var file in TunnelPaths.DnsStateFiles())
         {
             if (abortIf?.Invoke() == true)
             {
                 return;
+            }
+
+            if (owned.Contains(file))
+            {
+                continue;
             }
 
             try

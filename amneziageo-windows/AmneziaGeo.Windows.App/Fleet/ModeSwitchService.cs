@@ -50,22 +50,18 @@ internal sealed class ModeSwitchService(
             }
 
             await LowerAsync(supervisor);
-            if (wanted)
+            if (!wanted && _soleWasUp)
             {
-                // The set answers for what is up from here on; the header takes up the state of the tunnel it
-                // points at once the set is standing.
-                selected.SetRunning(false);
+                logger.LogInformation("the machine goes back on '{Config}', the tunnel it stood on before the set took it over", selected.Target);
             }
+
+            // Neither mode takes the other's state up: the set answers for what is up from here on, and the
+            // single tunnel is put back on what it stood on before the set took the machine over.
+            selected.SetRunning(!wanted && _soleWasUp);
 
             mode.MultiServer = wanted;
             mode.Switched = true;
             supervisor = await RaiseAsync(wanted, stoppingToken);
-
-            if (!wanted && _soleWasUp)
-            {
-                logger.LogInformation("the machine goes back on '{Config}', the tunnel it stood on before the set took it over", selected.Target);
-                selected.SetRunning(true);
-            }
         }
 
         await LowerAsync(supervisor);

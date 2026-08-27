@@ -1,3 +1,5 @@
+using AmneziaGeo.Ipc.Fleet;
+
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
@@ -130,4 +132,7 @@ public sealed record StatusSnapshot(
     // How many devices the access point admits.
     int HotspotMaxClients = 0,
     // Whether several tunnels may be up at once (experimental).
-    bool MultiServer = false);
+    bool MultiServer = false,
+    // What the mode holds while several tunnels may be up: every server, its role and what it carries. Null on a
+    // machine that keeps one tunnel.
+    FleetSnapshot? Fleet = null);

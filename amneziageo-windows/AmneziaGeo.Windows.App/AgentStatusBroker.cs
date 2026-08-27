@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, ILogger<AgentStatusBroker> logger)
+internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -24,7 +24,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, BrokerScope> _scopes = new(StringComparer.OrdinalIgnoreCase);
     private BrokerScope? _defaultScope;
 
-    private BrokerScope CurrentScope => _connectionScope.Value ?? (_defaultScope ??= ScopeFor(AppDataRoot.Base()));
+    protected BrokerScope CurrentScope => _connectionScope.Value ?? (_defaultScope ??= ScopeFor(AppDataRoot.Base()));
 
     // Resolve the acting user's data surfaces from the current connection scope.
     private IStateStore store => CurrentScope.Store;
@@ -279,7 +279,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
-                _ => new IpcAck(false, $"unknown command: {command.Op}"),
+                _ => await UnknownAsync(command, ct),
             };
         }
         catch (Exception ex)
@@ -287,6 +287,14 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             logger.LogWarning(ex, "the request '{Op}' from the app could not be carried out; nothing was changed", command.Op);
             return new IpcAck(false, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// A request this agent has no handler for. The mode answers its own here.
+    /// </summary>
+    protected virtual Task<IpcAck> UnknownAsync(IpcCommand command, CancellationToken ct)
+    {
+        return Task.FromResult(new IpcAck(false, $"unknown command: {command.Op}"));
     }
 
     // Records a UI-side diagnostic line in the agent log; the UI process keeps no log of its own.
@@ -1443,7 +1451,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return listId is long id ? (await store.GetRoutingListAsync(id, ct))?.Name : null;
     }
 
-    private async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    /// <summary>
+    /// Sets what the machine is asked to keep up. A machine on one tunnel connects the selected configuration.
+    /// </summary>
+    protected virtual async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1)
         {
@@ -2486,7 +2497,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
         var connectFailed = owned && control.ConnectFailed;
         var disconnectFailed = owned && control.DisconnectFailed;
-        return new StatusSnapshot(Version(), boundTarget, configs, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
+        return Describe(new StatusSnapshot(Version(), boundTarget, configs, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -2544,10 +2555,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             HotspotBandActual: hotspot.BandActual,
             HotspotClients: hotspot.Clients,
             HotspotMaxClients: hotspot.MaxClients,
-            MultiServer: settings.MultiServer);
+            MultiServer: settings.MultiServer), scope, states);
     }
 
-    private static string DisplayStatus(string profileStatus)
+    /// <summary>
+    /// The finished snapshot, as the supervisor driving the machine sees it. One that keeps a single tunnel adds
+    /// nothing to it.
+    /// </summary>
+    protected virtual StatusSnapshot Describe(StatusSnapshot snapshot, BrokerScope scope, IReadOnlyList<TunnelState> states)
+    {
+        return snapshot;
+    }
+
+    protected static string DisplayStatus(string profileStatus)
     {
         return profileStatus switch
         {

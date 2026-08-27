@@ -154,6 +154,56 @@ public sealed class FleetControlTests
     }
 
     [Fact]
+    public void TheWindowIsToldTheWholeLibraryInTheModesOrder()
+    {
+        var fleet = new FleetControl();
+        fleet.SetOrder(["bravo", "alpha"]);
+        fleet.Add("bravo");
+        fleet.SetRole("charlie", TunnelRoles.Neutral);
+
+        var described = fleet.Describe(["alpha", "bravo", "charlie"]);
+
+        Assert.Equal(["bravo", "alpha", "charlie"], described.Servers.Select(server => server.Name));
+        Assert.Equal("bravo", described.Carrier);
+        Assert.Equal(string.Empty, described.Primary);
+
+        var carrier = described.Servers[0];
+        Assert.True(carrier.Wanted);
+        Assert.True(carrier.CarriesDefault);
+        Assert.True(carrier.HoldsResolver);
+        Assert.Equal(TunnelRoles.Reserve, carrier.Role);
+
+        var idle = described.Servers[1];
+        Assert.False(idle.Wanted);
+        Assert.False(idle.CarriesDefault);
+        Assert.Equal(TunnelRoles.Neutral, described.Servers[2].Role);
+    }
+
+    [Fact]
+    public void AServerTheLibraryNoLongerHoldsIsNotDescribed()
+    {
+        var fleet = new FleetControl();
+        fleet.SetOrder(["alpha", "bravo"]);
+
+        var described = fleet.Describe(["alpha"]);
+
+        Assert.Equal(["alpha"], described.Servers.Select(server => server.Name));
+    }
+
+    [Fact]
+    public void OnlyARequestMakesTheSetWorthWritingDown()
+    {
+        var fleet = new FleetControl();
+        Assert.False(fleet.Moved);
+
+        fleet.Restore(new FleetState(["alpha"], new Dictionary<string, string>(StringComparer.Ordinal), string.Empty, ["alpha"]));
+        Assert.False(fleet.Moved);
+
+        fleet.Add("bravo");
+        Assert.True(fleet.Moved);
+    }
+
+    [Fact]
     public void TheSetMovingWakesTheSupervisor()
     {
         var fleet = new FleetControl();

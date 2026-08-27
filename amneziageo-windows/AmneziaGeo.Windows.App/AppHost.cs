@@ -55,7 +55,13 @@ internal static class AppHost
             builder.Services.AddSingleton<AgentMode>();
             builder.Services.AddSingleton<FleetControl>();
             builder.Services.AddSingleton<FleetStore>();
+            builder.Services.AddSingleton<FleetLive>();
             builder.Services.AddSingleton<FleetRunnerFactory>();
+
+            // One broker answers the window either way: with the flag off it is the one registered below it, to
+            // the line, and the mode's own requests are refused as requests it has no handler for.
+            builder.Services.AddSingleton<FleetStatusBroker>();
+            builder.Services.AddSingleton<AgentStatusBroker>(sp => sp.GetRequiredService<FleetStatusBroker>());
 
             // The mode is the fork, and this is the only object that sees it: it raises the supervisor the flag
             // calls for and changes it over when the flag moves. Everything below is wired the same either way.

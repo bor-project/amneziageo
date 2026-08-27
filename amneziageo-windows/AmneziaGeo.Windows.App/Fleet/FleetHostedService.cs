@@ -11,6 +11,7 @@ namespace AmneziaGeo.Windows.App.Fleet;
 internal sealed class FleetHostedService(
     FleetControl fleet,
     FleetStore fleetStore,
+    FleetLive live,
     FleetRunnerFactory factory,
     AgentMode mode,
     AgentTarget target,
@@ -21,14 +22,6 @@ internal sealed class FleetHostedService(
     ILogger<FleetHostedService> logger) : BackgroundService
 {
     private readonly Dictionary<string, FleetMember> _members = new(StringComparer.Ordinal);
-
-    // What the header last said, so only a move of it counts as a request.
-    private string _lastTarget = string.Empty;
-    private bool _lastRunning;
-
-    // Whether a request has moved the set since it was restored: a start that raised nothing must not forget
-    // what the mode last stood on.
-    private bool _moved;
 
     private IStateStore store => activeScope.Store;
     private ConfigRepository configRepo => activeScope.ConfigRepo;
@@ -56,8 +49,8 @@ internal sealed class FleetHostedService(
             // stop is one of the three: the wait ends with the supervisor, not only with a request.
             using (var change = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, fleet.ChangeToken, selected.ChangeToken))
             {
-                Follow();
                 await SyncAsync(stoppingToken);
+                Mirror();
                 await PersistAsync(stoppingToken);
                 await IdleAsync(change.Token);
             }
@@ -135,68 +128,18 @@ internal sealed class FleetHostedService(
             logger.LogInformation("the set the mode last stood on is being connected: {Names}", string.Join(", ", desired));
         }
 
-        Align(selected.Target ?? string.Empty);
-        _lastTarget = selected.Target ?? string.Empty;
-        _lastRunning = selected.Running;
+        Mirror();
     }
 
-    // The set has no requests of its own until the mode's own operations land, so the selected configuration
-    // speaks for it: connecting joins it to the set, disconnecting takes it out, and the rest of the set stands.
-    // Only a move counts - the set the mode came back to is not re-asked on every wake.
-    private void Follow()
+    // The machine's own lamp, which the window's push loop and the resolver watch read: in the mode it stands
+    // for the set as a whole, and the snapshot answers for each server on its own.
+    private void Mirror()
     {
-        var name = selected.Target ?? string.Empty;
-        var running = selected.Running;
-        var picked = !string.Equals(name, _lastTarget, StringComparison.Ordinal);
-        if (!picked && running == _lastRunning)
+        var up = fleet.Wanted.Count > 0;
+        if (up != selected.Running)
         {
-            return;
+            selected.SetRunning(up);
         }
-
-        _lastTarget = name;
-        _lastRunning = running;
-        if (name.Length == 0)
-        {
-            return;
-        }
-
-        if (running)
-        {
-            if (fleet.Add(name))
-            {
-                _moved = true;
-                logger.LogInformation("{Name}: asked for; {Count} tunnel(s) are now wanted up", name, fleet.Wanted.Count);
-            }
-
-            return;
-        }
-
-        // Another card was picked, not disconnected: the set stands as it is, and the header takes up the state
-        // of the tunnel it now points at.
-        if (picked)
-        {
-            Align(name);
-            return;
-        }
-
-        if (fleet.Remove(name))
-        {
-            _moved = true;
-            logger.LogInformation("{Name}: no longer asked for; {Count} tunnel(s) are now wanted up", name, fleet.Wanted.Count);
-        }
-    }
-
-    // The header answers for the tunnel it points at, since that is what the mode reads requests off.
-    private void Align(string name)
-    {
-        var up = name.Length > 0 && fleet.Wanted.Contains(name);
-        if (up == selected.Running)
-        {
-            return;
-        }
-
-        selected.SetRunning(up);
-        _lastRunning = up;
     }
 
     // Brings the running tunnels in line with the set.
@@ -235,7 +178,7 @@ internal sealed class FleetHostedService(
     // remembered must leave that memory where it is.
     private async Task PersistAsync(CancellationToken ct)
     {
-        if (!_moved)
+        if (!fleet.Moved)
         {
             return;
         }
@@ -256,7 +199,9 @@ internal sealed class FleetHostedService(
     private void Start(string name, CancellationToken ct)
     {
         var duties = fleet.For(name);
-        _members[name] = factory.Start(name, duties, ct);
+        var member = factory.Start(name, duties, ct);
+        _members[name] = member;
+        live.Publish(name, member.Control);
         logger.LogInformation("{Name}: connecting as one of {Count} tunnel(s); it {Carries} what no rule sends elsewhere",
             name, _members.Count, duties.CarriesDefault ? "carries" : "does not carry");
     }
@@ -268,6 +213,7 @@ internal sealed class FleetHostedService(
             return;
         }
 
+        live.Drop(name);
         logger.LogInformation("{Name}: disconnecting; {Count} tunnel(s) left up", name, _members.Count);
         member.Control.SetRunning(false);
         await member.Stop.CancelAsync();
@@ -288,6 +234,8 @@ internal sealed class FleetHostedService(
         {
             await StopAsync(name);
         }
+
+        live.Clear();
     }
 
     // Retries the boot reconcile while nothing is asked for: each bring-up reconciles on its own.

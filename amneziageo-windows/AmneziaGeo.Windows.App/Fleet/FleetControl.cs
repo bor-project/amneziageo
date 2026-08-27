@@ -13,6 +13,7 @@ internal sealed class FleetControl : TunnelDutyRoster
     private readonly List<string> _wanted = [];
     private readonly Dictionary<string, string> _roles = new(StringComparer.Ordinal);
     private CancellationTokenSource _change = new();
+    private bool _moved;
 
     /// <summary>
     /// Fires when the set or a role moves.
@@ -71,6 +72,21 @@ internal sealed class FleetControl : TunnelDutyRoster
     }
 
     /// <summary>
+    /// Whether a request has moved the set since it was stood back up. A start that raised nothing must not
+    /// write over what the mode last stood on.
+    /// </summary>
+    public bool Moved
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _moved;
+            }
+        }
+    }
+
+    /// <summary>
     /// The tunnel carrying what no rule sends elsewhere, or null while nothing in the set may.
     /// </summary>
     public string? Carrier
@@ -102,6 +118,7 @@ internal sealed class FleetControl : TunnelDutyRoster
             }
 
             _wanted.Add(name);
+            _moved = true;
         }
 
         Signal();
@@ -119,6 +136,8 @@ internal sealed class FleetControl : TunnelDutyRoster
             {
                 return false;
             }
+
+            _moved = true;
         }
 
         Signal();
@@ -134,6 +153,7 @@ internal sealed class FleetControl : TunnelDutyRoster
         {
             _order.Clear();
             Fill(_order, names);
+            _moved = true;
         }
 
         Signal();
@@ -161,6 +181,7 @@ internal sealed class FleetControl : TunnelDutyRoster
 
             _wanted.Clear();
             Fill(_wanted, state.Desired);
+            _moved = false;
         }
 
         Signal();
@@ -178,6 +199,24 @@ internal sealed class FleetControl : TunnelDutyRoster
                 new Dictionary<string, string>(_roles, StringComparer.Ordinal),
                 PrimaryLocked(),
                 _wanted.ToArray());
+        }
+    }
+
+    /// <summary>
+    /// The set as the window sees it: every server of the library, in the order the mode lists them.
+    /// </summary>
+    public FleetSnapshot Describe(IReadOnlyList<string> library)
+    {
+        lock (_gate)
+        {
+            var servers = new List<FleetEntry>();
+            foreach (var name in ListedLocked(library))
+            {
+                var duties = DutiesLocked(name);
+                servers.Add(new FleetEntry(name, RoleLocked(name), _wanted.Contains(name), duties.CarriesDefault, duties.HoldsResolver));
+            }
+
+            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty);
         }
     }
 
@@ -208,6 +247,8 @@ internal sealed class FleetControl : TunnelDutyRoster
             {
                 _roles[name] = given;
             }
+
+            _moved = true;
         }
 
         Signal();
@@ -227,7 +268,32 @@ internal sealed class FleetControl : TunnelDutyRoster
     {
         lock (_gate)
         {
-            return string.Equals(CarrierLocked(), name, StringComparison.Ordinal) ? TunnelDuties.Sole : TunnelDuties.None;
+            return DutiesLocked(name);
+        }
+    }
+
+    private TunnelDuties DutiesLocked(string name)
+    {
+        return string.Equals(CarrierLocked(), name, StringComparison.Ordinal) ? TunnelDuties.Sole : TunnelDuties.None;
+    }
+
+    // The library in the order the mode lists it: what the order names, then what it does not.
+    private IEnumerable<string> ListedLocked(IReadOnlyList<string> library)
+    {
+        foreach (var name in _order)
+        {
+            if (library.Contains(name))
+            {
+                yield return name;
+            }
+        }
+
+        foreach (var name in library)
+        {
+            if (!_order.Contains(name))
+            {
+                yield return name;
+            }
         }
     }
 

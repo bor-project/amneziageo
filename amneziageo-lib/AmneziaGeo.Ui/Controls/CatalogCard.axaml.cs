@@ -29,6 +29,9 @@ internal sealed partial class CatalogCard : UserControl
     public static readonly StyledProperty<ICommand?> PickCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(PickCommand));
 
+    public static readonly StyledProperty<object?> ExtrasProperty =
+        AvaloniaProperty.Register<CatalogCard, object?>(nameof(Extras));
+
     public static readonly StyledProperty<ActionSheetViewModel?> SheetProperty =
         AvaloniaProperty.Register<CatalogCard, ActionSheetViewModel?>(nameof(Sheet));
 
@@ -112,6 +115,18 @@ internal sealed partial class CatalogCard : UserControl
 
     /// <summary>
     /// Набор способов оболочки: им выносится меню карточки.
+    /// </summary>
+    /// <summary>
+    /// Что карточка показывает сверх общего: режим ставит сюда своё, у машины с одним туннелем пусто.
+    /// </summary>
+    public object? Extras
+    {
+        get => GetValue(ExtrasProperty);
+        set => SetValue(ExtrasProperty, value);
+    }
+
+    /// <summary>
+    /// Шторка действий карточки.
     /// </summary>
     public ActionSheetViewModel? Sheet
     {

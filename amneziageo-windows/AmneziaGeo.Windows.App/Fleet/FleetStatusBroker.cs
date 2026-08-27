@@ -72,7 +72,10 @@ internal sealed class FleetStatusBroker(
             return snapshot;
         }
 
-        var configs = snapshot.Configs.Select(entry => Card(entry, states)).ToList();
+        // The order of the set is the order of the cards, and the priority the fallback walks.
+        var library = snapshot.Configs.ToDictionary(entry => entry.Name, StringComparer.Ordinal);
+        var described = fleet.Describe([.. snapshot.Configs.Select(entry => entry.Name)]);
+        var configs = described.Servers.Select(server => Card(library[server.Name], states)).ToList();
         var selected = snapshot.SelectedTarget ?? string.Empty;
         var standing = selected.Length > 0 ? live.Of(selected) : null;
 
@@ -91,7 +94,7 @@ internal sealed class FleetStatusBroker(
             DisconnectFailed = standing?.DisconnectFailed ?? false,
             DisconnectFailDetail = standing?.DisconnectFailed == true ? (standing.DisconnectFailDetail ?? string.Empty) : string.Empty,
             RetryAttempt = standing?.RetryAttempt ?? 0,
-            Fleet = fleet.Describe([.. configs.Select(entry => entry.Name)]),
+            Fleet = described,
         };
     }
 

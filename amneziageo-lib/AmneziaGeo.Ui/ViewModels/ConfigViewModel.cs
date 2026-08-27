@@ -13,7 +13,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// rename / delete), and the standalone "+ Новая конфигурация" import form. The shared-namespace name check
 /// lives on the shell, reached through <c>_host</c>.
 /// </summary>
-internal sealed partial class ConfigViewModel : ViewModelBase
+internal partial class ConfigViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
@@ -612,6 +612,26 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Разбирает снимок. Машине с одним туннелем в нём нужны только конфигурации.
+    /// </summary>
+    public virtual void Apply(StatusSnapshot snapshot)
+    {
+        Apply(snapshot.Configs);
+    }
+
+    // Строка каталога. Режим ставит свою.
+    protected virtual ConfigItemViewModel NewRow(string name)
+    {
+        return new ConfigItemViewModel { Name = name };
+    }
+
+    // Запрос, которым записывается порядок карточек.
+    protected virtual IpcCommand OrderCommand(IReadOnlyList<string> names)
+    {
+        return new IpcCommand(IpcContract.OpReorderConfigs, names);
+    }
+
+    /// <summary>
     /// Reconciles the config catalogue from the snapshot.
     /// </summary>
     public void Apply(IReadOnlyList<ConfigEntry> entries)
@@ -643,7 +663,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             var existing = Configs.FirstOrDefault(c => string.Equals(c.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new ConfigItemViewModel { Name = entry.Name };
+                existing = NewRow(entry.Name);
                 Configs.Insert(Math.Min(i, Configs.Count), existing);
             }
             else
@@ -1002,7 +1022,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         var names = Configs.Select(config => config.Name).ToList();
         _pendingOrder = names;
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderConfigs, names));
+        var ack = await _connection.SendCommandAsync(OrderCommand(names));
         if (!ack.Ok)
         {
             _pendingOrder = null;

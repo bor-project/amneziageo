@@ -11,7 +11,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// <summary>
 /// A single configuration row in the list.
 /// </summary>
-internal sealed partial class ConfigItemViewModel : ViewModelBase
+internal partial class ConfigItemViewModel : ViewModelBase
 {
     [ObservableProperty]
     private string _name = string.Empty;
@@ -94,7 +94,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// <summary>
     /// Re-raises the localized computed labels after a language change.
     /// </summary>
-    public void RefreshLocalizedLabels()
+    public virtual void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Tags));
         OnPropertyChanged(nameof(CardActionText));

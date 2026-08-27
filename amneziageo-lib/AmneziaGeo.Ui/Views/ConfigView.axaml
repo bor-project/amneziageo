@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
@@ -66,8 +67,21 @@
       <ScrollViewer IsVisible="{Binding ShowCardStack}"
                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <ItemsControl x:Name="CardStack" ItemsSource="{Binding Configs}" controls:ListMotion.Enabled="True">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ConfigItemViewModel">
+          <!-- Карточка режима отличается от общей своим шаблоном, и выбирает его тип строки. -->
+          <ItemsControl.DataTemplates>
+            <DataTemplate DataType="fleet:FleetConfigItemViewModel" x:DataType="fleet:FleetConfigItemViewModel">
+              <controls:CatalogCard Margin="0,0,0,8"
+                      OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
+                      ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
+                      DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
+                      PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}">
+                <controls:CatalogCard.Extras>
+                  <fleet:FleetCardStrip />
+                </controls:CatalogCard.Extras>
+              </controls:CatalogCard>
+            </DataTemplate>
+            <DataTemplate DataType="vm:ConfigItemViewModel" x:DataType="vm:ConfigItemViewModel">
               <controls:CatalogCard Margin="0,0,0,8"
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
@@ -75,7 +89,7 @@
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
-          </ItemsControl.ItemTemplate>
+          </ItemsControl.DataTemplates>
         </ItemsControl>
       </ScrollViewer>
 
@@ -88,8 +102,21 @@
               <UniformGrid Columns="2" />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ConfigItemViewModel">
+          <!-- Карточка режима отличается от общей своим шаблоном, и выбирает его тип строки. -->
+          <ItemsControl.DataTemplates>
+            <DataTemplate DataType="fleet:FleetConfigItemViewModel" x:DataType="fleet:FleetConfigItemViewModel">
+              <controls:CatalogCard Margin="0,0,10,10" VerticalAlignment="Top"
+                      OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
+                      ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
+                      DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
+                      PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}">
+                <controls:CatalogCard.Extras>
+                  <fleet:FleetCardStrip />
+                </controls:CatalogCard.Extras>
+              </controls:CatalogCard>
+            </DataTemplate>
+            <DataTemplate DataType="vm:ConfigItemViewModel" x:DataType="vm:ConfigItemViewModel">
               <controls:CatalogCard Margin="0,0,10,10" VerticalAlignment="Top"
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
@@ -97,7 +124,7 @@
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
-          </ItemsControl.ItemTemplate>
+          </ItemsControl.DataTemplates>
         </ItemsControl>
       </ScrollViewer>
     </Panel>

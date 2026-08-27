@@ -185,6 +185,13 @@
                         </DataTemplate>
                       </controls:AdaptiveComboBox.ItemTemplate>
                     </controls:AdaptiveComboBox>
+                    <!-- Machine on several tunnels: hand it to the server the header stands on. -->
+                    <Button Classes="linkbtn" HorizontalAlignment="Center" Padding="0,2"
+                            IsVisible="{Binding MultiServer}"
+                            IsEnabled="{Binding HomeFleet.CanMakePrimary}"
+                            Command="{Binding HomeFleet.MakePrimaryCommand}"
+                            Content="{l:Tr Main_MakePrimaryLink}" />
+
                     <!-- No configs: the add-config button offers the way in right here and says it itself. -->
                     <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
                             IsVisible="{Binding !HasConfigs}" Click="OnAddConfigOptions">

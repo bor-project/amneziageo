@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Fleet;
 using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -74,6 +75,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasConfigs;
 
+    // Whether the machine keeps several tunnels at once; the screens the mode adds read it.
+    [ObservableProperty]
+    private bool _multiServer;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
     [NotifyPropertyChangedFor(nameof(IsSettingsRouting))]
@@ -96,10 +101,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _prefs = prefs;
         Diagnostics = new DiagnosticsViewModel(this, connection, prefs);
         General = new GeneralViewModel(this, connection, prefs);
-        Config = new ConfigViewModel(this, connection);
+        Config = AppFeatures.MultiServer
+            ? new FleetConfigViewModel(this, connection)
+            : new ConfigViewModel(this, connection);
         Routing = new RoutingViewModel(this, connection, prefs);
         Connections = new ConnectionsViewModel(connection);
-        Home = new ConnectionViewModel(this, connection, prefs);
+        Home = AppFeatures.MultiServer
+            ? new FleetConnectionViewModel(this, connection, prefs)
+            : new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         Probe = new ProbeSettingsViewModel(prefs);
         // Seed backing field from prefs without echoing OnChanged.
@@ -122,6 +131,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Home screen: the connection card, tray-icon colour, and the notice banner.
     /// </summary>
     public ConnectionViewModel Home { get; }
+
+    /// <summary>
+    /// The home screen of the mode, where it is the one built; nothing on a machine that keeps one tunnel.
+    /// </summary>
+    public FleetConnectionViewModel? HomeFleet => Home as FleetConnectionViewModel;
 
     /// <summary>
     /// Набор способов «Добавить» / «Экспорт», показанный шторкой поверх всего экрана.
@@ -628,7 +642,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void Apply(StatusSnapshot snapshot)
     {
-        Config.Apply(snapshot.Configs);
+        MultiServer = snapshot.MultiServer;
+        Config.Apply(snapshot);
         Routing.Apply(snapshot);
         Sources.Apply(snapshot);
         HasConfigs = Config.Configs.Count > 0;

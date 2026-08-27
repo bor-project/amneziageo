@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
+             xmlns:roles="clr-namespace:AmneziaGeo.Ipc.Fleet;assembly=AmneziaGeo.Ipc"
+             x:Class="AmneziaGeo.Ui.Fleet.FleetCardStrip"
+             x:CompileBindings="True"
+             x:DataType="fleet:FleetConfigItemViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgRoleCaretGeometry">M7,10L12,15L17,10Z</StreamGeometry>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- Бейдж повторяет плашки карточки: у основного цвет действия, у прочих ролей серый. -->
+    <Style Selector="Button.rolebadge">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="7,2" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+    <Style Selector="Button.rolebadge.primary">
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Тип сервера: бейджем, список ролей падает из него. -->
+  <Button Classes="rolebadge" Classes.primary="{Binding IsPrimary}"
+          HorizontalAlignment="Left" ToolTip.Tip="{Binding RoleLabel}">
+    <StackPanel Orientation="Horizontal" Spacing="4">
+      <TextBlock Text="{Binding RoleText}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <PathIcon Data="{StaticResource AgRoleCaretGeometry}" Width="9" Height="9" VerticalAlignment="Center" />
+    </StackPanel>
+    <Button.Flyout>
+      <MenuFlyout Placement="BottomEdgeAlignedLeft">
+        <MenuItem Header="{Binding PrimaryText}"
+                  Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Primary}" />
+        <MenuItem Header="{Binding ReserveText}"
+                  Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Reserve}" />
+        <MenuItem Header="{Binding NeutralText}"
+                  Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Neutral}" />
+      </MenuFlyout>
+    </Button.Flyout>
+  </Button>
+</UserControl>

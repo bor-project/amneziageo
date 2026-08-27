@@ -1993,6 +1993,21 @@
   <data name="Main_CardReorder" xml:space="preserve">
     <value>Изменить порядок</value>
   </data>
+  <data name="Main_CardTunnelLabel" xml:space="preserve">
+    <value>Туннель</value>
+  </data>
+  <data name="Main_RolePrimary" xml:space="preserve">
+    <value>Основной</value>
+  </data>
+  <data name="Main_RoleReserve" xml:space="preserve">
+    <value>Резервный</value>
+  </data>
+  <data name="Main_RoleNeutral" xml:space="preserve">
+    <value>Нейтральный</value>
+  </data>
+  <data name="Main_MakePrimaryLink" xml:space="preserve">
+    <value>Сделать основным</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Настройки</value>
   </data>

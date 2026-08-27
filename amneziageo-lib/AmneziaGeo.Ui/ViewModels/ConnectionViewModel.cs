@@ -13,7 +13,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// Home screen: the connection card (power control, status, active-config picker), the tray-icon colour, and
 /// the top-center notice banner. The config catalogue lives on the shell, reached through <c>_host</c>.
 /// </summary>
-internal sealed partial class ConnectionViewModel : ViewModelBase
+internal partial class ConnectionViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
@@ -438,7 +438,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// Applies the connection state, active-config matching, and top-center notice from the snapshot. Runs
     /// after the config catalogue is reconciled, so the matching reads the fresh rows.
     /// </summary>
-    public void Apply(StatusSnapshot snapshot)
+    public virtual void Apply(StatusSnapshot snapshot)
     {
         // First snapshot: the card leaves the loading state for the real connection UI.
         IsReady = true;
@@ -633,7 +633,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     // Ставит состояние подключения на карточки: цель носит состояние кнопки в шапке, остальные выключены.
-    private void PushCardPower()
+    protected virtual void PushCardPower()
     {
         var target = _dialTarget ?? BoundTarget;
         foreach (var row in _host.Config.Configs)
@@ -886,7 +886,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// уходит целиком перед сменой цели: агент поднимать новую поверх живой не умеет.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDialConfig))]
-    private async Task ConnectConfig(ConfigItemViewModel? item)
+    protected virtual async Task ConnectConfig(ConfigItemViewModel? item)
     {
         if (item is null || SwitchingConfig)
         {
@@ -925,7 +925,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     // Кнопка карточки: её запирают отсутствие агента, зависший снос и идущий перенос. Свой туннель карточка
     // снимает и посреди подъёма, чужой берёт только с закончившегося перехода.
-    private bool CanDialConfig(ConfigItemViewModel? item) => item is not null
+    protected virtual bool CanDialConfig(ConfigItemViewModel? item) => item is not null
         && IsConnected
         && !Reconnecting
         && !DisconnectFailed
@@ -1307,7 +1307,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     // True when an ack signals the tunnel is owned by another account.
-    private static bool OwnedByOtherAck(IpcAck ack)
+    protected static bool OwnedByOtherAck(IpcAck ack)
     {
         return IpcMessage.TryParse(ack.Message, out var key, out _)
             && string.Equals(key, "Agent_TunnelOwnedByOther", StringComparison.Ordinal);

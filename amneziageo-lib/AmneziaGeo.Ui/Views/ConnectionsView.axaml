@@ -58,6 +58,12 @@
               <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
             </StackPanel>
           </Grid>
+
+          <!-- Several servers at once: the mode is experimental, so the row is offered only where an agent runs it. -->
+          <controls:SettingSwitchRow Label="{l:Tr General_MultiServer}"
+                                     Description="{l:Tr General_MultiServerHint}"
+                                     IsVisible="{Binding MultiServerOffered}"
+                                     IsChecked="{Binding MultiServer, Mode=TwoWay}" />
         </StackPanel>
 
         <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->

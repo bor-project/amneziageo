@@ -14,6 +14,11 @@ public static class SettingKeys
     public const string RouteTtl = "route-ttl-seconds";
 
     /// <summary>
+    /// Whether several tunnels may be up at once.
+    /// </summary>
+    public const string MultiServer = "multi-server";
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public const string ProxyEnabled = "proxy-enabled";

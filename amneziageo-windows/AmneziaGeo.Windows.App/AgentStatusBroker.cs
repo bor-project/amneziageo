@@ -2543,7 +2543,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             HotspotBand: settings.HotspotBand,
             HotspotBandActual: hotspot.BandActual,
             HotspotClients: hotspot.Clients,
-            HotspotMaxClients: hotspot.MaxClients);
+            HotspotMaxClients: hotspot.MaxClients,
+            MultiServer: settings.MultiServer);
     }
 
     private static string DisplayStatus(string profileStatus)

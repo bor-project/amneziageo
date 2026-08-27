@@ -60,6 +60,12 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     private bool _showNotifications = true;
 
     /// <summary>
+    /// Keep several tunnels up at once (experimental).
+    /// </summary>
+    [ObservableProperty]
+    private bool _multiServer;
+
+    /// <summary>
     /// The interval input is editable only while periodic reconnect is on.
     /// </summary>
     public bool PeriodicReconnectIntervalEnabled => PeriodicReconnect;
@@ -68,6 +74,11 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     /// Whether the tunnel settings are offered (Windows only: the Android agent does not apply them).
     /// </summary>
     public bool CanConfigureConnection => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Whether the several-servers switch is offered on this machine.
+    /// </summary>
+    public bool MultiServerOffered => AppFeatures.MultiServer;
 
     /// <summary>
     /// Whether the local proxy listens on its ports.
@@ -398,6 +409,7 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         // Seed the settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
         ShowNotifications = snapshot.ShowNotifications;
+        MultiServer = snapshot.MultiServer;
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
         ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
@@ -662,6 +674,14 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("show-notifications", value ? "on" : "off");
+        }
+    }
+
+    partial void OnMultiServerChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.MultiServer, value ? "on" : "off");
         }
     }
 

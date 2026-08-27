@@ -44,6 +44,7 @@ internal static class SettingsCommands
             (_surviveRebootKey, snapshot.SurviveReboot ? "on" : "off"),
             (_periodicReconnectKey, snapshot.PeriodicReconnect ? "on" : "off"),
             (_reconnectIntervalKey, snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)),
+            (SettingKeys.MultiServer, snapshot.MultiServer ? "on" : "off"),
             (SettingKeys.RouteTtl, snapshot.RouteTtlSeconds.ToString(CultureInfo.InvariantCulture)),
         };
 
@@ -103,7 +104,7 @@ internal static class SettingsCommands
 
                 return true;
 
-            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey:
+            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.MultiServer:
                 if (!Toggle.TryParse(raw, out var on))
                 {
                     error = $"{key} takes on or off";

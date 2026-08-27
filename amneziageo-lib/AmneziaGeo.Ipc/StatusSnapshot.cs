@@ -128,4 +128,6 @@ public sealed record StatusSnapshot(
     // Devices on the access point right now.
     int HotspotClients = 0,
     // How many devices the access point admits.
-    int HotspotMaxClients = 0);
+    int HotspotMaxClients = 0,
+    // Whether several tunnels may be up at once (experimental).
+    bool MultiServer = false);

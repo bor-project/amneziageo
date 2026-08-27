@@ -238,6 +238,12 @@
   <data name="General_PeriodicReconnectHint" xml:space="preserve">
     <value>Keep retrying at a fixed interval while a connection stays inactive.</value>
   </data>
+  <data name="General_MultiServer" xml:space="preserve">
+    <value>Several servers</value>
+  </data>
+  <data name="General_MultiServerHint" xml:space="preserve">
+    <value>Experimental: keep several tunnels up at once and give every rule a server of its own.</value>
+  </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Retry interval</value>
   </data>

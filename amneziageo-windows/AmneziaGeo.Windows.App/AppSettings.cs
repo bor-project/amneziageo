@@ -128,6 +128,11 @@ internal sealed record AppSettings
     public bool ShowNotifications { get; init; } = true;
 
     /// <summary>
+    /// Whether several tunnels may be up at once.
+    /// </summary>
+    public bool MultiServer { get; init; }
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public bool ProxyEnabled { get; init; }

@@ -17,6 +17,12 @@ internal static class AppFeatures
     /// </summary>
     public static bool PerAppRouting => DebugMarker.Value;
 
+    /// <summary>
+    /// Whether the several-servers switch is offered. Windows carries the mode; the other platforms get it
+    /// once the port catches up.
+    /// </summary>
+    public static bool MultiServer => OperatingSystem.IsWindows();
+
     private static bool Exists(string marker)
     {
         try

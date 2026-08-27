@@ -238,6 +238,12 @@
   <data name="General_PeriodicReconnectHint" xml:space="preserve">
     <value>Повторять попытки с заданным интервалом, пока подключение неактивно.</value>
   </data>
+  <data name="General_MultiServer" xml:space="preserve">
+    <value>Несколько серверов</value>
+  </data>
+  <data name="General_MultiServerHint" xml:space="preserve">
+    <value>Экспериментально: держать несколько туннелей одновременно и давать каждому правилу свой сервер.</value>
+  </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Интервал повтора</value>
   </data>

@@ -398,12 +398,29 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, $"config {name} is running; disconnect first");
         }
 
+        await ForgetConfigAsync(name, ct);
         await configRepo.RemoveAsync(name, ct);
         await store.RemoveTunnelStateAsync(name, ct);
         await ClearBindingIfTargetAsync(name, ct);
 
         logger.LogInformation("removed config {Name}", name);
         return new IpcAck(true, $"removed config {name}");
+    }
+
+    /// <summary>
+    /// Takes a server about to be removed out of whatever else the machine still holds it in.
+    /// </summary>
+    protected virtual Task ForgetConfigAsync(string name, CancellationToken ct)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Follows a rename wherever else the machine still holds the name.
+    /// </summary>
+    protected virtual Task RetargetConfigAsync(string oldName, string newName, CancellationToken ct)
+    {
+        return Task.CompletedTask;
     }
 
     // Clear target binding when the removed config was selected.
@@ -482,6 +499,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // Follow the rename in the live binding so the supervisor keeps resolving the config: a stale
         // running target would look like a broken binding on the next re-dial and drop the tunnel.
         control.RetargetName(oldName, newName);
+        await RetargetConfigAsync(oldName, newName, ct);
 
         logger.LogInformation("renamed config {Old} -> {New}", oldName, newName);
         return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));

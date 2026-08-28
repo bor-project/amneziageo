@@ -2011,11 +2011,20 @@
   <data name="Main_RuleFallbackLabel" xml:space="preserve">
     <value>Фоллбек</value>
   </data>
+  <data name="Main_RuleRouteTooltip" xml:space="preserve">
+    <value>Куда правило едет</value>
+  </data>
+  <data name="Main_RuleRouteEntriesTooltip" xml:space="preserve">
+    <value>Куда правило едет и содержимое категории</value>
+  </data>
   <data name="Main_RuleTargetAuto" xml:space="preserve">
     <value>Авто</value>
   </data>
   <data name="Main_RuleTargetBest" xml:space="preserve">
     <value>Лучший</value>
+  </data>
+  <data name="Main_RuleTargetDirect" xml:space="preserve">
+    <value>Директ</value>
   </data>
   <data name="Main_RuleTargetBlock" xml:space="preserve">
     <value>Блок</value>

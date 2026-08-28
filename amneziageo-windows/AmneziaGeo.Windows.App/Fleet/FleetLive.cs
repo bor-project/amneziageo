@@ -32,6 +32,20 @@ internal sealed class FleetLive
     }
 
     /// <summary>
+    /// Lists a tunnel under the name its configuration is called now.
+    /// </summary>
+    public void Retarget(string oldName, string newName)
+    {
+        lock (_gate)
+        {
+            if (_up.Remove(oldName, out var control))
+            {
+                _up[newName] = control;
+            }
+        }
+    }
+
+    /// <summary>
     /// Empties the list.
     /// </summary>
     public void Clear()

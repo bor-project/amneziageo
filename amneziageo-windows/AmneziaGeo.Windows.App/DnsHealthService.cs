@@ -10,6 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class DnsHealthService(
     AgentControl control,
+    ResolverHolder resolver,
     AgentStatusBroker broker,
     ILogger<DnsHealthService> logger) : BackgroundService
 {
@@ -61,7 +62,8 @@ internal sealed class DnsHealthService(
 
     private async Task CheckOnceAsync(CancellationToken ct)
     {
-        if (!control.Running)
+        var holder = resolver.Current;
+        if (holder is null)
         {
             _misses = 0;
             await ReportAsync(false, ct).ConfigureAwait(false);
@@ -92,7 +94,7 @@ internal sealed class DnsHealthService(
 
         if (!control.DnsUnreachable)
         {
-            logger.LogWarning("names on this machine are not resolved through {Tunnel}: rules by domain no longer apply, so those sites either leave outside the tunnel or are cut off by the leak protection", control.RunningTarget ?? control.Target);
+            logger.LogWarning("names on this machine are not resolved through {Tunnel}: rules by domain no longer apply, so those sites either leave outside the tunnel or are cut off by the leak protection", holder.RunningTarget ?? holder.Target);
         }
 
         await ReportAsync(true, ct).ConfigureAwait(false);

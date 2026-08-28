@@ -136,6 +136,38 @@ internal sealed class FleetStatusBroker(
     }
 
     /// <inheritdoc/>
+    protected override Task ForgetConfigAsync(string name, CancellationToken ct)
+    {
+        if (!mode.MultiServer)
+        {
+            return base.ForgetConfigAsync(name, ct);
+        }
+
+        if (fleet.Forget(name))
+        {
+            log.LogInformation("'{Name}' was removed, so the set no longer lists it; the machine is asked for {Count} tunnel(s)", name, fleet.Wanted.Count);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    protected override Task RetargetConfigAsync(string oldName, string newName, CancellationToken ct)
+    {
+        if (!mode.MultiServer)
+        {
+            return base.RetargetConfigAsync(oldName, newName, ct);
+        }
+
+        if (fleet.Rename(oldName, newName))
+        {
+            log.LogInformation("'{Old}' is called '{New}' from now on, and the set lists it under that name", oldName, newName);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
     protected override async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (!mode.MultiServer)

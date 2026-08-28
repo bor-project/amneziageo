@@ -62,6 +62,11 @@ internal static class AppHost
             builder.Services.AddSingleton<FleetStatusBroker>();
             builder.Services.AddSingleton<AgentStatusBroker>(sp => sp.GetRequiredService<FleetStatusBroker>());
 
+            // The resolver watch asks who holds the lookups, and in the mode that is the tunnel carrying the
+            // machine rather than the machine's own lamp.
+            builder.Services.AddSingleton<FleetResolverHolder>();
+            builder.Services.AddSingleton<ResolverHolder>(sp => sp.GetRequiredService<FleetResolverHolder>());
+
             // The mode is the fork, and this is the only object that sees it: it raises the supervisor the flag
             // calls for and changes it over when the flag moves. Everything below is wired the same either way.
             builder.Services.AddHostedService<ModeSwitchService>();
@@ -92,6 +97,7 @@ internal static class AppHost
         services.AddSingleton<AgentControl>();
         // Single tunnel: it holds every duty. The agent replaces this with the set's own arbiter when the mode is on.
         services.AddSingleton<TunnelDutyRoster>();
+        services.AddSingleton<ResolverHolder>();
         services.AddSingleton<HttpClient>();
         services.AddSingleton<ServiceManager>();
         services.AddSingleton<RouteManager>();

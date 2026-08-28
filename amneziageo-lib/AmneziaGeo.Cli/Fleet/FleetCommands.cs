@@ -27,8 +27,8 @@ public static class FleetCommands
           fleet role <config> <primary|reserve|neutral>
           fleet order <config> [<config>...]  the order the mode falls back through
           fleet target <id|name> <rule> [<rides>] [<fallback>]
-                                              where one rule of a routing list rides: auto, best, block or a
-                                              server; naming neither end leaves the rule to the machine again
+                                              where one rule of a routing list rides: auto, best, direct, block
+                                              or a server; naming neither end leaves the rule to the machine
           Turn the mode on with 'settings set multi-server on'. While it is on, 'status' prints the set as
           well, 'up <config>' joins the selected server to it and 'down <config>' takes one out.
         """;
@@ -221,7 +221,7 @@ public static class FleetCommands
     {
         if (args.Count is < 2 or > 4 || RoutingCommands.Resolve(agent, args[0]) is not { } list)
         {
-            return Reply.Usage("usage: amneziageo fleet target <id|name> <rule> [auto|best|block|<config>] [auto|best|block|<config>]");
+            return Reply.Usage("usage: amneziageo fleet target <id|name> <rule> [auto|best|direct|block|<config>] [auto|best|direct|block|<config>]");
         }
 
         var id = list.Id.ToString(CultureInfo.InvariantCulture);

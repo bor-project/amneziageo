@@ -1,3 +1,4 @@
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -14,7 +15,7 @@ internal partial class RoutingRuleItemViewModel : ViewModelBase
     public RoutingRuleItemViewModel(string token)
     {
         Token = token;
-        CanExpand = UiPlatform.SupportsGeoPreview
+        CanPreview = UiPlatform.SupportsGeoPreview
             && (token.StartsWith("geosite:", StringComparison.OrdinalIgnoreCase)
                 || token.StartsWith("geoip:", StringComparison.OrdinalIgnoreCase));
     }
@@ -27,7 +28,22 @@ internal partial class RoutingRuleItemViewModel : ViewModelBase
     /// <summary>
     /// True for geo categories - the only rules whose contents come from the geo databases.
     /// </summary>
-    public bool CanExpand { get; }
+    public bool CanPreview { get; }
+
+    /// <summary>
+    /// True while the row opens under the arrow.
+    /// </summary>
+    public virtual bool CanExpand => CanPreview;
+
+    /// <summary>
+    /// True while the opened row carries the pickers of where the rule rides.
+    /// </summary>
+    public virtual bool HasRouteStrip => false;
+
+    /// <summary>
+    /// What the arrow promises.
+    /// </summary>
+    public virtual string ExpandTooltip => Loc.Instance.Get("Main_RuleEntriesTooltip");
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Glyph))]

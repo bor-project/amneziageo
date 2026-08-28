@@ -65,7 +65,8 @@ public sealed class FleetShareTests
 
         Assert.Equal("bravo", fleet.Rides(To("delta", "bravo")));
         Assert.Equal("alpha", fleet.Rides(To("delta")));
-        Assert.Equal(string.Empty, fleet.Rides(To("delta", "block")));
+        Assert.Equal(RuleTarget.Block, fleet.Rides(To("delta", "block")));
+        Assert.Equal(RuleTarget.Direct, fleet.Rides(To("delta", "direct")));
     }
 
     [Fact]
@@ -77,8 +78,8 @@ public sealed class FleetShareTests
 
         Assert.Equal("bravo", fleet.Rides(best, trips));
 
-        // Nobody measured leaves the choice to the order, which is the answer auto gives.
-        Assert.Equal("alpha", fleet.Rides(best, new Dictionary<string, int>()));
+        // Nobody measured at all leaves the choice to the order, which is the answer auto gives.
+        Assert.Equal("alpha", Set().Rides(best, new Dictionary<string, int>()));
     }
 
     [Fact]
@@ -124,6 +125,19 @@ public sealed class FleetShareTests
         foreach (var name in new[] { "alpha", "bravo" })
         {
             Assert.Equal([new GeoRule(GeoRuleKind.GeoSite, "github", RouteRole.Block)], fleet.Share(name, List, rules));
+        }
+    }
+
+    [Fact]
+    public void ARuleThatFallsToDirectGoesPastTheTunnelOnEveryServer()
+    {
+        var fleet = Set();
+        fleet.SetTarget(FleetTargets.Key(List, "geosite:github"), To("delta", "direct"));
+        IReadOnlyList<GeoRule> rules = [new(GeoRuleKind.GeoSite, "github")];
+
+        foreach (var name in new[] { "alpha", "bravo" })
+        {
+            Assert.Equal([new GeoRule(GeoRuleKind.GeoSite, "github", RouteRole.Direct)], fleet.Share(name, List, rules));
         }
     }
 

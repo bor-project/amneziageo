@@ -21,6 +21,9 @@ internal sealed class FleetHostedService(
     ActiveTunnelScope activeScope,
     ILogger<FleetHostedService> logger) : BackgroundService
 {
+    // How often the balancer is looked at again.
+    private static readonly TimeSpan _balanceStep = TimeSpan.FromSeconds(30);
+
     private readonly Dictionary<string, FleetMember> _members = new(StringComparer.Ordinal);
 
     private IStateStore store => activeScope.Store;
@@ -39,6 +42,7 @@ internal sealed class FleetHostedService(
         // Stand the boot cleanup down the moment a tunnel is asked for: its own reconcile then owns adapter state.
         reconciler.Reconcile(WantsATunnel);
         _ = RetryBootReconcileAsync(stoppingToken);
+        _ = BalanceAsync(stoppingToken);
 
         await SeedSelectionAsync(stoppingToken);
         await RestoreAsync(stoppingToken);
@@ -145,6 +149,11 @@ internal sealed class FleetHostedService(
     // Brings the running tunnels in line with the set.
     private async Task SyncAsync(CancellationToken ct)
     {
+        foreach (var renamed in fleet.DrainRenames())
+        {
+            Follow(renamed.From, renamed.To);
+        }
+
         var wanted = fleet.Wanted;
         foreach (var name in _members.Keys.Where(running => !wanted.Contains(running)).ToArray())
         {
@@ -206,6 +215,20 @@ internal sealed class FleetHostedService(
             name, _members.Count, duties.CarriesDefault ? "carries" : "does not carry");
     }
 
+    // Carries a renamed tunnel over: its supervisor resolves the configuration under the new name from here on.
+    private void Follow(string oldName, string newName)
+    {
+        if (!_members.Remove(oldName, out var member))
+        {
+            return;
+        }
+
+        member.Control.RetargetName(oldName, newName);
+        _members[newName] = new FleetMember(newName, member.Duties, member.Stamp, member.Control, member.Stop, member.Run);
+        live.Retarget(oldName, newName);
+        logger.LogInformation("{Old} is called '{New}' from now on; it stays up and carries what it carried", oldName, newName);
+    }
+
     private async Task StopAsync(string name)
     {
         if (!_members.Remove(name, out var member))
@@ -236,6 +259,28 @@ internal sealed class FleetHostedService(
         }
 
         live.Clear();
+    }
+
+    // Looks the balancer over on a timer, so a rule riding the quickest server follows the readings and goes
+    // back to the primary the moment it answers again.
+    private async Task BalanceAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(_balanceStep, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (fleet.Rebalance(live.RoundTrips()))
+            {
+                logger.LogInformation("the balancer holds '{Name}' from now on; the tunnels take the rules riding it over again", fleet.Best);
+            }
+        }
     }
 
     // Retries the boot reconcile while nothing is asked for: each bring-up reconciles on its own.

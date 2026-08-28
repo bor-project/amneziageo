@@ -88,7 +88,7 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
         return new FleetRoutingRuleItemViewModel(token, this, RuleRoute.Parse(_targets.GetValueOrDefault(FleetTargets.Key(Id, token))));
     }
 
-    // Авто, лучший, каждый сервер библиотеки, и блок - только у второго списка.
+    // Авто, лучший, каждый сервер библиотеки, а директ и блок - только у второго списка.
     private static IReadOnlyList<RuleTargetChoice> Choices(IReadOnlyList<string> servers, bool fallback)
     {
         if (servers.Count == 0)
@@ -108,6 +108,7 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
 
         if (fallback)
         {
+            choices.Add(new RuleTargetChoice(RuleTarget.Direct, Loc.Instance.Get("Main_RuleTargetDirect")));
             choices.Add(new RuleTargetChoice(RuleTarget.Block, Loc.Instance.Get("Main_RuleTargetBlock")));
         }
 

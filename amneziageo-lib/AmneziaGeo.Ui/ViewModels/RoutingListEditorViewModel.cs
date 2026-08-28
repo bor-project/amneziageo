@@ -366,6 +366,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // Fetches a rule's entries through the agent and memoizes them for the session.
     private async Task LoadRuleDetailsAsync(RoutingRuleItemViewModel item)
     {
+        if (!item.CanPreview)
+        {
+            return;
+        }
+
         if (_detailCache.TryGetValue(item.Token, out var cached))
         {
             item.ShowDetails(Summarize(cached.Total, cached.Entries.Count), cached.Entries);

@@ -9,12 +9,14 @@
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="Padding" Value="8,3" />
       <Setter Property="FontSize" Value="12" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="MinWidth" Value="170" />
+      <Setter Property="MaxWidth" Value="230" />
     </Style>
   </UserControl.Styles>
 
   <!-- Куда правило едет и куда уходит, пока названный сервер не поднят. -->
-  <Grid ColumnDefinitions="Auto,*,Auto,*" Margin="14,0,0,6" ColumnSpacing="6">
+  <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="6">
     <TextBlock Grid.Column="0" Text="{Binding RouteLabel}" Classes="muted" FontSize="11.5"
                VerticalAlignment="Center" />
     <ComboBox Grid.Column="1" Classes="target" ItemsSource="{Binding RouteChoices}"

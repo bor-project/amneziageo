@@ -10,14 +10,20 @@ namespace AmneziaGeo.Windows.App.Fleet;
 /// </summary>
 internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 {
+    // Silent looks in a row before the balancer hands the pick over; one is a tunnel being dialled again.
+    private const int Strikes = 2;
+
     private readonly Lock _gate = new();
     private readonly List<string> _order = [];
     private readonly List<string> _wanted = [];
     private readonly Dictionary<string, string> _roles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RuleRoute> _targets = new(StringComparer.Ordinal);
+    private readonly List<(string From, string To)> _renamed = [];
     private CancellationTokenSource _change = new();
     private bool _moved;
     private long _stamp;
+    private string _best = string.Empty;
+    private int _quiet;
 
     /// <summary>
     /// Fires when the set or a role moves.
@@ -85,6 +91,20 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             lock (_gate)
             {
                 return PrimaryLocked();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The server the balancer holds, empty while it holds none.
+    /// </summary>
+    public string Best
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _best;
             }
         }
     }
@@ -163,6 +183,96 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
+    /// Strikes a server the library no longer holds: it leaves the set, the order, the roles and both ends of
+    /// every rule that named it. Answers whether the mode held it anywhere.
+    /// </summary>
+    public bool Forget(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            var struck = _wanted.Remove(name);
+            struck |= _order.Remove(name);
+            struck |= _roles.Remove(name);
+            struck |= ForgetAddressesLocked(name);
+            if (!struck)
+            {
+                return false;
+            }
+
+            if (string.Equals(_best, name, StringComparison.Ordinal))
+            {
+                _best = string.Empty;
+                _quiet = 0;
+            }
+
+            TouchLocked();
+        }
+
+        Signal();
+        return true;
+    }
+
+    /// <summary>
+    /// Follows a rename through the set: the server keeps its place in the order, its role, its share of the
+    /// rules and the balancer's pick under the new name. Answers whether the mode held it anywhere.
+    /// </summary>
+    public bool Rename(string oldName, string newName)
+    {
+        if (string.IsNullOrEmpty(oldName) || string.IsNullOrEmpty(newName) || string.Equals(oldName, newName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            var held = Swap(_order, oldName, newName);
+            held |= Swap(_wanted, oldName, newName);
+            held |= RenameRoleLocked(oldName, newName);
+            held |= RenameAddressesLocked(oldName, newName);
+            if (!held)
+            {
+                return false;
+            }
+
+            if (string.Equals(_best, oldName, StringComparison.Ordinal))
+            {
+                _best = newName;
+            }
+
+            // The rules ride the same tunnel as before, so nobody takes their share again; a tunnel that is up
+            // follows the name instead of being dialled again.
+            _renamed.Add((oldName, newName));
+            _moved = true;
+        }
+
+        Signal();
+        return true;
+    }
+
+    /// <summary>
+    /// The renames the tunnels have not followed yet; each is handed out once.
+    /// </summary>
+    public IReadOnlyList<(string From, string To)> DrainRenames()
+    {
+        lock (_gate)
+        {
+            if (_renamed.Count == 0)
+            {
+                return [];
+            }
+
+            var pending = _renamed.ToArray();
+            _renamed.Clear();
+            return pending;
+        }
+    }
+
+    /// <summary>
     /// Lists the servers in the order the mode keeps them.
     /// </summary>
     public void SetOrder(IReadOnlyList<string> names)
@@ -205,6 +315,9 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 
             _wanted.Clear();
             Fill(_wanted, state.Desired);
+            _best = string.Empty;
+            _quiet = 0;
+            _renamed.Clear();
             _stamp++;
             _moved = false;
         }
@@ -298,8 +411,8 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// The tunnel a rule rides: what it names while the set holds it, else what it falls to. An empty answer
-    /// drops what the rule matches; null means nothing takes it, and it leaves past the tunnels.
+    /// The tunnel a rule rides: what it names while the set holds it, else what it falls to. A keyword answers
+    /// for itself; null means nobody takes it, and the rule leaves every tunnel's share.
     /// </summary>
     public string? Rides(RuleRoute route, IReadOnlyDictionary<string, int>? roundTrips = null)
     {
@@ -307,6 +420,33 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         {
             return ResolveLocked(route.Target, roundTrips) ?? ResolveLocked(route.Fallback, roundTrips);
         }
+    }
+
+    /// <summary>
+    /// Looks the balancer over: the primary takes the pick back the moment it answers, and any other server
+    /// takes it only by answering twice as fast. Answers whether the tunnels have to take their share again.
+    /// </summary>
+    public bool Rebalance(IReadOnlyDictionary<string, int> roundTrips)
+    {
+        lock (_gate)
+        {
+            var pick = ReconsiderLocked(roundTrips);
+            if (string.Equals(pick, _best, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _best = pick;
+            if (!RidesBestLocked())
+            {
+                return false;
+            }
+
+            _stamp++;
+        }
+
+        Signal();
+        return true;
     }
 
     /// <summary>
@@ -365,9 +505,13 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             }
 
             moved = true;
-            if (rides is { Length: 0 })
+            if (rides == RuleTarget.Block)
             {
                 share.Add(rule with { Role = RouteRole.Block });
+            }
+            else if (rides == RuleTarget.Direct)
+            {
+                share.Add(rule with { Role = RouteRole.Direct });
             }
         }
 
@@ -390,15 +534,16 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     {
         return target.Mode switch
         {
-            RuleTarget.Block => string.Empty,
+            RuleTarget.Block => RuleTarget.Block,
+            RuleTarget.Direct => RuleTarget.Direct,
             RuleTarget.Server => _wanted.Contains(target.Name) ? target.Name : null,
             RuleTarget.Best => BestLocked(roundTrips) ?? CarrierLocked(),
             _ => CarrierLocked(),
         };
     }
 
-    // The quickest to answer of the servers in the balancer; one nobody has measured leaves the choice to the
-    // order, and the answer is the one auto gives.
+    // The pick stands while the set holds the server it names; nobody measured at all leaves the choice to the
+    // order, which is the answer auto gives.
     private string? BestLocked(IReadOnlyDictionary<string, int>? roundTrips)
     {
         if (roundTrips is null)
@@ -406,23 +551,152 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             return null;
         }
 
+        if (!HoldsLocked(_best))
+        {
+            _best = QuickestLocked(roundTrips) ?? string.Empty;
+        }
+
+        return _best.Length > 0 ? _best : null;
+    }
+
+    // The timed look at the balancer: the primary while it answers, else the pick it holds, and another server
+    // only while it answers in less than half the time.
+    private string ReconsiderLocked(IReadOnlyDictionary<string, int> roundTrips)
+    {
+        var primary = PrimaryLocked();
+        if (AvailableLocked(primary, roundTrips))
+        {
+            _quiet = 0;
+            return primary;
+        }
+
+        var quickest = QuickestLocked(roundTrips);
+        if (!HoldsLocked(_best))
+        {
+            _quiet = 0;
+            return quickest ?? string.Empty;
+        }
+
+        if (AvailableLocked(_best, roundTrips))
+        {
+            _quiet = 0;
+            return quickest is not null && roundTrips[quickest] * 2 < roundTrips[_best] ? quickest : _best;
+        }
+
+        // The pick is silent: a look or two is a tunnel being dialled again, and a set where nobody answers has
+        // nobody to hand the rules to either.
+        if (quickest is null || ++_quiet < Strikes)
+        {
+            return _best;
+        }
+
+        _quiet = 0;
+        return quickest;
+    }
+
+    // The quickest to answer of the servers the balancer may pick.
+    private string? QuickestLocked(IReadOnlyDictionary<string, int> roundTrips)
+    {
         var best = default(string);
         var quickest = int.MaxValue;
         foreach (var name in PriorityLocked())
         {
-            if (!TunnelRoles.Balanced(RoleLocked(name))
-                || !roundTrips.TryGetValue(name, out var trip)
-                || trip < 0
-                || trip >= quickest)
+            if (!AvailableLocked(name, roundTrips) || roundTrips[name] >= quickest)
             {
                 continue;
             }
 
             best = name;
-            quickest = trip;
+            quickest = roundTrips[name];
         }
 
         return best;
+    }
+
+    // A server the balancer may pick right now: held by it and answering.
+    private bool AvailableLocked(string name, IReadOnlyDictionary<string, int> roundTrips)
+    {
+        return HoldsLocked(name) && roundTrips.TryGetValue(name, out var trip) && trip >= 0;
+    }
+
+    // A server the balancer may pick at all: asked for and in the balancer.
+    private bool HoldsLocked(string name)
+    {
+        return name.Length > 0 && _wanted.Contains(name) && TunnelRoles.Balanced(RoleLocked(name));
+    }
+
+    // Whether any rule follows the balancer; a set where none does reads the same whoever the pick is.
+    private bool RidesBestLocked()
+    {
+        return _targets.Values.Any(route => route.Target.Mode == RuleTarget.Best || route.Fallback.Mode == RuleTarget.Best);
+    }
+
+    // Both ends of every rule: one naming a server that is gone is left to the machine again.
+    private bool ForgetAddressesLocked(string name)
+    {
+        var struck = false;
+        foreach (var key in _targets.Keys.ToArray())
+        {
+            var route = _targets[key];
+            var moved = new RuleRoute(
+                Names(route.Target, name) ? RuleTarget.Default : route.Target,
+                Names(route.Fallback, name) ? RuleTarget.Default : route.Fallback);
+            if (moved == route)
+            {
+                continue;
+            }
+
+            struck = true;
+            if (moved.IsDefault)
+            {
+                _targets.Remove(key);
+            }
+            else
+            {
+                _targets[key] = moved;
+            }
+        }
+
+        return struck;
+    }
+
+    // Both ends of every rule: one naming a renamed server names it as it is called now.
+    private bool RenameAddressesLocked(string oldName, string newName)
+    {
+        var moved = false;
+        foreach (var key in _targets.Keys.ToArray())
+        {
+            var route = _targets[key];
+            var renamed = new RuleRoute(
+                Names(route.Target, oldName) ? new RuleTarget(RuleTarget.Server, newName) : route.Target,
+                Names(route.Fallback, oldName) ? new RuleTarget(RuleTarget.Server, newName) : route.Fallback);
+            if (renamed == route)
+            {
+                continue;
+            }
+
+            _targets[key] = renamed;
+            moved = true;
+        }
+
+        return moved;
+    }
+
+    // Carries the role of a renamed server over.
+    private bool RenameRoleLocked(string oldName, string newName)
+    {
+        if (!_roles.Remove(oldName, out var role))
+        {
+            return false;
+        }
+
+        _roles[newName] = role;
+        return true;
+    }
+
+    private static bool Names(RuleTarget end, string name)
+    {
+        return end.Mode == RuleTarget.Server && string.Equals(end.Name, name, StringComparison.Ordinal);
     }
 
     private TunnelDuties DutiesLocked(string name)
@@ -543,6 +817,19 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 list.Add(name);
             }
         }
+    }
+
+    // Keeps the place a renamed server holds in a list.
+    private static bool Swap(List<string> list, string oldName, string newName)
+    {
+        var at = list.IndexOf(oldName);
+        if (at < 0)
+        {
+            return false;
+        }
+
+        list[at] = newName;
+        return true;
     }
 
     private void Signal()

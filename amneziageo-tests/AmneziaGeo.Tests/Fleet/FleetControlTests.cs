@@ -77,6 +77,81 @@ public sealed class FleetControlTests
     }
 
     [Fact]
+    public void AServerTheLibraryDropsLeavesTheSetAndItsRules()
+    {
+        var fleet = new FleetControl(new FleetLive());
+        fleet.SetOrder(["alpha", "bravo"]);
+        fleet.Add("alpha");
+        fleet.Add("bravo");
+        fleet.SetRole("bravo", TunnelRoles.Primary);
+        fleet.SetTarget(FleetTargets.Key(1, "geosite:github"),
+            new RuleRoute(new RuleTarget(RuleTarget.Server, "bravo"), new RuleTarget(RuleTarget.Server, "alpha")));
+
+        Assert.True(fleet.Forget("bravo"));
+
+        Assert.Equal(["alpha"], fleet.Wanted);
+        Assert.Equal(["alpha"], fleet.Order);
+        Assert.Equal(string.Empty, fleet.Primary);
+        Assert.True(fleet.Moved);
+
+        // The end that named it is left to the machine again; the other end stands as it was addressed.
+        Assert.Equal(RuleRoute.Parse("auto,alpha"), fleet.TargetOf(FleetTargets.Key(1, "geosite:github")));
+        Assert.False(fleet.Forget("bravo"));
+    }
+
+    [Fact]
+    public void ARuleAddressedOnlyToAServerThatIsGoneIsLeftToTheMachine()
+    {
+        var fleet = new FleetControl(new FleetLive());
+        fleet.Add("alpha");
+        fleet.SetTarget(FleetTargets.Key(1, "geosite:github"), new RuleRoute(new RuleTarget(RuleTarget.Server, "alpha"), RuleTarget.Default));
+
+        fleet.Forget("alpha");
+
+        Assert.Equal(RuleRoute.Default, fleet.TargetOf(FleetTargets.Key(1, "geosite:github")));
+    }
+
+    [Fact]
+    public void AServerTheLibraryRenamesKeepsItsPlaceAndItsRules()
+    {
+        var fleet = new FleetControl(new FleetLive());
+        fleet.SetOrder(["alpha", "bravo"]);
+        fleet.Add("alpha");
+        fleet.Add("bravo");
+        fleet.SetRole("bravo", TunnelRoles.Primary);
+        fleet.SetTarget(FleetTargets.Key(1, "geosite:github"),
+            new RuleRoute(new RuleTarget(RuleTarget.Server, "bravo"), new RuleTarget(RuleTarget.Server, "alpha")));
+
+        Assert.True(fleet.Rename("bravo", "delta"));
+
+        Assert.Equal(["alpha", "delta"], fleet.Order);
+        Assert.Equal(["alpha", "delta"], fleet.Wanted);
+        Assert.Equal("delta", fleet.Primary);
+        Assert.Equal("delta", fleet.Carrier);
+        Assert.Equal(RuleRoute.Parse("delta,alpha"), fleet.TargetOf(FleetTargets.Key(1, "geosite:github")));
+        Assert.False(fleet.Rename("bravo", "echo"));
+    }
+
+    [Fact]
+    public void ARenamedServerIsCarriedOverRatherThanDialledAgain()
+    {
+        var fleet = new FleetControl(new FleetLive());
+        fleet.Add("alpha");
+        fleet.SetTarget(FleetTargets.Key(1, "geosite:github"), new RuleRoute(new RuleTarget(RuleTarget.Server, "alpha"), RuleTarget.Default));
+        var stamp = fleet.Stamp;
+
+        Assert.True(fleet.Rename("alpha", "delta"));
+
+        Assert.Equal(stamp, fleet.Stamp);
+        Assert.True(fleet.Moved);
+
+        var carried = Assert.Single(fleet.DrainRenames());
+        Assert.Equal("alpha", carried.From);
+        Assert.Equal("delta", carried.To);
+        Assert.Empty(fleet.DrainRenames());
+    }
+
+    [Fact]
     public void AskingTwiceLeavesTheSetAlone()
     {
         var fleet = new FleetControl(new FleetLive());

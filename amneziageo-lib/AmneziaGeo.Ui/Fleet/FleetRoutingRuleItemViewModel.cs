@@ -25,6 +25,16 @@ internal sealed partial class FleetRoutingRuleItemViewModel : RoutingRuleItemVie
         _seeded = true;
     }
 
+    /// <inheritdoc/>
+    public override bool CanExpand => true;
+
+    /// <inheritdoc/>
+    public override bool HasRouteStrip => true;
+
+    /// <inheritdoc/>
+    public override string ExpandTooltip =>
+        Loc.Instance.Get(CanPreview ? "Main_RuleRouteEntriesTooltip" : "Main_RuleRouteTooltip");
+
     /// <summary>
     /// Куда правило едет.
     /// </summary>

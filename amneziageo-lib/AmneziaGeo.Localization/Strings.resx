@@ -2011,11 +2011,20 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_RuleFallbackLabel" xml:space="preserve">
     <value>Fallback</value>
   </data>
+  <data name="Main_RuleRouteTooltip" xml:space="preserve">
+    <value>Where the rule rides</value>
+  </data>
+  <data name="Main_RuleRouteEntriesTooltip" xml:space="preserve">
+    <value>Where the rule rides, and what the category contains</value>
+  </data>
   <data name="Main_RuleTargetAuto" xml:space="preserve">
     <value>Auto</value>
   </data>
   <data name="Main_RuleTargetBest" xml:space="preserve">
     <value>Best</value>
+  </data>
+  <data name="Main_RuleTargetDirect" xml:space="preserve">
+    <value>Direct</value>
   </data>
   <data name="Main_RuleTargetBlock" xml:space="preserve">
     <value>Block</value>

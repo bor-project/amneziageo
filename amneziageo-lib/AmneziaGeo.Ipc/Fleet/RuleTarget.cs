@@ -29,6 +29,11 @@ public sealed record RuleTarget(string Mode, string Name = "")
     public const string Block = "block";
 
     /// <summary>
+    /// Past the tunnels: what the rule matches goes out as it is, on no server of the set.
+    /// </summary>
+    public const string Direct = "direct";
+
+    /// <summary>
     /// What a field holds until it is addressed.
     /// </summary>
     public static readonly RuleTarget Default = new(Auto);
@@ -57,6 +62,7 @@ public sealed record RuleTarget(string Mode, string Name = "")
             "" or Auto => Default,
             Best => new RuleTarget(Best),
             Block => new RuleTarget(Block),
+            Direct => new RuleTarget(Direct),
             _ => new RuleTarget(Server, word),
         };
     }

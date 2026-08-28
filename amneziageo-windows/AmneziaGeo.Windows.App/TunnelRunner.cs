@@ -218,6 +218,12 @@ internal sealed class TunnelRunner(
         // sends elsewhere; a second session cannot install its own into a group the first one holds anyway.
         var killSwitch = duties.CarriesDefault;
 
+        // Traffic a rule hands to another tunnel of the set leaves through that tunnel's adapter, and the block
+        // below belongs to this one alone: it permits the adapters standing alongside it too.
+        var peers = TunnelPaths.Peers(await store.GetSettingAsync(TunnelPaths.PeersKey(name)))
+            .Where(peer => !string.Equals(peer, name, StringComparison.Ordinal))
+            .ToArray();
+
         // Every bucket is resolved per destination, whatever its size: nothing is materialized at bring-up.
         var listDirect = activeList?.DirectRoutes ?? [];
 
@@ -276,6 +282,13 @@ internal sealed class TunnelRunner(
 
         // Split /0 into /1 halves so the engine's blanket kill-switch isn't armed.
         allowedIps = SplitDefaultRoutes(allowedIps, duties.CarriesDefault);
+        if (!geoSplit && !duties.CarriesDefault)
+        {
+            // Everything rides the tunnel, but the default belongs to the tunnel carrying the machine: this one
+            // takes the ranges its own rules name, and they win over the default by being the longer match.
+            allowedIps = [.. allowedIps.Union(geoRoutes, StringComparer.Ordinal)];
+        }
+
         if (allowedIps.Count == 0)
         {
             // Taking the default off a tunnel whose configuration names nothing else leaves it with no ranges at
@@ -619,7 +632,7 @@ internal sealed class TunnelRunner(
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, routing, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, routing, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -1271,7 +1284,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, RoutingCache? routing, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, RoutingCache? routing, CancellationToken ct)
     {
         try
         {
@@ -1290,7 +1303,21 @@ internal sealed class TunnelRunner(
                 await WaitForHandshakeAsync(name, ct);
             }
 
-            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, ct), ct))
+            var alongside = new List<uint>();
+            foreach (var peer in peers)
+            {
+                if (routes.FindInterfaceIndex(peer) is { } sibling)
+                {
+                    alongside.Add(sibling);
+                }
+            }
+
+            if (alongside.Count > 0)
+            {
+                logger.LogInformation("{Name}: {Count} other tunnel(s) of the set are let through its leak protection, so what a rule sends to them is not blocked here", name, alongside.Count);
+            }
+
+            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, ct), ct))
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
@@ -1318,10 +1345,10 @@ internal sealed class TunnelRunner(
 
     // Installs the filters and returns whether they survived. The session cancels before the teardown disables,
     // so a set that lands after it undoes itself here.
-    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
+    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<uint> alongside, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
+        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside);
         if (ct.IsCancellationRequested)
         {
             firewall.Disable();

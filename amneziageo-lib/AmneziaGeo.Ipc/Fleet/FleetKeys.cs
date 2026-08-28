@@ -25,4 +25,9 @@ public static class FleetKeys
     /// The servers wanted up, one per line.
     /// </summary>
     public const string Desired = "fleet-desired";
+
+    /// <summary>
+    /// Where every addressed rule rides, one "list:token=target,fallback" per line.
+    /// </summary>
+    public const string Targets = "fleet-targets";
 }

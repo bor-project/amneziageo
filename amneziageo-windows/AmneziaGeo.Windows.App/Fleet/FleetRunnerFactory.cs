@@ -11,7 +11,7 @@ internal sealed class FleetRunnerFactory(IServiceProvider services, ActiveTunnel
     /// <summary>
     /// Raises the named tunnel and returns the member driving it.
     /// </summary>
-    public FleetMember Start(string name, TunnelDuties duties, CancellationToken ct)
+    public FleetMember Start(string name, TunnelDuties duties, long stamp, CancellationToken ct)
     {
         var control = new AgentControl();
         control.SetTarget(name);
@@ -27,6 +27,6 @@ internal sealed class FleetRunnerFactory(IServiceProvider services, ActiveTunnel
         var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Started off the cancellation token: a cancelled member still has to tear its tunnel down.
-        return new FleetMember(name, duties, control, stop, Task.Run(() => runner.RunAsync(name, stop.Token), CancellationToken.None));
+        return new FleetMember(name, duties, stamp, control, stop, Task.Run(() => runner.RunAsync(name, stop.Token), CancellationToken.None));
     }
 }

@@ -98,6 +98,23 @@ internal sealed class FleetStatusBroker(
         };
     }
 
+    // How long a role change is given to stand the set back up, and how often that is looked at.
+    private static readonly TimeSpan SettleWait = TimeSpan.FromSeconds(25);
+    private static readonly TimeSpan SettleStep = TimeSpan.FromMilliseconds(400);
+
+    /// <inheritdoc/>
+    protected override async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
+    {
+        if (!mode.MultiServer)
+        {
+            return await base.InspectTargetAsync(ct);
+        }
+
+        // Every server runs a tunnel of its own, so a question about the tunnel is about the picked server.
+        var name = control.Target ?? await CurrentScope.Store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        return (name, live.Of(name) is { Running: true });
+    }
+
     /// <inheritdoc/>
     protected override async Task<IpcAck> UnknownAsync(IpcCommand command, CancellationToken ct)
     {
@@ -113,6 +130,7 @@ internal sealed class FleetStatusBroker(
             FleetOps.SetPrimary => await RoleAsync(Named(command.Args), TunnelRoles.Primary, ct),
             FleetOps.SetRole => await RoleAsync(Named(command.Args), command.Args.Count > 1 ? command.Args[1] : string.Empty, ct),
             FleetOps.Reorder => await ReorderAsync(command.Args, ct),
+            FleetOps.SetTarget => await TargetAsync(command.Args, ct),
             _ => await base.UnknownAsync(command, ct),
         };
     }
@@ -215,7 +233,58 @@ internal sealed class FleetStatusBroker(
 
         fleet.SetRole(name, role);
         log.LogInformation("'{Name}' is the {Role} server from now on", name, TunnelRoles.Of(role));
+        await SettledAsync(ct);
         return new IpcAck(true, $"{name}: {TunnelRoles.Of(role)}");
+    }
+
+    // Says where one rule of a routing list rides. Both ends left to the machine clear the address, so the
+    // same request takes it back off the rule.
+    private async Task<IpcAck> TargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2 || !long.TryParse(args[0], out var listId) || args[1].Trim().Length == 0)
+        {
+            return new IpcAck(false, "fleet-set-target requires a list, a rule and where it rides");
+        }
+
+        var route = new RuleRoute(
+            RuleTarget.Parse(args.Count > 2 ? args[2] : string.Empty),
+            RuleTarget.Parse(args.Count > 3 ? args[3] : string.Empty));
+        foreach (var end in new[] { route.Target, route.Fallback })
+        {
+            if (end.Mode == RuleTarget.Server && !await CurrentScope.ConfigRepo.ExistsAsync(end.Name, ct))
+            {
+                return new IpcAck(false, $"unknown config: {end.Name}");
+            }
+        }
+
+        fleet.SetTarget(FleetTargets.Key(listId, args[1]), route);
+        log.LogInformation("rule '{Rule}' of list {List} rides {Target}, and {Fallback} while that one is not up",
+            args[1], listId, route.Target.Format(), route.Fallback.Format());
+        await SettledAsync(ct);
+        return new IpcAck(true, $"{args[1]}: {route.Format()}");
+    }
+
+    // A tunnel reads its duties at bring-up, so a role takes the ones it touches down and back up. The answer
+    // waits for the set to stand again: whoever asked measures through the server it just named.
+    private async Task SettledAsync(CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + SettleWait;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                await Task.Delay(SettleStep, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (fleet.Wanted.All(name => live.Of(name) is { Running: true }))
+            {
+                return;
+            }
+        }
     }
 
     // The order the servers are listed in is the order the mode falls back through.

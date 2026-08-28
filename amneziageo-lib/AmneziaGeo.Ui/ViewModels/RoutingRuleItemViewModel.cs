@@ -6,7 +6,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// <summary>
 /// One entry of the open routing list: its rule token plus the collapsible preview of what a geo rule expands to.
 /// </summary>
-internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
+internal partial class RoutingRuleItemViewModel : ViewModelBase
 {
     /// <summary>
     /// ctor

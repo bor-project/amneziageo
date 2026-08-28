@@ -32,4 +32,10 @@ public static class FleetOps
     /// Args: the names, in that order.
     /// </summary>
     public const string Reorder = "fleet-reorder";
+
+    /// <summary>
+    /// Command to say where one rule of a routing list rides. Args: list id, rule token, where it rides,
+    /// where it goes while that one is down.
+    /// </summary>
+    public const string SetTarget = "fleet-set-target";
 }

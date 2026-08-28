@@ -20,6 +20,7 @@ internal sealed class ConfigRunner(
     AgentControl control,
     ActiveTunnelScope activeScope,
     TunnelDutyRoster roster,
+    GeoConfigurator geo,
     ILogger<ConfigRunner> logger)
 {
     private IStateStore store => activeScope.Store;
@@ -379,6 +380,15 @@ internal sealed class ConfigRunner(
             return;
         }
 
+        // The share of the list this tunnel carries. A machine running one tunnel is given the list itself,
+        // and the rules are the ones already expanded into it.
+        var share = roster.Share(config, list.Id, list.Rules);
+        if (!ReferenceEquals(share, list.Rules))
+        {
+            logger.LogInformation("{Config} carries {Kept} of the {Total} rule(s) of '{List}'; the rest ride other servers of the set", config, share.Count, list.Rules.Count, list.Name);
+            list = await geo.MaterializeDraftAsync([.. share.Select(GeoConfigurator.FormatWithRole)], ct) with { Id = list.Id, Name = list.Name };
+        }
+
         await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, list.Id, ct);
         logger.LogInformation("routing list '{List}' now applies to {Config}: only what it names goes through the tunnel", list.Name, config);
     }
@@ -444,6 +454,16 @@ internal sealed class ConfigRunner(
         // holds every duty, which is what it has always done.
         var duties = roster.For(member);
         await store.SetSettingAsync(TunnelPaths.DutiesKey(member), duties.Format(), ct);
+
+        // The tunnels standing alongside it. The one carrying the machine permits their adapters in its leak
+        // protection, or traffic a rule hands to them dies on its block. A machine running one tunnel has none
+        // of them, and nothing is written for it.
+        var peers = string.Join('\n', roster.Standing(member).Where(peer => !string.Equals(peer, member, StringComparison.Ordinal)));
+        if (peers.Length > 0 || (await store.GetSettingAsync(TunnelPaths.PeersKey(member), ct))?.Length > 0)
+        {
+            await store.SetSettingAsync(TunnelPaths.PeersKey(member), peers, ct);
+        }
+
         if (!duties.HoldsResolver)
         {
             logger.LogInformation("{Member}: another tunnel holds this machine's name lookups, so rules by domain do not apply to it - only rules by address", member);

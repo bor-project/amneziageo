@@ -2005,6 +2005,21 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_RoleNeutral" xml:space="preserve">
     <value>Neutral</value>
   </data>
+  <data name="Main_RuleRouteLabel" xml:space="preserve">
+    <value>Route</value>
+  </data>
+  <data name="Main_RuleFallbackLabel" xml:space="preserve">
+    <value>Fallback</value>
+  </data>
+  <data name="Main_RuleTargetAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="Main_RuleTargetBest" xml:space="preserve">
+    <value>Best</value>
+  </data>
+  <data name="Main_RuleTargetBlock" xml:space="preserve">
+    <value>Block</value>
+  </data>
   <data name="Main_MakePrimaryLink" xml:space="preserve">
     <value>Make primary</value>
   </data>

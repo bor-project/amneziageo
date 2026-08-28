@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              xmlns:sys="using:System"
@@ -241,6 +242,19 @@
                         </Button>
                       </Grid>
                     </Border>
+
+                    <!-- Where the rule rides while the machine keeps several tunnels up; the row picks it
+                         by its own type, and a machine running one tunnel shows nothing here. -->
+                    <ContentControl Content="{Binding}">
+                      <ContentControl.DataTemplates>
+                        <DataTemplate DataType="fleet:FleetRoutingRuleItemViewModel" x:DataType="fleet:FleetRoutingRuleItemViewModel">
+                          <fleet:FleetRuleStrip />
+                        </DataTemplate>
+                        <DataTemplate DataType="vm:RoutingRuleItemViewModel" x:DataType="vm:RoutingRuleItemViewModel">
+                          <Panel />
+                        </DataTemplate>
+                      </ContentControl.DataTemplates>
+                    </ContentControl>
 
                     <!-- Expanded entries, indented under their item. -->
                     <Border IsVisible="{Binding IsExpanded}" Margin="14,0,0,6" Padding="10,7"

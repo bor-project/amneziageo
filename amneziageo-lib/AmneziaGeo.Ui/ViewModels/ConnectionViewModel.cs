@@ -693,6 +693,9 @@ internal partial class ConnectionViewModel : ViewModelBase
         ToggleConnectionCommand.NotifyCanExecuteChanged();
     }
 
+    // Едет ли живой туннель за выбором сервера.
+    protected virtual bool MovesWithSelection => true;
+
     partial void OnActiveConfigChoiceChanged(ConfigChoice? value)
     {
         if (_suppressActiveChoice || value is null)
@@ -713,7 +716,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
 
         // Живой туннель едет за выбором: смена сервера на главной переносит его так же, как кнопка карточки.
-        if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
+        if (MovesWithSelection && IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
         {
             _ = ConnectConfig(row);
             return;
@@ -727,7 +730,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     /// </summary>
     internal Task UseConfigAsync(ConfigItemViewModel row)
     {
-        if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
+        if (MovesWithSelection && IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
         {
             return ConnectConfig(row);
         }

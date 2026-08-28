@@ -7,7 +7,9 @@ namespace AmneziaGeo.Ipc.Fleet;
 /// <param name="Servers">Every server of the library, in the order the mode lists them.</param>
 /// <param name="Primary">The server named to carry the machine; empty while none is.</param>
 /// <param name="Carrier">The server carrying it now; empty while none does.</param>
+/// <param name="Targets">Where every addressed rule rides, by the key the mode stores it under.</param>
 public sealed record FleetSnapshot(
     IReadOnlyList<FleetEntry> Servers,
     string Primary = "",
-    string Carrier = "");
+    string Carrier = "",
+    IReadOnlyDictionary<string, string>? Targets = null);

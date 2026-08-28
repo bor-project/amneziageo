@@ -20,7 +20,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// (nothing is cached across a page change); the header carries what the source records - capture verbosity
 /// (ageo) or the routing-log switch (routes).
 /// </summary>
-internal sealed partial class LogsViewModel : ViewModelBase
+internal partial class LogsViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
@@ -472,6 +472,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ProbeRunning = true;
         try
         {
+            await BeginProbeAsync();
             await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeTarget,
                 [target, ProbePath, _host.Probe.UploadUrl.Trim()]));
         }
@@ -481,10 +482,23 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
         finally
         {
+            await EndProbeAsync();
             ProbeRunning = false;
         }
 
         ResetAndReload();
+    }
+
+    // Takes the machine for the run. The mode measures through the picked server, so it hands it the machine.
+    protected virtual Task BeginProbeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    // Gives back what the run took.
+    protected virtual Task EndProbeAsync()
+    {
+        return Task.CompletedTask;
     }
 
     private bool CanRunProbe => !ProbeRunning && ServerPicked && !PathNeedsTunnel && ProbeTarget.Trim().Length > 0;

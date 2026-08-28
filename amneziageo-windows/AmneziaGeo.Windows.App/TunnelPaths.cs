@@ -54,6 +54,22 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Settings key naming the tunnels standing alongside one, empty on a machine running a single tunnel.
+    /// </summary>
+    public static string PeersKey(string name)
+    {
+        return $"tunnel-peers:{name}";
+    }
+
+    /// <summary>
+    /// Reads the tunnels standing alongside one.
+    /// </summary>
+    public static IReadOnlyList<string> Peers(string? text)
+    {
+        return text?.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+    }
+
+    /// <summary>
     /// Directory holding the stored wg-quick configs.
     /// </summary>
     public static string ConfigurationsDirectory()

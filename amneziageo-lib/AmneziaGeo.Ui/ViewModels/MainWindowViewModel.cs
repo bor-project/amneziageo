@@ -99,12 +99,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _connection = connection;
         _prefs = prefs;
-        Diagnostics = new DiagnosticsViewModel(this, connection, prefs);
+        Diagnostics = new DiagnosticsViewModel(connection, AppFeatures.MultiServer
+            ? new FleetLogsViewModel(this, connection, prefs)
+            : new LogsViewModel(this, connection, prefs));
         General = new GeneralViewModel(this, connection, prefs);
         Config = AppFeatures.MultiServer
             ? new FleetConfigViewModel(this, connection)
             : new ConfigViewModel(this, connection);
-        Routing = new RoutingViewModel(this, connection, prefs);
+        Routing = AppFeatures.MultiServer
+            ? new FleetRoutingViewModel(this, connection, prefs)
+            : new RoutingViewModel(this, connection, prefs);
         Connections = new ConnectionsViewModel(connection);
         Home = AppFeatures.MultiServer
             ? new FleetConnectionViewModel(this, connection, prefs)
@@ -136,6 +140,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// The home screen of the mode, where it is the one built; nothing on a machine that keeps one tunnel.
     /// </summary>
     public FleetConnectionViewModel? HomeFleet => Home as FleetConnectionViewModel;
+
+    /// <summary>
+    /// The catalogue of the mode, where it is the one built; nothing on a machine that keeps one tunnel.
+    /// </summary>
+    public FleetConfigViewModel? ConfigFleet => Config as FleetConfigViewModel;
 
     /// <summary>
     /// Набор способов «Добавить» / «Экспорт», показанный шторкой поверх всего экрана.

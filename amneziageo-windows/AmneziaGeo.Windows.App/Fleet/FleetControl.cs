@@ -1,3 +1,5 @@
+using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc.Fleet;
 
 namespace AmneziaGeo.Windows.App.Fleet;
@@ -6,14 +8,16 @@ namespace AmneziaGeo.Windows.App.Fleet;
 /// The tunnels a machine is asked to keep up at once, what each of them is for, and which one carries what no
 /// rule sends elsewhere.
 /// </summary>
-internal sealed class FleetControl : TunnelDutyRoster
+internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 {
     private readonly Lock _gate = new();
     private readonly List<string> _order = [];
     private readonly List<string> _wanted = [];
     private readonly Dictionary<string, string> _roles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RuleRoute> _targets = new(StringComparer.Ordinal);
     private CancellationTokenSource _change = new();
     private bool _moved;
+    private long _stamp;
 
     /// <summary>
     /// Fires when the set or a role moves.
@@ -53,6 +57,20 @@ internal sealed class FleetControl : TunnelDutyRoster
             lock (_gate)
             {
                 return _order.ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Counts the moves of the rule addresses. A tunnel raised before one carries the share it no longer has.
+    /// </summary>
+    public long Stamp
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _stamp;
             }
         }
     }
@@ -118,7 +136,7 @@ internal sealed class FleetControl : TunnelDutyRoster
             }
 
             _wanted.Add(name);
-            _moved = true;
+            TouchLocked();
         }
 
         Signal();
@@ -137,7 +155,7 @@ internal sealed class FleetControl : TunnelDutyRoster
                 return false;
             }
 
-            _moved = true;
+            TouchLocked();
         }
 
         Signal();
@@ -153,7 +171,7 @@ internal sealed class FleetControl : TunnelDutyRoster
         {
             _order.Clear();
             Fill(_order, names);
-            _moved = true;
+            TouchLocked();
         }
 
         Signal();
@@ -179,8 +197,15 @@ internal sealed class FleetControl : TunnelDutyRoster
                 PromoteLocked(state.Primary);
             }
 
+            _targets.Clear();
+            foreach (var pair in state.Targets)
+            {
+                _targets[pair.Key] = pair.Value;
+            }
+
             _wanted.Clear();
             Fill(_wanted, state.Desired);
+            _stamp++;
             _moved = false;
         }
 
@@ -198,7 +223,8 @@ internal sealed class FleetControl : TunnelDutyRoster
                 _order.ToArray(),
                 new Dictionary<string, string>(_roles, StringComparer.Ordinal),
                 PrimaryLocked(),
-                _wanted.ToArray());
+                _wanted.ToArray(),
+                new Dictionary<string, RuleRoute>(_targets, StringComparer.Ordinal));
         }
     }
 
@@ -216,7 +242,13 @@ internal sealed class FleetControl : TunnelDutyRoster
                 servers.Add(new FleetEntry(name, RoleLocked(name), _wanted.Contains(name), duties.CarriesDefault, duties.HoldsResolver));
             }
 
-            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty);
+            var words = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var pair in _targets)
+            {
+                words[pair.Key] = pair.Value.Format();
+            }
+
+            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty, words);
         }
     }
 
@@ -228,6 +260,52 @@ internal sealed class FleetControl : TunnelDutyRoster
         lock (_gate)
         {
             return RoleLocked(name);
+        }
+    }
+
+    /// <summary>
+    /// Where a rule is addressed, or the machine's own choice while it is not.
+    /// </summary>
+    public RuleRoute TargetOf(string key)
+    {
+        lock (_gate)
+        {
+            return _targets.TryGetValue(key, out var route) ? route : RuleRoute.Default;
+        }
+    }
+
+    /// <summary>
+    /// Addresses one rule. A rule left to the machine on both ends is not held at all.
+    /// </summary>
+    public void SetTarget(string key, RuleRoute route)
+    {
+        lock (_gate)
+        {
+            if (route.IsDefault)
+            {
+                _targets.Remove(key);
+            }
+            else
+            {
+                _targets[key] = route;
+            }
+
+            _stamp++;
+            _moved = true;
+        }
+
+        Signal();
+    }
+
+    /// <summary>
+    /// The tunnel a rule rides: what it names while the set holds it, else what it falls to. An empty answer
+    /// drops what the rule matches; null means nothing takes it, and it leaves past the tunnels.
+    /// </summary>
+    public string? Rides(RuleRoute route, IReadOnlyDictionary<string, int>? roundTrips = null)
+    {
+        lock (_gate)
+        {
+            return ResolveLocked(route.Target, roundTrips) ?? ResolveLocked(route.Fallback, roundTrips);
         }
     }
 
@@ -248,7 +326,7 @@ internal sealed class FleetControl : TunnelDutyRoster
                 _roles[name] = given;
             }
 
-            _moved = true;
+            TouchLocked();
         }
 
         Signal();
@@ -264,12 +342,87 @@ internal sealed class FleetControl : TunnelDutyRoster
     }
 
     /// <inheritdoc/>
+    public override IReadOnlyList<GeoRule> Share(string name, long listId, IReadOnlyList<GeoRule> rules)
+    {
+        var roundTrips = live.RoundTrips();
+        var share = new List<GeoRule>(rules.Count);
+        var moved = false;
+        foreach (var rule in rules)
+        {
+            // Only a rule that names a tunnel rides one: what is kept off the tunnel or dropped reads the same
+            // on every server of the set.
+            if (rule.Role != RouteRole.Proxy)
+            {
+                share.Add(rule);
+                continue;
+            }
+
+            var rides = Rides(TargetOf(FleetTargets.Key(listId, GeoConfigurator.Format(rule))), roundTrips);
+            if (string.Equals(rides, name, StringComparison.Ordinal))
+            {
+                share.Add(rule);
+                continue;
+            }
+
+            moved = true;
+            if (rides is { Length: 0 })
+            {
+                share.Add(rule with { Role = RouteRole.Block });
+            }
+        }
+
+        // The list itself while every rule of it rides this tunnel: a machine nobody has addressed a rule on
+        // carries what it always carried.
+        return moved ? share : rules;
+    }
+
+    /// <inheritdoc/>
     public override TunnelDuties For(string name)
     {
         lock (_gate)
         {
             return DutiesLocked(name);
         }
+    }
+
+    // One end of a rule: the server it points at while the set holds it.
+    private string? ResolveLocked(RuleTarget target, IReadOnlyDictionary<string, int>? roundTrips)
+    {
+        return target.Mode switch
+        {
+            RuleTarget.Block => string.Empty,
+            RuleTarget.Server => _wanted.Contains(target.Name) ? target.Name : null,
+            RuleTarget.Best => BestLocked(roundTrips) ?? CarrierLocked(),
+            _ => CarrierLocked(),
+        };
+    }
+
+    // The quickest to answer of the servers in the balancer; one nobody has measured leaves the choice to the
+    // order, and the answer is the one auto gives.
+    private string? BestLocked(IReadOnlyDictionary<string, int>? roundTrips)
+    {
+        if (roundTrips is null)
+        {
+            return null;
+        }
+
+        var best = default(string);
+        var quickest = int.MaxValue;
+        foreach (var name in PriorityLocked())
+        {
+            if (!TunnelRoles.Balanced(RoleLocked(name))
+                || !roundTrips.TryGetValue(name, out var trip)
+                || trip < 0
+                || trip >= quickest)
+            {
+                continue;
+            }
+
+            best = name;
+            quickest = trip;
+        }
+
+        return best;
     }
 
     private TunnelDuties DutiesLocked(string name)
@@ -338,6 +491,17 @@ internal sealed class FleetControl : TunnelDutyRoster
             {
                 yield return name;
             }
+        }
+    }
+
+    // A move of the set changes where an addressed rule rides, so the tunnels carrying one are asked to take
+    // their share again. A set nobody addressed a rule in reads the same after the move as before it.
+    private void TouchLocked()
+    {
+        _moved = true;
+        if (_targets.Count > 0)
+        {
+            _stamp++;
         }
     }
 

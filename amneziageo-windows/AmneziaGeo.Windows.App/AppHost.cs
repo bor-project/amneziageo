@@ -55,7 +55,6 @@ internal static class AppHost
             builder.Services.AddSingleton<AgentMode>();
             builder.Services.AddSingleton<FleetControl>();
             builder.Services.AddSingleton<FleetStore>();
-            builder.Services.AddSingleton<FleetLive>();
             builder.Services.AddSingleton<FleetRunnerFactory>();
 
             // One broker answers the window either way: with the flag off it is the one registered below it, to
@@ -116,6 +115,7 @@ internal static class AppHost
         services.AddSingleton<ConfigRunner>();
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();
+        services.AddSingleton<FleetLive>();
         services.AddSingleton<CheckService>();
         services.AddSingleton<LocalProxyService>();
         services.AddSingleton<WindowsHotspotService>();

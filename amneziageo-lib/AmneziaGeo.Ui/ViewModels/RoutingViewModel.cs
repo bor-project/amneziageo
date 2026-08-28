@@ -13,7 +13,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// editors, the import create-form, and list CRUD. The shared catalogue lives on the shell, reached through
 /// <c>_host</c>.
 /// </summary>
-internal sealed partial class RoutingViewModel : ViewModelBase
+internal partial class RoutingViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
@@ -332,9 +332,25 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// The editor an existing list is opened in.
+    /// </summary>
+    protected virtual RoutingListEditorViewModel NewEditor(long id, string name, Action<long>? onSaved)
+    {
+        return new RoutingListEditorViewModel(_connection, id, name, onSaved);
+    }
+
+    /// <summary>
+    /// The editor a list that does not exist yet is drafted in.
+    /// </summary>
+    protected virtual RoutingListEditorViewModel NewDraft(Action<long>? onSaved)
+    {
+        return new RoutingListEditorViewModel(_connection, onSaved);
+    }
+
+    /// <summary>
     /// Reconciles the routing-list catalogue from the snapshot.
     /// </summary>
-    public void Apply(StatusSnapshot snapshot)
+    public virtual void Apply(StatusSnapshot snapshot)
     {
         _boundStatus = snapshot.BoundStatus;
 
@@ -759,7 +775,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             return;
         }
 
-        var editor = new RoutingListEditorViewModel(_connection, id, name, OnSectionRoutingEditorSaved);
+        var editor = NewEditor(id, name, OnSectionRoutingEditorSaved);
         RoutingEditor = editor;
 
         var settings = new RoutingSettingsViewModel(_connection, id);
@@ -917,7 +933,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         // The draft stands on a clear slate: the open list is dropped before its editor is built.
         RoutingSettings = null;
         EditRoutingList = null;
-        var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
+        var editor = NewDraft(OnSectionRoutingEditorSaved);
         RoutingEditor = editor;
         _ = editor.LoadAsync();
 
@@ -1023,7 +1039,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             return false;
         }
 
-        var editor = new RoutingListEditorViewModel(_connection);
+        var editor = NewDraft(null);
         editor.ApplyImport(text, out var options);
         var baseName = string.IsNullOrWhiteSpace(importedName)
             ? Loc.Instance.Get("MainVm_NewListDefaultName")

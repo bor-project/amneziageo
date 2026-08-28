@@ -43,6 +43,27 @@ internal sealed class FleetLive
     }
 
     /// <summary>
+    /// The round trip of every tunnel that has one measured; the balancer picks by these.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> RoundTrips()
+    {
+        lock (_gate)
+        {
+            var readings = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var pair in _up)
+            {
+                var rtt = pair.Value.Link.RttMs;
+                if (rtt >= 0)
+                {
+                    readings[pair.Key] = rtt;
+                }
+            }
+
+            return readings;
+        }
+    }
+
+    /// <summary>
     /// The state of one tunnel of the set, or null while it is not up.
     /// </summary>
     public AgentControl? Of(string name)

@@ -25,7 +25,7 @@
   </UserControl.Styles>
 
   <!-- Тип сервера: бейджем, список ролей падает из него. -->
-  <Button Classes="rolebadge" Classes.primary="{Binding IsPrimary}"
+  <Button Classes="rolebadge" Classes.primary="{Binding IsPrimary}" IsEnabled="{Binding RolesFree}"
           HorizontalAlignment="Left" ToolTip.Tip="{Binding RoleLabel}">
     <StackPanel Orientation="Horizontal" Spacing="4">
       <TextBlock Text="{Binding RoleText}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />

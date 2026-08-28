@@ -14,6 +14,10 @@ namespace AmneziaGeo.Ui.Fleet;
 internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
 {
     private readonly IAgentConnection _link;
+    private readonly MainWindowViewModel _shell;
+
+    // Кто был основным до замера, кого он занял и с какой ролью взял.
+    private (string Primary, string Name, string Role) _lent = (string.Empty, string.Empty, string.Empty);
 
     /// <summary>
     /// ctor
@@ -22,6 +26,7 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         : base(host, connection, prefs)
     {
         _link = connection;
+        _shell = host;
     }
 
     [ObservableProperty]
@@ -35,12 +40,26 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     private string _primary = string.Empty;
 
     /// <summary>
+    /// Заперты ли роли: пока замер держит машину, их не двигают ни ссылка, ни бейдж.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanMakePrimary))]
+    [NotifyCanExecuteChangedFor(nameof(MakePrimaryCommand))]
+    private bool _rolesLocked;
+
+    /// <summary>
     /// Можно ли отдать машину выбранному серверу: он уже основной - нечего и просить.
     /// </summary>
     public bool CanMakePrimary => MultiServer
+        && !RolesLocked
         && IsConnected
         && ActiveConfig is { } row
         && !string.Equals(row.Name, Primary, StringComparison.Ordinal);
+
+    /// <summary>
+    /// В режиме выбор только выбирает: туннель поднимают кнопкой карточки или шапкой.
+    /// </summary>
+    protected override bool MovesWithSelection => !MultiServer;
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)
@@ -115,8 +134,62 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         }
     }
 
+    /// <summary>
+    /// Отдаёт машину выбранному серверу на время замера.
+    /// </summary>
+    internal async Task TakePrimaryAsync()
+    {
+        if (!MultiServer || ActiveConfig is not { } row || string.Equals(row.Name, Primary, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var role = row is FleetConfigItemViewModel card ? card.Role : TunnelRoles.Default;
+        var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetPrimary, [row.Name]));
+        if (!ack.Ok)
+        {
+            ShowNotice(FleetNotice.Of(ack));
+            return;
+        }
+
+        _lent = (Primary, row.Name, role);
+    }
+
+    /// <summary>
+    /// Возвращает машину тому, кто был основным до замера.
+    /// </summary>
+    internal async Task ReturnPrimaryAsync()
+    {
+        var lent = _lent;
+        _lent = (string.Empty, string.Empty, string.Empty);
+        if (lent.Name.Length == 0)
+        {
+            return;
+        }
+
+        // Прежний основной забирает машину сам и снимает основного с занятого; без него роль возвращают ему.
+        var back = lent.Primary.Length > 0
+            ? new IpcCommand(FleetOps.SetPrimary, [lent.Primary])
+            : new IpcCommand(FleetOps.SetRole, [lent.Name, lent.Role]);
+        var ack = await _link.SendCommandAsync(back);
+        if (ack.Ok && lent.Primary.Length > 0 && !string.Equals(lent.Role, TunnelRoles.Default, StringComparison.Ordinal))
+        {
+            ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetRole, [lent.Name, lent.Role]));
+        }
+
+        if (!ack.Ok)
+        {
+            ShowNotice(FleetNotice.Of(ack));
+        }
+    }
+
     partial void OnMultiServerChanged(bool value)
     {
         ConnectConfigCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnRolesLockedChanged(bool value)
+    {
+        _shell.ConfigFleet?.NotifyRoleGate();
     }
 }

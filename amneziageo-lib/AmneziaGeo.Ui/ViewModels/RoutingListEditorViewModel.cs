@@ -15,7 +15,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs). Edits are held
 /// in the buffer and persisted atomically through the agent on the header Save (#143).
 /// </summary>
-internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
+internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 {
     private readonly IAgentConnection _connection;
     private readonly Action<long>? _onSaved;
@@ -310,13 +310,21 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         }
     }
 
+    /// <summary>
+    /// The row one rule is shown in. The mode's row carries the servers the rule may ride.
+    /// </summary>
+    protected virtual RoutingRuleItemViewModel NewRuleRow(string token)
+    {
+        return new RoutingRuleItemViewModel(token);
+    }
+
     // Rebuilds the shown bucket's projection, carrying expansion state and already-fetched entries over.
-    private void RebuildRuleItems()
+    protected void RebuildRuleItems()
     {
         RuleItems.Clear();
         foreach (var token in Rules)
         {
-            var item = new RoutingRuleItemViewModel(token);
+            var item = NewRuleRow(token);
             if (item.CanExpand && _expandedRules.Contains(token))
             {
                 item.IsExpanded = true;

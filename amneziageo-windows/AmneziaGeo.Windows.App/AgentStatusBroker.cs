@@ -1144,7 +1144,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config
     // the next connect would raise.
-    private async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
+    // The tunnel a question is about, and whether it is up and ours. The mode answers for the picked server.
+    protected virtual async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
     {
         var scope = CurrentScope;
         var applied = control.Running && activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);

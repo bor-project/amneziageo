@@ -59,6 +59,25 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
     }
 
     /// <summary>
+    /// Свободны ли роли: замер держит машину, и до его конца их не двигают.
+    /// </summary>
+    internal bool RolesFree => _shell.HomeFleet?.RolesLocked != true;
+
+    /// <summary>
+    /// Пересчитывает запор ролей на карточках.
+    /// </summary>
+    internal void NotifyRoleGate()
+    {
+        foreach (var row in Configs)
+        {
+            if (row is FleetConfigItemViewModel card)
+            {
+                card.RefreshRoleGate();
+            }
+        }
+    }
+
+    /// <summary>
     /// Ставит серверу роль. «Основной» на машине один, и просят его своим запросом.
     /// </summary>
     internal async Task SetRoleAsync(string name, string role)

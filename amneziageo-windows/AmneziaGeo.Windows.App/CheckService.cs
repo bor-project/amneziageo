@@ -6,6 +6,7 @@ using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Routing;
+using AmneziaGeo.Windows.App.Fleet;
 
 using Microsoft.Extensions.Logging;
 
@@ -15,7 +16,7 @@ namespace AmneziaGeo.Windows.App;
 /// Runs the diagnostic checks and keeps their answers where the support archive picks them up. A run is stored
 /// whole rather than logged: the capture floor is errors by default, so a healthy run would leave no trace at all.
 /// </summary>
-internal sealed class CheckService(AgentControl control, RuntimeInspector inspector, LiveSession session, SqliteLogStore logStore, ILogger<CheckService> logger)
+internal sealed class CheckService(AgentControl control, RuntimeInspector inspector, LiveSession session, SqliteLogStore logStore, FleetLive live, ILogger<CheckService> logger)
 {
     /// <summary>
     /// Runs the ladder from the local gateway out to a download, and returns the measured legs with the verdict.
@@ -179,7 +180,10 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
 
     private bool Connected(string config)
     {
-        return control.Running && string.Equals(control.RunningTarget ?? control.Target, config, StringComparison.Ordinal);
+        // In the mode each server carries its own control; with the flag off the set publishes none.
+        return live.Of(config) is { } member
+            ? member.Running
+            : control.Running && string.Equals(control.RunningTarget ?? control.Target, config, StringComparison.Ordinal);
     }
 
     // The list the tunnel decides by: the one the running tunnel materialized, else the one the next connect uses.

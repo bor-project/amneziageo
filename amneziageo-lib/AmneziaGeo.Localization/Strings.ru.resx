@@ -2005,6 +2005,21 @@
   <data name="Main_RoleNeutral" xml:space="preserve">
     <value>Нейтральный</value>
   </data>
+  <data name="Main_RuleRouteLabel" xml:space="preserve">
+    <value>Маршрут</value>
+  </data>
+  <data name="Main_RuleFallbackLabel" xml:space="preserve">
+    <value>Фоллбек</value>
+  </data>
+  <data name="Main_RuleTargetAuto" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="Main_RuleTargetBest" xml:space="preserve">
+    <value>Лучший</value>
+  </data>
+  <data name="Main_RuleTargetBlock" xml:space="preserve">
+    <value>Блок</value>
+  </data>
   <data name="Main_MakePrimaryLink" xml:space="preserve">
     <value>Сделать основным</value>
   </data>

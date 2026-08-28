@@ -122,7 +122,7 @@ internal sealed class FleetHostedService(
             desired = [];
         }
 
-        fleet.Restore(new FleetState(order, stored.Roles, stored.Primary, desired));
+        fleet.Restore(new FleetState(order, stored.Roles, stored.Primary, desired, stored.Targets));
         if (desired.Length > 0)
         {
             logger.LogInformation("the set the mode last stood on is being connected: {Names}", string.Join(", ", desired));
@@ -159,11 +159,11 @@ internal sealed class FleetHostedService(
             }
         }
 
-        // A tunnel reads its duties at bring-up, so one that has gained or lost the default route - the tunnel
-        // ahead of it left the set - is dialled again to take them up.
+        // A tunnel reads its duties and its share of the rules at bring-up, so one that has gained or lost the
+        // default route - the tunnel ahead of it left the set - or whose rules were readdressed is dialled again.
         foreach (var member in _members.Values.ToArray())
         {
-            if (fleet.For(member.Name) == member.Duties)
+            if (fleet.For(member.Name) == member.Duties && fleet.Stamp == member.Stamp)
             {
                 continue;
             }
@@ -199,7 +199,7 @@ internal sealed class FleetHostedService(
     private void Start(string name, CancellationToken ct)
     {
         var duties = fleet.For(name);
-        var member = factory.Start(name, duties, ct);
+        var member = factory.Start(name, duties, fleet.Stamp, ct);
         _members[name] = member;
         live.Publish(name, member.Control);
         logger.LogInformation("{Name}: connecting as one of {Count} tunnel(s); it {Carries} what no rule sends elsewhere",

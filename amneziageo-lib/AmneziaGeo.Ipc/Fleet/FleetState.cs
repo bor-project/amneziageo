@@ -8,17 +8,19 @@ namespace AmneziaGeo.Ipc.Fleet;
 /// <param name="Roles">Role of every server given one.</param>
 /// <param name="Primary">Server that carries what no rule sends elsewhere; empty while none is named.</param>
 /// <param name="Desired">Servers wanted up.</param>
+/// <param name="Targets">Where every addressed rule rides.</param>
 public sealed record FleetState(
     IReadOnlyList<string> Order,
     IReadOnlyDictionary<string, string> Roles,
     string Primary,
-    IReadOnlyList<string> Desired)
+    IReadOnlyList<string> Desired,
+    IReadOnlyDictionary<string, RuleRoute> Targets)
 {
     /// <summary>
     /// A mode never entered.
     /// </summary>
     public static readonly FleetState Empty =
-        new([], new Dictionary<string, string>(StringComparer.Ordinal), string.Empty, []);
+        new([], new Dictionary<string, string>(StringComparer.Ordinal), string.Empty, [], FleetTargets.Empty);
 
     /// <summary>
     /// Writes names as they are stored, one per line.

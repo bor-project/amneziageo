@@ -14,7 +14,7 @@ public sealed class FleetControlTests
     [Fact]
     public void FirstAskedForCarriesTheDefault()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.Add("alpha");
         fleet.Add("bravo");
 
@@ -26,7 +26,7 @@ public sealed class FleetControlTests
     [Fact]
     public void PrimaryCarriesWhereverItStandsInTheSet()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.Add("alpha");
         fleet.Add("bravo");
         fleet.SetRole("bravo", TunnelRoles.Primary);
@@ -39,7 +39,7 @@ public sealed class FleetControlTests
     [Fact]
     public void SecondPrimaryDemotesTheFirst()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.Add("alpha");
         fleet.Add("bravo");
         fleet.SetRole("alpha", TunnelRoles.Primary);
@@ -52,7 +52,7 @@ public sealed class FleetControlTests
     [Fact]
     public void NeutralNeverCarries()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.SetRole("alpha", TunnelRoles.Neutral);
         fleet.Add("alpha");
 
@@ -67,7 +67,7 @@ public sealed class FleetControlTests
     [Fact]
     public void LeavingTheSetMovesTheDefaultOn()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.Add("alpha");
         fleet.Add("bravo");
         fleet.Remove("alpha");
@@ -79,7 +79,7 @@ public sealed class FleetControlTests
     [Fact]
     public void AskingTwiceLeavesTheSetAlone()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
 
         Assert.True(fleet.Add("alpha"));
         Assert.False(fleet.Add("alpha"));
@@ -93,7 +93,7 @@ public sealed class FleetControlTests
     [Fact]
     public void EveryTunnelOfTheSetStandsThroughANeighboursBringUp()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.Add("alpha");
         fleet.Add("bravo");
 
@@ -105,12 +105,13 @@ public sealed class FleetControlTests
     [Fact]
     public void TheModeStandsBackUpOnWhatItStored()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         var stored = new FleetState(
             ["alpha", "bravo", "charlie"],
             new Dictionary<string, string> { ["charlie"] = TunnelRoles.Neutral },
             "bravo",
-            ["bravo", "charlie"]);
+            ["bravo", "charlie"],
+            FleetTargets.Empty);
 
         fleet.Restore(stored);
 
@@ -124,7 +125,7 @@ public sealed class FleetControlTests
     [Fact]
     public void TheOrderTheModeListsDecidesWhoCarries()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.SetOrder(["bravo", "alpha"]);
         fleet.Add("alpha");
         fleet.Add("bravo");
@@ -139,12 +140,12 @@ public sealed class FleetControlTests
     [Fact]
     public void WhatIsStoredIsWhatTheSetStandsOn()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.SetOrder(["alpha", "bravo"]);
         fleet.Add("bravo");
         fleet.SetRole("bravo", TunnelRoles.Primary);
 
-        var stood = new FleetControl();
+        var stood = new FleetControl(new FleetLive());
         stood.Restore(fleet.Snapshot());
 
         Assert.Equal(fleet.Order, stood.Order);
@@ -156,7 +157,7 @@ public sealed class FleetControlTests
     [Fact]
     public void TheWindowIsToldTheWholeLibraryInTheModesOrder()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.SetOrder(["bravo", "alpha"]);
         fleet.Add("bravo");
         fleet.SetRole("charlie", TunnelRoles.Neutral);
@@ -182,7 +183,7 @@ public sealed class FleetControlTests
     [Fact]
     public void AServerTheLibraryNoLongerHoldsIsNotDescribed()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         fleet.SetOrder(["alpha", "bravo"]);
 
         var described = fleet.Describe(["alpha"]);
@@ -193,10 +194,10 @@ public sealed class FleetControlTests
     [Fact]
     public void OnlyARequestMakesTheSetWorthWritingDown()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         Assert.False(fleet.Moved);
 
-        fleet.Restore(new FleetState(["alpha"], new Dictionary<string, string>(StringComparer.Ordinal), string.Empty, ["alpha"]));
+        fleet.Restore(new FleetState(["alpha"], new Dictionary<string, string>(StringComparer.Ordinal), string.Empty, ["alpha"], FleetTargets.Empty));
         Assert.False(fleet.Moved);
 
         fleet.Add("bravo");
@@ -206,7 +207,7 @@ public sealed class FleetControlTests
     [Fact]
     public void TheSetMovingWakesTheSupervisor()
     {
-        var fleet = new FleetControl();
+        var fleet = new FleetControl(new FleetLive());
         var token = fleet.ChangeToken;
         fleet.Add("alpha");
 

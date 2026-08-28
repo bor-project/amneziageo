@@ -77,7 +77,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// Arms the kill-switch; permits before block. Block-list destinations are dropped per address on contact,
     /// not materialized here. Returns false on failure.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null)
     {
         lock (_gate)
         {
@@ -115,6 +115,17 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     }
 
                     PermitTunInterface(engine, luid);
+
+                    // The adapters of the tunnels standing alongside this one: what a rule sends to them leaves
+                    // through their adapter, and this block would otherwise be the end of it.
+                    foreach (var peer in alsoPermit ?? [])
+                    {
+                        if (ConvertInterfaceIndexToLuid(peer, out var peerLuid) == 0)
+                        {
+                            PermitTunInterface(engine, peerLuid);
+                        }
+                    }
+
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
                     PermitLan(engine, extraLanCidrs ?? []);

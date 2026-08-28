@@ -47,6 +47,20 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
     public string RoleLabel => Loc.Instance.Get("Main_CardTunnelLabel");
 
     /// <summary>
+    /// Открыт ли бейдж: пока замер держит машину, роль не меняют.
+    /// </summary>
+    public bool RolesFree => _catalogue.RolesFree;
+
+    /// <summary>
+    /// Пересчитывает запор ролей на карточке.
+    /// </summary>
+    internal void RefreshRoleGate()
+    {
+        OnPropertyChanged(nameof(RolesFree));
+        SetRoleCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
     /// Роли словами - по одной на кнопку поля.
     /// </summary>
     public string PrimaryText => Loc.Instance.Get("Main_RolePrimary");
@@ -69,7 +83,7 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
     }
 
     // Ставит серверу роль; основным его делает отдельный запрос - основной на машине один.
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSetRole))]
     private async Task SetRole(string? role)
     {
         if (role is not { Length: > 0 } || string.Equals(role, Role, StringComparison.Ordinal))
@@ -78,5 +92,11 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
         }
 
         await _catalogue.SetRoleAsync(Name, role);
+    }
+
+    // Роль меняют, пока её никто не держит.
+    private bool CanSetRole(string? role)
+    {
+        return _catalogue.RolesFree;
     }
 }

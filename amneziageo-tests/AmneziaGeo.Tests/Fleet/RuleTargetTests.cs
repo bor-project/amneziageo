@@ -1,0 +1,69 @@
+using AmneziaGeo.Ipc.Fleet;
+using Xunit;
+
+namespace AmneziaGeo.Tests.Fleet;
+
+/// <summary>
+/// Where a rule rides is read back at every start, so both ends of it have to survive the round trip - and a
+/// rule left to the machine has to take no room at all, or a mode nobody addressed a rule in would store a line
+/// per rule.
+/// </summary>
+public sealed class RuleTargetTests
+{
+    [Theory]
+    [InlineData("", RuleTarget.Auto, "")]
+    [InlineData("auto", RuleTarget.Auto, "")]
+    [InlineData("  AUTO ", RuleTarget.Auto, "")]
+    [InlineData("best", RuleTarget.Best, "")]
+    [InlineData("block", RuleTarget.Block, "")]
+    [InlineData("bor-dev-b", RuleTarget.Server, "bor-dev-b")]
+    public void ReadsOneEnd(string text, string mode, string name)
+    {
+        var target = RuleTarget.Parse(text);
+
+        Assert.Equal(mode, target.Mode);
+        Assert.Equal(name, target.Name);
+    }
+
+    [Fact]
+    public void AnEndWritesBackAsItWasRead()
+    {
+        foreach (var word in new[] { "auto", "best", "block", "bor-dev-b" })
+        {
+            Assert.Equal(word, RuleTarget.Parse(word).Format());
+        }
+    }
+
+    [Fact]
+    public void AValueNamingOneEndLeavesTheOtherToTheMachine()
+    {
+        var route = RuleRoute.Parse("bravo");
+
+        Assert.Equal("bravo", route.Target.Name);
+        Assert.True(route.Fallback.IsAuto);
+    }
+
+    [Fact]
+    public void AnAddressedRuleReadsBackAsItWasWritten()
+    {
+        var targets = new Dictionary<string, RuleRoute>
+        {
+            [FleetTargets.Key(3, "geosite:github")] = new(new RuleTarget(RuleTarget.Server, "bravo"), new RuleTarget(RuleTarget.Block)),
+            [FleetTargets.Key(3, "app:path=C:\\apps\\x.exe")] = new(new RuleTarget(RuleTarget.Best), RuleTarget.Default),
+        };
+
+        var read = FleetTargets.Parse(FleetTargets.Format(targets));
+
+        Assert.Equal(targets, read);
+    }
+
+    [Fact]
+    public void ARuleLeftToTheMachineIsNotStored()
+    {
+        var targets = new Dictionary<string, RuleRoute> { [FleetTargets.Key(1, "geoip:ru")] = RuleRoute.Default };
+
+        Assert.Equal(string.Empty, FleetTargets.Format(targets));
+        Assert.Empty(FleetTargets.Parse("1:geoip:ru=auto,auto"));
+        Assert.Empty(FleetTargets.Parse(null));
+    }
+}

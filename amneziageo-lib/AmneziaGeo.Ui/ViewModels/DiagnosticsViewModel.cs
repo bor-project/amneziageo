@@ -16,10 +16,10 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public DiagnosticsViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
+    public DiagnosticsViewModel(IAgentConnection connection, LogsViewModel logs)
     {
         _connection = connection;
-        Logs = new LogsViewModel(host, connection, prefs);
+        Logs = logs;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc.Fleet;
 
 namespace AmneziaGeo.Windows.App;
@@ -22,5 +23,14 @@ internal class TunnelDutyRoster
     public virtual IReadOnlyCollection<string> Standing(string name)
     {
         return [name];
+    }
+
+    /// <summary>
+    /// The rules of a list the named tunnel carries. The only tunnel on a machine carries every one of them,
+    /// and answering with the list it was given says exactly that.
+    /// </summary>
+    public virtual IReadOnlyList<GeoRule> Share(string name, long listId, IReadOnlyList<GeoRule> rules)
+    {
+        return rules;
     }
 }

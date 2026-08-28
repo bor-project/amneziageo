@@ -53,8 +53,8 @@ func newAndroidLogger(level int) *device.Logger {
 }
 
 //export wgTurnOn
-func wgTurnOn(settings *C.char, tunFd int32) int32 {
-	logger := newAndroidLogger(device.LogLevelVerbose)
+func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
+	logger := newAndroidLogger(int(logLevel))
 
 	tunDevice, _, err := tun.CreateUnmonitoredTUNFromFD(int(tunFd))
 	if err != nil {

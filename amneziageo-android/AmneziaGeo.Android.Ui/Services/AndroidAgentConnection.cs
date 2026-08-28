@@ -535,7 +535,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
-            _transports.GetValueOrDefault(configName), foreground: true);
+            _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel));
         return Ok();
     }
 
@@ -551,7 +551,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return activity is not null && await activity.RequestVpnPermissionAsync(prepare);
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground)
+    // Движок пишет каждое своё решение через JNI: на диагностическом уровне это заметная доля времени пакета.
+    private static int EngineLogLevel(string level)
+    {
+        return level switch
+        {
+            "none" => 0,
+            "trace" or "debug" => 2,
+            _ => 1,
+        };
+    }
+
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -571,6 +582,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraAppMode, appMode);
             intent.PutExtra(GeoVpnService.ExtraAppList, appPkgs);
         }
+
+        intent.PutExtra(GeoVpnService.ExtraEngineLog, engineLog);
 
         if (transport is not null)
         {

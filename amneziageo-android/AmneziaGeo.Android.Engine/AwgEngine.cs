@@ -10,11 +10,26 @@ internal static partial class AwgEngine
     private const string Lib = "amneziawg-go";
 
     /// <summary>
+    /// Движок молчит.
+    /// </summary>
+    public const int LogSilent = 0;
+
+    /// <summary>
+    /// Движок пишет только ошибки.
+    /// </summary>
+    public const int LogError = 1;
+
+    /// <summary>
+    /// Движок пишет каждое своё решение.
+    /// </summary>
+    public const int LogVerbose = 2;
+
+    /// <summary>
     /// Starts the tunnel on an established tun fd; returns an engine handle.
     /// </summary>
-    public static int TurnOn(string settings, int tunFd)
+    public static int TurnOn(string settings, int tunFd, int logLevel)
     {
-        return TurnOnNative(settings, tunFd);
+        return TurnOnNative(settings, tunFd, logLevel);
     }
 
     /// <summary>
@@ -43,7 +58,7 @@ internal static partial class AwgEngine
     }
 
     [LibraryImport(Lib, EntryPoint = "wgTurnOn", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int TurnOnNative(string settings, int tunFd);
+    private static partial int TurnOnNative(string settings, int tunFd, int logLevel);
 
     [LibraryImport(Lib, EntryPoint = "wgTurnOff")]
     private static partial void TurnOffNative(int handle);

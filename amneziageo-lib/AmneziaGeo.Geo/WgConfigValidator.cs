@@ -11,10 +11,22 @@ public sealed class WgConfigFormatException : Exception
     /// <summary>
     /// ctor
     /// </summary>
-    public WgConfigFormatException(string why, string offender)
+    public WgConfigFormatException(string why, string offender, bool unknownKey = false)
         : base($"{why}: \"{offender}\"")
     {
+        Offender = offender;
+        UnknownKey = unknownKey;
     }
+
+    /// <summary>
+    /// Ключ или строка, на которой разбор остановился.
+    /// </summary>
+    public string Offender { get; }
+
+    /// <summary>
+    /// Ключ неизвестен этой версии клиента.
+    /// </summary>
+    public bool UnknownKey { get; }
 }
 
 /// <summary>
@@ -33,7 +45,7 @@ public static class WgConfigValidator
     // Теги, для которых движок допускает пустое значение.
     private static readonly HashSet<string> SpecialHandshakeTags = new(StringComparer.Ordinal)
     {
-        "i1", "i2", "i3", "i4", "i5", "j1", "j2", "j3", "itime",
+        "i1", "i2", "i3", "i4", "i5", "j1", "j2", "j3", "itime", "headerprotectionkey",
     };
 
     /// <summary>
@@ -162,10 +174,29 @@ public static class WgConfigValidator
             case "s4":
                 ParseUint16(val, key);
                 break;
+            case "headerprotectionkey":
+                if (val.Length > 0)
+                {
+                    ParseKeyBase64(val);
+                }
+
+                break;
+            case "contentpaddingaddition":
+            case "rekeyaftertime":
+            case "rekeytimeout":
+            case "rejectaftertime":
+            case "keepalivetimeout":
+            case "maxhandshakeattempts":
             case "h1":
             case "h2":
             case "h3":
             case "h4":
+                ParseUintRange(val, key);
+                break;
+            case "randomtrailers":
+            case "disablecookies":
+                ParseAwgBool(val, key);
+                break;
             case "i1":
             case "i2":
             case "i3":
@@ -193,7 +224,7 @@ public static class WgConfigValidator
                 ParseTableOff(val);
                 break;
             default:
-                throw new WgConfigFormatException("Invalid key for [Interface] section", key);
+                throw new WgConfigFormatException("Invalid key for [Interface] section", key, unknownKey: true);
         }
     }
 
@@ -219,7 +250,7 @@ public static class WgConfigValidator
                 ParseEndpoint(val);
                 break;
             default:
-                throw new WgConfigFormatException("Invalid key for [Peer] section", key);
+                throw new WgConfigFormatException("Invalid key for [Peer] section", key, unknownKey: true);
         }
     }
 
@@ -265,6 +296,47 @@ public static class WgConfigValidator
         }
     }
 
+    // Диапазон движка: одно число либо "низ-верх".
+    private static void ParseUintRange(string s, string name)
+    {
+        var parts = s.Split('-');
+        if (parts.Length > 2)
+        {
+            throw new WgConfigFormatException($"Invalid {name}", s);
+        }
+
+        if (!uint.TryParse(parts[0], out var lo))
+        {
+            throw new WgConfigFormatException($"Invalid {name}", s);
+        }
+
+        if (parts.Length == 2 && (!uint.TryParse(parts[1], out var hi) || hi < lo))
+        {
+            throw new WgConfigFormatException($"Invalid {name}", s);
+        }
+    }
+
+    // Флаг 3.1: движку уходит 1/0, поэтому опечатка молча выключила бы защиту.
+    private static void ParseAwgBool(string s, string name)
+    {
+        switch (s.Trim().ToLowerInvariant())
+        {
+            case "on":
+            case "off":
+            case "1":
+            case "0":
+            case "true":
+            case "false":
+            case "t":
+            case "f":
+            case "yes":
+            case "no":
+                return;
+            default:
+                throw new WgConfigFormatException($"Invalid {name}", s);
+        }
+    }
+
     private static void ParseMtu(string s)
     {
         if (!int.TryParse(s, out var mtu) || mtu < 576 || mtu > 65535)
@@ -273,17 +345,15 @@ public static class WgConfigValidator
         }
     }
 
+    // В 3.1 это тоже диапазон, а не одно число.
     private static void ParsePersistentKeepalive(string s)
     {
-        if (string.Equals(s, "off", StringComparison.Ordinal))
+        if (string.Equals(s, "off", StringComparison.Ordinal) || string.Equals(s, "(off)", StringComparison.Ordinal))
         {
             return;
         }
 
-        if (!int.TryParse(s, out var value) || value < 0 || value > 65535)
-        {
-            throw new WgConfigFormatException("Invalid persistent keepalive", s);
-        }
+        ParseUintRange(s, "persistent keepalive");
     }
 
     private static void ParseTableOff(string s)

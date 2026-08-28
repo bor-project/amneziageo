@@ -50,7 +50,7 @@
 
           <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места.
                Отступы стоят на группах: скрытая скорость не оставляет прогала. Потери ужимаются первыми. -->
-          <Grid Grid.Row="1" Classes="cardinfo" ColumnDefinitions="Auto,Auto,*" Margin="0,8,0,0"
+          <Grid Grid.Row="1" Classes="cardinfo" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0"
                 VerticalAlignment="Center">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
               <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
@@ -80,6 +80,16 @@
                          Foreground="{Binding CardLossBrush}"
                          TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
             </Grid>
+            <!-- Конфигурация из подписки: перечитать её прямо с карточки, под кнопкой подключения. -->
+            <!-- Ширина повторяет круг подключения, поэтому иконка встаёт ровно под ним. -->
+            <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center" HorizontalAlignment="Right"
+                    Width="34" Padding="0" HorizontalContentAlignment="Center"
+                    IsVisible="{Binding FromSubscription}"
+                    ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"
+                    Command="{Binding $parent[controls:CatalogCard].RefreshSubscriptionCommand}"
+                    CommandParameter="{Binding}">
+              <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="13" Height="13" />
+            </Button>
           </Grid>
 
           <!-- Место режима: у машины с одним туннелем пусто и роста не даёт. -->

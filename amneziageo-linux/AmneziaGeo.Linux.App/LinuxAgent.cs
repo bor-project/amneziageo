@@ -26,12 +26,18 @@ internal sealed class LinuxAgent : IDisposable
     private const string RouteTtlKey = SettingKeys.RouteTtl;
     private const string GeoAutoCheckKey = "geo-auto-check";
     private const string GeoIntervalKey = "geo-check-interval-hours";
+    private const string SubscriptionAutoRefreshKey = SettingKeys.SubscriptionAutoRefresh;
+    private const string SubscriptionIntervalKey = SettingKeys.SubscriptionRefreshInterval;
     private const int SupervisorTickSeconds = 5;
 
     // How long the connect itself waits for the peer's first answer, and how long the supervisor waits after it.
     private const int HandshakeGraceSeconds = 3;
     private const int HandshakeWaitSeconds = 30;
     private const int GeoTickSeconds = 60;
+
+    // Ticks between two looks at whose subscription interval has run out.
+    private const int SubscriptionTickSeconds = 900;
+    private const int DefaultSubscriptionIntervalHours = 12;
 
     // Supervisor ticks between two readings of what the wireless adapter can do.
     private const int HotspotProbeTicks = 12;
@@ -80,6 +86,8 @@ internal sealed class LinuxAgent : IDisposable
     private int _routeTtlSeconds = TunnelOptions.DefaultRouteTtlSeconds;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
+    private bool _subscriptionAutoRefresh = true;
+    private int _subscriptionIntervalHours = DefaultSubscriptionIntervalHours;
     private bool _desiredConnected;
     private int _handshakeAge = -1;
     private readonly LinkMeter _meter = new();
@@ -151,6 +159,8 @@ internal sealed class LinuxAgent : IDisposable
         _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
         _geoAutoCheck = !settings.TryGetValue(GeoAutoCheckKey, out var geoAuto) || IsOn(geoAuto);
         _geoCheckIntervalHours = GeoInterval(settings.TryGetValue(GeoIntervalKey, out var geoInterval) ? geoInterval : null);
+        _subscriptionAutoRefresh = !settings.TryGetValue(SubscriptionAutoRefreshKey, out var subAuto) || IsOn(subAuto);
+        _subscriptionIntervalHours = SubscriptionInterval(settings.TryGetValue(SubscriptionIntervalKey, out var subInterval) ? subInterval : null);
         _proxyOptions = ReadProxyOptions(settings);
         _proxy.Apply(_proxyOptions);
         _shareMode = ShareModes.Of(settings.TryGetValue(SettingKeys.ShareMode, out var share) ? share : null);
@@ -179,7 +189,7 @@ internal sealed class LinuxAgent : IDisposable
             }
         }
 
-        await Task.WhenAll(SuperviseLoopAsync(ct), CheckGeoUpdatesAsync(ct)).ConfigureAwait(false);
+        await Task.WhenAll(SuperviseLoopAsync(ct), CheckGeoUpdatesAsync(ct), RefreshSubscriptionsAsync(ct)).ConfigureAwait(false);
     }
 
     // The stations and the band in force are cheap to read every tick; what the adapter can do is not, so it is
@@ -273,9 +283,10 @@ internal sealed class LinuxAgent : IDisposable
     public async Task<StatusSnapshot> BuildSnapshotAsync(CancellationToken ct)
     {
         var configs = new List<ConfigEntry>();
+        var members = await SubscriptionMembersAsync(ct).ConfigureAwait(false);
         foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
-            configs.Add(await BuildConfigEntryAsync(name, ct).ConfigureAwait(false));
+            configs.Add(await BuildConfigEntryAsync(name, members.GetValueOrDefault(name), ct).ConfigureAwait(false));
         }
 
         var routingLists = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
@@ -299,6 +310,8 @@ internal sealed class LinuxAgent : IDisposable
             RouteLog: _routeLog,
             GeoAutoCheck: _geoAutoCheck,
             GeoCheckIntervalHours: _geoCheckIntervalHours,
+            SubscriptionAutoRefresh: _subscriptionAutoRefresh,
+            SubscriptionRefreshIntervalHours: _subscriptionIntervalHours,
             ConnectFailReason: _connectFailReason,
             ConnectFailDetail: _connectFailDetail,
             SurviveReboot: _surviveReboot,
@@ -675,6 +688,21 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpCopyConfig:
                 return await CopyConfigAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpAddSubscription:
+                return await AddSubscriptionAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpListSubscriptions:
+                return await Subscriptions().ListAsync(ct).ConfigureAwait(false);
+
+            case IpcContract.OpRefreshSubscription:
+                return await RefreshSubscriptionAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpRemoveSubscription:
+                return await RemoveSubscriptionAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpConfigSubscription:
+                return await Subscriptions().ConfigUrlAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpSelectConfig:
                 return await SelectTargetAsync(args, ct).ConfigureAwait(false);
 
@@ -921,6 +949,139 @@ internal sealed class LinuxAgent : IDisposable
         return false;
     }
 
+    private async Task<IpcAck> AddSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var outcome = await Subscriptions().AddAsync(args, ct).ConfigureAwait(false);
+        if (!outcome.Ack.Ok)
+        {
+            return outcome.Ack;
+        }
+
+        _log.Info("sub", $"subscription {outcome.Name} brought in {outcome.Added} configuration(s)");
+
+        // A first import is ready to dial: it takes the selection while there is none.
+        if (_selectedTarget is null
+            && await Subscriptions().MembersAsync(outcome.Name, ct).ConfigureAwait(false) is [var first, ..])
+        {
+            await StoreSelectedTargetAsync(first, ct).ConfigureAwait(false);
+        }
+
+        await PushAsync(ct).ConfigureAwait(false);
+        return outcome.Ack;
+    }
+
+    private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var outcome = await Subscriptions().RefreshAsync(args, ct).ConfigureAwait(false);
+        FlagRewritten(outcome);
+        await PushAsync(ct).ConfigureAwait(false);
+        return outcome.Ack;
+    }
+
+    private async Task<IpcAck> RemoveSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var ack = await Subscriptions().RemoveAsync(args, _tunnel.Running ? _boundTarget : null, ct).ConfigureAwait(false);
+        if (ack.Ok)
+        {
+            await PushAsync(ct).ConfigureAwait(false);
+        }
+
+        return ack;
+    }
+
+    // Re-reads the subscriptions whose interval has run out. A subscription lives on the open internet, so this
+    // runs whether or not a tunnel is up.
+    private async Task RefreshSubscriptionsAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(SubscriptionTickSeconds));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                if (!_subscriptionAutoRefresh)
+                {
+                    continue;
+                }
+
+                var service = Subscriptions();
+                var due = await service.DueAsync(_subscriptionIntervalHours, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+                foreach (var subscription in due)
+                {
+                    var outcome = await service.RefreshAsync([subscription.Name], ct).ConfigureAwait(false);
+                    FlagRewritten(outcome);
+                    if (!outcome.Ack.Ok)
+                    {
+                        _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");
+                    }
+                }
+
+                if (due.Count > 0)
+                {
+                    await PushAsync(ct).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("sub", "the scheduled re-read of the subscriptions stopped", ex);
+        }
+    }
+
+    // A rewritten text applies on a fresh tunnel; flag a reconnect when the running target is affected.
+    private void FlagRewritten(SubscriptionOutcome outcome)
+    {
+        if (_tunnel.Running && outcome.Rewritten.Any(name => string.Equals(name, _boundTarget, StringComparison.Ordinal)))
+        {
+            _restartRequired = true;
+            _log.Info("sub", "the subscription rewrote the running configuration; it applies on the next connect");
+        }
+    }
+
+    private SubscriptionService Subscriptions()
+    {
+        return new SubscriptionService(_geoHttp, _store, new StoreLibrary(this));
+    }
+
+    // The configuration library as a subscription sees it: this agent keeps its configurations in the state store.
+    private sealed class StoreLibrary(LinuxAgent agent) : ISubscriptionLibrary
+    {
+        public async Task<IReadOnlyCollection<string>> NamesAsync(CancellationToken ct)
+        {
+            return await agent._store.ListConfigNamesAsync(ct).ConfigureAwait(false);
+        }
+
+        public async Task<string?> TextAsync(string name, CancellationToken ct)
+        {
+            return await agent._store.GetConfigTextAsync(name, ct).ConfigureAwait(false);
+        }
+
+        public async Task AddAsync(string name, string confText, CancellationToken ct)
+        {
+            await agent._store.SaveConfigAsync(name, confText, ct).ConfigureAwait(false);
+        }
+
+        public async Task EditAsync(string name, string confText, CancellationToken ct)
+        {
+            await agent._store.SaveConfigAsync(name, confText, ct).ConfigureAwait(false);
+        }
+
+        public async Task RemoveAsync(string name, CancellationToken ct)
+        {
+            await agent._store.RemoveConfigAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveTunnelGeoAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveConfigDnsAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveConfigExclusionsAsync(name, ct).ConfigureAwait(false);
+            if (string.Equals(name, agent._selectedTarget, StringComparison.Ordinal))
+            {
+                await agent.StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
     private async Task<IpcAck> GetConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1)
@@ -982,6 +1143,12 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
+        var rejected = RejectBadConfig(args[1]);
+        if (rejected is not null)
+        {
+            return rejected;
+        }
+
         await _store.SaveConfigAsync(args[0], args[1], ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
@@ -994,9 +1161,24 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, args.Count < 2 ? "expected a name and a file path" : $"{args[1]} not found");
         }
 
-        await _store.SaveConfigAsync(args[0], await File.ReadAllTextAsync(args[1], ct).ConfigureAwait(false), ct).ConfigureAwait(false);
-        await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
+        var text = await File.ReadAllTextAsync(args[1], ct).ConfigureAwait(false);
+        return await SaveConfigAsync([args[0], text], ct).ConfigureAwait(false);
+    }
+
+    // Отбивает конфиг, который движок отверг бы при подъёме туннеля.
+    private static IpcAck? RejectBadConfig(string text)
+    {
+        try
+        {
+            WgConfigValidator.Validate(text);
+            return null;
+        }
+        catch (WgConfigFormatException ex)
+        {
+            return new IpcAck(false, ex.UnknownKey
+                ? IpcMessage.Key("Agent_ConfigUnsupportedKey", ex.Offender)
+                : IpcMessage.Key("Agent_ConfigRejected", ex.Message));
+        }
     }
 
     private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1516,6 +1698,14 @@ internal sealed class LinuxAgent : IDisposable
             case GeoIntervalKey:
                 _geoCheckIntervalHours = GeoInterval(args[1]);
                 await _store.SetSettingAsync(GeoIntervalKey, _geoCheckIntervalHours.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
+                break;
+            case SubscriptionAutoRefreshKey:
+                _subscriptionAutoRefresh = IsOn(args[1]);
+                await _store.SetSettingAsync(SubscriptionAutoRefreshKey, _subscriptionAutoRefresh ? "on" : "off", ct).ConfigureAwait(false);
+                break;
+            case SubscriptionIntervalKey:
+                _subscriptionIntervalHours = SubscriptionInterval(args[1]);
+                await _store.SetSettingAsync(SubscriptionIntervalKey, _subscriptionIntervalHours.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
                 break;
             case SettingKeys.ProxyEnabled:
             case SettingKeys.ProxyAnonymous:
@@ -2162,7 +2352,7 @@ internal sealed class LinuxAgent : IDisposable
         return sb.ToString();
     }
 
-    private async Task<ConfigEntry> BuildConfigEntryAsync(string name, CancellationToken ct)
+    private async Task<ConfigEntry> BuildConfigEntryAsync(string name, SubscriptionMember? member, CancellationToken ct)
     {
         var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
         var geo = await _store.GetTunnelGeoAsync(name, ct).ConfigureAwait(false);
@@ -2190,7 +2380,21 @@ internal sealed class LinuxAgent : IDisposable
             reading.TxBitsPerSecond,
             reading.HandshakesPerMinute,
             reading.LossPercent,
-            reading.RttMs);
+            reading.RttMs,
+            member?.Subscription ?? string.Empty,
+            member is { Present: false });
+    }
+
+    // Which subscription brought which configuration, read once for the whole snapshot.
+    private async Task<Dictionary<string, SubscriptionMember>> SubscriptionMembersAsync(CancellationToken ct)
+    {
+        var members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
+        foreach (var member in await _store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false))
+        {
+            members[member.ConfigName] = member;
+        }
+
+        return members;
     }
 
     private async Task<IReadOnlyList<SourceEntry>> BuildSourcesAsync(CancellationToken ct)
@@ -2295,6 +2499,11 @@ internal sealed class LinuxAgent : IDisposable
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
             ? Math.Clamp(hours, MinGeoIntervalHours, MaxGeoIntervalHours)
             : 24;
+
+    private static int SubscriptionInterval(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
+            ? Math.Clamp(hours, SettingKeys.SubscriptionIntervalMinHours, SettingKeys.SubscriptionIntervalMaxHours)
+            : DefaultSubscriptionIntervalHours;
 
     private static bool IsOn(string? token) => token is "on" or "true" or "1";
 

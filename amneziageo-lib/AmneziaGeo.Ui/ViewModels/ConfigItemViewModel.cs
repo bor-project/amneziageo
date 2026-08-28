@@ -49,6 +49,26 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
 
+    /// <summary>
+    /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    [NotifyPropertyChangedFor(nameof(FromSubscription))]
+    private string _subscription = string.Empty;
+
+    /// <summary>
+    /// Перестала ли подписка её нести. Такую конфигурацию сам никто не сносит.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _subscriptionGone;
+
+    /// <summary>
+    /// Ведётся ли конфигурация подпиской.
+    /// </summary>
+    public bool FromSubscription => Subscription.Length > 0;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
     [NotifyPropertyChangedFor(nameof(CardActionText))]
@@ -82,6 +102,14 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// ширины не хватает.
     /// </summary>
     public IReadOnlyList<CardTag> Tags =>
+        SubscriptionGone
+            ? [SubscriptionTag, .. SettingTags]
+            : SettingTags;
+
+    // Метка узла, пропавшего из подписки. Имя самой подписки на карточку не выносится: это адрес.
+    private CardTag SubscriptionTag => new(Loc.Instance.Get("Main_CardTagSubscriptionGone", Subscription), false);
+
+    private IReadOnlyList<CardTag> SettingTags =>
     [
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
@@ -349,6 +377,8 @@ internal partial class ConfigItemViewModel : ViewModelBase
         ? RoundTripText
         : ProbeUnreachable
         ? Loc.Instance.Get(ProbeState == ProbeOutcome.NoAddress ? "Main_ProbeNoAddress" : "Main_ProbeNoAnswer")
+        : ProbeState == ProbeOutcome.Shielded
+        ? Loc.Instance.Get("Main_ProbeShielded")
         : Loc.Instance.Get("Main_ProbeUnknown");
 
     /// <summary>

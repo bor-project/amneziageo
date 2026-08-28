@@ -7,7 +7,7 @@
 # SIGNPATH_API_TOKEN secret) the sign job submits them to SignPath and the release ships signed; until
 # then the release is unsigned. The signing key never lives in the repo or on the runner
 # (installer.config.ci.json sets signingCert = null, so the local signtool path is skipped).
-# The APK takes the SDK debug key unless the ANDROID_KEYSTORE_BASE64 secret holds a release keystore.
+# The APK is signed from the ANDROID_KEYSTORE_BASE64 secret; a tag without it fails the build.
 name: build & sign release
 
 on:
@@ -193,10 +193,13 @@ jobs:
         run: |
           set -euo pipefail
           # A debug-signed APK never upgrades over one signed elsewhere: the SDK key is generated per
-          # machine. Set the ANDROID_KEYSTORE_BASE64 secret to sign every release with one key.
+          # machine, so a tag refuses to build without the shared keystore.
           if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
             printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
             export ANDROID_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set - a release must not ship a debug-signed APK"
+            exit 1
           fi
           args=(--config Release)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -219,8 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     # Skipped until SignPath is wired up: gated on the SIGNPATH_ORGANIZATION_ID repository variable so the
     # release pipeline still publishes unsigned installers in the meantime. Set the variable (and the
-    # SIGNPATH_API_TOKEN secret) to activate signing. NOTE: when enabled, this job must be turned into a
-    # matrix over the 4 build artifacts (one submission each) - it currently handles a single artifact.
+    # SIGNPATH_API_TOKEN secret) to activate signing. The matrix below submits each build artifact.
     if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
     strategy:
       fail-fast: false

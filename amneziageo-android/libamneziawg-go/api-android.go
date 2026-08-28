@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/amnezia-vpn/amneziawg-go/conn"
-	"github.com/amnezia-vpn/amneziawg-go/device"
-	"github.com/amnezia-vpn/amneziawg-go/tun"
+	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
+	"github.com/amnezia-vpn/amneziawg-go/v3/device"
+	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 )
 
 const logTag = "amneziawg-go"
@@ -53,8 +53,8 @@ func newAndroidLogger(level int) *device.Logger {
 }
 
 //export wgTurnOn
-func wgTurnOn(settings *C.char, tunFd int32) int32 {
-	logger := newAndroidLogger(device.LogLevelVerbose)
+func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
+	logger := newAndroidLogger(int(logLevel))
 
 	tunDevice, _, err := tun.CreateUnmonitoredTUNFromFD(int(tunFd))
 	if err != nil {

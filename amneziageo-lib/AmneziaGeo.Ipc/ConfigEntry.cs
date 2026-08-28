@@ -29,7 +29,11 @@ public sealed record ConfigEntry(
     int LossPercent = LinkHealth.LossUnknown,
     // Round trip to the far end of the running tunnel, timed inside it; -1 on every config that is not running
     // and until the first echo comes back.
-    int RttMs = -1);
+    int RttMs = -1,
+    // Subscription the configuration came in with; empty when it came from anywhere else.
+    string Subscription = "",
+    // Whether the subscription stopped carrying it. Such a config is never removed on its own.
+    bool SubscriptionGone = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

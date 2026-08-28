@@ -173,6 +173,15 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         await store.RemoveConfigExclusionsAsync(name, ct);
         await store.RemoveDomainResolutionsAsync(name, ct);
 
+        // Подписка заведёт этот узел заново при следующем обновлении - принадлежность за удалённой не тянем.
+        foreach (var member in await store.ListSubscriptionMembersAsync(null, ct))
+        {
+            if (string.Equals(member.ConfigName, name, StringComparison.Ordinal))
+            {
+                await store.RemoveSubscriptionMemberAsync(member.Subscription, member.Remark, ct);
+            }
+        }
+
         RemoveLegacyConfigFile(name);
     }
 

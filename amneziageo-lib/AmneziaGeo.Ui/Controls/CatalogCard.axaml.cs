@@ -23,6 +23,9 @@ internal sealed partial class CatalogCard : UserControl
     public static readonly StyledProperty<ICommand?> ConnectCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(ConnectCommand));
 
+    public static readonly StyledProperty<ICommand?> RefreshSubscriptionCommandProperty =
+        AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(RefreshSubscriptionCommand));
+
     public static readonly StyledProperty<ICommand?> DropCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(DropCommand));
 
@@ -93,6 +96,15 @@ internal sealed partial class CatalogCard : UserControl
     {
         get => GetValue(ConnectCommandProperty);
         set => SetValue(ConnectCommandProperty, value);
+    }
+
+    /// <summary>
+    /// Команда, перечитывающая подписку, которой пришла конфигурация.
+    /// </summary>
+    public ICommand? RefreshSubscriptionCommand
+    {
+        get => GetValue(RefreshSubscriptionCommandProperty);
+        set => SetValue(RefreshSubscriptionCommandProperty, value);
     }
 
     /// <summary>

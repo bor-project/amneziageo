@@ -43,6 +43,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private const int GeoTickSeconds = 60;
     private const int MinGeoIntervalHours = 1;
     private const int MaxGeoIntervalHours = 24 * 7;
+
+    // Seconds between two looks at whose subscription interval has run out.
+    private const int SubscriptionTickSeconds = 900;
+    private const int DefaultSubscriptionIntervalHours = 12;
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
@@ -57,6 +61,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Null until the store has been read: the snapshot says "not loaded yet", not "no lists".
     private IReadOnlyList<RoutingListEntry>? _routingSummaries;
     private IReadOnlyDictionary<string, ConfigTransport> _transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
+
+    // Which subscription brought which configuration; empty until the store has been read.
+    private IReadOnlyDictionary<string, SubscriptionMember> _members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
     private IReadOnlyList<GeoSource> _geoSources = [];
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
@@ -88,6 +95,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private int _routeTtl = 300;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
+    private bool _subscriptionAutoRefresh = true;
+    private int _subscriptionIntervalHours = DefaultSubscriptionIntervalHours;
     private DateTimeOffset _geoCheckedAt;
     private readonly CancellationTokenSource _geoChecks = new();
     private bool _alwaysOn;
@@ -158,6 +167,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         SyncTunnelState();
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
         _ = CheckGeoUpdatesAsync(_geoChecks.Token);
+        _ = RefreshSubscriptionsAsync(_geoChecks.Token);
     }
 
     public Task<IpcAck> SendCommandAsync(IpcCommand command) => DispatchAsync(command);
@@ -208,6 +218,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Отбивает конфиг, который движок отверг бы при подъёме туннеля.
+    private static IpcAck? RejectBadConfig(string text)
+    {
+        try
+        {
+            WgConfigValidator.Validate(text);
+            return null;
+        }
+        catch (WgConfigFormatException ex)
+        {
+            return new IpcAck(false, ex.UnknownKey
+                ? IpcMessage.Key("Agent_ConfigUnsupportedKey", ex.Offender)
+                : IpcMessage.Key("Agent_ConfigRejected", ex.Message));
+        }
+    }
+
     private async Task<IpcAck> DispatchAsync(IpcCommand command)
     {
         var args = command.Args;
@@ -218,6 +244,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 if (args.Count < 2)
                 {
                     return Fail();
+                }
+
+                var rejected = RejectBadConfig(args[1]);
+                if (rejected is not null)
+                {
+                    return rejected;
                 }
 
                 // Import creates; replacing the text of an existing configuration is edit-config.
@@ -247,6 +279,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpCopyConfig:
                 return await CopyConfigAsync(args).ConfigureAwait(false);
+
+            case IpcContract.OpAddSubscription:
+                return await AddSubscriptionAsync(args).ConfigureAwait(false);
+
+            case IpcContract.OpListSubscriptions:
+                return await ListSubscriptionsAsync().ConfigureAwait(false);
+
+            case IpcContract.OpRefreshSubscription:
+                return await RefreshSubscriptionAsync(args).ConfigureAwait(false);
+
+            case IpcContract.OpRemoveSubscription:
+                return await RemoveSubscriptionAsync(args).ConfigureAwait(false);
+
+            case IpcContract.OpConfigSubscription:
+                return await ConfigSubscriptionAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpRemoveConfig:
                 return await RemoveConfigAsync(args).ConfigureAwait(false);
@@ -488,7 +535,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
-            _transports.GetValueOrDefault(configName), foreground: true);
+            _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel));
         return Ok();
     }
 
@@ -504,7 +551,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return activity is not null && await activity.RequestVpnPermissionAsync(prepare);
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground)
+    // Движок пишет каждое своё решение через JNI: на диагностическом уровне это заметная доля времени пакета.
+    private static int EngineLogLevel(string level)
+    {
+        return level switch
+        {
+            "none" => 0,
+            "trace" or "debug" => 2,
+            _ => 1,
+        };
+    }
+
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -524,6 +582,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraAppMode, appMode);
             intent.PutExtra(GeoVpnService.ExtraAppList, appPkgs);
         }
+
+        intent.PutExtra(GeoVpnService.ExtraEngineLog, engineLog);
 
         if (transport is not null)
         {
@@ -781,6 +841,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RouteTtlSeconds: _routeTtl,
             GeoAutoCheck: _geoAutoCheck,
             GeoCheckIntervalHours: _geoCheckIntervalHours,
+            SubscriptionAutoRefresh: _subscriptionAutoRefresh,
+            SubscriptionRefreshIntervalHours: _subscriptionIntervalHours,
             UpdateUrl: _updater.Url,
             UpdateAvailable: _updater.Available,
             UpdateVersion: _updater.Version,
@@ -865,6 +927,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix))
             : -1;
         var reading = bound ? _link : LinkReading.Empty;
+        var member = _members.GetValueOrDefault(name);
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
             WebSocketHost: transport?.WebSocketHost ?? string.Empty,
@@ -876,7 +939,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             TxBitsPerSecond: reading.TxBitsPerSecond,
             HandshakesPerMinute: reading.HandshakesPerMinute,
             LossPercent: reading.LossPercent,
-            RttMs: reading.RttMs);
+            RttMs: reading.RttMs,
+            Subscription: member?.Subscription ?? string.Empty,
+            SubscriptionGone: member is { Present: false });
     }
 
     private string StatusFor(string target)
@@ -1848,6 +1913,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _transports = transports;
+        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+    }
+
+    private async Task RefreshSubscriptionMembersAsync()
+    {
+        var members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
+        foreach (var member in await _store.ListSubscriptionMembersAsync(null).ConfigureAwait(false))
+        {
+            members[member.ConfigName] = member;
+        }
+
+        _members = members;
     }
 
     // Picks the routing list every config uses. Args: list id, or "none" to turn routing off.
@@ -1974,6 +2051,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return long.TryParse(idPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? (id, useRouting) : (null, false);
     }
 
+    private static int SubscriptionInterval(string? value)
+    {
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
+            ? Math.Clamp(hours, SettingKeys.SubscriptionIntervalMinHours, SettingKeys.SubscriptionIntervalMaxHours)
+            : DefaultSubscriptionIntervalHours;
+    }
+
     private static int GeoInterval(string? value) =>
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
             ? Math.Clamp(hours, MinGeoIntervalHours, MaxGeoIntervalHours)
@@ -2037,6 +2121,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 && geoInterval.ValueKind == JsonValueKind.Number)
             {
                 _geoCheckIntervalHours = GeoInterval(geoInterval.GetRawText());
+            }
+
+            if (document.RootElement.TryGetProperty("SubscriptionAutoRefresh", out var subAuto)
+                && subAuto.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _subscriptionAutoRefresh = subAuto.ValueKind == JsonValueKind.True;
+            }
+
+            if (document.RootElement.TryGetProperty("SubscriptionInterval", out var subInterval)
+                && subInterval.ValueKind == JsonValueKind.Number)
+            {
+                _subscriptionIntervalHours = SubscriptionInterval(subInterval.GetRawText());
             }
 
             if (document.RootElement.TryGetProperty("GeoCheckedAt", out var geoChecked)
@@ -2138,6 +2234,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
             builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
             builder.Append(",\"GeoCheckedAt\":").Append(JsonSerializer.Serialize(_geoCheckedAt.ToString("O", CultureInfo.InvariantCulture)));
+            builder.Append(",\"SubscriptionAutoRefresh\":").Append(_subscriptionAutoRefresh ? "true" : "false");
+            builder.Append(",\"SubscriptionInterval\":").Append(_subscriptionIntervalHours);
             builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
@@ -2778,6 +2876,170 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Refuses while the config is the running target; otherwise drops it with its stored settings and clears a selection pointing at it.
+    private async Task<IpcAck> AddSubscriptionAsync(IReadOnlyList<string> args)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var outcome = await Subscriptions().AddAsync(args, CancellationToken.None).ConfigureAwait(false);
+        if (!outcome.Ack.Ok)
+        {
+            return outcome.Ack;
+        }
+
+        _log.Info("sub", $"subscription {outcome.Name} brought in {outcome.Added} configuration(s)");
+
+        // A first import is ready to dial: it takes the selection while there is none.
+        if (_selectedTarget is null
+            && await Subscriptions().MembersAsync(outcome.Name, CancellationToken.None).ConfigureAwait(false) is [var first, ..])
+        {
+            _selectedTarget = first;
+        }
+
+        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+        Save();
+        PushSnapshot();
+        return outcome.Ack;
+    }
+
+    private async Task<IpcAck> ListSubscriptionsAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        return await Subscriptions().ListAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var outcome = await Subscriptions().RefreshAsync(args, CancellationToken.None).ConfigureAwait(false);
+        FlagRewritten(outcome);
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        Save();
+        PushSnapshot();
+        return outcome.Ack;
+    }
+
+    private async Task<IpcAck> RemoveSubscriptionAsync(IReadOnlyList<string> args)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var ack = await Subscriptions().RemoveAsync(args, _active ? _boundTarget : null, CancellationToken.None).ConfigureAwait(false);
+        if (ack.Ok)
+        {
+            await RefreshTransportsAsync().ConfigureAwait(false);
+            Save();
+            PushSnapshot();
+        }
+
+        return ack;
+    }
+
+    private async Task<IpcAck> ConfigSubscriptionAsync(IReadOnlyList<string> args)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        return await Subscriptions().ConfigUrlAsync(args, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    // Re-reads the subscriptions whose interval has run out. A subscription lives on the open internet, so this
+    // runs whether or not the interface is up; a document of a couple of kilobytes needs no free link either.
+    private async Task RefreshSubscriptionsAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(GeoStartDelaySeconds), ct).ConfigureAwait(false);
+            while (!ct.IsCancellationRequested)
+            {
+                if (_subscriptionAutoRefresh)
+                {
+                    await EnsureInitAsync().ConfigureAwait(false);
+                    var service = Subscriptions();
+                    var due = await service.DueAsync(_subscriptionIntervalHours, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+                    foreach (var subscription in due)
+                    {
+                        var outcome = await service.RefreshAsync([subscription.Name], ct).ConfigureAwait(false);
+                        FlagRewritten(outcome);
+                        if (!outcome.Ack.Ok)
+                        {
+                            _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");
+                        }
+                    }
+
+                    if (due.Count > 0)
+                    {
+                        Save();
+                        PushSnapshot();
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(SubscriptionTickSeconds), ct).ConfigureAwait(false);
+            }
+        }
+        catch (System.OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("sub", "the scheduled re-read of the subscriptions stopped", ex);
+        }
+    }
+
+    // A rewritten text applies on a fresh interface; flag a reconnect when the running target is affected.
+    private void FlagRewritten(SubscriptionOutcome outcome)
+    {
+        if (_active && outcome.Rewritten.Any(name => string.Equals(name, _boundTarget, StringComparison.Ordinal)))
+        {
+            _restartRequired = true;
+        }
+    }
+
+    private SubscriptionService Subscriptions()
+    {
+        return new SubscriptionService(_geoHttp, _store, new MapLibrary(this));
+    }
+
+    // The configuration library as a subscription sees it: this head keeps its configurations in one map.
+    private sealed class MapLibrary(AndroidAgentConnection agent) : ISubscriptionLibrary
+    {
+        public Task<IReadOnlyCollection<string>> NamesAsync(CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyCollection<string>>([.. agent._configs.Keys]);
+        }
+
+        public Task<string?> TextAsync(string name, CancellationToken ct)
+        {
+            return Task.FromResult(agent._configs.TryGetValue(name, out var text) ? text : null);
+        }
+
+        public Task AddAsync(string name, string confText, CancellationToken ct)
+        {
+            agent._configs[name] = confText;
+            return Task.CompletedTask;
+        }
+
+        public Task EditAsync(string name, string confText, CancellationToken ct)
+        {
+            agent._configs[name] = confText;
+            return Task.CompletedTask;
+        }
+
+        public async Task RemoveAsync(string name, CancellationToken ct)
+        {
+            agent._configs.Remove(name);
+            if (string.Equals(name, agent._selectedTarget, StringComparison.Ordinal))
+            {
+                agent._selectedTarget = null;
+            }
+
+            // Always-on raises the last session on its own: a config that is gone must not come back with it.
+            if (VpnBridge.ReadRequest() is { } stored && string.Equals(name, stored.Name, StringComparison.Ordinal))
+            {
+                VpnBridge.ClearRequest();
+            }
+
+            await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
+        }
+    }
+
     private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 1)
@@ -2971,6 +3233,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return Ok();
             case "geo-check-interval-hours":
                 _geoCheckIntervalHours = GeoInterval(args[1]);
+                Save();
+                PushSnapshot();
+                return Ok();
+            case SettingKeys.SubscriptionAutoRefresh:
+                _subscriptionAutoRefresh = IsOn(args[1]);
+                Save();
+                PushSnapshot();
+                return Ok();
+            case SettingKeys.SubscriptionRefreshInterval:
+                _subscriptionIntervalHours = SubscriptionInterval(args[1]);
                 Save();
                 PushSnapshot();
                 return Ok();

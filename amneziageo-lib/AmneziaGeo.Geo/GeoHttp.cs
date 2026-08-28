@@ -9,7 +9,9 @@ namespace AmneziaGeo.Geo;
 /// <summary>
 /// HTTP for geo sources. A request the machine refuses over its certificate is repeated without verifying
 /// the server, so a host whose certificate store or clock is out of date still receives the rule databases.
-/// Downloads of the application setup deliberately do not go through here.
+/// A subscription is not such a source: it carries private keys, so it goes through <see cref="SendVerifiedAsync"/>
+/// and a rejected certificate stays an error there. Downloads of the application setup deliberately do not go
+/// through here either.
 /// </summary>
 public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposable
 {
@@ -30,6 +32,14 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
             Report(request.RequestUri?.ToString(), ex);
             return await _unverified.Value.SendAsync(Clone(request), completion, ct);
         }
+    }
+
+    /// <summary>
+    /// Sends a request whose answer has to be proven: a rejected certificate stays an error.
+    /// </summary>
+    public Task<HttpResponseMessage> SendVerifiedAsync(HttpRequestMessage request, HttpCompletionOption completion, CancellationToken ct)
+    {
+        return http.SendAsync(request, completion, ct);
     }
 
     /// <summary>

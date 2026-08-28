@@ -1,2 +1,4 @@
 # Shell scripts must stay LF so the shebang works on macOS/Linux.
 *.sh text eol=lf
+# Debian control files must stay LF or dpkg-deb rejects the package.
+amneziageo-linux/packaging/** text eol=lf

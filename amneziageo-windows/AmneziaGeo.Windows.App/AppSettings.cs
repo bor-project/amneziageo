@@ -148,6 +148,16 @@ internal sealed record AppSettings
     public int BalanceMarginPercent { get; init; } = AmneziaGeo.Ipc.Fleet.BalancePolicy.Default.MarginPercent;
 
     /// <summary>
+    /// Re-read subscriptions on a timer.
+    /// </summary>
+    public bool SubscriptionAutoRefresh { get; init; } = true;
+
+    /// <summary>
+    /// How often subscriptions are re-read when the panel names no interval of its own, in hours.
+    /// </summary>
+    public int SubscriptionRefreshIntervalHours { get; init; } = 12;
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public bool ProxyEnabled { get; init; }

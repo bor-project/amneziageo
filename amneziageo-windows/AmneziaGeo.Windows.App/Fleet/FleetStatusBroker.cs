@@ -31,6 +31,7 @@ internal sealed class FleetStatusBroker(
     CheckService checks,
     LocalProxyService proxy,
     WindowsHotspotService hotspot,
+    GeoHttp geoHttp,
     ILogger<AgentStatusBroker> logger,
     AgentMode mode,
     FleetControl fleet,
@@ -56,6 +57,7 @@ internal sealed class FleetStatusBroker(
         checks,
         proxy,
         hotspot,
+        geoHttp,
         logger)
 {
     /// <inheritdoc/>

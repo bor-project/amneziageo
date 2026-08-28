@@ -146,6 +146,41 @@ public interface IStateStore
     Task RemoveGeoSourceAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns every subscription, by name.
+    /// </summary>
+    Task<IReadOnlyList<Subscription>> ListSubscriptionsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a subscription by its name.
+    /// </summary>
+    Task SaveSubscriptionAsync(Subscription subscription, CancellationToken ct = default);
+
+    /// <summary>
+    /// Drops a subscription together with the membership of its configs. The configs themselves stay.
+    /// </summary>
+    Task RemoveSubscriptionAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the configs a subscription brought in, or every one of them when no subscription is named.
+    /// </summary>
+    Task<IReadOnlyList<SubscriptionMember>> ListSubscriptionMembersAsync(string? subscription = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates one membership, keyed by the subscription and the node remark.
+    /// </summary>
+    Task SaveSubscriptionMemberAsync(SubscriptionMember member, CancellationToken ct = default);
+
+    /// <summary>
+    /// Drops one membership. The config itself stays.
+    /// </summary>
+    Task RemoveSubscriptionMemberAsync(string subscription, string remark, CancellationToken ct = default);
+
+    /// <summary>
+    /// Follows a config rename in every membership that points at it.
+    /// </summary>
+    Task RenameSubscriptionMemberAsync(string configName, string newConfigName, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates the resolved IPs for a tunnel's domain, tagged with the routing list it came from
     /// (0 = none/unknown). The list id lets a list's cached resolutions be cleaned when the list is removed.
     /// </summary>

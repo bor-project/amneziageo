@@ -122,7 +122,7 @@ public sealed class ServerSweepTests
         var report = new SweepReport(
             1_700_000_000_000,
             [
-                new SweepRow("bor (2)", LegState.Ok, 40, 3, 0, Best: true, Note: "46.8.237.222"),
+                new SweepRow("bor (2)", LegState.Ok, 40, 3, 0, Best: true, Note: "203.0.113.222"),
                 new SweepRow("myvpn", LegState.Weak, 55, 8, 25, Live: true),
             ],
             new CheckLeg(CheckLegs.Gateway, LegState.Ok, RttMs: 2, JitterMs: 1, LossPercent: 0, Note: "192.168.1.1"),
@@ -136,7 +136,7 @@ public sealed class ServerSweepTests
         Assert.Equal("bor (2)", back.Servers[0].Config);
         Assert.True(back.Servers[0].Best);
         Assert.False(back.Servers[0].Live);
-        Assert.Equal("46.8.237.222", back.Servers[0].Note);
+        Assert.Equal("203.0.113.222", back.Servers[0].Note);
         Assert.True(back.Servers[1].Live);
         Assert.Equal(25, back.Servers[1].LossPercent);
         Assert.Equal(2, back.Gateway?.RttMs);

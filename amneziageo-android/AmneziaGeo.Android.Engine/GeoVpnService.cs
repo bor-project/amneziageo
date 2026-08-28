@@ -93,6 +93,11 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraIpv6 = "ipv6";
 
+    /// <summary>
+    /// Уровень, на котором движок пишет о себе: молчит, только ошибки, каждое решение.
+    /// </summary>
+    public const string ExtraEngineLog = "engine-log";
+
     private const string ChannelId = "amneziageo.vpn";
     private const int NotificationId = 1001;
     private const int DefaultMtu = 1420;
@@ -199,7 +204,7 @@ public sealed class GeoVpnService : VpnService
         _recovery.Reset();
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
-            request.Mtu, request.Ipv6, request.WsHost, request.WsPort));
+            request.Mtu, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog));
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -344,7 +349,7 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
-                    request.Ipv6, request.WsHost, request.WsPort).ConfigureAwait(false);
+                    request.Ipv6, request.WsHost, request.WsPort, request.EngineLog).ConfigureAwait(false);
             }
             finally
             {
@@ -375,7 +380,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, bool ipv6, string? wsHost, int wsPort)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, bool ipv6, string? wsHost, int wsPort, int engineLog)
     {
         try
         {
@@ -426,7 +431,7 @@ public sealed class GeoVpnService : VpnService
             _carved = new List<string>(rules.Local);
 
             var tunFd = pfd.DetachFd();
-            var handle = AwgEngine.TurnOn(Restrict(uapi, rules.Allowed), tunFd);
+            var handle = AwgEngine.TurnOn(Restrict(uapi, rules.Allowed), tunFd, engineLog);
             if (handle < 0)
             {
                 ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
@@ -1315,7 +1320,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetIntExtra(ExtraMtu, 0),
             intent.GetBooleanExtra(ExtraIpv6, false),
             intent.GetStringExtra(ExtraWsHost),
-            intent.GetIntExtra(ExtraWsPort, 0));
+            intent.GetIntExtra(ExtraWsPort, 0),
+            intent.GetIntExtra(ExtraEngineLog, AwgEngine.LogError));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Threading;
 using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Ui.Controls;
@@ -31,8 +32,20 @@ internal sealed class AdaptiveComboBox : ComboBox
     }
 
     // The head holds a copy of the picked row's content, taken when the pick was made: a translation that
-    // arrives later reaches the row and never the copy.
+    // arrives later reaches the row and never the copy. Смена языка приходит и с чужого потока - консольная
+    // команда ставит культуру у себя, - поэтому голова переписывается через диспетчер.
     private void RetitleHead()
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            Retitle();
+            return;
+        }
+
+        Dispatcher.UIThread.Post(Retitle);
+    }
+
+    private void Retitle()
     {
         if (SelectedItem is ContentControl row)
         {

@@ -31,7 +31,29 @@ public static partial class Program
             return;
         }
 
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        // A crash on the UI thread kills the process before the exit line below, leaving no trace at all.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            ClientLog.Error("GUI crashed", e.ExceptionObject as Exception);
+            ClientLog.Flush();
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            ClientLog.Error("background task failed", e.Exception);
+            e.SetObserved();
+        };
+
+        try
+        {
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            ClientLog.Error("GUI crashed", ex);
+            ClientLog.Flush();
+            throw;
+        }
 
         ClientLog.Info("GUI exited");
         ClientLog.Flush();

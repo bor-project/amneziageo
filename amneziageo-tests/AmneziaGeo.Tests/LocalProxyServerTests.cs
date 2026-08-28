@@ -240,7 +240,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public void APublicAddress_IsNeverOffered()
     {
-        var wan = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, true, [IPAddress.Parse("46.8.237.222")]);
+        var wan = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, true, [IPAddress.Parse("203.0.113.222")]);
 
         Assert.Empty(LocalProxyServer.Usable([wan]));
     }

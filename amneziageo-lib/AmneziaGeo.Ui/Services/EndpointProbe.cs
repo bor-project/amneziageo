@@ -30,6 +30,11 @@ internal enum ProbeOutcome
     /// The endpoint carries no address, or its name does not resolve.
     /// </summary>
     NoAddress,
+
+    /// <summary>
+    /// Эхо не выйдет наружу: туннель поднят на другой конфигурации и уводит его в себя.
+    /// </summary>
+    Shielded,
 }
 
 /// <summary>

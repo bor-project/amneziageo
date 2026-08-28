@@ -139,6 +139,12 @@ public static class CliRunner
               source edit <name> geosite|geoip <url>
               source remove <name>
 
+            subscriptions
+              sub list                          what is subscribed to, and what the panel reports
+              sub add <url> [<name>]            read a subscription and bring its configurations in
+              sub refresh [<name>]              read it again: new appear, changed are rewritten
+              sub remove <name> [--configs]     drop it, and with --configs what it brought in
+
             agent settings
               settings show
               settings set <key> <value>
@@ -202,6 +208,7 @@ public static class CliRunner
             "config" => await ConfigCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
+            "sub" => await SubscriptionCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "proxy" => await ProxyCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "hotspot" => await HotspotCommands.RunAsync(agent, arguments).ConfigureAwait(false),

@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, ILogger<AgentStatusBroker> logger)
+internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, GeoHttp geoHttp, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -243,6 +243,11 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpSetConnection => await SetConnectionAsync(command.Args, ct),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
                 IpcContract.OpSelectConfig => await SelectConfigAsync(command.Args, ct),
+                IpcContract.OpAddSubscription => await AddSubscriptionAsync(command.Args, ct),
+                IpcContract.OpListSubscriptions => await ListSubscriptionsAsync(ct),
+                IpcContract.OpRefreshSubscription => await RefreshSubscriptionAsync(command.Args, ct),
+                IpcContract.OpRemoveSubscription => await RemoveSubscriptionAsync(command.Args, ct),
+                IpcContract.OpConfigSubscription => await ConfigSubscriptionAsync(command.Args, ct),
                 IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
                 IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
                 IpcContract.OpEditSource => await EditSourceAsync(command.Args, ct),
@@ -353,6 +358,121 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         await EnsureDefaultTargetAsync(args[0], ct);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigImported", args[0]));
+    }
+
+    private async Task<IpcAck> AddSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var outcome = await Subscriptions().AddAsync(args, ct);
+        if (outcome.Ack.Ok)
+        {
+            logger.LogInformation("subscription {Name} brought in {Added} configs", outcome.Name, outcome.Added);
+        }
+
+        return outcome.Ack;
+    }
+
+    private async Task<IpcAck> ListSubscriptionsAsync(CancellationToken ct)
+    {
+        return await Subscriptions().ListAsync(ct);
+    }
+
+    private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var outcome = await Subscriptions().RefreshAsync(args, ct);
+
+        // Переписанный текст встаёт на следующем подъёме туннеля.
+        if (control.Running && outcome.Rewritten.Any(IsRunningMember))
+        {
+            control.SetRestartRequired();
+        }
+
+        if (outcome.Ack.Ok)
+        {
+            logger.LogInformation("subscriptions refreshed: {Added} added, {Updated} rewritten, {Gone} gone", outcome.Added, outcome.Updated, outcome.Gone);
+        }
+
+        return outcome.Ack;
+    }
+
+    private async Task<IpcAck> RemoveSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var ack = await Subscriptions().RemoveAsync(args, control.Running ? BoundTarget : null, ct);
+        if (ack.Ok)
+        {
+            logger.LogInformation("removed subscription {Name}", args[0]);
+        }
+
+        return ack;
+    }
+
+    private async Task<IpcAck> ConfigSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        return await Subscriptions().ConfigUrlAsync(args, ct);
+    }
+
+    /// <summary>
+    /// Обновляет подписки, которым пора, у каждой открытой библиотеки, и просит перезапуск, если переписана
+    /// работающая конфигурация. Подписки живут у пользователя, поэтому обходятся все известные корни.
+    /// </summary>
+    public async Task<int> RefreshDueSubscriptionsAsync(int fallbackHours, CancellationToken ct)
+    {
+        var roots = registry.OpenedRoots().Append(AppDataRoot.Base()).Distinct(StringComparer.OrdinalIgnoreCase);
+        var refreshed = 0;
+        foreach (var root in roots)
+        {
+            var scope = ScopeFor(root);
+            var service = new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope));
+            foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
+            {
+                var outcome = await service.RefreshAsync([subscription.Name], ct);
+                if (control.Running && outcome.Rewritten.Any(IsRunningMember))
+                {
+                    control.SetRestartRequired();
+                }
+
+                refreshed++;
+            }
+        }
+
+        return refreshed;
+    }
+
+    // Подписки того пользователя, чьё соединение обслуживается.
+    private SubscriptionService Subscriptions()
+    {
+        var scope = CurrentScope;
+        return new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope));
+    }
+
+    // Библиотека конфигураций того пользователя, чьё соединение обслуживается.
+    private sealed class ScopeLibrary(AgentStatusBroker owner, BrokerScope scope) : ISubscriptionLibrary
+    {
+        public async Task<IReadOnlyCollection<string>> NamesAsync(CancellationToken ct)
+        {
+            return await scope.ConfigRepo.ListAsync(ct);
+        }
+
+        public async Task<string?> TextAsync(string name, CancellationToken ct)
+        {
+            return await scope.ConfigRepo.ExistsAsync(name, ct) ? await scope.ConfigRepo.ReadTextAsync(name, ct) : null;
+        }
+
+        public Task AddAsync(string name, string confText, CancellationToken ct)
+        {
+            return scope.ConfigRepo.AddFromTextAsync(name, confText, ct);
+        }
+
+        public Task EditAsync(string name, string confText, CancellationToken ct)
+        {
+            return scope.ConfigRepo.EditFromTextAsync(name, confText, ct);
+        }
+
+        public async Task RemoveAsync(string name, CancellationToken ct)
+        {
+            await scope.ConfigRepo.RemoveAsync(name, ct);
+            await scope.Store.RemoveTunnelStateAsync(name, ct);
+            await owner.ClearBindingIfTargetAsync(name, ct);
+        }
     }
 
     private async Task<IpcAck> EditConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2463,6 +2583,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
         var defaultExclusions = default(string);
+        var members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
+        foreach (var member in await store.ListSubscriptionMembersAsync(null, ct))
+        {
+            members[member.ConfigName] = member;
+        }
+
         foreach (var name in await configRepo.ListAsync(ct))
         {
             var configText = await configRepo.ReadTextAsync(name, ct);
@@ -2479,7 +2605,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var bound = string.Equals(name, boundConfig, StringComparison.Ordinal);
             var handshake = bound ? handshakeAge : -1;
             var reading = bound ? link : LinkReading.Empty;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs));
+            var member = members.GetValueOrDefault(name);
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }));
         }
 
         var routingLists = new List<RoutingListEntry>();
@@ -2574,6 +2701,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             HotspotBandActual: hotspot.BandActual,
             HotspotClients: hotspot.Clients,
             HotspotMaxClients: hotspot.MaxClients,
+            SubscriptionAutoRefresh: settings.SubscriptionAutoRefresh,
+            SubscriptionRefreshIntervalHours: settings.SubscriptionRefreshIntervalHours,
             MultiServer: settings.MultiServer), scope, states);
     }
 

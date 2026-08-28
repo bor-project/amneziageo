@@ -26,6 +26,19 @@ public static class WgQuickToUapi
         ["I3"] = "i3",
         ["I4"] = "i4",
         ["I5"] = "i5",
+        ["ContentPaddingAddition"] = "content_padding_addition",
+        ["RekeyAfterTime"] = "rekey_after_time",
+        ["RekeyTimeout"] = "rekey_timeout",
+        ["RejectAfterTime"] = "reject_after_time",
+        ["KeepaliveTimeout"] = "keepalive_timeout",
+        ["MaxHandshakeAttempts"] = "max_handshake_attempts",
+    };
+
+    // Interface-level AmneziaWG 3.1 flags, mapped to their UAPI tokens.
+    private static readonly IReadOnlyDictionary<string, string> AwgBoolKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["RandomTrailers"] = "random_trailers",
+        ["DisableCookies"] = "disable_cookies",
     };
 
     /// <summary>
@@ -129,10 +142,32 @@ public static class WgQuickToUapi
         {
             lines.Add($"listen_port={value}");
         }
+        else if (key.Equals("HeaderProtectionKey", StringComparison.OrdinalIgnoreCase))
+        {
+            var hex = KeyToHex(value);
+            if (hex is not null)
+            {
+                lines.Add($"header_protection_key={hex}");
+            }
+        }
+        else if (AwgBoolKeys.TryGetValue(key, out var boolToken))
+        {
+            lines.Add($"{boolToken}={BoolToUapi(value)}");
+        }
         else if (AwgKeys.TryGetValue(key, out var token))
         {
             lines.Add($"{token}={value}");
         }
+    }
+
+    // The device reads these through strconv.ParseBool, which rejects the on/off spelling wg-quick writes.
+    private static string BoolToUapi(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "on" or "1" or "true" or "t" or "yes" => "1",
+            _ => "0",
+        };
     }
 
     private static void AppendPeerLine(List<string> peer, string key, string value)
@@ -159,7 +194,7 @@ public static class WgQuickToUapi
         }
         else if (key.Equals("PersistentKeepalive", StringComparison.OrdinalIgnoreCase))
         {
-            peer.Add($"persistent_keepalive_interval={value}");
+            peer.Add($"persistent_keepalive_interval={KeepaliveToUapi(value)}");
         }
         else if (key.Equals("AllowedIPs", StringComparison.OrdinalIgnoreCase))
         {
@@ -169,6 +204,12 @@ public static class WgQuickToUapi
                 peer.Add($"allowed_ip={cidr}");
             }
         }
+    }
+
+    // wg-quick пишет выключенный keepalive словом, движок читает поле числовым диапазоном.
+    private static string KeepaliveToUapi(string value)
+    {
+        return value is "off" or "(off)" ? "0" : value;
     }
 
     private static string? KeyToHex(string base64)

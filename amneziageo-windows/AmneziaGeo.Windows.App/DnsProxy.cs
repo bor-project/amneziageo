@@ -228,42 +228,6 @@ internal sealed class DnsProxy
     }
 
     /// <summary>
-    /// Points the names another tunnel of the set carries at it: the first delegate names that tunnel, the
-    /// second has it look the name up and put the addresses on its own path.
-    /// </summary>
-    public void SetLentNames(Func<string, string?> owner, Func<string, string, Task<IReadOnlyList<string>>> carry)
-    {
-        _lentOwner = owner;
-        _lentCarry = carry;
-        ClearCache();
-    }
-
-    /// <summary>
-    /// Looks a name up for the tunnel holding this machine's lookups and puts its addresses on this one.
-    /// Empty when no rule here names it, or when nothing answered.
-    /// </summary>
-    public async Task<IReadOnlyList<string>> CarryAsync(string name)
-    {
-        if (!_matcher.IsTunneled(name))
-        {
-            _logger.LogDebug("{Name}: no rule of this tunnel names it, so it is not carried here", name);
-            return [];
-        }
-
-        var ips = new List<IPAddress>();
-        await CollectAddressesAsync(name, TypeA, ips).ConfigureAwait(false);
-        if (ips.Count == 0)
-        {
-            _logger.LogWarning("{Name}: the resolver in this tunnel did not answer, so what a rule sent here leaves directly until the next query", name);
-            return [];
-        }
-
-        var addresses = ips.Select(ip => ip.ToString()).ToList();
-        _tracker?.Add(name, addresses);
-        _logger.LogInformation("{Name}: looked up for the tunnel holding this machine's names; its {Count} address(es) now go through this one", name, addresses.Count);
-        return addresses;
-    }
-    /// <summary>
     /// Serves the clients of the access point on the address it hands them. Windows gives a datagram to the
     /// closest bind, so queries land here even while the sharing service holds every address on port 53.
     /// </summary>
@@ -310,6 +274,43 @@ internal sealed class DnsProxy
         _clientNames?.Clear();
         _clientNames = null;
         server.Dispose();
+    }
+
+    /// <summary>
+    /// Points the names another tunnel of the set carries at it: the first delegate names that tunnel, the
+    /// second has it look the name up and put the addresses on its own path.
+    /// </summary>
+    public void SetLentNames(Func<string, string?> owner, Func<string, string, Task<IReadOnlyList<string>>> carry)
+    {
+        _lentOwner = owner;
+        _lentCarry = carry;
+        ClearCache();
+    }
+
+    /// <summary>
+    /// Looks a name up for the tunnel holding this machine's lookups and puts its addresses on this one.
+    /// Empty when no rule here names it, or when nothing answered.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CarryAsync(string name)
+    {
+        if (!_matcher.IsTunneled(name))
+        {
+            _logger.LogDebug("{Name}: no rule of this tunnel names it, so it is not carried here", name);
+            return [];
+        }
+
+        var ips = new List<IPAddress>();
+        await CollectAddressesAsync(name, TypeA, ips).ConfigureAwait(false);
+        if (ips.Count == 0)
+        {
+            _logger.LogWarning("{Name}: the resolver in this tunnel did not answer, so what a rule sent here leaves directly until the next query", name);
+            return [];
+        }
+
+        var addresses = ips.Select(ip => ip.ToString()).ToList();
+        _tracker?.Add(name, addresses);
+        _logger.LogInformation("{Name}: looked up for the tunnel holding this machine's names; its {Count} address(es) now go through this one", name, addresses.Count);
+        return addresses;
     }
 
     /// <summary>

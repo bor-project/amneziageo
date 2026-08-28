@@ -15,6 +15,7 @@
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
     <StreamGeometry x:Key="AgEyeGeometry">M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z</StreamGeometry>
+    <StreamGeometry x:Key="AgTrashGeometry">M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z</StreamGeometry>
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Last row stars to fill the pane with the card catalogue. Cards stretch the full pane width. -->
@@ -53,11 +54,26 @@
             <TextBlock Text="{l:Tr Main_ProbeButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
+        <!-- Обновление всех подписок разом: появляется вместе с первой из них. -->
+        <Button Classes="methodpick" MinHeight="34" Padding="12,6" Margin="4,0,0,0"
+                HorizontalAlignment="Stretch" IsVisible="{Binding HasSubscriptions}"
+                Command="{Binding RefreshAllSubscriptionsCommand}" IsEnabled="{Binding !SubscriptionsRefreshing}"
+                ToolTip.Tip="{l:Tr General_SubscriptionRefreshAllHint}"
+                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <PathIcon Classes.spin="{Binding SubscriptionsRefreshing}" Data="{DynamicResource AgRefreshGeometry}"
+                      Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr General_SubscriptionRefreshAllButton}" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
       </UniformGrid>
 
       <!-- Каталог пуст: настроек ещё нет, добавление - единственный шаг. -->
       <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
                  Text="{l:Tr Main_ConfigCatalogueEmpty}" IsVisible="{Binding ShowNoConfigsHint}" />
+
     </StackPanel>
 
     <!-- Каталог карточек: кнопка на карточке и двойной щелчок по ней открывают настройки своей
@@ -75,6 +91,7 @@
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                      RefreshSubscriptionCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).RefreshConfigSubscriptionCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}">
                 <controls:CatalogCard.Extras>
                   <fleet:FleetCardStrip />
@@ -87,6 +104,7 @@
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                      RefreshSubscriptionCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).RefreshConfigSubscriptionCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
           </ItemsControl.DataTemplates>
@@ -110,6 +128,7 @@
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                      RefreshSubscriptionCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).RefreshConfigSubscriptionCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}">
                 <controls:CatalogCard.Extras>
                   <fleet:FleetCardStrip />
@@ -122,6 +141,7 @@
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                      RefreshSubscriptionCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).RefreshConfigSubscriptionCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
           </ItemsControl.DataTemplates>
@@ -161,11 +181,53 @@
 
           <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
           <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15"
+                         VerticalAlignment="Center" />
+              <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
+              <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
+                      IsVisible="{Binding HasOpenConfigSubscription}"
+                      IsEnabled="{Binding !OpenConfigSubscription.Busy}"
+                      Command="{Binding OpenConfigSubscription.RefreshCommand}"
+                      ToolTip.Tip="{Binding OpenConfigSubscription.Caption}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Classes.spin="{Binding OpenConfigSubscription.Busy}"
+                            Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
+                </StackPanel>
+              </Button>
+            </Grid>
             <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
                      Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
             <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
                        Text="{l:Tr Main_RequiredEmptyWarning}" />
+
+            <!-- Конфигурация из подписки: что подписка принесла, чем ответила в прошлый раз и как её снять. -->
+            <StackPanel Spacing="6" Margin="0,6,0,0" IsVisible="{Binding HasOpenConfigSubscription}">
+              <StackPanel Spacing="6" DataContext="{Binding OpenConfigSubscription}"
+                          x:DataType="vm:SubscriptionItemViewModel">
+                <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
+                           IsVisible="{Binding HasError}" />
+                <Button Classes="linkbtn" HorizontalAlignment="Left" IsVisible="{Binding !RemovePending}"
+                        Command="{Binding BeginRemoveCommand}" IsEnabled="{Binding !Busy}"
+                        Content="{l:Tr Main_SubscriptionRemove}" />
+
+                <!-- Снятие спрашивает про конфигурации: оставить их помеченными или снести вместе с подпиской. -->
+                <StackPanel Spacing="6" IsVisible="{Binding RemovePending}">
+                  <TextBlock Text="{l:Tr Main_SubscriptionRemovePrompt}" Classes="muted" FontSize="11.5"
+                             TextWrapping="Wrap" />
+                  <WrapPanel Orientation="Horizontal">
+                    <Button Classes="softbtn" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionKeepConfigs}"
+                            Command="{Binding RemoveKeepingConfigsCommand}" />
+                    <Button Classes="danger" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionDropConfigs}"
+                            Command="{Binding RemoveWithConfigsCommand}" />
+                    <Button Classes="softbtn" Margin="0,0,0,4" Content="{l:Tr Main_CancelButton}"
+                            Command="{Binding CancelRemoveCommand}" />
+                  </WrapPanel>
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
             <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
                        IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
@@ -289,9 +351,19 @@
         <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
               configuration. Shown beside the text, where there is something to apply them to. -->
         <Border DockPanel.Dock="Bottom" Margin="0,14,0,0"
-                IsVisible="{Binding IsImportManual}">
+                IsVisible="{Binding ShowSectionTransport}">
           <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
         </Border>
+
+        <!-- В поле лежит адрес подписки: сохранение заведёт её, а конфигурации она принесёт сама. -->
+        <TextBlock DockPanel.Dock="Bottom" Text="{l:Tr Main_SubscriptionHint}" Classes="muted"
+                   FontSize="11.5" TextWrapping="Wrap" Margin="0,10,0,0"
+                   IsVisible="{Binding SectionIsSubscription}" />
+
+        <!-- Адрес без TLS: ключи подписки приедут открытым текстом. -->
+        <TextBlock DockPanel.Dock="Bottom" Text="{l:Tr Main_SubscriptionInsecure}" Classes="fieldwarn"
+                   FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0"
+                   IsVisible="{Binding SectionSubscriptionInsecure}" />
 
         <!-- Источник: набранный текст либо живой сканер. -->
         <Panel MinHeight="220" Margin="0,12,0,0">
@@ -330,11 +402,26 @@
           <Border Background="{DynamicResource AgInsetBrush}"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                   CornerRadius="9" Padding="3" MaxWidth="480" HorizontalAlignment="Center">
-            <UniformGrid Columns="2">
+            <!-- Подпись вкладки держит ширину колонки: на трёх вкладках места мало, поэтому поля узкие,
+                 а текст ужимается. -->
+            <UniformGrid Columns="{Binding TabColumns}">
               <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                      Content="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Stretch" Padding="20,6" />
+                      HorizontalAlignment="Stretch" Padding="4,6">
+                <TextBlock Text="{l:Tr Main_QrConfTabShort}" TextTrimming="CharacterEllipsis"
+                           TextAlignment="Center" />
+              </Button>
               <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                      Content="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Stretch" Padding="20,6" />
+                      HorizontalAlignment="Stretch" Padding="4,6">
+                <TextBlock Text="{l:Tr Main_QrLinkTabShort}" TextTrimming="CharacterEllipsis"
+                           TextAlignment="Center" />
+              </Button>
+              <!-- Подписка есть не у всякой конфигурации, поэтому вкладка появляется вместе с ней. -->
+              <Button Classes="seg" Classes.active="{Binding IsQrSubscription}" Command="{Binding ShowQrSubscriptionCommand}"
+                      IsVisible="{Binding CanExportSubscription}"
+                      HorizontalAlignment="Stretch" Padding="4,6">
+                <TextBlock Text="{l:Tr Main_QrSubscriptionTabShort}" TextTrimming="CharacterEllipsis"
+                           TextAlignment="Center" />
+              </Button>
             </UniformGrid>
           </Border>
           <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
@@ -348,7 +435,7 @@
                        Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
           </Border>
           <!-- vpn:// link under its QR: read-only, borderless, selectable to copy. -->
-          <TextBox Text="{Binding LinkText}" IsReadOnly="True" IsVisible="{Binding IsQrLink}"
+          <TextBox Text="{Binding LinkText}" IsReadOnly="True" IsVisible="{Binding ShowLinkText}"
                    TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0"
                    FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11.5" />
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" MaxWidth="480" HorizontalAlignment="Center">

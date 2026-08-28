@@ -131,6 +131,10 @@ public sealed record StatusSnapshot(
     int HotspotClients = 0,
     // How many devices the access point admits.
     int HotspotMaxClients = 0,
+    // Whether subscriptions are re-read on a timer.
+    bool SubscriptionAutoRefresh = true,
+    // How often subscriptions are re-read when the panel names no interval of its own, in hours.
+    int SubscriptionRefreshIntervalHours = 12,
     // Whether several tunnels may be up at once.
     bool MultiServer = false,
     // What the mode holds while several tunnels may be up: every server, its role and what it carries. Null on a

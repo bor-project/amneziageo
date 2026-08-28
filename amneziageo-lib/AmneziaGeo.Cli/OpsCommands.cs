@@ -33,6 +33,10 @@ internal static class OpsCommands
         [IpcContract.OpReorderRoutingLists] = "routing order",
         [IpcContract.OpGetRoutingSettings] = "routing settings",
         [IpcContract.OpSetRoutingSettings] = "routing configure",
+        [IpcContract.OpAddSubscription] = "sub add",
+        [IpcContract.OpListSubscriptions] = "sub list",
+        [IpcContract.OpRefreshSubscription] = "sub refresh",
+        [IpcContract.OpRemoveSubscription] = "sub remove",
         [IpcContract.OpListGeo] = "geo list",
         [IpcContract.OpGetGeoEntries] = "geo show",
         [IpcContract.OpUpdateSources] = "geo update",
@@ -306,6 +310,7 @@ internal static class OpsCommands
             or IpcContract.OpAddConfig or IpcContract.OpImportConfig or IpcContract.OpEditConfig
             or IpcContract.OpImportBundle or IpcContract.OpRemoveConfig
             or IpcContract.OpRemoveRoutingList or IpcContract.OpRemoveSource
+            or IpcContract.OpAddSubscription or IpcContract.OpRefreshSubscription or IpcContract.OpRemoveSubscription
             or IpcContract.OpReportUpdateDownload or IpcContract.OpCancelUpdateDownload
             or IpcContract.OpDownloadUpdate or IpcContract.OpApplyUpdate
             or IpcContract.OpCheckChannel or IpcContract.OpCheckServers;

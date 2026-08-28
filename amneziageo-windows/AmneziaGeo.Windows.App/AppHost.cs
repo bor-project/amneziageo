@@ -56,6 +56,7 @@ internal static class AppHost
             builder.Services.AddHostedService<StatusPipeServer>();
             builder.Services.AddHostedService<UpdateCheckService>();
             builder.Services.AddHostedService<GeoUpdateCheckService>();
+            builder.Services.AddHostedService<SubscriptionRefreshService>();
             builder.Services.AddHostedService<GeoBootstrapService>();
             builder.Services.AddHostedService<DnsHealthService>();
             builder.Services.AddHostedService<LogLevelBackgroundWatcher>();

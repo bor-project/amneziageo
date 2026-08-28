@@ -98,6 +98,15 @@ internal static class ConfigAddOptions
             }
 
             var text = new UTF8Encoding(false, false).GetString(raw).TrimStart('﻿');
+            // Что пришло, решает содержимое: адрес подписки узнаётся так же, как конфигурация и ссылка.
+            if (SubscriptionCodec.LooksLikeAddress(text))
+            {
+                vm.SectionConfigText = text.Trim();
+                vm.SectionConfigStatus = string.Empty;
+                vm.ImportMethod = ConfigImportMethod.Manual;
+                return;
+            }
+
             if (VpnLinkCodec.TryDecode(text) is not { } imported)
             {
                 vm.SectionConfigText = text;
@@ -124,6 +133,14 @@ internal static class ConfigAddOptions
         if (text is null)
         {
             vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrNotFound");
+            return;
+        }
+
+        if (SubscriptionCodec.LooksLikeAddress(text))
+        {
+            vm.SectionConfigText = text.Trim();
+            vm.SectionConfigStatus = string.Empty;
+            vm.ImportMethod = ConfigImportMethod.Manual;
             return;
         }
 

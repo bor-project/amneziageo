@@ -1395,6 +1395,30 @@ Renamed on import: several names clashed with existing ones.</value>
   <data name="Agent_ConfigCopied" xml:space="preserve">
     <value>config copied: {0}</value>
   </data>
+  <data name="Agent_SubscriptionBadUrl" xml:space="preserve">
+    <value>not a subscription address: {0}</value>
+  </data>
+  <data name="Agent_SubscriptionNameTaken" xml:space="preserve">
+    <value>subscription {0} already exists</value>
+  </data>
+  <data name="Agent_SubscriptionUnknown" xml:space="preserve">
+    <value>unknown subscription: {0}</value>
+  </data>
+  <data name="Agent_SubscriptionFailed" xml:space="preserve">
+    <value>subscription {0} could not be read: {1}</value>
+  </data>
+  <data name="Agent_SubscriptionAdded" xml:space="preserve">
+    <value>subscription {0}: {1} configs</value>
+  </data>
+  <data name="Agent_SubscriptionRefreshed" xml:space="preserve">
+    <value>{0} added, {1} rewritten, {2} gone</value>
+  </data>
+  <data name="Agent_SubscriptionRemoved" xml:space="preserve">
+    <value>subscription {0} removed</value>
+  </data>
+  <data name="Main_QrSubscriptionTabShort" xml:space="preserve">
+    <value>Subscription</value>
+  </data>
   <data name="Agent_ConfigImported" xml:space="preserve">
     <value>imported {0}</value>
   </data>
@@ -1989,6 +2013,69 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   </data>
   <data name="Main_CardTagMtuAuto" xml:space="preserve">
     <value>MTU auto</value>
+  </data>
+  <data name="Main_CardTagSubscription" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Main_CardTagSubscriptionGone" xml:space="preserve">
+    <value>gone from {0}</value>
+  </data>
+  <data name="Main_SubscriptionsTitle" xml:space="preserve">
+    <value>Subscriptions</value>
+  </data>
+  <data name="Main_SubscriptionConfigs" xml:space="preserve">
+    <value>configurations: {0}</value>
+  </data>
+  <data name="Main_SubscriptionGone" xml:space="preserve">
+    <value>gone: {0}</value>
+  </data>
+  <data name="Main_SubscriptionTraffic" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="Main_SubscriptionExpires" xml:space="preserve">
+    <value>until {0}</value>
+  </data>
+  <data name="Main_SubscriptionChecked" xml:space="preserve">
+    <value>read {0}</value>
+  </data>
+  <data name="Main_SubscriptionNever" xml:space="preserve">
+    <value>not read yet</value>
+  </data>
+  <data name="Main_SubscriptionRefresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Main_SubscriptionRemove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Main_SubscriptionRemovePrompt" xml:space="preserve">
+    <value>Remove the subscription and what it brought in?</value>
+  </data>
+  <data name="Main_SubscriptionKeepConfigs" xml:space="preserve">
+    <value>Keep the configurations</value>
+  </data>
+  <data name="Main_SubscriptionDropConfigs" xml:space="preserve">
+    <value>Remove them too</value>
+  </data>
+  <data name="Main_SubscriptionHint" xml:space="preserve">
+    <value>A subscription address is recognised on its own: paste it here and the configurations come with it.</value>
+  </data>
+  <data name="Main_SubscriptionInsecure" xml:space="preserve">
+    <value>This address is not encrypted: the keys of the subscription travel in the open, for anyone on the way to read.</value>
+  </data>
+  <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
+    <value>Re-read subscriptions</value>
+  </data>
+  <data name="General_SubscriptionAutoRefreshHint" xml:space="preserve">
+    <value>A configuration the panel changed is rewritten on its own; it applies on the next connect.</value>
+  </data>
+  <data name="General_SubscriptionInterval" xml:space="preserve">
+    <value>How often to re-read</value>
+  </data>
+  <data name="General_SubscriptionIntervalHint" xml:space="preserve">
+    <value>Used where the panel names no interval of its own.</value>
+  </data>
+  <data name="General_Hours" xml:space="preserve">
+    <value>hours</value>
   </data>
   <data name="Main_CardReorder" xml:space="preserve">
     <value>Reorder</value>

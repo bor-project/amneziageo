@@ -151,6 +151,31 @@ public static class IpcContract
     public const string OpSelectConfig = "set-config";
 
     /// <summary>
+    /// Adds a subscription and reads it right away: address, and optionally a name.
+    /// </summary>
+    public const string OpAddSubscription = "add-subscription";
+
+    /// <summary>
+    /// Lists the subscriptions as a JSON array of entries.
+    /// </summary>
+    public const string OpListSubscriptions = "list-subscriptions";
+
+    /// <summary>
+    /// Re-reads one subscription by name, or every one of them when none is named.
+    /// </summary>
+    public const string OpRefreshSubscription = "refresh-subscription";
+
+    /// <summary>
+    /// Drops a subscription; the second argument "configs" drops what it brought in as well.
+    /// </summary>
+    public const string OpRemoveSubscription = "remove-subscription";
+
+    /// <summary>
+    /// Returns the address of the subscription a configuration came from, empty when it came from elsewhere. Args: name.
+    /// </summary>
+    public const string OpConfigSubscription = "config-subscription";
+
+    /// <summary>
     /// Command to add a geo data source and download it immediately. Args: kind (geosite/geoip), url.
     /// </summary>
     public const string OpAddSource = "add-source";

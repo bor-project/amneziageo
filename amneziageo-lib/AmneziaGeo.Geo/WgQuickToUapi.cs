@@ -194,7 +194,7 @@ public static class WgQuickToUapi
         }
         else if (key.Equals("PersistentKeepalive", StringComparison.OrdinalIgnoreCase))
         {
-            peer.Add($"persistent_keepalive_interval={value}");
+            peer.Add($"persistent_keepalive_interval={KeepaliveToUapi(value)}");
         }
         else if (key.Equals("AllowedIPs", StringComparison.OrdinalIgnoreCase))
         {
@@ -204,6 +204,12 @@ public static class WgQuickToUapi
                 peer.Add($"allowed_ip={cidr}");
             }
         }
+    }
+
+    // wg-quick пишет выключенный keepalive словом, движок читает поле числовым диапазоном.
+    private static string KeepaliveToUapi(string value)
+    {
+        return value is "off" or "(off)" ? "0" : value;
     }
 
     private static string? KeyToHex(string base64)

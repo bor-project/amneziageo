@@ -45,6 +45,8 @@ internal static class SettingsCommands
             (_periodicReconnectKey, snapshot.PeriodicReconnect ? "on" : "off"),
             (_reconnectIntervalKey, snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)),
             (SettingKeys.RouteTtl, snapshot.RouteTtlSeconds.ToString(CultureInfo.InvariantCulture)),
+            (SettingKeys.SubscriptionAutoRefresh, snapshot.SubscriptionAutoRefresh ? "on" : "off"),
+            (SettingKeys.SubscriptionRefreshInterval, snapshot.SubscriptionRefreshIntervalHours.ToString(CultureInfo.InvariantCulture)),
         };
 
         if (Output.Json)
@@ -103,7 +105,7 @@ internal static class SettingsCommands
 
                 return true;
 
-            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey:
+            case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.SubscriptionAutoRefresh:
                 if (!Toggle.TryParse(raw, out var on))
                 {
                     error = $"{key} takes on or off";
@@ -121,6 +123,16 @@ internal static class SettingsCommands
                 }
 
                 value = seconds.ToString(CultureInfo.InvariantCulture);
+                return true;
+
+            case SettingKeys.SubscriptionRefreshInterval:
+                if (!SettingKeys.TryParseSubscriptionInterval(raw, out var hours))
+                {
+                    error = $"{key} takes whole hours between {SettingKeys.SubscriptionIntervalMinHours} and {SettingKeys.SubscriptionIntervalMaxHours}";
+                    return false;
+                }
+
+                value = hours.ToString(CultureInfo.InvariantCulture);
                 return true;
 
             case SettingKeys.RouteTtl:

@@ -19,6 +19,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
 
     private IReadOnlyList<string> _configNames = [];
+    private IReadOnlyList<string> _subscriptionNames = [];
 
     // The order a drag just sent; held until a snapshot arrives carrying it.
     private IReadOnlyList<string>? _pendingOrder;
@@ -131,6 +132,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsImportPicker))]
     [NotifyPropertyChangedFor(nameof(IsImportManual))]
     [NotifyPropertyChangedFor(nameof(IsImportCamera))]
+    [NotifyPropertyChangedFor(nameof(ShowSectionTransport))]
     [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     private ConfigImportMethod _importMethod = ConfigImportMethod.Picker;
@@ -178,6 +180,16 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// Configuration rows.
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
+
+    /// <summary>
+    /// Подписки, которыми ведётся часть каталога.
+    /// </summary>
+    public ObservableCollection<SubscriptionItemViewModel> Subscriptions { get; } = [];
+
+    /// <summary>
+    /// Есть ли хоть одна заведённая подписка.
+    /// </summary>
+    public bool HasSubscriptions => Subscriptions.Count > 0;
 
     /// <summary>
     /// The same catalogue for the home picker, «не выбрано» first: the connection card takes no configuration
@@ -256,7 +268,23 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         || string.Equals(SectionConfigName, _sectionConfigDefaultName, StringComparison.Ordinal);
 
     public bool CanSaveSectionConfig =>
-        VpnLinkCodec.TryDecode(SectionConfigText) is not null && !string.IsNullOrWhiteSpace(SectionConfigName);
+        (VpnLinkCodec.TryDecode(SectionConfigText) is not null || SubscriptionCodec.LooksLikeAddress(SectionConfigText))
+        && !string.IsNullOrWhiteSpace(SectionConfigName);
+
+    /// <summary>
+    /// Черновик держит адрес подписки, а не конфигурацию: сохранение заведёт подписку.
+    /// </summary>
+    public bool SectionIsSubscription => SubscriptionCodec.LooksLikeAddress(SectionConfigText);
+
+    /// <summary>
+    /// Адрес подписки без шифрования: ключи приедут открытым текстом.
+    /// </summary>
+    public bool SectionSubscriptionInsecure => SubscriptionCodec.IsPlainAddress(SectionConfigText);
+
+    /// <summary>
+    /// Транспорт правится у конфигурации: адресу подписки применять его не к чему.
+    /// </summary>
+    public bool ShowSectionTransport => IsImportManual && !SectionIsSubscription;
 
     public bool IsImportPicker => ImportMethod == ConfigImportMethod.Picker;
 
@@ -672,9 +700,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.HandshakesPerMinute = entry.HandshakesPerMinute;
             existing.LinkLossPercent = entry.LossPercent;
             existing.LinkRttMs = entry.RttMs;
+            existing.Subscription = entry.Subscription;
+            existing.SubscriptionGone = entry.SubscriptionGone;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
+
+        // Список подписок в снимке не едет: перечитываем его, когда каталог показал другой набор имён.
+        var carried = entries.Select(e => e.Subscription).Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        if (carried.Except(_subscriptionNames, StringComparer.Ordinal).Any())
+        {
+            _ = LoadSubscriptionsAsync();
+        }
+
         ReconcileConfigOptions();
         EnsurePickedCard();
 
@@ -703,9 +741,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _enterDeferred = false;
         NotifyCatalogueChanged();
         Configs.Clear();
+        Subscriptions.Clear();
+        OnPropertyChanged(nameof(HasSubscriptions));
         OpenConfig = null;
         _pendingOpenConfig = null;
         _configNames = [];
+        _subscriptionNames = [];
         IsCreatingSectionConfig = false;
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
@@ -778,6 +819,122 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         if (value)
         {
             FollowActiveCard(_host.Home.ActiveConfig?.Name);
+            _ = LoadSubscriptionsAsync();
+        }
+    }
+
+    /// <summary>
+    /// Перечитывает список подписок у агента и сводит с ним строки каталога.
+    /// </summary>
+    public async Task LoadSubscriptionsAsync()
+    {
+        var ack = await Ask(new IpcCommand(IpcContract.OpListSubscriptions, []));
+        if (ack is not { Ok: true })
+        {
+            return;
+        }
+
+        var entries = ParseSubscriptions(ack.Message);
+        var present = entries.Select(entry => entry.Name).ToHashSet(StringComparer.Ordinal);
+        for (var i = Subscriptions.Count - 1; i >= 0; i--)
+        {
+            if (!present.Contains(Subscriptions[i].Name))
+            {
+                Subscriptions.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var existing = Subscriptions.FirstOrDefault(item => string.Equals(item.Name, entry.Name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                existing = new SubscriptionItemViewModel(RefreshSubscriptionAsync, RemoveSubscriptionAsync) { Name = entry.Name };
+                Subscriptions.Insert(Math.Min(i, Subscriptions.Count), existing);
+            }
+
+            existing.Url = entry.Url;
+            existing.Title = entry.Title;
+            existing.Configs = entry.Configs;
+            existing.Gone = entry.Gone;
+            existing.Upload = entry.Upload;
+            existing.Download = entry.Download;
+            existing.Total = entry.Total;
+            existing.ExpiresAt = entry.ExpiresAt;
+            existing.CheckedAt = entry.CheckedAt;
+            existing.LastError = entry.LastError;
+        }
+
+        _subscriptionNames = [.. entries.Select(entry => entry.Name)];
+        OnPropertyChanged(nameof(HasSubscriptions));
+    }
+
+    private static IReadOnlyList<SubscriptionEntry> ParseSubscriptions(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<SubscriptionEntry>>(json, IpcJson.Options) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
+    }
+
+    // Перечитывает одну подписку по кнопке строки.
+    private async Task RefreshSubscriptionAsync(SubscriptionItemViewModel item)
+    {
+        if (item.Busy)
+        {
+            return;
+        }
+
+        item.Busy = true;
+        try
+        {
+            var ack = await Ask(new IpcCommand(IpcContract.OpRefreshSubscription, [item.Name]));
+            item.LastError = ack is { Ok: false } ? ack.Message : string.Empty;
+            await LoadSubscriptionsAsync();
+        }
+        finally
+        {
+            item.Busy = false;
+        }
+    }
+
+    // Снимает подписку, по требованию вместе с приведёнными ею конфигурациями.
+    private async Task RemoveSubscriptionAsync(SubscriptionItemViewModel item, bool withConfigs)
+    {
+        if (item.Busy)
+        {
+            return;
+        }
+
+        item.Busy = true;
+        try
+        {
+            var args = withConfigs ? new[] { item.Name, "configs" } : [item.Name];
+            var ack = await Ask(new IpcCommand(IpcContract.OpRemoveSubscription, args));
+            item.LastError = ack is { Ok: false } ? ack.Message : string.Empty;
+            await LoadSubscriptionsAsync();
+        }
+        finally
+        {
+            item.Busy = false;
+        }
+    }
+
+    // Команда агенту; оборванная труба - не повод ронять экран, ответа просто нет.
+    private async Task<IpcAck?> Ask(IpcCommand command)
+    {
+        try
+        {
+            return await _connection.SendCommandAsync(command);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
+            return null;
         }
     }
 
@@ -881,10 +1038,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     partial void OnSectionConfigTextChanged(string value)
     {
         SectionConfigStatus = string.Empty;
+        OnPropertyChanged(nameof(SectionIsSubscription));
+        OnPropertyChanged(nameof(SectionSubscriptionInsecure));
+        OnPropertyChanged(nameof(ShowSectionTransport));
         if (VpnLinkCodec.TryDecode(value) is { } imported)
         {
             SeedSectionNameFromConfig(imported);
             SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty);
+            return;
+        }
+
+        if (SubscriptionCodec.LooksLikeAddress(value))
+        {
+            SeedSectionNameFromAddress(value);
         }
     }
 
@@ -1202,17 +1368,32 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ImportMethod = ConfigImportMethod.Camera;
     }
 
-    // The scanner reports a decoded QR's raw text; accept it only when it decodes to a config.
+    // The scanner reports a decoded QR's raw text; accept a configuration, a link to one, or a subscription address.
     private bool TryAcceptScannedConfig(string text)
     {
-        var imported = VpnLinkCodec.TryDecodeQr(text);
-        if (imported is null)
+        if (VpnLinkCodec.TryDecodeQr(text) is { } imported)
+        {
+            ApplyScannedConfig(imported);
+            return true;
+        }
+
+        if (!SubscriptionCodec.LooksLikeAddress(text))
         {
             return false;
         }
 
-        ApplyScannedConfig(imported);
+        ApplyScannedAddress(text.Trim());
         return true;
+    }
+
+    // Заполняет черновик снятым адресом подписки.
+    private void ApplyScannedAddress(string url)
+    {
+        SeedSectionNameFromAddress(url);
+        SectionConfigText = url;
+        SectionConfigStatus = string.Empty;
+        SectionScan = null;
+        ImportMethod = ConfigImportMethod.Manual;
     }
 
     // Footer Save/Cancel: the same bar serves the import draft and the open-config edits.
@@ -1333,6 +1514,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return false;
         }
 
+        if (SubscriptionCodec.LooksLikeAddress(SectionConfigText))
+        {
+            return await SaveSectionSubscription();
+        }
+
         var imported = VpnLinkCodec.TryDecode(SectionConfigText);
         if (imported is null)
         {
@@ -1397,6 +1583,55 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         finally
         {
             _sectionConfigSaving = false;
+        }
+    }
+
+    // Заводит подписку по адресу из черновика: конфигурации приносит она сама, поэтому форма просто закрывается.
+    private async Task<bool> SaveSectionSubscription()
+    {
+        if (_sectionConfigSaving)
+        {
+            return false;
+        }
+
+        var url = SectionConfigText.Trim();
+        var name = !SectionConfigNameIsDefault ? SectionConfigName.Trim() : SubscriptionCodec.AddressName(url);
+        _sectionConfigSaving = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddSubscription, [url, name]));
+            if (!ack.Ok)
+            {
+                SectionConfigStatus = ack.Message;
+                return false;
+            }
+
+            IsCreatingSectionConfig = false;
+            SectionConfigName = string.Empty;
+            SectionConfigText = string.Empty;
+            SectionConfigStatus = string.Empty;
+            SectionTransport = null;
+            await LoadSubscriptionsAsync();
+            return true;
+        }
+        finally
+        {
+            _sectionConfigSaving = false;
+        }
+    }
+
+    // Имя подписки, пока в поле стоит дефолт: хост её адреса.
+    private void SeedSectionNameFromAddress(string url)
+    {
+        if (!SectionConfigNameIsDefault)
+        {
+            return;
+        }
+
+        var host = SubscriptionCodec.AddressName(url);
+        if (host.Length > 0)
+        {
+            SectionConfigName = UniqueName.ResolveParen(host, _subscriptionNames);
         }
     }
 

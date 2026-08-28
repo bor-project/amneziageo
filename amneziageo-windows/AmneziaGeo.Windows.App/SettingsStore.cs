@@ -31,6 +31,8 @@ internal sealed class SettingsStore(IStateStore store)
             PeriodicReconnect = ReadBool(values, "periodic-reconnect-enabled", defaults.PeriodicReconnect),
             PeriodicReconnectIntervalSeconds = ReadInt(values, "periodic-reconnect-interval-seconds", defaults.PeriodicReconnectIntervalSeconds),
             ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
+            SubscriptionAutoRefresh = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionAutoRefresh, defaults.SubscriptionAutoRefresh),
+            SubscriptionRefreshIntervalHours = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval, defaults.SubscriptionRefreshIntervalHours),
             AllowPrerelease = ReadBool(values, "allow-prerelease", defaults.AllowPrerelease),
             ProxyEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, defaults.ProxyEnabled),
             ProxySocksPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, defaults.ProxySocksPort),
@@ -75,6 +77,17 @@ internal sealed class SettingsStore(IStateStore store)
             }
 
             await store.SetSettingAsync(key, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
+            return true;
+        }
+
+        if (key == AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval)
+        {
+            if (!AmneziaGeo.Ipc.SettingKeys.TryParseSubscriptionInterval(value, out var hours))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, hours.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
             return true;
         }
 
@@ -188,7 +201,7 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. ShareKeys];
+        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. ShareKeys, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval];
     }
 
     private static readonly string[] IntKeys =
@@ -201,7 +214,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] ProxyPortKeys =
         [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.ShareEthernet];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.SubscriptionAutoRefresh, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.ShareEthernet];
 
     // Sharing settings, each with a rule of its own.
     private static readonly string[] ShareKeys =

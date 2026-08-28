@@ -53,6 +53,28 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     /// <inheritdoc/>
     public Task RemoveGeoSourceAsync(string name, CancellationToken ct = default) => machine.RemoveGeoSourceAsync(name, ct);
 
+    // Пользовательская библиотека: подписки идут за конфигурациями.
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Subscription>> ListSubscriptionsAsync(CancellationToken ct = default) => user.ListSubscriptionsAsync(ct);
+
+    /// <inheritdoc/>
+    public Task SaveSubscriptionAsync(Subscription subscription, CancellationToken ct = default) => user.SaveSubscriptionAsync(subscription, ct);
+
+    /// <inheritdoc/>
+    public Task RemoveSubscriptionAsync(string name, CancellationToken ct = default) => user.RemoveSubscriptionAsync(name, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<SubscriptionMember>> ListSubscriptionMembersAsync(string? subscription = null, CancellationToken ct = default) => user.ListSubscriptionMembersAsync(subscription, ct);
+
+    /// <inheritdoc/>
+    public Task SaveSubscriptionMemberAsync(SubscriptionMember member, CancellationToken ct = default) => user.SaveSubscriptionMemberAsync(member, ct);
+
+    /// <inheritdoc/>
+    public Task RemoveSubscriptionMemberAsync(string subscription, string remark, CancellationToken ct = default) => user.RemoveSubscriptionMemberAsync(subscription, remark, ct);
+
+    /// <inheritdoc/>
+    public Task RenameSubscriptionMemberAsync(string configName, string newConfigName, CancellationToken ct = default) => user.RenameSubscriptionMemberAsync(configName, newConfigName, ct);
+
     /// <inheritdoc/>
     public Task<GeoFileMetadata?> GetGeoFileAsync(string name, CancellationToken ct = default) => machine.GetGeoFileAsync(name, ct);
 

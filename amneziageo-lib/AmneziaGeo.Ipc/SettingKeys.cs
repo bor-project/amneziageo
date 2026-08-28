@@ -74,6 +74,26 @@ public static class SettingKeys
     public const string HotspotBand = "hotspot-band";
 
     /// <summary>
+    /// Whether subscriptions are re-read on a timer.
+    /// </summary>
+    public const string SubscriptionAutoRefresh = "subscription-auto-refresh-enabled";
+
+    /// <summary>
+    /// How often subscriptions are re-read when the panel names no interval of its own, in hours.
+    /// </summary>
+    public const string SubscriptionRefreshInterval = "subscription-refresh-interval-hours";
+
+    /// <summary>
+    /// Shortest re-read interval, in hours.
+    /// </summary>
+    public const int SubscriptionIntervalMinHours = 1;
+
+    /// <summary>
+    /// Longest re-read interval, in hours.
+    /// </summary>
+    public const int SubscriptionIntervalMaxHours = 24 * 7;
+
+    /// <summary>
     /// Longest network name a beacon carries, in bytes.
     /// </summary>
     public const int HotspotSsidMaxBytes = 32;
@@ -95,6 +115,15 @@ public static class SettingKeys
     public static bool TryParseRouteTtl(string? text, out int seconds)
     {
         return int.TryParse(text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out seconds);
+    }
+
+    /// <summary>
+    /// Reads a re-read interval: whole hours between 1 and 168.
+    /// </summary>
+    public static bool TryParseSubscriptionInterval(string? text, out int hours)
+    {
+        return int.TryParse(text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out hours)
+            && hours is >= SubscriptionIntervalMinHours and <= SubscriptionIntervalMaxHours;
     }
 
     /// <summary>

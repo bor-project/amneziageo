@@ -53,6 +53,8 @@ public static class ConfigRename
             await store.RemoveTunnelStateAsync(oldName, ct).ConfigureAwait(false);
         }
 
+        await store.RenameSubscriptionMemberAsync(oldName, newName, ct).ConfigureAwait(false);
+
         var selected = await store.GetSettingAsync(StateKeys.SelectedTarget, ct).ConfigureAwait(false);
         if (string.Equals(selected, oldName, StringComparison.Ordinal))
         {

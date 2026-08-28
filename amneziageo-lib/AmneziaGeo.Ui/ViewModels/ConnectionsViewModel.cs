@@ -60,9 +60,27 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     private bool _showNotifications = true;
 
     /// <summary>
+    /// Re-read the subscriptions on a timer.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionIntervalEnabled))]
+    private bool _subscriptionAutoRefresh = true;
+
+    /// <summary>
+    /// How often subscriptions are re-read where the panel names no interval of its own, in hours.
+    /// </summary>
+    [ObservableProperty]
+    private int _subscriptionIntervalHours = 12;
+
+    /// <summary>
     /// The interval input is editable only while periodic reconnect is on.
     /// </summary>
     public bool PeriodicReconnectIntervalEnabled => PeriodicReconnect;
+
+    /// <summary>
+    /// The interval input is editable only while the subscriptions are re-read on a timer.
+    /// </summary>
+    public bool SubscriptionIntervalEnabled => SubscriptionAutoRefresh;
 
     /// <summary>
     /// Whether the tunnel settings are offered (Windows only: the Android agent does not apply them).
@@ -401,6 +419,8 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
         ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
+        SubscriptionAutoRefresh = snapshot.SubscriptionAutoRefresh;
+        SubscriptionIntervalHours = snapshot.SubscriptionRefreshIntervalHours;
         ProxyEnabled = snapshot.ProxyEnabled;
         ProxyAnonymous = snapshot.ProxyAnonymous;
         ProxySocksPort = snapshot.ProxySocksPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -715,6 +735,22 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         if (!_suppressSettingPush && value > 0)
         {
             _ = SetSettingAsync("periodic-reconnect-interval-seconds", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    partial void OnSubscriptionAutoRefreshChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.SubscriptionAutoRefresh, value ? "on" : "off");
+        }
+    }
+
+    partial void OnSubscriptionIntervalHoursChanged(int value)
+    {
+        if (!_suppressSettingPush && value >= SettingKeys.SubscriptionIntervalMinHours && value <= SettingKeys.SubscriptionIntervalMaxHours)
+        {
+            _ = SetSettingAsync(SettingKeys.SubscriptionRefreshInterval, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
     }
 

@@ -141,6 +141,30 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at TEXT NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS subscriptions (
+                        name           TEXT PRIMARY KEY,
+                        url            TEXT NOT NULL,
+                        title          TEXT NOT NULL DEFAULT '',
+                        interval_hours INTEGER NOT NULL DEFAULT 0,
+                        upload         INTEGER NOT NULL DEFAULT 0,
+                        download       INTEGER NOT NULL DEFAULT 0,
+                        total          INTEGER NOT NULL DEFAULT 0,
+                        expires_at     TEXT NOT NULL DEFAULT '',
+                        checked_at     TEXT NOT NULL DEFAULT '',
+                        last_error     TEXT NOT NULL DEFAULT '',
+                        created_at     TEXT NOT NULL,
+                        updated_at     TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS subscription_configs (
+                        subscription TEXT NOT NULL,
+                        remark       TEXT NOT NULL,
+                        config_name  TEXT NOT NULL,
+                        present      INTEGER NOT NULL DEFAULT 1,
+                        updated_at   TEXT NOT NULL,
+                        PRIMARY KEY (subscription, remark)
+                    );
+
                     CREATE TABLE IF NOT EXISTS domain_ips (
                         id         INTEGER PRIMARY KEY AUTOINCREMENT,
                         tunnel     TEXT NOT NULL,
@@ -1047,6 +1071,224 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText = "DELETE FROM geo_sources WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<Subscription>> ListSubscriptionsAsync(CancellationToken ct = default)
+    {
+        var subscriptions = new List<Subscription>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error
+                    FROM subscriptions
+                    ORDER BY name;
+                    """;
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        subscriptions.Add(new Subscription(
+                            reader.GetString(0),
+                            reader.GetString(1),
+                            reader.GetString(2),
+                            reader.GetInt32(3),
+                            reader.GetInt64(4),
+                            reader.GetInt64(5),
+                            reader.GetInt64(6),
+                            ReadMoment(reader.GetString(7)),
+                            ReadMoment(reader.GetString(8)),
+                            reader.GetString(9)));
+                    }
+                }
+            }
+        }
+
+        return subscriptions;
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveSubscriptionAsync(Subscription subscription, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO subscriptions (name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error, created_at, updated_at)
+                    VALUES ($name, $url, $title, $interval, $upload, $download, $total, $expires, $checked, $error, $updated, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        url            = excluded.url,
+                        title          = excluded.title,
+                        interval_hours = excluded.interval_hours,
+                        upload         = excluded.upload,
+                        download       = excluded.download,
+                        total          = excluded.total,
+                        expires_at     = excluded.expires_at,
+                        checked_at     = excluded.checked_at,
+                        last_error     = excluded.last_error,
+                        updated_at     = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$name", subscription.Name);
+                command.Parameters.AddWithValue("$url", subscription.Url);
+                command.Parameters.AddWithValue("$title", subscription.Title);
+                command.Parameters.AddWithValue("$interval", subscription.IntervalHours);
+                command.Parameters.AddWithValue("$upload", subscription.Upload);
+                command.Parameters.AddWithValue("$download", subscription.Download);
+                command.Parameters.AddWithValue("$total", subscription.Total);
+                command.Parameters.AddWithValue("$expires", WriteMoment(subscription.Expires));
+                command.Parameters.AddWithValue("$checked", WriteMoment(subscription.CheckedAt));
+                command.Parameters.AddWithValue("$error", subscription.LastError);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveSubscriptionAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                // Внешние ключи в базе выключены, поэтому принадлежность снимается своим запросом.
+                command.CommandText =
+                    """
+                    DELETE FROM subscription_configs WHERE subscription = $name;
+                    DELETE FROM subscriptions WHERE name = $name;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<SubscriptionMember>> ListSubscriptionMembersAsync(string? subscription = null, CancellationToken ct = default)
+    {
+        var members = new List<SubscriptionMember>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = subscription is null
+                    ? "SELECT subscription, remark, config_name, present FROM subscription_configs ORDER BY subscription, remark;"
+                    : "SELECT subscription, remark, config_name, present FROM subscription_configs WHERE subscription = $name ORDER BY remark;";
+                if (subscription is not null)
+                {
+                    command.Parameters.AddWithValue("$name", subscription);
+                }
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        members.Add(new SubscriptionMember(
+                            reader.GetString(0),
+                            reader.GetString(1),
+                            reader.GetString(2),
+                            reader.GetInt32(3) != 0));
+                    }
+                }
+            }
+        }
+
+        return members;
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveSubscriptionMemberAsync(SubscriptionMember member, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO subscription_configs (subscription, remark, config_name, present, updated_at)
+                    VALUES ($subscription, $remark, $config, $present, $updated)
+                    ON CONFLICT(subscription, remark) DO UPDATE SET
+                        config_name = excluded.config_name,
+                        present     = excluded.present,
+                        updated_at  = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$subscription", member.Subscription);
+                command.Parameters.AddWithValue("$remark", member.Remark);
+                command.Parameters.AddWithValue("$config", member.ConfigName);
+                command.Parameters.AddWithValue("$present", member.Present ? 1 : 0);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveSubscriptionMemberAsync(string subscription, string remark, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM subscription_configs WHERE subscription = $subscription AND remark = $remark;";
+                command.Parameters.AddWithValue("$subscription", subscription);
+                command.Parameters.AddWithValue("$remark", remark);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RenameSubscriptionMemberAsync(string configName, string newConfigName, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "UPDATE subscription_configs SET config_name = $new, updated_at = $updated WHERE config_name = $old;";
+                command.Parameters.AddWithValue("$new", newConfigName);
+                command.Parameters.AddWithValue("$old", configName);
+                command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -2385,6 +2627,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     private static string Timestamp()
     {
         return DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+    }
+
+    private static string WriteMoment(DateTimeOffset? moment)
+    {
+        return moment?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private static DateTimeOffset? ReadMoment(string text)
+    {
+        return DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var moment) ? moment : null;
     }
 
     private static GeoFileMetadata ReadGeoFile(string name, SqliteDataReader reader, int offset = 0)

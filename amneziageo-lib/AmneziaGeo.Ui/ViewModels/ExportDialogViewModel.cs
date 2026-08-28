@@ -19,6 +19,9 @@ internal enum ConfigViewMode
     /// <summary>QR of the Amnezia vpn:// link.</summary>
     QrLink,
 
+    /// <summary>QR of the subscription the config came from.</summary>
+    QrSubscription,
+
     /// <summary>The .conf text, editable in place.</summary>
     Text,
 }
@@ -34,7 +37,9 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsQrConf))]
     [NotifyPropertyChangedFor(nameof(IsQrLink))]
+    [NotifyPropertyChangedFor(nameof(IsQrSubscription))]
     [NotifyPropertyChangedFor(nameof(IsText))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkText))]
     [NotifyPropertyChangedFor(nameof(ShowQr))]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private ConfigViewMode _mode;
@@ -50,6 +55,11 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 
     [ObservableProperty]
     private string _linkText = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportSubscription))]
+    [NotifyPropertyChangedFor(nameof(TabColumns))]
+    private string _subscriptionUrl = string.Empty;
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -83,9 +93,29 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     public bool IsQrLink => Mode == ConfigViewMode.QrLink;
 
     /// <summary>
+    /// Whether the subscription QR is selected.
+    /// </summary>
+    public bool IsQrSubscription => Mode == ConfigViewMode.QrSubscription;
+
+    /// <summary>
     /// Whether the config text is selected.
     /// </summary>
     public bool IsText => Mode == ConfigViewMode.Text;
+
+    /// <summary>
+    /// Whether the config came from a subscription, which the export then offers as its own QR.
+    /// </summary>
+    public bool CanExportSubscription => SubscriptionUrl.Length > 0;
+
+    /// <summary>
+    /// How many tabs the export shows: the subscription one only for a config that has one.
+    /// </summary>
+    public int TabColumns => CanExportSubscription ? 3 : 2;
+
+    /// <summary>
+    /// Whether the link under the QR is shown: both link modes carry one, the .conf QR does not.
+    /// </summary>
+    public bool ShowLinkText => IsQrLink || IsQrSubscription;
 
     /// <summary>
     /// Whether a QR is rendered for the selected mode.
@@ -100,7 +130,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     /// <summary>
     /// Content copied by the export card: the vpn link in link mode, otherwise the config text.
     /// </summary>
-    public string Payload => IsQrLink ? LinkText : ConfText;
+    public string Payload => IsQrConf || IsText ? ConfText : LinkText;
 
     /// <summary>
     /// Whether the platform hands an export to another application.
@@ -120,6 +150,15 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
         }
 
         Seed(ack.Message);
+        await LoadSubscriptionAsync();
+    }
+
+    // The address of the subscription this config came from: it carries the whole set to another device at once.
+    private async Task LoadSubscriptionAsync()
+    {
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpConfigSubscription, [ConfigName]));
+        SubscriptionUrl = ack.Ok ? ack.Message.Trim() : string.Empty;
+        Refresh();
     }
 
     /// <summary>
@@ -146,14 +185,26 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     // Re-encodes the baseline for the selected QR mode. The text mode carries no QR, so it skips the work.
     private void Refresh()
     {
+        if (IsQrSubscription && !CanExportSubscription)
+        {
+            Mode = ConfigViewMode.QrConf;
+            return;
+        }
+
         if (!IsReady || IsText)
         {
             LinkText = string.Empty;
             return;
         }
 
-        var payload = IsQrLink ? VpnLinkCodec.Encode(_baseConfText, ConfigName) : _baseConfText;
-        LinkText = IsQrLink ? payload : string.Empty;
+        var payload = Mode switch
+        {
+            ConfigViewMode.QrLink => VpnLinkCodec.Encode(_baseConfText, ConfigName),
+            ConfigViewMode.QrSubscription => SubscriptionUrl,
+            _ => _baseConfText,
+        };
+
+        LinkText = IsQrConf ? string.Empty : payload;
         _ = RefreshQrAsync(payload);
     }
 
@@ -195,6 +246,9 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 
     [RelayCommand]
     private void ShowQrLink() => Mode = ConfigViewMode.QrLink;
+
+    [RelayCommand]
+    private void ShowQrSubscription() => Mode = ConfigViewMode.QrSubscription;
 
     [RelayCommand]
     private void ShowText() => Mode = ConfigViewMode.Text;

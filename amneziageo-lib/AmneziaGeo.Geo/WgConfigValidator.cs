@@ -187,16 +187,16 @@ public static class WgConfigValidator
             case "rejectaftertime":
             case "keepalivetimeout":
             case "maxhandshakeattempts":
+            case "h1":
+            case "h2":
+            case "h3":
+            case "h4":
                 ParseUintRange(val, key);
                 break;
             case "randomtrailers":
             case "disablecookies":
                 ParseAwgBool(val, key);
                 break;
-            case "h1":
-            case "h2":
-            case "h3":
-            case "h4":
             case "i1":
             case "i2":
             case "i3":
@@ -345,17 +345,15 @@ public static class WgConfigValidator
         }
     }
 
+    // В 3.1 это тоже диапазон, а не одно число.
     private static void ParsePersistentKeepalive(string s)
     {
-        if (string.Equals(s, "off", StringComparison.Ordinal))
+        if (string.Equals(s, "off", StringComparison.Ordinal) || string.Equals(s, "(off)", StringComparison.Ordinal))
         {
             return;
         }
 
-        if (!int.TryParse(s, out var value) || value < 0 || value > 65535)
-        {
-            throw new WgConfigFormatException("Invalid persistent keepalive", s);
-        }
+        ParseUintRange(s, "persistent keepalive");
     }
 
     private static void ParseTableOff(string s)

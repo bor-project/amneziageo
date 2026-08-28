@@ -1395,6 +1395,30 @@
   <data name="Agent_ConfigCopied" xml:space="preserve">
     <value>конфигурация скопирована: {0}</value>
   </data>
+  <data name="Agent_SubscriptionBadUrl" xml:space="preserve">
+    <value>не адрес подписки: {0}</value>
+  </data>
+  <data name="Agent_SubscriptionNameTaken" xml:space="preserve">
+    <value>подписка {0} уже заведена</value>
+  </data>
+  <data name="Agent_SubscriptionUnknown" xml:space="preserve">
+    <value>нет такой подписки: {0}</value>
+  </data>
+  <data name="Agent_SubscriptionFailed" xml:space="preserve">
+    <value>подписка {0} не прочитана: {1}</value>
+  </data>
+  <data name="Agent_SubscriptionAdded" xml:space="preserve">
+    <value>подписка {0}: конфигураций {1}</value>
+  </data>
+  <data name="Agent_SubscriptionRefreshed" xml:space="preserve">
+    <value>добавлено {0}, переписано {1}, пропало {2}</value>
+  </data>
+  <data name="Agent_SubscriptionRemoved" xml:space="preserve">
+    <value>подписка {0} снята</value>
+  </data>
+  <data name="Main_QrSubscriptionTabShort" xml:space="preserve">
+    <value>Подписка</value>
+  </data>
   <data name="Agent_ConfigImported" xml:space="preserve">
     <value>импортирован {0}</value>
   </data>
@@ -1989,6 +2013,69 @@
   </data>
   <data name="Main_CardTagMtuAuto" xml:space="preserve">
     <value>MTU авто</value>
+  </data>
+  <data name="Main_CardTagSubscription" xml:space="preserve">
+    <value>{0}</value>
+  </data>
+  <data name="Main_CardTagSubscriptionGone" xml:space="preserve">
+    <value>нет в {0}</value>
+  </data>
+  <data name="Main_SubscriptionsTitle" xml:space="preserve">
+    <value>Подписки</value>
+  </data>
+  <data name="Main_SubscriptionConfigs" xml:space="preserve">
+    <value>конфигураций: {0}</value>
+  </data>
+  <data name="Main_SubscriptionGone" xml:space="preserve">
+    <value>пропало: {0}</value>
+  </data>
+  <data name="Main_SubscriptionTraffic" xml:space="preserve">
+    <value>{0} из {1}</value>
+  </data>
+  <data name="Main_SubscriptionExpires" xml:space="preserve">
+    <value>до {0}</value>
+  </data>
+  <data name="Main_SubscriptionChecked" xml:space="preserve">
+    <value>прочитана {0}</value>
+  </data>
+  <data name="Main_SubscriptionNever" xml:space="preserve">
+    <value>ещё не читалась</value>
+  </data>
+  <data name="Main_SubscriptionRefresh" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="Main_SubscriptionRemove" xml:space="preserve">
+    <value>Снять</value>
+  </data>
+  <data name="Main_SubscriptionRemovePrompt" xml:space="preserve">
+    <value>Снять подписку вместе с тем, что она принесла?</value>
+  </data>
+  <data name="Main_SubscriptionKeepConfigs" xml:space="preserve">
+    <value>Оставить конфигурации</value>
+  </data>
+  <data name="Main_SubscriptionDropConfigs" xml:space="preserve">
+    <value>Удалить вместе с ними</value>
+  </data>
+  <data name="Main_SubscriptionHint" xml:space="preserve">
+    <value>Адрес подписки узнаётся сам: вставьте его сюда, конфигурации придут вместе с ним.</value>
+  </data>
+  <data name="Main_SubscriptionInsecure" xml:space="preserve">
+    <value>Адрес без шифрования: ключи подписки поедут открытым текстом, и по дороге их прочитает кто угодно.</value>
+  </data>
+  <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
+    <value>Перечитывать подписки</value>
+  </data>
+  <data name="General_SubscriptionAutoRefreshHint" xml:space="preserve">
+    <value>Изменённая в панели конфигурация переписывается сама; применяется на следующем подключении.</value>
+  </data>
+  <data name="General_SubscriptionInterval" xml:space="preserve">
+    <value>Как часто перечитывать</value>
+  </data>
+  <data name="General_SubscriptionIntervalHint" xml:space="preserve">
+    <value>Берётся там, где панель не назвала свой срок.</value>
+  </data>
+  <data name="General_Hours" xml:space="preserve">
+    <value>часов</value>
   </data>
   <data name="Main_CardReorder" xml:space="preserve">
     <value>Изменить порядок</value>

@@ -49,6 +49,26 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
 
+    /// <summary>
+    /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    [NotifyPropertyChangedFor(nameof(FromSubscription))]
+    private string _subscription = string.Empty;
+
+    /// <summary>
+    /// Перестала ли подписка её нести. Такую конфигурацию сам никто не сносит.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _subscriptionGone;
+
+    /// <summary>
+    /// Ведётся ли конфигурация подпиской.
+    /// </summary>
+    public bool FromSubscription => Subscription.Length > 0;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
     [NotifyPropertyChangedFor(nameof(CardActionText))]
@@ -82,6 +102,18 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// ширины не хватает.
     /// </summary>
     public IReadOnlyList<CardTag> Tags =>
+        FromSubscription
+            ? [SubscriptionTag, .. SettingTags]
+            : SettingTags;
+
+    // Метка принадлежности: имя подписки, а у пропавшего из неё узла - что его там больше нет.
+    private CardTag SubscriptionTag => new(
+        SubscriptionGone
+            ? Loc.Instance.Get("Main_CardTagSubscriptionGone", Subscription)
+            : Loc.Instance.Get("Main_CardTagSubscription", Subscription),
+        !SubscriptionGone);
+
+    private IReadOnlyList<CardTag> SettingTags =>
     [
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),

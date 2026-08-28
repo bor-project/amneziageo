@@ -2063,16 +2063,28 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>This address is not encrypted: the keys of the subscription travel in the open, for anyone on the way to read.</value>
   </data>
   <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
-    <value>Re-read subscriptions</value>
+    <value>Subscription auto-refresh</value>
   </data>
   <data name="General_SubscriptionAutoRefreshHint" xml:space="preserve">
     <value>A configuration the panel changed is rewritten on its own; it applies on the next connect.</value>
   </data>
   <data name="General_SubscriptionInterval" xml:space="preserve">
-    <value>How often to re-read</value>
+    <value>How often to refresh</value>
   </data>
   <data name="General_SubscriptionIntervalHint" xml:space="preserve">
     <value>Used where the panel names no interval of its own.</value>
+  </data>
+  <data name="General_SubscriptionRefreshAll" xml:space="preserve">
+    <value>Refresh the subscriptions now</value>
+  </data>
+  <data name="General_SubscriptionRefreshAllHint" xml:space="preserve">
+    <value>Reads every subscription at once, without waiting for its interval.</value>
+  </data>
+  <data name="General_SubscriptionRefreshAllButton" xml:space="preserve">
+    <value>Refresh all</value>
+  </data>
+  <data name="Main_ProbeShielded" xml:space="preserve">
+    <value>hidden by the tunnel</value>
   </data>
   <data name="General_Hours" xml:space="preserve">
     <value>hours</value>

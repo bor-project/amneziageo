@@ -962,10 +962,15 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             row.Probing = true;
         }
 
+        // Поднятый туннель уводит эхо в себя: чужой сервер отвечает только тому, кто вышел мимо туннеля,
+        // и молчание в его сторону ничего не говорит о нём самом.
+        var shielded = rows.Any(row => row.ShowStatusFrame);
         ProbeRunning = true;
         try
         {
-            await Task.WhenAll(rows.Select(row => ProbeRowAsync(row, cts.Token)));
+            await Task.WhenAll(rows.Select(row => shielded && !row.ShowStatusFrame
+                ? ShieldRowAsync(row)
+                : ProbeRowAsync(row, cts.Token)));
         }
         finally
         {
@@ -975,6 +980,19 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 ProbeRunning = false;
             }
         }
+    }
+
+    // Отмечает строку как не проверяемую из-под туннеля, не тратя на неё замер.
+    private static Task ShieldRowAsync(ConfigItemViewModel row)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            row.Probing = false;
+            row.ProbeState = ProbeOutcome.Shielded;
+            row.ProbeMilliseconds = 0;
+            row.ProbeLossPercent = 0;
+        });
+        return Task.CompletedTask;
     }
 
     // Measures one server off the UI thread and posts the answer back into its row.

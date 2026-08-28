@@ -2063,16 +2063,28 @@
     <value>Адрес без шифрования: ключи подписки поедут открытым текстом, и по дороге их прочитает кто угодно.</value>
   </data>
   <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
-    <value>Перечитывать подписки</value>
+    <value>Автообновление подписок</value>
   </data>
   <data name="General_SubscriptionAutoRefreshHint" xml:space="preserve">
     <value>Изменённая в панели конфигурация переписывается сама; применяется на следующем подключении.</value>
   </data>
   <data name="General_SubscriptionInterval" xml:space="preserve">
-    <value>Как часто перечитывать</value>
+    <value>Как часто обновлять</value>
   </data>
   <data name="General_SubscriptionIntervalHint" xml:space="preserve">
     <value>Берётся там, где панель не назвала свой срок.</value>
+  </data>
+  <data name="General_SubscriptionRefreshAll" xml:space="preserve">
+    <value>Обновить подписки сейчас</value>
+  </data>
+  <data name="General_SubscriptionRefreshAllHint" xml:space="preserve">
+    <value>Читает все подписки разом, не дожидаясь срока.</value>
+  </data>
+  <data name="General_SubscriptionRefreshAllButton" xml:space="preserve">
+    <value>Обновить все</value>
+  </data>
+  <data name="Main_ProbeShielded" xml:space="preserve">
+    <value>не видно из туннеля</value>
   </data>
   <data name="General_Hours" xml:space="preserve">
     <value>часов</value>

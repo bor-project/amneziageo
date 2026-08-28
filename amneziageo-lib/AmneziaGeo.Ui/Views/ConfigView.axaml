@@ -53,59 +53,26 @@
             <TextBlock Text="{l:Tr Main_ProbeButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
+        <!-- Обновление всех подписок разом: появляется вместе с первой из них. -->
+        <Button Classes="methodpick" MinHeight="34" Padding="12,6" Margin="4,0,0,0"
+                HorizontalAlignment="Stretch" IsVisible="{Binding HasSubscriptions}"
+                Command="{Binding RefreshAllSubscriptionsCommand}" IsEnabled="{Binding !SubscriptionsRefreshing}"
+                ToolTip.Tip="{l:Tr General_SubscriptionRefreshAllHint}"
+                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <PathIcon Classes.spin="{Binding SubscriptionsRefreshing}" Data="{DynamicResource AgRefreshGeometry}"
+                      Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr General_SubscriptionRefreshAllButton}" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
       </UniformGrid>
 
       <!-- Каталог пуст: настроек ещё нет, добавление - единственный шаг. -->
       <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
                  Text="{l:Tr Main_ConfigCatalogueEmpty}" IsVisible="{Binding ShowNoConfigsHint}" />
 
-      <!-- Подписки: что каждая принесла и когда её читали. Обновление и снятие идут по строке. -->
-      <Border Classes="sect" IsVisible="{Binding HasSubscriptions}">
-        <StackPanel Spacing="8">
-          <TextBlock Text="{l:Tr Main_SubscriptionsTitle}" FontWeight="SemiBold" FontSize="13.5" />
-          <ItemsControl ItemsSource="{Binding Subscriptions}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:SubscriptionItemViewModel">
-                <StackPanel Spacing="6" Margin="0,0,0,6">
-                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Caption}" FontSize="13.5" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
-                                 IsVisible="{Binding HasError}" />
-                    </StackPanel>
-                    <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
-                            Command="{Binding RefreshCommand}" IsEnabled="{Binding !Busy}"
-                            ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}">
-                      <PathIcon Classes.spin="{Binding Busy}" Data="{DynamicResource AgRefreshGeometry}"
-                                Width="14" Height="14" />
-                    </Button>
-                    <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                            Command="{Binding BeginRemoveCommand}" IsEnabled="{Binding !Busy}"
-                            ToolTip.Tip="{l:Tr Main_SubscriptionRemove}">
-                      <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
-                    </Button>
-                  </Grid>
-
-                  <!-- Снятие спрашивает про конфигурации: оставить их помеченными или снести вместе с подпиской. -->
-                  <StackPanel Spacing="6" IsVisible="{Binding RemovePending}">
-                    <TextBlock Text="{l:Tr Main_SubscriptionRemovePrompt}" Classes="muted" FontSize="11.5"
-                               TextWrapping="Wrap" />
-                    <WrapPanel Orientation="Horizontal">
-                      <Button Classes="softbtn" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionKeepConfigs}"
-                              Command="{Binding RemoveKeepingConfigsCommand}" />
-                      <Button Classes="danger" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionDropConfigs}"
-                              Command="{Binding RemoveWithConfigsCommand}" />
-                      <Button Classes="softbtn" Margin="0,0,0,4" Content="{l:Tr Main_CancelButton}"
-                              Command="{Binding CancelRemoveCommand}" />
-                    </WrapPanel>
-                  </StackPanel>
-                </StackPanel>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </StackPanel>
-      </Border>
     </StackPanel>
 
     <!-- Каталог карточек: кнопка на карточке и двойной щелчок по ней открывают настройки своей
@@ -122,6 +89,7 @@
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                      RefreshSubscriptionCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).RefreshConfigSubscriptionCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -144,6 +112,7 @@
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
                       DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}"
                       PickCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).PickCardCommand}"
+                      RefreshSubscriptionCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).RefreshConfigSubscriptionCommand}"
                         Sheet="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Sheet}" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -203,6 +172,33 @@
                      Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
             <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
                        Text="{l:Tr Main_RequiredEmptyWarning}" />
+
+            <!-- Конфигурация из подписки: что подписка принесла, чем ответила в прошлый раз и как её снять. -->
+            <StackPanel Spacing="6" Margin="0,6,0,0" IsVisible="{Binding HasOpenConfigSubscription}">
+              <StackPanel Spacing="6" DataContext="{Binding OpenConfigSubscription}"
+                          x:DataType="vm:SubscriptionItemViewModel">
+                <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
+                           IsVisible="{Binding HasError}" />
+                <Button Classes="linkbtn" HorizontalAlignment="Left" IsVisible="{Binding !RemovePending}"
+                        Command="{Binding BeginRemoveCommand}" IsEnabled="{Binding !Busy}"
+                        Content="{l:Tr Main_SubscriptionRemove}" />
+
+                <!-- Снятие спрашивает про конфигурации: оставить их помеченными или снести вместе с подпиской. -->
+                <StackPanel Spacing="6" IsVisible="{Binding RemovePending}">
+                  <TextBlock Text="{l:Tr Main_SubscriptionRemovePrompt}" Classes="muted" FontSize="11.5"
+                             TextWrapping="Wrap" />
+                  <WrapPanel Orientation="Horizontal">
+                    <Button Classes="softbtn" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionKeepConfigs}"
+                            Command="{Binding RemoveKeepingConfigsCommand}" />
+                    <Button Classes="danger" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionDropConfigs}"
+                            Command="{Binding RemoveWithConfigsCommand}" />
+                    <Button Classes="softbtn" Margin="0,0,0,4" Content="{l:Tr Main_CancelButton}"
+                            Command="{Binding CancelRemoveCommand}" />
+                  </WrapPanel>
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
             <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
                        IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
@@ -377,15 +373,26 @@
           <Border Background="{DynamicResource AgInsetBrush}"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                   CornerRadius="9" Padding="3" MaxWidth="480" HorizontalAlignment="Center">
+            <!-- Подпись вкладки держит ширину колонки: на трёх вкладках места мало, поэтому поля узкие,
+                 а текст ужимается. -->
             <UniformGrid Columns="{Binding TabColumns}">
               <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                      Content="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Stretch" Padding="12,6" />
+                      HorizontalAlignment="Stretch" Padding="4,6">
+                <TextBlock Text="{l:Tr Main_QrConfTabShort}" TextTrimming="CharacterEllipsis"
+                           TextAlignment="Center" />
+              </Button>
               <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                      Content="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Stretch" Padding="12,6" />
+                      HorizontalAlignment="Stretch" Padding="4,6">
+                <TextBlock Text="{l:Tr Main_QrLinkTabShort}" TextTrimming="CharacterEllipsis"
+                           TextAlignment="Center" />
+              </Button>
               <!-- Подписка есть не у всякой конфигурации, поэтому вкладка появляется вместе с ней. -->
               <Button Classes="seg" Classes.active="{Binding IsQrSubscription}" Command="{Binding ShowQrSubscriptionCommand}"
                       IsVisible="{Binding CanExportSubscription}"
-                      Content="{l:Tr Main_QrSubscriptionTabShort}" HorizontalAlignment="Stretch" Padding="12,6" />
+                      HorizontalAlignment="Stretch" Padding="4,6">
+                <TextBlock Text="{l:Tr Main_QrSubscriptionTabShort}" TextTrimming="CharacterEllipsis"
+                           TextAlignment="Center" />
+              </Button>
             </UniformGrid>
           </Border>
           <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"

@@ -213,6 +213,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool HasOpenConfigSubscription => OpenConfigSubscription is not null;
 
     /// <summary>
+    /// Идёт ли общее обновление подписок.
+    /// </summary>
+    [ObservableProperty]
+    private bool _subscriptionsRefreshing;
+
+    /// <summary>
     /// The same catalogue for the home picker, «не выбрано» first: the connection card takes no configuration
     /// at all, while the settings picker always shows one.
     /// </summary>
@@ -909,6 +915,47 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         catch (System.Text.Json.JsonException)
         {
             return [];
+        }
+    }
+
+    /// <summary>
+    /// Перечитывает все подписки разом, не дожидаясь их срока.
+    /// </summary>
+    [RelayCommand]
+    private async Task RefreshAllSubscriptions()
+    {
+        if (SubscriptionsRefreshing)
+        {
+            return;
+        }
+
+        SubscriptionsRefreshing = true;
+        try
+        {
+            await Ask(new IpcCommand(IpcContract.OpRefreshSubscription, []));
+            await LoadSubscriptionsAsync();
+        }
+        finally
+        {
+            SubscriptionsRefreshing = false;
+        }
+    }
+
+    /// <summary>
+    /// Перечитывает подписку, которой пришла конфигурация карточки.
+    /// </summary>
+    [RelayCommand]
+    private async Task RefreshConfigSubscription(ConfigItemViewModel? row)
+    {
+        if (row is not { Subscription.Length: > 0 })
+        {
+            return;
+        }
+
+        var item = Subscriptions.FirstOrDefault(sub => string.Equals(sub.Name, row.Subscription, StringComparison.Ordinal));
+        if (item is not null)
+        {
+            await RefreshSubscriptionAsync(item);
         }
     }
 

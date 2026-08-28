@@ -102,16 +102,12 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// ширины не хватает.
     /// </summary>
     public IReadOnlyList<CardTag> Tags =>
-        FromSubscription
+        SubscriptionGone
             ? [SubscriptionTag, .. SettingTags]
             : SettingTags;
 
-    // Метка принадлежности: имя подписки, а у пропавшего из неё узла - что его там больше нет.
-    private CardTag SubscriptionTag => new(
-        SubscriptionGone
-            ? Loc.Instance.Get("Main_CardTagSubscriptionGone", Subscription)
-            : Loc.Instance.Get("Main_CardTagSubscription", Subscription),
-        !SubscriptionGone);
+    // Метка узла, пропавшего из подписки. Имя самой подписки на карточку не выносится: это адрес.
+    private CardTag SubscriptionTag => new(Loc.Instance.Get("Main_CardTagSubscriptionGone", Subscription), false);
 
     private IReadOnlyList<CardTag> SettingTags =>
     [
@@ -381,6 +377,8 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         ? RoundTripText
         : ProbeUnreachable
         ? Loc.Instance.Get(ProbeState == ProbeOutcome.NoAddress ? "Main_ProbeNoAddress" : "Main_ProbeNoAnswer")
+        : ProbeState == ProbeOutcome.Shielded
+        ? Loc.Instance.Get("Main_ProbeShielded")
         : Loc.Instance.Get("Main_ProbeUnknown");
 
     /// <summary>

@@ -28,7 +28,9 @@ public static class FleetCommands
           fleet order <config> [<config>...]  the order the mode falls back through
           fleet target <id|name> <rule> [<rides>] [<fallback>]
                                               where one rule of a routing list rides: auto, best, direct, block
-                                              or a server; naming neither end leaves the rule to the machine
+                                              or a server; naming neither end leaves the rule to the machine.
+                                              A rule by name takes no server: only the tunnel holding this
+                                              machine's lookups ever sees the name
           Turn the mode on with 'settings set multi-server on'. While it is on, 'status' prints the set as
           well, 'up <config>' joins the selected server to it and 'down <config>' takes one out.
         """;

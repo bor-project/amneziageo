@@ -2035,6 +2035,9 @@
   <data name="Main_RuleRouteEntriesTooltip" xml:space="preserve">
     <value>Куда правило едет и содержимое категории</value>
   </data>
+  <data name="Main_RuleByName" xml:space="preserve">
+    <value>Правило по именам: имя видит только туннель, через который машина ищет адреса, поэтому сервер ему не назначить.</value>
+  </data>
   <data name="Main_RuleTargetAuto" xml:space="preserve">
     <value>Авто</value>
   </data>

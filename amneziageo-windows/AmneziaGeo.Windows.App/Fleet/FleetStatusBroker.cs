@@ -281,6 +281,12 @@ internal sealed class FleetStatusBroker(
         var route = new RuleRoute(
             RuleTarget.Parse(args.Count > 2 ? args[2] : string.Empty),
             RuleTarget.Parse(args.Count > 3 ? args[3] : string.Empty));
+        if (!route.IsDefault && RuleAddressing.ByName(args[1]))
+        {
+            log.LogInformation("rule '{Rule}' of list {List} is matched by name, so it rides the tunnel holding this machine's lookups and takes no address", args[1], listId);
+            return new IpcAck(false, $"{args[1]}: {RuleAddressing.ByNameReason}");
+        }
+
         foreach (var end in new[] { route.Target, route.Fallback })
         {
             if (end.Mode == RuleTarget.Server && !await CurrentScope.ConfigRepo.ExistsAsync(end.Name, ct))

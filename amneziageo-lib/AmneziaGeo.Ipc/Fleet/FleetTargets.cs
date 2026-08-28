@@ -85,7 +85,8 @@ public static class FleetTargets
 
             var key = line[..cut].Trim();
             var route = RuleRoute.Parse(line[(cut + 1)..]);
-            if (key.Length > 0 && !route.IsDefault)
+            // A rule matched by name rides the tunnel holding the lookups, so an address stored on one is dropped.
+            if (key.Length > 0 && !route.IsDefault && TrySplit(key, out _, out var token) && !RuleAddressing.ByName(token))
             {
                 targets[key] = route;
             }

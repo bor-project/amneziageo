@@ -85,6 +85,12 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
             return base.NewRuleRow(token);
         }
 
+        // Имя видит только туннель, через который машина ищет адреса, поэтому сервера у такого правила нет.
+        if (RuleAddressing.ByName(token))
+        {
+            return new FleetNamedRuleItemViewModel(token);
+        }
+
         return new FleetRoutingRuleItemViewModel(token, this, RuleRoute.Parse(_targets.GetValueOrDefault(FleetTargets.Key(Id, token))));
     }
 

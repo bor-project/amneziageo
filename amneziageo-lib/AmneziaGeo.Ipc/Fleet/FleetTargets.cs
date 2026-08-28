@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AmneziaGeo.Ipc.Fleet;
 
 /// <summary>
@@ -24,6 +26,23 @@ public static class FleetTargets
     public static string Key(long listId, string token)
     {
         return $"{listId}:{token.Trim()}";
+    }
+
+    /// <summary>
+    /// Reads a key back into the list it belongs to and the token it was written as.
+    /// </summary>
+    public static bool TrySplit(string key, out long listId, out string token)
+    {
+        token = string.Empty;
+        var cut = key.IndexOf(':');
+        if (cut <= 0 || !long.TryParse(key[..cut], NumberStyles.Integer, CultureInfo.InvariantCulture, out listId))
+        {
+            listId = 0;
+            return false;
+        }
+
+        token = key[(cut + 1)..].Trim();
+        return token.Length > 0;
     }
 
     /// <summary>

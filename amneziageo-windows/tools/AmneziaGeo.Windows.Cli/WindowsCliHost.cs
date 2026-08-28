@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AmneziaGeo.Cli;
+using AmneziaGeo.Cli.Fleet;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Windows.Cli;
@@ -20,7 +21,9 @@ internal sealed class WindowsCliHost : ICliHost
     public string ExeName => "amneziageo";
 
     /// <inheritdoc/>
-    public string ExtraUsage => """
+    public string ExtraUsage => $"""
+        {FleetCommands.Usage}
+
         service
           service status | start | stop | restart
           The installer registers the service; installing it by hand needs an elevated
@@ -62,7 +65,8 @@ internal sealed class WindowsCliHost : ICliHost
         args[0] == "service" ? Task.FromResult(Service([.. args.Skip(1)])) : null;
 
     /// <inheritdoc/>
-    public Task<int>? TryRunWithAgentAsync(IAgentLink agent, IReadOnlyList<string> args, CancellationToken ct) => null;
+    public Task<int>? TryRunWithAgentAsync(IAgentLink agent, IReadOnlyList<string> args, CancellationToken ct) =>
+        FleetCommands.Claims(agent.Snapshot, args) ? FleetCommands.RunAsync(agent, args) : null;
 
     /// <inheritdoc/>
     public IReadOnlyList<DoctorCheck> DoctorChecks(StatusSnapshot snapshot)

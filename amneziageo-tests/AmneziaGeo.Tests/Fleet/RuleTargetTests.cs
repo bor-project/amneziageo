@@ -58,6 +58,17 @@ public sealed class RuleTargetTests
     }
 
     [Fact]
+    public void AKeyNamesItsListAndItsRule()
+    {
+        Assert.True(FleetTargets.TrySplit(FleetTargets.Key(6, "geosite:youtube"), out var listId, out var token));
+        Assert.Equal(6, listId);
+        Assert.Equal("geosite:youtube", token);
+
+        Assert.False(FleetTargets.TrySplit("geosite:youtube", out _, out _));
+        Assert.False(FleetTargets.TrySplit("6:", out _, out _));
+    }
+
+    [Fact]
     public void ARuleLeftToTheMachineIsNotStored()
     {
         var targets = new Dictionary<string, RuleRoute> { [FleetTargets.Key(1, "geoip:ru")] = RuleRoute.Default };

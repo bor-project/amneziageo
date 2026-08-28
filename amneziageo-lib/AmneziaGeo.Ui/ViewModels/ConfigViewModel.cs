@@ -67,6 +67,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionCatalogue))]
     [NotifyPropertyChangedFor(nameof(ShowCardStack))]
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
+    [NotifyPropertyChangedFor(nameof(OpenConfigSubscription))]
+    [NotifyPropertyChangedFor(nameof(HasOpenConfigSubscription))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -190,6 +192,25 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// Есть ли хоть одна заведённая подписка.
     /// </summary>
     public bool HasSubscriptions => Subscriptions.Count > 0;
+
+    /// <summary>
+    /// Подписка, которой ведётся открытая конфигурация.
+    /// </summary>
+    public SubscriptionItemViewModel? OpenConfigSubscription
+    {
+        get
+        {
+            var row = Configs.FirstOrDefault(item => string.Equals(item.Name, OpenConfig, StringComparison.Ordinal));
+            return row is { Subscription.Length: > 0 }
+                ? Subscriptions.FirstOrDefault(item => string.Equals(item.Name, row.Subscription, StringComparison.Ordinal))
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// Ведётся ли открытая конфигурация подпиской.
+    /// </summary>
+    public bool HasOpenConfigSubscription => OpenConfigSubscription is not null;
 
     /// <summary>
     /// The same catalogue for the home picker, «не выбрано» first: the connection card takes no configuration
@@ -728,6 +749,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         NotifyHasConfigsChanged();
+        NotifyOpenConfigSubscriptionChanged();
         MarkCatalogueKnown();
     }
 
@@ -868,6 +890,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         _subscriptionNames = [.. entries.Select(entry => entry.Name)];
         OnPropertyChanged(nameof(HasSubscriptions));
+        NotifyOpenConfigSubscriptionChanged();
+    }
+
+    // Кнопка у заголовка настроек читает и каталог, и список подписок.
+    private void NotifyOpenConfigSubscriptionChanged()
+    {
+        OnPropertyChanged(nameof(OpenConfigSubscription));
+        OnPropertyChanged(nameof(HasOpenConfigSubscription));
     }
 
     private static IReadOnlyList<SubscriptionEntry> ParseSubscriptions(string json)

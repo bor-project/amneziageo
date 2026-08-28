@@ -183,7 +183,22 @@
 
           <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
           <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15"
+                         VerticalAlignment="Center" />
+              <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
+              <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
+                      IsVisible="{Binding HasOpenConfigSubscription}"
+                      IsEnabled="{Binding !OpenConfigSubscription.Busy}"
+                      Command="{Binding OpenConfigSubscription.RefreshCommand}"
+                      ToolTip.Tip="{Binding OpenConfigSubscription.Caption}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Classes.spin="{Binding OpenConfigSubscription.Busy}"
+                            Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
+                </StackPanel>
+              </Button>
+            </Grid>
             <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
                      Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
             <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"

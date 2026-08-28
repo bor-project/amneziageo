@@ -18,9 +18,6 @@ internal sealed class ModeSwitchService(
     // How often the flag is re-read; the setting is written by the window and by the command line alike.
     private static readonly TimeSpan _poll = TimeSpan.FromSeconds(5);
 
-    // Whether the single tunnel stood up when the set took the machine over.
-    private bool _soleWasUp;
-
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -46,18 +43,18 @@ internal sealed class ModeSwitchService(
                 wanted ? "on" : "off", wanted ? "set of tunnels" : "single tunnel");
             if (wanted)
             {
-                _soleWasUp = selected.Running;
+                mode.SoleWasUp = selected.Running;
             }
 
             await LowerAsync(supervisor);
-            if (!wanted && _soleWasUp)
+            if (!wanted && mode.SoleWasUp)
             {
                 logger.LogInformation("the machine goes back on '{Config}', the tunnel it stood on before the set took it over", selected.Target);
             }
 
-            // Neither mode takes the other's state up: the set answers for what is up from here on, and the
-            // single tunnel is put back on what it stood on before the set took the machine over.
-            selected.SetRunning(!wanted && _soleWasUp);
+            // Each mode answers for what is up from here on: the single tunnel is put back on what it stood on
+            // before the set took the machine over, and the set stands up on its own tunnels.
+            selected.SetRunning(!wanted && mode.SoleWasUp);
 
             mode.MultiServer = wanted;
             mode.Switched = true;

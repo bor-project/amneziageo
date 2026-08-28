@@ -123,13 +123,28 @@ internal sealed class FleetHostedService(
             desired = [];
         }
 
-        fleet.Restore(new FleetState(order, stored.Roles, stored.Primary, desired, stored.Targets));
+        var carrying = selected.Target ?? string.Empty;
+        var standing = StandOn(desired, carrying, mode.Switched && mode.SoleWasUp && known.Contains(carrying));
+        fleet.Restore(new FleetState(order, stored.Roles, stored.Primary, standing, stored.Targets));
         if (desired.Length > 0)
         {
             logger.LogInformation("the set the mode last stood on is being connected: {Names}", string.Join(", ", desired));
         }
+        else if (standing.Count > 0)
+        {
+            logger.LogInformation("the mode remembers no set of its own, so it stands up on '{Config}', the tunnel the machine was on when the flag moved", carrying);
+        }
 
         Mirror();
+    }
+
+    /// <summary>
+    /// The set the mode stands up on: what it remembers, or the tunnel carrying the machine while it remembers
+    /// none of its own.
+    /// </summary>
+    internal static IReadOnlyList<string> StandOn(IReadOnlyList<string> remembered, string carrying, bool carried)
+    {
+        return remembered.Count == 0 && carried && carrying.Length > 0 ? [carrying] : remembered;
     }
 
     // The machine's own lamp, which the window's push loop and the resolver watch read: in the mode it stands

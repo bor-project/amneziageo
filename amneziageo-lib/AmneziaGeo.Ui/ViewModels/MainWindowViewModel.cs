@@ -109,7 +109,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Routing = AppFeatures.MultiServer
             ? new FleetRoutingViewModel(this, connection, prefs)
             : new RoutingViewModel(this, connection, prefs);
-        Connections = new ConnectionsViewModel(connection);
+        Connections = AppFeatures.MultiServer
+            ? new FleetConnectionsViewModel(connection)
+            : new ConnectionsViewModel(connection);
         Home = AppFeatures.MultiServer
             ? new FleetConnectionViewModel(this, connection, prefs)
             : new ConnectionViewModel(this, connection, prefs);

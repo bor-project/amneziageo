@@ -1,3 +1,4 @@
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -29,8 +30,8 @@ internal sealed class FleetLogsViewModel : LogsViewModel
         }
 
         home.RolesLocked = true;
-        // Замер мимо туннеля сервера не касается, и занимать машину ему незачем.
-        if (!IsProbeBypass)
+        // Машину занимает только «Авто»: он идёт по правилам, а по ним неадресованное везёт основной.
+        if (ProbePath == ProbePaths.Auto)
         {
             await home.TakePrimaryAsync();
         }

@@ -10,9 +10,6 @@ namespace AmneziaGeo.Windows.App.Fleet;
 /// </summary>
 internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 {
-    // Silent looks in a row before the balancer hands the pick over; one is a tunnel being dialled again.
-    private const int Strikes = 2;
-
     private readonly Lock _gate = new();
     private readonly List<string> _order = [];
     private readonly List<string> _wanted = [];
@@ -24,6 +21,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     private long _stamp;
     private string _best = string.Empty;
     private int _quiet;
+    private BalancePolicy _policy = BalancePolicy.Default;
 
     /// <summary>
     /// Fires when the set or a role moves.
@@ -361,7 +359,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 words[pair.Key] = pair.Value.Format();
             }
 
-            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty, words);
+            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty, words, _policy);
         }
     }
 
@@ -423,8 +421,20 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
+    /// Takes the numbers the balancer is looked at by.
+    /// </summary>
+    public void SetPolicy(BalancePolicy policy)
+    {
+        lock (_gate)
+        {
+            _policy = policy;
+        }
+    }
+
+    /// <summary>
     /// Looks the balancer over: the primary takes the pick back the moment it answers, and any other server
-    /// takes it only by answering twice as fast. Answers whether the tunnels have to take their share again.
+    /// takes it only by answering within its share of the pick's round trip. Answers whether the tunnels have
+    /// to take their share again.
     /// </summary>
     public bool Rebalance(IReadOnlyDictionary<string, int> roundTrips)
     {
@@ -580,12 +590,12 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         if (AvailableLocked(_best, roundTrips))
         {
             _quiet = 0;
-            return quickest is not null && roundTrips[quickest] * 2 < roundTrips[_best] ? quickest : _best;
+            return quickest is not null && roundTrips[quickest] * 100 < roundTrips[_best] * _policy.MarginPercent ? quickest : _best;
         }
 
         // The pick is silent: a look or two is a tunnel being dialled again, and a set where nobody answers has
         // nobody to hand the rules to either.
-        if (quickest is null || ++_quiet < Strikes)
+        if (quickest is null || ++_quiet < _policy.Strikes)
         {
             return _best;
         }

@@ -8,8 +8,10 @@ namespace AmneziaGeo.Ipc.Fleet;
 /// <param name="Primary">The server named to carry the machine; empty while none is.</param>
 /// <param name="Carrier">The server carrying it now; empty while none does.</param>
 /// <param name="Targets">Where every addressed rule rides, by the key the mode stores it under.</param>
+/// <param name="Balance">How the balancer is looked at; null while the mode has not been told.</param>
 public sealed record FleetSnapshot(
     IReadOnlyList<FleetEntry> Servers,
     string Primary = "",
     string Carrier = "",
-    IReadOnlyDictionary<string, string>? Targets = null);
+    IReadOnlyDictionary<string, string>? Targets = null,
+    BalancePolicy? Balance = null);

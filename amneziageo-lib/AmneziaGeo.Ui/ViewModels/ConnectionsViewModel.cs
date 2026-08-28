@@ -14,7 +14,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// Connections screen: what the agent does with the tunnel itself, the proxy a device on this network is
 /// pointed at, and the access point a device joins without being set up at all.
 /// </summary>
-internal sealed partial class ConnectionsViewModel : ViewModelBase
+internal partial class ConnectionsViewModel : ViewModelBase
 {
     private readonly IAgentConnection _connection;
 
@@ -402,9 +402,14 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// What the mode adds under the tunnel settings; null on a machine that keeps one tunnel.
+    /// </summary>
+    public virtual object? TunnelExtras => null;
+
+    /// <summary>
     /// Takes what the agent reports about the tunnel settings, the proxy and the access point.
     /// </summary>
-    public void Apply(StatusSnapshot snapshot)
+    public virtual void Apply(StatusSnapshot snapshot)
     {
         // Seed the settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
@@ -751,7 +756,7 @@ internal sealed partial class ConnectionsViewModel : ViewModelBase
         }
     }
 
-    private async Task SetSettingAsync(string key, string value)
+    protected async Task SetSettingAsync(string key, string value)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value]));
     }

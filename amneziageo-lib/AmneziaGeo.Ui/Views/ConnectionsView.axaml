@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.ConnectionsView"
@@ -64,6 +65,15 @@
                                      Description="{l:Tr General_MultiServerHint}"
                                      IsVisible="{Binding MultiServerOffered}"
                                      IsChecked="{Binding MultiServer, Mode=TwoWay}" />
+
+          <!-- Место режима: у машины с одним туннелем пусто и роста не даёт. -->
+          <ContentControl Content="{Binding TunnelExtras}">
+            <ContentControl.DataTemplates>
+              <DataTemplate DataType="fleet:FleetConnectionsViewModel" x:DataType="fleet:FleetConnectionsViewModel">
+                <fleet:FleetBalanceStrip />
+              </DataTemplate>
+            </ContentControl.DataTemplates>
+          </ContentControl>
         </StackPanel>
 
         <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->

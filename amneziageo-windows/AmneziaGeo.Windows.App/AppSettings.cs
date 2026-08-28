@@ -133,6 +133,21 @@ internal sealed record AppSettings
     public bool MultiServer { get; init; }
 
     /// <summary>
+    /// How often the balancer of the set is looked at again, in seconds.
+    /// </summary>
+    public int BalanceIntervalSeconds { get; init; } = AmneziaGeo.Ipc.Fleet.BalancePolicy.Default.IntervalSeconds;
+
+    /// <summary>
+    /// Silent looks in a row before the balancer hands the pick over.
+    /// </summary>
+    public int BalanceStrikes { get; init; } = AmneziaGeo.Ipc.Fleet.BalancePolicy.Default.Strikes;
+
+    /// <summary>
+    /// Share of the pick's round trip another server answers within to take it, in percent.
+    /// </summary>
+    public int BalanceMarginPercent { get; init; } = AmneziaGeo.Ipc.Fleet.BalancePolicy.Default.MarginPercent;
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public bool ProxyEnabled { get; init; }

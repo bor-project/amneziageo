@@ -24,22 +24,25 @@
     </Style>
   </UserControl.Styles>
 
-  <!-- Тип сервера: бейджем, список ролей падает из него. -->
-  <Button Classes="rolebadge" Classes.primary="{Binding IsPrimary}" IsEnabled="{Binding RolesFree}"
-          HorizontalAlignment="Left" ToolTip.Tip="{Binding RoleLabel}">
-    <StackPanel Orientation="Horizontal" Spacing="4">
-      <TextBlock Text="{Binding RoleText}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-      <PathIcon Data="{StaticResource AgRoleCaretGeometry}" Width="9" Height="9" VerticalAlignment="Center" />
-    </StackPanel>
-    <Button.Flyout>
-      <MenuFlyout Placement="BottomEdgeAlignedLeft">
-        <MenuItem Header="{Binding PrimaryText}"
-                  Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Primary}" />
-        <MenuItem Header="{Binding ReserveText}"
-                  Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Reserve}" />
-        <MenuItem Header="{Binding NeutralText}"
-                  Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Neutral}" />
-      </MenuFlyout>
-    </Button.Flyout>
-  </Button>
+  <!-- Тип сервера: подпись и бейдж под ней, список ролей падает из бейджа. -->
+  <StackPanel Spacing="3" HorizontalAlignment="Left">
+    <TextBlock Text="{Binding RoleLabel}" Classes="muted" FontSize="11.5" />
+    <Button Classes="rolebadge" Classes.primary="{Binding IsPrimary}" IsEnabled="{Binding RolesFree}"
+            HorizontalAlignment="Left">
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <TextBlock Text="{Binding RoleText}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <PathIcon Data="{StaticResource AgRoleCaretGeometry}" Width="9" Height="9" VerticalAlignment="Center" />
+      </StackPanel>
+      <Button.Flyout>
+        <MenuFlyout Placement="BottomEdgeAlignedLeft">
+          <MenuItem Header="{Binding PrimaryText}"
+                    Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Primary}" />
+          <MenuItem Header="{Binding ReserveText}"
+                    Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Reserve}" />
+          <MenuItem Header="{Binding NeutralText}"
+                    Command="{Binding SetRoleCommand}" CommandParameter="{x:Static roles:TunnelRoles.Neutral}" />
+        </MenuFlyout>
+      </Button.Flyout>
+    </Button>
+  </StackPanel>
 </UserControl>

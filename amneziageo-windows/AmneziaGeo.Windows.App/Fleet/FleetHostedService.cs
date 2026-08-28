@@ -21,9 +21,6 @@ internal sealed class FleetHostedService(
     ActiveTunnelScope activeScope,
     ILogger<FleetHostedService> logger) : BackgroundService
 {
-    // How often the balancer is looked at again.
-    private static readonly TimeSpan _balanceStep = TimeSpan.FromSeconds(30);
-
     private readonly Dictionary<string, FleetMember> _members = new(StringComparer.Ordinal);
 
     private IStateStore store => activeScope.Store;
@@ -269,7 +266,10 @@ internal sealed class FleetHostedService(
         {
             try
             {
-                await Task.Delay(_balanceStep, ct);
+                // Read every look, so a number changed on the settings screen lands on the one that follows.
+                var settings = await settingsStore.LoadAsync(ct);
+                fleet.SetPolicy(new BalancePolicy(settings.BalanceIntervalSeconds, settings.BalanceStrikes, settings.BalanceMarginPercent));
+                await Task.Delay(TimeSpan.FromSeconds(settings.BalanceIntervalSeconds), ct);
             }
             catch (OperationCanceledException)
             {

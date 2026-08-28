@@ -244,6 +244,24 @@
   <data name="General_MultiServerHint" xml:space="preserve">
     <value>Experimental: keep several tunnels up at once and give every rule a server of its own.</value>
   </data>
+  <data name="General_BalanceInterval" xml:space="preserve">
+    <value>Rebalance every</value>
+  </data>
+  <data name="General_BalanceIntervalHint" xml:space="preserve">
+    <value>How often the set is looked over to see whether the rules riding the quickest server should move.</value>
+  </data>
+  <data name="General_BalanceStrikes" xml:space="preserve">
+    <value>Silent looks before a handover</value>
+  </data>
+  <data name="General_BalanceStrikesHint" xml:space="preserve">
+    <value>How many looks in a row a silent server keeps what rides it; one look is a tunnel being dialled again.</value>
+  </data>
+  <data name="General_BalanceMargin" xml:space="preserve">
+    <value>Handover threshold</value>
+  </data>
+  <data name="General_BalanceMarginHint" xml:space="preserve">
+    <value>Share of the current server's round trip another one answers within to take its rules.</value>
+  </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Retry interval</value>
   </data>

@@ -184,10 +184,13 @@ internal sealed class ConfigRunner(
 
         _launchStreak = 0;
         await SetStateAsync("connecting");
-        if (!await ConnectWithRetryAsync(config, ct))
+        var dialled = await ConnectWithRetryAsync(config, ct);
+        if (!dialled.Ok)
         {
             return;
         }
+
+        config = dialled.Config;
 
         logger.LogInformation("connected through {Config}; traffic now follows the routing rules", config);
         await SetStateAsync("connected");
@@ -234,10 +237,13 @@ internal sealed class ConfigRunner(
                     config = current;
                 }
 
-                if (!await ConnectWithRetryAsync(config, ct))
+                var redialled = await ConnectWithRetryAsync(config, ct);
+                if (!redialled.Ok)
                 {
                     return;
                 }
+
+                config = redialled.Config;
 
                 await SetStateAsync("connected");
                 _lastRxBytes = -1;
@@ -269,7 +275,7 @@ internal sealed class ConfigRunner(
     // default, the configured interval when periodic reconnect is on - while local/config failures latch and
     // stop. Returns true on handshake, false on a fatal failure or a change signal (disconnect/reconfigure).
     // The attempt counter lives on the control so it survives a signal-driven supervisor re-entry.
-    private async Task<bool> ConnectWithRetryAsync(string config, CancellationToken ct)
+    private async Task<(bool Ok, string Config)> ConnectWithRetryAsync(string config, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -278,12 +284,12 @@ internal sealed class ConfigRunner(
             {
                 control.ClearRetry();
                 _launchStreak = 0;
-                return true;
+                return (true, config);
             }
 
             if (ct.IsCancellationRequested)
             {
-                return false;
+                return (false, config);
             }
 
             _launchStreak = outcome.Reason == ConnectFailureReason.ServiceLaunchFailed ? _launchStreak + 1 : 0;
@@ -293,7 +299,7 @@ internal sealed class ConfigRunner(
                 Stop(config);
                 await SetStateAsync("disconnected");
                 control.FailConnect(outcome.Reason, outcome.Detail);
-                return false;
+                return (false, config);
             }
 
             var attempt = control.NextRetry();
@@ -302,9 +308,20 @@ internal sealed class ConfigRunner(
                 config, outcome.Reason, (int)delay.TotalSeconds, attempt);
             await SetStateAsync("connecting");
             await WaitRetryAsync(delay, ct);
+
+            // A rename between attempts moves the configuration; the attempt that follows dials the name it
+            // carries now.
+            var renamed = await ReresolveConfigAsync(config, ct);
+            if (!string.Equals(renamed, config, StringComparison.Ordinal))
+            {
+                logger.LogInformation("configuration {Old} was renamed to {New} while it was being dialled; the next attempt goes under the new name", config, renamed);
+                Stop(config);
+                await ProjectRoutingAsync(renamed, ct);
+                config = renamed;
+            }
         }
 
-        return false;
+        return (false, config);
     }
 
     // Serves the announced backoff. A network wake ends this wait and nothing else: it must not cancel the

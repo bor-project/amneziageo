@@ -33,6 +33,9 @@ internal sealed class SettingsStore(IStateStore store)
             ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
             AllowPrerelease = ReadBool(values, "allow-prerelease", defaults.AllowPrerelease),
             MultiServer = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.MultiServer, defaults.MultiServer),
+            BalanceIntervalSeconds = Math.Clamp(ReadInt(values, "balance-interval-seconds", defaults.BalanceIntervalSeconds), 5, 3600),
+            BalanceStrikes = Math.Clamp(ReadInt(values, "balance-strikes", defaults.BalanceStrikes), 1, 10),
+            BalanceMarginPercent = Math.Clamp(ReadInt(values, "balance-margin-percent", defaults.BalanceMarginPercent), 1, 100),
             ProxyEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, defaults.ProxyEnabled),
             ProxySocksPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, defaults.ProxySocksPort),
             ProxyHttpPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort, defaults.ProxyHttpPort),
@@ -193,7 +196,7 @@ internal sealed class SettingsStore(IStateStore store)
     }
 
     private static readonly string[] IntKeys =
-        [AppSettings.RouteTtlKey, "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds"];
+        [AppSettings.RouteTtlKey, "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds", "balance-interval-seconds", "balance-strikes", "balance-margin-percent"];
 
     // Integer settings that accept 0.
     private static readonly string[] ZeroableIntKeys = [AppSettings.RouteTtlKey];

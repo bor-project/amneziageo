@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Fleet.FleetBalanceStrip"
+             x:CompileBindings="True"
+             x:DataType="fleet:FleetConnectionsViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBox.count">
+      <Setter Property="Width" Value="92" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.unit">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Числа, по которым правило переезжает с сервера на сервер. Поля стоят в общей колонке. -->
+  <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="12">
+    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,10,0">
+      <TextBlock Text="{l:Tr General_BalanceInterval}" FontSize="13.5" TextWrapping="Wrap" />
+      <TextBlock Text="{l:Tr General_BalanceIntervalHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+    </StackPanel>
+    <TextBox Grid.Row="0" Grid.Column="1" Classes="field count"
+             controls:NumericInput.Minimum="5" controls:NumericInput.Maximum="3600"
+             Text="{Binding BalanceIntervalSeconds, Mode=TwoWay}" />
+    <TextBlock Grid.Row="0" Grid.Column="2" Classes="unit" Text="{l:Tr General_Seconds}" />
+
+    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,10,0">
+      <TextBlock Text="{l:Tr General_BalanceStrikes}" FontSize="13.5" TextWrapping="Wrap" />
+      <TextBlock Text="{l:Tr General_BalanceStrikesHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+    </StackPanel>
+    <TextBox Grid.Row="1" Grid.Column="1" Classes="field count"
+             controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="10"
+             Text="{Binding BalanceStrikes, Mode=TwoWay}" />
+
+    <StackPanel Grid.Row="2" Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,10,0">
+      <TextBlock Text="{l:Tr General_BalanceMargin}" FontSize="13.5" TextWrapping="Wrap" />
+      <TextBlock Text="{l:Tr General_BalanceMarginHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+    </StackPanel>
+    <TextBox Grid.Row="2" Grid.Column="1" Classes="field count"
+             controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="100"
+             Text="{Binding BalanceMarginPercent, Mode=TwoWay}" />
+    <TextBlock Grid.Row="2" Grid.Column="2" Classes="unit" Text="%" />
+  </Grid>
+</UserControl>

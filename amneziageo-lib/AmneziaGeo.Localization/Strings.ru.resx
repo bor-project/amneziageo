@@ -244,6 +244,24 @@
   <data name="General_MultiServerHint" xml:space="preserve">
     <value>Экспериментально: держать несколько туннелей одновременно и давать каждому правилу свой сервер.</value>
   </data>
+  <data name="General_BalanceInterval" xml:space="preserve">
+    <value>Пересматривать каждые</value>
+  </data>
+  <data name="General_BalanceIntervalHint" xml:space="preserve">
+    <value>Как часто набор пересматривается, не пора ли правилам переехать на другой сервер.</value>
+  </data>
+  <data name="General_BalanceStrikes" xml:space="preserve">
+    <value>Молчаливых проверок до передачи</value>
+  </data>
+  <data name="General_BalanceStrikesHint" xml:space="preserve">
+    <value>Сколько проверок подряд молчащий сервер держит то, что на нём едет; одна проверка - это переподключение туннеля.</value>
+  </data>
+  <data name="General_BalanceMargin" xml:space="preserve">
+    <value>Порог перехода</value>
+  </data>
+  <data name="General_BalanceMarginHint" xml:space="preserve">
+    <value>Доля отклика текущего сервера, в которую другой должен уложиться, чтобы забрать его правила.</value>
+  </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Интервал повтора</value>
   </data>

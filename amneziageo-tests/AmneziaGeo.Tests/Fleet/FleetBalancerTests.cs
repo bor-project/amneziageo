@@ -136,6 +136,24 @@ public sealed class FleetBalancerTests
     }
 
     [Fact]
+    public void TheNumbersTheSettingsHoldDecideTheHandover()
+    {
+        var fleet = Set();
+        fleet.Remove("alpha");
+        fleet.SetPolicy(new BalancePolicy(30, 1, 90));
+
+        Assert.Equal("bravo", fleet.Rides(Best, Trips(5, 30, 40)));
+
+        // A tenth quicker is enough at 90%, where the pick would stand at the default half.
+        Assert.True(fleet.Rebalance(Trips(5, 30, 26)));
+        Assert.Equal("charlie", fleet.Best);
+
+        // One silent look is all a single strike gives.
+        Assert.True(fleet.Rebalance(new Dictionary<string, int> { ["bravo"] = 30 }));
+        Assert.Equal("bravo", fleet.Best);
+    }
+
+    [Fact]
     public void APickNoRuleFollowsLeavesTheTunnelsAlone()
     {
         var fleet = new FleetControl(new FleetLive());

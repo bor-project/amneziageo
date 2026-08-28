@@ -128,7 +128,12 @@ public static class FleetCommands
             Output.Line();
         }
 
-        Output.Pairs([("primary", Named(fleet.Primary)), ("carrier", Named(fleet.Carrier))]);
+        var balance = fleet.Balance ?? BalancePolicy.Default;
+        Output.Pairs([
+            ("primary", Named(fleet.Primary)),
+            ("carrier", Named(fleet.Carrier)),
+            ("balancer", $"every {balance.IntervalSeconds}s, {balance.Strikes} silent look(s), takes over under {balance.MarginPercent}%"),
+        ]);
         Output.Line();
         Output.Table(
             ["SERVER", "ROLE", "ASKED", "DEFAULT", "RESOLVER"],

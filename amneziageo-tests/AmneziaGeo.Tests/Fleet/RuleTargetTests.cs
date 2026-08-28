@@ -48,7 +48,7 @@ public sealed class RuleTargetTests
     {
         var targets = new Dictionary<string, RuleRoute>
         {
-            [FleetTargets.Key(3, "geoip:us")] = new(new RuleTarget(RuleTarget.Server, "bravo"), new RuleTarget(RuleTarget.Block)),
+            [FleetTargets.Key(3, "geosite:github")] = new(new RuleTarget(RuleTarget.Server, "bravo"), new RuleTarget(RuleTarget.Block)),
             [FleetTargets.Key(3, "app:path=C:\\apps\\x.exe")] = new(new RuleTarget(RuleTarget.Best), RuleTarget.Default),
         };
 
@@ -69,7 +69,7 @@ public sealed class RuleTargetTests
     }
 
     [Fact]
-    public void ARuleByNameTakesNoAddress()
+    public void ARuleByNameIsToldFromOneByAddress()
     {
         Assert.True(RuleAddressing.ByName("geosite:youtube"));
         Assert.True(RuleAddressing.ByName(" DOMAIN:printer.local "));
@@ -77,11 +77,11 @@ public sealed class RuleTargetTests
         Assert.False(RuleAddressing.ByName("cidr:10.0.0.0/8"));
         Assert.False(RuleAddressing.ByName("app:path=C:\\apps\\x.exe"));
 
-        // An address stored on one before it was refused is dropped rather than read back and never applied.
+        // Both keep their server: the tunnel holding the lookups hands a name to the one named on it.
         var read = FleetTargets.Parse("6:geosite:rutracker=bravo,direct\n6:geoip:ru=bravo");
 
-        Assert.Single(read);
-        Assert.True(read.ContainsKey(FleetTargets.Key(6, "geoip:ru")));
+        Assert.Equal(2, read.Count);
+        Assert.True(read.ContainsKey(FleetTargets.Key(6, "geosite:rutracker")));
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Routing;
+using AmneziaGeo.Windows.App.Fleet;
 using AmneziaGeo.Windows.Engine;
 using Microsoft.Extensions.Logging;
 
@@ -138,6 +139,7 @@ internal sealed class TunnelRunner(
         // What this tunnel is on the hook for: the default route and the machine's name lookups go to one tunnel,
         // and the agent names which. A machine running a single tunnel hands it both.
         var duties = TunnelDuties.Parse(await store.GetSettingAsync(TunnelPaths.DutiesKey(name)));
+        _duties = duties;
 
         // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it.
         var transport = await store.GetConfigTransportAsync(name);
@@ -233,8 +235,9 @@ internal sealed class TunnelRunner(
         // The config owns this because the server behind it may or may not have an IPv6 address.
         var stripV6 = !(transport?.UseIpv6 ?? false);
 
-        // Domain tracking only in split mode.
-        var trackDomains = geoSplit && domains.Count > 0;
+        // Domain tracking in split mode, and on a tunnel of the set that carries only what names it: there the
+        // full tunnel belongs to another one, and a name its own rule matched reaches it by route alone.
+        var trackDomains = domains.Count > 0 && (geoSplit || !duties.CarriesDefault);
 
         // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
@@ -500,6 +503,26 @@ internal sealed class TunnelRunner(
 
         var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing);
         session.SetProxy(proxy);
+
+        // This machine looks addresses up through one tunnel, so a name matched by a rule riding another one
+        // never reaches that one. The holder learns who owns which names and hands each over; the owner looks
+        // it up and carries the addresses. A machine keeping one tunnel has nobody standing alongside.
+        _lent = null;
+        if (peers.Length > 0)
+        {
+            if (duties.HoldsResolver)
+            {
+                await AdoptLentAsync(name, sessionCts.Token);
+            }
+            else if (domains.Count > 0)
+            {
+                // The holder may have read the sets before this tunnel wrote its own, so it is told again.
+                foreach (var peer in peers)
+                {
+                    _ = Task.Run(() => RuntimeSnapshotPipe.Send(peer, RuntimeSnapshotPipe.OpLent, logger));
+                }
+            }
+        }
 
         // The clients of the access point go out under the rules of this machine: what they open is terminated
         // on an adapter of ours and opened again here, so the routing table decides it and the sharing NAT does
@@ -1132,6 +1155,10 @@ internal sealed class TunnelRunner(
         }
     }
 
+    // What this tunnel is on the hook for, and the names the ones standing alongside carry.
+    private TunnelDuties _duties = TunnelDuties.Sole;
+    private FleetLentNames? _lent;
+
     private const int FirewallArmAttempts = 4;
     private static readonly TimeSpan FirewallArmRetryDelay = TimeSpan.FromSeconds(2);
 
@@ -1146,6 +1173,21 @@ internal sealed class TunnelRunner(
         {
             await ApplyRulesAsync(routing, tunnelName, ct);
             return "ok";
+        }
+
+        if (op == RuntimeSnapshotPipe.OpLent)
+        {
+            return await AdoptLentAsync(tunnelName, ct) ? "ok" : "-";
+        }
+
+        if (op.StartsWith(RuntimeSnapshotPipe.OpCarry, StringComparison.Ordinal))
+        {
+            var asked = op.Split('\t');
+            var wanted = asked.Length > 1 ? asked[1] : string.Empty;
+            var carried = session.Proxy is { } lender && wanted.Length > 0
+                ? await lender.CarryAsync(wanted)
+                : [];
+            return carried.Count > 0 ? string.Join(',', carried) : "-";
         }
 
         if (op == RuntimeSnapshotPipe.OpTtl)
@@ -1178,6 +1220,38 @@ internal sealed class TunnelRunner(
         }
 
         return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
+    }
+
+    // Re-reads which tunnel standing alongside carries which names. Only the one holding this machine's
+    // lookups answers: every name arrives there, and it is where they are handed over.
+    private async Task<bool> AdoptLentAsync(string name, CancellationToken ct)
+    {
+        if (!_duties.HoldsResolver || session.Proxy is not { } proxy)
+        {
+            return false;
+        }
+
+        try
+        {
+            var lent = _lent;
+            if (lent is not null)
+            {
+                await lent.ReloadAsync(ct);
+                proxy.ClearCache();
+                return true;
+            }
+
+            lent = new FleetLentNames(store, name, loggerFactory.CreateLogger<FleetLentNames>());
+            await lent.ReloadAsync(ct);
+            proxy.SetLentNames(lent.Owner, lent.CarryAsync);
+            _lent = lent;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Name}: what the tunnels standing alongside carry could not be read, so a rule by name riding one of them does not apply until the next connect", name);
+            return false;
+        }
     }
 
     // Re-reads the stored lifetime and hands it to what already holds routes. The store is the one both processes

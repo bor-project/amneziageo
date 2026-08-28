@@ -242,7 +242,7 @@
     <value>Several servers</value>
   </data>
   <data name="General_MultiServerHint" xml:space="preserve">
-    <value>Experimental: keep several tunnels up at once and give every rule a server of its own.</value>
+    <value>Keep several tunnels up at once and give every rule a server of its own.</value>
   </data>
   <data name="General_BalanceInterval" xml:space="preserve">
     <value>Rebalance every</value>
@@ -2034,9 +2034,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   </data>
   <data name="Main_RuleRouteEntriesTooltip" xml:space="preserve">
     <value>Where the rule rides, and what the category contains</value>
-  </data>
-  <data name="Main_RuleByName" xml:space="preserve">
-    <value>A rule by name: only the tunnel this machine looks addresses up through sees the name, so no server can be named on it.</value>
   </data>
   <data name="Main_RuleTargetAuto" xml:space="preserve">
     <value>Auto</value>

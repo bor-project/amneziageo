@@ -49,6 +49,25 @@ internal static class RuntimeSnapshotPipe
     public const string OpProbe = "probe";
 
     /// <summary>
+    /// Announces that a tunnel standing alongside carries names of its own, so who owns what is read again.
+    /// </summary>
+    public const string OpLent = "lent";
+
+    /// <summary>
+    /// Asks the tunnel to look one name up and carry its addresses. Only the tunnel a rule names can put a
+    /// prefix on its own path, so the lookup and the route both happen there.
+    /// </summary>
+    public const string OpCarry = "carry";
+
+    /// <summary>
+    /// Composes a carry request: the op and the name.
+    /// </summary>
+    public static string Carry(string name)
+    {
+        return string.Join('\t', OpCarry, name);
+    }
+
+    /// <summary>
     /// Composes a probe request: the op, the target, the path and the speed service.
     /// </summary>
     public static string Probe(string target, string path, string uploadUrl)

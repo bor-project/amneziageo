@@ -60,7 +60,7 @@
             </StackPanel>
           </Grid>
 
-          <!-- Several servers at once: the mode is experimental, so the row is offered only where an agent runs it. -->
+          <!-- Several servers at once: the row is offered only where an agent runs it. -->
           <controls:SettingSwitchRow Label="{l:Tr General_MultiServer}"
                                      Description="{l:Tr General_MultiServerHint}"
                                      IsVisible="{Binding MultiServerOffered}"

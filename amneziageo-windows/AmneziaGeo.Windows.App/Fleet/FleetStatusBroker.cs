@@ -283,8 +283,7 @@ internal sealed class FleetStatusBroker(
             RuleTarget.Parse(args.Count > 3 ? args[3] : string.Empty));
         if (!route.IsDefault && RuleAddressing.ByName(args[1]))
         {
-            log.LogInformation("rule '{Rule}' of list {List} is matched by name, so it rides the tunnel holding this machine's lookups and takes no address", args[1], listId);
-            return new IpcAck(false, $"{args[1]}: {RuleAddressing.ByNameReason}");
+            log.LogInformation("rule '{Rule}' of list {List} is matched by name: the tunnel holding this machine's lookups hands the name to {Server}, and its addresses go through that one", args[1], listId, route.Target.Name.Length > 0 ? route.Target.Name : route.Fallback.Name);
         }
 
         foreach (var end in new[] { route.Target, route.Fallback })

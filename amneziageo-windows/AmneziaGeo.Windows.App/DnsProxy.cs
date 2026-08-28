@@ -89,6 +89,10 @@ internal sealed class DnsProxy
     // Volatile: read on the hot query path, replaced on the poll thread; the matcher is immutable.
     private volatile IReadOnlyList<GeoDomain> _domains;
     private volatile DomainMatcher _matcher;
+    // Names another tunnel of the set carries: which one owns a name, and how it is asked to carry it. Both
+    // stay empty on a machine that keeps one tunnel.
+    private volatile Func<string, string?>? _lentOwner;
+    private volatile Func<string, string, Task<IReadOnlyList<string>>>? _lentCarry;
     // Block bucket: names refused with NXDOMAIN before any tunnel/bypass decision; never tunneled or resolved.
     private volatile IReadOnlyList<GeoDomain> _blockDomains;
     private volatile DomainMatcher _blockMatcher;
@@ -221,6 +225,43 @@ internal sealed class DnsProxy
     {
         _cache.Clear();
         _bypass.Clear();
+    }
+
+    /// <summary>
+    /// Points the names another tunnel of the set carries at it: the first delegate names that tunnel, the
+    /// second has it look the name up and put the addresses on its own path.
+    /// </summary>
+    public void SetLentNames(Func<string, string?> owner, Func<string, string, Task<IReadOnlyList<string>>> carry)
+    {
+        _lentOwner = owner;
+        _lentCarry = carry;
+        ClearCache();
+    }
+
+    /// <summary>
+    /// Looks a name up for the tunnel holding this machine's lookups and puts its addresses on this one.
+    /// Empty when no rule here names it, or when nothing answered.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CarryAsync(string name)
+    {
+        if (!_matcher.IsTunneled(name))
+        {
+            _logger.LogDebug("{Name}: no rule of this tunnel names it, so it is not carried here", name);
+            return [];
+        }
+
+        var ips = new List<IPAddress>();
+        await CollectAddressesAsync(name, TypeA, ips).ConfigureAwait(false);
+        if (ips.Count == 0)
+        {
+            _logger.LogWarning("{Name}: the resolver in this tunnel did not answer, so what a rule sent here leaves directly until the next query", name);
+            return [];
+        }
+
+        var addresses = ips.Select(ip => ip.ToString()).ToList();
+        _tracker?.Add(name, addresses);
+        _logger.LogInformation("{Name}: looked up for the tunnel holding this machine's names; its {Count} address(es) now go through this one", name, addresses.Count);
+        return addresses;
     }
     /// <summary>
     /// Serves the clients of the access point on the address it hands them. Windows gives a datagram to the
@@ -631,9 +672,13 @@ internal sealed class DnsProxy
             var geoMatch = !isLocal && !bypassed && name is not null ? _matcher.Match(name) : null;
             var matched = geoMatch is not null || appDns;
 
+            // A name no rule here matches may still be named by a rule riding another tunnel of the set. This
+            // machine looks addresses up in one place, so that tunnel never sees the name: it is handed over.
+            var lentTo = !isLocal && !bypassed && !matched && name is not null ? _lentOwner?.Invoke(name) : null;
+
             // Remember a non-local miss so the matcher isn't re-run for it until the lists change. An app-tunnel
             // name is matched, so it is never bypassed.
-            if (name is not null && !isLocal && !bypassed && !matched)
+            if (name is not null && !isLocal && !bypassed && !matched && lentTo is null)
             {
                 MarkBypassed(name);
             }
@@ -691,6 +736,21 @@ internal sealed class DnsProxy
                 StoreInCache(name, type, response);
                 TriggerReachabilityRefresh(name!, hydrated);
                 outcome = $"restored {hydrated.Count} address(es) saved from an earlier session and put them back in the tunnel";
+            }
+            else if (lentTo is not null && type == TypeA
+                     && await AskOwnerAsync(lentTo, name!).ConfigureAwait(false) is { Count: > 0 } lent)
+            {
+                // The owner looked it up through its own tunnel and put the addresses there; this side only
+                // answers the client.
+                response = DnsMessage.BuildAAnswer(query, lent, ServeKnownTtlSeconds);
+                StoreInCache(name, type, response);
+                outcome = $"looked up on {lentTo}, the tunnel its rule names, and its {lent.Count} address(es) go through that one";
+            }
+            else if (lentTo is not null && type != TypeA)
+            {
+                // The tunnel carrying it took IPv4 addresses; an answer of another kind would leave past it.
+                response = DnsMessage.BuildNoData(query);
+                outcome = $"answered without an address of this kind, {lentTo} carries this name over IPv4";
             }
             else
             {
@@ -1543,6 +1603,26 @@ internal sealed class DnsProxy
         finally
         {
             gate.Release();
+        }
+    }
+
+    // Hands one name to the tunnel that owns it and waits for the addresses it put on itself.
+    private async Task<IReadOnlyList<string>> AskOwnerAsync(string owner, string name)
+    {
+        var carry = _lentCarry;
+        if (carry is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return await carry(owner, name).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "{Name}: {Owner} did not answer, so it stays off that tunnel until the next query", name, owner);
+            return [];
         }
     }
 

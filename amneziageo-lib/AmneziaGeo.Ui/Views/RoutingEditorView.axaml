@@ -255,9 +255,6 @@
                             <DataTemplate DataType="fleet:FleetRoutingRuleItemViewModel" x:DataType="fleet:FleetRoutingRuleItemViewModel">
                               <fleet:FleetRuleStrip />
                             </DataTemplate>
-                            <DataTemplate DataType="fleet:FleetNamedRuleItemViewModel" x:DataType="fleet:FleetNamedRuleItemViewModel">
-                              <TextBlock Text="{Binding RouteNote}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                            </DataTemplate>
                             <DataTemplate DataType="vm:RoutingRuleItemViewModel" x:DataType="vm:RoutingRuleItemViewModel">
                               <Panel />
                             </DataTemplate>

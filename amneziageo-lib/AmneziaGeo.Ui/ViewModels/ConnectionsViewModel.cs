@@ -60,7 +60,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     private bool _showNotifications = true;
 
     /// <summary>
-    /// Keep several tunnels up at once (experimental).
+    /// Keep several tunnels up at once.
     /// </summary>
     [ObservableProperty]
     private bool _multiServer;

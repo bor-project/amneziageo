@@ -19,7 +19,7 @@ public static class FleetCommands
     /// Usage block a host folds into its own.
     /// </summary>
     public const string Usage = """
-        several servers (experimental, Windows only)
+        several servers (Windows only)
           fleet status                        the set: roles, what stands and who carries the machine
           fleet up <config> [--takeover]      ask for one more server; the rest stand
           fleet down <config>                 take one server out of the set
@@ -28,9 +28,7 @@ public static class FleetCommands
           fleet order <config> [<config>...]  the order the mode falls back through
           fleet target <id|name> <rule> [<rides>] [<fallback>]
                                               where one rule of a routing list rides: auto, best, direct, block
-                                              or a server; naming neither end leaves the rule to the machine.
-                                              A rule by name takes no server: only the tunnel holding this
-                                              machine's lookups ever sees the name
+                                              or a server; naming neither end leaves the rule to the machine
           Turn the mode on with 'settings set multi-server on'. While it is on, 'status' prints the set as
           well, 'up <config>' joins the selected server to it and 'down <config>' takes one out.
         """;

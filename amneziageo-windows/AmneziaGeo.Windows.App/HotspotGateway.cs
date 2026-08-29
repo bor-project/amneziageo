@@ -324,7 +324,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
         return null;
     }
 
-    private static string Scope()
+    internal static string Scope()
     {
         try
         {

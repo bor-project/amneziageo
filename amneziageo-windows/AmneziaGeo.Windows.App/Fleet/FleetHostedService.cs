@@ -51,6 +51,7 @@ internal sealed class FleetHostedService(
             using (var change = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, fleet.ChangeToken, selected.ChangeToken))
             {
                 await SyncAsync(stoppingToken);
+                live.Turned();
                 Mirror();
                 await PersistAsync(stoppingToken);
                 await IdleAsync(change.Token);
@@ -184,7 +185,7 @@ internal sealed class FleetHostedService(
         // default route - the tunnel ahead of it left the set - or whose rules were readdressed is dialled again.
         foreach (var member in _members.Values.ToArray())
         {
-            if (fleet.For(member.Name) == member.Duties && fleet.Stamp == member.Stamp)
+            if (fleet.For(member.Name) == member.Duties && fleet.StampOf(member.Name) == member.Stamp)
             {
                 continue;
             }
@@ -220,7 +221,7 @@ internal sealed class FleetHostedService(
     private void Start(string name, CancellationToken ct)
     {
         var duties = fleet.For(name);
-        var member = factory.Start(name, duties, fleet.Stamp, ct);
+        var member = factory.Start(name, duties, fleet.StampOf(name), ct);
         _members[name] = member;
         live.Publish(name, member.Control);
         logger.LogInformation("{Name}: connecting as one of {Count} tunnel(s); it {Carries} what no rule sends elsewhere",

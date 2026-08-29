@@ -136,8 +136,8 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default) => user.SaveTunnelGeoAsync(geo, ct);
 
     /// <inheritdoc/>
-    public Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default)
-        => user.SaveTunnelProjectionAsync(name, split, routes, domains, apps, routingListId, ct);
+    public Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, IReadOnlyList<string> directRoutes, IReadOnlyList<GeoDomain> directDomains, IReadOnlyList<string> blockRoutes, IReadOnlyList<GeoDomain> blockDomains, long? routingListId, CancellationToken ct = default)
+        => user.SaveTunnelProjectionAsync(name, split, routes, domains, apps, directRoutes, directDomains, blockRoutes, blockDomains, routingListId, ct);
 
     /// <inheritdoc/>
     public Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default) => user.ClearTunnelProjectionAsync(name, ct);

@@ -8,6 +8,20 @@ internal sealed class FleetLive
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<string, AgentControl> _up = new(StringComparer.Ordinal);
+    private long _turn;
+
+    /// <summary>
+    /// Counts the rounds the tunnels were brought in line with the set in.
+    /// </summary>
+    public long Turn => Interlocked.Read(ref _turn);
+
+    /// <summary>
+    /// Marks a round done.
+    /// </summary>
+    public void Turned()
+    {
+        Interlocked.Increment(ref _turn);
+    }
 
     /// <summary>
     /// Puts a raised tunnel on the list.

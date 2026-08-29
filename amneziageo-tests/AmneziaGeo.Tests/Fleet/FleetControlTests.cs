@@ -91,8 +91,10 @@ public sealed class FleetControlTests
 
         Assert.Equal(["alpha"], fleet.Wanted);
         Assert.Equal(["alpha"], fleet.Order);
-        Assert.Equal(string.Empty, fleet.Primary);
         Assert.True(fleet.Moved);
+
+        // A machine keeps a primary: the first the mode lists takes the struck one's place.
+        Assert.Equal("alpha", fleet.Primary);
 
         // The end that named it is left to the machine again; the other end stands as it was addressed.
         Assert.Equal(RuleRoute.Parse("auto,alpha"), fleet.TargetOf(FleetTargets.Key(1, "geosite:github")));

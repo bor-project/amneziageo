@@ -104,6 +104,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         proj_routes_json  TEXT NOT NULL DEFAULT '[]',
                         proj_domains_json TEXT NOT NULL DEFAULT '[]',
                         proj_apps_json    TEXT NOT NULL DEFAULT '[]',
+                        proj_direct_routes_json  TEXT NOT NULL DEFAULT '[]',
+                        proj_direct_domains_json TEXT NOT NULL DEFAULT '[]',
+                        proj_block_routes_json   TEXT NOT NULL DEFAULT '[]',
+                        proj_block_domains_json  TEXT NOT NULL DEFAULT '[]',
                         proj_routing_list_id INTEGER,
                         updated_at        TEXT NOT NULL
                     );
@@ -241,6 +245,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             // Materialized app matchers for the projection (config path derives apps from rules).
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_apps_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+
+            // The share of the list this tunnel carries: a machine keeping several up gives each its own.
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_direct_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_direct_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_block_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_block_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
 
             // Routing list a live projection came from (null for full-tunnel / no-list).
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routing_list_id INTEGER;", ct).ConfigureAwait(false);
@@ -603,7 +613,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     SELECT projected, geo_split, rules_json, routes_json, domains_json,
-                           proj_split, proj_routes_json, proj_domains_json, proj_apps_json
+                           proj_split, proj_routes_json, proj_domains_json, proj_apps_json,
+                           proj_direct_routes_json, proj_direct_domains_json,
+                           proj_block_routes_json, proj_block_domains_json
                     FROM tunnel_geo
                     WHERE name = $name;
                     """;
@@ -623,7 +635,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         var projRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
                         var projDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(7)) ?? [];
                         var projApps = JsonSerializer.Deserialize<List<string>>(reader.GetString(8)) ?? [];
-                        return new TunnelGeo(name, reader.GetInt32(5) != 0, [], projRoutes, projDomains, projApps);
+                        var projDirectRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(9)) ?? [];
+                        var projDirectDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(10)) ?? [];
+                        var projBlockRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(11)) ?? [];
+                        var projBlockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(12)) ?? [];
+                        return new TunnelGeo(name, reader.GetInt32(5) != 0, [], projRoutes, projDomains, projApps,
+                            projDirectRoutes, projDirectDomains, projBlockRoutes, projBlockDomains);
                     }
 
                     var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(2)) ?? [];
@@ -636,7 +653,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default)
+    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, IReadOnlyList<string> directRoutes, IReadOnlyList<GeoDomain> directDomains, IReadOnlyList<string> blockRoutes, IReadOnlyList<GeoDomain> blockDomains, long? routingListId, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -649,22 +666,30 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 // Insert keeps user columns at defaults; conflict path preserves the config's own split.
                 command.CommandText =
                     """
-                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, proj_routing_list_id, updated_at)
-                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $list, $updated)
+                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, proj_direct_routes_json, proj_direct_domains_json, proj_block_routes_json, proj_block_domains_json, proj_routing_list_id, updated_at)
+                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $directRoutes, $directDomains, $blockRoutes, $blockDomains, $list, $updated)
                     ON CONFLICT(name) DO UPDATE SET
-                        projected            = 1,
-                        proj_split           = excluded.proj_split,
-                        proj_routes_json     = excluded.proj_routes_json,
-                        proj_domains_json    = excluded.proj_domains_json,
-                        proj_apps_json       = excluded.proj_apps_json,
-                        proj_routing_list_id = excluded.proj_routing_list_id,
-                        updated_at           = excluded.updated_at;
+                        projected                = 1,
+                        proj_split               = excluded.proj_split,
+                        proj_routes_json         = excluded.proj_routes_json,
+                        proj_domains_json        = excluded.proj_domains_json,
+                        proj_apps_json           = excluded.proj_apps_json,
+                        proj_direct_routes_json  = excluded.proj_direct_routes_json,
+                        proj_direct_domains_json = excluded.proj_direct_domains_json,
+                        proj_block_routes_json   = excluded.proj_block_routes_json,
+                        proj_block_domains_json  = excluded.proj_block_domains_json,
+                        proj_routing_list_id     = excluded.proj_routing_list_id,
+                        updated_at               = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", name);
                 command.Parameters.AddWithValue("$split", split ? 1 : 0);
                 command.Parameters.AddWithValue("$routes", JsonSerializer.Serialize(routes));
                 command.Parameters.AddWithValue("$domains", JsonSerializer.Serialize(domains));
                 command.Parameters.AddWithValue("$apps", JsonSerializer.Serialize(apps));
+                command.Parameters.AddWithValue("$directRoutes", JsonSerializer.Serialize(directRoutes));
+                command.Parameters.AddWithValue("$directDomains", JsonSerializer.Serialize(directDomains));
+                command.Parameters.AddWithValue("$blockRoutes", JsonSerializer.Serialize(blockRoutes));
+                command.Parameters.AddWithValue("$blockDomains", JsonSerializer.Serialize(blockDomains));
                 command.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -687,13 +712,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     UPDATE tunnel_geo
-                    SET projected            = 0,
-                        proj_split           = 0,
-                        proj_routes_json     = '[]',
-                        proj_domains_json    = '[]',
-                        proj_apps_json       = '[]',
-                        proj_routing_list_id = NULL,
-                        updated_at           = $updated
+                    SET projected                = 0,
+                        proj_split               = 0,
+                        proj_routes_json         = '[]',
+                        proj_domains_json        = '[]',
+                        proj_apps_json           = '[]',
+                        proj_direct_routes_json  = '[]',
+                        proj_direct_domains_json = '[]',
+                        proj_block_routes_json   = '[]',
+                        proj_block_domains_json  = '[]',
+                        proj_routing_list_id     = NULL,
+                        updated_at               = $updated
                     WHERE name = $name;
                     """;
                 command.Parameters.AddWithValue("$name", name);

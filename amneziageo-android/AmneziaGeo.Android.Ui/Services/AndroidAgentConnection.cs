@@ -2920,7 +2920,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task<IpcAck> RemoveSubscriptionAsync(IReadOnlyList<string> args)
     {
         await EnsureInitAsync().ConfigureAwait(false);
-        var ack = await Subscriptions().RemoveAsync(args, _active ? _boundTarget : null, CancellationToken.None).ConfigureAwait(false);
+        var ack = await Subscriptions().RemoveAsync(args, _active && _boundTarget is { Length: > 0 } ? [_boundTarget] : [], CancellationToken.None).ConfigureAwait(false);
         if (ack.Ok)
         {
             await RefreshTransportsAsync().ConfigureAwait(false);

@@ -51,8 +51,9 @@ internal sealed class DnsProxy
     private const int ProbeTimeoutMs = 3000;
     private const int MaxProbeIps = 3;
 
-    // Fallback loopback aliases when 127.0.0.1:53 is taken by another resolver.
-    private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
+    // Loopback aliases the proxy may listen on: 127.0.0.1:53 is taken by another resolver, or by another tunnel
+    // of the set, so every tunnel a machine keeps up gets one of its own.
+    private static readonly IPAddress[] V4Candidates = [.. Enumerable.Range(1, 8).Select(last => IPAddress.Parse($"127.0.0.{last}"))];
 
     /// <summary>
     /// Name the liveness probe asks for. Answered here without an upstream, so a slow resolver never reads as a
@@ -132,7 +133,7 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true)
     {
         _appDns = appDns;
         _routing = routing;
@@ -155,6 +156,15 @@ internal sealed class DnsProxy
         _tracker = tracker;
         _logger = logger;
         _stripV6 = stripV6;
+
+        if (!listen)
+        {
+            // The machine asks one tunnel of the set, and this is not it: names arrive over the pipe of the one
+            // that holds them, so no loopback is taken here.
+            _logger.LogInformation("names are looked up here only for the tunnel holding this machine's lookups: {Domains} domain rule(s), tunnel resolver {TunnelUp}",
+                _domains.Count, _tunnelUpstream);
+            return;
+        }
 
         foreach (var candidate in V4Candidates)
         {

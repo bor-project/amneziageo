@@ -15,6 +15,7 @@ internal sealed class AgentControl
 
     private readonly Lock _gate = new();
     private volatile bool _running;
+    private volatile bool _connected;
     private volatile bool _restartRequired;
     private volatile string? _target;
     private volatile string? _runningTarget;
@@ -37,6 +38,19 @@ internal sealed class AgentControl
     /// Whether the agent keeps a tunnel up.
     /// </summary>
     public bool Running => _running;
+
+    /// <summary>
+    /// Whether the server has answered the running tunnel.
+    /// </summary>
+    public bool Connected => _connected;
+
+    /// <summary>
+    /// Records whether the tunnel stands.
+    /// </summary>
+    public void SetConnected(bool value)
+    {
+        _connected = value;
+    }
 
     /// <summary>
     /// How long ago the running tunnel's peer last answered, in reporting steps; -1 before it ever has.
@@ -209,6 +223,7 @@ internal sealed class AgentControl
     public void SetRunning(bool value)
     {
         _running = value;
+        _connected = false;
         _connectFailed = false;
         _connectFailReason = ConnectFailureReason.Unknown;
         _connectFailDetail = null;

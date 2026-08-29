@@ -98,6 +98,7 @@ public sealed class RoutingCache
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
     private readonly bool _split;
+    private readonly bool _carriesDefault;
     private long _idleTtlMs;
     private int _scansPerSweep;
     private readonly ILogger<RoutingCache> _logger;
@@ -115,11 +116,12 @@ public sealed class RoutingCache
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null)
+    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null, bool carriesDefault = true)
     {
         _applier = applier;
         _live = live;
         _split = split;
+        _carriesDefault = carriesDefault;
         SetTtl(ttlSeconds);
         _logger = logger;
         _rules = Build(proxy, direct, block, 0);
@@ -159,6 +161,9 @@ public sealed class RoutingCache
     /// Whether the tunnel carries only what the list names; everything else follows the physical path.
     /// </summary>
     public bool Split => _split;
+
+    // Everything already rides this tunnel: a full tunnel whose default is its own.
+    private bool CarriesEverything => !_split && _carriesDefault;
 
     /// <summary>
     /// A held destination: its verdict, what that verdict installed, whether a name settled it, and the idle time
@@ -516,7 +521,7 @@ public sealed class RoutingCache
     // is released first, so a permit out the physical path never outlives the decision that replaced it.
     private void Promote(Entry entry, long now)
     {
-        if (!_split || entry.Plan is RoutePlan.Tunnel or RoutePlan.Drop or RoutePlan.External || entry.Verdict is RouteVerdict.Direct)
+        if (CarriesEverything || entry.Plan is RoutePlan.Tunnel or RoutePlan.Drop or RoutePlan.External || entry.Verdict is RouteVerdict.Direct)
         {
             if (!Installed(entry))
             {
@@ -1001,7 +1006,8 @@ public sealed class RoutingCache
         return rules.Proxy.Contains(address) ? RouteVerdict.Proxy : RouteVerdict.None;
     }
 
-    // Full tunnel: the tunnel is the default, so only Direct leaves it and Block is already dropped by WFP.
+    // Full tunnel: the tunnel is the default, so only Direct leaves it and Block is already dropped by WFP; one
+    // that does not carry the default takes a route of its own for what its rules name.
     // Split: nothing rides the tunnel until a destination earns it, and the physical path is blocked until a
     // verdict exists - so Proxy earns the tunnel, Block stays dropped, and everything else earns a permit.
     // app: claimed by an app rule. Block still wins, and so does an explicit Direct range - the user pinned that
@@ -1015,7 +1021,13 @@ public sealed class RoutingCache
 
         if (!_split)
         {
-            return verdict == RouteVerdict.Direct ? RoutePlan.Bypass : RoutePlan.None;
+            if (verdict == RouteVerdict.Direct)
+            {
+                return RoutePlan.Bypass;
+            }
+
+            // The default belongs to another tunnel of the set, so what a rule names here takes a route of its own.
+            return !_carriesDefault && (verdict == RouteVerdict.Proxy || app) ? RoutePlan.Tunnel : RoutePlan.None;
         }
 
         if (verdict == RouteVerdict.Direct)

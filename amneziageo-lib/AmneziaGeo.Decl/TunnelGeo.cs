@@ -9,4 +9,8 @@ public sealed record TunnelGeo(
     IReadOnlyList<GeoRule> Rules,
     IReadOnlyList<string> Routes,
     IReadOnlyList<GeoDomain> Domains,
-    IReadOnlyList<string> Apps);
+    IReadOnlyList<string> Apps,
+    IReadOnlyList<string>? DirectRoutes = null,
+    IReadOnlyList<GeoDomain>? DirectDomains = null,
+    IReadOnlyList<string>? BlockRoutes = null,
+    IReadOnlyList<GeoDomain>? BlockDomains = null);

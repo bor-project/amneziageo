@@ -170,6 +170,29 @@ internal sealed class FleetStatusBroker(
     }
 
     /// <inheritdoc/>
+    protected override IReadOnlyCollection<string> RunningMembers()
+    {
+        if (!mode.MultiServer)
+        {
+            return base.RunningMembers();
+        }
+
+        return [.. fleet.Wanted.Where(name => live.Of(name) is { Running: true })];
+    }
+
+    /// <inheritdoc/>
+    protected override void MarkRestartRequired(string config)
+    {
+        if (!mode.MultiServer)
+        {
+            base.MarkRestartRequired(config);
+            return;
+        }
+
+        live.Of(config)?.SetRestartRequired();
+    }
+
+    /// <inheritdoc/>
     protected override async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (!mode.MultiServer)
@@ -265,9 +288,13 @@ internal sealed class FleetStatusBroker(
             return new IpcAck(false, $"unknown config: {name}");
         }
 
-        fleet.SetRole(name, role);
-        log.LogInformation("'{Name}' is the {Role} server from now on", name, TunnelRoles.Of(role));
-        await SettledAsync(ct);
+        var turn = live.Turn;
+        if (fleet.SetRole(name, role))
+        {
+            log.LogInformation("'{Name}' is the {Role} server from now on", name, TunnelRoles.Of(role));
+            await SettledAsync(turn, ct);
+        }
+
         return new IpcAck(true, $"{name}: {TunnelRoles.Of(role)}");
     }
 
@@ -296,16 +323,20 @@ internal sealed class FleetStatusBroker(
             }
         }
 
-        fleet.SetTarget(FleetTargets.Key(listId, args[1]), route);
-        log.LogInformation("rule '{Rule}' of list {List} rides {Target}, and {Fallback} while that one is not up",
-            args[1], listId, route.Target.Format(), route.Fallback.Format());
-        await SettledAsync(ct);
+        var turn = live.Turn;
+        if (fleet.SetTarget(FleetTargets.Key(listId, args[1]), route))
+        {
+            log.LogInformation("rule '{Rule}' of list {List} rides {Target}, and {Fallback} while that one is not up",
+                args[1], listId, route.Target.Format(), route.Fallback.Format());
+            await SettledAsync(turn, ct);
+        }
+
         return new IpcAck(true, $"{args[1]}: {route.Format()}");
     }
 
     // A tunnel reads its duties at bring-up, so a role takes the ones it touches down and back up. The answer
     // waits for the set to stand again: whoever asked measures through the server it just named.
-    private async Task SettledAsync(CancellationToken ct)
+    private async Task SettledAsync(long turn, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + SettleWait;
         while (DateTimeOffset.UtcNow < deadline)
@@ -319,7 +350,9 @@ internal sealed class FleetStatusBroker(
                 return;
             }
 
-            if (fleet.Wanted.All(name => live.Of(name) is { Running: true }))
+            // The round the request set off has to be over first: until then the set stands as it stood. A
+            // tunnel counts once its server has answered, not once it was asked for.
+            if (live.Turn != turn && fleet.Wanted.All(name => live.Of(name) is { Connected: true }))
             {
                 return;
             }

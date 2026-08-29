@@ -980,7 +980,7 @@ internal sealed class LinuxAgent : IDisposable
 
     private async Task<IpcAck> RemoveSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        var ack = await Subscriptions().RemoveAsync(args, _tunnel.Running ? _boundTarget : null, ct).ConfigureAwait(false);
+        var ack = await Subscriptions().RemoveAsync(args, _tunnel.Running && _boundTarget is { Length: > 0 } ? [_boundTarget] : [], ct).ConfigureAwait(false);
         if (ack.Ok)
         {
             await PushAsync(ct).ConfigureAwait(false);

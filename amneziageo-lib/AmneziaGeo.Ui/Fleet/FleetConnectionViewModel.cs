@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Ui.Services;
@@ -144,7 +145,8 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
             return;
         }
 
-        var role = row is FleetConfigItemViewModel card ? card.Role : TunnelRoles.Default;
+        // Кого машина занята у, читается до запроса: ответ на него уже переписывает основного.
+        var lent = (Primary, row.Name, row is FleetConfigItemViewModel card ? card.Role : TunnelRoles.Default);
         var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetPrimary, [row.Name]));
         if (!ack.Ok)
         {
@@ -152,7 +154,7 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
             return;
         }
 
-        _lent = (Primary, row.Name, role);
+        _lent = lent;
     }
 
     /// <summary>
@@ -180,6 +182,19 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         if (!ack.Ok)
         {
             ShowNotice(FleetNotice.Of(ack));
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnPropertyChanged(PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+
+        // Ссылка «Сделать основным» смотрит на выбранную карточку и на агента, а они меняются мимо режима.
+        if (e.PropertyName is nameof(ActiveConfig) or nameof(IsConnected))
+        {
+            OnPropertyChanged(nameof(CanMakePrimary));
+            MakePrimaryCommand.NotifyCanExecuteChanged();
         }
     }
 

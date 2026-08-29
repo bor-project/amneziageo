@@ -193,6 +193,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 
         lock (_gate)
         {
+            var carried = RoleLocked(name) == TunnelRoles.Primary;
             var struck = _wanted.Remove(name);
             struck |= _order.Remove(name);
             struck |= _roles.Remove(name);
@@ -206,6 +207,11 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             {
                 _best = string.Empty;
                 _quiet = 0;
+            }
+
+            if (carried)
+            {
+                ElectLocked();
             }
 
             TouchLocked();
@@ -381,17 +387,23 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     {
         lock (_gate)
         {
-            return _targets.TryGetValue(key, out var route) ? route : RuleRoute.Default;
+            return TargetOfLocked(key);
         }
     }
 
     /// <summary>
-    /// Addresses one rule. A rule left to the machine on both ends is not held at all.
+    /// Addresses one rule; answers whether the address moved. A rule left to the machine on both ends is not
+    /// held at all.
     /// </summary>
-    public void SetTarget(string key, RuleRoute route)
+    public bool SetTarget(string key, RuleRoute route)
     {
         lock (_gate)
         {
+            if (TargetOfLocked(key) == route)
+            {
+                return false;
+            }
+
             if (route.IsDefault)
             {
                 _targets.Remove(key);
@@ -406,6 +418,26 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         }
 
         Signal();
+        return true;
+    }
+
+    /// <summary>
+    /// What a tunnel carries of the addressed rules: it moves only while its own share does.
+    /// </summary>
+    public long StampOf(string name)
+    {
+        var roundTrips = live.RoundTrips();
+        lock (_gate)
+        {
+            var hash = new HashCode();
+            foreach (var key in _targets.Keys.Order(StringComparer.Ordinal))
+            {
+                hash.Add(key, StringComparer.Ordinal);
+                hash.Add(ShareOfLocked(key, name, roundTrips));
+            }
+
+            return hash.ToHashCode();
+        }
     }
 
     /// <summary>
@@ -460,13 +492,20 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// Gives a tunnel its role. A machine holds one primary, so naming a second one demotes the first.
+    /// Gives a tunnel its role; answers whether the set moved. A machine holds one primary, so naming a second
+    /// one demotes the first.
     /// </summary>
-    public void SetRole(string name, string role)
+    public bool SetRole(string name, string role)
     {
         var given = TunnelRoles.Of(role);
+        var roundTrips = live.RoundTrips();
         lock (_gate)
         {
+            if (RoleLocked(name) == given)
+            {
+                return false;
+            }
+
             if (given == TunnelRoles.Primary)
             {
                 PromoteLocked(name);
@@ -476,10 +515,14 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 _roles[name] = given;
             }
 
+            // The primary takes the balancer's pick back the moment it is named, so the rules following the
+            // pick move with the role instead of at the next look.
+            _best = ReconsiderLocked(roundTrips);
             TouchLocked();
         }
 
         Signal();
+        return true;
     }
 
     /// <inheritdoc/>
@@ -709,6 +752,29 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         return end.Mode == RuleTarget.Server && string.Equals(end.Name, name, StringComparison.Ordinal);
     }
 
+    // How one rule reads on a tunnel: its own, kept off the tunnel, dropped, or somebody else's.
+    private int ShareOfLocked(string key, string name, IReadOnlyDictionary<string, int> roundTrips)
+    {
+        var route = _targets[key];
+        var rides = ResolveLocked(route.Target, roundTrips) ?? ResolveLocked(route.Fallback, roundTrips);
+        if (string.Equals(rides, name, StringComparison.Ordinal))
+        {
+            return 1;
+        }
+
+        if (rides == RuleTarget.Block)
+        {
+            return 2;
+        }
+
+        return rides == RuleTarget.Direct ? 3 : 0;
+    }
+
+    private RuleRoute TargetOfLocked(string key)
+    {
+        return _targets.TryGetValue(key, out var route) ? route : RuleRoute.Default;
+    }
+
     private TunnelDuties DutiesLocked(string name)
     {
         return string.Equals(CarrierLocked(), name, StringComparison.Ordinal) ? TunnelDuties.Sole : TunnelDuties.None;
@@ -800,6 +866,16 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         }
 
         return string.Empty;
+    }
+
+    // A machine holds one primary, so a struck one leaves the first the mode lists in its place.
+    private void ElectLocked()
+    {
+        var heir = CarrierLocked() ?? _order.FirstOrDefault(name => TunnelRoles.Balanced(RoleLocked(name)));
+        if (heir is not null)
+        {
+            PromoteLocked(heir);
+        }
     }
 
     // A machine holds one primary, so naming one puts the one before it back in the balancer.

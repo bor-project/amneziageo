@@ -132,10 +132,10 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
     }
 
     /// <summary>
-    /// Снимает подписку, а со вторым аргументом "configs" - и приведённые ею конфигурации. Имя
-    /// работающей конфигурации отбивает снос вместе с ней.
+    /// Снимает подписку, а со вторым аргументом "configs" - и приведённые ею конфигурации. Имена
+    /// работающих конфигураций отбивают снос вместе с ними.
     /// </summary>
-    public async Task<IpcAck> RemoveAsync(IReadOnlyList<string> args, string? running, CancellationToken ct)
+    public async Task<IpcAck> RemoveAsync(IReadOnlyList<string> args, IReadOnlyCollection<string> running, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
@@ -151,9 +151,12 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
 
         var members = await store.ListSubscriptionMembersAsync(name, ct).ConfigureAwait(false);
         var withConfigs = args.Count > 1 && string.Equals(args[1], "configs", StringComparison.OrdinalIgnoreCase);
-        if (withConfigs && running is { Length: > 0 } && members.Any(member => string.Equals(member.ConfigName, running, StringComparison.Ordinal)))
+        var held = withConfigs
+            ? members.FirstOrDefault(member => running.Contains(member.ConfigName, StringComparer.Ordinal))?.ConfigName
+            : null;
+        if (held is not null)
         {
-            return new IpcAck(false, $"config {running} is running; disconnect first");
+            return new IpcAck(false, $"config {held} is running; disconnect first");
         }
 
         await store.RemoveSubscriptionAsync(name, ct).ConfigureAwait(false);

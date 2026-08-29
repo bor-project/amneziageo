@@ -209,9 +209,10 @@ internal sealed class TunnelRunner(
         logger.LogDebug("{Name}: rules loaded — {Routes} address range(s), {Domains} domain(s), {Apps} app(s); only what they name goes through the tunnel: {Split} [{Elapsed} ms in]",
             name, geoRoutes.Count, domains.Count, apps.Count, geoSplit, connectSw.ElapsedMilliseconds);
 
-        // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN).
-        var blockRoutes = activeList?.BlockRoutes ?? [];
-        var blockDomains = activeList?.BlockDomains ?? [];
+        // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN). The
+        // projection carries this tunnel's own share of the list, which the set readdresses rule by rule.
+        var blockRoutes = geo?.BlockRoutes ?? activeList?.BlockRoutes ?? [];
+        var blockDomains = geo?.BlockDomains ?? activeList?.BlockDomains ?? [];
 
         // WFP kill-switch: on in both modes. In split it holds a destination off the physical path until its
         // verdict exists - a packet that leaves earlier carries the real address, which is the leak this prevents.
@@ -227,7 +228,7 @@ internal sealed class TunnelRunner(
             .ToArray();
 
         // Every bucket is resolved per destination, whatever its size: nothing is materialized at bring-up.
-        var listDirect = activeList?.DirectRoutes ?? [];
+        var listDirect = geo?.DirectRoutes ?? activeList?.DirectRoutes ?? [];
 
         // Route IPv6 only when the config opts in (ConfigTransport.UseIpv6); otherwise the tunnel stays v4-only:
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
@@ -331,7 +332,7 @@ internal sealed class TunnelRunner(
         var exclusionDomains = new List<string>(parsedExclusionDomains);
         // Direct bucket (both modes): its domains stay on the local resolver, off the tunnel, overriding a proxy
         // match. Handed to the proxy on its own so an edited list rebuilds it without a fresh tunnel.
-        var directDomains = activeList?.DirectDomains ?? [];
+        var directDomains = geo?.DirectDomains ?? activeList?.DirectDomains ?? [];
         // Keep LAN DNS suffixes off-tunnel (split-horizon DNS).
         foreach (var suffix in dns.CaptureLocalDnsSuffixes())
         {
@@ -440,7 +441,7 @@ internal sealed class TunnelRunner(
         }
 
         session.Clear();
-        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), tunnelResolver);
+        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), tunnelResolver, duties.CarriesDefault);
         session.SetCache(routing);
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.
@@ -501,7 +502,7 @@ internal sealed class TunnelRunner(
             _ = Task.Run(() => appMemory.RunAsync(sessionCts.Token));
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver);
         session.SetProxy(proxy);
 
         // This machine looks addresses up through one tunnel, so a name matched by a rule riding another one
@@ -607,7 +608,7 @@ internal sealed class TunnelRunner(
         {
             redirectServers = [proxy.BoundV4.ToString()];
         }
-        else
+        else if (duties.HoldsResolver)
         {
             // Loopback :53 busy - fall back to direct resolvers.
             redirectServers = configDns.Count > 0 ? configDns : upstream;
@@ -783,7 +784,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -794,7 +795,13 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen);
+        if (!listen)
+        {
+            // It answers the holder of the machine's lookups over the pipe, so it serves no socket of its own.
+            return proxy;
+        }
+
         if (proxy.BoundV4 is null)
         {
             return null;

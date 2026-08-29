@@ -152,7 +152,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         _feed.Body = Body(Config("phone"));
         await _service.AddAsync([Url], default);
 
-        var ack = await _service.RemoveAsync(["example.net"], null, default);
+        var ack = await _service.RemoveAsync(["example.net"], [], default);
 
         Assert.True(ack.Ok);
         Assert.Empty(await _store.ListSubscriptionsAsync());
@@ -165,7 +165,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         _feed.Body = Body(Config("phone"));
         await _service.AddAsync([Url], default);
 
-        var ack = await _service.RemoveAsync(["example.net", "configs"], null, default);
+        var ack = await _service.RemoveAsync(["example.net", "configs"], [], default);
 
         Assert.True(ack.Ok);
         Assert.Empty(_library.Names);
@@ -177,7 +177,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         _feed.Body = Body(Config("phone"));
         await _service.AddAsync([Url], default);
 
-        var ack = await _service.RemoveAsync(["example.net", "configs"], "phone", default);
+        var ack = await _service.RemoveAsync(["example.net", "configs"], ["phone"], default);
 
         Assert.False(ack.Ok);
         Assert.Single(_library.Names);

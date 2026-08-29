@@ -406,19 +406,21 @@ internal sealed class ConfigRunner(
             list = await geo.MaterializeDraftAsync([.. share.Select(GeoConfigurator.FormatWithRole)], ct) with { Id = list.Id, Name = list.Name };
         }
 
-        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, list.Id, ct);
+        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps,
+            list.DirectRoutes, list.DirectDomains, list.BlockRoutes, list.BlockDomains, list.Id, ct);
         logger.LogInformation("routing list '{List}' now applies to {Config}: only what it names goes through the tunnel", list.Name, config);
     }
 
     private async Task ProjectFullTunnelAsync(string config, CancellationToken ct)
     {
         // geoSplit=false -> full tunnel via config AllowedIPs.
-        await store.SaveTunnelProjectionAsync(config, false, [], [], [], null, ct);
+        await store.SaveTunnelProjectionAsync(config, false, [], [], [], [], [], [], [], null, ct);
         logger.LogInformation("routing rules are off for {Config}: all traffic goes through the tunnel", config);
     }
 
     private async Task SetStateAsync(string status)
     {
+        control.SetConnected(status == ConnectionStatus.Connected);
         try
         {
             await store.SaveTunnelStateAsync(new TunnelState(_config, status, DateTimeOffset.UtcNow));

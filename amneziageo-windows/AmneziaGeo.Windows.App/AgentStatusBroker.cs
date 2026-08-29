@@ -381,9 +381,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var outcome = await Subscriptions().RefreshAsync(args, ct);
 
         // Переписанный текст встаёт на следующем подъёме туннеля.
-        if (control.Running && outcome.Rewritten.Any(IsRunningMember))
+        foreach (var name in outcome.Rewritten.Where(IsRunningMember))
         {
-            control.SetRestartRequired();
+            MarkRestartRequired(name);
         }
 
         if (outcome.Ack.Ok)
@@ -396,7 +396,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     private async Task<IpcAck> RemoveSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        var ack = await Subscriptions().RemoveAsync(args, control.Running ? BoundTarget : null, ct);
+        var ack = await Subscriptions().RemoveAsync(args, RunningMembers(), ct);
         if (ack.Ok)
         {
             logger.LogInformation("removed subscription {Name}", args[0]);
@@ -425,9 +425,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
             {
                 var outcome = await service.RefreshAsync([subscription.Name], ct);
-                if (control.Running && outcome.Rewritten.Any(IsRunningMember))
+                foreach (var name in outcome.Rewritten.Where(IsRunningMember))
                 {
-                    control.SetRestartRequired();
+                    MarkRestartRequired(name);
                 }
 
                 refreshed++;
@@ -469,6 +469,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         public async Task RemoveAsync(string name, CancellationToken ct)
         {
+            await owner.ForgetConfigAsync(name, ct);
             await scope.ConfigRepo.RemoveAsync(name, ct);
             await scope.Store.RemoveTunnelStateAsync(name, ct);
             await owner.ClearBindingIfTargetAsync(name, ct);
@@ -490,9 +491,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         await configRepo.EditFromTextAsync(args[0], args[1], ct);
 
         // Config text applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && IsRunningMember(args[0]))
+        if (IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            MarkRestartRequired(args[0]);
         }
 
         logger.LogInformation("edited config {Name}", args[0]);
@@ -512,8 +513,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, $"unknown config: {name}");
         }
 
-        // Refuse while the config is the running target.
-        if (control.Running && string.Equals(name, BoundTarget, StringComparison.Ordinal))
+        // Refuse while the config runs a tunnel.
+        if (IsRunningMember(name))
         {
             return new IpcAck(false, $"config {name} is running; disconnect first");
         }
@@ -1081,9 +1082,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
-        if (previous != updated && control.Running && IsRunningMember(args[0]))
+        if (previous != updated && IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            MarkRestartRequired(args[0]);
         }
 
         logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu}, IPv6 allowed: {V6} — takes effect on reconnect",
@@ -1117,9 +1118,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         // DNS applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && IsRunningMember(args[0]))
+        if (IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            MarkRestartRequired(args[0]);
         }
 
         logger.LogInformation("{Name}: names outside the tunnel will be resolved by '{Servers}' (empty means your provider's own servers) — takes effect on reconnect", args[0], servers);
@@ -1145,9 +1146,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         await store.SetConfigExclusionsAsync(new ConfigExclusions(args[0], exclusions), ct);
 
         // Exclusions apply on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && IsRunningMember(args[0]))
+        if (IsRunningMember(args[0]))
         {
-            control.SetRestartRequired();
+            MarkRestartRequired(args[0]);
         }
 
         logger.LogInformation("{Name}: the list of addresses and names kept out of the tunnel was saved ({Len} characters) — takes effect on reconnect", args[0], exclusions.Length);
@@ -1160,9 +1161,34 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
     }
 
+    /// <summary>
+    /// The configurations whose tunnels are up right now.
+    /// </summary>
+    protected virtual IReadOnlyCollection<string> RunningMembers()
+    {
+        return control.Running && BoundTarget is { Length: > 0 } target ? [target] : [];
+    }
+
+    /// <summary>
+    /// Asks the tunnel of one configuration for a reconnect.
+    /// </summary>
+    protected virtual void MarkRestartRequired(string config)
+    {
+        control.SetRestartRequired();
+    }
+
+    // Asks every tunnel that is up for a reconnect.
+    private void MarkRestartRequired()
+    {
+        foreach (var name in RunningMembers())
+        {
+            MarkRestartRequired(name);
+        }
+    }
+
     private bool IsRunningMember(string config)
     {
-        return string.Equals(BoundTarget, config, StringComparison.Ordinal);
+        return RunningMembers().Contains(config, StringComparer.Ordinal);
     }
 
     private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
@@ -1385,14 +1411,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
         // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
-        if (control.Running && BoundTarget is not null)
+        if (RunningMembers().Count > 0)
         {
             var listId = await store.GetSelectedRoutingListAsync(ct);
             var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
             var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
             if (listId == resultId && !newReconnect.SetEquals(previousReconnect))
             {
-                control.SetRestartRequired();
+                MarkRestartRequired();
             }
         }
 
@@ -1504,11 +1530,11 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         // Settings apply on a fresh tunnel; flag a reconnect when the running tunnel routes through this list.
-        if (changed && control.Running && BoundTarget is not null)
+        if (changed && RunningMembers().Count > 0)
         {
             if (await store.GetSelectedRoutingListAsync(ct) == id)
             {
-                control.SetRestartRequired();
+                MarkRestartRequired();
             }
         }
 
@@ -1565,10 +1591,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var currentList = await store.GetSelectedRoutingListAsync(ct);
         Journal(SwitchLog.RoutingList(await ListNameAsync(currentList, ct), await ListNameAsync(listId, ct)));
         await store.SetSelectedRoutingListAsync(listId, ct);
-        if (currentList != listId && control.Running)
+        if (currentList != listId && RunningMembers().Count > 0)
         {
             // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
-            control.SetRestartRequired();
+            MarkRestartRequired();
         }
 
         logger.LogInformation("routing list {List} now applies to every configuration; with none picked, all traffic goes through the tunnel", listId);

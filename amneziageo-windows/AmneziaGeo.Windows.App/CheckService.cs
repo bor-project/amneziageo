@@ -46,7 +46,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             connected ? control.HandshakeAge : -1,
             connected ? control.Link.HandshakesPerMinute : -1,
             SourceHost: source,
-            ConfiguredMtu: TunnelRunner.EffectiveMtu(transport?.Mtu ?? 0),
+            ConfiguredMtu: WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, text),
             CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);

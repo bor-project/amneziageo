@@ -100,7 +100,6 @@ public sealed class GeoVpnService : VpnService
 
     private const string ChannelId = "amneziageo.vpn";
     private const int NotificationId = 1001;
-    private const int DefaultMtu = 1420;
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
@@ -740,9 +739,8 @@ public sealed class GeoVpnService : VpnService
                 builder.AddDnsServer(server);
             }
 
-            // The saved per-config MTU wins; without one the config text decides.
-            var configMtu = WgConfigEditor.GetMtu(config);
-            builder.SetMtu(mtu > 0 ? mtu : configMtu > 0 ? configMtu : DefaultMtu);
+            // The MTU chosen for the config wins; without one the config text decides.
+            builder.SetMtu(WgConfigEditor.EffectiveMtu(mtu, config));
 
             // Hands the applications a proxy of our own: a request then arrives as a name, before the client has
             // resolved it, which is the only per-destination signal this platform gives a session in progress.

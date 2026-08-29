@@ -720,6 +720,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.Dns = entry.Dns;
             existing.Exclusions = entry.Exclusions;
             existing.Mtu = entry.Mtu;
+            existing.ConfigMtu = entry.ConfigMtu;
             existing.UseIpv6 = entry.UseIpv6;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
@@ -944,7 +945,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Перечитывает подписку, которой пришла конфигурация карточки.
     /// </summary>
-    [RelayCommand]
+    // Кнопка не гаснет на время чтения: погасшую пульт роняет из фокуса. Повторный запуск отсекает Busy.
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task RefreshConfigSubscription(ConfigItemViewModel? row)
     {
         if (row is not { Subscription.Length: > 0 })

@@ -973,7 +973,7 @@ internal sealed class LinuxAgent : IDisposable
     private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var outcome = await Subscriptions().RefreshAsync(args, ct).ConfigureAwait(false);
-        FlagRewritten(outcome);
+        await FlagRewrittenAsync(outcome, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return outcome.Ack;
     }
@@ -1008,7 +1008,7 @@ internal sealed class LinuxAgent : IDisposable
                 foreach (var subscription in due)
                 {
                     var outcome = await service.RefreshAsync([subscription.Name], ct).ConfigureAwait(false);
-                    FlagRewritten(outcome);
+                    await FlagRewrittenAsync(outcome, ct).ConfigureAwait(false);
                     if (!outcome.Ack.Ok)
                     {
                         _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");
@@ -1030,14 +1030,40 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    // A rewritten text applies on a fresh tunnel; flag a reconnect when the running target is affected.
-    private void FlagRewritten(SubscriptionOutcome outcome)
+    // A rewritten text applies on a fresh tunnel; dial the running target again as soon as it is rewritten.
+    private async Task FlagRewrittenAsync(SubscriptionOutcome outcome, CancellationToken ct)
     {
-        if (_tunnel.Running && outcome.Rewritten.Any(name => string.Equals(name, _boundTarget, StringComparison.Ordinal)))
+        // Подписка снесла работающую конфигурацию - держать туннель не на чем.
+        if (_tunnel.Running && _boundTarget is { Length: > 0 } bound
+            && await _store.GetConfigTextAsync(bound, ct).ConfigureAwait(false) is null)
+        {
+            _log.Info("sub", "the subscription dropped the running configuration; disconnecting");
+            await SetConnectionAsync("disconnect", ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (!_desiredConnected)
+        {
+            return;
+        }
+
+        var dialled = _tunnel.Running ? _boundTarget : _selectedTarget;
+        if (!outcome.Rewritten.Any(name => string.Equals(name, dialled, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        // Выбор успели увести на другую конфигурацию - переподключение остаётся за пользователем.
+        if (!string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
         {
             _restartRequired = true;
             _log.Info("sub", "the subscription rewrote the running configuration; it applies on the next connect");
+            return;
         }
+
+        _log.Info("sub", "the subscription rewrote the running configuration; dialling it again");
+        await SetConnectionAsync("disconnect", ct).ConfigureAwait(false);
+        await SetConnectionAsync("connect", ct).ConfigureAwait(false);
     }
 
     private SubscriptionService Subscriptions()
@@ -1366,7 +1392,9 @@ internal sealed class LinuxAgent : IDisposable
         var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false);
         var port = int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPort) ? parsedPort : 443;
         var host = args.Count > 3 ? args[3] : string.Empty;
-        var mtu = args.Count > 4 && int.TryParse(args[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMtu) ? parsedMtu : stored?.Mtu ?? 1420;
+        var mtu = args.Count > 4
+            ? int.TryParse(args[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMtu) ? parsedMtu : 0
+            : stored?.Mtu ?? 0;
         var ipv6 = args.Count > 5 ? IsOn(args[5]) : stored?.UseIpv6 ?? false;
         await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
@@ -2373,7 +2401,7 @@ internal sealed class LinuxAgent : IDisposable
             transport?.WebSocketPort ?? 443,
             dns?.Servers ?? string.Empty,
             exclusions?.Exclusions ?? string.Empty,
-            transport?.Mtu ?? WgConfigEditor.GetMtu(text),
+            transport?.Mtu ?? 0,
             transport?.UseIpv6 ?? false,
             handshake,
             reading.RxBitsPerSecond,
@@ -2382,7 +2410,8 @@ internal sealed class LinuxAgent : IDisposable
             reading.LossPercent,
             reading.RttMs,
             member?.Subscription ?? string.Empty,
-            member is { Present: false });
+            member is { Present: false },
+            WgConfigEditor.GetMtu(text));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

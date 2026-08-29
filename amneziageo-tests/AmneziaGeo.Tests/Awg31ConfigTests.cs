@@ -217,6 +217,28 @@ public sealed class Awg31ConfigTests
         Assert.Equal("198.51.100.9:443", WgConfigEditor.GetEndpoint(edited));
     }
 
+    [Fact]
+    public void ChosenMtu_WinsOverTheOneInTheConfig()
+    {
+        Assert.Equal(1280, WgConfigEditor.EffectiveMtu(1280, Conf()));
+    }
+
+    [Fact]
+    public void WithoutAChosenMtu_TheConfigDecides()
+    {
+        // Подписка привозит свой MTU: пока своего не задано, встаёт он.
+        Assert.Equal(1340, WgConfigEditor.EffectiveMtu(0, WgConfigEditor.SetMtu(Conf(), 1340)));
+    }
+
+    [Fact]
+    public void ConfigWithoutAnMtu_TakesTheFallback()
+    {
+        var config = "[Interface]\nAddress = 10.0.0.2/32\n";
+
+        Assert.Equal(WgConfigEditor.DefaultMtu, WgConfigEditor.EffectiveMtu(0, config));
+        Assert.Equal(0, WgConfigEditor.EffectiveMtu(0, config, 0));
+    }
+
     [Theory]
     [InlineData("25")]
     [InlineData("10-30")]

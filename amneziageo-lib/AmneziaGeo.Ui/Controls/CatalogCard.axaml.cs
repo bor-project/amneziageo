@@ -438,14 +438,19 @@ internal sealed partial class CatalogCard : UserControl
         grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки строками: подключение сверху, настройки снизу; запертую кнопку туннеля пульт
-    // пропускает.
+    // Контролы карточки строками: подключение сверху, обновление подписки под ним, настройки снизу;
+    // запертую кнопку туннеля и скрытое обновление пульт пропускает.
     private List<List<Control>> Rows()
     {
         var rows = new List<List<Control>>();
         if (ConnectPart is { IsVisible: true, IsEnabled: true })
         {
             rows.Add([ConnectPart]);
+        }
+
+        if (RefreshPart is { IsVisible: true, IsEnabled: true })
+        {
+            rows.Add([RefreshPart]);
         }
 
         rows.Add([SettingsPart]);
@@ -457,6 +462,7 @@ internal sealed partial class CatalogCard : UserControl
     {
         var stop = _entered || !UiPlatform.IsTelevision;
         ConnectPart.Focusable = stop;
+        RefreshPart.Focusable = stop;
         SettingsPart.Focusable = stop;
     }
 }

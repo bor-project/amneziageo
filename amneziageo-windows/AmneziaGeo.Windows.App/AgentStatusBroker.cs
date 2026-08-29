@@ -372,10 +372,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     {
         var outcome = await Subscriptions().RefreshAsync(args, ct);
 
-        // Переписанный текст встаёт на следующем подъёме туннеля.
-        if (control.Running && outcome.Rewritten.Any(IsRunningMember))
+        // Переписанный текст встаёт сразу: сессия пересобирается на нём же, а снесённая конфигурация роняет её.
+        if (control.Running && (outcome.Rewritten.Any(IsRunningMember) || outcome.Gone > 0))
         {
-            control.SetRestartRequired();
+            control.Invalidate();
         }
 
         if (outcome.Ack.Ok)
@@ -403,8 +403,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     }
 
     /// <summary>
-    /// Обновляет подписки, которым пора, у каждой открытой библиотеки, и просит перезапуск, если переписана
-    /// работающая конфигурация. Подписки живут у пользователя, поэтому обходятся все известные корни.
+    /// Обновляет подписки, которым пора, у каждой открытой библиотеки, и поднимает туннель заново, если
+    /// переписана работающая конфигурация. Подписки живут у пользователя, поэтому обходятся все известные корни.
     /// </summary>
     public async Task<int> RefreshDueSubscriptionsAsync(int fallbackHours, CancellationToken ct)
     {
@@ -417,9 +417,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
             {
                 var outcome = await service.RefreshAsync([subscription.Name], ct);
-                if (control.Running && outcome.Rewritten.Any(IsRunningMember))
+                if (control.Running && (outcome.Rewritten.Any(IsRunningMember) || outcome.Gone > 0))
                 {
-                    control.SetRestartRequired();
+                    control.Invalidate();
                 }
 
                 refreshed++;
@@ -1033,8 +1033,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         // Optional 4th arg: wstunnel host; empty reuses the Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
 
-        // Optional 5th arg: tunnel MTU (default 1420, range 576-1500).
-        var mtu = 1420;
+        // Optional 5th arg: tunnel MTU (range 576-1500); empty leaves the config in charge.
+        var mtu = 0;
         if (args.Count > 4 && args[4].Trim().Length > 0)
         {
             if (!int.TryParse(args[4].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < 576 or > 1500)
@@ -2576,7 +2576,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var handshake = bound ? handshakeAge : -1;
             var reading = bound ? link : LinkReading.Empty;
             var member = members.GetValueOrDefault(name);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText)));
         }
 
         var routingLists = new List<RoutingListEntry>();

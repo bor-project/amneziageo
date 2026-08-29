@@ -1,3 +1,5 @@
+using System.Text;
+
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using Xunit;
@@ -11,22 +13,53 @@ public sealed class SubscriptionMergeTests
 {
     private const string PeerKey = "QW1uZXppYUdlbyBtZXJnZSBzZXJ2ZXIga2V5IDAwMSE=";
 
-    private static VpnLinkCodec.Imported Node(string? name, string host = "example.net")
+    // Ключ у подписки свой на каждый узел; узлы с одним ключом - это один и тот же узел.
+    private static string Key(string seed)
     {
-        var text = string.Join(
-            '\n',
-            [
-                "[Interface]",
-                "PrivateKey = QW1uZXppYUdlbyBtZXJnZSBjbGllbnQga2V5IDAwMSE=",
-                "Address = 10.0.1.2/32",
-                string.Empty,
-                "[Peer]",
-                $"PublicKey = {PeerKey}",
-                "AllowedIPs = 0.0.0.0/0",
-                $"Endpoint = {host}:51821",
-            ]);
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes((seed + " AmneziaGeo merge client").PadRight(32)[..32]));
+    }
 
-        return new VpnLinkCodec.Imported(text, name);
+    private static VpnLinkCodec.Imported Node(
+        string? name,
+        string host = "example.net",
+        int port = 51821,
+        string? id = null,
+        bool keyed = true)
+    {
+        var seed = id ?? name ?? host;
+        var lines = new List<string> { "[Interface]" };
+        if (keyed)
+        {
+            lines.Add($"PrivateKey = {Key(seed)}");
+        }
+
+        lines.AddRange(
+        [
+            "Address = 10.0.1.2/32",
+            string.Empty,
+            "[Peer]",
+            $"PublicKey = {PeerKey}",
+            "AllowedIPs = 0.0.0.0/0",
+            $"Endpoint = {host}:{port}",
+        ]);
+
+        return new VpnLinkCodec.Imported(string.Join('\n', lines), name);
+    }
+
+    private static SubscriptionMember Member(SubscriptionChange change, string? configName = null)
+    {
+        return new SubscriptionMember("myvpn", change.Remark, configName ?? change.ConfigName);
+    }
+
+    private static Dictionary<string, string> Texts(params (string Name, VpnLinkCodec.Imported Node)[] items)
+    {
+        var texts = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (name, node) in items)
+        {
+            texts[name] = node.ConfText;
+        }
+
+        return texts;
     }
 
     [Fact]
@@ -52,7 +85,8 @@ public sealed class SubscriptionMergeTests
     [Fact]
     public void KnownNode_KeepsItsConfigAndIsRewritten()
     {
-        var members = new[] { new SubscriptionMember("myvpn", "phone", "мой телефон") };
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0], "мой телефон") };
 
         var plan = SubscriptionMerge.Plan([Node("phone")], members, ["мой телефон"]);
 
@@ -64,7 +98,8 @@ public sealed class SubscriptionMergeTests
     [Fact]
     public void KnownNode_WhoseConfigWasDeleted_IsEnteredAgain()
     {
-        var members = new[] { new SubscriptionMember("myvpn", "phone", "мой телефон") };
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0], "мой телефон") };
 
         var plan = SubscriptionMerge.Plan([Node("phone")], members, []);
 
@@ -76,11 +111,8 @@ public sealed class SubscriptionMergeTests
     [Fact]
     public void NodeGoneFromTheFeed_IsMarked()
     {
-        var members = new[]
-        {
-            new SubscriptionMember("myvpn", "phone", "phone"),
-            new SubscriptionMember("myvpn", "laptop", "laptop"),
-        };
+        var first = SubscriptionMerge.Plan([Node("phone"), Node("laptop")], [], []);
+        var members = first.Select(change => Member(change)).ToArray();
 
         var plan = SubscriptionMerge.Plan([Node("phone")], members, ["phone", "laptop"]);
 
@@ -91,7 +123,8 @@ public sealed class SubscriptionMergeTests
     [Fact]
     public void NodeBackInTheFeed_IsRewrittenRatherThanDoubled()
     {
-        var members = new[] { new SubscriptionMember("myvpn", "phone", "phone", Present: false) };
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0]) with { Present = false } };
 
         var plan = SubscriptionMerge.Plan([Node("phone")], members, ["phone"]);
 
@@ -108,12 +141,89 @@ public sealed class SubscriptionMergeTests
     }
 
     [Fact]
-    public void NodeWithoutARemark_IsKnownByItsPeerAndHost()
+    public void NodesSharingAName_AreBothEntered()
     {
-        var first = SubscriptionMerge.Plan([Node(null)], [], []);
-        var member = new SubscriptionMember("myvpn", first[0].Remark, first[0].ConfigName);
+        // Панель отдаёт нескольким узлам одно имя; узлы всё равно разные.
+        var plan = SubscriptionMerge.Plan([Node("de", id: "one"), Node("de", id: "two")], [], []);
 
-        var second = SubscriptionMerge.Plan([Node(null)], [member], [first[0].ConfigName]);
+        Assert.Equal(2, plan.Count);
+        Assert.All(plan, change => Assert.Equal(SubscriptionChangeKind.Add, change.Kind));
+        Assert.Equal(["de", "de-2"], plan.Select(change => change.ConfigName));
+    }
+
+    [Fact]
+    public void RenamedNode_KeepsItsConfigAndIsRewritten()
+    {
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0]) };
+        var texts = Texts(("phone", Node("phone")));
+
+        var plan = SubscriptionMerge.Plan([Node("phone-de", id: "phone", port: 51823)], members, ["phone"], texts);
+
+        var change = Assert.Single(plan);
+        Assert.Equal(SubscriptionChangeKind.Update, change.Kind);
+        Assert.Equal("phone", change.ConfigName);
+    }
+
+    [Fact]
+    public void RenamedNode_DoesNotTakeAnotherClientsConfig()
+    {
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0]) };
+        var texts = Texts(("phone", Node("phone")));
+
+        var plan = SubscriptionMerge.Plan([Node("laptop-de", id: "laptop")], members, ["phone"], texts);
+
+        Assert.Equal(2, plan.Count);
+        Assert.Contains(plan, change => change.Kind == SubscriptionChangeKind.Add);
+        Assert.Contains(plan, change => change.Kind == SubscriptionChangeKind.Gone);
+    }
+
+    [Fact]
+    public void MovedNode_IsKnownByItsClientKey()
+    {
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0]) };
+
+        var plan = SubscriptionMerge.Plan([Node("phone", "other.example.net")], members, ["phone"]);
+
+        Assert.Equal(SubscriptionChangeKind.Update, Assert.Single(plan).Kind);
+    }
+
+    [Fact]
+    public void RenamedNode_LeavesNothingBehindAsGone()
+    {
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0]) };
+        var texts = Texts(("phone", Node("phone")));
+
+        var plan = SubscriptionMerge.Plan([Node("phone-de", id: "phone")], members, ["phone"], texts);
+
+        Assert.DoesNotContain(plan, change => change.Kind == SubscriptionChangeKind.Gone);
+    }
+
+    [Fact]
+    public void MemberKnownByItsOldName_MovesToTheKey()
+    {
+        // Запись прошлых версий: имя узла вместо ключа. Узнаётся по тексту заведённой конфигурации.
+        var members = new[] { new SubscriptionMember("myvpn", "phone", "phone") };
+        var texts = Texts(("phone", Node("phone")));
+
+        var plan = SubscriptionMerge.Plan([Node("phone")], members, ["phone"], texts);
+
+        var change = Assert.Single(plan);
+        Assert.Equal(SubscriptionChangeKind.Update, change.Kind);
+        Assert.Equal("phone", change.PreviousRemark);
+        Assert.StartsWith("key:", change.Remark);
+    }
+
+    [Fact]
+    public void NodeWithoutAKey_IsKnownByItsPeerAndHost()
+    {
+        var first = SubscriptionMerge.Plan([Node(null, keyed: false)], [], []);
+        var members = new[] { Member(first[0]) };
+
+        var second = SubscriptionMerge.Plan([Node(null, keyed: false)], members, [first[0].ConfigName]);
 
         Assert.Equal(SubscriptionChangeKind.Add, first[0].Kind);
         Assert.Equal("example.net", first[0].ConfigName);
@@ -121,12 +231,12 @@ public sealed class SubscriptionMergeTests
     }
 
     [Fact]
-    public void NodeThatMovedToAnotherHost_IsANewOne()
+    public void NodeWithoutAKeyThatMovedToAnotherHost_IsANewOne()
     {
-        var first = SubscriptionMerge.Plan([Node(null)], [], []);
-        var member = new SubscriptionMember("myvpn", first[0].Remark, first[0].ConfigName);
+        var first = SubscriptionMerge.Plan([Node(null, keyed: false)], [], []);
+        var members = new[] { Member(first[0]) };
 
-        var second = SubscriptionMerge.Plan([Node(null, "other.example.net")], [member], [first[0].ConfigName]);
+        var second = SubscriptionMerge.Plan([Node(null, "other.example.net", keyed: false)], members, [first[0].ConfigName]);
 
         Assert.Equal(2, second.Count);
         Assert.Contains(second, change => change.Kind == SubscriptionChangeKind.Add);

@@ -82,7 +82,7 @@
             </Grid>
             <!-- Конфигурация из подписки: перечитать её прямо с карточки, под кнопкой подключения. -->
             <!-- Ширина повторяет круг подключения, поэтому иконка встаёт ровно под ним. -->
-            <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center" HorizontalAlignment="Right"
+            <Button x:Name="RefreshPart" Grid.Column="3" Classes="icon" VerticalAlignment="Center" HorizontalAlignment="Right"
                     Width="34" Padding="0" HorizontalContentAlignment="Center"
                     IsVisible="{Binding FromSubscription}"
                     ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"

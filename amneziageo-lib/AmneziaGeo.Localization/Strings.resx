@@ -2018,7 +2018,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>{0}</value>
   </data>
   <data name="Main_CardTagSubscriptionGone" xml:space="preserve">
-    <value>gone from {0}</value>
+    <value>gone from the subscription</value>
   </data>
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Subscriptions</value>

@@ -47,6 +47,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
+    private int _configMtu;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
 
     /// <summary>
@@ -106,18 +110,21 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
             ? [SubscriptionTag, .. SettingTags]
             : SettingTags;
 
-    // Метка узла, пропавшего из подписки. Имя самой подписки на карточку не выносится: это адрес.
-    private CardTag SubscriptionTag => new(Loc.Instance.Get("Main_CardTagSubscriptionGone", Subscription), false);
+    // Метка узла, пропавшего из подписки. Ни имя подписки, ни её адрес на карточку не выносятся.
+    private CardTag SubscriptionTag => new(Loc.Instance.Get("Main_CardTagSubscriptionGone"), false);
 
     private IReadOnlyList<CardTag> SettingTags =>
     [
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
-        new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", Mtu) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),
+        new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", MtuShown) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),
     ];
 
-    // Задан ли MTU своим значением: нулём приходит настройка по умолчанию.
-    private bool MtuSet => Mtu > 0;
+    // MTU, с которым встанет туннель: свой, иначе объявленный в конфигурации.
+    private int MtuShown => Mtu > 0 ? Mtu : ConfigMtu;
+
+    // Задан ли MTU: нулём приходит настройка по умолчанию, и о нём ничего не говорит и конфигурация.
+    private bool MtuSet => MtuShown > 0;
 
     /// <summary>
     /// Re-raises the localized computed labels after a language change.

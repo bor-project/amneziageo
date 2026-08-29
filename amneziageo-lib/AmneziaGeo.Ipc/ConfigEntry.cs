@@ -33,7 +33,9 @@ public sealed record ConfigEntry(
     // Subscription the configuration came in with; empty when it came from anywhere else.
     string Subscription = "",
     // Whether the subscription stopped carrying it. Such a config is never removed on its own.
-    bool SubscriptionGone = false);
+    bool SubscriptionGone = false,
+    // MTU the config text declares; zero when it names none. The stored Mtu above wins over it.
+    int ConfigMtu = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

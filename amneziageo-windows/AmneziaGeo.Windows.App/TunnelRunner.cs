@@ -27,7 +27,6 @@ internal sealed class TunnelRunner(
     ILogger<TunnelRunner> logger)
 {
     // Effective MTU when a config has no explicit value.
-    private const int DefaultMtu = 1420;
 
     // Proactively refresh the peer handshake/NAT mapping so a lossy underlay can't let the session age out.
     internal const int DefaultKeepaliveSeconds = 25;
@@ -35,14 +34,6 @@ internal sealed class TunnelRunner(
     // How long the leftover cleanup may hold bring-up: several times what it costs on a busy machine, and a
     // small share of the 30s the service manager allows a service to report running.
     private static readonly TimeSpan _reconcileBudget = TimeSpan.FromSeconds(8);
-
-    /// <summary>
-    /// MTU a stored value resolves to; unset follows the current default.
-    /// </summary>
-    public static int EffectiveMtu(int stored)
-    {
-        return stored > 0 ? stored : DefaultMtu;
-    }
 
     /// <summary>
     /// Resolvers the config declares, IPv4 only.
@@ -136,7 +127,7 @@ internal sealed class TunnelRunner(
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        var effectiveMtu = EffectiveMtu(transport?.Mtu ?? 0);
+        var effectiveMtu = WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, config);
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;

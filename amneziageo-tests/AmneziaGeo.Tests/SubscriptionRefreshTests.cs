@@ -14,7 +14,14 @@ namespace AmneziaGeo.Tests;
 /// </summary>
 public sealed class SubscriptionRefreshTests : IAsyncLifetime
 {
-    private const string ClientKey = "QW1uZXppYUdlbyByZWZyZXNoIGNsaWVudCBrZXkhIQ==";
+    private const string ClientKeySeed = "AmneziaGeo refresh client key ";
+
+    // Ключ у подписки свой на каждый узел: по нему узел и опознаётся между чтениями.
+    private static string ClientKey(string node)
+    {
+        var text = (node + " " + ClientKeySeed).PadRight(32)[..32];
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    }
     private const string ServerKey = "QW1uZXppYUdlbyByZWZyZXNoIHNlcnZlciBrZXkhIQ==";
 
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"ageo-refresh-{Guid.NewGuid():N}.db");
@@ -48,7 +55,7 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
             '\n',
             [
                 "[Interface]",
-                $"PrivateKey = {ClientKey}",
+                $"PrivateKey = {ClientKey(remark)}",
                 $"Address = {address}",
                 "Jc = 6",
                 "Jmin = 52",
@@ -135,7 +142,7 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task NodeGoneFromTheFeed_IsMarkedAndItsConfigStays()
+    public async Task NodeGoneFromTheFeed_TakesItsConfigWithIt()
     {
         _feed.Body = Body(Config("AmneziaWG 3.1 -phone"), Config("AmneziaWG 2 -laptop"));
         await _refresher.RefreshAsync(Fresh(), default);
@@ -144,9 +151,10 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
         var result = await _refresher.RefreshAsync(await Stored(), default);
 
         Assert.Equal(1, result.Gone);
-        Assert.Equal(2, _library.Names.Count);
+        Assert.Equal(["AmneziaWG-3.1-phone"], _library.Names);
         var members = await _store.ListSubscriptionMembersAsync("myvpn");
-        Assert.Single(members, member => !member.Present && member.ConfigName == "AmneziaWG-2-laptop");
+        Assert.Single(members);
+        Assert.Equal("AmneziaWG-3.1-phone", members[0].ConfigName);
     }
 
     [Fact]

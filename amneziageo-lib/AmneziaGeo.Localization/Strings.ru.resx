@@ -2018,7 +2018,7 @@
     <value>{0}</value>
   </data>
   <data name="Main_CardTagSubscriptionGone" xml:space="preserve">
-    <value>нет в {0}</value>
+    <value>нет в подписке</value>
   </data>
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Подписки</value>

@@ -29,7 +29,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // The order the list is shown in; the store file keeps it as the order its config map is written in.
     private List<string> _order = [];
     private readonly string _storePath;
-    private const int DefaultMtu = 1420;
 
     // Age past which the tunnel's own snapshot of what it carries is no longer an answer about what runs now.
     private const int SessionWindowSeconds = 60;
@@ -85,6 +84,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _churnLogged;
     private bool _active;
     private bool _restartRequired;
+
+    // Просил ли пользователь быть подключённым: держится через падения связи и гаснет только по отбою.
+    private bool _dialWanted;
+
+    // Сколько ждать остановки туннеля перед подъёмом заново.
+    private const int RestartTickMs = 100;
+    private const int RestartWaitTicks = 50;
     private bool _connectFailed;
     private string _connectFailReason = string.Empty;
     private string _connectFailDetail = string.Empty;
@@ -480,6 +486,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         if (desired == "disconnect")
         {
+            _dialWanted = false;
+            Save();
             _log.Info("agent", "disconnect requested");
 
             // Stops through a broadcast: a head in the background is barred from starting the service.
@@ -524,6 +532,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         ClearConnectFailure();
         _restartRequired = false;
+        _dialWanted = true;
+        Save();
         // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
         // then a snapshot would pull the card back to disconnected.
         _active = true;
@@ -941,7 +951,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             LossPercent: reading.LossPercent,
             RttMs: reading.RttMs,
             Subscription: member?.Subscription ?? string.Empty,
-            SubscriptionGone: member is { Present: false });
+            SubscriptionGone: member is { Present: false },
+            ConfigMtu: WgConfigEditor.GetMtu(config));
     }
 
     private string StatusFor(string target)
@@ -1879,8 +1890,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidPort"));
         }
 
+        // Empty leaves the config in charge: a zero here means nothing was chosen.
         var mtuText = args.Count > 4 ? args[4].Trim() : string.Empty;
-        if ((mtuText.Length == 0 ? DefaultMtu : ParseRange(mtuText, 576, 1500)) is not { } mtu)
+        if ((mtuText.Length == 0 ? 0 : ParseRange(mtuText, 576, 1500)) is not { } mtu)
         {
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidMtu"));
         }
@@ -2123,6 +2135,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _geoCheckIntervalHours = GeoInterval(geoInterval.GetRawText());
             }
 
+            if (document.RootElement.TryGetProperty("DialWanted", out var dial)
+                && (dial.ValueKind == JsonValueKind.True || dial.ValueKind == JsonValueKind.False))
+            {
+                _dialWanted = dial.GetBoolean();
+            }
+
             if (document.RootElement.TryGetProperty("SubscriptionAutoRefresh", out var subAuto)
                 && subAuto.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
@@ -2237,6 +2255,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"SubscriptionAutoRefresh\":").Append(_subscriptionAutoRefresh ? "true" : "false");
             builder.Append(",\"SubscriptionInterval\":").Append(_subscriptionIntervalHours);
             builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
+            builder.Append(",\"DialWanted\":").Append(_dialWanted ? "true" : "false");
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
             builder.Append('}');
@@ -2480,7 +2499,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
-            ConfiguredMtu: transport is { Mtu: > 0 } ? transport.Mtu : WgConfigEditor.GetMtu(text),
+            ConfiguredMtu: WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, text, 0),
             CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
@@ -2910,6 +2929,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         await EnsureInitAsync().ConfigureAwait(false);
         var outcome = await Subscriptions().RefreshAsync(args, CancellationToken.None).ConfigureAwait(false);
+        DropRunningIfGone();
         FlagRewritten(outcome);
         await RefreshTransportsAsync().ConfigureAwait(false);
         Save();
@@ -2984,12 +3004,53 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // A rewritten text applies on a fresh interface; flag a reconnect when the running target is affected.
+    // Переписанный подпиской текст встаёт сразу: туннель поднимается заново на нём же. Упавший от смены
+    // адреса поднимается так же - подписка чинит именно его.
     private void FlagRewritten(SubscriptionOutcome outcome)
     {
-        if (_active && outcome.Rewritten.Any(name => string.Equals(name, _boundTarget, StringComparison.Ordinal)))
+        if (!_dialWanted)
+        {
+            return;
+        }
+
+        var dialled = _active ? _boundTarget : _selectedTarget;
+
+        if (!outcome.Rewritten.Any(name => string.Equals(name, dialled, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        // Выбор успели увести на другую конфигурацию - переподключение остаётся за пользователем.
+        if (!string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
         {
             _restartRequired = true;
+            return;
         }
+
+        _log.Info("sub", "the subscription rewrote the configuration it dials; dialling it again");
+        _ = RestartTunnelAsync();
+    }
+
+    // Подписка снесла работающую конфигурацию - держать туннель не на чем.
+    private void DropRunningIfGone()
+    {
+        if (_active && _boundTarget is { Length: > 0 } bound && !_configs.ContainsKey(bound))
+        {
+            _log.Info("sub", "the subscription dropped the running configuration; disconnecting");
+            _ = SetConnectionAsync("disconnect");
+        }
+    }
+
+    // Движок читает конфигурацию на старте: новый текст встаёт только на поднятом заново туннеле.
+    private async Task RestartTunnelAsync()
+    {
+        await SetConnectionAsync("disconnect").ConfigureAwait(false);
+        for (var attempt = 0; attempt < RestartWaitTicks && _active; attempt++)
+        {
+            await Task.Delay(RestartTickMs).ConfigureAwait(false);
+        }
+
+        await SetConnectionAsync("connect").ConfigureAwait(false);
     }
 
     private SubscriptionService Subscriptions()

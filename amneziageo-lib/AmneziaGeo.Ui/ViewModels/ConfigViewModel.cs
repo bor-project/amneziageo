@@ -1441,36 +1441,57 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         EnsureSectionConfig();
-        SectionScan = new ScanViewModel(TryAcceptScannedConfig);
+        SectionScan = new ScanViewModel(ApplyScannedText);
         ImportMethod = ConfigImportMethod.Camera;
     }
 
-    // The scanner reports a decoded QR's raw text; accept a configuration, a link to one, or a subscription address.
-    private bool TryAcceptScannedConfig(string text)
+    /// <summary>
+    /// Кладёт в черновик прочитанный текст: адрес подписки либо конфигурацию.
+    /// </summary>
+    public bool ApplyImportText(string text, string? fileName = null)
     {
-        if (VpnLinkCodec.TryDecodeQr(text) is { } imported)
-        {
-            ApplyScannedConfig(imported);
-            return true;
-        }
+        return ApplyRecognized(ImportCodec.Recognize(text), text, fileName);
+    }
 
-        if (!SubscriptionCodec.LooksLikeAddress(text))
+    /// <summary>
+    /// Кладёт в черновик текст, снятый с QR. Нераспознанный оставляет черновик прежним.
+    /// </summary>
+    public bool ApplyScannedText(string text)
+    {
+        var recognized = ImportCodec.RecognizeQr(text);
+        if (recognized.Kind == ImportKind.Unknown)
         {
             return false;
         }
 
-        ApplyScannedAddress(text.Trim());
+        ApplyRecognized(recognized, text, null);
         return true;
     }
 
-    // Заполняет черновик снятым адресом подписки.
-    private void ApplyScannedAddress(string url)
+    // Заполняет черновик разобранным текстом; нераспознанное остаётся в поле под сообщением.
+    private bool ApplyRecognized(ImportCodec.Recognized recognized, string text, string? fileName)
     {
-        SeedSectionNameFromAddress(url);
-        SectionConfigText = url;
-        SectionConfigStatus = string.Empty;
         SectionScan = null;
         ImportMethod = ConfigImportMethod.Manual;
+        if (recognized.Kind == ImportKind.Subscription)
+        {
+            SeedSectionNameFromAddress(recognized.Address);
+            SectionConfigText = recognized.Address;
+            SectionConfigStatus = string.Empty;
+            return true;
+        }
+
+        if (recognized.Config is { } imported)
+        {
+            SeedSectionNameFromConfig(imported, fileName);
+            SectionConfigText = imported.ConfText;
+            SectionConfigStatus = string.Empty;
+            return true;
+        }
+
+        SectionConfigText = text;
+        SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+        return false;
     }
 
     // Footer Save/Cancel: the same bar serves the import draft and the open-config edits.
@@ -1557,16 +1578,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             CancelSectionConfig();
             OpenConfig = _configBeforeCreate;
         }
-    }
-
-    // Fill the create form from a scanned QR and show it for review.
-    private void ApplyScannedConfig(VpnLinkCodec.Imported imported)
-    {
-        SeedSectionNameFromConfig(imported);
-        SectionConfigText = imported.ConfText;
-        SectionConfigStatus = string.Empty;
-        SectionScan = null;
-        ImportMethod = ConfigImportMethod.Manual;
     }
 
     // Stops the live scanner when the create form leaves view (section change / home / hide). The draft falls back

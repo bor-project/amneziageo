@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using AmneziaGeo.Decl;
+using Avalonia.Input.Platform;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
@@ -18,6 +18,7 @@ namespace AmneziaGeo.Ui.Controls;
 internal enum ConfigAddSource
 {
     File,
+    Clipboard,
     Camera,
     Manual,
 }
@@ -36,6 +37,7 @@ internal static class ConfigAddOptions
         var options = new List<ActionOption>
         {
             new(Loc.Instance.Get("Main_FileButton"), Glyphs.File, () => ImportFromFile(owner, vm, started)),
+            new(Loc.Instance.Get("Main_PasteButton"), Glyphs.Paste, () => ImportFromClipboard(owner, vm, started)),
         };
         if (vm.CameraScanAvailable)
         {
@@ -84,6 +86,41 @@ internal static class ConfigAddOptions
         started(ConfigAddSource.File);
     }
 
+    // Вставка из буфера: что пришло - адрес подписки, конфигурация или ссылка на неё - решает содержимое.
+    private static async void ImportFromClipboard(Visual owner, ConfigViewModel vm, Action<ConfigAddSource> started)
+    {
+        var text = await ReadClipboardAsync(owner);
+        vm.BeginImportDraft();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ClipboardNoText");
+        }
+        else
+        {
+            vm.ApplyImportText(text!);
+        }
+
+        started(ConfigAddSource.Clipboard);
+    }
+
+    private static async Task<string?> ReadClipboardAsync(Visual owner)
+    {
+        if (TopLevel.GetTopLevel(owner)?.Clipboard is not { } clipboard)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await clipboard.TryGetTextAsync();
+        }
+        catch (Exception)
+        {
+            // Не всякий буфер обмена отдаёт текст.
+            return null;
+        }
+    }
+
     // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
     // TryGetLocalPath is null, so a path-based read silently drops every pick on mobile.
     private static async Task ReadIntoDraftAsync(ConfigViewModel vm, PickedFile file)
@@ -98,27 +135,7 @@ internal static class ConfigAddOptions
             }
 
             var text = new UTF8Encoding(false, false).GetString(raw).TrimStart('﻿');
-            // Что пришло, решает содержимое: адрес подписки узнаётся так же, как конфигурация и ссылка.
-            if (SubscriptionCodec.LooksLikeAddress(text))
-            {
-                vm.SectionConfigText = text.Trim();
-                vm.SectionConfigStatus = string.Empty;
-                vm.ImportMethod = ConfigImportMethod.Manual;
-                return;
-            }
-
-            if (VpnLinkCodec.TryDecode(text) is not { } imported)
-            {
-                vm.SectionConfigText = text;
-                vm.SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
-                vm.ImportMethod = ConfigImportMethod.Manual;
-                return;
-            }
-
-            vm.SeedSectionNameFromConfig(imported, Path.GetFileNameWithoutExtension(file.Name));
-            vm.SectionConfigText = imported.ConfText;
-            vm.SectionConfigStatus = string.Empty;
-            vm.ImportMethod = ConfigImportMethod.Manual;
+            vm.ApplyImportText(text, Path.GetFileNameWithoutExtension(file.Name));
         }
         catch (Exception ex)
         {
@@ -136,24 +153,9 @@ internal static class ConfigAddOptions
             return;
         }
 
-        if (SubscriptionCodec.LooksLikeAddress(text))
-        {
-            vm.SectionConfigText = text.Trim();
-            vm.SectionConfigStatus = string.Empty;
-            vm.ImportMethod = ConfigImportMethod.Manual;
-            return;
-        }
-
-        var imported = VpnLinkCodec.TryDecodeQr(text);
-        if (imported is null)
+        if (!vm.ApplyScannedText(text))
         {
             vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrNotConfig");
-            return;
         }
-
-        vm.SeedSectionNameFromConfig(imported);
-        vm.SectionConfigText = imported.ConfText;
-        vm.SectionConfigStatus = string.Empty;
-        vm.ImportMethod = ConfigImportMethod.Manual;
     }
 }

@@ -83,6 +83,16 @@ public sealed class SubscriptionMergeTests
     }
 
     [Fact]
+    public void UnnamedNode_TakesTheTagWithItsPort()
+    {
+        // Панель именует только первый узел, остальным достаётся общий хвост его имени.
+        var plan = SubscriptionMerge.Plan(
+            [Node("bor-work-pc-20-fi", port: 39847), Node("fi", port: 443)], [], []);
+
+        Assert.Equal(["bor-work-pc-20-fi", "fi-443"], plan.Select(change => change.ConfigName));
+    }
+
+    [Fact]
     public void KnownNode_KeepsItsConfigAndIsRewritten()
     {
         var first = SubscriptionMerge.Plan([Node("phone")], [], []);

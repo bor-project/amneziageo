@@ -71,7 +71,7 @@ public static class SubscriptionMerge
                 continue;
             }
 
-            var name = Unique(imported.Name ?? VpnLinkCodec.HostName(imported.ConfText) ?? "config", taken);
+            var name = Unique(NodeName(imported, fetched), taken);
             taken.Add(name);
             plan.Add(new SubscriptionChange(remark, name, imported.ConfText, SubscriptionChangeKind.Add));
         }
@@ -157,6 +157,39 @@ public static class SubscriptionMerge
         }
 
         return string.Empty;
+    }
+
+    // Хвост чужого имени именем не считается: панель именует только первый узел подписки.
+    private static string NodeName(VpnLinkCodec.Imported imported, IReadOnlyList<VpnLinkCodec.Imported> fetched)
+    {
+        var name = imported.Name?.Trim() ?? string.Empty;
+        if (name.Length == 0)
+        {
+            return VpnLinkCodec.HostName(imported.ConfText) ?? "config";
+        }
+
+        if (!BareTag(name, fetched))
+        {
+            return name;
+        }
+
+        var port = VpnLinkCodec.EndpointPort(imported.ConfText);
+        return port > 0 ? $"{name}-{port}" : name;
+    }
+
+    private static bool BareTag(string name, IReadOnlyList<VpnLinkCodec.Imported> fetched)
+    {
+        foreach (var other in fetched)
+        {
+            var full = other.Name?.Trim();
+            if (full is { Length: > 0 } && full.Length > name.Length
+                && full.EndsWith("-" + name, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Узел опознаётся по ключу клиента: панель и переименовывает узлы, и раздаёт нескольким одно имя. Без

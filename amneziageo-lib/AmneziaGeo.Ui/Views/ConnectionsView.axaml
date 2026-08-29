@@ -51,12 +51,16 @@
               <TextBlock Text="{l:Tr General_ReconnectIntervalHint}" Classes="muted" FontSize="11.5"
                          TextWrapping="Wrap" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <TextBox Classes="field" Width="92" VerticalAlignment="Center"
-                       controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="86400"
-                       Text="{Binding ReconnectIntervalSeconds, Mode=TwoWay}" />
-              <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
-            </StackPanel>
+            <!-- The unit sits inside the box: beside it every language gives it a width of its own and
+                 pushes the boxes out of line with each other. -->
+            <TextBox Grid.Column="1" Classes="field" Width="132" VerticalAlignment="Center"
+                     controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="86400"
+                     Text="{Binding ReconnectIntervalSeconds, Mode=TwoWay}">
+              <TextBox.InnerRightContent>
+                <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" Margin="6,0,10,0"
+                           VerticalAlignment="Center" IsHitTestVisible="False" />
+              </TextBox.InnerRightContent>
+            </TextBox>
           </Grid>
 
         </StackPanel>
@@ -269,12 +273,14 @@
                 <TextBlock Text="{l:Tr General_SubscriptionIntervalHint}" Classes="muted" FontSize="11.5"
                            TextWrapping="Wrap" />
               </StackPanel>
-              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <TextBox Classes="field" Width="92" VerticalAlignment="Center"
-                         controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="168"
-                         Text="{Binding SubscriptionIntervalHours, Mode=TwoWay}" />
-                <TextBlock Text="{l:Tr General_Hours}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
-              </StackPanel>
+              <TextBox Grid.Column="1" Classes="field" Width="132" VerticalAlignment="Center"
+                       controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="168"
+                       Text="{Binding SubscriptionIntervalHours, Mode=TwoWay}">
+                <TextBox.InnerRightContent>
+                  <TextBlock Text="{l:Tr General_Hours}" Classes="muted" FontSize="12.5" Margin="6,0,10,0"
+                             VerticalAlignment="Center" IsHitTestVisible="False" />
+                </TextBox.InnerRightContent>
+              </TextBox>
             </Grid>
         </StackPanel>
       </StackPanel>

@@ -18,9 +18,17 @@ internal sealed class FleetMember(string name, TunnelDuties duties, long stamp, 
     public TunnelDuties Duties => duties;
 
     /// <summary>
-    /// The rule addresses it was raised on.
+    /// The rule addresses it carries.
     /// </summary>
-    public long Stamp => stamp;
+    public long Stamp { get; private set; } = stamp;
+
+    /// <summary>
+    /// Remembers the rule addresses it has taken up while running.
+    /// </summary>
+    public void Took(long taken)
+    {
+        Stamp = taken;
+    }
 
     /// <summary>
     /// Its own connection state.

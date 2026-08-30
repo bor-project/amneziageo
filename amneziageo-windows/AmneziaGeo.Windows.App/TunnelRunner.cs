@@ -916,12 +916,20 @@ internal sealed class TunnelRunner(
         return null;
     }
 
+    // The lookup runs before the process reports itself running, so it is held inside the service manager's
+    // patience: a set coming up points the machine's names at a tunnel that has not answered yet, and there an
+    // unbounded lookup costs the whole start window.
+    private static readonly TimeSpan _resolveAttempt = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan _resolveBudget = TimeSpan.FromSeconds(6);
+
     /// <summary>
-    /// Resolves the endpoint host to an IPv4 in the clean pre-tunnel context, retrying a cold flap, and falls
-    /// back to the last-known-good IP; persists a fresh resolve as the new last-known-good.
+    /// Resolves the endpoint host to an IPv4 in the clean pre-tunnel context, retrying a cold flap within a
+    /// bounded budget, and falls back to the last-known-good IP; persists a fresh resolve as the new
+    /// last-known-good.
     /// </summary>
     private async Task<IPAddress?> PinEndpointAsync(string name, string host)
     {
+        var deadline = DateTimeOffset.UtcNow + _resolveBudget;
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var live = await ResolveHostV4Async(host);
@@ -936,6 +944,11 @@ internal sealed class TunnelRunner(
                 }
 
                 return live;
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                break;
             }
 
             await Task.Delay(400);
@@ -954,7 +967,7 @@ internal sealed class TunnelRunner(
     {
         try
         {
-            foreach (var address in await Dns.GetHostAddressesAsync(host))
+            foreach (var address in await Dns.GetHostAddressesAsync(host).WaitAsync(_resolveAttempt))
             {
                 if (address.AddressFamily == AddressFamily.InterNetwork)
                 {
@@ -963,6 +976,9 @@ internal sealed class TunnelRunner(
             }
         }
         catch (SocketException)
+        {
+        }
+        catch (TimeoutException)
         {
         }
 

@@ -69,6 +69,56 @@ public sealed class RoutingShareStoreTests : IAsyncLifetime
         Assert.Equal([new GeoDomain(GeoDomainKind.Domain, "block.example")], current.BlockDomains);
     }
 
+    [Fact]
+    public async Task Materialization_StampsTheCutWhileTheListStandsStill()
+    {
+        var listId = await _store.SaveRoutingListAsync(new RoutingList(
+            0,
+            "main",
+            [],
+            ["10.0.0.0/8", "192.168.0.0/16"],
+            [new GeoDomain(GeoDomainKind.Domain, "alpha.example")],
+            [],
+            [],
+            [],
+            [],
+            []));
+
+        await _store.SaveTunnelProjectionAsync(
+            "alpha",
+            true,
+            ["10.0.0.0/8", "192.168.0.0/16"],
+            [new GeoDomain(GeoDomainKind.Domain, "alpha.example")],
+            [],
+            [],
+            [],
+            [],
+            [],
+            listId);
+
+        var whole = await _store.GetActiveRoutingListMaterializationAsync("alpha");
+
+        // Второе правило уехало на соседний туннель; список тот же, поколение не двигалось.
+        await _store.SaveTunnelProjectionAsync(
+            "alpha",
+            true,
+            ["10.0.0.0/8"],
+            [new GeoDomain(GeoDomainKind.Domain, "alpha.example")],
+            [],
+            [],
+            [],
+            [],
+            [],
+            listId);
+
+        var part = await _store.GetActiveRoutingListMaterializationAsync("alpha");
+
+        Assert.NotNull(whole);
+        Assert.NotNull(part);
+        Assert.Equal(whole.Generation, part.Generation);
+        Assert.NotEqual(whole.Share, part.Share);
+    }
+
     private static void TryDelete(string path)
     {
         try

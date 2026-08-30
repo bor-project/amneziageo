@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc.Fleet;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ internal sealed class FleetHostedService(
     FleetStore fleetStore,
     FleetLive live,
     FleetRunnerFactory factory,
+    GeoConfigurator geo,
     AgentMode mode,
     AgentTarget target,
     AgentControl selected,
@@ -181,19 +183,69 @@ internal sealed class FleetHostedService(
             }
         }
 
-        // A tunnel reads its duties and its share of the rules at bring-up, so one that has gained or lost the
-        // default route - the tunnel ahead of it left the set - or whose rules were readdressed is dialled again.
+        // A tunnel reads its duties at bring-up, so one that has gained or lost the default route - the tunnel
+        // ahead of it left the set - is dialled again; readdressed rules it takes up while it runs.
         foreach (var member in _members.Values.ToArray())
         {
-            if (fleet.For(member.Name) == member.Duties && fleet.StampOf(member.Name) == member.Stamp)
+            if (fleet.For(member.Name) != member.Duties)
             {
+                logger.LogInformation("{Name}: what it carries changed, so it is connected again to take it up", member.Name);
+                await StopAsync(member.Name);
+                Start(member.Name, ct);
                 continue;
             }
 
-            logger.LogInformation("{Name}: what it carries changed, so it is connected again to take it up", member.Name);
+            var stamp = fleet.StampOf(member.Name);
+            if (stamp != member.Stamp)
+            {
+                await ReaddressAsync(member, stamp, ct);
+            }
+        }
+    }
+
+    // Cuts a running tunnel's share of the rules afresh and hands it over. An app rule is matched by a matcher
+    // built at bring-up, so a share that gains or loses one is dialled again.
+    private async Task ReaddressAsync(FleetMember member, long stamp, CancellationToken ct)
+    {
+        try
+        {
+            var before = await AppsOfAsync(member.Name, ct);
+            await RoutingProjection.ProjectAsync(store, geo, fleet, member.Name, logger, ct);
+            if (!(await AppsOfAsync(member.Name, ct)).SetEquals(before))
+            {
+                logger.LogInformation("{Name}: the app rules addressed to it changed, so it is connected again to take them up", member.Name);
+                await StopAsync(member.Name);
+                Start(member.Name, ct);
+                return;
+            }
+
+            if (await Task.Run(() => RuntimeSnapshotPipe.Send(member.Name, RuntimeSnapshotPipe.OpRules, logger), ct) is null)
+            {
+                logger.LogInformation("{Name}: the readdressed rules did not reach it, so it is connected again to take them up", member.Name);
+                await StopAsync(member.Name);
+                Start(member.Name, ct);
+                return;
+            }
+
+            member.Took(stamp);
+            logger.LogInformation("{Name}: the rules addressed to it changed and it took them up without reconnecting", member.Name);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Name}: the readdressed rules could not be handed over, so it is connected again to take them up", member.Name);
             await StopAsync(member.Name);
             Start(member.Name, ct);
         }
+    }
+
+    // The applications the tunnel's share names.
+    private async Task<HashSet<string>> AppsOfAsync(string name, CancellationToken ct)
+    {
+        var projected = await store.GetActiveTunnelGeoAsync(name, ct);
+        return projected is null ? [] : new HashSet<string>(projected.Apps, StringComparer.OrdinalIgnoreCase);
     }
 
     // The mode's own state is written once a request has moved the set: a start that did not raise what it

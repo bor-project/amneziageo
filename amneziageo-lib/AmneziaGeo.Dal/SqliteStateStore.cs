@@ -2436,16 +2436,40 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
                     var listId = reader.GetInt64(0);
                     var generation = reader.GetInt64(1);
-                    var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(2)) ?? [];
-                    var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
-                    var directRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(4)) ?? [];
-                    var directDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(5)) ?? [];
-                    var blockRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
-                    var blockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(7)) ?? [];
-                    return new ActiveRoutingListMaterialization(listId, generation, routes, domains, directRoutes, directDomains, blockRoutes, blockDomains);
+                    var routesJson = reader.GetString(2);
+                    var domainsJson = reader.GetString(3);
+                    var directRoutesJson = reader.GetString(4);
+                    var directDomainsJson = reader.GetString(5);
+                    var blockRoutesJson = reader.GetString(6);
+                    var blockDomainsJson = reader.GetString(7);
+                    var routes = JsonSerializer.Deserialize<List<string>>(routesJson) ?? [];
+                    var domains = JsonSerializer.Deserialize<List<GeoDomain>>(domainsJson) ?? [];
+                    var directRoutes = JsonSerializer.Deserialize<List<string>>(directRoutesJson) ?? [];
+                    var directDomains = JsonSerializer.Deserialize<List<GeoDomain>>(directDomainsJson) ?? [];
+                    var blockRoutes = JsonSerializer.Deserialize<List<string>>(blockRoutesJson) ?? [];
+                    var blockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(blockDomainsJson) ?? [];
+                    var share = ShareStamp(routesJson, domainsJson, directRoutesJson, directDomainsJson, blockRoutesJson, blockDomainsJson);
+                    return new ActiveRoutingListMaterialization(listId, generation, share, routes, domains, directRoutes, directDomains, blockRoutes, blockDomains);
                 }
             }
         }
+    }
+
+    // Tells one cut of a list from another while the list itself stands still.
+    private static long ShareStamp(params string[] parts)
+    {
+        var stamp = 14695981039346656037UL;
+        foreach (var part in parts)
+        {
+            foreach (var symbol in part)
+            {
+                stamp = unchecked((stamp ^ symbol) * 1099511628211UL);
+            }
+
+            stamp = unchecked((stamp ^ '\n') * 1099511628211UL);
+        }
+
+        return unchecked((long)stamp);
     }
 
     /// <inheritdoc/>

@@ -163,7 +163,7 @@ internal sealed class TunnelController : IDisposable
             return Refused($"engine start failed: {ex.Message}");
         }
 
-        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, WgConfigEditor.EffectiveMtu(options.Transport?.Mtu ?? 0, config), ct).ConfigureAwait(false);
+        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport?.MtuMode ?? MtuMode.Auto, options.Transport?.Mtu ?? 0, config), ct).ConfigureAwait(false);
         if (failure is not null)
         {
             await DownAsync(ct).ConfigureAwait(false);

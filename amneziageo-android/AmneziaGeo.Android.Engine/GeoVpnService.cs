@@ -78,6 +78,11 @@ public sealed class GeoVpnService : VpnService
     public const string ExtraMtu = "mtu";
 
     /// <summary>
+    /// How the MTU is picked: 0 auto, 1 from the config text, 2 the size above.
+    /// </summary>
+    public const string ExtraMtuMode = "mtu-mode";
+
+    /// <summary>
     /// WebSocket front extra: a host or a whole wss:// URL. Absent leaves the tunnel on plain UDP.
     /// </summary>
     public const string ExtraWsHost = "ws-host";
@@ -203,7 +208,7 @@ public sealed class GeoVpnService : VpnService
         _recovery.Reset();
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
-            request.Mtu, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog));
+            request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog));
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -348,7 +353,7 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
-                    request.Ipv6, request.WsHost, request.WsPort, request.EngineLog).ConfigureAwait(false);
+                    request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog).ConfigureAwait(false);
             }
             finally
             {
@@ -379,7 +384,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, bool ipv6, string? wsHost, int wsPort, int engineLog)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog)
     {
         try
         {
@@ -416,7 +421,10 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
-            var pfd = BuildTunnel(resolved, name, appMode, appList, mtu, ipv6, rules.Tunneled, servers, _proxyPort,
+            // The mode says where the size comes from: the link, the config text, or the one stored for it.
+            var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, resolved);
+            Report($"packets leave at {size} bytes ({MtuModes.Text(MtuModes.From(mtuMode))})");
+            var pfd = BuildTunnel(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort,
                 out var establishError);
             if (pfd is null)
             {
@@ -559,11 +567,11 @@ public sealed class GeoVpnService : VpnService
         return true;
     }
 
-    // Turns the rules into the two address lists a tunnel is built from. Behind the relay the tun carries everything
-    // and every destination is decided while the session runs, so no name is resolved and no range becomes a route at
-    // connect - the mode only says where a destination no rule named belongs. A route table holds addresses and not
-    // protocols, so this puts every datagram in the tunnel as well. Without the relay a name has to become an address
-    // here and stay that way for the session: a route table cannot be edited once the tun is established.
+    // Turns the rules into the two address lists a tunnel is built from. Behind the relay a destination is decided
+    // while the session runs, so no name is resolved at connect - the mode only says where a destination no rule
+    // named belongs. A route table holds addresses and not protocols, so the tun there carries every datagram
+    // except the direct ranges it leaves out. Without the relay a name has to become an address here and stay that
+    // way for the session: a route table cannot be edited once the tun is established.
     private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, IReadOnlyList<string> servers, bool relayed)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
@@ -588,16 +596,11 @@ public sealed class GeoVpnService : VpnService
 
         if (relayed)
         {
-            Report($"{Mode(plan)} tunnel behind the local proxy: the tun carries everything, "
+            Report($"{Mode(plan)} tunnel behind the local proxy: "
                 + $"{plan.ProxyRoutes.Count + plan.DirectRoutes.Count} range(s) and "
                 + $"{plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count} name rule(s) "
-                + $"decided on contact, none at connect; a destination no rule names goes "
+                + $"decided on contact; a destination no rule names goes "
                 + $"{(plan.FullTunnel ? "through the tunnel" : "direct")}");
-
-            if (!plan.AllUdp)
-            {
-                Report("every datagram still rides the tunnel: the tun is what captures udp and it captures all of it");
-            }
 
             // A blocked name is refused by the relay, but traffic that never reaches the relay is stopped by the
             // peer's address list alone, so blocked names become addresses even here.
@@ -607,6 +610,27 @@ public sealed class GeoVpnService : VpnService
                 block.AddRange(await resolver.ResolveAsync(plan.BlockDomains).ConfigureAwait(false));
                 Report($"{plan.BlockDomains.Count} blocked name(s) resolved to addresses as well, so what bypasses "
                     + "the relay is dropped too");
+            }
+
+            // A direct range decided by the route table costs nothing and holds for traffic the relay never sees,
+            // so the tun leaves out as many of them as establish() takes. An application the list names keeps its
+            // own verdict where no range names the destination, which is the precedence the relay follows too.
+            var picked = Stopwatch.StartNew();
+            var carved = SystemRoutes.Carve(plan.DirectRoutes, local, block, RouteBudget.Max);
+            picked.Stop();
+            direct.AddRange(carved);
+            if (carved.Count > 0)
+            {
+                Report($"{carved.Count} of the direct route(s) leave the tun as well, picked in "
+                    + $"{picked.ElapsedMilliseconds} ms, so a datagram or a socket that ignores the proxy takes the "
+                    + "physical path for them");
+            }
+
+            if (!plan.AllUdp)
+            {
+                Report(carved.Count == 0
+                    ? "every datagram still rides the tunnel: the tun is what captures udp and it captures all of it"
+                    : "a datagram to any other destination still rides the tunnel: the tun is what captures udp");
             }
         }
         else if (plan.HasDomains)
@@ -739,8 +763,7 @@ public sealed class GeoVpnService : VpnService
                 builder.AddDnsServer(server);
             }
 
-            // The MTU chosen for the config wins; without one the config text decides.
-            builder.SetMtu(WgConfigEditor.EffectiveMtu(mtu, config));
+            builder.SetMtu(mtu);
 
             // Hands the applications a proxy of our own: a request then arrives as a name, before the client has
             // resolved it, which is the only per-destination signal this platform gives a session in progress.
@@ -1319,7 +1342,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetBooleanExtra(ExtraIpv6, false),
             intent.GetStringExtra(ExtraWsHost),
             intent.GetIntExtra(ExtraWsPort, 0),
-            intent.GetIntExtra(ExtraEngineLog, AwgEngine.LogError));
+            intent.GetIntExtra(ExtraEngineLog, AwgEngine.LogError),
+            intent.GetIntExtra(ExtraMtuMode, 0));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -48,6 +49,14 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private int _configMtu;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private MtuMode _mtuMode;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private int _resolvedMtu;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
@@ -117,13 +126,13 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
-        new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", MtuShown) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),
+        new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", MtuShown) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuMode == MtuMode.Custom),
     ];
 
-    // MTU, с которым встанет туннель: свой, иначе объявленный в конфигурации.
-    private int MtuShown => Mtu > 0 ? Mtu : ConfigMtu;
+    // MTU, с которым встанет туннель: подобранный агентом, иначе свой, иначе объявленный в конфигурации.
+    private int MtuShown => ResolvedMtu > 0 ? ResolvedMtu : Mtu > 0 ? Mtu : ConfigMtu;
 
-    // Задан ли MTU: нулём приходит настройка по умолчанию, и о нём ничего не говорит и конфигурация.
+    // Есть ли что показывать: нулём приходит настройка по умолчанию, и о нём ничего не говорит и конфигурация.
     private bool MtuSet => MtuShown > 0;
 
     /// <summary>

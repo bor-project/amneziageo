@@ -127,7 +127,7 @@ internal sealed class TunnelRunner(
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        var effectiveMtu = WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, config);
+        var effectiveMtu = MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config);
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;

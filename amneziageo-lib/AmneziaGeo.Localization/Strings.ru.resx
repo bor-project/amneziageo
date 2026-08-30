@@ -742,6 +742,15 @@
   <data name="Main_MtuHint" xml:space="preserve">
     <value>Размер пакета</value>
   </data>
+  <data name="Main_MtuModeAuto" xml:space="preserve">
+    <value>Подбирать</value>
+  </data>
+  <data name="Main_MtuModeConfig" xml:space="preserve">
+    <value>Из файла</value>
+  </data>
+  <data name="Main_MtuModeCustom" xml:space="preserve">
+    <value>Задать</value>
+  </data>
   <data name="Main_NameLabel" xml:space="preserve">
     <value>НАЗВАНИЕ</value>
   </data>

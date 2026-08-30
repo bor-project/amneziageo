@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using AmneziaGeo.Decl;
+
 namespace AmneziaGeo.Geo;
 
 /// <summary>
@@ -53,7 +55,7 @@ public static class PortableBundle
     /// <summary>
     /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.
     /// </summary>
-    public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu, bool UseIpv6 = false);
+    public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu, bool UseIpv6 = false, MtuMode MtuMode = MtuMode.Auto);
 
     /// <summary>
     /// Geo split toggle and rule tokens.

@@ -598,6 +598,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (transport is not null)
         {
             intent.PutExtra(GeoVpnService.ExtraMtu, transport.Mtu);
+            intent.PutExtra(GeoVpnService.ExtraMtuMode, (int)transport.MtuMode);
             intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
         }
 
@@ -952,7 +953,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RttMs: reading.RttMs,
             Subscription: member?.Subscription ?? string.Empty,
             SubscriptionGone: member is { Present: false },
-            ConfigMtu: WgConfigEditor.GetMtu(config));
+            ConfigMtu: WgConfigEditor.GetMtu(config),
+            MtuMode: transport?.MtuMode ?? MtuMode.Auto,
+            ResolvedMtu: MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config));
     }
 
     private string StatusFor(string target)
@@ -1621,7 +1624,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.WebSocketHost,
                         transport.WebSocketPort,
                         transport.Mtu,
-                        transport.UseIpv6),
+                        transport.UseIpv6,
+                        transport.MtuMode),
                 null));
         }
 
@@ -1862,7 +1866,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1901,7 +1905,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false);
         var useIpv6 = args.Count > 5 ? IsOn(args[5]) : previous?.UseIpv6 ?? false;
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6)).ConfigureAwait(false);
+
+        // An older client sends no mode, and a size it sent stands for a choice of its own.
+        var mode = args.Count > 6
+            ? MtuModes.Parse(args[6], previous?.MtuMode ?? MtuMode.Auto)
+            : mtu > 0 ? MtuMode.Custom : previous?.MtuMode ?? MtuMode.Auto;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
@@ -2499,7 +2508,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
-            ConfiguredMtu: WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, text, 0),
+            ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text),
             CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);

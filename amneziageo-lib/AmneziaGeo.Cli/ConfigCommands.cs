@@ -42,6 +42,7 @@ internal static class ConfigCommands
             "dns" => await DnsAsync(agent, rest).ConfigureAwait(false),
             "exclusions" => await ExclusionsAsync(agent, rest).ConfigureAwait(false),
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),
+            "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
             "geo" => await GeoAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown config command '{args[0]}'"),
         };
@@ -226,6 +227,33 @@ internal static class ConfigCommands
             host,
             mtu,
             Toggle.Text(useIpv6)).ConfigureAwait(false));
+    }
+
+    // The size travels with the rest of the transport, so the stored fields are resent untouched beside it.
+    private static async Task<int> MtuAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 2 || !MtuModes.TryParse(args[1], out var mode, out var value))
+        {
+            return Reply.Usage($"usage: amneziageo config mtu <name> auto|config|<{MtuModes.MinMtu}-{MtuModes.MaxMtu}>");
+        }
+
+        var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == args[0]);
+        if (stored is null)
+        {
+            return Reply.Usage($"unknown config: {args[0]}");
+        }
+
+        // Custom carries the size the command names; the other modes keep whatever was stored.
+        var size = mode == MtuMode.Custom ? value : stored.Mtu;
+        return Reply.Report(await agent.SendAsync(
+            IpcContract.OpSetWebSocket,
+            args[0],
+            stored.WebSocket ? "on" : "off",
+            stored.WebSocketPort.ToString(CultureInfo.InvariantCulture),
+            stored.WebSocketHost,
+            size > 0 ? size.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            stored.UseIpv6 ? "on" : "off",
+            MtuModes.Text(mode)).ConfigureAwait(false));
     }
 
     private static async Task<int> GeoAsync(IAgentLink agent, IReadOnlyList<string> args)

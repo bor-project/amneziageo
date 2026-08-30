@@ -59,7 +59,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             }
 
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false) is { } tr
-                ? new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6)
+                ? new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode)
                 : null;
 
             var ownGeo = await store.GetTunnelGeoAsync(name, ct).ConfigureAwait(false);
@@ -252,7 +252,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
     {
         if (block.Transport is { } transport)
         {
-            await store.SetConfigTransportAsync(new ConfigTransport(name, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6), ct).ConfigureAwait(false);
+            await store.SetConfigTransportAsync(new ConfigTransport(name, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode), ct).ConfigureAwait(false);
         }
 
         if (block.Dns is { } dns)

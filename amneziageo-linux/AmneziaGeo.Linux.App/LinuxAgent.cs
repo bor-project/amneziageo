@@ -1396,7 +1396,12 @@ internal sealed class LinuxAgent : IDisposable
             ? int.TryParse(args[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMtu) ? parsedMtu : 0
             : stored?.Mtu ?? 0;
         var ipv6 = args.Count > 5 ? IsOn(args[5]) : stored?.UseIpv6 ?? false;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6), ct).ConfigureAwait(false);
+
+        // An older client sends no mode, and a size it sent stands for a choice of its own.
+        var mode = args.Count > 6
+            ? MtuModes.Parse(args[6], stored?.MtuMode ?? MtuMode.Auto)
+            : mtu > 0 ? MtuMode.Custom : stored?.MtuMode ?? MtuMode.Auto;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -2411,7 +2416,9 @@ internal sealed class LinuxAgent : IDisposable
             reading.RttMs,
             member?.Subscription ?? string.Empty,
             member is { Present: false },
-            WgConfigEditor.GetMtu(text));
+            WgConfigEditor.GetMtu(text),
+            transport?.MtuMode ?? MtuMode.Auto,
+            MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

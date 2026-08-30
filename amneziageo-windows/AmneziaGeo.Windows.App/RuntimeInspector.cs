@@ -79,7 +79,8 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
 
         Section(text, "transport");
         Row(text, "carrier", Carrier(configText, transport));
-        Row(text, "mtu", WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, configText).ToString(CultureInfo.InvariantCulture));
+        Row(text, "mtu", MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, configText).ToString(CultureInfo.InvariantCulture)
+            + " (" + MtuModes.Text(transport?.MtuMode ?? MtuMode.Auto) + ")");
         Row(text, "ipv6", (transport?.UseIpv6 ?? false) ? "on" : "off");
         Row(text, "endpoint", WgConfigEditor.GetEndpoint(configText) ?? "-");
         Row(text, "config dns", Join(WgConfigEditor.GetDns(configText)));
@@ -439,7 +440,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         text = WgConfigEditor.ApplyAllowedIps(text, shown);
         // The agent applies the resolvers on the adapter itself, so the file it hands over carries no DNS.
         text = WgConfigEditor.RemoveDns(text);
-        text = WgConfigEditor.SetMtu(text, WgConfigEditor.EffectiveMtu(transport?.Mtu ?? 0, text));
+        text = WgConfigEditor.SetMtu(text, MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text));
         text = WgConfigEditor.EnsurePersistentKeepalive(text, TunnelRunner.DefaultKeepaliveSeconds);
 
         var endpoint = DeviceEndpoint(device);

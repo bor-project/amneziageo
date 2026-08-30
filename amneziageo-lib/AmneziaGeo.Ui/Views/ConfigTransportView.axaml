@@ -89,8 +89,15 @@
         <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
         <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
       </StackPanel>
-      <TextBox Grid.Column="1" Classes="field" Width="90" VerticalAlignment="Center"
-               controls:NumericInput.Minimum="576" controls:NumericInput.Maximum="1500" Text="{Binding Mtu}" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <controls:AdaptiveComboBox Classes="field" Width="132" SelectedIndex="{Binding MtuMode, Mode=TwoWay}">
+          <ComboBoxItem Content="{l:Tr Main_MtuModeAuto}" />
+          <ComboBoxItem Content="{l:Tr Main_MtuModeConfig}" />
+          <ComboBoxItem Content="{l:Tr Main_MtuModeCustom}" />
+        </controls:AdaptiveComboBox>
+        <TextBox Classes="field" Width="90" IsReadOnly="{Binding IsMtuReadOnly}"
+                 controls:NumericInput.Minimum="576" controls:NumericInput.Maximum="1500" Text="{Binding Mtu}" />
+      </StackPanel>
     </Grid>
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

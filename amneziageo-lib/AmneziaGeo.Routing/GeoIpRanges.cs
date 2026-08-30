@@ -148,16 +148,16 @@ public sealed class GeoIpRanges
     {
         start = 0;
         end = 0;
-        var slash = entry.IndexOf('/');
-        var host = slash < 0 ? entry : entry[..slash];
-        if (!IPAddress.TryParse(host, out var address) || !TryToNumeric(address, out var network))
+        var text = entry.AsSpan();
+        var slash = text.IndexOf('/');
+        if (!TryQuad(slash < 0 ? text : text[..slash], out var network))
         {
             return false;
         }
 
         // A bare address is a single-host range.
         var bits = (byte)32;
-        if (slash >= 0 && (!byte.TryParse(entry[(slash + 1)..], out bits) || bits > 32))
+        if (slash >= 0 && (!byte.TryParse(text[(slash + 1)..], out bits) || bits > 32))
         {
             return false;
         }
@@ -165,6 +165,47 @@ public sealed class GeoIpRanges
         var mask = bits == 0 ? 0u : uint.MaxValue << (32 - bits);
         start = network & mask;
         end = start | ~mask;
+        return true;
+    }
+
+    // Dotted quad in host order; a list holds tens of thousands of them, so it is read where it lies.
+    private static bool TryQuad(ReadOnlySpan<char> text, out uint value)
+    {
+        value = 0;
+        var dots = 0;
+        var octet = -1;
+        foreach (var symbol in text)
+        {
+            if (symbol == '.')
+            {
+                if (octet < 0 || ++dots > 3)
+                {
+                    return false;
+                }
+
+                value = (value << 8) | (uint)octet;
+                octet = -1;
+                continue;
+            }
+
+            if (symbol < '0' || symbol > '9')
+            {
+                return false;
+            }
+
+            octet = (octet < 0 ? 0 : octet * 10) + (symbol - '0');
+            if (octet > 255)
+            {
+                return false;
+            }
+        }
+
+        if (dots != 3 || octet < 0)
+        {
+            return false;
+        }
+
+        value = (value << 8) | (uint)octet;
         return true;
     }
 }

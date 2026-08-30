@@ -79,6 +79,15 @@ public sealed class GeoIpRangesTests
     }
 
     [Fact]
+    public void AnAddressShortOfFourOctets_IsNoRange()
+    {
+        var ranges = GeoIpRanges.Build(["10.0.0/8", "10.0.0.0.0/8", "10.0.0.256/32", "10.0.0.0/8"]);
+
+        Assert.Equal(1, ranges.Count);
+        Assert.True(ranges.Contains(Num("10.1.2.3")));
+    }
+
+    [Fact]
     public void DefaultRoute_CoversEverything()
     {
         var ranges = GeoIpRanges.Build(["0.0.0.0/0"]);

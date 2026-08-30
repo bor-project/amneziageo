@@ -12,8 +12,7 @@ namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
 /// Карточка каталога настроек: имя, кнопка подключения, замер и настройки. На телевизоре пульт входит
-/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку, двойной щелчок
-/// открывает её настройки.
+/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
 {
@@ -159,18 +158,10 @@ internal sealed partial class CatalogCard : UserControl
     private void OnCardPressed(object? sender, PointerPressedEventArgs e)
     {
         Pick();
-        if (CardGesture.OpensSettings(FacePart, e))
-        {
-            _reorder.Cancel();
-            Open();
-            e.Handled = true;
-            return;
-        }
-
         _reorder.Press(e);
     }
 
-    // Двойной щелчок по телу карточки открывает её настройки - то же, что кнопка в подвале.
+    // Открывает настройки карточки - то же, что кнопка в подвале.
     private void Open()
     {
         if (DataContext is { } item && OpenCommand?.CanExecute(item) == true)

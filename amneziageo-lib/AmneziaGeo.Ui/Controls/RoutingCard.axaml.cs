@@ -12,8 +12,8 @@ namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
 /// Карточка каталога маршрутизации: имя, состав списка, флаг применения и кнопка настроек. На телевизоре
-/// пульт входит в карточку, ходит по её контролам сверху вниз и выходит «назад»; перетаскивание переставляет
-/// карточку, двойной щелчок открывает её настройки.
+/// пульт входит в карточку, ходит по её контролам сверху вниз и выходит «назад»; перетаскивание
+/// переставляет карточку.
 /// </summary>
 internal sealed partial class RoutingCard : UserControl
 {
@@ -147,14 +147,6 @@ internal sealed partial class RoutingCard : UserControl
     private void OnCardPressed(object? sender, PointerPressedEventArgs e)
     {
         Pick();
-        if (CardGesture.OpensSettings(FacePart, e))
-        {
-            _reorder.Cancel();
-            Open();
-            e.Handled = true;
-            return;
-        }
-
         _reorder.Press(e);
     }
 
@@ -179,7 +171,7 @@ internal sealed partial class RoutingCard : UserControl
         _reorder.Cancel();
     }
 
-    // Двойной щелчок по телу карточки открывает её настройки - то же, что кнопка в подвале.
+    // Открывает настройки карточки - то же, что кнопка в подвале.
     private void Open()
     {
         if (DataContext is { } item && OpenCommand?.CanExecute(item) == true)

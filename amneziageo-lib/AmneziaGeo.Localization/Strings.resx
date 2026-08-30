@@ -752,13 +752,13 @@
     <value>Packet size</value>
   </data>
   <data name="Main_MtuModeAuto" xml:space="preserve">
-    <value>Picked</value>
+    <value>Auto</value>
   </data>
   <data name="Main_MtuModeConfig" xml:space="preserve">
-    <value>From the file</value>
+    <value>Config</value>
   </data>
   <data name="Main_MtuModeCustom" xml:space="preserve">
-    <value>Set here</value>
+    <value>Manual</value>
   </data>
   <data name="Main_NameLabel" xml:space="preserve">
     <value>NAME</value>

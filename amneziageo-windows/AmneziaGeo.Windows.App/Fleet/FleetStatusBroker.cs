@@ -58,6 +58,7 @@ internal sealed class FleetStatusBroker(
         proxy,
         hotspot,
         geoHttp,
+        fleet,
         logger)
 {
     /// <inheritdoc/>
@@ -179,6 +180,9 @@ internal sealed class FleetStatusBroker(
 
         return [.. fleet.Wanted.Where(name => live.Of(name) is { Running: true })];
     }
+
+    /// <inheritdoc/>
+    protected override TunnelDutyRoster Roster => mode.MultiServer ? fleet : base.Roster;
 
     /// <inheritdoc/>
     protected override void MarkRestartRequired(string config)

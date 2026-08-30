@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, GeoHttp geoHttp, ILogger<AgentStatusBroker> logger)
+internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, WindowsHotspotService hotspot, GeoHttp geoHttp, TunnelDutyRoster roster, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -1170,6 +1170,11 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     }
 
     /// <summary>
+    /// Who says what share of a routing list each tunnel carries.
+    /// </summary>
+    protected virtual TunnelDutyRoster Roster => roster;
+
+    /// <summary>
     /// Asks the tunnel of one configuration for a reconnect.
     /// </summary>
     protected virtual void MarkRestartRequired(string config)
@@ -1422,23 +1427,40 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             }
         }
 
+        await ReprojectAsync(resultId, ct);
         AnnounceRules();
         logger.LogInformation("saved routing list {Id} '{Name}' ({Rules} rules)", resultId, name, args.Count - 2);
         return new IpcAck(true, resultId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // Each tunnel carries its own share of the list, so the shares are cut afresh before the edit is announced.
+    private async Task ReprojectAsync(long listId, CancellationToken ct)
+    {
+        if (await store.GetSelectedRoutingListAsync(ct) != listId)
+        {
+            return;
+        }
+
+        foreach (var member in RunningMembers())
+        {
+            if (await store.GetActiveRoutingListIdAsync(member, ct) == listId)
+            {
+                await RoutingProjection.ProjectAsync(store, geo, Roster, member, logger, ct);
+            }
+        }
     }
 
     // The tunnel runs in its own process and polls for nothing: a rule change is announced to it here, and it
     // decides every destination in use against the new rules.
     private void AnnounceRules() => Announce(RuntimeSnapshotPipe.OpRules);
 
+    // Each tunnel decides its own destinations, so every one that is up hears it.
     private void Announce(string op)
     {
-        if (!control.Running || control.RunningTarget is not { Length: > 0 } tunnel)
+        foreach (var tunnel in RunningMembers())
         {
-            return;
+            _ = Task.Run(() => RuntimeSnapshotPipe.Send(tunnel, op, logger));
         }
-
-        _ = Task.Run(() => RuntimeSnapshotPipe.Send(tunnel, op, logger));
     }
 
     // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.

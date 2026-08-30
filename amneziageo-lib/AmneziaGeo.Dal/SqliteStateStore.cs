@@ -2414,10 +2414,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                // Read the list's current materialization, not the connect-time snapshot.
+                // Read the share this tunnel carries, stamped with the list's current generation.
                 command.CommandText =
                     """
-                    SELECT rl.id, rl.generation, rl.routes_json, rl.domains_json
+                    SELECT rl.id, rl.generation, tg.proj_routes_json, tg.proj_domains_json,
+                           tg.proj_direct_routes_json, tg.proj_direct_domains_json,
+                           tg.proj_block_routes_json, tg.proj_block_domains_json
                     FROM tunnel_geo tg
                     JOIN routing_lists rl ON rl.id = tg.proj_routing_list_id
                     WHERE tg.name = $name AND tg.projected = 1;
@@ -2436,7 +2438,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var generation = reader.GetInt64(1);
                     var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(2)) ?? [];
                     var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
-                    return new ActiveRoutingListMaterialization(listId, generation, routes, domains);
+                    var directRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(4)) ?? [];
+                    var directDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(5)) ?? [];
+                    var blockRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
+                    var blockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(7)) ?? [];
+                    return new ActiveRoutingListMaterialization(listId, generation, routes, domains, directRoutes, directDomains, blockRoutes, blockDomains);
                 }
             }
         }

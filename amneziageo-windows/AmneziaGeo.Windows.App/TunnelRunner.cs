@@ -1278,7 +1278,8 @@ internal sealed class TunnelRunner(
         }
     }
 
-    // Re-reads the active list and decides every destination in use against it; one that changed side moves at once.
+    // Re-reads this tunnel's share of the active list and decides every destination in use against it; one that
+    // changed side moves at once.
     private async Task ApplyRulesAsync(RoutingCache routing, string tunnelName, CancellationToken ct)
     {
         try
@@ -1289,22 +1290,18 @@ internal sealed class TunnelRunner(
                 return;
             }
 
-            var list = await store.GetRoutingListAsync(current.ListId, ct);
-            if (list is not null)
+            // Read before the rebuild: these are the destinations a rule by name has to be applied to.
+            var held = routing.Snapshot();
+            routing.Rebuild(current.Routes, current.DirectRoutes, current.BlockRoutes);
+
+            // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
+            // while these two buckets decide in both.
+            if (session.Proxy is { } proxy && proxy.UpdateBuckets(current.BlockDomains, current.DirectDomains))
             {
-                // Read before the rebuild: these are the destinations a rule by name has to be applied to.
-                var held = routing.Snapshot();
-                routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
-
-                // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
-                // while these two buckets decide in both.
-                if (session.Proxy is { } proxy && proxy.UpdateBuckets(list.BlockDomains, list.DirectDomains))
-                {
-                    dns.FlushCache();
-                }
-
-                ApplyNameRules(routing, held);
+                dns.FlushCache();
             }
+
+            ApplyNameRules(routing, held);
 
             session.Tracker?.ApplyList(current, ct);
         }

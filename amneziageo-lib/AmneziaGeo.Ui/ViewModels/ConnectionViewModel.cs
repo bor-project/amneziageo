@@ -923,6 +923,20 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private bool IsLiveConfig(ConfigItemViewModel item) =>
         IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
 
+    /// <summary>
+    /// Reconnects a live configuration after a transport edit: the setting reaches the tunnel only on a fresh dial.
+    /// </summary>
+    public async Task ReconnectLiveAsync(ConfigItemViewModel item)
+    {
+        // Занятый переход, зависший снос и предложенный перехват ведут туннель сами.
+        if (!IsLiveConfig(item) || Reconnecting || DisconnectFailed || TakeoverPending)
+        {
+            return;
+        }
+
+        await ReconnectCommand.ExecuteAsync(null);
+    }
+
     // Кнопка карточки: её запирают отсутствие агента, зависший снос и идущий перенос. Свой туннель карточка
     // снимает и посреди подъёма, чужой берёт только с закончившегося перехода.
     private bool CanDialConfig(ConfigItemViewModel? item) => item is not null

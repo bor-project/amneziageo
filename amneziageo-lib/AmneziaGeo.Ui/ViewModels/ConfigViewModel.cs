@@ -1027,7 +1027,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             MtuModes.Text(item.MtuMode),
             item.UseRouter ? "on" : "off",
         ]));
-        return ack is { Ok: true };
+        if (ack is not { Ok: true })
+        {
+            return false;
+        }
+
+        await _host.Home.ReconnectLiveAsync(item);
+        return true;
     }
 
     // Команда агенту; оборванная труба - не повод ронять экран, ответа просто нет.

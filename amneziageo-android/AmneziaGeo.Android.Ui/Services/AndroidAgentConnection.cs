@@ -540,8 +540,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _boundStatus = ConnectionStatus.Connecting;
         _boundTarget = _selectedTarget;
         PushSnapshot();
-        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync();
-        VpnBridge.WritePlan(await BuildPlanAsync().ConfigureAwait(false));
+        var useRouter = RouterEnabled();
+        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(useRouter);
+        VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false));
         _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
@@ -945,6 +946,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             WebSocketPort: transport?.WebSocketPort ?? 443,
             Mtu: transport?.Mtu ?? 0,
             UseIpv6: transport?.UseIpv6 ?? false,
+            UseRouter: transport?.UseRouter ?? true,
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -1478,9 +1480,25 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // A name carries no address until connect, where it resolves and cuts or adds about two routes.
         var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
-        // A device that can raise the relay has no ceiling: what the route table will not hold, the relay decides.
-        var limit = RouteBudget.Relayable ? 0 : RouteBudget.Max;
-        return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)},\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}}}");
+        // A session behind the relay has no ceiling: what the route table will not hold, the relay decides. Without
+        // one the tun keeps the direct ranges that do not fit and leaves out the widest, so a list over the budget
+        // still runs - shorter of reach, in either mode: every range left outside costs the routes around it.
+        var relayed = RouteBudget.Relayable && RouterEnabled();
+        var trims = !relayed && routes > RouteBudget.Max;
+        var kept = trims
+            ? SystemRoutes.Carve(draft.DirectRoutes, [], draft.BlockRoutes, RouteBudget.Max)
+            : [];
+        if (trims)
+        {
+            routes = SystemRoutes.Tunneled(full, draft.Routes, kept, draft.BlockRoutes).Count + (names * 2);
+        }
+
+        var limit = relayed ? 0 : RouteBudget.Max;
+        return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)}"
+            + $",\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}"
+            + $",\"trims\":{(trims ? 1 : 0).ToString(CultureInfo.InvariantCulture)}"
+            + $",\"kept\":{kept.Count.ToString(CultureInfo.InvariantCulture)}"
+            + $",\"total\":{draft.DirectRoutes.Count.ToString(CultureInfo.InvariantCulture)}}}");
     }
 
     // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
@@ -1625,7 +1643,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.WebSocketPort,
                         transport.Mtu,
                         transport.UseIpv6,
-                        transport.MtuMode),
+                        transport.MtuMode,
+                        transport.UseRouter),
                 null));
         }
 
@@ -1866,7 +1885,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1910,7 +1929,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var mode = args.Count > 6
             ? MtuModes.Parse(args[6], previous?.MtuMode ?? MtuMode.Auto)
             : mtu > 0 ? MtuMode.Custom : previous?.MtuMode ?? MtuMode.Auto;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode)).ConfigureAwait(false);
+        var useRouter = args.Count > 7 ? IsOn(args[7]) : previous?.UseRouter ?? true;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
@@ -1971,11 +1991,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // The rules the session routes by. Addresses stay ranges and names stay names: a name resolved to a fresh
     // address keeps its verdict, which a set of host routes fixed at connect never could.
-    private async Task<GeoRoutingPlan> BuildPlanAsync()
+    private async Task<GeoRoutingPlan> BuildPlanAsync(bool useRouter)
     {
         if (_selectedRoutingList is not { } listId)
         {
-            return GeoRoutingPlan.Full;
+            return GeoRoutingPlan.Full with { UseRouter = useRouter };
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
@@ -1995,7 +2015,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // add to them. Without a relay the owner is unreachable and the tunnel itself has to be restricted to them,
         // which is what the whole tunnel below stands for.
         var apps = AppPackages(list.Apps);
-        var perApp = settings is not { UseGlobalProxy: true } && apps.Length > 0;
+        var perApp = settings is not { UseGlobalProxy: true } && useRouter && apps.Length > 0;
         var attributed = Build.VERSION.SdkInt >= BuildVersionCodes.Q;
         var plan = new GeoRoutingPlan(
             list.Routes,
@@ -2009,6 +2029,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _routeTtl)
         {
             TunnelApps = perApp && attributed ? apps : [],
+            UseRouter = useRouter,
         };
 
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
@@ -2609,7 +2630,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : null;
         var full = settings?.UseGlobalProxy ?? false;
         // Without a list the tun carries everything, so nothing is left outside it to be put back in.
-        return (new TargetInspector(list, !full, AppMode(list, settings)), _selectedRoutingList is null || full);
+        return (new TargetInspector(list, !full, AppMode(list, settings, RouterEnabled())), _selectedRoutingList is null || full);
     }
 
     // Measures one destination over the path asked for. The tun fixes its routes at establish, so the tunnel
@@ -3157,9 +3178,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // The app set from the selected routing list's app:pkg rules, as the allow list the tunnel falls back to where
     // a connection cannot be traced to its owner; ("off", []) when none.
-    private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync()
+    private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync(bool useRouter)
     {
-        if (_selectedRoutingList is not { } listId)
+        if (_selectedRoutingList is not { } listId || !useRouter)
         {
             return ("off", []);
         }
@@ -3178,15 +3199,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // What the app rules of a list do here: they add to the rules where a connection can be traced to its owner,
     // and hold the tunnel to themselves where it cannot.
-    private static AppScope AppMode(RoutingList? list, RoutingSettings? settings)
+    private static AppScope AppMode(RoutingList? list, RoutingSettings? settings, bool useRouter)
     {
-        if (settings is { UseGlobalProxy: true } || AppPackages(list?.Apps).Length == 0)
+        if (!useRouter || settings is { UseGlobalProxy: true } || AppPackages(list?.Apps).Length == 0)
         {
             return AppScope.None;
         }
 
         return Build.VERSION.SdkInt >= BuildVersionCodes.Q ? AppScope.Additive : AppScope.Exclusive;
     }
+
+    // Whether the selected configuration decides connections on its own: the flag rides with the tunnel, not
+    // with the rules, and a configuration that never said otherwise does.
+    private bool RouterEnabled() =>
+        _selectedTarget is not { Length: > 0 } name || _transports.GetValueOrDefault(name)?.UseRouter != false;
 
     // The packages a routing list names, without the marker they are stored under.
     private static string[] AppPackages(IReadOnlyList<string>? apps)
@@ -3417,7 +3443,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             report.Append("endpoint     : ").Append(WgConfigEditor.GetEndpoint(configText) ?? "(none)").Append('\n');
         }
 
-        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync();
+        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(RouterEnabled());
         report.Append("app rules    : ").Append(AppRulesLine(appMode, appPkgs.Length)).Append('\n');
         AppendRoutingReport(report);
         report.Append("log level    : ").Append(_logLevel).Append('\n');

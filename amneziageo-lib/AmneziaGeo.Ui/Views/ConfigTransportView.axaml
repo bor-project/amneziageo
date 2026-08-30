@@ -105,6 +105,12 @@
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
                                IsChecked="{Binding UseIpv6, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
+    <!-- The router decides destinations while the session runs and costs a second pass through userspace;
+         turning it off leaves the route table alone with the rules. -->
+    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_RouterTitle}" Description="{l:Tr Main_RouterHint}"
+                               IsVisible="{Binding RouterAvailable}"
+                               IsChecked="{Binding UseRouter, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
     <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
   </StackPanel>

@@ -724,6 +724,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.MtuMode = entry.MtuMode;
             existing.ResolvedMtu = entry.ResolvedMtu;
             existing.UseIpv6 = entry.UseIpv6;
+            existing.UseRouter = entry.UseRouter;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
@@ -1047,7 +1048,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true);
         RefreshEditBar();
     }
 

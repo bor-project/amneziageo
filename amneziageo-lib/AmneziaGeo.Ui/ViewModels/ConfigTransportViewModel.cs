@@ -30,6 +30,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private string _baseMtu = string.Empty;
     private int _baseMtuMode;
     private bool _baseUseIpv6;
+    private bool _baseUseRouter;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
@@ -68,6 +69,14 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _useIpv6;
 
     [ObservableProperty]
+    private bool _useRouter = true;
+
+    /// <summary>
+    /// Whether this platform can decide connections of its own at all; only there is the switch worth showing.
+    /// </summary>
+    public static bool RouterAvailable => OperatingSystem.IsAndroid();
+
+    [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
@@ -90,13 +99,14 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true)
     {
         _connection = connection;
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
         _useIpv6 = useIpv6;
+        _useRouter = useRouter;
         _mtuMode = (int)mtuMode;
 
         // Only the custom mode shows a size of its own; the other two show what the agent settled on.
@@ -193,6 +203,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnUseRouterChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -218,7 +234,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal)
             || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal)
             || MtuMode != _baseMtuMode
-            || UseIpv6 != _baseUseIpv6;
+            || UseIpv6 != _baseUseIpv6
+            || UseRouter != _baseUseRouter;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -239,6 +256,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseMtu = Mtu ?? string.Empty;
         _baseMtuMode = MtuMode;
         _baseUseIpv6 = UseIpv6;
+        _baseUseRouter = UseRouter;
         if (IsDirty)
         {
             IsDirty = false;
@@ -262,6 +280,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             Mtu = _baseMtu;
             MtuMode = _baseMtuMode;
             UseIpv6 = _baseUseIpv6;
+            UseRouter = _baseUseRouter;
             StatusMessage = string.Empty;
         }
         finally
@@ -379,7 +398,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode))]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off"]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;

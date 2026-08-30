@@ -433,6 +433,18 @@
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Use IPv6</value>
   </data>
+  <data name="Main_RouterTitle" xml:space="preserve">
+    <value>Router</value>
+  </data>
+  <data name="Main_RouterHint" xml:space="preserve">
+    <value>Every connection gets its own verdict, so application and name rules apply; off leaves it to the route table, with names resolved once at connect</value>
+  </data>
+  <data name="Main_CardTagRoutesOnly" xml:space="preserve">
+    <value>Routes only</value>
+  </data>
+  <data name="RoutingEditor_RoutesTrimmed" xml:space="preserve">
+    <value>The list does not fit: {0} of {1} Direct ranges keep the direct path, the rest ride the tunnel.</value>
+  </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
   </data>

@@ -1401,7 +1401,8 @@ internal sealed class LinuxAgent : IDisposable
         var mode = args.Count > 6
             ? MtuModes.Parse(args[6], stored?.MtuMode ?? MtuMode.Auto)
             : mtu > 0 ? MtuMode.Custom : stored?.MtuMode ?? MtuMode.Auto;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode), ct).ConfigureAwait(false);
+        var useRouter = args.Count > 7 ? IsOn(args[7]) : stored?.UseRouter ?? true;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -2418,7 +2419,8 @@ internal sealed class LinuxAgent : IDisposable
             member is { Present: false },
             WgConfigEditor.GetMtu(text),
             transport?.MtuMode ?? MtuMode.Auto,
-            MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text));
+            MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text),
+            transport?.UseRouter ?? true);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

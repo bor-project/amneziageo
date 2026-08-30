@@ -196,14 +196,14 @@ internal static class ConfigCommands
     private static async Task<int> WebSocketAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
-        if (!flags.Allowed("host", "port", "mtu", "ipv6"))
+        if (!flags.Allowed("host", "port", "mtu", "ipv6", "router"))
         {
             return Reply.Usage(flags.Error!);
         }
 
         if (flags.Positional.Count != 2 || !Toggle.TryParse(flags.Positional[1], out var on))
         {
-            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off]");
+            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off] [--router on|off]");
         }
 
         var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == flags.Positional[0]);
@@ -219,6 +219,12 @@ internal static class ConfigCommands
             return Reply.Usage("--ipv6 takes on or off");
         }
 
+        var router = flags.Value("router") ?? ((stored?.UseRouter ?? true) ? "on" : "off");
+        if (!Toggle.TryParse(router, out var useRouter))
+        {
+            return Reply.Usage("--router takes on or off");
+        }
+
         return Reply.Report(await agent.SendAsync(
             IpcContract.OpSetWebSocket,
             flags.Positional[0],
@@ -226,7 +232,9 @@ internal static class ConfigCommands
             port,
             host,
             mtu,
-            Toggle.Text(useIpv6)).ConfigureAwait(false));
+            Toggle.Text(useIpv6),
+            MtuModes.Text(stored?.MtuMode ?? MtuMode.Auto),
+            Toggle.Text(useRouter)).ConfigureAwait(false));
     }
 
     // The size travels with the rest of the transport, so the stored fields are resent untouched beside it.
@@ -253,7 +261,8 @@ internal static class ConfigCommands
             stored.WebSocketHost,
             size > 0 ? size.ToString(CultureInfo.InvariantCulture) : string.Empty,
             stored.UseIpv6 ? "on" : "off",
-            MtuModes.Text(mode)).ConfigureAwait(false));
+            MtuModes.Text(mode),
+            stored.UseRouter ? "on" : "off").ConfigureAwait(false));
     }
 
     private static async Task<int> GeoAsync(IAgentLink agent, IReadOnlyList<string> args)

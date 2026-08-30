@@ -62,6 +62,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _useRouter = true;
+
     /// <summary>
     /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.
     /// </summary>
@@ -126,6 +130,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [
         new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
         new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
+        new(Loc.Instance.Get("Main_CardTagRoutesOnly"), !UseRouter),
         new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", MtuShown) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuMode == MtuMode.Custom),
     ];
 

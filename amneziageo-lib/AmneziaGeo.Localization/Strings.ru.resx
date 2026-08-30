@@ -433,6 +433,18 @@
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Использовать IPv6</value>
   </data>
+  <data name="Main_RouterTitle" xml:space="preserve">
+    <value>Роутер</value>
+  </data>
+  <data name="Main_RouterHint" xml:space="preserve">
+    <value>Решение по каждому соединению, поэтому работают правила по приложениям и именам; без него решает таблица маршрутов, а имена определяются один раз при подключении</value>
+  </data>
+  <data name="Main_CardTagRoutesOnly" xml:space="preserve">
+    <value>Только маршруты</value>
+  </data>
+  <data name="RoutingEditor_RoutesTrimmed" xml:space="preserve">
+    <value>Список не помещается: прямой путь сохраняют {0} из {1} диапазонов «Директ», остальные пойдут через туннель.</value>
+  </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
   </data>

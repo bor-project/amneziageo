@@ -41,7 +41,9 @@ public sealed record ConfigEntry(
     // How the MTU is picked: the link, the config text, or the stored size.
     MtuMode MtuMode = MtuMode.Auto,
     // Size the mode settles on, so the interface shows what the tunnel comes up with rather than guessing.
-    int ResolvedMtu = 0);
+    int ResolvedMtu = 0,
+    // Whether the session decides every connection on its own instead of leaving it all to the route table.
+    bool UseRouter = true);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

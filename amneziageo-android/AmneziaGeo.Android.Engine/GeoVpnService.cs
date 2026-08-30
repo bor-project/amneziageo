@@ -542,11 +542,18 @@ public sealed class GeoVpnService : VpnService
 
     // Whether the session raises the relay. Every byte it carries crosses userspace twice, so it stands only where
     // the route table cannot say the same thing: a connection to attribute to an application, or more ranges than
-    // establish() takes in one transaction.
+    // establish() takes. A configuration can also refuse it outright, and then the route table decides alone.
     private static bool NeedsRelay(GeoRoutingPlan plan)
     {
         if (!RouteBudget.Relayable)
         {
+            return false;
+        }
+
+        if (!plan.UseRouter)
+        {
+            Report("the configuration keeps the relay down, so the route table decides every destination and no "
+                + "byte crosses userspace twice");
             return false;
         }
 
@@ -594,6 +601,10 @@ public sealed class GeoVpnService : VpnService
 
         direct.AddRange(local);
 
+        // Ranges the tun leaves out whatever the budget holds: the network the device sits on, and the addresses a
+        // direct name resolved to.
+        var kept = new List<string>(local);
+
         if (relayed)
         {
             Report($"{Mode(plan)} tunnel behind the local proxy: "
@@ -638,14 +649,31 @@ public sealed class GeoVpnService : VpnService
             var clock = Stopwatch.StartNew();
             var resolver = new GeoDomainRouteResolver();
             var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
+            var named = await resolver.ResolveAsync(plan.DirectDomains).ConfigureAwait(false);
             proxy.AddRange(await resolver.ResolveAsync(plan.ProxyDomains).ConfigureAwait(false));
-            direct.AddRange(await resolver.ResolveAsync(plan.DirectDomains).ConfigureAwait(false));
+            direct.AddRange(named);
+            kept.AddRange(named);
             block.AddRange(await resolver.ResolveAsync(plan.BlockDomains).ConfigureAwait(false));
             Report($"{names} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms; "
                 + "a name that moves to another address will no longer match");
         }
 
         var tunneled = SystemRoutes.Tunneled(plan.FullTunnel || relayed, proxy, direct, block);
+        if (!relayed && tunneled.Count > RouteBudget.Max)
+        {
+            // establish() takes the table in one transaction, so the tun keeps the direct ranges that do not fit
+            // there: the widest leave it, and a destination inside the rest rides the tunnel.
+            var picked = Stopwatch.StartNew();
+            var carved = SystemRoutes.Carve(plan.DirectRoutes, kept, block, RouteBudget.Max);
+            picked.Stop();
+            direct = new List<string>(kept);
+            direct.AddRange(carved);
+            tunneled = SystemRoutes.Tunneled(plan.FullTunnel, proxy, direct, block);
+            Report($"{carved.Count} of {plan.DirectRoutes.Count} direct range(s) leave the tun, picked in "
+                + $"{picked.ElapsedMilliseconds} ms; the rest ride the tunnel so the table stays within "
+                + $"{RouteBudget.Max} route(s)");
+        }
+
         if (tunneled.Count == 0)
         {
             Report("the rules capture nothing, running the whole tunnel instead");

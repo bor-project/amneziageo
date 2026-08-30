@@ -116,6 +116,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         ws_port    INTEGER NOT NULL DEFAULT 443,
                         mtu        INTEGER NOT NULL DEFAULT 0,
                         use_ipv6   INTEGER NOT NULL DEFAULT 0,
+                        use_router INTEGER NOT NULL DEFAULT 1,
                         updated_at TEXT NOT NULL
                     );
 
@@ -265,6 +266,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // How the MTU is picked: 0 auto, 1 from the config text, 2 the stored size. A row that already carries
             // a size kept it as a choice of its own, so it becomes custom; an empty one follows the path.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu_mode INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
+            // Per-config router: every connection gets its own verdict. Off leaves the route table alone
+            // with the rules, and no byte crosses userspace twice.
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN use_router INTEGER NOT NULL DEFAULT 1;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "UPDATE config_transport SET mtu_mode = 2 WHERE mtu > 0 AND mtu_mode = 0;", ct).ConfigureAwait(false);
 
             // Generation counter, bumped when the materialized set changes.
@@ -787,7 +792,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -798,7 +803,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4) != 0, MtuModes.From(reader.GetInt32(5)));
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4) != 0, MtuModes.From(reader.GetInt32(5)), reader.GetInt32(6) != 0);
                 }
             }
         }
@@ -817,8 +822,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, updated_at)
-                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
                         ws_host    = excluded.ws_host,
@@ -826,6 +831,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         mtu        = excluded.mtu,
                         use_ipv6   = excluded.use_ipv6,
                         mtu_mode   = excluded.mtu_mode,
+                        use_router = excluded.use_router,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
@@ -835,6 +841,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$mtu", transport.Mtu);
                 command.Parameters.AddWithValue("$v6", transport.UseIpv6 ? 1 : 0);
                 command.Parameters.AddWithValue("$mode", (int)transport.MtuMode);
+                command.Parameters.AddWithValue("$router", transport.UseRouter ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

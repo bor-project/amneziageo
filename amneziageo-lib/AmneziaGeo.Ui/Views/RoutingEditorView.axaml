@@ -185,6 +185,9 @@
           <!-- The Proxy bucket is inert while the global proxy is on: everything already goes through the tunnel. -->
           <TextBlock Text="{l:Tr Main_RoleProxyUnusedWarning}" FontSize="11.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding IsProxyBucketUnused}" />
+          <!-- Without the relay the tun holds the direct ranges that do not fit, so the list runs with less reach. -->
+          <TextBlock Text="{Binding RouteTrimNotice}" FontSize="11.5" TextWrapping="Wrap"
+                     Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding RouteTrims}" />
         </StackPanel>
 
         <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">

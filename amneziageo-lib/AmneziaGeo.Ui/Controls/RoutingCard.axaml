@@ -57,7 +57,7 @@
         <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->
         <Border Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <controls:CardTags Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
+            <controls:CardTags x:Name="TagsPart" Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick cardgear"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">

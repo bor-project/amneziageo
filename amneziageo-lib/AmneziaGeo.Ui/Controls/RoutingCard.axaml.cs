@@ -398,7 +398,7 @@ internal sealed partial class RoutingCard : UserControl
     // Водит по контролам карточки, останавливаясь на краях.
     private void Step(int delta)
     {
-        var stops = new Control[] { ActivePart, SettingsPart };
+        Control[] stops = [ActivePart, .. TagsPart.Presses(), SettingsPart];
         var at = Array.FindIndex(stops, stop => stop.IsKeyboardFocusWithin);
         var next = at < 0 ? 0 : at + delta;
         if (next >= 0 && next < stops.Length)
@@ -413,5 +413,6 @@ internal sealed partial class RoutingCard : UserControl
         var stop = _entered || !UiPlatform.IsTelevision;
         ActivePart.Focusable = stop;
         SettingsPart.Focusable = stop;
+        TagsPart.Stops = stop;
     }
 }

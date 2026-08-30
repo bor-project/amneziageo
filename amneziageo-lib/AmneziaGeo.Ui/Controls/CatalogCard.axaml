@@ -21,10 +21,14 @@
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
-          <!-- Имя и подключение: имя занимает строку целиком, кнопка жмётся последней. -->
+          <!-- Имя и подключение: имя с адресом занимают строку целиком, кнопка жмётся последней. -->
           <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding CardAddress}" FontSize="11" Classes="muted"
+                         TextTrimming="CharacterEllipsis" IsVisible="{Binding HasAddress}" />
+            </StackPanel>
             <!-- Подключение: со своей конфигурации туннель снимает, с чужой переносит его сюда. Круг повторяет
                  кнопку в шапке: цвет состояния и дуга на переключении. -->
             <Button x:Name="ConnectPart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
@@ -96,7 +100,7 @@
         <!-- Подвал карточки: метки настроек слева, настройки конфигурации справа. -->
         <Border Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <controls:CardTags Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
+            <controls:CardTags x:Name="TagsPart" Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <!-- Шестерёнка встаёт под кнопку подключения: ширина кнопки повторяет её. -->
             <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick cardgear"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"

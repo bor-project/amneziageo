@@ -698,7 +698,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             var existing = Configs.FirstOrDefault(c => string.Equals(c.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new ConfigItemViewModel { Name = entry.Name };
+                existing = new ConfigItemViewModel { Name = entry.Name, SaveTransport = SaveTransportAsync };
                 Configs.Insert(Math.Min(i, Configs.Count), existing);
             }
             else
@@ -1005,6 +1005,29 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             item.Busy = false;
         }
+    }
+
+    // Плашка режима на карточке: тот же set-websocket, что и в настройках конфигурации.
+    private async Task<bool> SaveTransportAsync(ConfigItemViewModel item)
+    {
+        var mtu = item.MtuMode == MtuMode.Custom && item.Mtu is >= MtuModes.MinMtu and <= MtuModes.MaxMtu
+            ? item.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+
+        // Порт хранится только у прокси; у остальных строк его нет, а команда без него не проходит.
+        var port = item.WebSocketPort is > 0 and <= 65535 ? item.WebSocketPort : 443;
+        var ack = await Ask(new IpcCommand(IpcContract.OpSetWebSocket,
+        [
+            item.Name,
+            item.UseWebSocket ? "on" : "off",
+            port.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            item.WebSocketHost,
+            mtu,
+            item.UseIpv6 ? "on" : "off",
+            MtuModes.Text(item.MtuMode),
+            item.UseRouter ? "on" : "off",
+        ]));
+        return ack is { Ok: true };
     }
 
     // Команда агенту; оборванная труба - не повод ронять экран, ответа просто нет.

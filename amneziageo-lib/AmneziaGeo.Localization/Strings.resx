@@ -439,9 +439,6 @@
   <data name="Main_RouterHint" xml:space="preserve">
     <value>Every connection gets its own verdict, so application and name rules apply; off leaves it to the route table, with names resolved once at connect</value>
   </data>
-  <data name="Main_CardTagRoutesOnly" xml:space="preserve">
-    <value>Routes only</value>
-  </data>
   <data name="RoutingEditor_RoutesTrimmed" xml:space="preserve">
     <value>The list does not fit: {0} of {1} Direct ranges keep the direct path, the rest ride the tunnel.</value>
   </data>
@@ -2037,9 +2034,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   </data>
   <data name="Main_CardTagSubscription" xml:space="preserve">
     <value>{0}</value>
-  </data>
-  <data name="Main_CardTagSubscriptionGone" xml:space="preserve">
-    <value>gone from the subscription</value>
   </data>
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Subscriptions</value>

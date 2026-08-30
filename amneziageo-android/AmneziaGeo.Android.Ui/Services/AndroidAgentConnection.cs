@@ -1588,6 +1588,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         MarkRoutingChanged(id);
+
+        // Сводки списков держатся в памяти: без перечитывания снимок отдаёт прежние режимы.
+        await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
     }

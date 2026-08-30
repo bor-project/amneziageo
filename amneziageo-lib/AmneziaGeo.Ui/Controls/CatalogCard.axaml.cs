@@ -444,7 +444,7 @@ internal sealed partial class CatalogCard : UserControl
             rows.Add([RefreshPart]);
         }
 
-        rows.Add([SettingsPart]);
+        rows.Add([.. TagsPart.Presses(), SettingsPart]);
         return rows;
     }
 
@@ -455,5 +455,6 @@ internal sealed partial class CatalogCard : UserControl
         ConnectPart.Focusable = stop;
         RefreshPart.Focusable = stop;
         SettingsPart.Focusable = stop;
+        TagsPart.Stops = stop;
     }
 }

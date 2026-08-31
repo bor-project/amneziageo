@@ -579,6 +579,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
         {
             _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["log-level", value]));
         }
+
+        // The level the agent records at is the floor the viewer shows, so the rows follow the setting.
+        if (IsAgentLog && IsActive)
+        {
+            ResetAndReload();
+        }
     }
 
     // --- Cache kind (cache): the verdict a row carries, or every row ---
@@ -1088,7 +1094,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
             type,
             LogLimit.ToString(CultureInfo.InvariantCulture),
             (beforeId ?? 0).ToString(CultureInfo.InvariantCulture),
-            type == "ageo" ? "trace" : string.Empty,
+            type == "ageo" ? CaptureLevel : string.Empty,
             SearchQuery ?? string.Empty,
         };
 

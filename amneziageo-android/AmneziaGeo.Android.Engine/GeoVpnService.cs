@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -103,6 +104,16 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraEngineLog = "engine-log";
 
+    /// <summary>
+    /// Whether a stream to a direct range leaves on a protected socket instead of riding the tunnel.
+    /// </summary>
+    public const string ExtraDirectTcp = "direct-tcp";
+
+    /// <summary>
+    /// Whether the hot direct addresses are left outside the tun by name; API 33 and above.
+    /// </summary>
+    public const string ExtraExcludeRoutes = "exclude-routes";
+
     private const string ChannelId = "amneziageo.vpn";
     private const int NotificationId = 1001;
     private const string DefaultDns = "1.1.1.1";
@@ -111,6 +122,11 @@ public sealed class GeoVpnService : VpnService
     private const int LinkIntervalMs = 5_000;
     private const int HandshakeWaitSeconds = 30;
     private const int HandshakePollMs = 500;
+    private const int TrafficWaitSeconds = 20;
+    private const int TrafficPollMs = 250;
+    private const string HotFile = "hot-direct.txt";
+    private const int HotMax = 1024;
+    private const int HotTtlSeconds = 3600;
     private const int KeepaliveSeconds = 25;
     private const int TcpProtocol = 6;
     private const int ExitDelayMs = 1_000;
@@ -208,7 +224,8 @@ public sealed class GeoVpnService : VpnService
         _recovery.Reset();
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
-            request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog));
+            request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog,
+            request.DirectTcp, request.ExcludeRoutes));
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -353,7 +370,8 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
-                    request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog).ConfigureAwait(false);
+                    request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog, request.DirectTcp,
+                    request.ExcludeRoutes).ConfigureAwait(false);
             }
             finally
             {
@@ -384,7 +402,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog, bool directTcp, bool excludeRoutes)
     {
         try
         {
@@ -425,7 +443,7 @@ public sealed class GeoVpnService : VpnService
             var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, resolved);
             Report($"packets leave at {size} bytes ({MtuModes.Text(MtuModes.From(mtuMode))})");
             var pfd = BuildTunnel(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort,
-                out var establishError);
+                Excluded(excludeRoutes), out var establishError);
             if (pfd is null)
             {
                 Teardown(VpnStage.Failed, establishError ?? "establish failed",
@@ -453,6 +471,21 @@ public sealed class GeoVpnService : VpnService
                 Protect(socket);
             }
 
+            // The protector goes in before the ranges: a direct datagram sent on an unprotected socket comes
+            // straight back into the tun.
+            AwgEngine.SetProtector(handle, Protect);
+            if (rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts))
+            {
+                Report($"{plan.BlockRoutes.Count} blocked and {plan.DirectRoutes.Count} direct range(s) handed to "
+                    + "the engine, which decides them on the packet");
+            }
+
+            if (directTcp && AwgEngine.SetTcpDirect(handle, true))
+            {
+                Report("a stream to a direct range leaves on a protected socket as well, so the relay is no longer "
+                    + "the only way past the tunnel");
+            }
+
             // The peer has to answer before the session counts as up: the tun and the engine start over a dead
             // server just as well, and the head would paint a live connection over nothing.
             var handshake = await WaitForHandshakeAsync(handle).ConfigureAwait(false);
@@ -467,8 +500,6 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
-            Publish(VpnStage.Connected, name);
-            VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
             // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the far
@@ -476,6 +507,22 @@ public sealed class GeoVpnService : VpnService
             // resolvers, which the tunnel carries even where it carries nothing else of that subnet.
             var loss = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetDns(resolved)));
             _ = Task.Run(() => loss.RunAsync(keepalive.Token));
+
+            // The handshake proves the channel, not the path to it: the system takes a fresh network into use a
+            // while after establish() returns, and until then the applications go beside the tunnel. The stage
+            // waits for the first byte that came back through it.
+            var carried = await WaitForTrafficAsync(loss, handle).ConfigureAwait(false);
+            if (_handle != handle)
+            {
+                return;
+            }
+
+            Report(carried
+                ? "the tunnel carries traffic both ways"
+                : $"the peer answered, but nothing has come back through the tun in {TrafficWaitSeconds} s; the "
+                    + "session is reported as up on the handshake alone");
+            Publish(VpnStage.Connected, name);
+            VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
             _ = Task.Run(() => ReportLinkAsync(loss, keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
@@ -538,7 +585,11 @@ public sealed class GeoVpnService : VpnService
     /// <summary>
     /// The route lists a session is built from, and the local networks it keeps out of the tun.
     /// </summary>
-    private readonly record struct Materialized(IReadOnlyList<string> Tunneled, IReadOnlyList<string> Allowed, IReadOnlyList<string> Local);
+    private readonly record struct Materialized(
+        IReadOnlyList<string> Tunneled,
+        IReadOnlyList<string> Allowed,
+        IReadOnlyList<string> Local,
+        string Verdicts);
 
     // Whether the session raises the relay. Every byte it carries crosses userspace twice, so it stands only where
     // the route table cannot say the same thing: a connection to attribute to an application, or more ranges than
@@ -623,25 +674,15 @@ public sealed class GeoVpnService : VpnService
                     + "the relay is dropped too");
             }
 
-            // A direct range decided by the route table costs nothing and holds for traffic the relay never sees,
-            // so the tun leaves out as many of them as establish() takes. An application the list names keeps its
-            // own verdict where no range names the destination, which is the precedence the relay follows too.
-            var picked = Stopwatch.StartNew();
-            var carved = SystemRoutes.Carve(plan.DirectRoutes, local, block, RouteBudget.Max);
-            picked.Stop();
-            direct.AddRange(carved);
-            if (carved.Count > 0)
-            {
-                Report($"{carved.Count} of the direct route(s) leave the tun as well, picked in "
-                    + $"{picked.ElapsedMilliseconds} ms, so a datagram or a socket that ignores the proxy takes the "
-                    + "physical path for them");
-            }
+            // A direct range stays out of the route table: the shim decides it on the packet and sends the
+            // datagram on its own protected socket, so establish() carries the local subnets alone.
+            Report($"{plan.DirectRoutes.Count} direct range(s) are decided on the packet, so a datagram to one of "
+                + "them leaves on a protected socket while the table stays short");
 
             if (!plan.AllUdp)
             {
-                Report(carved.Count == 0
-                    ? "every datagram still rides the tunnel: the tun is what captures udp and it captures all of it"
-                    : "a datagram to any other destination still rides the tunnel: the tun is what captures udp");
+                Report("a socket that ignores the proxy still rides the tunnel: only datagrams take the direct "
+                    + "path off the route table");
             }
         }
         else if (plan.HasDomains)
@@ -661,17 +702,12 @@ public sealed class GeoVpnService : VpnService
         var tunneled = SystemRoutes.Tunneled(plan.FullTunnel || relayed, proxy, direct, block);
         if (!relayed && tunneled.Count > RouteBudget.Max)
         {
-            // establish() takes the table in one transaction, so the tun keeps the direct ranges that do not fit
-            // there: the widest leave it, and a destination inside the rest rides the tunnel.
-            var picked = Stopwatch.StartNew();
-            var carved = SystemRoutes.Carve(plan.DirectRoutes, kept, block, RouteBudget.Max);
-            picked.Stop();
+            // establish() takes the table in one transaction, so the direct ranges leave it altogether and the
+            // shim decides them on the packet instead.
             direct = new List<string>(kept);
-            direct.AddRange(carved);
             tunneled = SystemRoutes.Tunneled(plan.FullTunnel, proxy, direct, block);
-            Report($"{carved.Count} of {plan.DirectRoutes.Count} direct range(s) leave the tun, picked in "
-                + $"{picked.ElapsedMilliseconds} ms; the rest ride the tunnel so the table stays within "
-                + $"{RouteBudget.Max} route(s)");
+            Report($"{plan.DirectRoutes.Count} direct range(s) do not fit the {RouteBudget.Max} route(s) "
+                + "establish() takes, so they are decided on the packet");
         }
 
         if (tunneled.Count == 0)
@@ -685,7 +721,34 @@ public sealed class GeoVpnService : VpnService
         var allowed = plan.FullTunnel || relayed || block.Count > 0 ? SystemRoutes.Allowed(block) : [];
         Report($"{Mode(plan)}: {tunneled.Count} route(s) into the tunnel, {block.Count} range(s) blocked, "
             + $"peer carries {(allowed.Count == 0 ? "what the config says" : allowed.Count + " range(s)")}");
-        return new Materialized(tunneled, allowed, local);
+        return new Materialized(tunneled, allowed, local, Verdicts(plan.ProxyRoutes, plan.DirectRoutes, block));
+    }
+
+    // What the shim decides on the packet: block wins over direct, direct over proxy. The ranges stay inside the
+    // process, so their number costs nothing here.
+    private static string Verdicts(
+        IReadOnlyList<string> proxy,
+        IReadOnlyList<string> direct,
+        IReadOnlyList<string> block)
+    {
+        var text = new StringBuilder();
+        Append(text, block, "block");
+        Append(text, direct, "direct");
+        Append(text, proxy, "proxy");
+        return text.ToString();
+
+        static void Append(StringBuilder text, IReadOnlyList<string> ranges, string role)
+        {
+            foreach (var range in ranges)
+            {
+                if (range.Contains(':', StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                text.Append(range).Append('=').Append(role).Append('\n');
+            }
+        }
     }
 
     private static string Mode(GeoRoutingPlan plan) => plan.FullTunnel ? "full" : "split";
@@ -756,6 +819,7 @@ public sealed class GeoVpnService : VpnService
         IReadOnlyList<string> routes,
         IReadOnlyList<string> servers,
         int proxyPort,
+        IReadOnlyList<string> excluded,
         out string? error)
     {
         error = null;
@@ -786,6 +850,11 @@ public sealed class GeoVpnService : VpnService
                 builder.AddRoute("::", 0);
             }
 
+            if (excluded.Count > 0)
+            {
+                Exclude(builder, excluded);
+            }
+
             foreach (var server in servers)
             {
                 builder.AddDnsServer(server);
@@ -814,6 +883,84 @@ public sealed class GeoVpnService : VpnService
             global::Android.Util.Log.Error("GeoVpnService", "establish failed: " + ex);
             error = ex.GetType().Name;
             return null;
+        }
+    }
+
+    // Что оставить вне tun поимённо: одна запись на адрес вместо покрывающих маршрутов. Ветка платформы, а
+    // не режима: до API 33 исключения задаются только инверсией списка, и она стоит подъёма туннеля.
+    private IReadOnlyList<string> Excluded(bool wanted)
+    {
+        return wanted && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu ? HotDirect() : [];
+    }
+
+    private static void Exclude(Builder builder, IReadOnlyList<string> addresses)
+    {
+        try
+        {
+            foreach (var address in addresses)
+            {
+                builder.ExcludeRoute(new IpPrefix(InetAddress.GetByName(address)!, 32));
+            }
+
+            Report($"{addresses.Count} address(es) the last session used stay outside the tun, so the kernel "
+                + "carries them instead of the shim");
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "excluding the addresses of the last session failed: " + ex);
+        }
+    }
+
+    // What the session has touched past the tunnel, kept for the next one: the route table is fixed at establish(),
+    // so a list of what is actually used can only come from the session before.
+    private void KeepHotDirect()
+    {
+        try
+        {
+            var live = AwgEngine.LiveAddresses(_handle);
+            if (string.IsNullOrEmpty(live))
+            {
+                return;
+            }
+
+            var hot = new List<string>();
+            foreach (var line in live.Split('\n'))
+            {
+                var parts = line.Split(' ');
+                if (parts.Length == 3 && parts[1] == "direct" && hot.Count < HotMax
+                    && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var age)
+                    && age <= HotTtlSeconds)
+                {
+                    hot.Add(parts[0]);
+                }
+            }
+
+            var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, HotFile);
+            if (hot.Count == 0)
+            {
+                System.IO.File.Delete(path);
+                return;
+            }
+
+            System.IO.File.WriteAllLines(path, hot);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "keeping the addresses of this session failed: " + ex);
+        }
+    }
+
+    private IReadOnlyList<string> HotDirect()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, HotFile);
+            return System.IO.File.Exists(path) ? System.IO.File.ReadAllLines(path) : [];
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "reading the addresses of the last session failed: " + ex);
+            return [];
         }
     }
 
@@ -995,7 +1142,34 @@ public sealed class GeoVpnService : VpnService
             var tunnel = TunnelBytes(AwgEngine.GetConfig(handle));
             var share = tunnel > 0 ? relay.Bytes * 100 / tunnel : 0;
             Report($"{relay.Snapshot()}; tunnel {tunnel / 1024} KiB, relayed {share}%");
+            var stats = AwgEngine.Stats(handle);
+            if (!string.IsNullOrEmpty(stats))
+            {
+                Report("verdicts: " + stats);
+            }
         }
+    }
+
+    // Waits for the first echo to come back through the tun; false when none does inside the window or the
+    // session is gone. What it proves is the path the applications take, which the handshake does not.
+    private async Task<bool> WaitForTrafficAsync(LinkLossProbe loss, int handle)
+    {
+        for (var attempt = 0; attempt < TrafficWaitSeconds * 1000 / TrafficPollMs; attempt++)
+        {
+            if (_handle != handle)
+            {
+                return false;
+            }
+
+            if (loss.Answering)
+            {
+                return true;
+            }
+
+            await Task.Delay(TrafficPollMs).ConfigureAwait(false);
+        }
+
+        return false;
     }
 
     // Waits for the peer's first answer, the only proof the session carries anything; 0 when none comes or the
@@ -1371,7 +1545,9 @@ public sealed class GeoVpnService : VpnService
             intent.GetStringExtra(ExtraWsHost),
             intent.GetIntExtra(ExtraWsPort, 0),
             intent.GetIntExtra(ExtraEngineLog, AwgEngine.LogError),
-            intent.GetIntExtra(ExtraMtuMode, 0));
+            intent.GetIntExtra(ExtraMtuMode, 0),
+            intent.GetBooleanExtra(ExtraDirectTcp, true),
+            intent.GetBooleanExtra(ExtraExcludeRoutes, false));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.
@@ -1434,6 +1610,7 @@ public sealed class GeoVpnService : VpnService
         _carrier = null;
         if (_handle >= 0)
         {
+            KeepHotDirect();
             AwgEngine.TurnOff(_handle);
             _handle = -1;
         }

@@ -11,6 +11,11 @@ package main
 #include <stdlib.h>
 #include <android/log.h>
 #cgo LDFLAGS: -llog
+
+// Хост защищает наш сокет от туннеля; возвращает ненулевое при успехе.
+typedef int (*ag_protect_fn)(int fd);
+
+static int ag_call_protect(ag_protect_fn fn, int fd) { return fn(fd); }
 */
 import "C"
 
@@ -25,8 +30,14 @@ import (
 
 const logTag = "amneziawg-go"
 
+// Движок вместе со слоем вердиктов, который стоит под ним.
+type tunnel struct {
+	dev *device.Device
+	tun *verdictTun
+}
+
 var (
-	tunnelHandles = make(map[int32]*device.Device)
+	tunnelHandles = make(map[int32]*tunnel)
 	nextHandle    int32
 )
 
@@ -62,7 +73,8 @@ func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
 		return -1
 	}
 
-	dev := device.NewDevice(tunDevice, conn.NewDefaultBind(), logger)
+	verdictDevice := newVerdictTun(tunDevice, defaultVerdictTtl)
+	dev := device.NewDevice(verdictDevice, conn.NewDefaultBind(), logger)
 
 	if err := dev.IpcSet(C.GoString(settings)); err != nil {
 		logger.Errorf("Failed to apply UAPI settings: %v", err)
@@ -78,28 +90,28 @@ func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
 
 	handle := nextHandle
 	nextHandle++
-	tunnelHandles[handle] = dev
+	tunnelHandles[handle] = &tunnel{dev: dev, tun: verdictDevice}
 	logger.Verbosef("Tunnel %d started", handle)
 	return handle
 }
 
 //export wgTurnOff
 func wgTurnOff(handle int32) {
-	dev, ok := tunnelHandles[handle]
+	t, ok := tunnelHandles[handle]
 	if !ok {
 		return
 	}
 	delete(tunnelHandles, handle)
-	dev.Close()
+	t.dev.Close()
 }
 
 //export wgGetSocketV4
 func wgGetSocketV4(handle int32) int32 {
-	dev, ok := tunnelHandles[handle]
+	t, ok := tunnelHandles[handle]
 	if !ok {
 		return -1
 	}
-	bind, ok := dev.Bind().(*conn.StdNetBind)
+	bind, ok := t.dev.Bind().(*conn.StdNetBind)
 	if !ok {
 		return -1
 	}
@@ -112,15 +124,79 @@ func wgGetSocketV4(handle int32) int32 {
 
 //export wgGetConfig
 func wgGetConfig(handle int32) *C.char {
-	dev, ok := tunnelHandles[handle]
+	t, ok := tunnelHandles[handle]
 	if !ok {
 		return nil
 	}
-	settings, err := dev.IpcGet()
+	settings, err := t.dev.IpcGet()
 	if err != nil {
 		return nil
 	}
 	return C.CString(settings)
+}
+
+//export wgSetConfig
+func wgSetConfig(handle int32, settings *C.char) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+	if err := t.dev.IpcSet(C.GoString(settings)); err != nil {
+		return -1
+	}
+	return 0
+}
+
+//export wgSetVerdicts
+func wgSetVerdicts(handle int32, spec *C.char) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+	t.tun.setTable(parseTable(C.GoString(spec)))
+	return 0
+}
+
+//export wgTunnelStats
+func wgTunnelStats(handle int32) *C.char {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return nil
+	}
+	return C.CString(t.tun.stats())
+}
+
+//export wgSetProtector
+func wgSetProtector(handle int32, fn C.ag_protect_fn) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+	t.tun.setProtector(func(fd int) bool {
+		return C.ag_call_protect(fn, C.int(fd)) != 0
+	})
+	return 0
+}
+
+//export wgSetTcpDirect
+func wgSetTcpDirect(handle int32, enable int32) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+	if err := t.tun.setTcpDirect(enable != 0); err != nil {
+		return -1
+	}
+	return 0
+}
+
+//export wgLiveAddresses
+func wgLiveAddresses(handle int32) *C.char {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return nil
+	}
+	return C.CString(t.tun.snapshot())
 }
 
 // c-shared requires a main function; it is never invoked.

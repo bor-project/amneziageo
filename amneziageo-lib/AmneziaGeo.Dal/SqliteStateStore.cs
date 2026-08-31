@@ -235,73 +235,77 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
+            // Every table and column already in the file: a migration that is in place is skipped, so a
+            // start on a current schema raises nothing inside SQLite.
+            var schema = await ReadSchemaAsync(connection, ct).ConfigureAwait(false);
+
             // Projection columns hold the live routing; user columns hold config intent.
-            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN projected INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_split INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "tunnel_geo", "projected", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "tunnel_geo", "proj_split", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "tunnel_geo", "proj_routes_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "tunnel_geo", "proj_domains_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
             // Materialized app matchers for the projection (config path derives apps from rules).
-            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_apps_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "tunnel_geo", "proj_apps_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
 
             // Routing list a live projection came from (null for full-tunnel / no-list).
-            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routing_list_id INTEGER;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "tunnel_geo", "proj_routing_list_id", "INTEGER", ct).ConfigureAwait(false);
 
             // HTTP validators for conditional update-checks.
-            await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN etag TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN last_modified TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "geo_files", "etag", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "geo_files", "last_modified", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
 
             // Verdict of the last update check, kept off the agent's heap.
-            await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN update_available INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "geo_files", "update_available", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // WebSocket transport host.
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_transport", "ws_host", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
 
             // Tunnel MTU, valid 576-1500; 0 is unset and follows the agent's default at connect time.
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_transport", "mtu", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
             await ClearLegacyMtuAsync(connection, ct).ConfigureAwait(false);
 
             // Per-config IPv6 opt-in; off keeps the tunnel v4-only. Moved off the routing list (was per-list #149).
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN use_ipv6 INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_transport", "use_ipv6", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // How the MTU is picked: 0 auto, 1 from the config text, 2 the stored size. A row that already carries
             // a size kept it as a choice of its own, so it becomes custom; an empty one follows the path.
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu_mode INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_transport", "mtu_mode", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Per-config router: every connection gets its own verdict. Off leaves the route table alone
             // with the rules, and no byte crosses userspace twice.
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN use_router INTEGER NOT NULL DEFAULT 1;", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "UPDATE config_transport SET mtu_mode = 2 WHERE mtu > 0 AND mtu_mode = 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_transport", "use_router", "INTEGER NOT NULL DEFAULT 1", ct).ConfigureAwait(false);
+            await ExecuteAsync(connection, "UPDATE config_transport SET mtu_mode = 2 WHERE mtu > 0 AND mtu_mode = 0;", ct).ConfigureAwait(false);
 
             // Generation counter, bumped when the materialized set changes.
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "generation", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Routing list a cached resolution belongs to (0 = none/unknown); lets a list's cache be cleaned on removal.
-            await TryAlterAsync(connection, "ALTER TABLE domain_ips ADD COLUMN list_id INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "domain_ips", "list_id", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Per-list IPv6 opt-in (#149); off keeps the tunnel v4-only.
-            await TryAlterAsync(connection, "ALTER TABLE routing_settings ADD COLUMN use_ipv6 INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_settings", "use_ipv6", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Global-proxy opt-in: full tunnel minus the Direct bucket; off tunnels only the Proxy bucket.
-            await TryAlterAsync(connection, "ALTER TABLE routing_settings ADD COLUMN use_global_proxy INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_settings", "use_global_proxy", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Per-rule role (Proxy/Direct/Block); existing rows default to Proxy.
-            await TryAlterAsync(connection, "ALTER TABLE routing_list_rules ADD COLUMN role TEXT NOT NULL DEFAULT 'Proxy';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_list_rules", "role", "TEXT NOT NULL DEFAULT 'Proxy'", ct).ConfigureAwait(false);
 
             // Materialized Direct/Block buckets alongside the Proxy routes_json/domains_json.
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN direct_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN direct_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN block_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN block_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "direct_routes_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "direct_domains_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "block_routes_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "block_domains_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
 
             // Materialized Exclude bucket (always off-tunnel, either mode).
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN exclude_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN exclude_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "exclude_routes_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "exclude_domains_json", "TEXT NOT NULL DEFAULT '[]'", ct).ConfigureAwait(false);
 
             // The place a config holds in the list; existing rows share 0 and stay ordered by name.
-            await TryAlterAsync(connection, "ALTER TABLE configs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "configs", "sort_order", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // The place a routing list holds in the catalogue; existing rows share 0 and stay ordered by name.
-            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_lists", "sort_order", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
@@ -463,19 +467,58 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
     }
 
-    private static async Task TryAlterAsync(SqliteConnection connection, string sql, CancellationToken ct)
+    // Table names, plus "table.column" for every column of each.
+    private static async Task<HashSet<string>> ReadSchemaAsync(SqliteConnection connection, CancellationToken ct)
     {
-        var alter = connection.CreateCommand();
-        await using (alter.ConfigureAwait(false))
+        var schema = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
         {
-            alter.CommandText = sql;
-            try
+            command.CommandText =
+                """
+                SELECT m.name, p.name
+                FROM sqlite_master m
+                JOIN pragma_table_info(m.name) p
+                WHERE m.type = 'table';
+                """;
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
             {
-                await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var table = reader.GetString(0);
+                    schema.Add(table);
+                    schema.Add($"{table}.{reader.GetString(1)}");
+                }
             }
-            catch (SqliteException)
-            {
-            }
+        }
+
+        return schema;
+    }
+
+    private static async Task AddColumnAsync(
+        SqliteConnection connection,
+        HashSet<string> schema,
+        string table,
+        string column,
+        string definition,
+        CancellationToken ct)
+    {
+        if (!schema.Contains(table) || !schema.Add($"{table}.{column}"))
+        {
+            return;
+        }
+
+        await ExecuteAsync(connection, $"ALTER TABLE {table} ADD COLUMN {column} {definition};", ct).ConfigureAwait(false);
+    }
+
+    private static async Task ExecuteAsync(SqliteConnection connection, string sql, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = sql;
+            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
 

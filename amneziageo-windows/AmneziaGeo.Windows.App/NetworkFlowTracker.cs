@@ -62,9 +62,11 @@ internal sealed class NetworkFlowTracker : IDisposable
     private const long PidCacheTtlMs = 1000;
     private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
 
-    // Proactive backstop for a matched app's SYN to a direct-blocked, DNS-less destination (Telegram MTProto DC):
-    // polls the TCP table for its SYN_SENT remotes and routes them, covering a missed connect event. Own thread.
-    private const int ScanIntervalMs = 2000;
+    // Proactive backstop for a SYN the packet filter dropped: polls the TCP table for half-open attempts and
+    // decides their destinations, so the permit is there before the stack repeats the SYN a second later. Own thread.
+    private const int ScanIntervalMs = 400;
+    // Matching an app walks the whole process tree, so that half keeps the old cadence.
+    private const int ScansPerAppMatch = 5;
     private const int AfInet = 2;
     private const int AfInet6 = 23;
     private const int TcpTableOwnerPidAll = 5;
@@ -510,12 +512,13 @@ internal sealed class NetworkFlowTracker : IDisposable
     {
         try
         {
+            var scans = 0;
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(ScanIntervalMs, ct).ConfigureAwait(false);
                 try
                 {
-                    ScanConnections();
+                    ScanConnections(++scans % ScansPerAppMatch == 0);
                 }
                 catch (Exception ex)
                 {
@@ -528,14 +531,14 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
     }
 
-    private void ScanConnections()
+    private void ScanConnections(bool matchApps)
     {
         while (_forgetScan.TryDequeue(out var address))
         {
             _scanSeen.Remove(address);
         }
 
-        if (_matcher is null)
+        if (_matcher is null && _noteV4 is null)
         {
             return;
         }
@@ -549,6 +552,20 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
 
         if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        // A dropped SYN raises no connect event, so the half-open attempt itself is what offers the destination.
+        foreach (var (pid, remote) in candidates)
+        {
+            if (remote.AddressFamily == AddressFamily.InterNetwork)
+            {
+                NoteDestination(pid, BitConverter.ToUInt32(remote.GetAddressBytes(), 0));
+            }
+        }
+
+        if (!matchApps || _matcher is null)
         {
             return;
         }

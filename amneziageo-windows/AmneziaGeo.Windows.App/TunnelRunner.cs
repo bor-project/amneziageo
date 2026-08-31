@@ -587,7 +587,7 @@ internal sealed class TunnelRunner(
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, routing, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, endpoint, routing, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -1184,7 +1184,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, RoutingCache? routing, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IPAddress? endpoint, RoutingCache? routing, CancellationToken ct)
     {
         try
         {
@@ -1203,7 +1203,8 @@ internal sealed class TunnelRunner(
                 await WaitForHandshakeAsync(name, ct);
             }
 
-            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, ct), ct))
+            // Soft block only where a verdict is still coming: without the cache nothing would ever unblock the retry.
+            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, routing is not null, endpoint, ct), ct))
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
@@ -1231,10 +1232,10 @@ internal sealed class TunnelRunner(
 
     // Installs the filters and returns whether they survived. The session cancels before the teardown disables,
     // so a set that lands after it undoes itself here.
-    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
+    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, bool softBlock, IPAddress? endpoint, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
+        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, softBlock, endpoint);
         if (ct.IsCancellationRequested)
         {
             firewall.Disable();

@@ -833,7 +833,7 @@ internal sealed class ConfigRunner(
 
     private void ReapForeignTunnels(string keep)
     {
-        var reaped = InstallerMaintenance.ReapTransientServices(keep);
+        var reaped = InstallerMaintenance.ReapTransientServices(TunnelDevice.NameOf(keep));
         if (reaped.Count > 0)
         {
             logger.LogInformation("removed {Count} tunnel(s) left over from an earlier run ({Names}), so they cannot fight over the routes", reaped.Count, string.Join(", ", reaped));

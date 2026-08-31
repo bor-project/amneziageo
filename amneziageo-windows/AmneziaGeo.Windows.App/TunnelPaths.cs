@@ -10,7 +10,7 @@ internal static class TunnelPaths
     /// </summary>
     public static string ServiceName(string name)
     {
-        return $"AmneziaGeo${name}";
+        return $"AmneziaGeo${TunnelDevice.NameOf(name)}";
     }
 
     /// <summary>

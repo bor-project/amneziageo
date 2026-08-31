@@ -648,7 +648,7 @@ internal sealed class TunnelRunner(
 
         try
         {
-            WireGuardEngine.RunTunnelService(config, name);
+            WireGuardEngine.RunTunnelService(config, TunnelDevice.NameOf(name));
         }
         catch (Exception ex) when (ex is not ConnectFailureException)
         {
@@ -950,7 +950,7 @@ internal sealed class TunnelRunner(
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (routes.FindInterfaceIndex(name) is { } index)
+            if (routes.FindTunnelIndex(name) is { } index)
             {
                 dns.SetAdapter(index, servers);
                 return;
@@ -968,7 +968,7 @@ internal sealed class TunnelRunner(
             while (DateTimeOffset.UtcNow < deadline)
             {
                 ct.ThrowIfCancellationRequested();
-                if (routes.FindInterfaceIndex(name) is not null)
+                if (routes.FindTunnelIndex(name) is not null)
                 {
                     // Clear the proxy cache too - bring-up-window poison lingers here.
                     proxy?.ClearCache();
@@ -1271,7 +1271,7 @@ internal sealed class TunnelRunner(
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (routes.FindInterfaceIndex(name) is { } index)
+            if (routes.FindTunnelIndex(name) is { } index)
             {
                 return index;
             }

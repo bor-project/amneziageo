@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia;
@@ -29,7 +30,8 @@ internal static class ExportActions
 
     public static async Task<bool> SaveTextAsync(Visual source, string text, string title, string suggestedName)
     {
-        if (FileSaverHost.SaveAsync(title, suggestedName) is { } builtIn)
+        var fileName = FileName(suggestedName);
+        if (FileSaverHost.SaveAsync(title, fileName) is { } builtIn)
         {
             var picked = await builtIn;
             if (picked is null)
@@ -50,7 +52,7 @@ internal static class ExportActions
         var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
-            SuggestedFileName = suggestedName,
+            SuggestedFileName = fileName,
         });
         if (file is null)
         {
@@ -78,7 +80,8 @@ internal static class ExportActions
         string extension,
         string typeName)
     {
-        if (FileSaverHost.SaveAsync(title, suggestedName) is { } builtIn)
+        var fileName = FileName(suggestedName);
+        if (FileSaverHost.SaveAsync(title, fileName) is { } builtIn)
         {
             var picked = await builtIn;
             if (picked is null)
@@ -104,7 +107,7 @@ internal static class ExportActions
         var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
-            SuggestedFileName = suggestedName,
+            SuggestedFileName = fileName,
             FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = [$"*.{extension}"] }],
         });
         if (file is null)
@@ -115,6 +118,14 @@ internal static class ExportActions
         await using var stream = await file.OpenWriteAsync();
         write(stream);
         return true;
+    }
+
+    // Имя конфигурации может быть любым, имя файла - нет.
+    private static string FileName(string suggestedName)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var clean = new string([.. suggestedName.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c)]).Trim();
+        return clean.Length == 0 ? "export" : clean;
     }
 
     /// <summary>

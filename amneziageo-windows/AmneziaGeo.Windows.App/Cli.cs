@@ -590,7 +590,7 @@ internal sealed class Cli(
     {
         var config = await configRepo.ReadTextAsync(name);
         var peer = WgConfigEditor.GetPeerPublicKey(config);
-        var index = routes.FindInterfaceIndex(name);
+        var index = routes.FindTunnelIndex(name);
         if (peer is null || index is null)
         {
             Console.WriteLine($"missing peer key or adapter: peer={peer is not null}, adapter={index is not null}");

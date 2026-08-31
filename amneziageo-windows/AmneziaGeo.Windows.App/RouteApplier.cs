@@ -136,7 +136,7 @@ internal sealed class RouteApplier(
 
     private uint? TunnelIndex()
     {
-        _tunnelIndex ??= routes.FindInterfaceIndex(tunnelName);
+        _tunnelIndex ??= routes.FindTunnelIndex(tunnelName);
         return _tunnelIndex;
     }
 

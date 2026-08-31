@@ -200,8 +200,8 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         }
     }
 
-    // Ряд, каким он должен стать. Роутер держит только Android, на остальных платформах его плашки нет.
-    // MTU переключается, только когда есть на что: свой размер либо объявленный конфигурацией.
+    // Ряд, каким он должен стать. Плашка роутера скрыта. MTU переключается, только когда есть на что:
+    // свой размер либо объявленный конфигурацией.
     private List<CardTag> Built()
     {
         var built = new List<CardTag>(4)
@@ -210,7 +210,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
             new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
         };
 
-        if (OperatingSystem.IsAndroid())
+        if (ConfigTransportViewModel.RouterVisible && OperatingSystem.IsAndroid())
         {
             built.Add(new(Loc.Instance.Get("Main_RouterTitle"), UseRouter, ToggleRouterCommand));
         }

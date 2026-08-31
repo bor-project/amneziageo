@@ -19,14 +19,26 @@ internal sealed partial class CardTag : ObservableObject
     [NotifyPropertyChangedFor(nameof(Interactive))]
     private ICommand? _command;
 
+    [ObservableProperty]
+    private bool _bad;
+
+    [ObservableProperty]
+    private bool _busy;
+
+    [ObservableProperty]
+    private string? _hint;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public CardTag(string text, bool on, ICommand? command = null)
+    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null)
     {
         _text = text;
         _on = on;
         _command = command;
+        _bad = bad;
+        _busy = busy;
+        _hint = hint;
     }
 
     /// <summary>
@@ -64,5 +76,8 @@ internal sealed partial class CardTag : ObservableObject
         Text = other.Text;
         On = other.On;
         Command = other.Command;
+        Bad = other.Bad;
+        Busy = other.Busy;
+        Hint = other.Hint;
     }
 }

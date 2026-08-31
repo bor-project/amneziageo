@@ -290,6 +290,21 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
+    <!-- Режим, который отбила проверка: красный текст в красной рамке. Отступ ужат на толщину рамки, чтобы ряд
+         не поехал. Пока проверка идёт, плашка гаснет. -->
+    <Style Selector="Border.cardtag.bad">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Border.cardtag.bad TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+    <Style Selector="Border.cardtag.busy">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
     <!-- Шапка карточки и строка сведений под ней: высоты держатся одни во всяком каталоге. -->
     <Style Selector=".cardhead" x:SetterTargetType="Control">
       <Setter Property="MinHeight" Value="34" />

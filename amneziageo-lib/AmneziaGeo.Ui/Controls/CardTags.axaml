@@ -15,8 +15,10 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate x:DataType="vm:CardTag">
-        <Button Classes="cardtagbtn" Command="{Binding Command}" IsHitTestVisible="{Binding Interactive}">
-          <Border Classes="cardchip cardtag" Classes.off="{Binding !On}">
+        <Button Classes="cardtagbtn" Command="{Binding Command}" IsHitTestVisible="{Binding Interactive}"
+                ToolTip.Tip="{Binding Hint}">
+          <Border Classes="cardchip cardtag" Classes.off="{Binding !On}" Classes.bad="{Binding Bad}"
+                  Classes.busy="{Binding Busy}">
             <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" />
           </Border>
         </Button>

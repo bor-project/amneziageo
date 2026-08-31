@@ -82,6 +82,21 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useRouter = true;
 
+    // Отбила ли проверка прокси, каким его знает карточка.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _proxyBroken;
+
+    // Чем отбила; уходит в подсказку плашки.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private string? _proxyFault;
+
+    // Идёт ли проверка.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _proxyChecking;
+
     /// <summary>
     /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.
     /// </summary>
@@ -152,7 +167,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// Переключает прокси с плашки карточки.
     /// </summary>
     public IAsyncRelayCommand ToggleWebSocketCommand =>
-        _toggleWebSocket ??= new AsyncRelayCommand(() => ToggleAsync(() => UseWebSocket = !UseWebSocket));
+        _toggleWebSocket ??= new AsyncRelayCommand(ToggleWebSocketAsync);
 
     /// <summary>
     /// Переключает IPv6 с плашки карточки.
@@ -191,7 +206,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     {
         var built = new List<CardTag>(4)
         {
-            new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket, ToggleWebSocketCommand),
+            new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket, ToggleWebSocketCommand, ProxyBroken, ProxyChecking, ProxyFault),
             new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
         };
 
@@ -206,6 +221,48 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
             Mtu > 0 || ConfigMtu > 0 ? ToggleMtuCommand : null));
         return built;
     }
+
+    // Прокси встаёт только на фронт, который отвечает: отказ оставляет настройку как была и красит плашку.
+    private async Task ToggleWebSocketAsync()
+    {
+        if (UseWebSocket)
+        {
+            await ToggleAsync(() => UseWebSocket = false);
+            return;
+        }
+
+        ProxyChecking = true;
+        try
+        {
+            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(Endpoint, WebSocketHost, WebSocketPort, CancellationToken.None);
+            ProxyBroken = outcome != WsFrontOutcome.Ok;
+            ProxyFault = ProxyBroken ? EndpointProbe.Describe(outcome, detail) : null;
+        }
+        finally
+        {
+            ProxyChecking = false;
+        }
+
+        if (!ProxyBroken)
+        {
+            await ToggleAsync(() => UseWebSocket = true);
+        }
+    }
+
+    // Настройки поменялись - прежний отказ больше ни о чём не говорит.
+    private void ClearProxyFault()
+    {
+        ProxyBroken = false;
+        ProxyFault = null;
+    }
+
+    partial void OnEndpointChanged(string value) => ClearProxyFault();
+
+    partial void OnUseWebSocketChanged(bool value) => ClearProxyFault();
+
+    partial void OnWebSocketHostChanged(string value) => ClearProxyFault();
+
+    partial void OnWebSocketPortChanged(int value) => ClearProxyFault();
 
     // Переворачивает режим и отправляет строку; отказ агента возвращает плашку на место.
     private async Task ToggleAsync(Action flip)

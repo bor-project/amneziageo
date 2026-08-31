@@ -123,7 +123,7 @@
     <!-- Catalogue loader: the agent has not reported its configs yet (#137). -->
     <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
                 HorizontalAlignment="Center" Spacing="12">
-      <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+      <ProgressBar IsIndeterminate="{Binding ShowCatalogueLoader}" Width="150" HorizontalAlignment="Center" />
       <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
     </StackPanel>
 

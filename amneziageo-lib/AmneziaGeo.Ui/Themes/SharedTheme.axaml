@@ -862,7 +862,7 @@
       <Setter Property="Height" Value="4" />
       <Setter Property="RenderTransform" Value="translateY(0px)" />
     </Style>
-    <Style Selector="Ellipse.dot.d1">
+    <Style Selector="Ellipse.dot.d1.bounce">
       <Style.Animations>
         <Animation Duration="0:0:1.05" Delay="0:0:0" IterationCount="INFINITE">
           <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
@@ -872,7 +872,7 @@
         </Animation>
       </Style.Animations>
     </Style>
-    <Style Selector="Ellipse.dot.d2">
+    <Style Selector="Ellipse.dot.d2.bounce">
       <Style.Animations>
         <Animation Duration="0:0:1.05" Delay="0:0:0.15" IterationCount="INFINITE">
           <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
@@ -882,7 +882,7 @@
         </Animation>
       </Style.Animations>
     </Style>
-    <Style Selector="Ellipse.dot.d3">
+    <Style Selector="Ellipse.dot.d3.bounce">
       <Style.Animations>
         <Animation Duration="0:0:1.05" Delay="0:0:0.3" IterationCount="INFINITE">
           <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>

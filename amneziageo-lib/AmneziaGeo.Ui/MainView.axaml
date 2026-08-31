@@ -201,7 +201,7 @@
           <!-- Loader until the first snapshot. -->
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
                       IsVisible="{Binding !Home.IsReady}">
-            <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+            <ProgressBar IsIndeterminate="{Binding !Home.IsReady}" Width="150" HorizontalAlignment="Center" />
             <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13"
                        HorizontalAlignment="Center" />
           </StackPanel>

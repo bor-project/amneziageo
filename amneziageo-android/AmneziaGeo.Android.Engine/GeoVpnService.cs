@@ -411,6 +411,8 @@ public sealed class GeoVpnService : VpnService
             // Makes the peer answer on its own, so a quiet link is neither dropped by the provider nor mistaken
             // for a live one.
             var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
+            // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
+            var underlay = resolved;
             var carrier = StartCarrier(config, wsHost, wsPort);
             if (carrier is not null)
             {
@@ -440,7 +442,7 @@ public sealed class GeoVpnService : VpnService
             }
 
             // The mode says where the size comes from: the link, the config text, or the one stored for it.
-            var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, resolved);
+            var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, underlay, carrier is not null);
             Report($"packets leave at {size} bytes ({MtuModes.Text(MtuModes.From(mtuMode))})");
             var pfd = BuildTunnel(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort,
                 Excluded(excludeRoutes), out var establishError);

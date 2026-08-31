@@ -113,6 +113,26 @@ public sealed class MtuPlanTests
     }
 
     [Fact]
+    public void Auto_LeavesRoomForTheWebsocketCarrier()
+    {
+        // 1500 - 78 carrier - 32 tunnel.
+        Assert.Equal(1390, MtuPlan.Ceiling(Plain, MtuModes.MaxMtu, webSocket: true));
+    }
+
+    [Fact]
+    public void Auto_CountsTheWebsocketCarrierAndThePaddingTogether()
+    {
+        // 1500 - 78 carrier - 32 tunnel - 44 padding - 16 trailer.
+        Assert.Equal(1330, MtuPlan.Ceiling(Extended, MtuModes.MaxMtu, webSocket: true));
+    }
+
+    [Fact]
+    public void Custom_KeepsItsSizeWhateverCarriesIt()
+    {
+        Assert.Equal(1400, MtuPlan.Resolve(MtuMode.Custom, 1400, Plain, MtuModes.MaxMtu, webSocket: true));
+    }
+
+    [Fact]
     public void Ceiling_StaysWithinTheAllowedSizes()
     {
         Assert.Equal(MtuModes.MinMtu, MtuPlan.Ceiling(Extended, 300));

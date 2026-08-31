@@ -962,7 +962,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             SubscriptionGone: member is { Present: false },
             ConfigMtu: WgConfigEditor.GetMtu(config),
             MtuMode: transport?.MtuMode ?? MtuMode.Auto,
-            ResolvedMtu: MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config));
+            ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config));
     }
 
     private string StatusFor(string target)
@@ -2559,7 +2559,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
-            ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text),
+            ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
             CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);

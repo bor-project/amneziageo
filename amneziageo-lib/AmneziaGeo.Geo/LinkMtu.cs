@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -10,13 +11,66 @@ namespace AmneziaGeo.Geo;
 /// </summary>
 public static class LinkMtu
 {
+    // What each endpoint's link was last seen to carry; a status snapshot asks for every configuration it lists.
+    private static readonly ConcurrentDictionary<string, int> Readings = new(StringComparer.OrdinalIgnoreCase);
+
+    // Endpoints a background reading is already running for.
+    private static readonly ConcurrentDictionary<string, byte> Asking = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// ctor
+    /// </summary>
+    static LinkMtu()
+    {
+        try
+        {
+            NetworkChange.NetworkAddressChanged += (_, _) => Readings.Clear();
+        }
+        catch (PlatformNotSupportedException)
+        {
+        }
+    }
+
     /// <summary>
     /// MTU of the interface a packet to this endpoint leaves through, or zero when it cannot be told.
     /// </summary>
     public static int Towards(string endpoint)
     {
-        var address = LocalAddress(endpoint);
-        return address is null ? 0 : MtuOf(address);
+        var key = endpoint?.Trim() ?? string.Empty;
+        var address = LocalAddress(key);
+        var mtu = address is null ? 0 : MtuOf(address);
+        Readings[key] = mtu;
+        return mtu;
+    }
+
+    /// <summary>
+    /// What the link towards this endpoint was last seen to carry, zero until it is known. Nothing is looked up
+    /// here: a missing reading is taken in the background, and a network change drops what was kept.
+    /// </summary>
+    public static int Learned(string endpoint)
+    {
+        var key = endpoint?.Trim() ?? string.Empty;
+        if (Readings.TryGetValue(key, out var mtu))
+        {
+            return mtu;
+        }
+
+        if (Asking.TryAdd(key, 0))
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    Towards(key);
+                }
+                finally
+                {
+                    Asking.TryRemove(key, out _);
+                }
+            });
+        }
+
+        return 0;
     }
 
     // The address a datagram socket takes when it is pointed at the endpoint; nothing leaves the device for it.

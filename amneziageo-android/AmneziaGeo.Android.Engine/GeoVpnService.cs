@@ -528,10 +528,11 @@ public sealed class GeoVpnService : VpnService
             {
                 Report($"local proxy on {ProxyHost}:{_proxyPort} offered to the applications, "
                     + $"route ttl {plan.TtlSeconds} s");
-                var reports = new CancellationTokenSource();
-                _reports = reports;
-                _ = Task.Run(() => ReportShareAsync(relay, reports.Token));
             }
+
+            var reports = new CancellationTokenSource();
+            _reports = reports;
+            _ = Task.Run(() => ReportShareAsync(relay, reports.Token));
 
             // The port the user set up: it opens with the tunnel, because everything it carries leaves through it.
             _proxy = new LocalProxyServer((IProxyOutbound?)relay ?? new DirectProxyOutbound(), Report);
@@ -1118,8 +1119,8 @@ public sealed class GeoVpnService : VpnService
         return packages is { Length: > 0 } ? packages[0] : "uid:" + uid;
     }
 
-    // Logs what the relay carried against what the tunnel carried, so the relayed share can be judged.
-    private async Task ReportShareAsync(ProxyRelay relay, CancellationToken ct)
+    // Logs what the tunnel carried and how the engine decided the packets; the relay adds its own share when it runs.
+    private async Task ReportShareAsync(ProxyRelay? relay, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -1138,10 +1139,18 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
-            VpnBridge.WriteSessions(relay.Sessions());
             var tunnel = TunnelBytes(AwgEngine.GetConfig(handle));
-            var share = tunnel > 0 ? relay.Bytes * 100 / tunnel : 0;
-            Report($"{relay.Snapshot()}; tunnel {tunnel / 1024} KiB, relayed {share}%");
+            if (relay is not null)
+            {
+                VpnBridge.WriteSessions(relay.Sessions());
+                var share = tunnel > 0 ? relay.Bytes * 100 / tunnel : 0;
+                Report($"{relay.Snapshot()}; tunnel {tunnel / 1024} KiB, relayed {share}%");
+            }
+            else
+            {
+                Report($"tunnel {tunnel / 1024} KiB");
+            }
+
             var stats = AwgEngine.Stats(handle);
             if (!string.IsNullOrEmpty(stats))
             {

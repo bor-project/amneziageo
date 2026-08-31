@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Media;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -13,10 +15,20 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal partial class ConfigItemViewModel : ViewModelBase
 {
+    private readonly ObservableCollection<CardTag> _tags = [];
+
+    private AsyncRelayCommand? _toggleWebSocket;
+    private AsyncRelayCommand? _toggleIpv6;
+    private AsyncRelayCommand? _toggleRouter;
+
+    private AsyncRelayCommand? _toggleMtu;
+
     [ObservableProperty]
     private string _name = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardAddress))]
+    [NotifyPropertyChangedFor(nameof(HasAddress))]
     private string _endpoint = string.Empty;
 
     [ObservableProperty]
@@ -27,12 +39,17 @@ internal partial class ConfigItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
+    [NotifyPropertyChangedFor(nameof(CardAddress))]
+    [NotifyPropertyChangedFor(nameof(HasAddress))]
     private bool _useWebSocket;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardAddress))]
+    [NotifyPropertyChangedFor(nameof(HasAddress))]
     private string _webSocketHost = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardAddress))]
     private int _webSocketPort = 443;
 
     [ObservableProperty]
@@ -47,7 +64,38 @@ internal partial class ConfigItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
+    private int _configMtu;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private MtuMode _mtuMode;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private int _resolvedMtu;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _useRouter = true;
+
+    // Отбила ли проверка прокси, каким его знает карточка.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _proxyBroken;
+
+    // Чем отбила; уходит в подсказку плашки.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private string? _proxyFault;
+
+    // Идёт ли проверка.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _proxyChecking;
 
     /// <summary>
     /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.
@@ -61,7 +109,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// Перестала ли подписка её нести. Такую конфигурацию сам никто не сносит.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _subscriptionGone;
 
     /// <summary>
@@ -98,26 +145,149 @@ internal partial class ConfigItemViewModel : ViewModelBase
         Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
 
     /// <summary>
+    /// Адрес, на который встаёт туннель: у прокси - его собственный, у остальных - объявленный конфигурацией.
+    /// </summary>
+    public string CardAddress => UseWebSocket && WebSocketHost.Length > 0
+        ? WebSocketHost.Contains(':', StringComparison.Ordinal) || WebSocketHost.Contains('/', StringComparison.Ordinal)
+            ? WebSocketHost
+            : $"{WebSocketHost}:{WebSocketPort}"
+        : Endpoint;
+
+    /// <summary>
+    /// Есть ли что показать под именем.
+    /// </summary>
+    public bool HasAddress => CardAddress.Length > 0;
+
+    /// <summary>
+    /// Сохранение транспорта строки: ставит владелец каталога, своей связи с агентом у строки нет.
+    /// </summary>
+    public Func<ConfigItemViewModel, Task<bool>>? SaveTransport { get; set; }
+
+    /// <summary>
+    /// Переключает прокси с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand ToggleWebSocketCommand =>
+        _toggleWebSocket ??= new AsyncRelayCommand(ToggleWebSocketAsync);
+
+    /// <summary>
+    /// Переключает IPv6 с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand ToggleIpv6Command =>
+        _toggleIpv6 ??= new AsyncRelayCommand(() => ToggleAsync(() => UseIpv6 = !UseIpv6));
+
+    /// <summary>
+    /// Переключает роутер с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand ToggleRouterCommand =>
+        _toggleRouter ??= new AsyncRelayCommand(() => ToggleAsync(() => UseRouter = !UseRouter));
+
+    /// <summary>
+    /// Переключает MTU с плашки карточки: подбор против зафиксированного размера.
+    /// </summary>
+    public IAsyncRelayCommand ToggleMtuCommand =>
+        _toggleMtu ??= new AsyncRelayCommand(() => ToggleAsync(() => MtuMode = NextMtuMode()));
+
+    /// <summary>
     /// Метки настроек карточки: прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край первым, когда
     /// ширины не хватает.
     /// </summary>
-    public IReadOnlyList<CardTag> Tags =>
-        SubscriptionGone
-            ? [SubscriptionTag, .. SettingTags]
-            : SettingTags;
+    public IReadOnlyList<CardTag> Tags
+    {
+        get
+        {
+            CardTag.Sync(_tags, Built());
+            return _tags;
+        }
+    }
 
-    // Метка узла, пропавшего из подписки. Имя самой подписки на карточку не выносится: это адрес.
-    private CardTag SubscriptionTag => new(Loc.Instance.Get("Main_CardTagSubscriptionGone", Subscription), false);
+    // Ряд, каким он должен стать. Роутер держит только Android, на остальных платформах его плашки нет.
+    // MTU переключается, только когда есть на что: свой размер либо объявленный конфигурацией.
+    private List<CardTag> Built()
+    {
+        var built = new List<CardTag>(4)
+        {
+            new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket, ToggleWebSocketCommand, ProxyBroken, ProxyChecking, ProxyFault),
+            new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
+        };
 
-    private IReadOnlyList<CardTag> SettingTags =>
-    [
-        new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
-        new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
-        new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", Mtu) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),
-    ];
+        if (OperatingSystem.IsAndroid())
+        {
+            built.Add(new(Loc.Instance.Get("Main_RouterTitle"), UseRouter, ToggleRouterCommand));
+        }
 
-    // Задан ли MTU своим значением: нулём приходит настройка по умолчанию.
-    private bool MtuSet => Mtu > 0;
+        built.Add(new(
+            MtuSet ? Loc.Instance.Get("Main_CardTagMtu", MtuShown) : Loc.Instance.Get("Main_CardTagMtuAuto"),
+            MtuMode != MtuMode.Auto,
+            Mtu > 0 || ConfigMtu > 0 ? ToggleMtuCommand : null));
+        return built;
+    }
+
+    // Прокси встаёт только на фронт, который отвечает: отказ оставляет настройку как была и красит плашку.
+    private async Task ToggleWebSocketAsync()
+    {
+        if (UseWebSocket)
+        {
+            await ToggleAsync(() => UseWebSocket = false);
+            return;
+        }
+
+        ProxyChecking = true;
+        try
+        {
+            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(Endpoint, WebSocketHost, WebSocketPort, CancellationToken.None);
+            ProxyBroken = outcome != WsFrontOutcome.Ok;
+            ProxyFault = ProxyBroken ? EndpointProbe.Describe(outcome, detail) : null;
+        }
+        finally
+        {
+            ProxyChecking = false;
+        }
+
+        if (!ProxyBroken)
+        {
+            await ToggleAsync(() => UseWebSocket = true);
+        }
+    }
+
+    // Настройки поменялись - прежний отказ больше ни о чём не говорит.
+    private void ClearProxyFault()
+    {
+        ProxyBroken = false;
+        ProxyFault = null;
+    }
+
+    partial void OnEndpointChanged(string value) => ClearProxyFault();
+
+    partial void OnUseWebSocketChanged(bool value) => ClearProxyFault();
+
+    partial void OnWebSocketHostChanged(string value) => ClearProxyFault();
+
+    partial void OnWebSocketPortChanged(int value) => ClearProxyFault();
+
+    // Переворачивает режим и отправляет строку; отказ агента возвращает плашку на место.
+    private async Task ToggleAsync(Action flip)
+    {
+        flip();
+        if (SaveTransport is not { } save)
+        {
+            return;
+        }
+
+        if (!await save(this))
+        {
+            flip();
+        }
+    }
+
+    // Куда ведёт нажатие на плашку MTU: из подбора - в свой размер, а без своего - в размер конфигурации.
+    private MtuMode NextMtuMode() =>
+        MtuMode != MtuMode.Auto ? MtuMode.Auto : Mtu > 0 ? MtuMode.Custom : MtuMode.Config;
+
+    // MTU, с которым встанет туннель: подобранный агентом, иначе свой, иначе объявленный в конфигурации.
+    private int MtuShown => ResolvedMtu > 0 ? ResolvedMtu : Mtu > 0 ? Mtu : ConfigMtu;
+
+    // Есть ли что показывать: нулём приходит настройка по умолчанию, и о нём ничего не говорит и конфигурация.
+    private bool MtuSet => MtuShown > 0;
 
     /// <summary>
     /// Re-raises the localized computed labels after a language change.

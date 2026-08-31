@@ -772,6 +772,14 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Returns the IPv4 interface index of a tunnel, by the name of its configuration.
+    /// </summary>
+    public uint? FindTunnelIndex(string tunnelName)
+    {
+        return FindInterfaceIndex(TunnelDevice.NameOf(tunnelName));
+    }
+
+    /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
     public uint? FindInterfaceIndex(string adapterName)

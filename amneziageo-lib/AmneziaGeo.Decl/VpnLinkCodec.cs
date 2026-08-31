@@ -266,6 +266,15 @@ public static class VpnLinkCodec
     }
 
     /// <summary>
+    /// Returns the peer port, or zero when the config carries no endpoint.
+    /// </summary>
+    public static int EndpointPort(string confText)
+    {
+        var (host, port) = ParseEndpoint(confText);
+        return string.IsNullOrWhiteSpace(host) ? 0 : port;
+    }
+
+    /// <summary>
     /// Whether the text is a wg-quick configuration.
     /// </summary>
     public static bool LooksLikeConf(string text)

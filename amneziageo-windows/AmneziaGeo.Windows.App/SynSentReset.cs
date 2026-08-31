@@ -22,6 +22,8 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
     // The adapter's own addresses are re-read on this cadence: the tunnel gets its address shortly after it appears.
     private const long LocalTtlMs = 30_000;
 
+    private readonly string _adapter = TunnelDevice.NameOf(tunnelName);
+
     private HashSet<uint> _local = [];
     private long _localStamp;
 
@@ -136,7 +138,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
         {
             foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
             {
-                if (nic.Name != tunnelName)
+                if (nic.Name != _adapter)
                 {
                     continue;
                 }

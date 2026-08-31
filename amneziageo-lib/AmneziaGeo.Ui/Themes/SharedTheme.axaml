@@ -255,6 +255,30 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!-- Плашка под нажатием: хром кнопки снят, вид держит плашка внутри. -->
+    <Style Selector="Button.cardtagbtn">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.cardtagbtn /template/ ContentPresenter#PART_ContentPresenter, Button.cardtagbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.cardtagbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.cardtagbtn:pressed">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+    <Style Selector="Button.cardtagbtn:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="7" />
+        </Template>
+      </Setter>
+    </Style>
+
     <!-- Метка режима на карточке списка: включённый режим носит цвет действия, выключенный уходит в серое. -->
     <Style Selector="Border.cardtag TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
@@ -264,6 +288,21 @@
     </Style>
     <Style Selector="Border.cardtag.off TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+
+    <!-- Режим, который отбила проверка: красный текст в красной рамке. Отступ ужат на толщину рамки, чтобы ряд
+         не поехал. Пока проверка идёт, плашка гаснет. -->
+    <Style Selector="Border.cardtag.bad">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Border.cardtag.bad TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+    <Style Selector="Border.cardtag.busy">
+      <Setter Property="Opacity" Value="0.5" />
     </Style>
 
     <!-- Шапка карточки и строка сведений под ней: высоты держатся одни во всяком каталоге. -->

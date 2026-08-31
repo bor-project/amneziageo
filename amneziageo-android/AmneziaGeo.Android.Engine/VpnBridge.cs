@@ -20,7 +20,8 @@ public sealed record VpnRequest(
     bool Ipv6,
     string? WsHost,
     int WsPort,
-    int EngineLog = 1);
+    int EngineLog = 1,
+    int MtuMode = 0);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that

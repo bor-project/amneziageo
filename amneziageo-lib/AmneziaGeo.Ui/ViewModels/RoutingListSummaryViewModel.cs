@@ -1,8 +1,10 @@
+using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Ui.ViewModels;
 
@@ -11,6 +13,11 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 {
+    private readonly ObservableCollection<CardTag> _tags = [];
+
+    private AsyncRelayCommand? _toggleGlobal;
+    private AsyncRelayCommand? _toggleUdp;
+
     [ObservableProperty]
     private long _id;
 
@@ -77,13 +84,52 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string BlockRulesText => Loc.Instance.Get("Main_CardRulesBlock", BlockRuleCount);
 
     /// <summary>
+    /// Сохранение настроек списка: ставит владелец каталога, своей связи с агентом у строки нет.
+    /// </summary>
+    public Func<RoutingListSummaryViewModel, Task<bool>>? SaveSettings { get; set; }
+
+    /// <summary>
+    /// Переключает полный туннель с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand ToggleGlobalCommand =>
+        _toggleGlobal ??= new AsyncRelayCommand(() => ToggleAsync(() => UseGlobalProxy = !UseGlobalProxy));
+
+    /// <summary>
+    /// Переключает весь UDP с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand ToggleUdpCommand =>
+        _toggleUdp ??= new AsyncRelayCommand(() => ToggleAsync(() => AllUdp = !AllUdp));
+
+    /// <summary>
     /// Mode labels on the card: everything through the tunnel and all UDP.
     /// </summary>
-    public IReadOnlyList<CardTag> Tags =>
-    [
-        new(Loc.Instance.Get("Main_CardTagGlobal"), UseGlobalProxy),
-        new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp),
-    ];
+    public IReadOnlyList<CardTag> Tags
+    {
+        get
+        {
+            CardTag.Sync(_tags,
+            [
+                new(Loc.Instance.Get("Main_CardTagGlobal"), UseGlobalProxy, ToggleGlobalCommand),
+                new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand),
+            ]);
+            return _tags;
+        }
+    }
+
+    // Переворачивает режим и отправляет строку; отказ агента возвращает плашку на место.
+    private async Task ToggleAsync(Action flip)
+    {
+        flip();
+        if (SaveSettings is not { } save)
+        {
+            return;
+        }
+
+        if (!await save(this))
+        {
+            flip();
+        }
+    }
 
     /// <summary>
     /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге.

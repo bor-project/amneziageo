@@ -343,7 +343,7 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
 
     private static string Exchange(string tunnelName, string request)
     {
-        var pipeName = $@"ProtectedPrefix\Administrators\AmneziaWG\{tunnelName}";
+        var pipeName = $@"ProtectedPrefix\Administrators\AmneziaWG\{TunnelDevice.NameOf(tunnelName)}";
         using (var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut))
         {
             client.Connect(5000);

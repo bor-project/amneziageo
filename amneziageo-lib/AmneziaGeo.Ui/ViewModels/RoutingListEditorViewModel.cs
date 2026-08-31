@@ -141,9 +141,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// </summary>
     public bool IsNameMissing => string.IsNullOrWhiteSpace(Name);
 
-    // The ceiling belongs to devices that build the tunnel without the relay: android below 10 turns the lists
-    // into routes at connect and hands them over in one transaction.
-    private static bool RouteBudgetApplies => OperatingSystem.IsAndroid() && !OperatingSystem.IsAndroidVersionAtLeast(29);
+    // The ceiling belongs to sessions built without the relay - the agent knows whether this one is, so the
+    // answer is asked for on every android and carries the ceiling in force.
+    private static bool RouteBudgetApplies => OperatingSystem.IsAndroid();
 
     // The rule set the held answer belongs to; the same set is not asked about twice.
     private string _budgetSignature = string.Empty;
@@ -171,6 +171,32 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool RouteBudgetExceeded => RouteLimit > 0 && RouteCount > RouteLimit;
 
     /// <summary>
+    /// True when the list is wider than the tun takes and the widest direct ranges leave it: the session runs,
+    /// the ranges held inside ride the tunnel instead of the physical path.
+    /// </summary>
+    [ObservableProperty]
+    private bool _routeTrims;
+
+    /// <summary>
+    /// Direct ranges that keep the physical path once the list is cut to size.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RouteTrimNotice))]
+    private int _routeKept;
+
+    /// <summary>
+    /// Direct ranges the list holds in total.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RouteTrimNotice))]
+    private int _routeTotal;
+
+    /// <summary>
+    /// What the trim costs, in the terms the list is written in.
+    /// </summary>
+    public string RouteTrimNotice => Loc.Instance.Get("RoutingEditor_RoutesTrimmed", RouteKept, RouteTotal);
+
+    /// <summary>
     /// Asks the agent what the current rules turn into and holds the answer.
     /// </summary>
     public async Task RefreshRouteBudgetAsync()
@@ -192,6 +218,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         {
             _budgetSignature = signature;
             RouteCount = 0;
+            RouteTrims = false;
             return;
         }
 
@@ -203,25 +230,32 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             return;
         }
 
-        var (routes, limit) = ParseBudget(ack.Message);
+        var answer = ParseBudget(ack.Message);
         _budgetSignature = signature;
-        RouteLimit = limit;
-        RouteCount = routes;
+        RouteLimit = answer.Limit;
+        RouteCount = answer.Routes;
+        RouteKept = answer.Kept;
+        RouteTotal = answer.Total;
+        RouteTrims = answer.Trims;
     }
 
-    // Reads the { routes, limit } the agent answers with; a malformed ack reads as no ceiling.
-    private static (int Routes, int Limit) ParseBudget(string message)
+    // Reads what the agent answers with; a malformed ack reads as no ceiling.
+    private static (int Routes, int Limit, bool Trims, int Kept, int Total) ParseBudget(string message)
     {
         try
         {
             using var doc = JsonDocument.Parse(message);
-            var routes = doc.RootElement.TryGetProperty("routes", out var count) && count.TryGetInt32(out var value) ? value : 0;
-            var limit = doc.RootElement.TryGetProperty("limit", out var cap) && cap.TryGetInt32(out var ceiling) ? ceiling : 0;
-            return (routes, limit);
+            var root = doc.RootElement;
+            var routes = root.TryGetProperty("routes", out var count) && count.TryGetInt32(out var value) ? value : 0;
+            var limit = root.TryGetProperty("limit", out var cap) && cap.TryGetInt32(out var ceiling) ? ceiling : 0;
+            var trims = root.TryGetProperty("trims", out var cut) && cut.TryGetInt32(out var cutting) && cutting != 0;
+            var kept = root.TryGetProperty("kept", out var held) && held.TryGetInt32(out var holding) ? holding : 0;
+            var total = root.TryGetProperty("total", out var all) && all.TryGetInt32(out var whole) ? whole : 0;
+            return (routes, limit, trims, kept, total);
         }
         catch (JsonException)
         {
-            return (0, 0);
+            return (0, 0, false, 0, 0);
         }
     }
 

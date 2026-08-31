@@ -1271,6 +1271,7 @@ internal sealed class DnsProxy
                     or SocketError.HostUnreachable
                     or SocketError.NetworkUnreachable
                     or SocketError.ConnectionReset
+                    or SocketError.NoBufferSpaceAvailable
                     or SocketError.OperationAborted))
             {
                 last = ex as SocketException ?? new SocketException((int)SocketError.TimedOut);

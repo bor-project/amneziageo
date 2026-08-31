@@ -57,7 +57,7 @@ public interface ISubscriptionLibrary
 
 /// <summary>
 /// Читает подписку и приводит к ней библиотеку: новые узлы заводит, изменившиеся переписывает, пропавшие
-/// помечает. Текст конфигурации меняется, имя и все настройки пользователя остаются на месте.
+/// сносит. Текст конфигурации меняется, имя и все настройки пользователя остаются на месте.
 /// </summary>
 public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library)
 {
@@ -108,7 +108,8 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
 
         var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
         var names = await library.NamesAsync(ct).ConfigureAwait(false);
-        var plan = SubscriptionMerge.Plan(snapshot.Configs, members, names);
+        var texts = await TextsAsync(members, names, ct).ConfigureAwait(false);
+        var plan = SubscriptionMerge.Plan(snapshot.Configs, members, names, texts);
 
         var added = 0;
         var gone = 0;
@@ -126,11 +127,18 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                     break;
                 case SubscriptionChangeKind.Update:
                     // Текст переписывается только когда он и правда другой: иначе перезапуск туннеля был бы зря.
-                    var current = await library.TextAsync(change.ConfigName, ct).ConfigureAwait(false);
+                    var current = texts.GetValueOrDefault(change.ConfigName);
                     if (!string.Equals(current, change.ConfText, StringComparison.Ordinal))
                     {
                         await library.EditAsync(change.ConfigName, change.ConfText, ct).ConfigureAwait(false);
                         rewritten.Add(change.ConfigName);
+                    }
+
+                    // Переименованный узел переезжает на новое имя, а не заводится вторым.
+                    if (change.PreviousRemark.Length > 0
+                        && !string.Equals(change.PreviousRemark, change.Remark, StringComparison.Ordinal))
+                    {
+                        await store.RemoveSubscriptionMemberAsync(subscription.Name, change.PreviousRemark, ct).ConfigureAwait(false);
                     }
 
                     await store.SaveSubscriptionMemberAsync(
@@ -138,10 +146,14 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                         ct).ConfigureAwait(false);
                     break;
                 default:
-                    await store.SaveSubscriptionMemberAsync(
-                        new SubscriptionMember(subscription.Name, change.Remark, change.ConfigName, Present: false),
-                        ct).ConfigureAwait(false);
-                    gone++;
+                    // Узла в подписке больше нет - конфигурация уходит вместе с ним.
+                    if (names.Contains(change.ConfigName, StringComparer.Ordinal))
+                    {
+                        await library.RemoveAsync(change.ConfigName, ct).ConfigureAwait(false);
+                        gone++;
+                    }
+
+                    await store.RemoveSubscriptionMemberAsync(subscription.Name, change.Remark, ct).ConfigureAwait(false);
                     break;
             }
         }
@@ -161,6 +173,29 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
             ct).ConfigureAwait(false);
 
         return new SubscriptionResult(added, rewritten.Count, gone, rewritten);
+    }
+
+    // Тексты заведённых конфигураций подписки: по ним узнаётся узел, которому сменили имя.
+    private async Task<Dictionary<string, string>> TextsAsync(
+        IReadOnlyList<SubscriptionMember> members,
+        IReadOnlyCollection<string> names,
+        CancellationToken ct)
+    {
+        var texts = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var member in members)
+        {
+            if (texts.ContainsKey(member.ConfigName) || !names.Contains(member.ConfigName, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            if (await library.TextAsync(member.ConfigName, ct).ConfigureAwait(false) is { } text)
+            {
+                texts[member.ConfigName] = text;
+            }
+        }
+
+        return texts;
     }
 
     private static string? Header(HttpResponseMessage response, string name)

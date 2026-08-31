@@ -197,6 +197,22 @@ internal sealed class FleetStatusBroker(
     }
 
     /// <inheritdoc/>
+    protected override void TakeRefreshed(SubscriptionOutcome outcome)
+    {
+        if (!mode.MultiServer)
+        {
+            base.TakeRefreshed(outcome);
+            return;
+        }
+
+        // Снесённую конфигурацию набор роняет сам, переписанный текст встаёт на следующем подъёме туннеля.
+        foreach (var name in outcome.Rewritten.Where(IsRunningMember))
+        {
+            MarkRestartRequired(name);
+        }
+    }
+
+    /// <inheritdoc/>
     protected override async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (!mode.MultiServer)

@@ -188,6 +188,12 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     // Removes the config file from disk; migration would otherwise resurrect a deleted config on the next start.
     private static void RemoveLegacyConfigFile(string name)
     {
+        // A name no file can carry never had one on disk.
+        if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return;
+        }
+
         var path = Path.Combine(TunnelPaths.ConfigurationsDirectory(), name + ".conf");
         if (!File.Exists(path))
         {
@@ -264,8 +270,8 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
     private static void EnsureValidName(string name)
     {
-        // Name doubles as the Windows service name, so keep it filesystem-safe.
-        if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        // The adapter, service and pipe names are folded from this one, so it only has to be a line of text.
+        if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsControl))
         {
             throw new ArgumentException($"invalid configuration name: {name}");
         }

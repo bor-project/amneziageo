@@ -590,7 +590,7 @@ internal sealed class Cli(
     {
         var config = await configRepo.ReadTextAsync(name);
         var peer = WgConfigEditor.GetPeerPublicKey(config);
-        var index = routes.FindInterfaceIndex(name);
+        var index = routes.FindTunnelIndex(name);
         if (peer is null || index is null)
         {
             Console.WriteLine($"missing peer key or adapter: peer={peer is not null}, adapter={index is not null}");
@@ -647,7 +647,7 @@ internal sealed class Cli(
 
         var on = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
         var current = await store.GetConfigTransportAsync(name);
-        await store.SetConfigTransportAsync(new ConfigTransport(name, on, host.Trim(), port, current?.Mtu ?? 1420, current?.UseIpv6 ?? false));
+        await store.SetConfigTransportAsync(new ConfigTransport(name, on, host.Trim(), port, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto));
         Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}, port={port}, host={(host.Length == 0 ? "(endpoint)" : host)}");
         return 0;
     }

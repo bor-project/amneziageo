@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.NetworkInformation;
 using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Hosting;
@@ -27,6 +28,9 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
     // Polls a sharing with no resolver of its own is given before it is put through a stop and a start.
     private const int WedgeTicks = 4;
 
+    // Times a sharing with no resolver is put through a stop and a start, before it is only reported.
+    private const int WedgeRepairs = 3;
+
     // Service the sharing runs as, and the port its resolver answers on.
     private const string SharingService = "SharedAccess";
     private const int Domain = 53;
@@ -37,7 +41,7 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
     private int _stale;
     private int _repairs;
     private int _wedge;
-    private bool _recycled;
+    private int _recycles;
 
     // Name the point of this agent carries. A point under any other name was raised by the user through Windows
     // itself and is never touched here.
@@ -133,10 +137,14 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
                 _stale++;
             }
 
-            if (!Running || _raisedSsid.Length == 0 || Resolving())
+            var resolves = Resolving();
+            if (!Running || _raisedSsid.Length == 0 || resolves)
             {
                 _wedge = 0;
-                _recycled = false;
+                if (resolves)
+                {
+                    _recycles = 0;
+                }
             }
             else
             {
@@ -144,7 +152,7 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
             }
 
             var stuck = _stale >= StaleTicks && _repairs < StaleRepairs;
-            var wedged = _wedge >= WedgeTicks && !_recycled;
+            var wedged = _wedge >= WedgeTicks && _recycles < WedgeRepairs;
             if (wanted != _applied || Running != wanted.Wanted || moved || stuck || wedged)
             {
                 if (moved)
@@ -218,7 +226,7 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
         _wedge = 0;
         _stale = 0;
         _repairs = 0;
-        _recycled = true;
+        _recycles++;
         logger.LogWarning("the sharing hands its clients no resolver, so the names they look up go nowhere while bare addresses still travel; the sharing is put through a stop and a start");
         await WindowsTethering.StopAsync(_raisedSsid, ct).ConfigureAwait(false);
         _raisedSsid = string.Empty;
@@ -309,14 +317,24 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
             .Any(nic => nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211);
     }
 
-    // Whether the sharing has a resolver of its own standing. It answers the clients on the address it hands
-    // them and holds that port on the link of the point as well; wedged, it holds nothing there and hands
-    // the clients no resolver at all, so their names go nowhere while bare addresses still travel.
+    // Whether the clients of the point are handed a resolver. It answers them on the address the sharing
+    // hands out, and that port is held there by whoever answers - the sharing itself, the proxy of this
+    // machine, or a listener on every address; wedged, nothing holds it and their names go nowhere while
+    // bare addresses still travel.
     private static bool Resolving()
     {
+        var point = IPAddress.TryParse(HotspotGateway.Scope(), out var scope) ? scope : null;
         foreach (var listener in IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners())
         {
-            if (listener.Port == Domain && listener.Address.IsIPv6LinkLocal)
+            if (listener.Port != Domain)
+            {
+                continue;
+            }
+
+            if (listener.Address.IsIPv6LinkLocal
+                || listener.Address.Equals(IPAddress.Any)
+                || listener.Address.Equals(IPAddress.IPv6Any)
+                || (point is not null && listener.Address.Equals(point)))
             {
                 return true;
             }

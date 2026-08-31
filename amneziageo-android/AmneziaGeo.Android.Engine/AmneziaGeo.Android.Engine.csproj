@@ -26,6 +26,11 @@
     <AndroidNativeLibrary Include="native\x86_64\libamneziawg-go.so">
       <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
+    <!-- 32-bit engine for the Android TV emulator images. -->
+    <AndroidNativeLibrary Include="native\x86\libamneziawg-go.so"
+                          Condition="Exists('native\x86\libamneziawg-go.so')">
+      <Abi>x86</Abi>
+    </AndroidNativeLibrary>
   </ItemGroup>
 
   <!-- Stops with build steps when the gitignored native Go engine is absent. -->

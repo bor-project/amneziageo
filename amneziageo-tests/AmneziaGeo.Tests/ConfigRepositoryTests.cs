@@ -89,6 +89,25 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
         Assert.Null(await _store.GetSelectedRoutingListAsync());
     }
 
+    [Fact]
+    public async Task Rename_ToANameNoFileCouldCarry_IsTakenAsItIs()
+    {
+        await _store.SaveConfigAsync("srv", "conf");
+
+        await _repo.RenameAsync("srv", "дом/офис: 2");
+
+        Assert.True(await _store.ConfigExistsAsync("дом/офис: 2"));
+        Assert.True(TunnelDevice.IsAcceptable(TunnelDevice.NameOf("дом/офис: 2")));
+    }
+
+    [Fact]
+    public async Task Rename_ToABlankName_IsRefused()
+    {
+        await _store.SaveConfigAsync("srv", "conf");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => _repo.RenameAsync("srv", "  "));
+    }
+
     private static void TryDelete(string path)
     {
         try

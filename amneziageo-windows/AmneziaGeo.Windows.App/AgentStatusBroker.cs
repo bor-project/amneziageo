@@ -380,11 +380,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     {
         var outcome = await Subscriptions().RefreshAsync(args, ct);
 
-        // Переписанный текст встаёт на следующем подъёме туннеля.
-        foreach (var name in outcome.Rewritten.Where(IsRunningMember))
-        {
-            MarkRestartRequired(name);
-        }
+        TakeRefreshed(outcome);
 
         if (outcome.Ack.Ok)
         {
@@ -411,8 +407,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     }
 
     /// <summary>
-    /// Обновляет подписки, которым пора, у каждой открытой библиотеки, и просит перезапуск, если переписана
-    /// работающая конфигурация. Подписки живут у пользователя, поэтому обходятся все известные корни.
+    /// Обновляет подписки, которым пора, у каждой открытой библиотеки, и поднимает туннель заново, если
+    /// переписана работающая конфигурация. Подписки живут у пользователя, поэтому обходятся все известные корни.
     /// </summary>
     public async Task<int> RefreshDueSubscriptionsAsync(int fallbackHours, CancellationToken ct)
     {
@@ -425,10 +421,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
             {
                 var outcome = await service.RefreshAsync([subscription.Name], ct);
-                foreach (var name in outcome.Rewritten.Where(IsRunningMember))
-                {
-                    MarkRestartRequired(name);
-                }
+                TakeRefreshed(outcome);
 
                 refreshed++;
             }
@@ -681,7 +674,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var tr = await store.GetConfigTransportAsync(name, ct);
             if (tr is not null)
             {
-                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6);
+                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter);
             }
 
             PortableBundle.GeoBlock? geoBlock = null;
@@ -810,7 +803,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 await configRepo.EditFromTextAsync(incoming, block.ConfigText, ct);
                 if (block.Transport is { } trE)
                 {
-                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu, trE.UseIpv6), ct);
+                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter), ct);
                 }
 
                 await ApplyConfigDataAsync(incoming, block, ct);
@@ -845,7 +838,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             if (block.Transport is { } tr)
             {
-                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu, tr.UseIpv6), ct);
+                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter), ct);
             }
 
             await ApplyConfigDataAsync(finalName, block, ct);
@@ -1060,8 +1053,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // Optional 4th arg: wstunnel host; empty reuses the Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
 
-        // Optional 5th arg: tunnel MTU (default 1420, range 576-1500).
-        var mtu = 1420;
+        // Optional 5th arg: tunnel MTU (range 576-1500); empty leaves the config in charge.
+        var mtu = 0;
         if (args.Count > 4 && args[4].Trim().Length > 0)
         {
             if (!int.TryParse(args[4].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < 576 or > 1500)
@@ -1077,7 +1070,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             ? args[5].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes"
             : previous?.UseIpv6 ?? false;
 
-        var updated = new ConfigTransport(args[0], on, host, port, mtu, useIpv6);
+        // Optional 7th arg: how the MTU is picked. An older client sends none, and a size it sent stands for a
+        // choice of its own.
+        var mtuMode = args.Count > 6
+            ? MtuModes.Parse(args[6], previous?.MtuMode ?? MtuMode.Auto)
+            : mtu > 0 ? MtuMode.Custom : previous?.MtuMode ?? MtuMode.Auto;
+
+        // Optional 8th arg: decide every connection for this config instead of leaving it to the route table.
+        var useRouter = args.Count > 7
+            ? args[7].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes"
+            : previous?.UseRouter ?? true;
+
+        var updated = new ConfigTransport(args[0], on, host, port, mtu, useIpv6, mtuMode, useRouter);
         await store.SetConfigTransportAsync(updated, ct);
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
@@ -1087,8 +1091,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             MarkRestartRequired(args[0]);
         }
 
-        logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu}, IPv6 allowed: {V6} — takes effect on reconnect",
-            args[0], on, host.Length == 0 ? "from the configuration" : host, port, mtu, useIpv6);
+        logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu} ({Mode}), IPv6 allowed: {V6} — takes effect on reconnect",
+            args[0], on, host.Length == 0 ? "from the configuration" : host, port, mtu, MtuModes.Text(mtuMode), useIpv6);
         return new IpcAck(true, on
             ? IpcMessage.Key("Agent_WebSocketEnabled", port)
             : IpcMessage.Key("Agent_WebSocketDisabled"));
@@ -1191,7 +1195,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
     }
 
-    private bool IsRunningMember(string config)
+    /// <summary>
+    /// Takes up what a subscription refresh changed: a rewritten text rebuilds the session, a config that is gone drops it.
+    /// </summary>
+    protected virtual void TakeRefreshed(SubscriptionOutcome outcome)
+    {
+        if (control.Running && (outcome.Rewritten.Any(IsRunningMember) || outcome.Gone > 0))
+        {
+            control.Invalidate();
+        }
+    }
+
+    protected bool IsRunningMember(string config)
     {
         return RunningMembers().Contains(config, StringComparer.Ordinal);
     }
@@ -1414,6 +1429,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 .ToHashSet(StringComparer.Ordinal);
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
+
+        // The first list applies at once.
+        if (id == 0 && lists.Count == 0)
+        {
+            await store.SetSelectedRoutingListAsync(resultId, ct);
+        }
 
         // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
         if (RunningMembers().Count > 0)
@@ -2654,7 +2675,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var handshake = bound ? handshakeAge : -1;
             var reading = bound ? link : LinkReading.Empty;
             var member = members.GetValueOrDefault(name);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, configText), transport?.UseRouter ?? true));
         }
 
         var routingLists = new List<RoutingListEntry>();

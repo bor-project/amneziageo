@@ -80,7 +80,7 @@ internal static class RuntimeSnapshotPipe
     /// </summary>
     public static string Name(string tunnel)
     {
-        return "ageo-runtime-" + tunnel.Replace('\\', '_').Replace('/', '_');
+        return "ageo-runtime-" + TunnelDevice.NameOf(tunnel);
     }
 
     /// <summary>

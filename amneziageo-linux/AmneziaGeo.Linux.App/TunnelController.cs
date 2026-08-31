@@ -28,7 +28,6 @@ internal sealed class TunnelController : IDisposable
 {
     private const string TunDevice = "/dev/net/tun";
     private const string Loopback = "127.0.0.1";
-    private const int DefaultMtu = 1420;
     private const int HandshakeWaitSeconds = 30;
     private const int KeepaliveSeconds = 25;
 
@@ -164,7 +163,7 @@ internal sealed class TunnelController : IDisposable
             return Refused($"engine start failed: {ex.Message}");
         }
 
-        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, ct).ConfigureAwait(false);
+        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport?.MtuMode ?? MtuMode.Auto, options.Transport?.Mtu ?? 0, config), ct).ConfigureAwait(false);
         if (failure is not null)
         {
             await DownAsync(ct).ConfigureAwait(false);
@@ -632,7 +631,7 @@ internal sealed class TunnelController : IDisposable
     }
 
     // Addresses, MTU, and the routes for the ranges the tunnel starts with.
-    private async Task<string?> ApplyNetworkAsync(string config, IReadOnlyList<string> allowedIps, string? endpointIp, CancellationToken ct)
+    private async Task<string?> ApplyNetworkAsync(string config, IReadOnlyList<string> allowedIps, string? endpointIp, int mtu, CancellationToken ct)
     {
         foreach (var address in WgConfigEditor.GetAddresses(config))
         {
@@ -644,8 +643,7 @@ internal sealed class TunnelController : IDisposable
             }
         }
 
-        var mtu = WgConfigEditor.GetMtu(config);
-        var up = await Shell.RunAsync("ip", ct, "link", "set", "dev", _iface, "mtu", (mtu > 0 ? mtu : DefaultMtu).ToString(CultureInfo.InvariantCulture), "up").ConfigureAwait(false);
+        var up = await Shell.RunAsync("ip", ct, "link", "set", "dev", _iface, "mtu", mtu.ToString(CultureInfo.InvariantCulture), "up").ConfigureAwait(false);
         if (up.ExitCode != 0)
         {
             return $"ip link set up failed: {up.Output}";

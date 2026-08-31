@@ -23,6 +23,11 @@ public sealed record GeoRoutingPlan(
     public IReadOnlyList<string> TunnelApps { get; init; } = [];
 
     /// <summary>
+    /// Whether every connection gets its own verdict; off leaves every destination to the route table.
+    /// </summary>
+    public bool UseRouter { get; init; } = true;
+
+    /// <summary>
     /// Everything through the tunnel, nothing listed.
     /// </summary>
     public static GeoRoutingPlan Full { get; } = new([], [], [], [], [], [], true, false);

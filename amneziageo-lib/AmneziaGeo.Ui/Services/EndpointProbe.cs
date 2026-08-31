@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Ui.Services;
 
@@ -115,6 +117,29 @@ internal static class EndpointProbe
         }
 
         return await WsCarrier.ProbeAsync(front, address, PortOf(endpoint), null, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Says what a front refused in; empty when it took the upgrade.
+    /// </summary>
+    public static string Describe(WsFrontOutcome outcome, string detail) => outcome switch
+    {
+        WsFrontOutcome.Ok => string.Empty,
+        WsFrontOutcome.NoAddress => Loc.Instance.Get("Transport_ProbeNoAddress"),
+        WsFrontOutcome.Tls => Loc.Instance.Get("Transport_ProbeTls"),
+        WsFrontOutcome.Refused => Denied(detail)
+            ? Loc.Instance.Get("Transport_ProbeDenied")
+            : Loc.Instance.Get("Transport_ProbeRefused", detail),
+        _ => Loc.Instance.Get("Transport_ProbeNoAnswer"),
+    };
+
+    // Codes a front answers with when the token or the login and password did not fit.
+    private static bool Denied(string detail)
+    {
+        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1
+            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code)
+            && code is 400 or 401 or 403 or 404;
     }
 
     // The port of a "host:port" endpoint; the tunnel's usual port stands in when the endpoint carries none.

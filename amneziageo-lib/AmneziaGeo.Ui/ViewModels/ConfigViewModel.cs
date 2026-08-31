@@ -719,6 +719,7 @@ internal partial class ConfigViewModel : ViewModelBase
             if (existing is null)
             {
                 existing = NewRow(entry.Name);
+                existing.SaveTransport = SaveTransportAsync;
                 Configs.Insert(Math.Min(i, Configs.Count), existing);
             }
             else
@@ -740,7 +741,11 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.Dns = entry.Dns;
             existing.Exclusions = entry.Exclusions;
             existing.Mtu = entry.Mtu;
+            existing.ConfigMtu = entry.ConfigMtu;
+            existing.MtuMode = entry.MtuMode;
+            existing.ResolvedMtu = entry.ResolvedMtu;
             existing.UseIpv6 = entry.UseIpv6;
+            existing.UseRouter = entry.UseRouter;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
@@ -964,7 +969,8 @@ internal partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Перечитывает подписку, которой пришла конфигурация карточки.
     /// </summary>
-    [RelayCommand]
+    // Кнопка не гаснет на время чтения: погасшую пульт роняет из фокуса. Повторный запуск отсекает Busy.
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task RefreshConfigSubscription(ConfigItemViewModel? row)
     {
         if (row is not { Subscription.Length: > 0 })
@@ -1022,6 +1028,35 @@ internal partial class ConfigViewModel : ViewModelBase
         }
     }
 
+    // Плашка режима на карточке: тот же set-websocket, что и в настройках конфигурации.
+    private async Task<bool> SaveTransportAsync(ConfigItemViewModel item)
+    {
+        var mtu = item.MtuMode == MtuMode.Custom && item.Mtu is >= MtuModes.MinMtu and <= MtuModes.MaxMtu
+            ? item.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+
+        // Порт хранится только у прокси; у остальных строк его нет, а команда без него не проходит.
+        var port = item.WebSocketPort is > 0 and <= 65535 ? item.WebSocketPort : 443;
+        var ack = await Ask(new IpcCommand(IpcContract.OpSetWebSocket,
+        [
+            item.Name,
+            item.UseWebSocket ? "on" : "off",
+            port.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            item.WebSocketHost,
+            mtu,
+            item.UseIpv6 ? "on" : "off",
+            MtuModes.Text(item.MtuMode),
+            item.UseRouter ? "on" : "off",
+        ]));
+        if (ack is not { Ok: true })
+        {
+            return false;
+        }
+
+        await _host.Home.ReconnectLiveAsync(item);
+        return true;
+    }
+
     // Команда агенту; оборванная труба - не повод ронять экран, ответа просто нет.
     private async Task<IpcAck?> Ask(IpcCommand command)
     {
@@ -1063,7 +1098,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true);
         RefreshEditBar();
     }
 
@@ -1461,36 +1496,57 @@ internal partial class ConfigViewModel : ViewModelBase
         }
 
         EnsureSectionConfig();
-        SectionScan = new ScanViewModel(TryAcceptScannedConfig);
+        SectionScan = new ScanViewModel(ApplyScannedText);
         ImportMethod = ConfigImportMethod.Camera;
     }
 
-    // The scanner reports a decoded QR's raw text; accept a configuration, a link to one, or a subscription address.
-    private bool TryAcceptScannedConfig(string text)
+    /// <summary>
+    /// Кладёт в черновик прочитанный текст: адрес подписки либо конфигурацию.
+    /// </summary>
+    public bool ApplyImportText(string text, string? fileName = null)
     {
-        if (VpnLinkCodec.TryDecodeQr(text) is { } imported)
-        {
-            ApplyScannedConfig(imported);
-            return true;
-        }
+        return ApplyRecognized(ImportCodec.Recognize(text), text, fileName);
+    }
 
-        if (!SubscriptionCodec.LooksLikeAddress(text))
+    /// <summary>
+    /// Кладёт в черновик текст, снятый с QR. Нераспознанный оставляет черновик прежним.
+    /// </summary>
+    public bool ApplyScannedText(string text)
+    {
+        var recognized = ImportCodec.RecognizeQr(text);
+        if (recognized.Kind == ImportKind.Unknown)
         {
             return false;
         }
 
-        ApplyScannedAddress(text.Trim());
+        ApplyRecognized(recognized, text, null);
         return true;
     }
 
-    // Заполняет черновик снятым адресом подписки.
-    private void ApplyScannedAddress(string url)
+    // Заполняет черновик разобранным текстом; нераспознанное остаётся в поле под сообщением.
+    private bool ApplyRecognized(ImportCodec.Recognized recognized, string text, string? fileName)
     {
-        SeedSectionNameFromAddress(url);
-        SectionConfigText = url;
-        SectionConfigStatus = string.Empty;
         SectionScan = null;
         ImportMethod = ConfigImportMethod.Manual;
+        if (recognized.Kind == ImportKind.Subscription)
+        {
+            SeedSectionNameFromAddress(recognized.Address);
+            SectionConfigText = recognized.Address;
+            SectionConfigStatus = string.Empty;
+            return true;
+        }
+
+        if (recognized.Config is { } imported)
+        {
+            SeedSectionNameFromConfig(imported, fileName);
+            SectionConfigText = imported.ConfText;
+            SectionConfigStatus = string.Empty;
+            return true;
+        }
+
+        SectionConfigText = text;
+        SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+        return false;
     }
 
     // Footer Save/Cancel: the same bar serves the import draft and the open-config edits.
@@ -1577,16 +1633,6 @@ internal partial class ConfigViewModel : ViewModelBase
             CancelSectionConfig();
             OpenConfig = _configBeforeCreate;
         }
-    }
-
-    // Fill the create form from a scanned QR and show it for review.
-    private void ApplyScannedConfig(VpnLinkCodec.Imported imported)
-    {
-        SeedSectionNameFromConfig(imported);
-        SectionConfigText = imported.ConfText;
-        SectionConfigStatus = string.Empty;
-        SectionScan = null;
-        ImportMethod = ConfigImportMethod.Manual;
     }
 
     // Stops the live scanner when the create form leaves view (section change / home / hide). The draft falls back

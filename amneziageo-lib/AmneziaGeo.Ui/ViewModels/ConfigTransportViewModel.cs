@@ -1,4 +1,5 @@
 using System.Globalization;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -27,7 +28,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private string _baseWebSocketPassword = string.Empty;
     private string _baseWebSocketToken = string.Empty;
     private string _baseMtu = string.Empty;
+    private int _baseMtuMode;
     private bool _baseUseIpv6;
+    private bool _baseUseRouter;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
@@ -57,8 +60,21 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private string _mtu = string.Empty;
 
+    // Where the size comes from: 0 the link, 1 the config text, 2 this field.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMtuReadOnly))]
+    private int _mtuMode;
+
     [ObservableProperty]
     private bool _useIpv6;
+
+    [ObservableProperty]
+    private bool _useRouter = true;
+
+    /// <summary>
+    /// Whether this platform can decide connections of its own at all; only there is the switch worth showing.
+    /// </summary>
+    public static bool RouterAvailable => OperatingSystem.IsAndroid();
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -83,14 +99,19 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true)
     {
         _connection = connection;
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
         _useIpv6 = useIpv6;
-        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1420";
+        _useRouter = useRouter;
+        _mtuMode = (int)mtuMode;
+
+        // Only the custom mode shows a size of its own; the other two show what the agent settled on.
+        var shown = mtuMode == AmneziaGeo.Decl.MtuMode.Custom ? mtu : resolvedMtu > 0 ? resolvedMtu : mtu;
+        _mtu = shown > 0 ? shown.ToString(CultureInfo.InvariantCulture) : "1420";
 
         // Parse the stored address; default the host to the config's Endpoint host.
         var (host, port, user, password, token, mode) = ParseStored(webSocketHost);
@@ -165,7 +186,24 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     partial void OnMtuChanged(string value) => MarkDirty();
 
+    partial void OnMtuModeChanged(int value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
+    /// <summary>
+    /// Whether the size is the client's to pick, which leaves the field to read.
+    /// </summary>
+    public bool IsMtuReadOnly => MtuModes.IsReadOnly(MtuModes.From(MtuMode));
+
     partial void OnUseIpv6Changed(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
+    partial void OnUseRouterChanged(bool value)
     {
         MarkDirty();
         FireAutoSave();
@@ -195,7 +233,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
             || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal)
             || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal)
-            || UseIpv6 != _baseUseIpv6;
+            || MtuMode != _baseMtuMode
+            || UseIpv6 != _baseUseIpv6
+            || UseRouter != _baseUseRouter;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -214,7 +254,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseWebSocketPassword = WebSocketPassword ?? string.Empty;
         _baseWebSocketToken = WebSocketToken ?? string.Empty;
         _baseMtu = Mtu ?? string.Empty;
+        _baseMtuMode = MtuMode;
         _baseUseIpv6 = UseIpv6;
+        _baseUseRouter = UseRouter;
         if (IsDirty)
         {
             IsDirty = false;
@@ -236,7 +278,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             WebSocketPassword = _baseWebSocketPassword;
             WebSocketToken = _baseWebSocketToken;
             Mtu = _baseMtu;
+            MtuMode = _baseMtuMode;
             UseIpv6 = _baseUseIpv6;
+            UseRouter = _baseUseRouter;
             StatusMessage = string.Empty;
         }
         finally
@@ -318,9 +362,10 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             return false;
         }
 
-        // MTU: empty = default; validate 576-1500.
+        // MTU: empty = default; validate 576-1500. The other modes pick the size themselves, so the field is theirs.
         var mtuVal = Mtu.Trim();
-        if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
+        if (!IsMtuReadOnly && mtuVal.Length > 0
+            && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < MtuModes.MinMtu or > MtuModes.MaxMtu))
         {
             StatusMessage = Loc.Instance.Get("Transport_InvalidMtu");
             return false;
@@ -345,13 +390,15 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         try
         {
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
-            var mtuVal = Mtu.Trim();
+
+            // A size travels only with the mode that takes one; the others keep whatever was stored.
+            var mtuVal = IsMtuReadOnly ? string.Empty : Mtu.Trim();
 
             // Fold the host + auth mode / inputs into the stored address string. Collapse a bare host equal to the Endpoint host to empty; a URL form is sent verbatim.
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off"]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off"]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
@@ -464,7 +511,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             }
 
             IsProbing = false;
-            ProbeMessage = outcome == WsFrontOutcome.Ok ? string.Empty : Reason(outcome, detail);
+            ProbeMessage = EndpointProbe.Describe(outcome, detail);
             ProbeFailed = outcome != WsFrontOutcome.Ok;
         }
         catch (OperationCanceledException)
@@ -482,25 +529,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     }
 
     // The front's answer as the editor states it.
-    private static string Reason(WsFrontOutcome outcome, string detail) => outcome switch
-    {
-        WsFrontOutcome.NoAddress => Loc.Instance.Get("Transport_ProbeNoAddress"),
-        WsFrontOutcome.Tls => Loc.Instance.Get("Transport_ProbeTls"),
-        WsFrontOutcome.Refused => Denied(detail)
-            ? Loc.Instance.Get("Transport_ProbeDenied")
-            : Loc.Instance.Get("Transport_ProbeRefused", detail),
-        _ => Loc.Instance.Get("Transport_ProbeNoAnswer"),
-    };
-
-    // Codes a front answers with when the token or the login and password did not fit.
-    private static bool Denied(string detail)
-    {
-        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length > 1
-            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code)
-            && code is 400 or 401 or 403 or 404;
-    }
-
     /// <summary>
     /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth, a wss://user:pass@host:port URL for login+password (user/pass percent-escaped), or a wss://host:port/token URL for a token. The port is baked into any URL form so it is not lost to the wss default (443).
     /// </summary>

@@ -1,3 +1,5 @@
+using AmneziaGeo.Decl;
+
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
@@ -33,7 +35,15 @@ public sealed record ConfigEntry(
     // Subscription the configuration came in with; empty when it came from anywhere else.
     string Subscription = "",
     // Whether the subscription stopped carrying it. Such a config is never removed on its own.
-    bool SubscriptionGone = false);
+    bool SubscriptionGone = false,
+    // MTU the config text declares; zero when it names none. The stored Mtu above wins over it.
+    int ConfigMtu = 0,
+    // How the MTU is picked: the link, the config text, or the stored size.
+    MtuMode MtuMode = MtuMode.Auto,
+    // Size the mode settles on, so the interface shows what the tunnel comes up with rather than guessing.
+    int ResolvedMtu = 0,
+    // Whether the session decides every connection on its own instead of leaving it all to the route table.
+    bool UseRouter = true);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

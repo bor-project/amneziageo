@@ -6,6 +6,11 @@ namespace AmneziaGeo.Geo;
 public static class WgConfigEditor
 {
     /// <summary>
+    /// MTU a tunnel comes up with when neither the settings nor the config name one.
+    /// </summary>
+    public const int DefaultMtu = 1420;
+
+    /// <summary>
     /// Returns the AllowedIPs entries declared in the config.
     /// </summary>
     public static IReadOnlyList<string> GetAllowedIps(string config)
@@ -237,6 +242,21 @@ public static class WgConfigEditor
 
         return 0;
     }
+    /// <summary>
+    /// MTU the tunnel comes up with: the value stored for the config, else the one the config text declares, else
+    /// the fallback. A stored zero means nothing was chosen, so the config decides.
+    /// </summary>
+    public static int EffectiveMtu(int stored, string config, int fallback = DefaultMtu)
+    {
+        if (stored > 0)
+        {
+            return stored;
+        }
+
+        var declared = GetMtu(config);
+        return declared > 0 ? declared : fallback;
+    }
+
     /// <summary>
     /// Returns the config with its [Interface] MTU set to the given value.
     /// </summary>

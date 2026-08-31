@@ -7,7 +7,7 @@
              ClipToBounds="True">
   <!-- Плашки режимов карточки: включённый режим носит цвет действия, выключенный уходит в серое. Ряд
        выкладывается по порядку, хвост за краем отсекается. -->
-  <ItemsControl ItemsSource="{Binding $parent[controls:CardTags].Tags}">
+  <ItemsControl x:Name="Strip" ItemsSource="{Binding $parent[controls:CardTags].Tags}">
     <ItemsControl.ItemsPanel>
       <ItemsPanelTemplate>
         <controls:TagStrip Spacing="6" />
@@ -15,9 +15,13 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate x:DataType="vm:CardTag">
-        <Border Classes="cardchip cardtag" Classes.off="{Binding !On}">
-          <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" />
-        </Border>
+        <Button Classes="cardtagbtn" Command="{Binding Command}" IsHitTestVisible="{Binding Interactive}"
+                ToolTip.Tip="{Binding Hint}">
+          <Border Classes="cardchip cardtag" Classes.off="{Binding !On}" Classes.bad="{Binding Bad}"
+                  Classes.busy="{Binding Busy}">
+            <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" />
+          </Border>
+        </Button>
       </DataTemplate>
     </ItemsControl.ItemTemplate>
   </ItemsControl>

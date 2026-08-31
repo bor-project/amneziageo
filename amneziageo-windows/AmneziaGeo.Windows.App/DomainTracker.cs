@@ -631,7 +631,7 @@ internal sealed class DomainTracker(
     {
         try
         {
-            while (routes.FindInterfaceIndex(tunnelName) is null)
+            while (routes.FindTunnelIndex(tunnelName) is null)
             {
                 await Task.Delay(500, ct);
             }
@@ -1144,7 +1144,7 @@ internal sealed class DomainTracker(
 
     private uint? EnsureIndex()
     {
-        _interfaceIndex ??= routes.FindInterfaceIndex(tunnelName);
+        _interfaceIndex ??= routes.FindTunnelIndex(tunnelName);
         return _interfaceIndex;
     }
 }

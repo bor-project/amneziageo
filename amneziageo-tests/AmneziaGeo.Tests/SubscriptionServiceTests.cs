@@ -16,7 +16,14 @@ namespace AmneziaGeo.Tests;
 /// </summary>
 public sealed class SubscriptionServiceTests : IAsyncLifetime
 {
-    private const string ClientKey = "QW1uZXppYUdlbyBzZXJ2aWNlIGNsaWVudCBrZXkhIQ==";
+    private const string ClientKeySeed = "AmneziaGeo service client key ";
+
+    // Ключ у подписки свой на каждый узел: по нему узел и опознаётся между чтениями.
+    private static string ClientKey(string node)
+    {
+        var text = (node + " " + ClientKeySeed).PadRight(32)[..32];
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+    }
     private const string ServerKey = "QW1uZXppYUdlbyBzZXJ2aWNlIHNlcnZlciBrZXkhIQ==";
     private const string Url = "https://example.net:9080/sub/path/id";
 
@@ -106,7 +113,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task List_ReportsWhatTheSubscriptionCarriesAndWhatFellOutOfIt()
+    public async Task List_ReportsWhatTheSubscriptionCarries()
     {
         _feed.Body = Body(Config("phone"), Config("laptop"));
         await _service.AddAsync([Url], default);
@@ -119,7 +126,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         var entry = Assert.Single(JsonSerializer.Deserialize<List<SubscriptionEntry>>(ack.Message, IpcJson.Options)!);
         Assert.Equal("example.net", entry.Name);
         Assert.Equal(1, entry.Configs);
-        Assert.Equal(1, entry.Gone);
+        Assert.Equal(0, entry.Gone);
         Assert.Equal(12, entry.IntervalHours);
         Assert.NotEqual(0, entry.CheckedAt);
     }
@@ -227,7 +234,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
             '\n',
             [
                 "[Interface]",
-                $"PrivateKey = {ClientKey}",
+                $"PrivateKey = {ClientKey(remark)}",
                 "Address = 10.0.1.2/32",
                 "Jc = 6",
                 "Jmin = 52",

@@ -157,6 +157,7 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
             }
 
             sb.AppendLine($"    ipv6:       {(transport?.UseIpv6 == true ? "on" : "off")}");
+            sb.AppendLine($"    router:     {(transport?.UseRouter != false ? "on" : "off")}");
 
             var geo = await store.GetTunnelGeoAsync(config, ct).ConfigureAwait(false);
             if (geo is not null)

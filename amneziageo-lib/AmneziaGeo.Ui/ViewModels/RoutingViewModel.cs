@@ -426,6 +426,27 @@ internal partial class RoutingViewModel : ViewModelBase
         }
     }
 
+    // Плашка режима на карточке списка: тот же блок, что и в настройках списка.
+    private async Task<bool> SaveRoutingSettingsAsync(RoutingListSummaryViewModel item)
+    {
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetRoutingSettings,
+            [
+                item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                string.Empty,
+                item.AllUdp ? "on" : "off",
+                item.UseGlobalProxy ? "full" : "split",
+                item.UseGlobalProxy ? "on" : "off",
+            ]));
+            return ack.Ok;
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
+            return false;
+        }
+    }
+
     // Sends the assignment, then re-reads the switch from the state the agent answered with.
     private async Task AssignRoutingAsync(long? listId)
     {
@@ -860,7 +881,7 @@ internal partial class RoutingViewModel : ViewModelBase
             var existing = RoutingLists.FirstOrDefault(r => r.Id == entry.Id);
             if (existing is null)
             {
-                existing = new RoutingListSummaryViewModel { Id = entry.Id };
+                existing = new RoutingListSummaryViewModel { Id = entry.Id, SaveSettings = SaveRoutingSettingsAsync };
                 RoutingLists.Insert(Math.Min(i, RoutingLists.Count), existing);
             }
             else

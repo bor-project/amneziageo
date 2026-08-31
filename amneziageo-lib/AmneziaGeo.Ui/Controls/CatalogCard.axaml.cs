@@ -12,8 +12,7 @@ namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
 /// Карточка каталога настроек: имя, кнопка подключения, замер и настройки. На телевизоре пульт входит
-/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку, двойной щелчок
-/// открывает её настройки.
+/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
 {
@@ -174,18 +173,10 @@ internal sealed partial class CatalogCard : UserControl
     private void OnCardPressed(object? sender, PointerPressedEventArgs e)
     {
         Pick();
-        if (CardGesture.OpensSettings(FacePart, e))
-        {
-            _reorder.Cancel();
-            Open();
-            e.Handled = true;
-            return;
-        }
-
         _reorder.Press(e);
     }
 
-    // Двойной щелчок по телу карточки открывает её настройки - то же, что кнопка в подвале.
+    // Открывает настройки карточки - то же, что кнопка в подвале.
     private void Open()
     {
         if (DataContext is { } item && OpenCommand?.CanExecute(item) == true)
@@ -453,8 +444,8 @@ internal sealed partial class CatalogCard : UserControl
         grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки строками: подключение сверху, настройки снизу; запертую кнопку туннеля пульт
-    // пропускает.
+    // Контролы карточки строками: подключение сверху, обновление подписки под ним, настройки снизу;
+    // запертую кнопку туннеля и скрытое обновление пульт пропускает.
     private List<List<Control>> Rows()
     {
         var rows = new List<List<Control>>();
@@ -463,7 +454,12 @@ internal sealed partial class CatalogCard : UserControl
             rows.Add([ConnectPart]);
         }
 
-        rows.Add([SettingsPart]);
+        if (RefreshPart is { IsVisible: true, IsEnabled: true })
+        {
+            rows.Add([RefreshPart]);
+        }
+
+        rows.Add([.. TagsPart.Presses(), SettingsPart]);
         return rows;
     }
 
@@ -472,6 +468,8 @@ internal sealed partial class CatalogCard : UserControl
     {
         var stop = _entered || !UiPlatform.IsTelevision;
         ConnectPart.Focusable = stop;
+        RefreshPart.Focusable = stop;
         SettingsPart.Focusable = stop;
+        TagsPart.Stops = stop;
     }
 }

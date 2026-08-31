@@ -1493,6 +1493,13 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var saved = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)], ct).ConfigureAwait(false);
+
+        // The first list applies at once.
+        if (id == 0 && lists.Count == 0)
+        {
+            await _store.SetSelectedRoutingListAsync(saved, ct).ConfigureAwait(false);
+        }
+
         await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return new IpcAck(true, saved.ToString(CultureInfo.InvariantCulture));

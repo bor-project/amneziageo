@@ -1368,6 +1368,12 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
+        // The first list applies at once.
+        if (id == 0 && lists.Count == 0)
+        {
+            await store.SetSelectedRoutingListAsync(resultId, ct);
+        }
+
         // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
         if (control.Running && BoundTarget is not null)
         {

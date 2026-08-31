@@ -1433,6 +1433,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var savedId = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)]).ConfigureAwait(false);
+
+        // The first list applies at once.
+        if (id == 0 && lists.Count == 0)
+        {
+            _selectedRoutingList = savedId;
+            Save();
+        }
+
         MarkRoutingChanged(savedId);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();

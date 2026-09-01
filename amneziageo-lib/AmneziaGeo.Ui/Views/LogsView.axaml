@@ -189,7 +189,7 @@
 
            <!-- A probe takes about ten seconds; the block says so while it runs. -->
            <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ProbeRunning}">
-             <ProgressBar IsIndeterminate="True" Width="120" VerticalAlignment="Center" />
+             <ProgressBar IsIndeterminate="{Binding ProbeRunning}" Width="120" VerticalAlignment="Center" />
              <TextBlock Text="{l:Tr Probe_Running}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
            </StackPanel>
          </StackPanel>
@@ -480,7 +480,7 @@
             </StackPanel>
             <!-- Loader while a window loads. -->
             <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
-              <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+              <ProgressBar IsIndeterminate="{Binding IsLoading}" Width="150" HorizontalAlignment="Center" />
               <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
             </StackPanel>
           </Panel>

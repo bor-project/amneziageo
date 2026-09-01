@@ -102,6 +102,8 @@ internal sealed class TunnelController : IDisposable
             return refusal;
         }
 
+        // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
+        var underlay = resolved;
         if (carrier.Started is { } started)
         {
             // The engine dials the carrier instead of the server, and the address that has to stay outside the
@@ -163,7 +165,7 @@ internal sealed class TunnelController : IDisposable
             return Refused($"engine start failed: {ex.Message}");
         }
 
-        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport?.MtuMode ?? MtuMode.Auto, options.Transport?.Mtu ?? 0, config), ct).ConfigureAwait(false);
+        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport, underlay), ct).ConfigureAwait(false);
         if (failure is not null)
         {
             await DownAsync(ct).ConfigureAwait(false);

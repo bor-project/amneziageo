@@ -10,8 +10,15 @@ namespace AmneziaGeo.Geo;
 /// </summary>
 public static class MtuPlan
 {
-    // IPv4 header 20, UDP header 8, AmneziaWG data header 16, Poly1305 tag 16.
-    private const int HeaderBytes = 60;
+    // IPv4 header 20, UDP header 8.
+    private const int UdpCarrierBytes = 28;
+
+    // What the same datagram costs inside a websocket instead: IPv4 header 20, TCP header 20 with 12 bytes of
+    // options, TLS record 22, websocket frame 4.
+    private const int WebSocketCarrierBytes = 78;
+
+    // AmneziaWG data header 16, Poly1305 tag 16.
+    private const int TunnelBytes = 32;
 
     // Room kept for the random trailer a profile appends to a data packet.
     private const int TrailerBytes = 16;
@@ -19,10 +26,11 @@ public static class MtuPlan
     /// <summary>
     /// Largest inner packet the link carries on this profile, capped by what the config declares.
     /// </summary>
-    public static int Ceiling(string config, int linkMtu = MtuModes.MaxMtu)
+    public static int Ceiling(string config, int linkMtu = MtuModes.MaxMtu, bool webSocket = false)
     {
         // Only what grows a data packet counts: the junk packets and the header keys leave its size alone.
-        var room = Math.Min(linkMtu, MtuModes.MaxMtu) - HeaderBytes - Padding(config);
+        var carrier = webSocket ? WebSocketCarrierBytes : UdpCarrierBytes;
+        var room = Math.Min(linkMtu, MtuModes.MaxMtu) - carrier - TunnelBytes - Padding(config);
         if (IsOn(config, "RandomTrailers"))
         {
             room -= TrailerBytes;
@@ -39,16 +47,16 @@ public static class MtuPlan
 
     /// <summary>
     /// MTU the tunnel comes up with under this mode: the stored size for custom, the declared one for config, and
-    /// the largest the link and the profile carry for auto.
+    /// the largest the link, the carrier and the profile carry for auto.
     /// </summary>
-    public static int Resolve(MtuMode mode, int stored, string config, int linkMtu = MtuModes.MaxMtu)
+    public static int Resolve(MtuMode mode, int stored, string config, int linkMtu = MtuModes.MaxMtu, bool webSocket = false)
     {
         var declared = WgConfigEditor.GetMtu(config);
         return mode switch
         {
             MtuMode.Custom => stored > 0 ? stored : Declared(declared),
             MtuMode.Config => Declared(declared),
-            _ => Ceiling(config, linkMtu),
+            _ => Ceiling(config, linkMtu, webSocket),
         };
     }
 
@@ -56,15 +64,34 @@ public static class MtuPlan
     /// MTU for this config, asking the link how much it carries when the mode is auto. Nothing leaves the device:
     /// the link is read off the interface a route to the endpoint goes through.
     /// </summary>
-    public static int ResolveForLink(MtuMode mode, int stored, string config)
+    public static int ResolveForLink(MtuMode mode, int stored, string config, bool webSocket = false)
+        => ForLink(mode, stored, config, webSocket, LinkMtu.Towards);
+
+    /// <inheritdoc cref="ResolveForLink(MtuMode, int, string, bool)"/>
+    public static int ResolveForLink(ConfigTransport? transport, string config)
+        => ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config, transport?.UseWebSocket ?? false);
+
+    /// <summary>
+    /// The same size built from what the link towards the endpoint was last seen to carry. Nothing is looked up, so
+    /// a status snapshot names the size without waiting on a name.
+    /// </summary>
+    public static int ResolveForLearnedLink(MtuMode mode, int stored, string config, bool webSocket = false)
+        => ForLink(mode, stored, config, webSocket, LinkMtu.Learned);
+
+    /// <inheritdoc cref="ResolveForLearnedLink(MtuMode, int, string, bool)"/>
+    public static int ResolveForLearnedLink(ConfigTransport? transport, string config)
+        => ResolveForLearnedLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config, transport?.UseWebSocket ?? false);
+
+    // Auto is the only mode the link has a say in; a link that cannot be told counts as the largest there can be.
+    private static int ForLink(MtuMode mode, int stored, string config, bool webSocket, Func<string, int> link)
     {
         if (mode != MtuMode.Auto)
         {
-            return Resolve(mode, stored, config);
+            return Resolve(mode, stored, config, MtuModes.MaxMtu, webSocket);
         }
 
-        var link = LinkMtu.Towards(WgConfigEditor.GetEndpoint(config) ?? string.Empty);
-        return Resolve(mode, stored, config, link > 0 ? link : MtuModes.MaxMtu);
+        var mtu = link(WgConfigEditor.GetEndpoint(config) ?? string.Empty);
+        return Resolve(mode, stored, config, mtu > 0 ? mtu : MtuModes.MaxMtu, webSocket);
     }
 
     private static int Declared(int declared) => declared > 0 ? declared : WgConfigEditor.DefaultMtu;

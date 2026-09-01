@@ -71,10 +71,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _useRouter = true;
 
+    // Keeps the router switch out of the interface.
+    internal static bool RouterVisible => false;
+
     /// <summary>
     /// Whether this platform can decide connections of its own at all; only there is the switch worth showing.
     /// </summary>
-    public static bool RouterAvailable => OperatingSystem.IsAndroid();
+    public static bool RouterAvailable => RouterVisible && OperatingSystem.IsAndroid();
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;

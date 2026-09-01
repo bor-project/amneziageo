@@ -2426,7 +2426,7 @@ internal sealed class LinuxAgent : IDisposable
             member is { Present: false },
             WgConfigEditor.GetMtu(text),
             transport?.MtuMode ?? MtuMode.Auto,
-            MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text),
+            MtuPlan.ResolveForLearnedLink(transport, text),
             transport?.UseRouter ?? true);
     }
 

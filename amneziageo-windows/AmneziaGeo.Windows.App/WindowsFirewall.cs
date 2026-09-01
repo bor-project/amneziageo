@@ -39,6 +39,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     ];
 
     private readonly object _gate = new();
+
+    // Where an outbound v4 decision is installed. On the ALE layer a block answers the program with an error the
+    // moment it calls connect; on the transport layer the packet is dropped instead, so the stack repeats it and
+    // the repeat gets through once the verdict lands. IPv6 stays on ALE - no verdict is ever learned for it.
+    private Guid _outboundV4 = LayerAleAuthConnectV4;
     private IntPtr _engine = IntPtr.Zero;
     // Second, non-dynamic handle: only the event options and the subscription live on it.
     private IntPtr _eventEngine = IntPtr.Zero;
@@ -75,13 +80,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     /// <summary>
     /// Arms the kill-switch; permits before block. Block-list destinations are dropped per address on contact,
-    /// not materialized here. Returns false on failure.
+    /// not materialized here. With <paramref name="softBlock"/> the outbound v4 block drops packets instead of
+    /// refusing connect, so a program retries into the verdict rather than failing on it. Returns false on failure.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null, bool softBlock = false, IPAddress? underlayEndpoint = null)
     {
         lock (_gate)
         {
             DisableLocked();
+            _outboundV4 = softBlock ? LayerOutboundTransportV4 : LayerAleAuthConnectV4;
 
             if (ConvertInterfaceIndexToLuid(tunnelInterfaceIndex, out var luid) != 0)
             {
@@ -130,6 +137,12 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitDhcpV4(engine);
                     PermitLan(engine, extraLanCidrs ?? []);
 
+                    // Permits the underlay by address: the transport layer carries no ALE_APP_ID to permit it by.
+                    if (underlayEndpoint is not null && underlayEndpoint.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        PermitV4Cidr(engine, $"{underlayEndpoint}/32");
+                    }
+
                     // Stand-in addresses of the shared access point. Nothing leaves the machine to them: the
                     // gateway adapter terminates them and this process opens the name again, which the leak
                     // protection already permits. Without this the first packet of every client is dropped here.
@@ -162,6 +175,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 else
                 {
                     logger.LogInformation("adapter {Index} holds no blocking rules of its own; what leaves this machine is decided by the tunnel that carries it", tunnelInterfaceIndex);
+                }
+
+                if (softBlock)
+                {
+                    logger.LogDebug("a destination with no verdict yet is dropped without answering the program, so the network stack repeats the attempt and the repeat goes through once the verdict is there");
                 }
 
                 return true;
@@ -522,7 +540,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
             };
 
-            foreach (var layer in AleLayers)
+            foreach (var layer in DecisionLayers)
             {
                 Add(engine, layer, WeightTun, ActionPermit, 0, cond, "Permit tunnel interface");
             }
@@ -540,7 +558,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             Condition(CondFlags, MatchFlagsAllSet, FwpUint32, ConditionFlagIsLoopback),
         };
 
-        foreach (var layer in AleLayers)
+        foreach (var layer in DecisionLayers)
         {
             Add(engine, layer, WeightLoopback, ActionPermit, 0, cond, "Permit loopback");
         }
@@ -564,7 +582,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             Condition(CondIpRemotePort, MatchEqual, FwpUint16, remotePort),
         };
 
-        Add(engine, LayerAleAuthConnectV4, WeightDhcp, ActionPermit, 0, cond, $"Permit outbound {role}");
+        Add(engine, _outboundV4, WeightDhcp, ActionPermit, 0, cond, $"Permit outbound {role}");
         Add(engine, LayerAleAuthRecvAcceptV4, WeightDhcp, ActionPermit, 0, cond, $"Permit inbound {role}");
     }
 
@@ -631,7 +649,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
             };
 
-            var rcOut = AddRaw(engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, "Permit bypass (out)");
+            var rcOut = AddRaw(engine, _outboundV4, WeightLan, ActionPermit, 0, cond, "Permit bypass (out)");
             var rcIn = AddRaw(engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, "Permit bypass (in)");
             return rcOut == 0 && rcIn == 0;
         }
@@ -679,7 +697,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
                 };
 
-                if (AddRaw(_engine, LayerAleAuthConnectV4, weight, action, 0, cond, $"{label} (out)", out outId) != 0)
+                // A block belongs on ALE, where the program is told at once; a permit belongs where the block-all is.
+                var outLayer = action == ActionBlock ? LayerAleAuthConnectV4 : _outboundV4;
+                if (AddRaw(_engine, outLayer, weight, action, 0, cond, $"{label} (out)", out outId) != 0)
                 {
                     outId = 0;
                     return false;
@@ -799,7 +819,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private void BlockAll(IntPtr engine)
     {
         // Block-all at lowest weight; also blocks all v6 intentionally (v4-only tunnel).
-        foreach (var layer in AleLayers)
+        foreach (var layer in DecisionLayers)
         {
             Add(engine, layer, WeightBlock, ActionBlock, 0, [], "Block all");
         }
@@ -903,6 +923,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private static readonly Guid LayerAleAuthConnectV6 = new(0x4a72393b, 0x319f, 0x44bc, 0x84, 0xc3, 0xba, 0x54, 0xdc, 0xb3, 0xb6, 0xb4);
     private static readonly Guid LayerAleAuthRecvAcceptV4 = new(0xe1cd9fe7, 0xf4b5, 0x4273, 0x96, 0xc0, 0x59, 0x2e, 0x48, 0x7b, 0x86, 0x50);
     private static readonly Guid LayerAleAuthRecvAcceptV6 = new(0xa3b42c97, 0x9f04, 0x4672, 0xb8, 0x7e, 0xce, 0xe9, 0xc4, 0x83, 0x25, 0x7f);
+    private static readonly Guid LayerOutboundTransportV4 = new(0x09e61aea, 0xd214, 0x46e2, 0x9b, 0x21, 0xb2, 0x6b, 0x0b, 0x2f, 0x28, 0xc8);
     private static readonly Guid LayerOutboundMacFrameNative = new(0x94c44912, 0x9d6f, 0x4ebf, 0xb9, 0x95, 0x05, 0xab, 0x8a, 0x08, 0x8d, 0x1b);
     private static readonly Guid LayerInboundMacFrameNative = new(0xd4220bd3, 0x62ce, 0x4f08, 0xae, 0x88, 0xb5, 0x6e, 0x85, 0x26, 0xdf, 0x50);
 
@@ -918,6 +939,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private static readonly Guid[] AleLayers =
     [
         LayerAleAuthConnectV4,
+        LayerAleAuthRecvAcceptV4,
+        LayerAleAuthConnectV6,
+        LayerAleAuthRecvAcceptV6,
+    ];
+
+    // The four layers a v4/v6 decision is installed on; the outbound v4 half follows the soft-block choice.
+    private Guid[] DecisionLayers =>
+    [
+        _outboundV4,
         LayerAleAuthRecvAcceptV4,
         LayerAleAuthConnectV6,
         LayerAleAuthRecvAcceptV6,

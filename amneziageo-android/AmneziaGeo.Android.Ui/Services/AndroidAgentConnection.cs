@@ -98,6 +98,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _disposed;
     private string _logLevel = "error";
     private bool _routeLog;
+    private bool _directTcp = true;
+    private bool _excludeRoutes;
     private int _routeTtl = 300;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
@@ -546,7 +548,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
-            _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel));
+            _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel), _directTcp,
+            _excludeRoutes);
         return Ok();
     }
 
@@ -573,7 +576,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -595,6 +598,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         intent.PutExtra(GeoVpnService.ExtraEngineLog, engineLog);
+        intent.PutExtra(GeoVpnService.ExtraDirectTcp, directTcp);
+        intent.PutExtra(GeoVpnService.ExtraExcludeRoutes, excludeRoutes);
 
         if (transport is not null)
         {
@@ -957,7 +962,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             SubscriptionGone: member is { Present: false },
             ConfigMtu: WgConfigEditor.GetMtu(config),
             MtuMode: transport?.MtuMode ?? MtuMode.Auto,
-            ResolvedMtu: MtuPlan.Resolve(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config));
+            ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config));
     }
 
     private string StatusFor(string target)
@@ -2151,6 +2156,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _routeLog = route.ValueKind == JsonValueKind.True;
             }
 
+            if (document.RootElement.TryGetProperty("DirectTcp", out var directTcp)
+                && directTcp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _directTcp = directTcp.ValueKind == JsonValueKind.True;
+            }
+
+            if (document.RootElement.TryGetProperty("ExcludeRoutes", out var excludeRoutes)
+                && excludeRoutes.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _excludeRoutes = excludeRoutes.ValueKind == JsonValueKind.True;
+            }
+
             if (document.RootElement.TryGetProperty("AllowPrerelease", out var prerelease)
                 && prerelease.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
@@ -2288,6 +2305,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             AppendMap(builder, OrderedNames(), _configs);
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
+            builder.Append(",\"DirectTcp\":").Append(_directTcp ? "true" : "false");
+            builder.Append(",\"ExcludeRoutes\":").Append(_excludeRoutes ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
             builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
@@ -2540,7 +2559,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
-            ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, text),
+            ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
             CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
@@ -3318,6 +3337,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 Save();
                 PushSnapshot();
                 return Ok();
+            case SettingKeys.DirectTcp:
+                _directTcp = IsOn(args[1]);
+                _restartRequired = true;
+                Save();
+                PushSnapshot();
+                return Ok();
+            case SettingKeys.ExcludeRoutes:
+                _excludeRoutes = IsOn(args[1]);
+                _restartRequired = true;
+                Save();
+                PushSnapshot();
+                return Ok();
             case SettingKeys.RouteTtl:
                 if (!SettingKeys.TryParseRouteTtl(args[1], out var ttl))
                 {
@@ -3458,6 +3489,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("app rules    : ").Append(AppRulesLine(appMode, appPkgs.Length)).Append('\n');
         AppendRoutingReport(report);
         report.Append("log level    : ").Append(_logLevel).Append('\n');
+        report.Append("direct tcp   : ").Append(_directTcp ? "on" : "off").Append('\n');
+        report.Append("exclude routes: ").Append(_excludeRoutes ? "on" : "off").Append('\n');
         report.Append("route log    : ").Append(_routeLog ? "on" : "off").Append('\n');
         return new IpcAck(true, report.ToString());
     }

@@ -89,13 +89,13 @@
 
       <!-- Catalogue loader: the agent has not reported its routing lists yet (#134). -->
       <StackPanel IsVisible="{Binding ShowCatalogueLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
-        <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+        <ProgressBar IsIndeterminate="{Binding ShowCatalogueLoader}" Width="150" HorizontalAlignment="Center" />
         <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
       </StackPanel>
 
       <!-- Section loader until an opened list's rules + traffic settings finish (#193). -->
       <StackPanel IsVisible="{Binding ShowSettingsLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
-        <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+        <ProgressBar IsIndeterminate="{Binding ShowSettingsLoader}" Width="150" HorizontalAlignment="Center" />
         <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
       </StackPanel>
 

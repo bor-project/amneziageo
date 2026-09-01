@@ -136,7 +136,7 @@ internal sealed class TunnelRunner(
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        var effectiveMtu = MtuPlan.ResolveForLink(transport?.MtuMode ?? MtuMode.Auto, transport?.Mtu ?? 0, config);
+        var effectiveMtu = MtuPlan.ResolveForLink(transport, config);
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;
@@ -647,7 +647,7 @@ internal sealed class TunnelRunner(
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, routing, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -1369,7 +1369,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, RoutingCache? routing, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, IPAddress? endpoint, RoutingCache? routing, CancellationToken ct)
     {
         try
         {
@@ -1402,7 +1402,8 @@ internal sealed class TunnelRunner(
                 logger.LogInformation("{Name}: {Count} other tunnel(s) of the set are let through its leak protection, so what a rule sends to them is not blocked here", name, alongside.Count);
             }
 
-            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, ct), ct))
+            // Soft block only where a verdict is still coming: without the cache nothing would ever unblock the retry.
+            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, routing is not null, endpoint, ct), ct))
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
@@ -1430,10 +1431,10 @@ internal sealed class TunnelRunner(
 
     // Installs the filters and returns whether they survived. The session cancels before the teardown disables,
     // so a set that lands after it undoes itself here.
-    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<uint> alongside, CancellationToken ct)
+    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<uint> alongside, bool softBlock, IPAddress? endpoint, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside);
+        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, softBlock, endpoint);
         if (ct.IsCancellationRequested)
         {
             firewall.Disable();

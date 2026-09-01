@@ -19,6 +19,16 @@ public static class SettingKeys
     public const string MultiServer = "multi-server";
 
     /// <summary>
+    /// Whether a stream to a direct range leaves on a protected socket instead of riding the tunnel.
+    /// </summary>
+    public const string DirectTcp = "direct-tcp";
+
+    /// <summary>
+    /// Whether the addresses of the last session are left outside the tun by name; Android 13 and above.
+    /// </summary>
+    public const string ExcludeRoutes = "exclude-routes";
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public const string ProxyEnabled = "proxy-enabled";

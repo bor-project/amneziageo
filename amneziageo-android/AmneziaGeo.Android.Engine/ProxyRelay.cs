@@ -27,7 +27,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private const int CountEvery = 262144;
     private const int ConnectTimeoutMs = 8000;
     private const int MinSweepMs = 5_000;
-    private const int MaxSweepMs = 30_000;
+    private const int MaxSweepMs = 60_000;
     private const int MaxEntries = 4096;
     private const int TopHosts = 6;
     private const int SessionRows = SessionReport.MaxRows;
@@ -48,7 +48,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private readonly Func<IPEndPoint, string?>? _owner;
     private readonly RouteVerdict _undecided;
     private readonly string _rules;
-    private readonly long _idleTtlMs;
+    private long _idleTtlMs;
     private Socket? _listener;
     private long _accepted;
     private long _served;
@@ -616,6 +616,14 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         Volatile.Write(ref entry.LastTouch, Environment.TickCount64);
     }
 
+    /// <summary>
+    /// Sets how long a destination is held without traffic; the next sweep reclaims whatever it now covers.
+    /// </summary>
+    public void SetTtl(int seconds)
+    {
+        Volatile.Write(ref _idleTtlMs, Math.Max(1, seconds) * 1000L);
+    }
+
     // Keeps what a dropped destination carried in the total.
     private void Retire(Entry entry)
     {
@@ -625,12 +633,12 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     // Drops what nothing has used for the idle window; a destination with a live connection is never dropped.
     private async Task SweepAsync(CancellationToken ct)
     {
-        var interval = (int)Math.Clamp(_idleTtlMs / 5, MinSweepMs, MaxSweepMs);
         while (!ct.IsCancellationRequested)
         {
+            var idleTtlMs = Volatile.Read(ref _idleTtlMs);
             try
             {
-                await Task.Delay(interval, ct).ConfigureAwait(false);
+                await Task.Delay((int)Math.Clamp(idleTtlMs / 5, MinSweepMs, MaxSweepMs), ct).ConfigureAwait(false);
             }
             catch (System.OperationCanceledException)
             {
@@ -641,7 +649,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             foreach (var pair in _entries)
             {
                 var entry = pair.Value;
-                if (Volatile.Read(ref entry.Live) > 0 || now - Volatile.Read(ref entry.LastTouch) < _idleTtlMs)
+                if (Volatile.Read(ref entry.Live) > 0 || now - Volatile.Read(ref entry.LastTouch) < idleTtlMs)
                 {
                     continue;
                 }
@@ -650,7 +658,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
                 {
                     Retire(entry);
                     Interlocked.Increment(ref _released);
-                    _log($"relay: {pair.Key} released after {_idleTtlMs / 1000} s idle");
+                    _log($"relay: {pair.Key} released after {idleTtlMs / 1000} s idle");
                 }
             }
 

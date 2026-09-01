@@ -18,6 +18,52 @@ public sealed class SystemRoutesTests
     }
 
     [Fact]
+    public void Fit_KeepsEveryAddressWhenTheBudgetHoldsThemAll()
+    {
+        var hot = Addresses(16);
+
+        var taken = SystemRoutes.Fit(true, [], ["192.168.1.0/24"], [], hot, 1000);
+
+        Assert.Equal(16, taken);
+    }
+
+    [Fact]
+    public void Fit_HalvesTheSetUntilItFits()
+    {
+        var hot = Addresses(64);
+
+        var budget = RouteCountOf(Addresses(8));
+
+        var taken = SystemRoutes.Fit(true, [], [], [], hot, budget);
+
+        Assert.InRange(taken, 1, 32);
+        Assert.True(RouteCountOf([.. hot.Take(taken)]) <= budget);
+    }
+
+    [Fact]
+    public void Fit_TakesNothingWhenOneAddressAlreadyOvershoots()
+    {
+        Assert.Equal(0, SystemRoutes.Fit(true, [], [], [], Addresses(4), 4));
+    }
+
+    [Fact]
+    public void Fit_TakesNothingWhenThereIsNothingToTake()
+    {
+        Assert.Equal(0, SystemRoutes.Fit(true, [], [], [], [], 1000));
+    }
+
+    // One address out of each /24, so none of them merges with the next and every one costs its own routes.
+    private static string[] Addresses(int count)
+    {
+        return [.. Enumerable.Range(0, count).Select(index => $"203.0.{index}.7/32")];
+    }
+
+    private static int RouteCountOf(IReadOnlyList<string> addresses)
+    {
+        return SystemRoutes.Tunneled(true, [], addresses, []).Count;
+    }
+
+    [Fact]
     public void Carve_TakesTheWidestRangeWhenTheBudgetHoldsOne()
     {
         var carved = SystemRoutes.Carve(["192.168.7.0/24", "10.0.0.0/8", "172.16.0.0/12"], [], [], 8);

@@ -21,6 +21,7 @@ import "C"
 
 import (
 	"fmt"
+	"time"
 	"unsafe"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
@@ -154,6 +155,43 @@ func wgSetVerdicts(handle int32, spec *C.char) int32 {
 		return -1
 	}
 	t.tun.setTable(parseTable(C.GoString(spec)))
+	return 0
+}
+
+//export wgPrepareSwap
+func wgPrepareSwap(handle int32, on int32) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+
+	t.tun.prepareSwap(on != 0)
+	return 0
+}
+
+//export wgSwapTun
+func wgSwapTun(handle int32, tunFd int32) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+
+	next, _, err := tun.CreateUnmonitoredTUNFromFD(int(tunFd))
+	if err != nil {
+		return -1
+	}
+
+	t.tun.swap(next)
+	return 0
+}
+
+//export wgSetVerdictTtl
+func wgSetVerdictTtl(handle int32, seconds int32) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok || seconds < 1 {
+		return -1
+	}
+	t.tun.setTtl(time.Duration(seconds) * time.Second)
 	return 0
 }
 

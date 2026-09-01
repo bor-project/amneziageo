@@ -143,7 +143,12 @@ public sealed class GeoVpnService : VpnService
     private WsCarrier? _carrier;
     private ProxyRelay? _relay;
     private LocalProxyServer? _proxy;
+    private TunShape? _shape;
+    private IReadOnlyList<string> _excluded = [];
+    private bool _liveTun;
+    private int _ttlSeconds = 300;
     private VpnBridge.Listener? _proxySettings;
+    private VpnBridge.Listener? _routeTtl;
     private VpnBridge.Listener? _probes;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
@@ -172,6 +177,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
         _proxySettings = new VpnBridge.Listener { Handler = _ => ApplyProxy() };
         VpnBridge.Listen(this, _proxySettings, VpnBridge.ActionProxy);
+        _routeTtl = new VpnBridge.Listener { Handler = _ => ApplyRouteTtl() };
+        VpnBridge.Listen(this, _routeTtl, VpnBridge.ActionRouteTtl);
         _probes = new VpnBridge.Listener { Handler = _ => RunProbe() };
         VpnBridge.Listen(this, _probes, VpnBridge.ActionProbe);
         WatchUnderlay();
@@ -250,6 +257,18 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_stops);
             _stops = null;
+        }
+
+        if (_proxySettings is not null)
+        {
+            UnregisterReceiver(_proxySettings);
+            _proxySettings = null;
+        }
+
+        if (_routeTtl is not null)
+        {
+            UnregisterReceiver(_routeTtl);
+            _routeTtl = null;
         }
 
         if (_probes is not null)
@@ -431,7 +450,11 @@ public sealed class GeoVpnService : VpnService
             var relay = NeedsRelay(plan) ? new ProxyRelay(plan, Protect, Report, ResolveOwner) : null;
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
-            var rules = await MaterializeAsync(plan, servers, _proxyPort > 0).ConfigureAwait(false);
+            // The tun of a running session can only be replaced where exclusions exist; below that the addresses
+            // the last session used leave it at connect instead, as many as the route budget holds.
+            _liveTun = excludeRoutes && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu;
+            var hot = excludeRoutes ? HotDirect() : [];
+            var rules = await MaterializeAsync(plan, servers, _proxyPort > 0, _liveTun ? [] : hot).ConfigureAwait(false);
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
                 Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
@@ -444,8 +467,9 @@ public sealed class GeoVpnService : VpnService
             // The mode says where the size comes from: the link, the config text, or the one stored for it.
             var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, underlay, carrier is not null);
             Report($"packets leave at {size} bytes ({MtuModes.Text(MtuModes.From(mtuMode))})");
+            var excluded = _liveTun ? hot : [];
             var pfd = BuildTunnel(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort,
-                Excluded(excludeRoutes), out var establishError);
+                excluded, out var establishError);
             if (pfd is null)
             {
                 Teardown(VpnStage.Failed, establishError ?? "establish failed",
@@ -456,6 +480,8 @@ public sealed class GeoVpnService : VpnService
             // What this tun leaves outside itself, held for as long as it lives: its route list is fixed now and the
             // networks under it are not.
             _carved = new List<string>(rules.Local);
+            _shape = new TunShape(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort);
+            _excluded = excluded;
 
             var tunFd = pfd.DetachFd();
             var handle = AwgEngine.TurnOn(Restrict(uapi, rules.Allowed), tunFd, engineLog);
@@ -487,6 +513,11 @@ public sealed class GeoVpnService : VpnService
                 Report("a stream to a direct range leaves on a protected socket as well, so the relay is no longer "
                     + "the only way past the tunnel");
             }
+
+            // Both caches hold a destination for the same window, and the engine is told it instead of assuming one.
+            _ttlSeconds = plan.TtlSeconds;
+            AwgEngine.SetVerdictTtl(handle, plan.TtlSeconds);
+            VpnBridge.WriteRouteTtl(plan.TtlSeconds);
 
             // The peer has to answer before the session counts as up: the tun and the engine start over a dead
             // server just as well, and the head would paint a live connection over nothing.
@@ -535,6 +566,12 @@ public sealed class GeoVpnService : VpnService
             var reports = new CancellationTokenSource();
             _reports = reports;
             _ = Task.Run(() => ReportShareAsync(relay, reports.Token));
+            if (_liveTun)
+            {
+                Report("a destination decided direct leaves this tun on its own exclusion, and comes back to it "
+                    + "when the cache releases it");
+                _ = Task.Run(() => RefreshTunAsync(reports.Token));
+            }
 
             // The port the user set up: it opens with the tunnel, because everything it carries leaves through it.
             _proxy = new LocalProxyServer((IProxyOutbound?)relay ?? new DirectProxyOutbound(), Report);
@@ -628,12 +665,24 @@ public sealed class GeoVpnService : VpnService
         return true;
     }
 
+    // What this session's tun is made of; the same parts rebuild it under a new set of exclusions.
+    private sealed record TunShape(
+        string Config,
+        string Name,
+        string? AppMode,
+        string[]? AppList,
+        int Mtu,
+        bool Ipv6,
+        IReadOnlyList<string> Routes,
+        IReadOnlyList<string> Servers,
+        int ProxyPort);
+
     // Turns the rules into the two address lists a tunnel is built from. Behind the relay a destination is decided
     // while the session runs, so no name is resolved at connect - the mode only says where a destination no rule
     // named belongs. A route table holds addresses and not protocols, so the tun there carries every datagram
     // except the direct ranges it leaves out. Without the relay a name has to become an address here and stay that
     // way for the session: a route table cannot be edited once the tun is established.
-    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, IReadOnlyList<string> servers, bool relayed)
+    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
         var direct = relayed ? [] : new List<string>(plan.DirectRoutes);
@@ -700,6 +749,19 @@ public sealed class GeoVpnService : VpnService
             block.AddRange(await resolver.ResolveAsync(plan.BlockDomains).ConfigureAwait(false));
             Report($"{names} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms; "
                 + "a name that moves to another address will no longer match");
+        }
+
+        // Where the tun cannot be replaced on a running session, the addresses the last one took past the tunnel
+        // leave it from the start - as many of them as the route budget still holds.
+        var taken = hot.Count > 0
+            ? SystemRoutes.Fit(plan.FullTunnel || relayed, proxy, direct, block, hot, RouteBudget.Max)
+            : 0;
+        if (taken > 0)
+        {
+            direct.AddRange(hot.Take(taken));
+            kept.AddRange(hot.Take(taken));
+            Report($"{taken} of {hot.Count} address(es) the last session used leave the tun from the start, so the "
+                + "kernel carries them instead of the shim");
         }
 
         var tunneled = SystemRoutes.Tunneled(plan.FullTunnel || relayed, proxy, direct, block);
@@ -889,13 +951,6 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // Что оставить вне tun поимённо: одна запись на адрес вместо покрывающих маршрутов. Ветка платформы, а
-    // не режима: до API 33 исключения задаются только инверсией списка, и она стоит подъёма туннеля.
-    private IReadOnlyList<string> Excluded(bool wanted)
-    {
-        return wanted && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu ? HotDirect() : [];
-    }
-
     private static void Exclude(Builder builder, IReadOnlyList<string> addresses)
     {
         try
@@ -914,30 +969,99 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
+    // Follows the engine's cache with the same step the relay and the shim sweep by, so a destination decided
+    // direct leaves the tun about as fast as it would get its own route on the other platforms.
+    private async Task RefreshTunAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(Math.Clamp(_ttlSeconds / 5, 5, 60) * 1000, ct).ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
+                return;
+            }
+
+            RefreshTun();
+        }
+    }
+
+    // Rebuilds the tun around what the cache holds now: an address decided direct is excluded from it, and one the
+    // cache has released is captured by it again. The engine keeps its peer and its handshake across the change.
+    private void RefreshTun()
+    {
+        var shape = _shape;
+        var handle = _handle;
+        if (shape is null || handle < 0 || _stage != VpnStage.Connected)
+        {
+            return;
+        }
+
+        var wanted = DirectAddresses(AwgEngine.LiveAddresses(handle));
+        if (wanted.Count == _excluded.Count && new HashSet<string>(wanted).SetEquals(_excluded))
+        {
+            return;
+        }
+
+        // The system closes the running tun the moment a new one is established, so the shim is told to wait for
+        // the replacement instead of reading a closed descriptor and taking the tunnel down with it.
+        AwgEngine.PrepareSwap(handle, true);
+        var pfd = BuildTunnel(shape.Config, shape.Name, shape.AppMode, shape.AppList, shape.Mtu, shape.Ipv6,
+            shape.Routes, shape.Servers, shape.ProxyPort, wanted, out var error);
+        if (pfd is null)
+        {
+            AwgEngine.PrepareSwap(handle, false);
+            Report($"the tun could not be rebuilt around {wanted.Count} direct address(es): {error}");
+            return;
+        }
+
+        var tunFd = pfd.DetachFd();
+        if (!AwgEngine.SwapTun(handle, tunFd))
+        {
+            AwgEngine.PrepareSwap(handle, false);
+            ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
+            Report("the engine refused the rebuilt tun, so the session keeps the one it has");
+            return;
+        }
+
+        var added = wanted.Count - _excluded.Count;
+        _excluded = wanted;
+        Report($"{wanted.Count} address(es) decided direct now leave the tun on their own ({added:+#;-#;0})");
+    }
+
+    // Addresses the engine holds a direct verdict for, freshest first and no more than the tun takes.
+    private static IReadOnlyList<string> DirectAddresses(string? live)
+    {
+        if (string.IsNullOrEmpty(live))
+        {
+            return [];
+        }
+
+        var hot = new List<(string Address, int Age)>();
+        foreach (var line in live.Split('\n'))
+        {
+            var parts = line.Split(' ');
+            if (parts.Length == 3 && parts[1] == "direct"
+                && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var age)
+                && age <= HotTtlSeconds)
+            {
+                hot.Add((parts[0], age));
+            }
+        }
+
+        hot.Sort((left, right) => left.Age.CompareTo(right.Age));
+        return [.. hot.Take(HotMax).Select(item => item.Address)];
+    }
+
     // What the session has touched past the tunnel, kept for the next one: the route table is fixed at establish(),
     // so a list of what is actually used can only come from the session before.
     private void KeepHotDirect()
     {
         try
         {
-            var live = AwgEngine.LiveAddresses(_handle);
-            if (string.IsNullOrEmpty(live))
-            {
-                return;
-            }
-
-            var hot = new List<string>();
-            foreach (var line in live.Split('\n'))
-            {
-                var parts = line.Split(' ');
-                if (parts.Length == 3 && parts[1] == "direct" && hot.Count < HotMax
-                    && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var age)
-                    && age <= HotTtlSeconds)
-                {
-                    hot.Add(parts[0]);
-                }
-            }
-
+            var hot = DirectAddresses(AwgEngine.LiveAddresses(_handle));
             var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, HotFile);
             if (hot.Count == 0)
             {
@@ -1600,6 +1724,26 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
+    // Moves both caches to the window the head last wrote: the relay holds names, the engine holds addresses.
+    private void ApplyRouteTtl()
+    {
+        var seconds = VpnBridge.ReadRouteTtl();
+        if (seconds <= 0)
+        {
+            return;
+        }
+
+        _ttlSeconds = seconds;
+        _relay?.SetTtl(seconds);
+        var handle = _handle;
+        if (handle >= 0)
+        {
+            AwgEngine.SetVerdictTtl(handle, seconds);
+        }
+
+        Report($"a destination unused for {seconds} s is now released and decided again on the next contact");
+    }
+
     private void Release()
     {
         _reports?.Cancel();
@@ -1614,6 +1758,9 @@ public sealed class GeoVpnService : VpnService
         _proxy = null;
         VpnBridge.WriteProxyState(false, string.Empty);
         VpnBridge.ClearSessions();
+        _shape = null;
+        _excluded = [];
+        _liveTun = false;
         _proxyPort = 0;
         _proxyEnd = null;
         _packages.Clear();

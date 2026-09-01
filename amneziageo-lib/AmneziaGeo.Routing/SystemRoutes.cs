@@ -41,6 +41,31 @@ public static class SystemRoutes
     }
 
     /// <summary>
+    /// How many of these addresses can leave the tun before its route table outgrows the budget. The set is halved
+    /// until it fits, so the freshest addresses are the ones kept.
+    /// </summary>
+    public static int Fit(
+        bool fullTunnel,
+        IReadOnlyList<string> proxy,
+        IReadOnlyList<string> direct,
+        IReadOnlyList<string> block,
+        IReadOnlyList<string> extra,
+        int budget)
+    {
+        for (var take = extra.Count; take > 0; take /= 2)
+        {
+            var probe = new List<string>(direct);
+            probe.AddRange(extra.Take(take));
+            if (Tunneled(fullTunnel, proxy, probe, block).Count <= budget)
+            {
+                return take;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
     /// Direct ranges a tun that carries everything still leaves outside itself, widest first, as many as the route
     /// budget holds. What never reaches a relay - a datagram, a socket that ignores the proxy - is decided by the
     /// route table alone, so these ranges take the physical path even behind one.

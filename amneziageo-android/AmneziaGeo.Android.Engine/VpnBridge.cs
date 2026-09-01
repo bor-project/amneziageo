@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Android.App;
 using Android.Content;
@@ -122,12 +123,18 @@ public static class VpnBridge
     /// </summary>
     public const string ActionProbe = "org.amneziageo.android.VPN_PROBE";
 
+    /// <summary>
+    /// Broadcast that makes a running tunnel take the idle window of a destination again.
+    /// </summary>
+    public const string ActionRouteTtl = "org.amneziageo.android.VPN_ROUTE_TTL";
+
     private const string PlanFile = "plan.json";
     private const string ProxyFile = "proxy.json";
     private const string ProxyStateFile = "proxy-state.json";
     private const string SessionsFile = "sessions.txt";
     private const string RequestFile = "session.json";
     private const string ProbeFile = "probe.json";
+    private const string RouteTtlFile = "route-ttl.txt";
     private const string ProbeResultFile = "probe-result.txt";
     private const string ProcessSuffix = ":vpn";
 
@@ -361,6 +368,46 @@ public static class VpnBridge
     public static void RequestProxy(Context context) => context.SendBroadcast(Broadcast(context, ActionProxy));
 
     /// <summary>
+    /// Writes the idle window a destination is held for, for the tunnel to read on a running session.
+    /// </summary>
+    public static void WriteRouteTtl(int seconds)
+    {
+        try
+        {
+            File.WriteAllText(RouteTtlPath(), seconds.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the route ttl failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the idle window the head last wrote; zero where it wrote none.
+    /// </summary>
+    public static int ReadRouteTtl()
+    {
+        try
+        {
+            var path = RouteTtlPath();
+            return File.Exists(path)
+                && int.TryParse(File.ReadAllText(path).Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
+                ? seconds
+                : 0;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the route ttl failed: " + ex);
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Asks a running tunnel to take the idle window again; a tunnel that is not running takes it at start.
+    /// </summary>
+    public static void RequestRouteTtl(Context context) => context.SendBroadcast(Broadcast(context, ActionRouteTtl));
+
+    /// <summary>
     /// Writes whether the listener came up, for the head to show.
     /// </summary>
     public static void WriteProxyState(bool running, string error)
@@ -580,6 +627,9 @@ public static class VpnBridge
 
     private static string RequestPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RequestFile);
+
+    private static string RouteTtlPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RouteTtlFile);
 
     private static string ProbePath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProbeFile);

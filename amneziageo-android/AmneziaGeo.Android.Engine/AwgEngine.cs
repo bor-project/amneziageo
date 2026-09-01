@@ -77,6 +77,30 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
+    /// Tells the shim a tun of its own is about to be replaced, so a read failing meanwhile waits for the new one.
+    /// </summary>
+    public static bool PrepareSwap(int handle, bool pending)
+    {
+        return PrepareSwapNative(handle, pending ? 1 : 0) == 0;
+    }
+
+    /// <summary>
+    /// Puts a freshly established tun under the running engine and closes the previous one.
+    /// </summary>
+    public static bool SwapTun(int handle, int tunFd)
+    {
+        return SwapTunNative(handle, tunFd) == 0;
+    }
+
+    /// <summary>
+    /// Sets how long the shim keeps an address it has seen no traffic for.
+    /// </summary>
+    public static bool SetVerdictTtl(int handle, int seconds)
+    {
+        return SetVerdictTtlNative(handle, seconds) == 0;
+    }
+
+    /// <summary>
     /// Reads the addresses the session has touched, one "address role age" a line.
     /// </summary>
     public static string? LiveAddresses(int handle)
@@ -150,6 +174,15 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgSetTcpDirect")]
     private static partial int SetTcpDirectNative(int handle, int enable);
+
+    [LibraryImport(Lib, EntryPoint = "wgPrepareSwap")]
+    private static partial int PrepareSwapNative(int handle, int pending);
+
+    [LibraryImport(Lib, EntryPoint = "wgSwapTun")]
+    private static partial int SwapTunNative(int handle, int tunFd);
+
+    [LibraryImport(Lib, EntryPoint = "wgSetVerdictTtl")]
+    private static partial int SetVerdictTtlNative(int handle, int seconds);
 
     [LibraryImport(Lib, EntryPoint = "wgTunnelStats")]
     private static partial IntPtr StatsNative(int handle);

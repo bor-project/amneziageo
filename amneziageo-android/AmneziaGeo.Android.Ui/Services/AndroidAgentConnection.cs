@@ -99,7 +99,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _logLevel = "error";
     private bool _routeLog;
     private bool _directTcp = true;
-    private bool _excludeRoutes;
+    private bool _excludeRoutes = true;
     private int _routeTtl = 300;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
@@ -3356,6 +3356,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 }
 
                 _routeTtl = ttl;
+                VpnBridge.WriteRouteTtl(ttl);
+                if (VpnBridge.IsRunning(Application.Context))
+                {
+                    VpnBridge.RequestRouteTtl(Application.Context);
+                }
+
                 Save();
                 PushSnapshot();
                 return Ok();

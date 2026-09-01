@@ -22,8 +22,20 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 )
 
-// Сколько запись живёт без трафика.
+// Сколько запись живёт без трафика, пока хост не задал своё окно.
 const defaultVerdictTtl = 300 * time.Second
+
+// Шаг уборки: то же окно, что у релея на стороне хоста.
+const (
+	minSweepInterval = 5 * time.Second
+	maxSweepInterval = 60 * time.Second
+)
+
+// Сколько ждать обещанный tun, прежде чем считать чтение сорванным.
+const (
+	swapWait = 5 * time.Second
+	swapStep = 20 * time.Millisecond
+)
 
 type verdict uint8
 
@@ -189,13 +201,25 @@ type touch struct {
 type liveSet struct {
 	mu    sync.RWMutex
 	items map[uint32]*touch
-	ttl   time.Duration
+	ttl   atomic.Int64
 	max   int
 	swept atomic.Int64
 }
 
 func newLiveSet(ttl time.Duration, max int) *liveSet {
-	return &liveSet{items: make(map[uint32]*touch), ttl: ttl, max: max}
+	l := &liveSet{items: make(map[uint32]*touch), max: max}
+	l.ttl.Store(int64(ttl))
+	return l
+}
+
+// Меняет окно простоя на живом туннеле.
+func (l *liveSet) setTtl(ttl time.Duration) {
+	l.ttl.Store(int64(ttl))
+}
+
+// Текущее окно простоя.
+func (l *liveSet) window() time.Duration {
+	return time.Duration(l.ttl.Load())
 }
 
 // Отметка идёт по каждому пакету, поэтому запись обновляется не чаще раза в секунду.
@@ -222,8 +246,15 @@ func (l *liveSet) note(addr uint32, v verdict, nanos int64) {
 	l.mu.Unlock()
 }
 
+// Уборка по расписанию, а не только при снятии снимка.
+func (l *liveSet) sweep(nanos int64) {
+	l.mu.Lock()
+	l.sweepLocked(nanos)
+	l.mu.Unlock()
+}
+
 func (l *liveSet) sweepLocked(nanos int64) {
-	deadline := nanos - int64(l.ttl)
+	deadline := nanos - l.ttl.Load()
 	for addr, item := range l.items {
 		if item.last.Load() < deadline {
 			delete(l.items, addr)
@@ -243,7 +274,7 @@ func (l *liveSet) size() int {
 func (l *liveSet) snapshot(nanos int64) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if nanos-l.swept.Load() > int64(l.ttl) {
+	if nanos-l.swept.Load() > l.ttl.Load() {
 		l.sweepLocked(nanos)
 	}
 	var out strings.Builder
@@ -260,7 +291,9 @@ func (l *liveSet) snapshot(nanos int64) string {
 
 // Стоит между системным tun и движком: ведёт учёт живых адресов и снимает блокированные пакеты.
 type verdictTun struct {
-	inner tun.Device
+	inner   atomic.Pointer[tun.Device]
+	events  chan tun.Event
+	pending atomic.Bool
 
 	mu    sync.RWMutex
 	table *verdictTable
@@ -271,15 +304,111 @@ type verdictTun struct {
 
 	protect atomic.Pointer[func(int) bool]
 
+	stop chan struct{}
+	once sync.Once
+
 	blocked atomic.Uint64
 	passed  atomic.Uint64
 	seen    atomic.Uint64
 }
 
 func newVerdictTun(inner tun.Device, ttl time.Duration) *verdictTun {
-	d := &verdictTun{inner: inner, live: newLiveSet(ttl, 65536)}
-	d.fwd = newForwarder(inner, &d.protect)
+	d := &verdictTun{live: newLiveSet(ttl, 65536), stop: make(chan struct{}), events: make(chan tun.Event, 8)}
+	d.inner.Store(&inner)
+	// Форвардеры пишут ответы через этот же слой, поэтому подмена tun доходит и до них.
+	d.fwd = newForwarder(d, &d.protect)
+	go d.sweeping()
+	go d.relayEvents(inner)
 	return d
+}
+
+// Системный tun, который слой читает прямо сейчас.
+func (d *verdictTun) device() tun.Device {
+	return *d.inner.Load()
+}
+
+// Объявляет подмену: до неё ошибка чтения означает закрытый хостом tun, а не мёртвый туннель.
+func (d *verdictTun) prepareSwap(on bool) {
+	d.pending.Store(on)
+}
+
+// Ставит под движок новый системный tun и закрывает прежний; чтение продолжается с нового.
+func (d *verdictTun) swap(next tun.Device) {
+	previous := d.device()
+	if previous == next {
+		d.pending.Store(false)
+		return
+	}
+
+	d.inner.Store(&next)
+	d.pending.Store(false)
+	go d.relayEvents(next)
+	previous.Close()
+}
+
+// Ждёт обещанный tun; по истечении ожидания чтение отдаёт свою ошибку и туннель закрывается.
+func (d *verdictTun) awaitSwap(previous tun.Device) bool {
+	for waited := time.Duration(0); waited < swapWait; waited += swapStep {
+		if d.device() != previous {
+			return true
+		}
+
+		if !d.pending.Load() {
+			return false
+		}
+
+		time.Sleep(swapStep)
+	}
+
+	d.pending.Store(false)
+	return false
+}
+
+// Пробрасывает события системного tun движку через собственный канал.
+func (d *verdictTun) relayEvents(from tun.Device) {
+	source := from.Events()
+	for {
+		select {
+		case <-d.stop:
+			return
+		case event, ok := <-source:
+			if !ok {
+				return
+			}
+
+			select {
+			case d.events <- event:
+			default:
+			}
+		}
+	}
+}
+
+// Задаёт окно простоя учёта адресов.
+func (d *verdictTun) setTtl(ttl time.Duration) {
+	d.live.setTtl(ttl)
+}
+
+// Отпускает простаивающие записи по расписанию.
+func (d *verdictTun) sweeping() {
+	for {
+		interval := d.live.window() / 5
+		if interval < minSweepInterval {
+			interval = minSweepInterval
+		}
+		if interval > maxSweepInterval {
+			interval = maxSweepInterval
+		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-d.stop:
+			timer.Stop()
+			return
+		case <-timer.C:
+			d.live.sweep(time.Now().UnixNano())
+		}
+	}
 }
 
 // Кто отпускает наш сокет мимо туннеля.
@@ -300,12 +429,12 @@ func (d *verdictTun) setTcpDirect(on bool) error {
 		return nil
 	}
 
-	mtu, err := d.inner.MTU()
+	mtu, err := d.MTU()
 	if err != nil || mtu < 576 {
 		mtu = defaultTunMtu
 	}
 
-	fwd, err := newTcpForwarder(d.inner, mtu, &d.protect)
+	fwd, err := newTcpForwarder(d, mtu, &d.protect)
 	if err != nil {
 		return err
 	}
@@ -360,7 +489,18 @@ func (d *verdictTun) verdictFor(addr uint32) (verdict, bool) {
 }
 
 func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
-	n, err := d.inner.Read(bufs, sizes, offset)
+	inner := d.device()
+	n, err := inner.Read(bufs, sizes, offset)
+	// Ошибка на подменённом tun не поднимается наверх: движок закрывается на любой другой.
+	for err != nil && (d.device() != inner || d.pending.Load()) {
+		if d.device() == inner && !d.awaitSwap(inner) {
+			break
+		}
+
+		inner = d.device()
+		n, err = inner.Read(bufs, sizes, offset)
+	}
+
 	if n == 0 || err != nil {
 		return n, err
 	}
@@ -395,22 +535,23 @@ func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 }
 
 func (d *verdictTun) Write(bufs [][]byte, offset int) (int, error) {
-	return d.inner.Write(bufs, offset)
+	return d.device().Write(bufs, offset)
 }
 
-func (d *verdictTun) File() *os.File           { return d.inner.File() }
-func (d *verdictTun) MTU() (int, error)        { return d.inner.MTU() }
-func (d *verdictTun) Name() (string, error)    { return d.inner.Name() }
-func (d *verdictTun) Events() <-chan tun.Event { return d.inner.Events() }
+func (d *verdictTun) File() *os.File           { return d.device().File() }
+func (d *verdictTun) MTU() (int, error)        { return d.device().MTU() }
+func (d *verdictTun) Name() (string, error)    { return d.device().Name() }
+func (d *verdictTun) Events() <-chan tun.Event { return d.events }
 func (d *verdictTun) Close() error {
+	d.once.Do(func() { close(d.stop) })
 	if fwd := d.tcp.Swap(nil); fwd != nil {
 		fwd.close()
 	}
 
 	d.fwd.close()
-	return d.inner.Close()
+	return d.device().Close()
 }
-func (d *verdictTun) BatchSize() int { return d.inner.BatchSize() }
+func (d *verdictTun) BatchSize() int { return d.device().BatchSize() }
 
 // Адрес назначения пакета IPv4; остальному трафику вердикт не ставится.
 func destinationIPv4(packet []byte) (uint32, bool) {

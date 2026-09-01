@@ -119,6 +119,45 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         ShowNotice(FleetNotice.Of(ack));
     }
 
+    /// <inheritdoc/>
+    public override async Task ReconnectLiveAsync(ConfigItemViewModel item)
+    {
+        if (!MultiServer)
+        {
+            await base.ReconnectLiveAsync(item);
+            return;
+        }
+
+        // Правка транспорта доходит до туннеля новым подъёмом, и карточка поднимает свой сервер.
+        if (item.Status is not (ConnectionStatus.Connected or ConnectionStatus.Connecting))
+        {
+            return;
+        }
+
+        var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.Disconnect, [item.Name]));
+        if (!ack.Ok)
+        {
+            ShowNotice(FleetNotice.Of(ack));
+            return;
+        }
+
+        await WaitForMemberDownAsync(item);
+        ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.Connect, [item.Name]));
+        if (!ack.Ok)
+        {
+            ShowNotice(FleetNotice.Of(ack));
+        }
+    }
+
+    // Ждёт ухода сервера, но не дольше пятнадцати секунд.
+    private static async Task WaitForMemberDownAsync(ConfigItemViewModel item)
+    {
+        for (var at = 0; at < 75 && item.Status is ConnectionStatus.Connected or ConnectionStatus.Connecting or ConnectionStatus.Disconnecting; at++)
+        {
+            await Task.Delay(200);
+        }
+    }
+
     // Отдаёт машину выбранному серверу.
     [RelayCommand(CanExecute = nameof(CanMakePrimary))]
     private async Task MakePrimary()

@@ -929,7 +929,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Reconnects a live configuration after a transport edit: the setting reaches the tunnel only on a fresh dial.
     /// </summary>
-    public async Task ReconnectLiveAsync(ConfigItemViewModel item)
+    public virtual async Task ReconnectLiveAsync(ConfigItemViewModel item)
     {
         // Занятый переход, зависший снос и предложенный перехват ведут туннель сами.
         if (!IsLiveConfig(item) || Reconnecting || DisconnectFailed || TakeoverPending)

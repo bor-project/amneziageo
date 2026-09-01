@@ -692,6 +692,13 @@ internal sealed class TunnelRunner(
         config = WgConfigEditor.EnsurePersistentKeepalive(config, DefaultKeepaliveSeconds);
         logger.LogInformation("{Name}: packet size set to {Mtu} and a keepalive every {Keepalive}s, so a quiet link is not dropped by the provider", name, effectiveMtu, DefaultKeepaliveSeconds);
 
+        // Leaves out the fields the engine has no parser for.
+        config = WgConfigEditor.RemoveInterfaceFields(config, WireGuardEngine.UnknownFields, out var unknown);
+        if (unknown.Count > 0)
+        {
+            logger.LogWarning("{Name}: the tunnel engine of this build does not know {Fields}, so they were left out of the config it is given; a server that requires them will not answer", name, string.Join(", ", unknown));
+        }
+
         // A carrier that stops carrying leaves the session standing, so the link is measured from inside the tunnel
         // and the carrier re-dialled on what the echoes say - the tunnel, its routes and its DNS all stay up.
         if (wsTransport is not null)
@@ -1194,6 +1201,12 @@ internal sealed class TunnelRunner(
             return await AdoptLentAsync(tunnelName, ct) ? "ok" : "-";
         }
 
+        if (op == RuntimeSnapshotPipe.OpPeers)
+        {
+            await AdoptPeersAsync(tunnelName, ct);
+            return "ok";
+        }
+
         if (op.StartsWith(RuntimeSnapshotPipe.OpCarry, StringComparison.Ordinal))
         {
             var asked = op.Split('\t');
@@ -1238,6 +1251,38 @@ internal sealed class TunnelRunner(
 
     // Re-reads which tunnel standing alongside carries which names. Only the one holding this machine's
     // lookups answers: every name arrives there, and it is where they are handed over.
+    // Squares the leak protection with the tunnels standing alongside: one that came up after it was armed is let
+    // through, one that left is taken back out. Only the tunnel carrying the machine holds a block of its own.
+    private async Task AdoptPeersAsync(string name, CancellationToken ct)
+    {
+        if (!_duties.CarriesDefault)
+        {
+            return;
+        }
+
+        try
+        {
+            var alongside = new List<uint>();
+            foreach (var peer in TunnelPaths.Peers(await store.GetSettingAsync(TunnelPaths.PeersKey(name), ct)))
+            {
+                if (!string.Equals(peer, name, StringComparison.Ordinal) && routes.FindInterfaceIndex(peer) is { } sibling)
+                {
+                    alongside.Add(sibling);
+                }
+            }
+
+            var (added, removed) = firewall.PermitAlongside(alongside);
+            if (added > 0 || removed > 0)
+            {
+                logger.LogInformation("{Name}: the set changed, so {Added} tunnel(s) of it are now let through its leak protection and {Removed} no longer are", name, added, removed);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Name}: the leak protection could not be squared with the tunnels standing alongside, so what a rule sends to one of them stays blocked until the next connect", name);
+        }
+    }
+
     private async Task<bool> AdoptLentAsync(string name, CancellationToken ct)
     {
         if (!_duties.HoldsResolver || session.Proxy is not { } proxy)
@@ -1400,6 +1445,12 @@ internal sealed class TunnelRunner(
             if (alongside.Count > 0)
             {
                 logger.LogInformation("{Name}: {Count} other tunnel(s) of the set are let through its leak protection, so what a rule sends to them is not blocked here", name, alongside.Count);
+            }
+
+            // The adapter is up, so the tunnels standing alongside square their own protection with this one.
+            foreach (var peer in peers)
+            {
+                _ = Task.Run(() => RuntimeSnapshotPipe.Send(peer, RuntimeSnapshotPipe.OpPeers, logger), CancellationToken.None);
             }
 
             // Soft block only where a verdict is still coming: without the cache nothing would ever unblock the retry.

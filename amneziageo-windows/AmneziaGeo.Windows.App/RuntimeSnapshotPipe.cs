@@ -54,6 +54,11 @@ internal static class RuntimeSnapshotPipe
     public const string OpLent = "lent";
 
     /// <summary>
+    /// Announces that the tunnels standing alongside changed, so the leak protection is squared with them.
+    /// </summary>
+    public const string OpPeers = "peers";
+
+    /// <summary>
     /// Asks the tunnel to look one name up and carry its addresses. Only the tunnel a rule names can put a
     /// prefix on its own path, so the lookup and the route both happen there.
     /// </summary>

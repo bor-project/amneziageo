@@ -170,9 +170,11 @@ internal sealed class FleetHostedService(
         }
 
         var wanted = fleet.Wanted;
+        var moved = false;
         foreach (var name in _members.Keys.Where(running => !wanted.Contains(running)).ToArray())
         {
             await StopAsync(name);
+            moved = true;
         }
 
         foreach (var name in wanted)
@@ -180,7 +182,13 @@ internal sealed class FleetHostedService(
             if (!_members.ContainsKey(name))
             {
                 Start(name, ct);
+                moved = true;
             }
+        }
+
+        if (moved)
+        {
+            await SquarePeersAsync(ct);
         }
 
         // A tunnel reads its duties at bring-up, so one that has gained or lost the default route - the tunnel
@@ -200,6 +208,23 @@ internal sealed class FleetHostedService(
             {
                 await ReaddressAsync(member, stamp, ct);
             }
+        }
+    }
+
+    // Hands every tunnel of the set the ones standing alongside it and has them square their leak protection with
+    // the new list. A tunnel that came up after the one carrying the machine was armed is let through it here.
+    private async Task SquarePeersAsync(CancellationToken ct)
+    {
+        var standing = _members.Keys.ToArray();
+        foreach (var name in standing)
+        {
+            var peers = string.Join('\n', fleet.Standing(name).Where(peer => !string.Equals(peer, name, StringComparison.Ordinal)));
+            await store.SetSettingAsync(TunnelPaths.PeersKey(name), peers, ct);
+        }
+
+        foreach (var name in standing)
+        {
+            _ = Task.Run(() => RuntimeSnapshotPipe.Send(name, RuntimeSnapshotPipe.OpPeers, logger), CancellationToken.None);
         }
     }
 

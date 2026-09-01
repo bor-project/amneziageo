@@ -306,4 +306,31 @@ public static class WgConfigEditor
 
         return string.Join('\n', kept);
     }
+
+    /// <summary>
+    /// Returns the config without the named [Interface] fields, naming the ones it took out.
+    /// </summary>
+    public static string RemoveInterfaceFields(string config, IReadOnlyCollection<string> fields, out IReadOnlyList<string> removed)
+    {
+        var kept = new List<string>();
+        var taken = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            var separator = line.IndexOf('=');
+            var key = separator < 0 ? string.Empty : line[..separator].Trim();
+            var field = key.Length > 0
+                ? fields.FirstOrDefault(known => string.Equals(known, key, StringComparison.OrdinalIgnoreCase))
+                : null;
+            if (field is null)
+            {
+                kept.Add(line);
+                continue;
+            }
+
+            taken.Add(field);
+        }
+
+        removed = taken;
+        return taken.Count == 0 ? config : string.Join('\n', kept);
+    }
 }

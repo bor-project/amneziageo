@@ -279,6 +279,39 @@ public sealed class Awg31ConfigTests
         Assert.Contains("persistent_keepalive_interval=0\n", uapi);
     }
 
+    [Fact]
+    public void RemoveInterfaceFields_TakesOutOnlyTheNamedOnes()
+    {
+        var stripped = WgConfigEditor.RemoveInterfaceFields(Conf(Awg31Lines), ["RandomTrailers", "DisableCookies"], out var removed);
+
+        Assert.Equal(["RandomTrailers", "DisableCookies"], removed);
+        Assert.DoesNotContain("RandomTrailers", stripped, StringComparison.Ordinal);
+        Assert.DoesNotContain("DisableCookies", stripped, StringComparison.Ordinal);
+        Assert.Contains("RekeyAfterTime = 100-135", stripped, StringComparison.Ordinal);
+        WgConfigValidator.Validate(stripped);
+    }
+
+    [Fact]
+    public void RemoveInterfaceFields_LeaveAConfigThatNamesNoneOfThemAlone()
+    {
+        var config = Conf();
+
+        var stripped = WgConfigEditor.RemoveInterfaceFields(config, ["RandomTrailers", "DisableCookies"], out var removed);
+
+        Assert.Empty(removed);
+        Assert.Equal(config, stripped);
+    }
+
+    [Fact]
+    public void RemoveInterfaceFields_KeepsAFieldWhoseNameOnlyStartsTheSame()
+    {
+        var stripped = WgConfigEditor.RemoveInterfaceFields(Conf(Awg31Lines), ["H1", "S1"], out var removed);
+
+        Assert.Equal(["H1", "S1"], [.. removed.Order()]);
+        Assert.Contains("H2 = 2345678", stripped, StringComparison.Ordinal);
+        Assert.Contains("S2 = 23", stripped, StringComparison.Ordinal);
+    }
+
     private static string WithKeepalive(string value)
     {
         return Conf(Awg31Lines).Replace("PersistentKeepalive = 25", $"PersistentKeepalive = {value}", StringComparison.Ordinal);

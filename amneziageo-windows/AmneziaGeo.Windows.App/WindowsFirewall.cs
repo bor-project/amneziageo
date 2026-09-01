@@ -57,6 +57,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // A dynamic session drops its filters with the engine handle, and arming rebuilds the set from scratch, so
     // on-demand permits carry the generation they were installed under and are reinstalled when it moves.
     private int _generation;
+    // The tunnel adapters let through the block, and the filters holding each one open.
+    private readonly Dictionary<uint, List<ulong>> _alongside = [];
 
     /// <summary>
     /// True while the kill-switch filters are installed.
@@ -129,7 +131,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     {
                         if (ConvertInterfaceIndexToLuid(peer, out var peerLuid) == 0)
                         {
-                            PermitTunInterface(engine, peerLuid);
+                            _alongside[peer] = PermitPeerInterface(engine, peerLuid);
                         }
                     }
 
@@ -436,6 +438,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         CloseEventEngineLocked();
         FwpmEngineClose0(_engine);
         _engine = IntPtr.Zero;
+        _alongside.Clear();
         logger.LogInformation("leak protection is off; traffic is no longer restricted to the tunnel");
     }
 
@@ -549,6 +552,35 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         {
             Marshal.FreeHGlobal(luidPtr);
         }
+    }
+
+    // The same permit as this tunnel's own adapter, keeping the filter ids so it can be taken back.
+    private List<ulong> PermitPeerInterface(IntPtr engine, ulong luid)
+    {
+        var ids = new List<ulong>();
+        var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
+        try
+        {
+            Marshal.WriteInt64(luidPtr, (long)luid);
+            var cond = new[]
+            {
+                Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
+            };
+
+            foreach (var layer in DecisionLayers)
+            {
+                if (AddRaw(engine, layer, WeightTun, ActionPermit, 0, cond, "Permit tunnel interface alongside", out var id) == 0)
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(luidPtr);
+        }
+
+        return ids;
     }
 
     private void PermitLoopback(IntPtr engine)
@@ -757,6 +789,53 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             }
 
             return removed;
+        }
+    }
+
+    /// <summary>
+    /// Squares the tunnel adapters let through the block with the given ones; returns how many were let through
+    /// and how many were taken back.
+    /// </summary>
+    public (int Added, int Removed) PermitAlongside(IReadOnlyCollection<uint> interfaces)
+    {
+        lock (_gate)
+        {
+            if (_engine == IntPtr.Zero)
+            {
+                return (0, 0);
+            }
+
+            var removed = 0;
+            foreach (var gone in _alongside.Keys.Where(index => !interfaces.Contains(index)).ToArray())
+            {
+                foreach (var id in _alongside[gone])
+                {
+                    DeleteByIdLocked(id);
+                }
+
+                _alongside.Remove(gone);
+                removed++;
+            }
+
+            var added = 0;
+            foreach (var index in interfaces)
+            {
+                if (_alongside.ContainsKey(index) || ConvertInterfaceIndexToLuid(index, out var luid) != 0)
+                {
+                    continue;
+                }
+
+                var ids = PermitPeerInterface(_engine, luid);
+                if (ids.Count == 0)
+                {
+                    continue;
+                }
+
+                _alongside[index] = ids;
+                added++;
+            }
+
+            return (added, removed);
         }
     }
 

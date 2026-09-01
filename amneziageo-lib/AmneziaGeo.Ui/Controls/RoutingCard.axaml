@@ -8,12 +8,7 @@
              x:DataType="vm:RoutingListSummaryViewModel"
              Design.DataContext="{x:Static vm:DesignData.RoutingCard}"
              Design.Width="340">
-  <UserControl.Resources>
-    <StreamGeometry x:Key="AgListTuneGeometry">M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z</StreamGeometry>
-    <StreamGeometry x:Key="AgListGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
-  </UserControl.Resources>
-
-  <!-- Применение берёт флаг, настройки - кнопка в подвале. На телевизоре тело служит входом,
+  <!-- Применение и настройки стоят на кнопках правого столбца. На телевизоре тело служит входом,
        дальше пульт ходит по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
@@ -69,7 +64,7 @@
             <Button x:Name="SettingsPart" Classes="cardtune" HorizontalAlignment="Center"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">
-              <PathIcon Data="{StaticResource AgListTuneGeometry}" Width="15" Height="15" />
+              <PathIcon Data="{DynamicResource AgGearGeometry}" Width="15" Height="15" />
             </Button>
           </StackPanel>
         </Border>

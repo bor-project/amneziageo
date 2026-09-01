@@ -118,6 +118,63 @@
 
             <Border Classes="hairline" />
 
+            <!-- Остальное списка уходит на свой экран. -->
+            <Button Classes="softbtn" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                    Padding="12,10" Command="{Binding SelectRoutingSectionCommand}" CommandParameter="advanced">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <StackPanel Grid.Column="0" Spacing="2">
+                  <TextBlock Text="{l:Tr Main_AdvancedTitle}" FontWeight="SemiBold" FontSize="15"
+                             TextWrapping="Wrap" />
+                  <TextBlock Text="{l:Tr Main_AdvancedSubtitle}" Classes="muted" FontSize="11.5"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <PathIcon Grid.Column="1" Data="{DynamicResource AgChevronGeometry}" Width="12" Height="12"
+                          VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <!-- Дополнительно: трафик списка, экспорт и удаление. Возвращает стрелка «назад» в шапке окна. -->
+      <StackPanel x:Name="AdvancedSection" IsVisible="{Binding ShowAdvancedEditor}" Spacing="12">
+        <TextBlock Text="{l:Tr Main_AdvancedTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+        <Border Classes="sect">
+          <StackPanel Spacing="14">
+            <StackPanel Spacing="14"
+                        IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}"
+                          x:DataType="vm:RoutingSettingsViewModel">
+                <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_AllUdpTitle}"
+                                           Description="{l:Tr Main_AllUdpHint}"
+                                           IsChecked="{Binding AllUdp, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+                <Border Classes="hairline" />
+
+                <!-- Общая настройка агента: время жизни держит кеш всех списков. -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MinHeight="40">
+                  <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{l:Tr Main_RouteTtlTitle}" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="{l:Tr Main_RouteTtlHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <TextBox Grid.Column="1" Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="132"
+                           controls:NumericInput.Minimum="0" controls:NumericInput.Maximum="86400"
+                           VerticalAlignment="Center" Text="{Binding RouteTtl, Mode=TwoWay}">
+                    <TextBox.InnerRightContent>
+                      <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" Margin="6,0,10,0"
+                                 VerticalAlignment="Center" IsHitTestVisible="False" />
+                    </TextBox.InnerRightContent>
+                  </TextBox>
+                </Grid>
+
+                <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                           IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+
+              <Border Classes="hairline" />
+            </StackPanel>
+
             <!-- Экспорт: способ - экран QR, текст списка в буфер или файл - выпадает списком у кнопки, а на
                  телефоне приходит шторкой снизу. -->
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10"
@@ -138,7 +195,7 @@
               </Button>
             </Grid>
 
-            <Border Classes="hairline" />
+            <Border Classes="hairline" IsVisible="{Binding CanExportOpenList}" />
 
             <!-- Delete: description left, delete trigger right. When armed, the trigger is replaced in place by
                  the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->

@@ -52,7 +52,7 @@ public sealed class SystemRoutesTests
         Assert.Equal(0, SystemRoutes.Fit(true, [], [], [], [], 1000));
     }
 
-    // One address out of each /24, so none of them merges with the next and every one costs its own routes.
+    // One address out of each /24.
     private static string[] Addresses(int count)
     {
         return [.. Enumerable.Range(0, count).Select(index => $"203.0.{index}.7/32")];

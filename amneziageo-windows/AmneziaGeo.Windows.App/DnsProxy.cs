@@ -734,7 +734,7 @@ internal sealed class DnsProxy
                 fromCache = true;
                 StoreInCache(name, type, response);
                 TriggerReachabilityRefresh(name!, known);
-                outcome = $"answered from its {known.Count} known address(es), already in the tunnel — checking in the background that they still respond";
+                outcome = $"answered from its {known.Count} known address(es), already in the tunnel - checking in the background that they still respond";
             }
             else if (matched && type == TypeA && _tracker is not null
                      && await _tracker.TryHydrateFromCacheAsync(name!, n => _matcher.IsTunneled(n)).ConfigureAwait(false) is { Count: > 0 } hydrated)
@@ -786,7 +786,7 @@ internal sealed class DnsProxy
                 if (result.Error is not null)
                 {
                     // Notes an upstream that did not answer.
-                    _logger.LogDebug("{Name} {Type}: {Decision}, asked {Resolver} — no answer ({Reason}); the client is told to try again",
+                    _logger.LogDebug("{Name} {Type}: {Decision}, asked {Resolver} - no answer ({Reason}); the client is told to try again",
                         name, TypeLabel(type), decision, ResolverLabel(isLocal, matched, lanRace, upstream), result.Error.Message);
                     if (RouteLog.Enabled && name is not null && result.Leader)
                     {

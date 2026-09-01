@@ -19,26 +19,54 @@
             HorizontalAlignment="{Binding #Root.IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
             MaxWidth="{Binding #Root.IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW480}">
       <UniformGrid Rows="1">
-        <Button Classes="seg" Content="{Binding #Root.Item1Text}"
+        <Button Classes="seg" Classes.dense="{Binding #Root.Dense}"
                 Classes.active="{Binding #Root.Item1Active}"
                 IsEnabled="{Binding #Root.Item1Enabled}"
                 Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item1Param}"
-                IsVisible="{Binding #Root.Item1Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <Button Classes="seg" Content="{Binding #Root.Item2Text}"
+                IsVisible="{Binding #Root.Item1Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+            <PathIcon Data="{Binding #Root.Item1Icon}" Width="13" Height="13" VerticalAlignment="Center"
+                      IsVisible="{Binding #Root.Item1Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding #Root.Item1Text}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Button>
+        <Button Classes="seg" Classes.dense="{Binding #Root.Dense}"
                 Classes.active="{Binding #Root.Item2Active}"
                 IsEnabled="{Binding #Root.Item2Enabled}"
                 Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item2Param}"
-                IsVisible="{Binding #Root.Item2Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <Button Classes="seg" Content="{Binding #Root.Item3Text}"
+                IsVisible="{Binding #Root.Item2Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+            <PathIcon Data="{Binding #Root.Item2Icon}" Width="13" Height="13" VerticalAlignment="Center"
+                      IsVisible="{Binding #Root.Item2Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding #Root.Item2Text}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Button>
+        <Button Classes="seg" Classes.dense="{Binding #Root.Dense}"
                 Classes.active="{Binding #Root.Item3Active}"
                 IsEnabled="{Binding #Root.Item3Enabled}"
                 Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item3Param}"
-                IsVisible="{Binding #Root.Item3Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <Button Classes="seg" Content="{Binding #Root.Item4Text}"
+                IsVisible="{Binding #Root.Item3Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+            <PathIcon Data="{Binding #Root.Item3Icon}" Width="13" Height="13" VerticalAlignment="Center"
+                      IsVisible="{Binding #Root.Item3Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding #Root.Item3Text}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Button>
+        <Button Classes="seg" Classes.dense="{Binding #Root.Dense}"
                 Classes.active="{Binding #Root.Item4Active}"
                 IsEnabled="{Binding #Root.Item4Enabled}"
                 Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item4Param}"
-                IsVisible="{Binding #Root.Item4Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                IsVisible="{Binding #Root.Item4Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+            <PathIcon Data="{Binding #Root.Item4Icon}" Width="13" Height="13" VerticalAlignment="Center"
+                      IsVisible="{Binding #Root.Item4Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Text="{Binding #Root.Item4Text}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Button>
       </UniformGrid>
     </Border>
 

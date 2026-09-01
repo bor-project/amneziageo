@@ -404,7 +404,7 @@
     <value>Добавить запись</value>
   </data>
   <data name="Main_AddEntryWatermark" xml:space="preserve">
-    <value>напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24</value>
+    <value>Например, youtube или geoip:ru</value>
   </data>
   <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
     <value>Добавить локальные сети</value>
@@ -725,10 +725,10 @@
     <value>Параметры маршрутизации</value>
   </data>
   <data name="Main_RoleProxy" xml:space="preserve">
-    <value>Прокси</value>
+    <value>Через VPN</value>
   </data>
   <data name="Main_RoleDirect" xml:space="preserve">
-    <value>Директ</value>
+    <value>Напрямую</value>
   </data>
   <data name="Main_RoleBlock" xml:space="preserve">
     <value>Блок</value>
@@ -743,7 +743,7 @@
     <value>Полностью блокировать.</value>
   </data>
   <data name="Main_RoleProxyUnusedWarning" xml:space="preserve">
-    <value>Включён глобальный прокси — этот список не применяется: в туннель уходит всё, кроме «Директ» и «Блок».</value>
+    <value>Включён глобальный прокси - этот список не применяется: в туннель уходит всё, кроме «Директ» и «Блок».</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>
@@ -833,7 +833,7 @@
     <value>Тип записи</value>
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
-    <value>Правила</value>
+    <value>Правила в этом списке</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
     <value>Прокси</value>
@@ -2430,5 +2430,110 @@
   </data>
   <data name="Probe_UploadServiceHint" xml:space="preserve">
     <value>Адрес для проверки скорости. По умолчанию: https://speed.cloudflare.com/__up.</value>
+  </data>
+  <data name="Main_RoleTabCount" xml:space="preserve">
+    <value>{0} {1}</value>
+  </data>
+  <data name="Main_BucketAddPrompt" xml:space="preserve">
+    <value>Что добавить</value>
+  </data>
+  <data name="Main_AddByFileTab" xml:space="preserve">
+    <value>Файл</value>
+  </data>
+  <data name="Main_AddByFolderTab" xml:space="preserve">
+    <value>Папка</value>
+  </data>
+  <data name="Main_AddFileWatermark" xml:space="preserve">
+    <value>Путь к программе, например C:\Program Files\App\app.exe</value>
+  </data>
+  <data name="Main_AddFolderWatermark" xml:space="preserve">
+    <value>Путь к папке с программами</value>
+  </data>
+  <data name="Main_BrowseButton" xml:space="preserve">
+    <value>Обзор</value>
+  </data>
+  <data name="Main_VpnModeTitle" xml:space="preserve">
+    <value>Режим VPN для приложений</value>
+  </data>
+  <data name="Main_VpnModeSelected" xml:space="preserve">
+    <value>Только выбранные</value>
+  </data>
+  <data name="Main_VpnModeSelectedHint" xml:space="preserve">
+    <value>Остальные - напрямую</value>
+  </data>
+  <data name="Main_VpnModeFull" xml:space="preserve">
+    <value>Полный туннель</value>
+  </data>
+  <data name="Main_VpnModeFullHint" xml:space="preserve">
+    <value>Кроме исключений</value>
+  </data>
+  <data name="Main_VpnModeHintSelected" xml:space="preserve">
+    <value>VPN используется только для элементов, направленных «Через VPN».</value>
+  </data>
+  <data name="Main_VpnModeHintFull" xml:space="preserve">
+    <value>В туннель уходит всё, кроме «Напрямую» и «Блок».</value>
+  </data>
+  <data name="Main_BadgeGeoSite" xml:space="preserve">
+    <value>GeoSite</value>
+  </data>
+  <data name="Main_BadgeGeoIp" xml:space="preserve">
+    <value>GeoIP</value>
+  </data>
+  <data name="Main_BadgeDomain" xml:space="preserve">
+    <value>Домен</value>
+  </data>
+  <data name="Main_BadgeCidr" xml:space="preserve">
+    <value>CIDR</value>
+  </data>
+  <data name="Main_BadgePackage" xml:space="preserve">
+    <value>Пакет</value>
+  </data>
+  <data name="Main_BadgePath" xml:space="preserve">
+    <value>Путь</value>
+  </data>
+  <data name="Main_BadgeFolder" xml:space="preserve">
+    <value>Папка</value>
+  </data>
+  <data name="Main_BadgeService" xml:space="preserve">
+    <value>Служба</value>
+  </data>
+  <data name="Main_KindAddress" xml:space="preserve">
+    <value>Адрес</value>
+  </data>
+  <data name="Main_KindApp" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="Main_KindFile" xml:space="preserve">
+    <value>Файл</value>
+  </data>
+  <data name="Main_KindFolder" xml:space="preserve">
+    <value>Папка</value>
+  </data>
+  <data name="Main_RuleCaption" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="Main_SuggestGeoSite" xml:space="preserve">
+    <value>Домены категории {0}</value>
+  </data>
+  <data name="Main_SuggestGeoIp" xml:space="preserve">
+    <value>IP-диапазоны региона {0}</value>
+  </data>
+  <data name="Main_SuggestDomain" xml:space="preserve">
+    <value>Точное совпадение домена</value>
+  </data>
+  <data name="Main_SuggestCidr" xml:space="preserve">
+    <value>Диапазон адресов</value>
+  </data>
+  <data name="Main_SuggestApp" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="Main_AppOnlyProxyHint" xml:space="preserve">
+    <value>Приложения, файлы и папки добавляются только в «Через VPN».</value>
+  </data>
+  <data name="Main_AdvancedTitle" xml:space="preserve">
+    <value>Дополнительно</value>
+  </data>
+  <data name="Main_AdvancedSubtitle" xml:space="preserve">
+    <value>UDP, кеш, экспорт и удаление</value>
   </data>
 </root>

@@ -41,8 +41,7 @@ public static class SystemRoutes
     }
 
     /// <summary>
-    /// How many of these addresses can leave the tun before its route table outgrows the budget. The set is halved
-    /// until it fits, so the freshest addresses are the ones kept.
+    /// How many direct addresses fit the tun route budget.
     /// </summary>
     public static int Fit(
         bool fullTunnel,

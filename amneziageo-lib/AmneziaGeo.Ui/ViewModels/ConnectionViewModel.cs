@@ -414,7 +414,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     {
         IsConnected = false;
         BoundStatus = ConnectionStatus.Disconnected;
-        // The catalogue rows were dropped by Config.Reset, so the combo re-mirrors to «— не выбрано —» and
+        // The catalogue rows were dropped by Config.Reset, so the combo re-mirrors to «- не выбрано -» and
         // connect re-gates until the next reconnect snapshot.
         ActiveConfig = null;
         BoundTarget = null;

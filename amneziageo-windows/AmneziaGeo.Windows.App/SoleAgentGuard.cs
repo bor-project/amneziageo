@@ -35,7 +35,7 @@ internal static partial class SoleAgentGuard
         // Interactive/elevated start: stop the agent service cleanly (no failure-restart ping-pong).
         if (services.AgentState() == "RUNNING")
         {
-            logger.LogInformation("the installed background service is running; stopping it so this copy can take over — any tunnel it holds goes down with it");
+            logger.LogInformation("the installed background service is running; stopping it so this copy can take over - any tunnel it holds goes down with it");
             services.StopAgentQuiet();
             await WaitUntilFreeAsync(TakeoverWait, ct);
         }
@@ -49,7 +49,7 @@ internal static partial class SoleAgentGuard
 
         if (PipeHeld())
         {
-            logger.LogWarning("the previous copy still holds the channel the app talks over; this one may fail to start — try running it as administrator");
+            logger.LogWarning("the previous copy still holds the channel the app talks over; this one may fail to start - try running it as administrator");
         }
     }
 

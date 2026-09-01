@@ -45,6 +45,11 @@ internal partial class RoutingRuleItemViewModel : ViewModelBase
     /// </summary>
     public virtual string ExpandTooltip => Loc.Instance.Get("Main_RuleEntriesTooltip");
 
+    /// <summary>
+    /// Kind and type of the entry, shown under its token.
+    /// </summary>
+    public string Caption => RuleToken.Caption(Token);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Glyph))]
     private bool _isExpanded;

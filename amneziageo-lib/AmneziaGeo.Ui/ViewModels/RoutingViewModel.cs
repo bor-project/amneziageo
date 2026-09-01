@@ -152,6 +152,12 @@ internal partial class RoutingViewModel : ViewModelBase
         && RoutingEditor is not null && ManageSection == RoutingSection.Export;
 
     /// <summary>
+    /// Стоит ли на экране «Дополнительно»: UDP, кеш, экспорт и удаление списка.
+    /// </summary>
+    public bool IsSectionAdvanced => !IsCreatingSectionRouting && EditRoutingList is not null
+        && RoutingEditor is not null && ManageSection == RoutingSection.Advanced;
+
+    /// <summary>
     /// Стоит ли на экране каталог карточек: кнопка на карточке открывает настройки списка, «назад» возвращает
     /// сюда.
     /// </summary>
@@ -198,9 +204,14 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool ShowSettingsEditor => IsSectionSettings && RoutingEditor is not null && !SectionLoading;
 
     /// <summary>
-    /// Whether the Delete card is shown (a real, saved list in the Settings section).
+    /// Показан ли экран «Дополнительно» с настройками открытого списка.
     /// </summary>
-    public bool ShowDeleteCard => IsSectionSettings && RoutingEditor is { IsNew: false } && !SectionLoading;
+    public bool ShowAdvancedEditor => IsSectionAdvanced && RoutingEditor is not null && !SectionLoading;
+
+    /// <summary>
+    /// Whether the Delete card is shown (a real, saved list in the Advanced section).
+    /// </summary>
+    public bool ShowDeleteCard => IsSectionAdvanced && RoutingEditor is { IsNew: false } && !SectionLoading;
 
     /// <summary>
     /// Whether the import draft rule + traffic editor is shown.
@@ -280,8 +291,10 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSectionImport));
         OnPropertyChanged(nameof(IsSectionSettings));
         OnPropertyChanged(nameof(IsSectionExport));
+        OnPropertyChanged(nameof(IsSectionAdvanced));
         OnPropertyChanged(nameof(ShowSettingsLoader));
         OnPropertyChanged(nameof(ShowSettingsEditor));
+        OnPropertyChanged(nameof(ShowAdvancedEditor));
         OnPropertyChanged(nameof(ShowDeleteCard));
         OnPropertyChanged(nameof(ShowImportEditor));
         OnPropertyChanged(nameof(ShowImportCamera));
@@ -661,7 +674,12 @@ internal partial class RoutingViewModel : ViewModelBase
 
         LeaveImport();
         SelectFirstIfNone();
-        ManageSection = target == "export" ? RoutingSection.Export : RoutingSection.Settings;
+        ManageSection = target switch
+        {
+            "export" => RoutingSection.Export,
+            "advanced" => RoutingSection.Advanced,
+            _ => RoutingSection.Settings,
+        };
         if (ManageSection == RoutingSection.Export)
         {
             RoutingEditor?.EnsureTransfer();
@@ -673,7 +691,7 @@ internal partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public bool TryNavigateBack()
     {
-        if (IsSectionExport)
+        if (IsSectionExport || IsSectionAdvanced)
         {
             SelectRoutingSection("settings");
             return true;
@@ -945,7 +963,7 @@ internal partial class RoutingViewModel : ViewModelBase
     // draft settings target id 0 until the list is created, then get retargeted at the real id.
     private void BeginSectionRouting()
     {
-        // Remember the open list so Cancel restores it (or «— не выбрано —»).
+        // Remember the open list so Cancel restores it (or «- не выбрано -»).
         _listBeforeCreate = EditRoutingList;
 
         // A new draft has no server data to load: show its empty form at once, never the section loader (#193).
@@ -1348,6 +1366,7 @@ internal enum RoutingSection
 {
     Settings,
     Export,
+    Advanced,
 }
 
 /// <summary>

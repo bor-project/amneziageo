@@ -26,5 +26,5 @@ dist/
 .vscode/debug.android.jsonc
 .vscode/debug.linux.jsonc
 
-# Local handoff notes — not committed
+# Local handoff notes - not committed
 HANDOFF.md

@@ -617,7 +617,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     }
 
     /// <summary>
-    /// Sets how long a destination is held without traffic; the next sweep reclaims whatever it now covers.
+    /// Sets the idle window a destination is held for.
     /// </summary>
     public void SetTtl(int seconds)
     {

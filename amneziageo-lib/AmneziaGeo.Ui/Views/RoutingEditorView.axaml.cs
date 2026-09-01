@@ -2,9 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Interactivity;
-using AmneziaGeo.Ui.Controls;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -23,18 +21,6 @@ internal sealed partial class RoutingEditorView : UserControl
     public RoutingEditorView()
     {
         InitializeComponent();
-    }
-
-    // Steps from the add button to the role segments: the next row starts at the card's left edge, so
-    // directional focus walks past them into the footer (#201).
-    private void OnAddEntryKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Handled || e.Key is not Key.Down)
-        {
-            return;
-        }
-
-        e.Handled = PaneFocus.FocusFirst(RoleSegments);
     }
 
     // Copies everything the expanded rule covers to the clipboard.
@@ -66,11 +52,28 @@ internal sealed partial class RoutingEditorView : UserControl
         }
     }
 
-    private async void OnAppSourceFolder(object? sender, RoutedEventArgs e)
+    // Puts the picked path into the add row, where it is added like a typed one.
+    private async void OnBrowsePath(object? sender, RoutedEventArgs e)
     {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is not { } vm || TopLevel.GetTopLevel(this) is not { } top)
+        if ((DataContext as RoutingViewModel)?.RoutingEditor is not { } vm)
         {
             return;
+        }
+
+        var path = vm.IsDirMethod
+            ? await PickFolderAsync()
+            : await PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe");
+        if (!string.IsNullOrEmpty(path))
+        {
+            vm.RuleInput = path;
+        }
+    }
+
+    private async Task<string?> PickFolderAsync()
+    {
+        if (TopLevel.GetTopLevel(this) is not { } top)
+        {
+            return null;
         }
 
         var folders = await top.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -78,24 +81,25 @@ internal sealed partial class RoutingEditorView : UserControl
             Title = Loc.Instance.Get("MainCode_AppFolderTitle"),
             AllowMultiple = false,
         });
-        var path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
-        if (!string.IsNullOrEmpty(path))
-        {
-            vm.AddAppToken($"app:dir={path}");
-        }
+        return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
     }
 
-    private async void OnAppSourceFile(object? sender, RoutedEventArgs e)
+    // Suggestions come as a dropdown while the editor is wide enough for one.
+    private void OnEditorSizeChanged(object? sender, SizeChangedEventArgs e)
     {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is not { } vm)
-        {
-            return;
-        }
+        ApplyLayoutWidth(e.NewSize.Width);
+    }
 
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe");
-        if (!string.IsNullOrEmpty(path))
+    private void OnEditorDataContextChanged(object? sender, EventArgs e)
+    {
+        ApplyLayoutWidth(Bounds.Width);
+    }
+
+    private void ApplyLayoutWidth(double width)
+    {
+        if ((DataContext as RoutingViewModel)?.RoutingEditor is { } vm)
         {
-            vm.AddAppToken($"app:path={path}");
+            vm.IsWideLayout = width >= UiLayout.CompactWidth;
         }
     }
 

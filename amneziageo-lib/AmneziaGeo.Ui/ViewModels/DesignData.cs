@@ -6,8 +6,8 @@ namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
 /// Design-time-only data for the Avalonia previewer. Referenced from XAML via <c>Design.DataContext</c> so
-/// the previewer renders a fully-populated screen — the real <see cref="MainWindowViewModel"/> backed by a
-/// mocked, never-started <see cref="IAgentConnection"/> — instead of the empty first-run state (no config,
+/// the previewer renders a fully-populated screen - the real <see cref="MainWindowViewModel"/> backed by a
+/// mocked, never-started <see cref="IAgentConnection"/> - instead of the empty first-run state (no config,
 /// "нет связи с агентом") that shows when nothing has been loaded from the agent yet.
 /// <para>
 /// Every settings section is seeded, so switching <see cref="MainWindowViewModel.SettingsSection"/> below
@@ -16,8 +16,8 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </para>
 /// <para>
 /// Not constructed at runtime: Avalonia strips <c>Design.*</c> assignments outside design mode, so the
-/// factory below never runs there. No IPC is issued — the sub-view-models are populated directly and their
-/// agent delegates are no-ops — with one exception: opening a config auto-builds an
+/// factory below never runs there. No IPC is issued - the sub-view-models are populated directly and their
+/// agent delegates are no-ops - with one exception: opening a config auto-builds an
 /// <see cref="ExportDialogViewModel"/> whose <c>LoadAsync</c> cannot reach the mock agent; it is replaced
 /// below with a ready, pre-rendered instance, and its stray load fails harmlessly on the detached original.
 /// </para>
@@ -253,7 +253,7 @@ internal static class DesignData
         return export;
     }
 
-    // Representative wg-quick text (AmneziaWG obfuscation + WebSocket-carried peer). Keys are placeholders —
+    // Representative wg-quick text (AmneziaWG obfuscation + WebSocket-carried peer). Keys are placeholders -
     // no real credentials live in source.
     private const string SampleConf =
         """

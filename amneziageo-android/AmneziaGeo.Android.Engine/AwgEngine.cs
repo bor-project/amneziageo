@@ -77,7 +77,7 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
-    /// Tells the shim a tun of its own is about to be replaced, so a read failing meanwhile waits for the new one.
+    /// Announces a tun swap to the shim.
     /// </summary>
     public static bool PrepareSwap(int handle, bool pending)
     {
@@ -85,7 +85,7 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
-    /// Puts a freshly established tun under the running engine and closes the previous one.
+    /// Puts a new tun under the running engine and closes the previous one.
     /// </summary>
     public static bool SwapTun(int handle, int tunFd)
     {
@@ -93,7 +93,7 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
-    /// Sets how long the shim keeps an address it has seen no traffic for.
+    /// Sets the idle window the shim keeps an address for.
     /// </summary>
     public static bool SetVerdictTtl(int handle, int seconds)
     {

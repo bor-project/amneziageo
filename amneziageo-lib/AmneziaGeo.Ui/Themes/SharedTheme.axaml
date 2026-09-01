@@ -109,6 +109,23 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <Style Selector="Button.modecard">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <Style Selector="Button.modecard.active">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="Button.seg.dense">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="6,0" />
+    </Style>
     <Style Selector="Button.seg.active">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />

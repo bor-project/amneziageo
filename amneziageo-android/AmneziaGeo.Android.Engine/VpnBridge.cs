@@ -124,7 +124,7 @@ public static class VpnBridge
     public const string ActionProbe = "org.amneziageo.android.VPN_PROBE";
 
     /// <summary>
-    /// Broadcast that makes a running tunnel take the idle window of a destination again.
+    /// Broadcast that reapplies the idle window.
     /// </summary>
     public const string ActionRouteTtl = "org.amneziageo.android.VPN_ROUTE_TTL";
 
@@ -368,7 +368,7 @@ public static class VpnBridge
     public static void RequestProxy(Context context) => context.SendBroadcast(Broadcast(context, ActionProxy));
 
     /// <summary>
-    /// Writes the idle window a destination is held for, for the tunnel to read on a running session.
+    /// Writes the idle window for the tunnel to read.
     /// </summary>
     public static void WriteRouteTtl(int seconds)
     {
@@ -383,7 +383,7 @@ public static class VpnBridge
     }
 
     /// <summary>
-    /// Reads the idle window the head last wrote; zero where it wrote none.
+    /// Reads the idle window the head wrote; zero when unset.
     /// </summary>
     public static int ReadRouteTtl()
     {
@@ -403,7 +403,7 @@ public static class VpnBridge
     }
 
     /// <summary>
-    /// Asks a running tunnel to take the idle window again; a tunnel that is not running takes it at start.
+    /// Asks a running tunnel to reapply the idle window.
     /// </summary>
     public static void RequestRouteTtl(Context context) => context.SendBroadcast(Broadcast(context, ActionRouteTtl));
 

@@ -356,7 +356,7 @@
               </ItemsControl>
             </ScrollViewer>
 
-            <!-- Narrow: a card per probe — the destination over its path, a row per leg, the verdict under
+            <!-- Narrow: a card per probe - the destination over its path, a row per leg, the verdict under
                  them. The block they are rendered as is a padded table, which no phone reads. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           IsVisible="{Binding ShowProbeCards}">
@@ -422,7 +422,7 @@
               </ItemsControl>
             </ScrollViewer>
 
-            <!-- Narrow: a card per destination — where it goes over what it holds. -->
+            <!-- Narrow: a card per destination - where it goes over what it holds. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           IsVisible="{Binding ShowLiveCards}">
               <ItemsControl ItemsSource="{Binding LiveRows}" Margin="0,0,0,2">

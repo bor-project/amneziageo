@@ -188,7 +188,7 @@ internal sealed class TunnelRunner(
             ? !(routingSettings?.UseGlobalProxy ?? false)
             : (geo?.GeoSplit ?? false);
 
-        logger.LogDebug("{Name}: rules loaded — {Routes} address range(s), {Domains} domain(s), {Apps} app(s); only what they name goes through the tunnel: {Split} [{Elapsed} ms in]",
+        logger.LogDebug("{Name}: rules loaded - {Routes} address range(s), {Domains} domain(s), {Apps} app(s); only what they name goes through the tunnel: {Split} [{Elapsed} ms in]",
             name, geoRoutes.Count, domains.Count, apps.Count, geoSplit, connectSw.ElapsedMilliseconds);
 
         // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN).
@@ -407,7 +407,7 @@ internal sealed class TunnelRunner(
         _ = Task.Run(() => routing.RunAsync(sessionCts.Token));
         _ = Task.Run(() => routing.PumpAsync(sessionCts.Token));
         var ranges = routing.RangeCounts;
-        logger.LogInformation("{Name}: routing rules ready — {Proxy} range(s) go through the tunnel, {Direct} stay outside it, {Block} are refused; each address is decided when it is first used and forgotten after {Ttl} s unused",
+        logger.LogInformation("{Name}: routing rules ready - {Proxy} range(s) go through the tunnel, {Direct} stay outside it, {Block} are refused; each address is decided when it is first used and forgotten after {Ttl} s unused",
             name, ranges.Proxy, ranges.Direct, ranges.Block, routing.TtlSeconds);
 
         // Tracker when there's live work or a routing list drives the split.
@@ -548,7 +548,7 @@ internal sealed class TunnelRunner(
         {
             // Loopback :53 busy - fall back to direct resolvers.
             redirectServers = configDns.Count > 0 ? configDns : upstream;
-            logger.LogWarning("port 53 on this machine is taken by another program, so names cannot be handled here; the resolvers are used directly and rules by domain name will not apply — only rules by address will");
+            logger.LogWarning("port 53 on this machine is taken by another program, so names cannot be handled here; the resolvers are used directly and rules by domain name will not apply - only rules by address will");
         }
 
         logger.LogDebug("{Name}: name handling {State}, domain tracking {Tracker} [{Elapsed} ms in]",
@@ -582,7 +582,7 @@ internal sealed class TunnelRunner(
         // Keep the LAN and any manual exclusions direct in both modes (RFC1918 floor + stored list). In split
         // mode the tunnelled geo routes are more specific, so longest-prefix-match keeps them on the tunnel.
         var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, bypassCidrs);
-        logger.LogDebug("{Name}: routes in place — the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
+        logger.LogDebug("{Name}: routes in place - the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
         // Whitelist wstunnel under the kill-switch.
@@ -1213,12 +1213,12 @@ internal sealed class TunnelRunner(
                 // sees it, because the send that would raise a connect or datagram event never happens.
                 if (routing is not null && !firewall.WatchDrops(routing.Report))
                 {
-                    logger.LogWarning("{Name}: the firewall does not report what it blocks on this system, so an address reached without a name lookup — an app with a hard-coded address — stays blocked instead of being routed", name);
+                    logger.LogWarning("{Name}: the firewall does not report what it blocks on this system, so an address reached without a name lookup - an app with a hard-coded address - stays blocked instead of being routed", name);
                 }
             }
             else
             {
-                logger.LogError("{Name}: the leak protection did not take after {Attempts} attempts; the tunnel is running unprotected, so if it drops, traffic goes out in the clear — reconnect to restore it", name, FirewallArmAttempts);
+                logger.LogError("{Name}: the leak protection did not take after {Attempts} attempts; the tunnel is running unprotected, so if it drops, traffic goes out in the clear - reconnect to restore it", name, FirewallArmAttempts);
             }
         }
         catch (OperationCanceledException)

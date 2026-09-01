@@ -929,7 +929,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     // draft settings target id 0 until the list is created, then get retargeted at the real id.
     private void BeginSectionRouting()
     {
-        // Remember the open list so Cancel restores it (or «— не выбрано —»).
+        // Remember the open list so Cancel restores it (or «- не выбрано -»).
         _listBeforeCreate = EditRoutingList;
 
         // A new draft has no server data to load: show its empty form at once, never the section loader (#193).

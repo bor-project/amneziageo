@@ -19,8 +19,7 @@ public static class SettingKeys
     public const string DirectTcp = "direct-tcp";
 
     /// <summary>
-    /// Whether an address decided direct leaves the tun by name: the tun is replaced on a running session from
-    /// Android 13, and below it the addresses of the last session leave it at connect.
+    /// Whether a direct address leaves the tun by name.
     /// </summary>
     public const string ExcludeRoutes = "exclude-routes";
 

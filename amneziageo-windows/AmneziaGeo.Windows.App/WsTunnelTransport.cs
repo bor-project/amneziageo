@@ -233,7 +233,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
         {
-            logger.LogError("this configuration asks to be carried inside a websocket, but the program that does it is missing ({Exe}); the connection cannot start — reinstall the app", exe);
+            logger.LogError("this configuration asks to be carried inside a websocket, but the program that does it is missing ({Exe}); the connection cannot start - reinstall the app", exe);
             return null;
         }
 

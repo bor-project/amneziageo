@@ -100,7 +100,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             var open = FwpmEngineOpen0(IntPtr.Zero, RpcCAuthnWinnt, IntPtr.Zero, ref session, out var engine);
             if (open != 0)
             {
-                logger.LogError("the Windows filtering engine refused to open (0x{Code:X8}); no leak protection is installed — check that the Base Filtering Engine service is running", open);
+                logger.LogError("the Windows filtering engine refused to open (0x{Code:X8}); no leak protection is installed - check that the Base Filtering Engine service is running", open);
                 return false;
             }
 

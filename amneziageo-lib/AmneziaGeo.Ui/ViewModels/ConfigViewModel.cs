@@ -1406,7 +1406,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private void BeginSectionConfig()
     {
-        // Remember the open config so Cancel restores it (or «— не выбрано —»). Close it so only the create form shows.
+        // Remember the open config so Cancel restores it (or «- не выбрано -»). Close it so only the create form shows.
         _configBeforeCreate = OpenConfig;
         OpenConfig = null;
         // Drop any just-saved pending open so a re-opened form does not resolve it into the manage panel.

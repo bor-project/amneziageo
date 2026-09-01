@@ -1007,7 +1007,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
         var (rules, routes, domains, skipped) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
         AnnounceRules();
-        logger.LogInformation("{Name}: {Rules} rule(s) saved, giving {Routes} address range(s) and {Domains} domain(s); only the named traffic goes through the tunnel: {On} — takes effect on reconnect", args[0], rules, routes, domains, on);
+        logger.LogInformation("{Name}: {Rules} rule(s) saved, giving {Routes} address range(s) and {Domains} domain(s); only the named traffic goes through the tunnel: {On} - takes effect on reconnect", args[0], rules, routes, domains, on);
         var summary = $"saved: {rules} rules, {routes} routes, {domains} domains";
         return new IpcAck(true, skipped > 0 ? $"{summary}, {skipped} tokens ignored (applies on reconnect)" : $"{summary} (applies on reconnect)");
     }
@@ -1071,7 +1071,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu} ({Mode}), IPv6 allowed: {V6} — takes effect on reconnect",
+        logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu} ({Mode}), IPv6 allowed: {V6} - takes effect on reconnect",
             args[0], on, host.Length == 0 ? "from the configuration" : host, port, mtu, MtuModes.Text(mtuMode), useIpv6);
         return new IpcAck(true, on
             ? IpcMessage.Key("Agent_WebSocketEnabled", port)
@@ -1107,7 +1107,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("{Name}: names outside the tunnel will be resolved by '{Servers}' (empty means your provider's own servers) — takes effect on reconnect", args[0], servers);
+        logger.LogInformation("{Name}: names outside the tunnel will be resolved by '{Servers}' (empty means your provider's own servers) - takes effect on reconnect", args[0], servers);
         return new IpcAck(true, servers.Length == 0
             ? IpcMessage.Key("Agent_DnsReset")
             : IpcMessage.Key("Agent_DnsSaved", servers));
@@ -1135,7 +1135,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("{Name}: the list of addresses and names kept out of the tunnel was saved ({Len} characters) — takes effect on reconnect", args[0], exclusions.Length);
+        logger.LogInformation("{Name}: the list of addresses and names kept out of the tunnel was saved ({Len} characters) - takes effect on reconnect", args[0], exclusions.Length);
         return new IpcAck(true, IpcMessage.Key("Agent_ExclusionsSaved"));
     }
 

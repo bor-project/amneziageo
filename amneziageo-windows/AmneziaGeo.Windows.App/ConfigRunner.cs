@@ -412,7 +412,7 @@ internal sealed class ConfigRunner(
         var state = string.IsNullOrEmpty(config) ? "ABSENT" : serviceManager.QueryState(config);
         if (state == "RUNNING")
         {
-            logger.LogWarning("the tunnel of {Config} is still {State} after being asked to stop, so the disconnect did not finish; it stays shown as connected — try again", config, state);
+            logger.LogWarning("the tunnel of {Config} is still {State} after being asked to stop, so the disconnect did not finish; it stays shown as connected - try again", config, state);
             control.FailDisconnect(state);
             await SetStateAsync("connected");
             return;
@@ -482,7 +482,7 @@ internal sealed class ConfigRunner(
             {
                 var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
                 // Per-poll handshake detail for Debug/Trace.
-                logger.LogDebug("{Member}: waiting for the server — last handshake {Hs}s ago, sent {Tx} B, received {Rx} B, {Sec}s into this attempt",
+                logger.LogDebug("{Member}: waiting for the server - last handshake {Hs}s ago, sent {Tx} B, received {Rx} B, {Sec}s into this attempt",
                     member, status.HandshakeSec, status.TxBytes, status.RxBytes, elapsed);
                 if (status.HandshakeSec > 0)
                 {
@@ -500,14 +500,14 @@ internal sealed class ConfigRunner(
                 if (DateTimeOffset.UtcNow - lastHeartbeat >= TimeSpan.FromSeconds(4))
                 {
                     lastHeartbeat = DateTimeOffset.UtcNow;
-                    logger.LogInformation("{Member}: still no answer from the server — sent {Tx} B, received {Rx} B in {Sec}s",
+                    logger.LogInformation("{Member}: still no answer from the server - sent {Tx} B, received {Rx} B in {Sec}s",
                         member, status.TxBytes, status.RxBytes, elapsed);
                 }
 
                 // No rx after the window: server silent, give up.
                 if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
                 {
-                    logger.LogWarning("{Member}: the server sent nothing back in {Sec}s ({Tx} B went out), so it is unreachable — check the address, the port and whether the server is running",
+                    logger.LogWarning("{Member}: the server sent nothing back in {Sec}s ({Tx} B went out), so it is unreachable - check the address, the port and whether the server is running",
                         member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
                     serverSilent = true;
                     break;

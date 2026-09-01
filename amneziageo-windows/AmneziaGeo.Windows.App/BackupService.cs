@@ -153,7 +153,7 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
             }
             catch (IOException ex)
             {
-                logger.LogError(ex, "the backup could not be put back because the files are in use; nothing was changed — disconnect and close the app, then retry");
+                logger.LogError(ex, "the backup could not be put back because the files are in use; nothing was changed - disconnect and close the app, then retry");
                 Console.WriteLine($"restore failed: {ex.Message} - is a tunnel or the agent still running?");
                 return 1;
             }

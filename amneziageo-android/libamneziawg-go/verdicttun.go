@@ -22,16 +22,16 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 )
 
-// Сколько запись живёт без трафика, пока хост не задал своё окно.
+// Окно простоя записи по умолчанию.
 const defaultVerdictTtl = 300 * time.Second
 
-// Шаг уборки: то же окно, что у релея на стороне хоста.
+// Шаг уборки записей.
 const (
 	minSweepInterval = 5 * time.Second
 	maxSweepInterval = 60 * time.Second
 )
 
-// Сколько ждать обещанный tun, прежде чем считать чтение сорванным.
+// Таймаут ожидания подменяемого tun.
 const (
 	swapWait = 5 * time.Second
 	swapStep = 20 * time.Millisecond
@@ -246,7 +246,7 @@ func (l *liveSet) note(addr uint32, v verdict, nanos int64) {
 	l.mu.Unlock()
 }
 
-// Уборка по расписанию, а не только при снятии снимка.
+// Уборка записей по расписанию.
 func (l *liveSet) sweep(nanos int64) {
 	l.mu.Lock()
 	l.sweepLocked(nanos)
@@ -315,7 +315,6 @@ type verdictTun struct {
 func newVerdictTun(inner tun.Device, ttl time.Duration) *verdictTun {
 	d := &verdictTun{live: newLiveSet(ttl, 65536), stop: make(chan struct{}), events: make(chan tun.Event, 8)}
 	d.inner.Store(&inner)
-	// Форвардеры пишут ответы через этот же слой, поэтому подмена tun доходит и до них.
 	d.fwd = newForwarder(d, &d.protect)
 	go d.sweeping()
 	go d.relayEvents(inner)
@@ -327,12 +326,12 @@ func (d *verdictTun) device() tun.Device {
 	return *d.inner.Load()
 }
 
-// Объявляет подмену: до неё ошибка чтения означает закрытый хостом tun, а не мёртвый туннель.
+// Объявляет подмену tun.
 func (d *verdictTun) prepareSwap(on bool) {
 	d.pending.Store(on)
 }
 
-// Ставит под движок новый системный tun и закрывает прежний; чтение продолжается с нового.
+// Ставит под движок новый системный tun и закрывает прежний.
 func (d *verdictTun) swap(next tun.Device) {
 	previous := d.device()
 	if previous == next {
@@ -346,7 +345,7 @@ func (d *verdictTun) swap(next tun.Device) {
 	previous.Close()
 }
 
-// Ждёт обещанный tun; по истечении ожидания чтение отдаёт свою ошибку и туннель закрывается.
+// Ждёт обещанный tun.
 func (d *verdictTun) awaitSwap(previous tun.Device) bool {
 	for waited := time.Duration(0); waited < swapWait; waited += swapStep {
 		if d.device() != previous {
@@ -364,7 +363,7 @@ func (d *verdictTun) awaitSwap(previous tun.Device) bool {
 	return false
 }
 
-// Пробрасывает события системного tun движку через собственный канал.
+// Пробрасывает события системного tun движку.
 func (d *verdictTun) relayEvents(from tun.Device) {
 	source := from.Events()
 	for {
@@ -491,7 +490,6 @@ func (d *verdictTun) verdictFor(addr uint32) (verdict, bool) {
 func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 	inner := d.device()
 	n, err := inner.Read(bufs, sizes, offset)
-	// Ошибка на подменённом tun не поднимается наверх: движок закрывается на любой другой.
 	for err != nil && (d.device() != inner || d.pending.Load()) {
 		if d.device() == inner && !d.awaitSwap(inner) {
 			break

@@ -123,6 +123,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CardPowerBrush))]
     [NotifyPropertyChangedFor(nameof(CardPowerBorderBrush))]
     [NotifyPropertyChangedFor(nameof(CardPowerForeground))]
+    [NotifyPropertyChangedFor(nameof(CardPowerOn))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
@@ -316,6 +317,11 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public bool CardBusy => PowerState == 1;
 
     /// <summary>
+    /// Светится ли круг подключения: туннель на карточке работает.
+    /// </summary>
+    public bool CardPowerOn => PowerState == 2 && !PowerSilent;
+
+    /// <summary>
     /// Заливка круга подключения: синяя у работающего туннеля, белая у остальных.
     /// </summary>
     public IBrush CardPowerBrush => PowerState == 2 && !PowerSilent ? _powerBlue : Brushes.White;
@@ -501,6 +507,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CardPowerBrush))]
     [NotifyPropertyChangedFor(nameof(CardPowerBorderBrush))]
     [NotifyPropertyChangedFor(nameof(CardPowerForeground))]
+    [NotifyPropertyChangedFor(nameof(CardPowerOn))]
     private int _handshakeAgeSeconds = -1;
 
     /// <summary>

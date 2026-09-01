@@ -89,7 +89,7 @@ internal sealed partial class RoutingView : UserControl
         }
 
         e.Handled = true;
-        Show(CardStack.IsEffectivelyVisible ? CardStack : CardGrid, to);
+        Show(CardStack, to);
     }
 
     // Ведёт пану за переехавшей карточкой.

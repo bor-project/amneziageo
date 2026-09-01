@@ -2005,6 +2005,9 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
   </data>
+  <data name="Main_CardActiveBadge" xml:space="preserve">
+    <value>ACTIVE</value>
+  </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Selected</value>
   </data>
@@ -2368,9 +2371,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Probe_UploadServiceHint" xml:space="preserve">
     <value>The address the speed is checked against. Default: https://speed.cloudflare.com/__up.</value>
   </data>
-  <data name="Main_RoleTabCount" xml:space="preserve">
-    <value>{0} {1}</value>
-  </data>
   <data name="Main_BucketAddPrompt" xml:space="preserve">
     <value>What to add</value>
   </data>
@@ -2393,10 +2393,10 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>VPN mode for apps</value>
   </data>
   <data name="Main_VpnModeSelected" xml:space="preserve">
-    <value>Selected only</value>
+    <value>Selected</value>
   </data>
   <data name="Main_VpnModeSelectedHint" xml:space="preserve">
-    <value>The rest go direct</value>
+    <value>Rest go direct</value>
   </data>
   <data name="Main_VpnModeFull" xml:space="preserve">
     <value>Full tunnel</value>

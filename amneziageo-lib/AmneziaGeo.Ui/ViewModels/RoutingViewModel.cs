@@ -37,14 +37,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCardStack))]
-    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCompact;
 
     // Width of the pane the catalogue stands in, pushed by the view. The settings screen keeps the rail
     // beside the pane, so a window wide enough for two columns leaves the pane too narrow for them.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCardStack))]
-    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private double _paneWidth;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
@@ -171,17 +169,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Сколько карточек стоит в строке каталога.
     /// </summary>
-    public int CatalogColumns => IsNarrowPane ? 1 : 2;
+    public int CatalogColumns => 1;
 
     /// <summary>
     /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && IsNarrowPane;
-
-    /// <summary>
-    /// Замощают ли карточки пану.
-    /// </summary>
-    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsNarrowPane;
+    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists;
 
     /// <summary>
     /// Delete-card prompt naming the open list.
@@ -311,7 +304,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(IsSectionCatalogue));
         OnPropertyChanged(nameof(ShowCardStack));
-        OnPropertyChanged(nameof(ShowCardGrid));
         OnPropertyChanged(nameof(ShowNoListsHint));
     }
 

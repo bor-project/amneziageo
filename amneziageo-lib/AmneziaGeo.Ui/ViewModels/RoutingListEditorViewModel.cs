@@ -489,22 +489,19 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool HasRules => Rules.Count > 0;
 
     /// <summary>
-    /// Proxy tab caption with its entry count.
+    /// Proxy tab caption.
     /// </summary>
-    public string ProxyTabText => TabText("Main_RoleProxy", ProxyRules.Count);
+    public string ProxyTabText => Loc.Instance.Get("Main_RoleProxy");
 
     /// <summary>
-    /// Direct tab caption with its entry count.
+    /// Direct tab caption.
     /// </summary>
-    public string DirectTabText => TabText("Main_RoleDirect", DirectRules.Count);
+    public string DirectTabText => Loc.Instance.Get("Main_RoleDirect");
 
     /// <summary>
-    /// Block tab caption with its entry count.
+    /// Block tab caption.
     /// </summary>
-    public string BlockTabText => TabText("Main_RoleBlock", BlockRules.Count);
-
-    private static string TabText(string key, int count) =>
-        Loc.Instance.Get("Main_RoleTabCount", Loc.Instance.Get(key), count);
+    public string BlockTabText => Loc.Instance.Get("Main_RoleBlock");
 
     // Re-reads the counters and the labels naming the shown bucket.
     private void RefreshCounts()

@@ -34,16 +34,17 @@
             <Button x:Name="ConnectPart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
                     ToolTip.Tip="{Binding CardActionText}"
                     Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
-              <Panel Width="28" Height="28">
+              <Panel Width="42" Height="42">
                 <Ellipse Classes="connspin" Classes.spinning="{Binding CardBusy}"
-                         Width="26" Height="26" Stroke="{Binding CardPowerForeground}"
-                         StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                         Width="40" Height="40" Stroke="{Binding CardPowerForeground}"
+                         StrokeThickness="2.5" StrokeDashArray="12,29" StrokeLineCap="Round"
                          HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <Border Width="22" Height="22" CornerRadius="11"
+                <Border Classes="powerglow" Classes.on="{Binding CardPowerOn}"
+                        Width="36" Height="36" CornerRadius="18"
                         Background="{Binding CardPowerBrush}"
-                        BorderBrush="{Binding CardPowerBorderBrush}" BorderThickness="1"
+                        BorderBrush="{Binding CardPowerBorderBrush}" BorderThickness="1.5"
                         HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
+                  <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="17" Height="17"
                             Foreground="{Binding CardPowerForeground}"
                             IsVisible="{Binding !CardBusy}"
                             HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -89,14 +90,15 @@
             </Grid>
             <!-- Конфигурация из подписки: перечитать её прямо с карточки, под кнопкой подключения. -->
             <!-- Ширина повторяет круг подключения, поэтому иконка встаёт ровно под ним. -->
-            <Button x:Name="RefreshPart" Grid.Column="3" Classes="icon" VerticalAlignment="Center" HorizontalAlignment="Right"
-                    Width="34" Padding="0" HorizontalContentAlignment="Center"
-                    IsVisible="{Binding FromSubscription}"
-                    ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"
-                    Command="{Binding $parent[controls:CatalogCard].RefreshSubscriptionCommand}"
-                    CommandParameter="{Binding}">
-              <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="13" Height="13" />
-            </Button>
+            <Panel Grid.Column="3" Width="42" VerticalAlignment="Center">
+              <Button x:Name="RefreshPart" Classes="cardtune" HorizontalAlignment="Center"
+                      IsVisible="{Binding FromSubscription}"
+                      ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"
+                      Command="{Binding $parent[controls:CatalogCard].RefreshSubscriptionCommand}"
+                      CommandParameter="{Binding}">
+                <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
+              </Button>
+            </Panel>
           </Grid>
         </Grid>
 
@@ -104,12 +106,14 @@
         <Border Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <controls:CardTags x:Name="TagsPart" Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
-            <!-- Шестерёнка встаёт под кнопку подключения: ширина кнопки повторяет её. -->
-            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick cardgear"
-                    ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
-                    Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
-              <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="15" Height="15" />
-            </Button>
+            <!-- Шестерёнка встаёт под кнопку подключения: поле повторяет её ширину. -->
+            <Panel Grid.Column="1" Width="42">
+              <Button x:Name="SettingsPart" Classes="methodpick cardgear" HorizontalAlignment="Center"
+                      ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
+                      Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
+                <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="15" Height="15" />
+              </Button>
+            </Panel>
           </Grid>
         </Border>
       </Grid>

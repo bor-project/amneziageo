@@ -48,7 +48,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private string _name = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRuleInput))]
     private string _ruleInput = string.Empty;
+
+    // Set by the view: a wide editor drops the suggestions under the field, a narrow one lists them inline.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowInlineSuggestions))]
+    [NotifyPropertyChangedFor(nameof(ShowDropdownSuggestions))]
+    private bool _isWideLayout;
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -76,10 +83,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     private AppCandidate? _appSelected;
 
-    // Add-entry method segment: "address" (geo / domain / cidr) or "app" (per-application, experimental).
+    // Add-entry method segment: address, app, file or folder.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAddressMethod))]
     [NotifyPropertyChangedFor(nameof(IsAppMethod))]
+    [NotifyPropertyChangedFor(nameof(IsFileMethod))]
+    [NotifyPropertyChangedFor(nameof(IsDirMethod))]
+    [NotifyPropertyChangedFor(nameof(IsPathMethod))]
+    [NotifyPropertyChangedFor(nameof(RuleWatermark))]
     private string _addMethod = "address";
 
     /// <summary>
@@ -282,6 +293,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
     [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
+    [NotifyPropertyChangedFor(nameof(CanAddApps))]
     private string _selectedRole = "proxy";
 
     // Mirrors the list's global-proxy flag, kept in sync by RoutingViewModel.
@@ -366,6 +378,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
             RuleItems.Add(item);
         }
+
+        RefreshCounts();
     }
 
     /// <summary>
@@ -470,6 +484,38 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsBlockRole => SelectedRole == "block";
 
     /// <summary>
+    /// True while the shown bucket holds entries.
+    /// </summary>
+    public bool HasRules => Rules.Count > 0;
+
+    /// <summary>
+    /// Proxy tab caption with its entry count.
+    /// </summary>
+    public string ProxyTabText => TabText("Main_RoleProxy", ProxyRules.Count);
+
+    /// <summary>
+    /// Direct tab caption with its entry count.
+    /// </summary>
+    public string DirectTabText => TabText("Main_RoleDirect", DirectRules.Count);
+
+    /// <summary>
+    /// Block tab caption with its entry count.
+    /// </summary>
+    public string BlockTabText => TabText("Main_RoleBlock", BlockRules.Count);
+
+    private static string TabText(string key, int count) =>
+        Loc.Instance.Get("Main_RoleTabCount", Loc.Instance.Get(key), count);
+
+    // Re-reads the counters and the labels naming the shown bucket.
+    private void RefreshCounts()
+    {
+        OnPropertyChanged(nameof(ProxyTabText));
+        OnPropertyChanged(nameof(DirectTabText));
+        OnPropertyChanged(nameof(BlockTabText));
+        OnPropertyChanged(nameof(HasRules));
+    }
+
+    /// <summary>
     /// True while the Proxy bucket is shown and the global proxy is on: everything already rides the tunnel, so
     /// neither the bucket's geo ranges nor its domains are applied.
     /// </summary>
@@ -488,6 +534,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // After the active bucket swaps, re-project it and refresh the suggestion filter for the newly shown bucket.
     partial void OnSelectedRoleChanged(string value)
     {
+        if (!CanAddApps && !IsAddressMethod)
+        {
+            AddMethod = "address";
+        }
+
         RebuildRuleItems();
         _ = ApplySuggestionFilterAsync();
     }
@@ -553,9 +604,59 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsAppMethod => AddMethod == "app";
 
     /// <summary>
+    /// True when the add-entry segment targets a program file.
+    /// </summary>
+    public bool IsFileMethod => AddMethod == "file";
+
+    /// <summary>
+    /// True when the add-entry segment targets a folder of programs.
+    /// </summary>
+    public bool IsDirMethod => AddMethod == "dir";
+
+    /// <summary>
+    /// True while the add row takes a path typed or picked by the user.
+    /// </summary>
+    public bool IsPathMethod => IsFileMethod || IsDirMethod;
+
+    /// <summary>
     /// True when the per-application entry method is offered (Windows path matching or the Android package picker).
     /// </summary>
     public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsAndroid();
+
+    /// <summary>
+    /// True when file and folder entries are offered: Android runs package rules only.
+    /// </summary>
+    public bool IsPathMethodAvailable => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// True while the app, file and folder methods are pickable: only the Proxy bucket runs them.
+    /// </summary>
+    public bool CanAddApps => IsProxyRole;
+
+    /// <summary>
+    /// App tab caption, empty where the platform runs no app rules.
+    /// </summary>
+    public string AppTabText => IsAppMethodAvailable ? Loc.Instance.Get("Main_AddByAppTab") : string.Empty;
+
+    /// <summary>
+    /// File tab caption, empty where the platform runs no path rules.
+    /// </summary>
+    public string FileTabText => IsPathMethodAvailable ? Loc.Instance.Get("Main_AddByFileTab") : string.Empty;
+
+    /// <summary>
+    /// Folder tab caption, empty where the platform runs no path rules.
+    /// </summary>
+    public string FolderTabText => IsPathMethodAvailable ? Loc.Instance.Get("Main_AddByFolderTab") : string.Empty;
+
+    /// <summary>
+    /// Watermark of the add row, reflecting the selected method.
+    /// </summary>
+    public string RuleWatermark => AddMethod switch
+    {
+        "file" => Loc.Instance.Get("Main_AddFileWatermark"),
+        "dir" => Loc.Instance.Get("Main_AddFolderWatermark"),
+        _ => Loc.Instance.Get("Main_AddEntryWatermark"),
+    };
 
     /// <summary>
     /// True when the app source is the Windows running / installed / path picker.
@@ -568,29 +669,70 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsAppSourceAndroid => OperatingSystem.IsAndroid();
 
     /// <summary>
-    /// Best-match geo suggestions for the current input, shown inline under the field.
+    /// Best-match suggestions for the current input, shown under the field.
     /// </summary>
-    public ObservableCollection<string> MatchedSuggestions { get; } = [];
+    public ObservableCollection<RoutingSuggestionViewModel> MatchedSuggestions { get; } = [];
 
     /// <summary>
-    /// True when the inline suggestion list has entries to show.
+    /// The head of the match list, shown inline where a dropdown does not fit.
+    /// </summary>
+    public ObservableCollection<RoutingSuggestionViewModel> TopSuggestions { get; } = [];
+
+    /// <summary>
+    /// True when the suggestion list has entries to show.
     /// </summary>
     public bool HasMatchedSuggestions => MatchedSuggestions.Count > 0;
 
-    // Rebuilds the inline pick list: geo suggestions containing the current input, capped to a short list.
+    /// <summary>
+    /// True while the suggestions stand as rows under the field.
+    /// </summary>
+    public bool ShowInlineSuggestions => HasMatchedSuggestions && !IsWideLayout;
+
+    /// <summary>
+    /// True while the suggestions come as a dropdown over the entries.
+    /// </summary>
+    public bool ShowDropdownSuggestions => HasMatchedSuggestions && IsWideLayout;
+
+    /// <summary>
+    /// True while the add row holds text.
+    /// </summary>
+    public bool HasRuleInput => RuleInput.Length > 0;
+
+    // How many suggestions the dropdown and the inline list hold.
+    private const int SuggestionLimit = 8;
+
+    private const int InlineSuggestionLimit = 3;
+
+    // Rebuilds the pick list: what the input adds as it stands, then the geo categories containing it.
     private void UpdateMatchedSuggestions()
     {
         MatchedSuggestions.Clear();
+        TopSuggestions.Clear();
         var query = RuleInput.Trim();
-        if (query.Length > 0)
+        if (query.Length > 0 && IsAddressMethod)
         {
-            foreach (var token in GeoSuggestions.Where(t => t.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(8))
+            var typed = Normalize(query);
+            if (typed.Length > 0 && !Rules.Contains(typed))
             {
-                MatchedSuggestions.Add(token);
+                MatchedSuggestions.Add(new RoutingSuggestionViewModel(typed));
+            }
+
+            foreach (var token in GeoSuggestions
+                .Where(t => t.Contains(query, StringComparison.OrdinalIgnoreCase) && t != typed)
+                .Take(SuggestionLimit))
+            {
+                MatchedSuggestions.Add(new RoutingSuggestionViewModel(token));
+            }
+
+            foreach (var item in MatchedSuggestions.Take(InlineSuggestionLimit))
+            {
+                TopSuggestions.Add(item);
             }
         }
 
         OnPropertyChanged(nameof(HasMatchedSuggestions));
+        OnPropertyChanged(nameof(ShowInlineSuggestions));
+        OnPropertyChanged(nameof(ShowDropdownSuggestions));
     }
 
     partial void OnRuleInputChanged(string value) => UpdateMatchedSuggestions();
@@ -612,7 +754,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(AppWatermark));
+        OnPropertyChanged(nameof(RuleWatermark));
+        OnPropertyChanged(nameof(AppTabText));
+        OnPropertyChanged(nameof(FileTabText));
+        OnPropertyChanged(nameof(FolderTabText));
         OnPropertyChanged(nameof(RoleHint));
+        RefreshCounts();
+        UpdateMatchedSuggestions();
 
         // Entry counts read from the cache carry a localized line; re-project to render it in the new language.
         RebuildRuleItems();
@@ -974,6 +1122,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // per-app picker is first opened rather than on every list open. Android picks apps through its own sheet.
     partial void OnAddMethodChanged(string value)
     {
+        UpdateMatchedSuggestions();
         if (value == "app" && IsAppSourceWindows && AppMode == "running" && AppSuggestions.Count == 0)
         {
             _ = LoadRunningAsync();
@@ -1030,6 +1179,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
+        if (IsPathMethod)
+        {
+            AddAppToken((IsFileMethod ? "app:path=" : "app:dir=") + text);
+            RuleInput = string.Empty;
+            return;
+        }
+
         var rule = Normalize(text);
         if (!Rules.Contains(rule))
         {
@@ -1051,6 +1207,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             Rules.Add(rule);
         }
 
+        RuleInput = string.Empty;
+    }
+
+    /// <summary>
+    /// Empties the add row.
+    /// </summary>
+    [RelayCommand]
+    private void ClearRuleInput()
+    {
         RuleInput = string.Empty;
     }
 

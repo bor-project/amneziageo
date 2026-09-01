@@ -29,6 +29,11 @@ internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
     /// </summary>
     public bool CanExpand { get; }
 
+    /// <summary>
+    /// Kind and type of the entry, shown under its token.
+    /// </summary>
+    public string Caption => RuleToken.Caption(Token);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Glyph))]
     private bool _isExpanded;

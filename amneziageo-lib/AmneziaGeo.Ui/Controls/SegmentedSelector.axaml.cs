@@ -2,6 +2,7 @@ using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Media;
 
 namespace AmneziaGeo.Ui.Controls;
 
@@ -28,6 +29,9 @@ internal sealed partial class SegmentedSelector : UserControl
     public static readonly StyledProperty<bool> IsCompactProperty =
         AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(IsCompact));
 
+    public static readonly StyledProperty<bool> DenseProperty =
+        AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(Dense));
+
     public static readonly StyledProperty<string?> Item1TextProperty =
         AvaloniaProperty.Register<SegmentedSelector, string?>(nameof(Item1Text));
 
@@ -39,6 +43,9 @@ internal sealed partial class SegmentedSelector : UserControl
 
     public static readonly StyledProperty<bool> Item1EnabledProperty =
         AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(Item1Enabled), true);
+
+    public static readonly StyledProperty<Geometry?> Item1IconProperty =
+        AvaloniaProperty.Register<SegmentedSelector, Geometry?>(nameof(Item1Icon));
 
     public static readonly StyledProperty<string?> Item2TextProperty =
         AvaloniaProperty.Register<SegmentedSelector, string?>(nameof(Item2Text));
@@ -52,6 +59,9 @@ internal sealed partial class SegmentedSelector : UserControl
     public static readonly StyledProperty<bool> Item2EnabledProperty =
         AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(Item2Enabled), true);
 
+    public static readonly StyledProperty<Geometry?> Item2IconProperty =
+        AvaloniaProperty.Register<SegmentedSelector, Geometry?>(nameof(Item2Icon));
+
     public static readonly StyledProperty<string?> Item3TextProperty =
         AvaloniaProperty.Register<SegmentedSelector, string?>(nameof(Item3Text));
 
@@ -64,6 +74,9 @@ internal sealed partial class SegmentedSelector : UserControl
     public static readonly StyledProperty<bool> Item3EnabledProperty =
         AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(Item3Enabled), true);
 
+    public static readonly StyledProperty<Geometry?> Item3IconProperty =
+        AvaloniaProperty.Register<SegmentedSelector, Geometry?>(nameof(Item3Icon));
+
     public static readonly StyledProperty<string?> Item4TextProperty =
         AvaloniaProperty.Register<SegmentedSelector, string?>(nameof(Item4Text));
 
@@ -75,6 +88,9 @@ internal sealed partial class SegmentedSelector : UserControl
 
     public static readonly StyledProperty<bool> Item4EnabledProperty =
         AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(Item4Enabled), true);
+
+    public static readonly StyledProperty<Geometry?> Item4IconProperty =
+        AvaloniaProperty.Register<SegmentedSelector, Geometry?>(nameof(Item4Icon));
 
     /// <summary>
     /// ctor
@@ -123,6 +139,15 @@ internal sealed partial class SegmentedSelector : UserControl
         set => SetValue(IsCompactProperty, value);
     }
 
+    /// <summary>
+    /// Сжимает кнопки: четыре подписи со значками встают в одну строку.
+    /// </summary>
+    public bool Dense
+    {
+        get => GetValue(DenseProperty);
+        set => SetValue(DenseProperty, value);
+    }
+
     public string? Item1Text
     {
         get => GetValue(Item1TextProperty);
@@ -145,6 +170,15 @@ internal sealed partial class SegmentedSelector : UserControl
     {
         get => GetValue(Item1EnabledProperty);
         set => SetValue(Item1EnabledProperty, value);
+    }
+
+    /// <summary>
+    /// Значок слева от подписи.
+    /// </summary>
+    public Geometry? Item1Icon
+    {
+        get => GetValue(Item1IconProperty);
+        set => SetValue(Item1IconProperty, value);
     }
 
     public string? Item2Text
@@ -171,6 +205,15 @@ internal sealed partial class SegmentedSelector : UserControl
         set => SetValue(Item2EnabledProperty, value);
     }
 
+    /// <summary>
+    /// Значок слева от подписи.
+    /// </summary>
+    public Geometry? Item2Icon
+    {
+        get => GetValue(Item2IconProperty);
+        set => SetValue(Item2IconProperty, value);
+    }
+
     public string? Item3Text
     {
         get => GetValue(Item3TextProperty);
@@ -195,6 +238,15 @@ internal sealed partial class SegmentedSelector : UserControl
         set => SetValue(Item3EnabledProperty, value);
     }
 
+    /// <summary>
+    /// Значок слева от подписи.
+    /// </summary>
+    public Geometry? Item3Icon
+    {
+        get => GetValue(Item3IconProperty);
+        set => SetValue(Item3IconProperty, value);
+    }
+
     public string? Item4Text
     {
         get => GetValue(Item4TextProperty);
@@ -217,5 +269,14 @@ internal sealed partial class SegmentedSelector : UserControl
     {
         get => GetValue(Item4EnabledProperty);
         set => SetValue(Item4EnabledProperty, value);
+    }
+
+    /// <summary>
+    /// Значок слева от подписи.
+    /// </summary>
+    public Geometry? Item4Icon
+    {
+        get => GetValue(Item4IconProperty);
+        set => SetValue(Item4IconProperty, value);
     }
 }

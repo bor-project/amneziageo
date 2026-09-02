@@ -292,13 +292,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [NotifyPropertyChangedFor(nameof(IsDirectRole))]
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
-    [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
     [NotifyPropertyChangedFor(nameof(CanAddApps))]
     private string _selectedRole = "proxy";
 
     // Mirrors the list's global-proxy flag, kept in sync by RoutingViewModel.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
+    [NotifyPropertyChangedFor(nameof(CanUseProxyBucket))]
     private bool _globalProxyActive;
 
     // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
@@ -307,6 +306,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
     partial void OnGlobalProxyActiveChanged(bool value)
     {
+        if (value && IsProxyRole)
+        {
+            SelectedRole = "direct";
+        }
+
         RefreshTransfer();
         _ = RefreshRouteBudgetAsync();
     }
@@ -513,10 +517,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     }
 
     /// <summary>
-    /// True while the Proxy bucket is shown and the global proxy is on: everything already rides the tunnel, so
-    /// neither the bucket's geo ranges nor its domains are applied.
+    /// True while the Proxy bucket is pickable: the full tunnel carries everything by itself.
     /// </summary>
-    public bool IsProxyBucketUnused => IsProxyRole && GlobalProxyActive;
+    public bool CanUseProxyBucket => !GlobalProxyActive;
 
     /// <summary>
     /// Localized help line for the active role.

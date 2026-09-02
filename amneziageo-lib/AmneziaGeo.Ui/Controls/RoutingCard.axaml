@@ -8,23 +8,35 @@
              x:DataType="vm:RoutingListSummaryViewModel"
              Design.DataContext="{x:Static vm:DesignData.RoutingCard}"
              Design.Width="340">
-  <!-- Применение и настройки стоят на кнопках правого столбца. На телевизоре тело служит входом,
-       дальше пульт ходит по этим же контролам. -->
+  <!-- Применение и настройки стоят на кнопках. На телевизоре тело служит входом, дальше пульт ходит
+       по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel Grid.Column="0" Margin="12,10" Spacing="8" VerticalAlignment="Center">
-          <!-- Имя списка и плашка применённого. -->
-          <Grid Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <Grid RowDefinitions="Auto,Auto">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
+          <!-- Имя списка и его применение: круг стоит на месте кнопки подключения карточки сервера. -->
+          <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <Border Grid.Column="1" Classes="cardbadge" IsVisible="{Binding IsSelected}">
-              <TextBlock Text="{l:Tr Main_CardActiveBadge}" FontSize="10.5" FontWeight="SemiBold" />
-            </Border>
+
+            <Button x:Name="ActivePart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
+                    ClickMode="Press" ToolTip.Tip="{l:Tr Main_CardActiveFlag}"
+                    Command="{Binding $parent[controls:RoutingCard].SelectCommand}"
+                    CommandParameter="{Binding}">
+              <Panel Width="42" Height="42">
+                <Border Classes="cardradio" Classes.on="{Binding IsSelected}"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Ellipse Width="18" Height="18" Fill="{DynamicResource AgAccentBrush}"
+                           IsVisible="{Binding IsSelected}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+              </Panel>
+            </Button>
           </Grid>
 
           <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
-          <StackPanel Classes="cardinfo" Orientation="Horizontal" Spacing="10">
+          <StackPanel Grid.Row="1" Classes="cardinfo" Orientation="Horizontal" Spacing="10" Margin="0,8,0,0"
+                      VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Ellipse Width="6" Height="6" VerticalAlignment="Center"
                        Fill="{DynamicResource AgAccentBrush}" />
@@ -44,29 +56,21 @@
                          VerticalAlignment="Center" />
             </StackPanel>
           </StackPanel>
+        </Grid>
 
-          <!-- Метки режимов списка. -->
-          <controls:CardTags x:Name="TagsPart" Tags="{Binding Tags}" HorizontalAlignment="Left" />
-        </StackPanel>
-
-        <!-- Правый столбец: применение списка и его настройки. -->
-        <Border Grid.Column="1" Classes="cardside">
-          <StackPanel Spacing="8" VerticalAlignment="Center">
-            <Button x:Name="ActivePart" Classes="cardtoggle" HorizontalAlignment="Center"
-                    ToolTip.Tip="{l:Tr Main_CardActiveFlag}"
-                    Command="{Binding $parent[controls:RoutingCard].SelectCommand}"
-                    CommandParameter="{Binding}">
-              <Border Classes="togglering" Classes.on="{Binding IsSelected}">
-                <Ellipse Width="13" Height="13" Fill="White" IsVisible="{Binding IsSelected}"
-                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-            </Button>
-            <Button x:Name="SettingsPart" Classes="cardtune" HorizontalAlignment="Center"
-                    ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
-                    Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">
-              <PathIcon Data="{DynamicResource AgGearGeometry}" Width="15" Height="15" />
-            </Button>
-          </StackPanel>
+        <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->
+        <Border Grid.Row="1" Classes="cardfoot">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <controls:CardTags x:Name="TagsPart" Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
+            <!-- Шестерёнка встаёт под круг применения: поле повторяет его ширину. -->
+            <Panel Grid.Column="1" Width="42">
+              <Button x:Name="SettingsPart" Classes="methodpick cardgear" HorizontalAlignment="Center"
+                      ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
+                      Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">
+                <PathIcon Data="{DynamicResource AgGearGeometry}" Width="15" Height="15" />
+              </Button>
+            </Panel>
+          </Grid>
         </Border>
       </Grid>
 

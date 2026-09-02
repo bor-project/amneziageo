@@ -416,32 +416,17 @@
       <Setter Property="BoxShadow" Value="0 0 10 0 #802A6FDB" />
     </Style>
 
-    <!-- Применение списка: круг у правого края карточки. -->
-    <Style Selector="Button.cardtoggle">
-      <Setter Property="Width" Value="64" />
-      <Setter Property="Height" Value="64" />
-      <Setter Property="CornerRadius" Value="32" />
-      <Setter Property="Margin" Value="-11" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="Cursor" Value="Hand" />
-    </Style>
-
-    <!-- Круг применения: обводка у отложенного списка, заливка со свечением у применённого. -->
-    <Style Selector="Border.togglering">
-      <Setter Property="Width" Value="42" />
-      <Setter Property="Height" Value="42" />
-      <Setter Property="CornerRadius" Value="21" />
+    <!-- Применение списка: большое радио на месте кнопки подключения. -->
+    <Style Selector="Border.cardradio">
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="CornerRadius" Value="18" />
       <Setter Property="BorderThickness" Value="1.5" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="Border.togglering.on">
-      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+    <Style Selector="Border.cardradio.on">
+      <Setter Property="BorderThickness" Value="2" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="BoxShadow" Value="0 0 11 0 #802A6FDB" />
     </Style>
@@ -460,14 +445,6 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Cursor" Value="Hand" />
-    </Style>
-
-    <!-- Правый столбец карточки: органы состояния отделены полосой. Свечение круга выходит за поле
-         кнопки, поэтому запас берётся отрицательным полем, а не отступом. -->
-    <Style Selector="Border.cardside">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1,0,0,0" />
-      <Setter Property="Padding" Value="12,10" />
     </Style>
 
     <!-- Плашка применённого списка рядом с именем. -->
@@ -501,13 +478,6 @@
     <Style Selector="Button.presetcard.on">
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="BorderThickness" Value="1.5" />
-    </Style>
-
-    <!-- Пример того, что набор уводит в туннель. -->
-    <Style Selector="Border.presetchip">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="CornerRadius" Value="5" />
-      <Setter Property="Padding" Value="6,1" />
     </Style>
 
     <!-- Header back button. -->

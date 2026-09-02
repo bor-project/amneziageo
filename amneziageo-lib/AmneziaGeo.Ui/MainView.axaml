@@ -193,6 +193,29 @@
                       </StackPanel>
                     </Button>
                   </StackPanel>
+
+                  <!-- Маршрутизация: тумблер включает, имя списка под подписью ведёт в раздел. -->
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasConfigs}">
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                      <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
+                                 FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <Button Classes="linkbtn" Classes.down="{Binding !Routing.HomeRoutingOn}"
+                              HorizontalAlignment="Left" HorizontalContentAlignment="Left"
+                              Margin="-7,-1,0,-4"
+                              Command="{Binding Routing.OpenHomeRoutingCommand}"
+                              ToolTip.Tip="{l:Tr Main_RoutingSection}">
+                        <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="4">
+                          <TextBlock Grid.Column="0" Text="{Binding Routing.HomeRoutingList}" FontSize="12"
+                                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                          <PathIcon Grid.Column="1" Data="{StaticResource AgChevronGeometry}" Width="9" Height="9"
+                                    VerticalAlignment="Center" />
+                        </Grid>
+                      </Button>
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                  IsChecked="{Binding Routing.HomeRoutingOn, Mode=TwoWay}"
+                                  ToolTip.Tip="{l:Tr Main_HomeRoutingHint}" />
+                  </Grid>
                 </StackPanel>
               </ScrollViewer>
           </Grid>

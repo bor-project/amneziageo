@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -12,8 +16,10 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Ui.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Button = Avalonia.Controls.Button;
 using CheckBox = Avalonia.Controls.CheckBox;
 using InputMethod = Avalonia.Input.InputMethod;
@@ -699,39 +705,60 @@ internal sealed partial class MobileSelectHost : UserControl
             .OrderBy(a => a.Label, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
-        var listPanel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 0) };
-        var rows = new List<(CheckBox Check, string Haystack)>();
-        foreach (var app in apps)
-        {
-            var check = new CheckBox { Content = app.Label, Tag = app.Pkg, IsChecked = chosen.Contains(app.Pkg) };
-            rows.Add((check, $"{app.Label} {app.Pkg}".ToLowerInvariant()));
-            listPanel.Children.Add(check);
-        }
+        var rows = apps
+            .Select(a => new AppRow(a.Label, a.Pkg, chosen.Contains(a.Pkg)))
+            .ToList();
+        var shown = new ObservableCollection<AppRow>(rows);
 
-        var listScroll = new ScrollViewer { Content = listPanel };
+        // Строки создаются по мере прокрутки: у телефона их сотни.
+        var list = new ListBox
+        {
+            ItemsSource = shown,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Margin = new Thickness(0, 8, 0, 0),
+            ItemTemplate = new FuncDataTemplate<AppRow>((row, _) =>
+            {
+                var check = new CheckBox { Content = row.Label };
+                check.Bind(Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty, new Binding(nameof(AppRow.Picked)) { Mode = BindingMode.TwoWay });
+                return check;
+            }),
+        };
+        list.Styles.Add(new Style(x => x.OfType<ListBoxItem>())
+        {
+            Setters =
+            {
+                new Setter(TemplatedControl.PaddingProperty, new Thickness(2)),
+                new Setter(Layoutable.MinHeightProperty, 0d),
+                new Setter(TemplatedControl.BackgroundProperty, Brushes.Transparent),
+            },
+        });
+
+        var listScroll = list;
 
         // Live match filter over the app list.
-        var search = new TextBox { Watermark = "Поиск приложений", Margin = new Thickness(0, 8, 0, 0) };
+        var search = new TextBox { Watermark = Loc.Instance.Get("AppPicker_Search"), Margin = new Thickness(0, 8, 0, 0) };
         search.Classes.Add("field");
         search.TextChanged += (_, _) =>
         {
             var query = search.Text?.Trim().ToLowerInvariant() ?? string.Empty;
-            foreach (var (check, haystack) in rows)
+            shown.Clear();
+            foreach (var row in rows.Where(r => query.Length == 0 || r.Haystack.Contains(query, StringComparison.Ordinal)))
             {
-                check.IsVisible = query.Length == 0 || haystack.Contains(query, StringComparison.Ordinal);
+                shown.Add(row);
             }
         };
 
-        var save = new Button { Content = "Сохранить", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var save = new Button { Content = Loc.Instance.Get("Main_SaveButton"), HorizontalAlignment = HorizontalAlignment.Stretch };
         save.Classes.Add("accent");
         save.Click += (_, _) =>
         {
-            var packages = rows.Where(r => r.Check.IsChecked == true).Select(r => (string)r.Check.Tag!).ToList();
+            var packages = rows.Where(r => r.Picked).Select(r => r.Package).ToList();
             CloseAppSplit();
             onPicked(packages);
         };
 
-        var cancel = new Button { Content = "Отмена", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var cancel = new Button { Content = Loc.Instance.Get("Main_CancelButton"), HorizontalAlignment = HorizontalAlignment.Stretch };
         cancel.Classes.Add("softbtn");
         cancel.Click += (_, _) => CloseAppSplit();
 
@@ -741,10 +768,10 @@ internal sealed partial class MobileSelectHost : UserControl
         actions.Children.Add(cancel);
         actions.Children.Add(save);
 
-        var title = new TextBlock { Text = "Приложения", FontWeight = FontWeight.SemiBold, FontSize = 16, Margin = new Thickness(0, 0, 0, 8) };
+        var title = new TextBlock { Text = Loc.Instance.Get("AppPicker_Title"), FontWeight = FontWeight.SemiBold, FontSize = 16, Margin = new Thickness(0, 0, 0, 8) };
         var hint = new TextBlock
         {
-            Text = "Изменение применится при следующем подключении.",
+            Text = Loc.Instance.Get("AppPicker_Hint"),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
@@ -768,6 +795,42 @@ internal sealed partial class MobileSelectHost : UserControl
         overlay.Background = overlay.TryFindResource("AgPanelBrush", out var brush) && brush is IBrush found
             ? found
             : new SolidColorBrush(Color.FromRgb(0x1a, 0x1c, 0x20));
+    }
+
+    // Строка списка приложений: имя, пакет и отметка.
+    private sealed partial class AppRow : ObservableObject
+    {
+        /// <summary>
+        /// ctor
+        /// </summary>
+        public AppRow(string label, string package, bool picked)
+        {
+            Label = label;
+            Package = package;
+            Haystack = $"{label} {package}".ToLowerInvariant();
+            _picked = picked;
+        }
+
+        /// <summary>
+        /// Имя приложения.
+        /// </summary>
+        public string Label { get; }
+
+        /// <summary>
+        /// Имя пакета.
+        /// </summary>
+        public string Package { get; }
+
+        /// <summary>
+        /// Строка для поиска.
+        /// </summary>
+        public string Haystack { get; }
+
+        /// <summary>
+        /// Отмечено ли приложение.
+        /// </summary>
+        [ObservableProperty]
+        private bool _picked;
     }
 
     private void CloseAppSplit()

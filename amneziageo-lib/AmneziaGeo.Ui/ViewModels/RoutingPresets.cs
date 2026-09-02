@@ -52,6 +52,7 @@ internal static class RoutingPresets
                 "geosite:twitter",
                 "geosite:discord",
                 "geosite:openai",
+                "geosite:telegram",
                 "geoip:telegram",
             ],
             [.. InsideRules, "geoip:{0}"],
@@ -193,13 +194,6 @@ internal sealed class RoutingPresetItemViewModel(RoutingPreset preset)
     /// Что идёт через VPN, а что напрямую.
     /// </summary>
     public string Hint => Loc.Instance.Get($"Preset_{preset.Key}Hint");
-
-    /// <summary>
-    /// Примеры того, что попадёт в туннель.
-    /// </summary>
-    public IReadOnlyList<string> Chips => Loc.Instance
-        .Get($"Preset_{preset.Key}Chips")
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }
 
 /// <summary>

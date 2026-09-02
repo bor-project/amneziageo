@@ -718,9 +718,6 @@
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Полностью блокировать.</value>
   </data>
-  <data name="Main_RoleProxyUnusedWarning" xml:space="preserve">
-    <value>Включён глобальный прокси - этот список не применяется: в туннель уходит всё, кроме «Директ» и «Блок».</value>
-  </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>
   </data>
@@ -801,6 +798,15 @@
   </data>
   <data name="Main_AddByAddressTab" xml:space="preserve">
     <value>Адрес</value>
+  </data>
+  <data name="AppPicker_Hint" xml:space="preserve">
+    <value>Изменение применится при следующем подключении.</value>
+  </data>
+  <data name="AppPicker_Search" xml:space="preserve">
+    <value>Поиск приложений</value>
+  </data>
+  <data name="AppPicker_Title" xml:space="preserve">
+    <value>Приложения</value>
   </data>
   <data name="Main_AddByAppTab" xml:space="preserve">
     <value>Приложение</value>
@@ -1861,26 +1867,17 @@
   <data name="Preset_ClosedHint" xml:space="preserve">
     <value>Через VPN идут сайты из готового списка, напрямую - выбранный регион.</value>
   </data>
-  <data name="Preset_ClosedChips" xml:space="preserve">
-    <value>YouTube, Telegram, Instagram, Discord, ChatGPT, и т.д.</value>
-  </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Всё, кроме выбранного региона</value>
   </data>
   <data name="Preset_AllButLocalHint" xml:space="preserve">
     <value>Через VPN идёт всё, кроме сайтов и адресов выбранного региона.</value>
   </data>
-  <data name="Preset_AllButLocalChips" xml:space="preserve">
-    <value>Выбранный регион напрямую, Остальное в VPN</value>
-  </data>
   <data name="Preset_EverythingName" xml:space="preserve">
     <value>Всё через VPN</value>
   </data>
   <data name="Preset_EverythingHint" xml:space="preserve">
     <value>Через VPN идёт всё без исключений, напрямую - домашняя сеть.</value>
-  </data>
-  <data name="Preset_EverythingChips" xml:space="preserve">
-    <value>Ничего не настраивать, Работает сразу</value>
   </data>
   <data name="Preset_RegionTitle" xml:space="preserve">
     <value>Регион</value>
@@ -2035,6 +2032,12 @@
   <data name="Main_AlwaysOnMode" xml:space="preserve">
     <value>Постоянная VPN: кнопка открывает системный экран</value>
   </data>
+  <data name="Main_HomeRoutingHint" xml:space="preserve">
+    <value>Включить или выключить маршрутизацию</value>
+  </data>
+  <data name="Main_HomeRoutingNone" xml:space="preserve">
+    <value>Списка нет</value>
+  </data>
   <data name="Main_HomeServerLabel" xml:space="preserve">
     <value>Сервер</value>
   </data>
@@ -2082,9 +2085,6 @@
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
-  </data>
-  <data name="Main_CardActiveBadge" xml:space="preserve">
-    <value>АКТИВНЫЙ</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Выбран</value>
@@ -2549,6 +2549,6 @@
     <value>Дополнительно</value>
   </data>
   <data name="Main_AdvancedSubtitle" xml:space="preserve">
-    <value>UDP, кеш, экспорт и удаление</value>
+    <value>UDP, кеш и экспорт</value>
   </data>
 </root>

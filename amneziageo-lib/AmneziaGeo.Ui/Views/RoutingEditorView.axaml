@@ -115,6 +115,7 @@
           <controls:SegmentedSelector Dense="True" Command="{Binding SelectRoleCommand}"
               IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
               Item1Text="{Binding ProxyTabText}" Item1Param="proxy" Item1Active="{Binding IsProxyRole}"
+              Item1Enabled="{Binding CanUseProxyBucket}"
               Item2Text="{Binding DirectTabText}" Item2Param="direct" Item2Active="{Binding IsDirectRole}"
               Item3Text="{Binding BlockTabText}" Item3Param="block" Item3Active="{Binding IsBlockRole}" />
         </StackPanel>
@@ -126,9 +127,6 @@
         <StackPanel Spacing="10">
           <TextBlock Text="{Binding RoleHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
 
-          <!-- Корзина «Через VPN» стоит впустую, пока туннель несёт весь трафик. -->
-          <TextBlock Text="{l:Tr Main_RoleProxyUnusedWarning}" FontSize="11.5" TextWrapping="Wrap"
-                     Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding IsProxyBucketUnused}" />
           <!-- Список маршрутов не помещается в бюджет, часть направлений уходит мимо. -->
           <TextBlock Text="{Binding RouteTrimNotice}" FontSize="11.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding RouteTrims}" />

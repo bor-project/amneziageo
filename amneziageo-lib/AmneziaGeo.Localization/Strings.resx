@@ -718,9 +718,6 @@
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Block these entirely.</value>
   </data>
-  <data name="Main_RoleProxyUnusedWarning" xml:space="preserve">
-    <value>Global proxy is on, so this list is not applied: everything except Direct and Block goes through the tunnel.</value>
-  </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Global proxy</value>
   </data>
@@ -801,6 +798,15 @@
   </data>
   <data name="Main_AddByAddressTab" xml:space="preserve">
     <value>Address</value>
+  </data>
+  <data name="AppPicker_Hint" xml:space="preserve">
+    <value>The change applies on the next connection.</value>
+  </data>
+  <data name="AppPicker_Search" xml:space="preserve">
+    <value>Search apps</value>
+  </data>
+  <data name="AppPicker_Title" xml:space="preserve">
+    <value>Applications</value>
   </data>
   <data name="Main_AddByAppTab" xml:space="preserve">
     <value>Application</value>
@@ -1861,26 +1867,17 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Preset_ClosedHint" xml:space="preserve">
     <value>The VPN carries sites from a ready list, the selected region goes direct.</value>
   </data>
-  <data name="Preset_ClosedChips" xml:space="preserve">
-    <value>YouTube, Telegram, Instagram, Discord, ChatGPT, and so on</value>
-  </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Everything but the selected region</value>
   </data>
   <data name="Preset_AllButLocalHint" xml:space="preserve">
     <value>The VPN carries everything except sites and addresses of the selected region.</value>
   </data>
-  <data name="Preset_AllButLocalChips" xml:space="preserve">
-    <value>Selected region direct, The rest in VPN</value>
-  </data>
   <data name="Preset_EverythingName" xml:space="preserve">
     <value>Everything through VPN</value>
   </data>
   <data name="Preset_EverythingHint" xml:space="preserve">
     <value>The VPN carries everything with no exceptions, the home network stays direct.</value>
-  </data>
-  <data name="Preset_EverythingChips" xml:space="preserve">
-    <value>Nothing to set up, Works right away</value>
   </data>
   <data name="Preset_RegionTitle" xml:space="preserve">
     <value>Region</value>
@@ -2035,6 +2032,12 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_AlwaysOnMode" xml:space="preserve">
     <value>Always-on VPN: the button opens the system screen</value>
   </data>
+  <data name="Main_HomeRoutingHint" xml:space="preserve">
+    <value>Turn routing on or off</value>
+  </data>
+  <data name="Main_HomeRoutingNone" xml:space="preserve">
+    <value>No list</value>
+  </data>
   <data name="Main_HomeServerLabel" xml:space="preserve">
     <value>Server</value>
   </data>
@@ -2082,9 +2085,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
-  </data>
-  <data name="Main_CardActiveBadge" xml:space="preserve">
-    <value>ACTIVE</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Selected</value>
@@ -2549,6 +2549,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Advanced</value>
   </data>
   <data name="Main_AdvancedSubtitle" xml:space="preserve">
-    <value>UDP, cache, export and delete</value>
+    <value>UDP, cache and export</value>
   </data>
 </root>

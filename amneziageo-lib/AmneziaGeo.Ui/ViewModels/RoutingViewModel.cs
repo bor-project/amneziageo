@@ -37,6 +37,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     private bool _presetSeeded;
 
+    // Ставит сохранённый черновик набора действующим списком.
+    private bool _assignAfterSave;
+
     // Определение региона: посев набора ждёт его результата.
     private Task? _regionProbe;
 
@@ -83,6 +86,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
     [NotifyPropertyChangedFor(nameof(UseOpenList))]
     [NotifyPropertyChangedFor(nameof(DeleteListPrompt))]
+    [NotifyPropertyChangedFor(nameof(OpenListName))]
     private RoutingListSummaryViewModel? _editRoutingList;
 
     // The routing list every config uses, mirrored from the snapshot; null leaves each config on its own settings.
@@ -256,6 +260,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists;
 
     /// <summary>
+    /// Имя открытого списка под заголовком раздела.
+    /// </summary>
+    public string OpenListName => IsCreatingSectionRouting ? string.Empty : EditRoutingList?.Name ?? string.Empty;
+
+    /// <summary>
     /// Delete-card prompt naming the open list.
     /// </summary>
     public string DeleteListPrompt => Loc.Instance.Get("Main_DeleteListPrompt", EditRoutingList?.Name ?? string.Empty);
@@ -281,9 +290,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool ShowAdvancedEditor => IsSectionAdvanced && RoutingEditor is not null && !SectionLoading;
 
     /// <summary>
-    /// Whether the Delete card is shown (a real, saved list in the Advanced section).
+    /// Стоит ли внизу настроек списка карточка удаления.
     /// </summary>
-    public bool ShowDeleteCard => IsSectionAdvanced && RoutingEditor is { IsNew: false } && !SectionLoading;
+    public bool ShowDeleteCard => IsSectionSettings && RoutingEditor is { IsNew: false } && !SectionLoading;
 
     /// <summary>
     /// Whether the import draft rule + traffic editor is shown.
@@ -460,6 +469,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowImportRegions));
         OnPropertyChanged(nameof(ShowPresetLoader));
         OnPropertyChanged(nameof(CanExportOpenList));
+        OnPropertyChanged(nameof(OpenListName));
         NotifyCatalogueChanged();
         RefreshEditBar();
     }
@@ -470,6 +480,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSectionCatalogue));
         OnPropertyChanged(nameof(ShowCardStack));
         OnPropertyChanged(nameof(ShowNoListsHint));
+        NotifyHomeRouting();
     }
 
     private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
@@ -562,6 +573,37 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             EnterSection();
         }
     }
+
+    /// <summary>
+    /// Идёт ли трафик по списку. Включение возвращает последний список, без списков ведёт на наборы.
+    /// </summary>
+    public bool HomeRoutingOn
+    {
+        get => SelectedRoutingListId is not null;
+        set
+        {
+            if (value == HomeRoutingOn)
+            {
+                return;
+            }
+
+            if (value && !HasRoutingLists)
+            {
+                _host.ShowRoutingPresets();
+                OnPropertyChanged();
+                return;
+            }
+
+            _ = AssignRoutingAsync(value ? PreferredDefaultList().Id : null);
+        }
+    }
+
+    /// <summary>
+    /// Имя списка в строке главного экрана.
+    /// </summary>
+    public string HomeRoutingList => HasRoutingLists
+        ? PreferredDefaultList().Name
+        : Loc.Instance.Get("Main_HomeRoutingNone");
 
     /// <summary>
     /// Whether the open list is the one every config routes by.
@@ -703,6 +745,21 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Открывает раздел маршрутизации с главного экрана.
+    /// </summary>
+    [RelayCommand]
+    private void OpenHomeRouting()
+    {
+        if (HasRoutingLists)
+        {
+            _host.ShowRouting();
+            return;
+        }
+
+        _host.ShowRoutingPresets();
+    }
+
+    /// <summary>
     /// Отмечает в каталоге карточку, по которой кликнули или в которую вошли пультом.
     /// </summary>
     [RelayCommand]
@@ -784,6 +841,14 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         EnsurePickedCard();
+        NotifyHomeRouting();
+    }
+
+    // Строка маршрутизации на главном экране.
+    private void NotifyHomeRouting()
+    {
+        OnPropertyChanged(nameof(HomeRoutingOn));
+        OnPropertyChanged(nameof(HomeRoutingList));
     }
 
     // Landing on the Routing section with nothing open: open the list that routes so it never opens empty, and
@@ -941,8 +1006,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         RefreshEditBar();
     }
 
-    // Feeds the traffic card's flags into the rule editor: the Proxy bucket warns when global proxy makes it
-    // unused, and both flags travel with the exported payload.
+    // Feeds the traffic card's flags into the rule editor: the full tunnel closes the Proxy bucket, and both
+    // flags travel with the exported payload.
     private void SyncTrafficFlags()
     {
         if (RoutingEditor is { } editor)
@@ -1107,6 +1172,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         MarkSelectedList();
+        OnPropertyChanged(nameof(OpenListName));
     }
 
     // ---- Import create-form: "+ Импорт" opens a new-list draft with a method picker (blank / file / paste / QR). ----
@@ -1135,6 +1201,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         ImportMethod = RoutingImportMethod.Picker;
         SectionScan = null;
+        _assignAfterSave = false;
         IsCreatingSectionRouting = true;
     }
 
@@ -1187,6 +1254,14 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         ImportMethod = RoutingImportMethod.Presets;
     }
 
+    /// <summary>
+    /// Открывает экран готовых наборов.
+    /// </summary>
+    public void EnterPresets()
+    {
+        BeginPresetImport();
+    }
+
     // Первый запуск без списков: ставит и применяет верхний набор.
     private void SeedDefaultPreset()
     {
@@ -1213,7 +1288,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             BeginPresetImport();
             if (PresetCards.FirstOrDefault() is { } card)
             {
-                await ApplyPreset(card);
+                await ApplyPresetAsync(card, true);
             }
         }
         catch (Exception)
@@ -1324,10 +1399,16 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Ставит набор списком и применяет его, не открывая редактор.
+    /// Заполняет черновик набором и открывает редактор.
     /// </summary>
     [RelayCommand]
     private async Task ApplyPreset(RoutingPresetItemViewModel? item)
+    {
+        await ApplyPresetAsync(item, false);
+    }
+
+    // Набор ложится в черновик; посев первого запуска сохраняет его сам.
+    private async Task ApplyPresetAsync(RoutingPresetItemViewModel? item, bool commit)
     {
         if (item is null || RoutingEditor is not { } editor)
         {
@@ -1359,13 +1440,18 @@ internal sealed partial class RoutingViewModel : ViewModelBase
                 settings.UseGlobalProxy = preset.UseGlobalProxy;
             }
 
+            _assignAfterSave = true;
+            if (!commit)
+            {
+                ImportMethod = RoutingImportMethod.Manual;
+                return;
+            }
+
             await SaveNewList();
             if (editor.IsNew)
             {
                 return;
             }
-
-            await AssignRoutingAsync(editor.Id);
 
             // Строка созданного списка ещё едет снимком: без сброса ожидания она откроет редактор поверх каталога.
             _pendingEditRoutingListId = null;
@@ -1637,6 +1723,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             }
         }
 
+        if (_assignAfterSave)
+        {
+            _assignAfterSave = false;
+            await AssignRoutingAsync(RoutingEditor.Id);
+        }
+
         IsCreatingSectionRouting = false;
         ImportMethod = RoutingImportMethod.Picker;
         SectionScan = null;
@@ -1651,6 +1743,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         IsCreatingSectionRouting = false;
         ImportMethod = RoutingImportMethod.Picker;
         SectionScan = null;
+        _assignAfterSave = false;
         RoutingEditor = null;
         RoutingSettings = null;
         ManageSection = RoutingSection.Settings;
@@ -1697,8 +1790,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         RoutingDeleteStatus = string.Empty;
     }
 
-    // Inline Confirm: delete the shared list. The applied one is released first, then on success the next
-    // remaining list is opened (or the editor cleared when it was the last one) so the section is never left empty.
+    // Inline Confirm: удаляет список и возвращает в каталог.
     [RelayCommand]
     private async Task ConfirmDeleteSectionRoutingList()
     {
@@ -1722,17 +1814,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             return;
         }
 
-        var next = RoutingLists.FirstOrDefault(r => r.Id != deletedId);
-        if (next is not null)
-        {
-            EditRoutingList = next;
-        }
-        else
-        {
-            EditRoutingList = null;
-            RoutingEditor = null;
-            RoutingSettings = null;
-        }
+        CloseOpenList();
     }
 }
 

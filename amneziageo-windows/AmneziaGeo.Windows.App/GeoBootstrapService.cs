@@ -18,7 +18,7 @@ internal sealed class GeoBootstrapService(
     {
         try
         {
-            var seeded = await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
+            var seeded = await GeoDefaults.SeedAsync(store, geoFiles, logger, ct);
             var rebuilt = await new GeoConfigurator(store, geoFiles).RematerializeIfStaleAsync(ct);
             if (rebuilt)
             {

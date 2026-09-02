@@ -146,7 +146,7 @@ internal sealed class LinuxAgent : IDisposable
     public async Task InitializeAsync(CancellationToken ct)
     {
         await _store.InitializeAsync(ct).ConfigureAwait(false);
-        await GeoDefaults.SeedIfEmptyAsync(_store, null, ct).ConfigureAwait(false);
+        await GeoDefaults.SeedAsync(_store, _geoFiles, null, ct).ConfigureAwait(false);
         await _geo.RematerializeIfStaleAsync(ct).ConfigureAwait(false);
 
         var settings = await _store.GetSettingsAsync(ct).ConfigureAwait(false);

@@ -449,6 +449,27 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Открывает раздел маршрутизации.
+    /// </summary>
+    public void ShowRouting()
+    {
+        Nav = "settings";
+        SettingsSection = "routing";
+        SettingsDetailOpen = true;
+        Routing.EnterSection();
+        RefreshLogsActive();
+    }
+
+    /// <summary>
+    /// Открывает готовые наборы правил.
+    /// </summary>
+    public void ShowRoutingPresets()
+    {
+        ShowRouting();
+        Routing.EnterPresets();
+    }
+
+    /// <summary>
     /// Открывает настройки замера.
     /// </summary>
     public void ShowProbeSettings()

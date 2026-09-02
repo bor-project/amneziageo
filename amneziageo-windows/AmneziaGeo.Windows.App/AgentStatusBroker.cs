@@ -2551,7 +2551,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     private async Task<IpcAck> DownloadGeoAsync(CancellationToken ct)
     {
-        await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
+        await GeoDefaults.SeedAsync(store, geoFiles, logger, ct);
 
         var sources = await store.ListGeoSourcesAsync(ct);
         if (sources.Count == 0)

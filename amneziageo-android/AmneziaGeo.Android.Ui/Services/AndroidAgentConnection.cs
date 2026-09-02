@@ -365,32 +365,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
 
+            // Гео-базы разбираются в пуле: разворачивание правил держит вызывающий поток, а он тут UI-шный.
             case IpcContract.OpListGeo:
-                return await ListGeoAsync();
+                return await Task.Run(ListGeoAsync).ConfigureAwait(false);
 
             case IpcContract.OpGetGeoEntries:
-                return await GetGeoEntriesAsync(args);
+                return await Task.Run(() => GetGeoEntriesAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpSaveRoutingList:
-                return await SaveRoutingListAsync(args);
+                return await Task.Run(() => SaveRoutingListAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpGetRoutingList:
-                return await GetRoutingListAsync(args);
+                return await Task.Run(() => GetRoutingListAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpCountRoutes:
-                return await CountRoutesAsync(args);
+                return await Task.Run(() => CountRoutesAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpRemoveRoutingList:
-                return await RemoveRoutingListAsync(args);
+                return await Task.Run(() => RemoveRoutingListAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpReorderRoutingLists:
-                return await ReorderRoutingListsAsync(args);
+                return await Task.Run(() => ReorderRoutingListsAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpGetRoutingSettings:
-                return await GetRoutingSettingsAsync(args);
+                return await Task.Run(() => GetRoutingSettingsAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpSetRoutingSettings:
-                return await SetRoutingSettingsAsync(args);
+                return await Task.Run(() => SetRoutingSettingsAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpSetWebSocket:
                 return await SetWebSocketAsync(args);
@@ -543,9 +544,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _boundTarget = _selectedTarget;
         PushSnapshot();
         var useRouter = RouterEnabled();
-        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(useRouter);
-        VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false));
-        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}");
+
+        // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
+        var planStarted = System.Environment.TickCount64;
+        var (appMode, appPkgs) = await Task.Run(async () =>
+        {
+            var split = await ResolveAppSplitFromRoutingAsync(useRouter).ConfigureAwait(false);
+            VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false));
+            return split;
+        }).ConfigureAwait(false);
+
+        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}, "
+            + $"plan ready in {System.Environment.TickCount64 - planStarted} ms");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
             _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel), _directTcp,
@@ -980,7 +990,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _log.InitializeAsync().ConfigureAwait(false);
         _log.Info("agent", "android agent started");
         await _store.InitializeAsync().ConfigureAwait(false);
-        await GeoDefaults.SeedIfEmptyAsync(_store, null, CancellationToken.None).ConfigureAwait(false);
+        await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
@@ -1993,7 +2003,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 ? null
                 : (long?)listId;
 
-        Journal(SwitchLog.RoutingList(await ListNameAsync(_selectedRoutingList).ConfigureAwait(false), await ListNameAsync(picked).ConfigureAwait(false)));
+        var names = await Task.Run(async () => (
+            From: await ListNameAsync(_selectedRoutingList).ConfigureAwait(false),
+            To: await ListNameAsync(picked).ConfigureAwait(false))).ConfigureAwait(false);
+
+        Journal(SwitchLog.RoutingList(names.From, names.To));
         _selectedRoutingList = picked;
         Save();
         PushSnapshot();

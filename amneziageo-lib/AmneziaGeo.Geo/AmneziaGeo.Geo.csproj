@@ -10,6 +10,11 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
   </ItemGroup>
 
+  <!-- Копии баз, с которыми готовые наборы работают без сети. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Bundled\*.dat" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

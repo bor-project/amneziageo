@@ -292,13 +292,12 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(IsDirectRole))]
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
-    [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
     [NotifyPropertyChangedFor(nameof(CanAddApps))]
     private string _selectedRole = "proxy";
 
     // Mirrors the list's global-proxy flag, kept in sync by RoutingViewModel.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
+    [NotifyPropertyChangedFor(nameof(CanUseProxyBucket))]
     private bool _globalProxyActive;
 
     // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
@@ -307,6 +306,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 
     partial void OnGlobalProxyActiveChanged(bool value)
     {
+        if (value && IsProxyRole)
+        {
+            SelectedRole = "direct";
+        }
+
         RefreshTransfer();
         _ = RefreshRouteBudgetAsync();
     }
@@ -502,22 +506,19 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool HasRules => Rules.Count > 0;
 
     /// <summary>
-    /// Proxy tab caption with its entry count.
+    /// Proxy tab caption.
     /// </summary>
-    public string ProxyTabText => TabText("Main_RoleProxy", ProxyRules.Count);
+    public string ProxyTabText => Loc.Instance.Get("Main_RoleProxy");
 
     /// <summary>
-    /// Direct tab caption with its entry count.
+    /// Direct tab caption.
     /// </summary>
-    public string DirectTabText => TabText("Main_RoleDirect", DirectRules.Count);
+    public string DirectTabText => Loc.Instance.Get("Main_RoleDirect");
 
     /// <summary>
-    /// Block tab caption with its entry count.
+    /// Block tab caption.
     /// </summary>
-    public string BlockTabText => TabText("Main_RoleBlock", BlockRules.Count);
-
-    private static string TabText(string key, int count) =>
-        Loc.Instance.Get("Main_RoleTabCount", Loc.Instance.Get(key), count);
+    public string BlockTabText => Loc.Instance.Get("Main_RoleBlock");
 
     // Re-reads the counters and the labels naming the shown bucket.
     private void RefreshCounts()
@@ -529,10 +530,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// True while the Proxy bucket is shown and the global proxy is on: everything already rides the tunnel, so
-    /// neither the bucket's geo ranges nor its domains are applied.
+    /// True while the Proxy bucket is pickable: the full tunnel carries everything by itself.
     /// </summary>
-    public bool IsProxyBucketUnused => IsProxyRole && GlobalProxyActive;
+    public bool CanUseProxyBucket => !GlobalProxyActive;
 
     /// <summary>
     /// Localized help line for the active role.

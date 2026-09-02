@@ -365,20 +365,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
 
+            // Гео-базы разбираются в пуле: разворачивание правил держит вызывающий поток, а он тут UI-шный.
             case IpcContract.OpListGeo:
-                return await ListGeoAsync();
+                return await Task.Run(ListGeoAsync).ConfigureAwait(false);
 
             case IpcContract.OpGetGeoEntries:
-                return await GetGeoEntriesAsync(args);
+                return await Task.Run(() => GetGeoEntriesAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpSaveRoutingList:
-                return await SaveRoutingListAsync(args);
+                return await Task.Run(() => SaveRoutingListAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpGetRoutingList:
                 return await GetRoutingListAsync(args);
 
             case IpcContract.OpCountRoutes:
-                return await CountRoutesAsync(args);
+                return await Task.Run(() => CountRoutesAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args);
@@ -980,7 +981,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _log.InitializeAsync().ConfigureAwait(false);
         _log.Info("agent", "android agent started");
         await _store.InitializeAsync().ConfigureAwait(false);
-        await GeoDefaults.SeedIfEmptyAsync(_store, null, CancellationToken.None).ConfigureAwait(false);
+        await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);

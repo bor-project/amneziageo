@@ -1825,6 +1825,84 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_AddListTitle" xml:space="preserve">
     <value>Add a list</value>
   </data>
+  <data name="Main_ImportListTitle" xml:space="preserve">
+    <value>Where to take the list from</value>
+  </data>
+  <data name="Main_MethodPresetTitle" xml:space="preserve">
+    <value>Preset</value>
+  </data>
+  <data name="Main_MethodPresetHint" xml:space="preserve">
+    <value>Nothing to configure</value>
+  </data>
+  <data name="Main_MethodManualTitle" xml:space="preserve">
+    <value>By hand</value>
+  </data>
+  <data name="Main_MethodManualHint" xml:space="preserve">
+    <value>Your own rules from scratch</value>
+  </data>
+  <data name="Main_MethodImportTitle" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="Main_MethodImportHint" xml:space="preserve">
+    <value>A ready list from elsewhere</value>
+  </data>
+  <data name="Preset_SectionTitle" xml:space="preserve">
+    <value>Preset</value>
+  </data>
+  <data name="Preset_AdsTitle" xml:space="preserve">
+    <value>Block ads</value>
+  </data>
+  <data name="Preset_AdsHint" xml:space="preserve">
+    <value>Adds to any preset</value>
+  </data>
+  <data name="Preset_ClosedName" xml:space="preserve">
+    <value>Unavailable sites</value>
+  </data>
+  <data name="Preset_ClosedHint" xml:space="preserve">
+    <value>The VPN carries sites from a ready list, the selected region goes direct.</value>
+  </data>
+  <data name="Preset_ClosedChips" xml:space="preserve">
+    <value>YouTube, Telegram, Instagram, Discord, ChatGPT, and so on</value>
+  </data>
+  <data name="Preset_AllButLocalName" xml:space="preserve">
+    <value>Everything but the selected region</value>
+  </data>
+  <data name="Preset_AllButLocalHint" xml:space="preserve">
+    <value>The VPN carries everything except sites and addresses of the selected region.</value>
+  </data>
+  <data name="Preset_AllButLocalChips" xml:space="preserve">
+    <value>Selected region direct, The rest in VPN</value>
+  </data>
+  <data name="Preset_EverythingName" xml:space="preserve">
+    <value>Everything through VPN</value>
+  </data>
+  <data name="Preset_EverythingHint" xml:space="preserve">
+    <value>The VPN carries everything with no exceptions, the home network stays direct.</value>
+  </data>
+  <data name="Preset_EverythingChips" xml:space="preserve">
+    <value>Nothing to set up, Works right away</value>
+  </data>
+  <data name="Preset_RegionTitle" xml:space="preserve">
+    <value>Region</value>
+  </data>
+  <data name="Preset_RegionNone" xml:space="preserve">
+    <value>Not picked</value>
+  </data>
+  <data name="Preset_RegionsTitle" xml:space="preserve">
+    <value>Pick a region</value>
+  </data>
+  <data name="Preset_RegionsHint" xml:space="preserve">
+    <value>Tick one or more: their addresses go direct.</value>
+  </data>
+  <data name="Preset_RegionSearch" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="Preset_RegionMore" xml:space="preserve">
+    <value>{0} more, narrow the search</value>
+  </data>
+  <data name="Preset_Applying" xml:space="preserve">
+    <value>Applying the preset…</value>
+  </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Config</value>
   </data>

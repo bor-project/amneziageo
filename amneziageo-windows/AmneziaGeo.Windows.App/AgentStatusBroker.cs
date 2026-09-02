@@ -2469,7 +2469,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private async Task<IpcAck> DownloadGeoAsync(CancellationToken ct)
     {
-        await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
+        await GeoDefaults.SeedAsync(store, geoFiles, logger, ct);
 
         var sources = await store.ListGeoSourcesAsync(ct);
         if (sources.Count == 0)

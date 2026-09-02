@@ -16,6 +16,11 @@
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
   </ItemGroup>
 
+  <!-- Таблица часовых поясов: по ней определяется регион устройства. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Services\ZoneRegions.txt" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />

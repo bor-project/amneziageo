@@ -1825,6 +1825,84 @@
   <data name="Main_AddListTitle" xml:space="preserve">
     <value>Добавить список</value>
   </data>
+  <data name="Main_ImportListTitle" xml:space="preserve">
+    <value>Откуда взять список</value>
+  </data>
+  <data name="Main_MethodPresetTitle" xml:space="preserve">
+    <value>Готовый набор</value>
+  </data>
+  <data name="Main_MethodPresetHint" xml:space="preserve">
+    <value>Ничего не настраивать</value>
+  </data>
+  <data name="Main_MethodManualTitle" xml:space="preserve">
+    <value>Вручную</value>
+  </data>
+  <data name="Main_MethodManualHint" xml:space="preserve">
+    <value>Свои правила с нуля</value>
+  </data>
+  <data name="Main_MethodImportTitle" xml:space="preserve">
+    <value>Импорт</value>
+  </data>
+  <data name="Main_MethodImportHint" xml:space="preserve">
+    <value>Готовый список со стороны</value>
+  </data>
+  <data name="Preset_SectionTitle" xml:space="preserve">
+    <value>Готовый набор</value>
+  </data>
+  <data name="Preset_AdsTitle" xml:space="preserve">
+    <value>Блокировать рекламу</value>
+  </data>
+  <data name="Preset_AdsHint" xml:space="preserve">
+    <value>Добавить к любому набору</value>
+  </data>
+  <data name="Preset_ClosedName" xml:space="preserve">
+    <value>Недоступные сайты</value>
+  </data>
+  <data name="Preset_ClosedHint" xml:space="preserve">
+    <value>Через VPN идут сайты из готового списка, напрямую - выбранный регион.</value>
+  </data>
+  <data name="Preset_ClosedChips" xml:space="preserve">
+    <value>YouTube, Telegram, Instagram, Discord, ChatGPT, и т.д.</value>
+  </data>
+  <data name="Preset_AllButLocalName" xml:space="preserve">
+    <value>Всё, кроме выбранного региона</value>
+  </data>
+  <data name="Preset_AllButLocalHint" xml:space="preserve">
+    <value>Через VPN идёт всё, кроме сайтов и адресов выбранного региона.</value>
+  </data>
+  <data name="Preset_AllButLocalChips" xml:space="preserve">
+    <value>Выбранный регион напрямую, Остальное в VPN</value>
+  </data>
+  <data name="Preset_EverythingName" xml:space="preserve">
+    <value>Всё через VPN</value>
+  </data>
+  <data name="Preset_EverythingHint" xml:space="preserve">
+    <value>Через VPN идёт всё без исключений, напрямую - домашняя сеть.</value>
+  </data>
+  <data name="Preset_EverythingChips" xml:space="preserve">
+    <value>Ничего не настраивать, Работает сразу</value>
+  </data>
+  <data name="Preset_RegionTitle" xml:space="preserve">
+    <value>Регион</value>
+  </data>
+  <data name="Preset_RegionNone" xml:space="preserve">
+    <value>Не выбран</value>
+  </data>
+  <data name="Preset_RegionsTitle" xml:space="preserve">
+    <value>Выбор региона</value>
+  </data>
+  <data name="Preset_RegionsHint" xml:space="preserve">
+    <value>Отметьте один или несколько: их адреса пойдут напрямую.</value>
+  </data>
+  <data name="Preset_RegionSearch" xml:space="preserve">
+    <value>Поиск</value>
+  </data>
+  <data name="Preset_RegionMore" xml:space="preserve">
+    <value>Ещё {0} по поиску</value>
+  </data>
+  <data name="Preset_Applying" xml:space="preserve">
+    <value>Применение набора…</value>
+  </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Конфиг</value>
   </data>

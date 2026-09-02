@@ -5,6 +5,7 @@
              xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:sys="using:System"
              x:Class="AmneziaGeo.Ui.Views.RoutingView"
              x:CompileBindings="True"
              x:DataType="vm:RoutingViewModel">
@@ -12,6 +13,8 @@
     <StreamGeometry x:Key="AgPlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
+    <StreamGeometry x:Key="AgMethodPresetGeometry">M3,5H9V11H3V5M5,7V9H7V7H5M11,7H21V9H11V7M11,15H21V17H11V15M5,20L1.5,16.5L2.91,15.09L5,17.17L9.59,12.59L11,14L5,20Z</StreamGeometry>
+    <StreamGeometry x:Key="AgMethodManualGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Cards stretch the full pane width. -->
@@ -22,11 +25,11 @@
     <!-- Заголовок раздела: стоит и над каталогом, и над экранами открытого списка. -->
     <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_RoutingSection}" />
 
-    <!-- Шапка каталога: добавление списка маршрутизации. Способы «Добавить» выпадают списком у кнопки, а на
-         телефоне приходят шторкой снизу. -->
+    <!-- Шапка каталога: добавление списка маршрутизации. Способ выбирается плитками на экране ниже. -->
     <StackPanel x:Name="CatalogueHeader" Grid.Row="1" Margin="0,14,0,0" Spacing="8"
                 IsVisible="{Binding IsSectionCatalogue}">
-      <Button x:Name="AddButton" Classes="methodpick" MinHeight="34" Padding="12,6" Click="OnAddOptions"
+      <Button x:Name="AddButton" Classes="methodpick" MinHeight="34" Padding="12,6"
+              Command="{Binding BeginAddListCommand}"
               HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
               MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
         <StackPanel Orientation="Horizontal" Spacing="6"
@@ -289,8 +292,150 @@
         </Border>
       </StackPanel>
 
-      <!-- Черновик нового списка: способ уже выбран в шторке, имя списка называет сам редактор, отсюда ведут
-           «Сохранить» и «Отмена» в футере. -->
+      <!-- Способ добавления: готовый набор, свои правила или импорт со стороны. -->
+      <Border Classes="sect" IsVisible="{Binding ShowImportPicker}">
+        <StackPanel Spacing="8">
+          <Button Classes="presetcard on" Command="{Binding BeginPresetImportCommand}">
+            <StackPanel Spacing="3">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <PathIcon Data="{StaticResource AgMethodPresetGeometry}" Width="15" Height="15"
+                          Foreground="{DynamicResource AgAccentBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_MethodPresetTitle}" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Text="{l:Tr Main_MethodPresetHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="presetcard" Command="{Binding BeginManualImportCommand}">
+            <StackPanel Spacing="3">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <PathIcon Data="{StaticResource AgMethodManualGeometry}" Width="15" Height="15"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_MethodManualTitle}" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Text="{l:Tr Main_MethodManualHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+
+          <Button x:Name="ImportTile" Classes="presetcard" Click="OnImportOptions">
+            <StackPanel Spacing="3">
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <PathIcon Grid.Column="0" Data="{StaticResource AgDownloadGeometry}" Width="15" Height="15"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{l:Tr Main_MethodImportTitle}" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <PathIcon Grid.Column="2" Data="{DynamicResource AgChevronGeometry}" Width="11" Height="11"
+                          Foreground="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
+              </Grid>
+              <TextBlock Text="{l:Tr Main_MethodImportHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+
+      <!-- Готовые наборы: нажатие ставит список и сразу применяет его. -->
+      <Border Classes="sect" IsVisible="{Binding ShowImportPresets}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{l:Tr Preset_SectionTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+          <!-- Регион набора: его адреса идут напрямую, выбор стоит на своём экране. -->
+          <Button Classes="softbtn" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Padding="12,10" Command="{Binding OpenRegionsCommand}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <TextBlock Text="{l:Tr Preset_RegionTitle}" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding PresetRegionsLabel}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+              <PathIcon Grid.Column="1" Data="{DynamicResource AgChevronGeometry}" Width="12" Height="12"
+                        VerticalAlignment="Center" />
+            </Grid>
+          </Button>
+
+          <ItemsControl ItemsSource="{Binding PresetCards}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RoutingPresetItemViewModel">
+                <Button Classes="presetcard" Margin="0,0,0,6"
+                        Command="{Binding $parent[ItemsControl].((vm:RoutingViewModel)DataContext).ApplyPresetCommand}"
+                        CommandParameter="{Binding}">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Hint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding Chips}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="sys:String">
+                          <Border Classes="presetchip" Margin="0,3,4,0">
+                            <TextBlock Text="{Binding}" FontSize="10.5" Classes="muted" />
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Добавка к любому набору: реклама уходит в корзину «Блок». -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="{l:Tr Preset_AdsTitle}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{l:Tr Preset_AdsHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding PresetAds, Mode=TwoWay}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Выбор региона: коды geoip из гео-баз, поиск и отметки. -->
+      <Border Classes="sect" IsVisible="{Binding ShowImportRegions}">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{l:Tr Preset_RegionsTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+          <TextBlock Text="{l:Tr Preset_RegionsHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+
+          <TextBox Classes="field" Text="{Binding RegionSearch, Mode=TwoWay}"
+                   Watermark="{l:Tr Preset_RegionSearch}" />
+
+          <StackPanel IsVisible="{Binding RegionsLoading}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
+            <ProgressBar IsIndeterminate="{Binding RegionsLoading}" Width="150" HorizontalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+          </StackPanel>
+
+          <ItemsControl ItemsSource="{Binding RegionCards}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RegionItemViewModel">
+                <CheckBox HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,0,0,2"
+                          IsChecked="{Binding IsPicked, Mode=TwoWay}">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Text="{Binding Badge}" Classes="muted" FontSize="11"
+                               VerticalAlignment="Center" />
+                  </Grid>
+                </CheckBox>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <TextBlock Text="{Binding RegionsTrimmed}" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                     IsVisible="{Binding RegionsTrimmed, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Набор применяется: список создаётся и встаёт активным. -->
+      <StackPanel IsVisible="{Binding ShowPresetLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
+        <ProgressBar IsIndeterminate="{Binding ShowPresetLoader}" Width="150" HorizontalAlignment="Center" />
+        <TextBlock Text="{l:Tr Preset_Applying}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+      </StackPanel>
+
+      <!-- Черновик нового списка: имя списка называет сам редактор, отсюда ведут «Сохранить» и «Отмена» в
+           футере. -->
       <Border x:Name="ImportEditor" Classes="sect" IsVisible="{Binding ShowImportEditor}">
         <views:RoutingEditorView />
       </Border>

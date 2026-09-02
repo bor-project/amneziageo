@@ -526,6 +526,9 @@
                 <TextBlock Text="{Binding Routing.RouteBudgetWarning}"
                            IsVisible="{Binding Routing.ShowRouteBudgetWarning}"
                            Foreground="{DynamicResource AgWarnBrush}" FontSize="12" TextWrapping="Wrap" />
+                <!-- Список пишется: правила разворачиваются по гео-базам, это заметно долго. -->
+                <ProgressBar IsIndeterminate="{Binding Routing.IsSaving}" IsVisible="{Binding Routing.IsSaving}"
+                             HorizontalAlignment="Stretch" />
                 <!-- Compact drops the Save / Cancel pair under the unsaved-changes label so they never overlap it. -->
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
                   <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"

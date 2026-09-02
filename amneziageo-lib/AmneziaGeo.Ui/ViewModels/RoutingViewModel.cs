@@ -19,7 +19,26 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
     private readonly UiPreferences _prefs;
 
+    private const string GeoIpPrefix = "geoip:";
+
+    // Сколько найденных регионов показывает список.
+    private const int RegionLimit = 60;
+
+    // Сколько посев набора ждёт определения региона.
+    private static readonly TimeSpan RegionWait = TimeSpan.FromSeconds(9);
+
     private long? _pendingEditRoutingListId;
+
+    // Регионы, по которым разворачиваются правила наборов.
+    private readonly List<string> _presetRegions = [];
+
+    // Коды geoip из гео-баз, прочитанные один раз на экран выбора.
+    private readonly List<string> _geoRegions = [];
+
+    private bool _presetSeeded;
+
+    // Определение региона: посев набора ждёт его результата.
+    private Task? _regionProbe;
 
     private IReadOnlyList<string>? _pendingOrder;
 
@@ -116,6 +135,64 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         _connection = connection;
         _prefs = prefs;
         Loc.Instance.CultureChanged += OnCultureChanged;
+        LoadPresetRegions();
+    }
+
+    // Регионы набора: ручной выбор, иначе определённый прежде, иначе настройка системы.
+    private void LoadPresetRegions()
+    {
+        var saved = RegionCodes(_prefs.PresetRegions);
+        if (saved.Count == 0)
+        {
+            saved = RegionCodes(_prefs.RegionAuto);
+        }
+
+        if (saved.Count == 0 && RegionProbe.BySystem() is { Length: > 0 } system)
+        {
+            saved.Add(system);
+        }
+
+        _presetRegions.AddRange(saved);
+    }
+
+    private static List<string> RegionCodes(string line) => line
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(code => code.ToLowerInvariant())
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
+    private void EnsureRegionDetected()
+    {
+        _regionProbe ??= DetectRegionAsync();
+    }
+
+    // Регион устройства: внешний адрес, часовой пояс, система. Ручной выбор он не трогает.
+    private async Task DetectRegionAsync()
+    {
+        var code = await RegionProbe.DetectAsync(
+            !string.Equals(_boundStatus, ConnectionStatus.Connected, StringComparison.Ordinal),
+            CancellationToken.None);
+
+        if (code.Length == 0 || _prefs.PresetRegions.Length > 0)
+        {
+            return;
+        }
+
+        if (!string.Equals(_prefs.RegionAuto, code, StringComparison.Ordinal))
+        {
+            _prefs.RegionAuto = code;
+            _prefs.Save();
+        }
+
+        if (_presetRegions.Count == 1 && string.Equals(_presetRegions[0], code, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _presetRegions.Clear();
+        _presetRegions.Add(code);
+        OnPropertyChanged(nameof(PresetRegionsLabel));
+        RebuildRegionCards();
     }
 
     private void OnCultureChanged()
@@ -127,6 +204,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         RoutingEditor?.RefreshLocalizedLabels();
         OnPropertyChanged(nameof(DeleteListPrompt));
+        OnPropertyChanged(nameof(PresetRegionsLabel));
+        RebuildRegionCards();
     }
 
     /// <summary>
@@ -222,6 +301,84 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     public bool IsImportCamera => ImportMethod == RoutingImportMethod.Camera;
 
+    public bool IsImportPresets => ImportMethod == RoutingImportMethod.Presets;
+
+    public bool IsImportRegions => ImportMethod == RoutingImportMethod.Regions;
+
+    /// <summary>
+    /// Whether the add-method tiles are shown.
+    /// </summary>
+    public bool ShowImportPicker => IsSectionImport && IsImportPicker;
+
+    /// <summary>
+    /// Whether the ready-made preset cards are shown.
+    /// </summary>
+    public bool ShowImportPresets => IsSectionImport && IsImportPresets && !ApplyingPreset;
+
+    /// <summary>
+    /// Показан ли экран выбора регионов.
+    /// </summary>
+    public bool ShowImportRegions => IsSectionImport && IsImportRegions && !ApplyingPreset;
+
+    /// <summary>
+    /// Стоит ли на экране лоадер применяемого набора.
+    /// </summary>
+    public bool ShowPresetLoader => IsSectionImport && ApplyingPreset;
+
+    /// <summary>
+    /// Регионы на экране выбора.
+    /// </summary>
+    public ObservableCollection<RegionItemViewModel> RegionCards { get; } = [];
+
+    /// <summary>
+    /// Выбранные регионы одной строкой.
+    /// </summary>
+    public string PresetRegionsLabel => _presetRegions.Count == 0
+        ? Loc.Instance.Get("Preset_RegionNone")
+        : string.Join(", ", _presetRegions.Select(RoutingPresets.RegionName));
+
+    /// <summary>
+    /// Поиск по регионам.
+    /// </summary>
+    [ObservableProperty]
+    private string _regionSearch = string.Empty;
+
+    /// <summary>
+    /// Ждёт ли экран список регионов от агента.
+    /// </summary>
+    [ObservableProperty]
+    private bool _regionsLoading;
+
+    /// <summary>
+    /// Сколько найденных регионов осталось за списком.
+    /// </summary>
+    [ObservableProperty]
+    private string _regionsTrimmed = string.Empty;
+
+    /// <summary>
+    /// Идёт ли применение набора.
+    /// </summary>
+    [ObservableProperty]
+    private bool _applyingPreset;
+
+    /// <summary>
+    /// Идёт ли сохранение списка.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
+    private bool _isSaving;
+
+    /// <summary>
+    /// Готовые наборы на экране выбора.
+    /// </summary>
+    public ObservableCollection<RoutingPresetItemViewModel> PresetCards { get; } = [];
+
+    /// <summary>
+    /// Добавлять ли к набору блокировку рекламы.
+    /// </summary>
+    [ObservableProperty]
+    private bool _presetAds;
+
     /// <summary>
     /// Whether a live camera QR scanner is available on this platform.
     /// </summary>
@@ -241,7 +398,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// Whether the footer Save/Cancel bar is shown: an import draft, or dirty open-list edits (only while this
     /// section is the one on screen).
     /// </summary>
-    public bool ShowSaveBar => IsActiveSection && (IsCreatingSectionRouting ? !IsImportPicker : IsEditDirty);
+    public bool ShowSaveBar => IsActiveSection
+        && (IsCreatingSectionRouting ? IsImportManual || IsImportCamera : IsEditDirty);
 
     /// <summary>
     /// Whether the footer Save button is shown: the import draft shows it once in manual entry; edits always.
@@ -251,7 +409,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Whether the footer Save button is enabled. A list this device cannot carry is not saved at all.
     /// </summary>
-    public bool CanSave => RoutingEditor is not { RouteBudgetExceeded: true }
+    public bool CanSave => !IsSaving
+        && RoutingEditor is not { RouteBudgetExceeded: true }
         && (IsCreatingSectionRouting
             ? RoutingEditor is { IsNameMissing: false }
             : IsEditDirty);
@@ -294,6 +453,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportPicker));
         OnPropertyChanged(nameof(IsImportManual));
         OnPropertyChanged(nameof(IsImportCamera));
+        OnPropertyChanged(nameof(IsImportPresets));
+        OnPropertyChanged(nameof(IsImportRegions));
+        OnPropertyChanged(nameof(ShowImportPicker));
+        OnPropertyChanged(nameof(ShowImportPresets));
+        OnPropertyChanged(nameof(ShowImportRegions));
+        OnPropertyChanged(nameof(ShowPresetLoader));
         OnPropertyChanged(nameof(CanExportOpenList));
         NotifyCatalogueChanged();
         RefreshEditBar();
@@ -316,6 +481,10 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     partial void OnSectionLoadingChanged(bool value) => RefreshSections();
 
     partial void OnImportMethodChanged(RoutingImportMethod value) => RefreshSections();
+
+    partial void OnApplyingPresetChanged(bool value) => RefreshSections();
+
+    partial void OnRegionSearchChanged(string value) => RebuildRegionCards();
 
     partial void OnHasRoutingListsChanged(bool value)
     {
@@ -342,6 +511,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public void Apply(StatusSnapshot snapshot)
     {
         _boundStatus = snapshot.BoundStatus;
+        EnsureRegionDetected();
 
         // No catalogue in the snapshot means the agent has not read its store yet - keep what is on screen and
         // stay "not loaded", rather than reading it as an account with no lists.
@@ -350,6 +520,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             SyncRoutingLists(entries);
             HasRoutingLists = RoutingLists.Count > 0;
             MarkCatalogueKnown();
+            SeedDefaultPreset();
         }
 
         SelectedRoutingListId = snapshot.SelectedRoutingList;
@@ -667,6 +838,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public bool TryNavigateBack()
     {
+        if (IsSectionImport && IsImportRegions)
+        {
+            ImportMethod = RoutingImportMethod.Presets;
+            return true;
+        }
+
         if (IsSectionExport || IsSectionAdvanced)
         {
             SelectRoutingSection("settings");
@@ -993,6 +1170,222 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         BeginImportDraft();
     }
 
+    // Кнопка «Добавить»: способ выбирается плитками.
+    [RelayCommand]
+    private void BeginAddList()
+    {
+        EnsureSectionRouting();
+        ImportMethod = RoutingImportMethod.Picker;
+    }
+
+    // Способ «Готовый набор».
+    [RelayCommand]
+    private void BeginPresetImport()
+    {
+        EnsureSectionRouting();
+        RebuildPresetCards();
+        ImportMethod = RoutingImportMethod.Presets;
+    }
+
+    // Первый запуск без списков: ставит и применяет верхний набор.
+    private void SeedDefaultPreset()
+    {
+        if (_presetSeeded || _prefs.PresetSeeded || HasRoutingLists || IsCreatingSectionRouting)
+        {
+            return;
+        }
+
+        _presetSeeded = true;
+        _prefs.PresetSeeded = true;
+        _prefs.Save();
+        _ = SeedDefaultPresetAsync();
+    }
+
+    private async Task SeedDefaultPresetAsync()
+    {
+        try
+        {
+            if (_regionProbe is { } probe)
+            {
+                await Task.WhenAny(probe, Task.Delay(RegionWait));
+            }
+
+            BeginPresetImport();
+            if (PresetCards.FirstOrDefault() is { } card)
+            {
+                await ApplyPreset(card);
+            }
+        }
+        catch (Exception)
+        {
+            CancelNewList();
+        }
+    }
+
+    private void RebuildPresetCards()
+    {
+        PresetCards.Clear();
+        foreach (var preset in RoutingPresets.All)
+        {
+            PresetCards.Add(new RoutingPresetItemViewModel(preset));
+        }
+    }
+
+    // Экран выбора региона: список geoip из гео-баз с поиском.
+    [RelayCommand]
+    private void OpenRegions()
+    {
+        EnsureSectionRouting();
+        RegionSearch = string.Empty;
+        ImportMethod = RoutingImportMethod.Regions;
+        _ = LoadRegionsAsync();
+    }
+
+    private async Task LoadRegionsAsync()
+    {
+        if (_geoRegions.Count > 0)
+        {
+            RebuildRegionCards();
+            return;
+        }
+
+        RegionsLoading = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListGeo, []));
+            if (ack.Ok)
+            {
+                _geoRegions.AddRange(ack.Message
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(token => token.StartsWith(GeoIpPrefix, StringComparison.OrdinalIgnoreCase))
+                    .Select(token => token[GeoIpPrefix.Length..].ToLowerInvariant())
+                    .Distinct(StringComparer.Ordinal));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
+        }
+        finally
+        {
+            RegionsLoading = false;
+            RebuildRegionCards();
+        }
+    }
+
+    // Список регионов: сверху отмеченные, следом найденные поиском.
+    private void RebuildRegionCards()
+    {
+        RegionCards.Clear();
+        var search = RegionSearch.Trim();
+        var matched = _geoRegions
+            .Where(code => !_presetRegions.Contains(code, StringComparer.Ordinal))
+            .Where(code => RegionMatches(code, search))
+            .OrderBy(RoutingPresets.RegionName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var code in _presetRegions)
+        {
+            RegionCards.Add(new RegionItemViewModel(code, true, OnRegionToggled));
+        }
+
+        foreach (var code in matched.Take(RegionLimit))
+        {
+            RegionCards.Add(new RegionItemViewModel(code, false, OnRegionToggled));
+        }
+
+        RegionsTrimmed = matched.Count > RegionLimit
+            ? Loc.Instance.Get("Preset_RegionMore", matched.Count - RegionLimit)
+            : string.Empty;
+    }
+
+    private static bool RegionMatches(string code, string search) => search.Length == 0
+        || code.Contains(search, StringComparison.OrdinalIgnoreCase)
+        || RoutingPresets.RegionName(code).Contains(search, StringComparison.OrdinalIgnoreCase)
+        || RoutingPresets.RegionNativeName(code).Contains(search, StringComparison.CurrentCultureIgnoreCase);
+
+    // Отметка региона: по выбранным разворачиваются правила наборов.
+    private void OnRegionToggled(RegionItemViewModel item)
+    {
+        if (item.IsPicked)
+        {
+            if (!_presetRegions.Contains(item.Code, StringComparer.Ordinal))
+            {
+                _presetRegions.Add(item.Code);
+            }
+        }
+        else
+        {
+            _presetRegions.Remove(item.Code);
+        }
+
+        _prefs.PresetRegions = string.Join(',', _presetRegions);
+        _prefs.Save();
+        OnPropertyChanged(nameof(PresetRegionsLabel));
+    }
+
+    /// <summary>
+    /// Ставит набор списком и применяет его, не открывая редактор.
+    /// </summary>
+    [RelayCommand]
+    private async Task ApplyPreset(RoutingPresetItemViewModel? item)
+    {
+        if (item is null || RoutingEditor is not { } editor)
+        {
+            return;
+        }
+
+        var preset = item.Preset;
+        if (preset.NeedsCountry && _presetRegions.Count == 0)
+        {
+            OpenRegions();
+            return;
+        }
+
+        ApplyingPreset = true;
+        try
+        {
+            editor.Name = UniqueName.Resolve(item.Name, RoutingLists.Select(row => row.Name));
+            FillBucket(editor.ProxyRules, RoutingPresets.Rules(preset.Proxy, _presetRegions));
+            FillBucket(editor.DirectRules, RoutingPresets.Rules(preset.Direct, _presetRegions));
+            FillBucket(editor.BlockRules, PresetAds ? [RoutingPresets.AdsRule] : []);
+
+            if (preset.LocalSubnets)
+            {
+                await editor.AddLocalSubnetsCommand.ExecuteAsync(null);
+            }
+
+            if (RoutingSettings is { } settings)
+            {
+                settings.UseGlobalProxy = preset.UseGlobalProxy;
+            }
+
+            await SaveNewList();
+            if (editor.IsNew)
+            {
+                return;
+            }
+
+            await AssignRoutingAsync(editor.Id);
+
+            // Строка созданного списка ещё едет снимком: без сброса ожидания она откроет редактор поверх каталога.
+            _pendingEditRoutingListId = null;
+            EditRoutingList = null;
+        }
+        finally
+        {
+            ApplyingPreset = false;
+        }
+    }
+
+    private static void FillBucket(ObservableCollection<string> bucket, IReadOnlyList<string> rules)
+    {
+        bucket.Clear();
+        foreach (var rule in rules)
+        {
+            bucket.Add(rule);
+        }
+    }
+
     // Способ «Сканировать QR-код».
     [RelayCommand]
     private void BeginCameraImport()
@@ -1148,13 +1541,21 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private async Task SaveSection()
     {
         _host.ArmReconnectPrompt();
-        if (IsCreatingSectionRouting)
+        IsSaving = true;
+        try
         {
-            await SaveNewList();
+            if (IsCreatingSectionRouting)
+            {
+                await SaveNewList();
+            }
+            else
+            {
+                await SaveRoutingEdit();
+            }
         }
-        else
+        finally
         {
-            await SaveRoutingEdit();
+            IsSaving = false;
         }
     }
 
@@ -1351,6 +1752,8 @@ internal enum RoutingSection
 internal enum RoutingImportMethod
 {
     Picker,
+    Presets,
+    Regions,
     Manual,
     Camera,
 }

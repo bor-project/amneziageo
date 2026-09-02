@@ -118,7 +118,7 @@ internal sealed partial class RoutingView : UserControl
     }
 
     // Способы добавления: файл, буфер обмена, живой сканер QR и пустой список.
-    private void OnAddOptions(object? sender, RoutedEventArgs e)
+    private void OnImportOptions(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not RoutingViewModel vm)
         {
@@ -138,15 +138,10 @@ internal sealed partial class RoutingView : UserControl
                 () => vm.BeginCameraImportCommand.Execute(null)));
         }
 
-        options.Add(new ActionOption(
-            Loc.Instance.Get("Main_CreateManuallyButton"),
-            Glyphs.Pencil,
-            () => vm.BeginManualImportCommand.Execute(null)));
-
         ActionOptions.Present(
             sender as Control,
             vm.Sheet,
-            Loc.Instance.Get("Main_AddListTitle"),
+            Loc.Instance.Get("Main_ImportListTitle"),
             string.Empty,
             options);
     }

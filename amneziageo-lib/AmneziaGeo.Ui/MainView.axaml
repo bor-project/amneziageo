@@ -194,14 +194,14 @@
                     </Button>
                   </StackPanel>
 
-                  <!-- Маршрутизация: тумблер включает, имя списка под подписью ведёт в раздел. -->
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasConfigs}">
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                      <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
-                                 FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
-                      <Button Classes="linkbtn" Classes.down="{Binding !Routing.HomeRoutingOn}"
+                  <!-- Маршрутизация: тумблер включает, имя списка ведёт в раздел. -->
+                  <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
+                    <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
+                               FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                      <Button Grid.Column="0" Classes="linkbtn" Classes.down="{Binding !Routing.HomeRoutingOn}"
                               HorizontalAlignment="Left" HorizontalContentAlignment="Left"
-                              Margin="-7,-1,0,-4"
+                              VerticalAlignment="Center" Margin="-7,0,0,0"
                               Command="{Binding Routing.OpenHomeRoutingCommand}"
                               ToolTip.Tip="{l:Tr Main_RoutingSection}">
                         <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="4">
@@ -211,11 +211,11 @@
                                     VerticalAlignment="Center" />
                         </Grid>
                       </Button>
-                    </StackPanel>
-                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
-                                  IsChecked="{Binding Routing.HomeRoutingOn, Mode=TwoWay}"
-                                  ToolTip.Tip="{l:Tr Main_HomeRoutingHint}" />
-                  </Grid>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                    IsChecked="{Binding Routing.HomeRoutingOn, Mode=TwoWay}"
+                                    ToolTip.Tip="{l:Tr Main_HomeRoutingHint}" />
+                    </Grid>
+                  </StackPanel>
                 </StackPanel>
               </ScrollViewer>
           </Grid>

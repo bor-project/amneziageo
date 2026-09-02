@@ -635,7 +635,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // Ставит состояние подключения на карточки: цель носит состояние кнопки в шапке, остальные выключены.
     private void PushCardPower()
     {
-        var target = _dialTarget ?? BoundTarget;
+        // Пока агент не назвал цель, её держит выбранная конфигурация.
+        var target = _dialTarget ?? BoundTarget ?? (ConnState == 0 ? null : ActiveConfig?.Name);
         foreach (var row in _host.Config.Configs)
         {
             row.Status = string.Equals(row.Name, target, StringComparison.Ordinal)
@@ -675,6 +676,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         NotifyCanToggleConnection();
         _host.Config.NotifyActiveConfigChanged();
         _host.Config.FollowActiveCard(newValue?.Name);
+        PushCardPower();
 
         if (_suppressActivePush || newValue is null)
         {

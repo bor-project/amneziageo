@@ -925,6 +925,12 @@ internal partial class RoutingViewModel : ViewModelBase
             return true;
         }
 
+        if (IsSectionImport && IsImportPresets)
+        {
+            ImportMethod = RoutingImportMethod.Picker;
+            return true;
+        }
+
         if (IsSectionExport || IsSectionAdvanced)
         {
             SelectRoutingSection("settings");

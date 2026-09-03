@@ -11,7 +11,7 @@ public static class TunnelInbound
 {
     // Prefix a bare interface address stands for, per family.
     private const int DefaultV4Prefix = 24;
-    private const int DefaultV6Prefix = 64;
+    private const int DefaultV6Prefix = 120;
 
     /// <summary>
     /// Returns the ranges to advertise for the given interface addresses; wholeNetwork widens each one from the

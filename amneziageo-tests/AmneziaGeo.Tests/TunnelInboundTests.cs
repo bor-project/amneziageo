@@ -37,8 +37,15 @@ public sealed class TunnelInboundTests
     [Fact]
     public void Ipv6Address_TakesItsOwnNetwork()
     {
-        Assert.Equal(["fd42:6d79:7671::/64"], TunnelInbound.Ranges(["fd42:6d79:7671::cafe/128"], wholeNetwork: true));
-        Assert.Equal(["fd42:6d79:7671::1/128"], TunnelInbound.Ranges(["fd42:6d79:7671::cafe/128"], wholeNetwork: false));
+        Assert.Equal(["fd42:6d79:7671::/120"], TunnelInbound.Ranges(["fd42:6d79:7671::9/128"], wholeNetwork: true));
+        Assert.Equal(["fd42:6d79:7671::1/128"], TunnelInbound.Ranges(["fd42:6d79:7671::9/128"], wholeNetwork: false));
+    }
+
+    [Fact]
+    public void Ipv6AddressOfADeepBlock_TakesTheServerOfThatBlock()
+    {
+        Assert.Equal(["fdcc:ad94:bacf:61a5::cafe:0/120"], TunnelInbound.Ranges(["fdcc:ad94:bacf:61a5::cafe:e/128"], wholeNetwork: true));
+        Assert.Equal(["fdcc:ad94:bacf:61a5::cafe:1/128"], TunnelInbound.Ranges(["fdcc:ad94:bacf:61a5::cafe:e/128"], wholeNetwork: false));
     }
 
     [Fact]

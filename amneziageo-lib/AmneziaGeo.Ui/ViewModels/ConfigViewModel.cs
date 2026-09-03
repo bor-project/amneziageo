@@ -680,12 +680,6 @@ internal partial class ConfigViewModel : ViewModelBase
         return new ConfigItemViewModel { Name = name };
     }
 
-    // Запрос, которым записывается порядок карточек.
-    protected virtual IpcCommand OrderCommand(IReadOnlyList<string> names)
-    {
-        return new IpcCommand(IpcContract.OpReorderConfigs, names);
-    }
-
     /// <summary>
     /// Reconciles the config catalogue from the snapshot.
     /// </summary>
@@ -1305,7 +1299,7 @@ internal partial class ConfigViewModel : ViewModelBase
     {
         var names = Configs.Select(config => config.Name).ToList();
         _pendingOrder = names;
-        var ack = await _connection.SendCommandAsync(OrderCommand(names));
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderConfigs, names));
         if (!ack.Ok)
         {
             _pendingOrder = null;

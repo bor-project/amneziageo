@@ -8,20 +8,9 @@ namespace AmneziaGeo.Windows.Engine;
 public static partial class WireGuardEngine
 {
     /// <summary>
-    /// [Interface] fields this engine has no parser for; one of them makes it refuse the whole config.
+    /// [Interface] fields this engine has no parser for.
     /// </summary>
-    public static readonly IReadOnlyList<string> UnknownFields =
-    [
-        "RandomTrailers",
-        "DisableCookies",
-        "HeaderProtectionKey",
-        "ContentPaddingAddition",
-        "RekeyAfterTime",
-        "RekeyTimeout",
-        "RejectAfterTime",
-        "KeepaliveTimeout",
-        "MaxHandshakeAttempts",
-    ];
+    public static readonly IReadOnlyList<string> UnknownFields = [];
 
     /// <summary>
     /// Generates a Curve25519 key pair as base64 strings.

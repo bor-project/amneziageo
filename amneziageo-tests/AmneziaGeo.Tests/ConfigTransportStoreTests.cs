@@ -79,6 +79,31 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Transport_KeepsAccessFromTheTunnel()
+    {
+        await _store.SetConfigTransportAsync(
+            new ConfigTransport("reachable", false, string.Empty, 443, 0, false, MtuMode.Auto, true, AllowInbound: true, InboundNetwork: true));
+
+        var stored = await _store.GetConfigTransportAsync("reachable");
+
+        Assert.NotNull(stored);
+        Assert.True(stored!.AllowInbound);
+        Assert.True(stored.InboundNetwork);
+    }
+
+    [Fact]
+    public async Task Transport_RefusesAccessFromTheTunnelByDefault()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("quiet", false, string.Empty, 443));
+
+        var stored = await _store.GetConfigTransportAsync("quiet");
+
+        Assert.NotNull(stored);
+        Assert.False(stored!.AllowInbound);
+        Assert.False(stored.InboundNetwork);
+    }
+
+    [Fact]
     public async Task Transport_HoldsTheRouterPerConfiguration()
     {
         await _store.SetConfigTransportAsync(

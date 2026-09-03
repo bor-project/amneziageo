@@ -1402,7 +1402,9 @@ internal sealed class LinuxAgent : IDisposable
             ? MtuModes.Parse(args[6], stored?.MtuMode ?? MtuMode.Auto)
             : mtu > 0 ? MtuMode.Custom : stored?.MtuMode ?? MtuMode.Auto;
         var useRouter = args.Count > 7 ? IsOn(args[7]) : stored?.UseRouter ?? true;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter), ct).ConfigureAwait(false);
+        var allowInbound = args.Count > 8 ? IsOn(args[8]) : stored?.AllowInbound ?? false;
+        var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : stored?.InboundNetwork ?? false;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -2427,7 +2429,10 @@ internal sealed class LinuxAgent : IDisposable
             WgConfigEditor.GetMtu(text),
             transport?.MtuMode ?? MtuMode.Auto,
             MtuPlan.ResolveForLearnedLink(transport, text),
-            transport?.UseRouter ?? true);
+            transport?.UseRouter ?? true,
+            transport?.AllowInbound ?? false,
+            transport?.InboundNetwork ?? false,
+            string.Join(", ", WgConfigEditor.GetAddresses(text)));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

@@ -43,7 +43,12 @@ public sealed record ConfigEntry(
     // Size the mode settles on, so the interface shows what the tunnel comes up with rather than guessing.
     int ResolvedMtu = 0,
     // Whether the session decides every connection on its own instead of leaving it all to the route table.
-    bool UseRouter = true);
+    bool UseRouter = true,
+    // Whether the machine answers what arrives from the tunnel, and whether the whole tunnel network may reach it.
+    bool AllowInbound = false,
+    bool InboundNetwork = false,
+    // Interface addresses the config declares, joined by commas.
+    string Address = "");
 
 /// <summary>
 /// Terms both sides read the handshake age by.

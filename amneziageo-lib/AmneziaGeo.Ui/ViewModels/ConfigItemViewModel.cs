@@ -82,6 +82,15 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useRouter = true;
 
+    [ObservableProperty]
+    private bool _allowInbound;
+
+    [ObservableProperty]
+    private bool _inboundNetwork;
+
+    [ObservableProperty]
+    private string _address = string.Empty;
+
     // Отбила ли проверка прокси, каким его знает карточка.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]

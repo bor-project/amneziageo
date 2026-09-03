@@ -962,6 +962,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             Mtu: transport?.Mtu ?? 0,
             UseIpv6: transport?.UseIpv6 ?? false,
             UseRouter: transport?.UseRouter ?? true,
+            AllowInbound: transport?.AllowInbound ?? false,
+            InboundNetwork: transport?.InboundNetwork ?? false,
+            Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -1956,7 +1959,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ? MtuModes.Parse(args[6], previous?.MtuMode ?? MtuMode.Auto)
             : mtu > 0 ? MtuMode.Custom : previous?.MtuMode ?? MtuMode.Auto;
         var useRouter = args.Count > 7 ? IsOn(args[7]) : previous?.UseRouter ?? true;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter)).ConfigureAwait(false);
+        var allowInbound = args.Count > 8 ? IsOn(args[8]) : previous?.AllowInbound ?? false;
+        var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : previous?.InboundNetwork ?? false;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
@@ -2036,6 +2041,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
+        // Inbound access rides the tunnel bucket: the tun then carries those ranges and the router sends the answers back.
+        var proxyRoutes = new List<string>(list.Routes);
+        foreach (var inbound in InboundRanges())
+        {
+            if (!proxyRoutes.Contains(inbound))
+            {
+                proxyRoutes.Add(inbound);
+            }
+        }
+
         var directRoutes = new List<string>(list.DirectRoutes);
         var directDomains = new List<GeoDomain>(list.DirectDomains);
         SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
@@ -2048,7 +2063,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var perApp = settings is not { UseGlobalProxy: true } && useRouter && apps.Length > 0;
         var attributed = Build.VERSION.SdkInt >= BuildVersionCodes.Q;
         var plan = new GeoRoutingPlan(
-            list.Routes,
+            proxyRoutes,
             directRoutes,
             list.BlockRoutes,
             list.Domains,
@@ -2074,6 +2089,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             + ModeName(perApp ? apps.Length : 0, attributed, plan.FullTunnel)
             + (plan.AllUdp ? ", all udp tunneled" : string.Empty));
         return plan;
+    }
+
+    // Ranges the tunnel may reach this device from; empty unless the target answers what arrives from it.
+    private IReadOnlyList<string> InboundRanges()
+    {
+        if (_selectedTarget is not { Length: > 0 } name
+            || _transports.GetValueOrDefault(name) is not { AllowInbound: true } transport
+            || !_configs.TryGetValue(name, out var text))
+        {
+            return [];
+        }
+
+        return TunnelInbound.Ranges(WgConfigEditor.GetAddresses(text), transport.InboundNetwork);
     }
 
     // How the session reads in the log: rules deciding each destination with the named applications added to them,

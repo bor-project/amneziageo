@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|inbound|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -43,6 +43,7 @@ internal static class ConfigCommands
             "exclusions" => await ExclusionsAsync(agent, rest).ConfigureAwait(false),
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
+            "inbound" => await InboundAsync(agent, rest).ConfigureAwait(false),
             "geo" => await GeoAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown config command '{args[0]}'"),
         };
@@ -264,6 +265,43 @@ internal static class ConfigCommands
             MtuModes.Text(mode),
             stored.UseRouter ? "on" : "off").ConfigureAwait(false));
     }
+
+    // Access from the tunnel travels with the rest of the transport, so the stored fields are resent untouched beside it.
+    private static async Task<int> InboundAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 2 || Scope(args[1]) is not { } scope)
+        {
+            return Reply.Usage("usage: amneziageo config inbound <name> off|host|network");
+        }
+
+        var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == args[0]);
+        if (stored is null)
+        {
+            return Reply.Usage($"unknown config: {args[0]}");
+        }
+
+        return Reply.Report(await agent.SendAsync(
+            IpcContract.OpSetWebSocket,
+            args[0],
+            stored.WebSocket ? "on" : "off",
+            stored.WebSocketPort.ToString(CultureInfo.InvariantCulture),
+            stored.WebSocketHost,
+            stored.Mtu > 0 ? stored.Mtu.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            stored.UseIpv6 ? "on" : "off",
+            MtuModes.Text(stored.MtuMode),
+            stored.UseRouter ? "on" : "off",
+            scope.Allow ? "on" : "off",
+            scope.Network ? "on" : "off").ConfigureAwait(false));
+    }
+
+    // What the word stands for: no access, the server alone, or every device of the tunnel network.
+    private static (bool Allow, bool Network)? Scope(string value) => value.ToLowerInvariant() switch
+    {
+        "off" => (false, false),
+        "host" => (true, false),
+        "network" => (true, true),
+        _ => null,
+    };
 
     private static async Task<int> GeoAsync(IAgentLink agent, IReadOnlyList<string> args)
     {

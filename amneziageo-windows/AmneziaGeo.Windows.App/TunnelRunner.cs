@@ -240,6 +240,25 @@ internal sealed class TunnelRunner(
             }
         }
 
+        // Inbound access: the ranges traffic may arrive from ride along with the resolver infrastructure, so the
+        // tunnel accepts them and the answers go back the same way. Off by default, and never in the reconcilable set.
+        IReadOnlyList<string> inboundRoutes = transport?.AllowInbound == true
+            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(config), transport.InboundNetwork)
+            : [];
+        foreach (var inbound in inboundRoutes)
+        {
+            resolverRoutes.Add(inbound);
+            if (!geoRoutes.Contains(inbound))
+            {
+                geoRoutes.Add(inbound);
+            }
+        }
+
+        if (inboundRoutes.Count > 0)
+        {
+            logger.LogInformation("{Name}: access from the tunnel is on for {Ranges}", name, string.Join(", ", inboundRoutes));
+        }
+
         // Reconcilable list ranges = the list's own ranges MINUS resolver infrastructure, so a range that
         // coincides with a tunnel-DNS resolver /32 stays advertised (in _staticRoutes) but is never in _listRoutes.
         var listRoutes = (geo?.Routes ?? []).Where(r => !resolverRoutes.Contains(r)).ToList();
@@ -399,7 +418,11 @@ internal sealed class TunnelRunner(
         }
 
         session.Clear();
-        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), tunnelResolver);
+        // The inbound ranges join the resolvers outside the cache: a Direct rule covering the tunnel network would
+        // otherwise pull the answers onto the physical path.
+        var pinnedRoutes = new List<string>(tunnelResolver);
+        pinnedRoutes.AddRange(inboundRoutes);
+        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes);
         session.SetCache(routing);
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.
@@ -585,6 +608,8 @@ internal sealed class TunnelRunner(
         logger.LogDebug("{Name}: routes in place - the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
+        var inboundOpened = InboundFirewall.Allow(name, inboundRoutes, logger);
+
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
         _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, endpoint, routing, sessionCts.Token));
@@ -696,6 +721,11 @@ internal sealed class TunnelRunner(
             if (lanExcluded)
             {
                 routes.RemoveLanExclusions(name);
+            }
+
+            if (inboundOpened)
+            {
+                InboundFirewall.Remove(name, logger);
             }
         }
     }

@@ -105,6 +105,19 @@
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
                                IsChecked="{Binding UseIpv6, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
+    <!-- Доступ из туннеля: сама галочка и вопрос про сеть, который она открывает. -->
+    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_InboundTitle}" Description="{l:Tr Main_InboundHint}"
+                               IsChecked="{Binding AllowInbound, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+    <controls:SettingSwitchRow Label="{l:Tr Main_InboundNetworkTitle}" Description="{l:Tr Main_InboundNetworkHint}"
+                               IsVisible="{Binding ShowInboundNetwork}"
+                               IsChecked="{Binding InboundNetwork, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+    <StackPanel Spacing="2" IsVisible="{Binding ShowInboundAddress}">
+      <TextBlock Text="{l:Tr Main_InboundAddressLabel}" FontWeight="SemiBold" FontSize="15" />
+      <SelectableTextBlock Text="{Binding TunnelAddress}" FontSize="13" TextWrapping="Wrap" />
+    </StackPanel>
+
     <!-- The router decides destinations while the session runs and costs a second pass through userspace;
          turning it off leaves the route table alone with the rules. -->
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_RouterTitle}" Description="{l:Tr Main_RouterHint}"

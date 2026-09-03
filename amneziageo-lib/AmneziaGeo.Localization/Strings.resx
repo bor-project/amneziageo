@@ -457,6 +457,21 @@
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Use IPv6</value>
   </data>
+  <data name="Main_InboundTitle" xml:space="preserve">
+    <value>Access from the tunnel</value>
+  </data>
+  <data name="Main_InboundHint" xml:space="preserve">
+    <value>This machine answers at its address inside the tunnel</value>
+  </data>
+  <data name="Main_InboundNetworkTitle" xml:space="preserve">
+    <value>Whole tunnel network</value>
+  </data>
+  <data name="Main_InboundNetworkHint" xml:space="preserve">
+    <value>Off: the server alone reaches this machine. On: every device of this tunnel</value>
+  </data>
+  <data name="Main_InboundAddressLabel" xml:space="preserve">
+    <value>Address in the tunnel</value>
+  </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Router</value>
   </data>

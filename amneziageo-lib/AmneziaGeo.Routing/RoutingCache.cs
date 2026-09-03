@@ -94,7 +94,7 @@ public sealed class RoutingCache
     // Addresses the cache neither installs nor reclaims: the tunnel resolver, routed as infrastructure at bring-up.
     // Its route must outlive every idle window - the agent's own queries to it are not attributed to any process,
     // so nothing here would ever refresh it and a sweep would take the tunnel's DNS down with it.
-    private readonly HashSet<uint> _pinned;
+    private readonly GeoIpRanges _pinned;
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
     private readonly bool _split;
@@ -125,10 +125,10 @@ public sealed class RoutingCache
         SetTtl(ttlSeconds);
         _logger = logger;
         _rules = Build(proxy, direct, block, 0);
-        _pinned = BuildPinned(pinned);
+        _pinned = pinned is null ? GeoIpRanges.Empty : GeoIpRanges.Build([.. pinned]);
         if (_pinned.Count > 0)
         {
-            _logger.LogDebug("{Count} resolver address(es) are held outside the cache: their path through the tunnel is set up with the connection and stays for as long as it lasts", _pinned.Count);
+            _logger.LogDebug("{Count} address range(s) are held outside the cache: their path through the tunnel is set up with the connection and stays for as long as it lasts", _pinned.Count);
         }
     }
 
@@ -1041,29 +1041,6 @@ public sealed class RoutingCache
     private static RuleSet Build(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int generation)
     {
         return new RuleSet(GeoIpRanges.Build(proxy), GeoIpRanges.Build(direct), GeoIpRanges.Build(block), generation);
-    }
-
-    // Reads the addresses to be held outside the cache; a prefix length is accepted so a caller can pass the
-    // resolver routes it already built.
-    private static HashSet<uint> BuildPinned(IReadOnlyCollection<string>? addresses)
-    {
-        var result = new HashSet<uint>();
-        if (addresses is null)
-        {
-            return result;
-        }
-
-        foreach (var entry in addresses)
-        {
-            var slash = entry.IndexOf('/');
-            var text = slash < 0 ? entry : entry[..slash];
-            if (IPAddress.TryParse(text, out var parsed) && GeoIpRanges.TryToNumeric(parsed, out var value))
-            {
-                result.Add(value);
-            }
-        }
-
-        return result;
     }
 
     private static IPAddress ToAddress(uint address)

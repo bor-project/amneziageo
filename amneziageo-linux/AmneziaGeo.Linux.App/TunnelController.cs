@@ -120,6 +120,18 @@ internal sealed class TunnelController : IDisposable
         var split = routing.Split && routing.HasRules;
         var tunnelResolvers = TunnelResolvers(resolved);
         var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
+        // Inbound access: what the tunnel may reach this machine from. Off by default.
+        var inboundRoutes = options.Transport?.AllowInbound == true
+            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(resolved), options.Transport.InboundNetwork)
+            : [];
+        foreach (var inbound in inboundRoutes)
+        {
+            if (!startupRoutes.Contains(inbound))
+            {
+                startupRoutes.Add(inbound);
+            }
+        }
+
         var allowedIps = AllowedIpsResolver.Build(split, WgConfigEditor.GetAllowedIps(resolved), startupRoutes);
         // Split advertises almost nothing at first, so without a keepalive the peer would only be greeted once
         // some destination had already earned its route - and the name rules that earn it need the tunnel first.
@@ -179,7 +191,7 @@ internal sealed class TunnelController : IDisposable
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
-        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString())]);
+        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes]);
         _cache = cache;
         _sessionCts = new CancellationTokenSource();
         _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));

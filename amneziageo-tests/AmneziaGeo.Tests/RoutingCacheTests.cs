@@ -749,6 +749,21 @@ public sealed class RoutingCacheTests
         Assert.Empty(applier.Removed);
     }
 
+    // Access from the tunnel pins a whole network, and a Direct rule covering it must not pull the answers onto
+    // the physical path.
+    [Fact]
+    public void PinnedNetwork_HoldsEveryAddressInIt()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: ["10.0.0.0/8"], pinned: ["10.8.2.0/24"]);
+
+        cache.Note(IPAddress.Parse("10.8.2.1"));
+        cache.Note(IPAddress.Parse("10.8.2.200"));
+
+        Assert.Empty(applier.Permitted);
+        Assert.Equal(0, cache.Size);
+    }
+
     [Fact]
     public void UnpinnedResolver_IsStillDecidedByTheRanges()
     {

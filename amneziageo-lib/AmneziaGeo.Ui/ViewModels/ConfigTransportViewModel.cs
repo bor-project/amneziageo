@@ -31,6 +31,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private int _baseMtuMode;
     private bool _baseUseIpv6;
     private bool _baseUseRouter;
+    private bool _baseAllowInbound;
+    private bool _baseInboundNetwork;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
@@ -71,6 +73,29 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _useRouter = true;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowInboundNetwork))]
+    [NotifyPropertyChangedFor(nameof(ShowInboundAddress))]
+    private bool _allowInbound;
+
+    [ObservableProperty]
+    private bool _inboundNetwork;
+
+    /// <summary>
+    /// Whether the network switch stands in the interface: it says something only while inbound access is on.
+    /// </summary>
+    public bool ShowInboundNetwork => AllowInbound;
+
+    /// <summary>
+    /// The address this machine answers at inside the tunnel.
+    /// </summary>
+    public string TunnelAddress { get; }
+
+    /// <summary>
+    /// Whether that address stands in the interface.
+    /// </summary>
+    public bool ShowInboundAddress => AllowInbound && TunnelAddress.Length > 0;
+
     // Keeps the router switch out of the interface.
     internal static bool RouterVisible => false;
 
@@ -102,7 +127,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "")
     {
         _connection = connection;
         ConfigName = name;
@@ -110,6 +135,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useWebSocket = useWebSocket;
         _useIpv6 = useIpv6;
         _useRouter = useRouter;
+        _allowInbound = allowInbound;
+        _inboundNetwork = inboundNetwork;
+        TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
         // Only the custom mode shows a size of its own; the other two show what the agent settled on.
@@ -212,6 +240,18 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnAllowInboundChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
+    partial void OnInboundNetworkChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -238,7 +278,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal)
             || MtuMode != _baseMtuMode
             || UseIpv6 != _baseUseIpv6
-            || UseRouter != _baseUseRouter;
+            || UseRouter != _baseUseRouter
+            || AllowInbound != _baseAllowInbound
+            || InboundNetwork != _baseInboundNetwork;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -260,6 +302,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseMtuMode = MtuMode;
         _baseUseIpv6 = UseIpv6;
         _baseUseRouter = UseRouter;
+        _baseAllowInbound = AllowInbound;
+        _baseInboundNetwork = InboundNetwork;
         if (IsDirty)
         {
             IsDirty = false;
@@ -284,6 +328,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             MtuMode = _baseMtuMode;
             UseIpv6 = _baseUseIpv6;
             UseRouter = _baseUseRouter;
+            AllowInbound = _baseAllowInbound;
+            InboundNetwork = _baseInboundNetwork;
             StatusMessage = string.Empty;
         }
         finally
@@ -401,7 +447,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off"]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", InboundNetwork ? "on" : "off"]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
@@ -618,6 +664,16 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         }
 
         return value;
+    }
+
+    // Drops a single-host prefix, which says nothing next to the address itself.
+    private static string FormatAddresses(string addresses)
+    {
+        var parts = addresses.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.EndsWith("/32", StringComparison.Ordinal) || part.EndsWith("/128", StringComparison.Ordinal)
+                ? part[..part.LastIndexOf('/')]
+                : part);
+        return string.Join(", ", parts);
     }
 
     private static string EndpointHost(string endpoint)

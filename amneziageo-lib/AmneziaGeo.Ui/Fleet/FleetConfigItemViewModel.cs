@@ -1,7 +1,9 @@
 using System.Globalization;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.ViewModels;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -28,6 +30,25 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
     private int _slot = TunnelRoles.Aside;
 
     /// <summary>
+    /// Просят ли этот сервер держать поднятым.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CardStatusBrush))]
+    private bool _wanted;
+
+    /// <summary>
+    /// Пока сервер заявлен, но ещё не поднят, точка носит цвет попытки: набор его добивается.
+    /// </summary>
+    public override IBrush CardStatusBrush =>
+        Wanted && Status is not ConnectionStatus.Connected ? PowerAmber : base.CardStatusBrush;
+
+    // Сколько карточка держит своё состояние, если снимок так и не узнал о команде.
+    private const long DialWait = 15000;
+
+    private bool _dialingUp;
+    private long _dialingUntil;
+
+    /// <summary>
     /// Ведёт ли карточка свою команду.
     /// </summary>
     internal bool Dialing { get; private set; }
@@ -36,13 +57,44 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
     internal void Mark(string status)
     {
         Dialing = true;
+        _dialingUp = string.Equals(status, ConnectionStatus.Connecting, StringComparison.Ordinal);
+        _dialingUntil = Environment.TickCount64 + DialWait;
         Status = status;
     }
 
-    // Возвращает карточку снимку.
-    internal void Release()
+    // Обрывает ожидание и ставит названное состояние.
+    internal void Settle(string status)
     {
         Dialing = false;
+        Status = status;
+    }
+
+    /// <summary>
+    /// Берёт ли карточка состояние из снимка. Пока команда в пути, снимок принимается только когда он уже знает
+    /// о ней: снятый до неё вернул бы карточку к прежнему виду, и она мигнула бы.
+    /// </summary>
+    internal bool Accepts(string reported)
+    {
+        if (!Dialing)
+        {
+            return true;
+        }
+
+        if (!Knows(reported) && Environment.TickCount64 < _dialingUntil)
+        {
+            return false;
+        }
+
+        Dialing = false;
+        return true;
+    }
+
+    // Знает ли снимок о команде: поднимаемый сервер отвечает подъёмом или отказом, снимаемый - снятием.
+    private bool Knows(string reported)
+    {
+        return _dialingUp
+            ? reported is ConnectionStatus.Connecting or ConnectionStatus.Connected or ConnectionStatus.Failed or ConnectionStatus.Preempted
+            : reported is ConnectionStatus.Disconnecting or ConnectionStatus.Disconnected or ConnectionStatus.Idle or ConnectionStatus.Failed;
     }
 
     /// <summary>

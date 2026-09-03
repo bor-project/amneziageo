@@ -1,6 +1,4 @@
-using AmneziaGeo.Ipc.Fleet;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 
@@ -24,30 +22,11 @@ internal sealed partial class FleetCardStrip : UserControl
         AvaloniaXamlLoader.Load(this);
     }
 
-    // Список мест строится на открытии: их столько же, сколько серверов в цепочке.
     private void OnPickSlot(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control anchor || DataContext is not FleetConfigItemViewModel card)
+        if (sender is Control anchor && DataContext is FleetConfigItemViewModel card)
         {
-            return;
+            TunnelSlotMenu.Present(anchor, card);
         }
-
-        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
-        foreach (var choice in card.SlotChoices)
-        {
-            if (choice.Slot == TunnelRoles.Aside)
-            {
-                menu.Items.Add(new Separator());
-            }
-
-            menu.Items.Add(new MenuItem
-            {
-                Header = choice.Text,
-                Command = card.SetSlotCommand,
-                CommandParameter = choice.Slot,
-            });
-        }
-
-        menu.ShowAt(anchor);
     }
 }

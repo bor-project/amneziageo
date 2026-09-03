@@ -2068,6 +2068,15 @@
   <data name="Main_HomeServerLabel" xml:space="preserve">
     <value>Сервер</value>
   </data>
+  <data name="Main_HomeServersSection" xml:space="preserve">
+    <value>Серверы</value>
+  </data>
+  <data name="Main_HomeConnectedCount" xml:space="preserve">
+    <value>{0} подключено</value>
+  </data>
+  <data name="Main_HomeMoreServers" xml:space="preserve">
+    <value>Ещё</value>
+  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Проверить серверы</value>
   </data>
@@ -2250,9 +2259,6 @@
   </data>
   <data name="Main_RuleTargetBlock" xml:space="preserve">
     <value>Блок</value>
-  </data>
-  <data name="Main_MakePrimaryLink" xml:space="preserve">
-    <value>Сделать основным</value>
   </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Настройки</value>

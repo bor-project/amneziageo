@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Fleet;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -360,6 +361,21 @@ public sealed partial class MainView : UserControl
             Loc.Instance.Get("Main_UpdateSection"),
             general.UpdateBannerText,
             options);
+    }
+
+    // Место сервера на строке главного экрана: тот же список, что падает из бейджа карточки.
+    private void OnPickHomeSlot(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control anchor && anchor.DataContext is FleetConfigItemViewModel card)
+        {
+            TunnelSlotMenu.Present(anchor, card);
+        }
+    }
+
+    // «Показать все серверы» на главном ведёт в каталог.
+    private void OnShowAllServers(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as MainWindowViewModel)?.ShowConfigs();
     }
 
     // «Добавить конфигурацию» на главном: способ выбирается здесь же, настройки открываются уже под него.

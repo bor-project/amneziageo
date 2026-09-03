@@ -43,6 +43,7 @@ internal sealed class CompactConverter : IValueConverter
             "w180" => compact ? double.NaN : 180d,
             "w240" => compact ? double.NaN : 240d,
             "w290" => compact ? double.NaN : 290d,
+            "w340" => compact ? double.NaN : 340d,
             "w300" => compact ? double.NaN : 300d,
             // Width floors that lift in compact so a narrow card cannot be overflowed.
             "minW130" => compact ? 0d : 130d,
@@ -57,6 +58,8 @@ internal sealed class CompactConverter : IValueConverter
             "shellBody" => compact ? new Thickness(6, 1, 6, 3) : new Thickness(12, 1, 12, 3),
             // Top gap under the tabs when the catalogue combo drops to its own row in compact.
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
+            // Подпись отходит от своей строки только на большом экране: узкому окну эта высота дорога.
+            "gap6" => compact ? 0d : 6d,
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
             // Inset of a list inside its frame; without the frame the rows stand at the edge.
             "boxPad" => compact ? new Thickness(0) : new Thickness(8),

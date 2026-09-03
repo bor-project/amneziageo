@@ -21,19 +21,22 @@ internal sealed class FleetStore(ActiveTunnelScope scope)
         var primary = (await store.GetSettingAsync(FleetKeys.Primary, ct) ?? string.Empty).Trim();
         var desired = await store.GetSettingAsync(FleetKeys.Desired, ct) ?? string.Empty;
         var targets = await store.GetSettingAsync(FleetKeys.Targets, ct) ?? string.Empty;
+        var resume = await store.GetSettingAsync(FleetKeys.Resume, ct) ?? string.Empty;
 
         _written[FleetKeys.Order] = order;
         _written[FleetKeys.Roles] = roles;
         _written[FleetKeys.Primary] = primary;
         _written[FleetKeys.Desired] = desired;
         _written[FleetKeys.Targets] = targets;
+        _written[FleetKeys.Resume] = resume;
 
         return new FleetState(
             FleetState.ParseNames(order),
             FleetState.ParseRoles(roles),
             primary,
             FleetState.ParseNames(desired),
-            FleetTargets.Parse(targets));
+            FleetTargets.Parse(targets),
+            FleetState.ParseNames(resume));
     }
 
     /// <summary>
@@ -46,9 +49,10 @@ internal sealed class FleetStore(ActiveTunnelScope scope)
         await WriteAsync(FleetKeys.Primary, state.Primary, ct);
         await WriteAsync(FleetKeys.Desired, FleetState.FormatNames(state.Desired), ct);
         await WriteAsync(FleetKeys.Targets, FleetTargets.Format(state.Targets), ct);
+        await WriteAsync(FleetKeys.Resume, FleetState.FormatNames(state.Resume ?? []), ct);
     }
 
-    // Writes only what moved: the set is saved on every request, and most requests move one key of the five.
+    // Writes only what moved: the set is saved on every request, and most requests move one key of the six.
     private async Task WriteAsync(string key, string value, CancellationToken ct)
     {
         if (_written.TryGetValue(key, out var last) && string.Equals(last, value, StringComparison.Ordinal))

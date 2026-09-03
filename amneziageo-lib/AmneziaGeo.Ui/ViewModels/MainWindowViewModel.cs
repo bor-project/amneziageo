@@ -73,11 +73,25 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _settingsDetailOpen;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowHomePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeFleet))]
     private bool _hasConfigs;
 
     // Whether the machine keeps several tunnels at once; the screens the mode adds read it.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowHomePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeFleet))]
     private bool _multiServer;
+
+    /// <summary>
+    /// Стоит ли на главном экране выбор одного сервера.
+    /// </summary>
+    public bool ShowHomePicker => HasConfigs && !MultiServer;
+
+    /// <summary>
+    /// Стоит ли на главном экране список набора.
+    /// </summary>
+    public bool ShowHomeFleet => HasConfigs && MultiServer;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
@@ -485,6 +499,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void Exit()
     {
         AppExitHost.Exit();
+    }
+
+    /// <summary>
+    /// Открывает каталог серверов с главного экрана.
+    /// </summary>
+    public void ShowConfigs()
+    {
+        Nav = "settings";
+        SettingsSection = "config";
+        SettingsDetailOpen = true;
+        Config.EnterSection();
+        RefreshLogsActive();
     }
 
     /// <summary>

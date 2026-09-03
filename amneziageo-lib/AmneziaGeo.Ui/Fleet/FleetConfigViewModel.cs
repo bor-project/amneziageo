@@ -1,6 +1,8 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -33,6 +35,50 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
     /// Сколько серверов стоит в цепочке.
     /// </summary>
     internal int ChainLength { get; private set; }
+
+    /// <summary>
+    /// Чем набор поднимется, когда его включат целиком; пусто, пока он стоит.
+    /// </summary>
+    internal IReadOnlyList<string> Resume { get; private set; } = [];
+
+    /// <summary>
+    /// Поднятые серверы набора: их показывает главный экран.
+    /// </summary>
+    public ObservableCollection<FleetConfigItemViewModel> Standing { get; } = [];
+
+    /// <summary>
+    /// Сколько серверов набора уже поднято: в списке стоят и те, которых ещё добиваются.
+    /// </summary>
+    public string StandingText => Loc.Instance.Get(
+        "Main_HomeConnectedCount",
+        Standing.Count(card => card.Status is ConnectionStatus.Connected).ToString(CultureInfo.InvariantCulture));
+
+    // Сводит список с каталогом, не пересобирая его целиком: пересборка дёргала бы строки на экране. В списке
+    // стоят заявленные серверы, а у снятого набора - те, которыми он поднимется, чтобы было видно, что вернётся.
+    private void SyncStanding()
+    {
+        var standing = Configs
+            .OfType<FleetConfigItemViewModel>()
+            .Where(card => card.Wanted || Resume.Contains(card.Name, StringComparer.Ordinal))
+            .ToList();
+        for (var at = Standing.Count - 1; at >= 0; at--)
+        {
+            if (!standing.Contains(Standing[at]))
+            {
+                Standing.RemoveAt(at);
+            }
+        }
+
+        for (var at = 0; at < standing.Count; at++)
+        {
+            if (!Standing.Contains(standing[at]))
+            {
+                Standing.Insert(Math.Min(at, Standing.Count), standing[at]);
+            }
+        }
+
+        OnPropertyChanged(nameof(StandingText));
+    }
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)
@@ -99,6 +145,7 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
         }
 
         ChainLength = servers.Values.Count(server => server.Slot > TunnelRoles.Aside);
+        Resume = snapshot.Fleet?.Resume ?? [];
         foreach (var entry in snapshot.Configs)
         {
             if (Row(entry.Name) is not { } card)
@@ -106,13 +153,17 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
                 continue;
             }
 
-            if (!card.Dialing)
+            if (card.Accepts(entry.Status))
             {
                 card.Status = entry.Status;
             }
 
-            card.Slot = servers.TryGetValue(entry.Name, out var server) ? server.Slot : TunnelRoles.Aside;
+            var listed = servers.TryGetValue(entry.Name, out var server);
+            card.Slot = listed ? server!.Slot : TunnelRoles.Aside;
+            card.Wanted = listed && server!.Wanted;
         }
+
+        SyncStanding();
     }
 
     // Карточка режима по имени сервера.

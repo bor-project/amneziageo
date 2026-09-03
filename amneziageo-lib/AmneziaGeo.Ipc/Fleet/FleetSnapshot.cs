@@ -9,9 +9,12 @@ namespace AmneziaGeo.Ipc.Fleet;
 /// <param name="Carrier">The server carrying it now; empty while none does.</param>
 /// <param name="Targets">Where every addressed rule rides, by the key the mode stores it under.</param>
 /// <param name="Balance">How the balancer is looked at; null while the mode has not been told.</param>
+/// <param name="Resume">What the set comes back up on after it was taken down as a whole; empty while it
+/// stands.</param>
 public sealed record FleetSnapshot(
     IReadOnlyList<FleetEntry> Servers,
     string Primary = "",
     string Carrier = "",
     IReadOnlyDictionary<string, string>? Targets = null,
-    BalancePolicy? Balance = null);
+    BalancePolicy? Balance = null,
+    IReadOnlyList<string>? Resume = null);

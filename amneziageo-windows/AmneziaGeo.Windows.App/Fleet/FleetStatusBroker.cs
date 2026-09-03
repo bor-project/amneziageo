@@ -101,8 +101,11 @@ internal sealed class FleetStatusBroker(
             Configs = configs,
             SelectedTarget = selected.Length > 0 ? selected : null,
             BoundTarget = selected.Length > 0 ? selected : null,
-            BoundStatus = Status(selected, states) ?? ConnectionStatus.Disconnected,
-            Active = fleet.Wanted.Contains(selected),
+            // The header is the switch of the whole machine, so it reads the set rather than the server it
+            // shows: one selected server standing idle beside a live set would otherwise leave it saying
+            // "connecting" for as long as the set is up.
+            BoundStatus = SetStatus(states),
+            Active = fleet.Wanted.Count > 0,
             RestartRequired = standing?.RestartRequired ?? false,
             ConnectFailed = standing?.ConnectFailed ?? false,
             ConnectFailReason = standing?.ConnectFailed == true ? standing.ConnectFailReason.ToString() : string.Empty,
@@ -245,20 +248,44 @@ internal sealed class FleetStatusBroker(
             return new IpcAck(false, $"unknown connection state: {args[0]}");
         }
 
-        // The header connects the server it shows, and in the mode that joins it to the set instead of taking
-        // the machine off whatever else it stands on.
-        var selected = await CurrentScope.Store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        // The header is the switch of the whole machine: it takes every tunnel of the set down at once and
+        // brings back the ones that stood. One server is asked for by its own card instead.
+        if (!connect)
+        {
+            if (!fleet.TakeAllDown())
+            {
+                return new IpcAck(true, "nothing stands");
+            }
+
+            log.LogInformation("the set was taken down as a whole; it comes back up on {Names}", string.Join(", ", fleet.Resume));
+            return new IpcAck(true, "the set is down");
+        }
+
+        var scope = CurrentScope;
+        if (fleet.Wanted.Count > 0
+            && !owner.IsOwnedBy(scope.UserRoot, scope.Sid)
+            && !args.Any(arg => arg.Equals("takeover", StringComparison.OrdinalIgnoreCase)))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_TunnelOwnedByOther"));
+        }
+
+        var selected = await scope.Store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
         if (selected.Length == 0)
         {
             selected = fleet.Primary;
         }
 
-        if (selected.Length == 0)
+        if (fleet.Resume.Count == 0 && selected.Length == 0)
         {
             return new IpcAck(false, "no configuration is selected");
         }
 
-        return connect ? await ConnectAsync(selected, args, ct) : Disconnect(selected);
+        owner.SetOwner(scope.UserRoot, scope.Sid);
+        await scope.Store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
+        var raised = fleet.BringBack(selected);
+
+        log.LogInformation("the set is asked back up on {Names}", string.Join(", ", raised));
+        return new IpcAck(true, $"asked for {string.Join(", ", raised)}");
     }
 
     // Asks for one server. The set belongs to whoever owns the machine's tunnels, so the first request takes it.
@@ -478,6 +505,20 @@ internal sealed class FleetStatusBroker(
             LossPercent = link.LossPercent,
             RttMs = link.RttMs,
         };
+    }
+
+    // The set as one state, read off the server carrying the machine, or the first one the chain lists while
+    // none does: what the machine sends goes through it. Each server writes its own state on its own card.
+    private string SetStatus(IReadOnlyList<TunnelState> states)
+    {
+        var wanted = fleet.Wanted;
+        if (wanted.Count == 0)
+        {
+            return ConnectionStatus.Disconnected;
+        }
+
+        var lead = fleet.Carrier ?? fleet.Order.FirstOrDefault(wanted.Contains) ?? wanted[0];
+        return Status(lead, states) ?? ConnectionStatus.Connecting;
     }
 
     // What a tunnel of the set last wrote down, or null while it is not up.

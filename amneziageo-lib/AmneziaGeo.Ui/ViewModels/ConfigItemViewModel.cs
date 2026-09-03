@@ -133,6 +133,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CardPowerBorderBrush))]
     [NotifyPropertyChangedFor(nameof(CardPowerForeground))]
     [NotifyPropertyChangedFor(nameof(CardPowerOn))]
+    [NotifyPropertyChangedFor(nameof(CardStatusBrush))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
@@ -355,6 +356,17 @@ internal partial class ConfigItemViewModel : ViewModelBase
         _ => _powerGlyph,
     };
 
+    /// <summary>
+    /// Цвет точки состояния: работающий туннель, переход, отказ, выключенный.
+    /// </summary>
+    public virtual IBrush CardStatusBrush => Status switch
+    {
+        ConnectionStatus.Connected => PowerSilent ? PowerAmber : _powerBlue,
+        ConnectionStatus.Connecting or ConnectionStatus.Disconnecting => PowerAmber,
+        ConnectionStatus.Failed => _dead,
+        _ => _idle,
+    };
+
     // 0 - выключен, 1 - переход, 2 - подключено.
     private int PowerState => Status switch
     {
@@ -547,6 +559,11 @@ internal partial class ConfigItemViewModel : ViewModelBase
     // Цвета круга подключения: те же, что у кнопки в шапке.
     private static readonly IBrush _powerBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _powerAmber = new SolidColorBrush(Color.FromRgb(0xE0, 0x90, 0x2F));
+
+    /// <summary>
+    /// Цвет перехода и попыток.
+    /// </summary>
+    protected static IBrush PowerAmber => _powerAmber;
     private static readonly IBrush _powerRing = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
     private static readonly IBrush _powerGlyph = new SolidColorBrush(Color.FromRgb(0x7B, 0x81, 0x8D));
 

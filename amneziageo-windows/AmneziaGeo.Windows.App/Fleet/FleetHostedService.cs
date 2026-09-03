@@ -52,7 +52,7 @@ internal sealed class FleetHostedService(
             // stop is one of the three: the wait ends with the supervisor, not only with a request.
             using (var change = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, fleet.ChangeToken, selected.ChangeToken))
             {
-                await SyncAsync(stoppingToken);
+                await SyncAsync(stoppingToken, change.Token);
                 live.Turned();
                 Mirror();
                 await PersistAsync(stoppingToken);
@@ -128,7 +128,8 @@ internal sealed class FleetHostedService(
 
         var carrying = selected.Target ?? string.Empty;
         var standing = StandOn(desired, carrying, mode.Switched && mode.SoleWasUp && known.Contains(carrying));
-        fleet.Restore(new FleetState(order, stored.Roles, stored.Primary, standing, stored.Targets));
+        var resume = (stored.Resume ?? []).Where(known.Contains).ToArray();
+        fleet.Restore(new FleetState(order, stored.Roles, stored.Primary, standing, stored.Targets, resume));
         if (desired.Length > 0)
         {
             logger.LogInformation("the set the mode last stood on is being connected: {Names}", string.Join(", ", desired));
@@ -161,8 +162,12 @@ internal sealed class FleetHostedService(
         }
     }
 
+    // How long one server is given to come up before the next one behind it is asked for.
+    private static readonly TimeSpan RaiseStep = TimeSpan.FromMilliseconds(300);
+    private const int RaiseSteps = 40;
+
     // Brings the running tunnels in line with the set.
-    private async Task SyncAsync(CancellationToken ct)
+    private async Task SyncAsync(CancellationToken ct, CancellationToken change)
     {
         foreach (var renamed in fleet.DrainRenames())
         {
@@ -171,19 +176,34 @@ internal sealed class FleetHostedService(
 
         var wanted = fleet.Wanted;
         var moved = false;
-        foreach (var name in _members.Keys.Where(running => !wanted.Contains(running)).ToArray())
+
+        // Taken down from the back of the chain, so the one carrying the machine is the last to go and nobody
+        // is elected in its place halfway through.
+        var leaving = Ordered([.. _members.Keys.Where(running => !wanted.Contains(running))]);
+        leaving.Reverse();
+        foreach (var name in leaving)
         {
             await StopAsync(name);
             moved = true;
         }
 
-        foreach (var name in wanted)
+        // Raised by place in the chain, one at a time: the carrier arms its leak protection and takes the name
+        // lookups before the reserve joins, instead of racing it for both.
+        foreach (var name in Ordered(wanted))
         {
-            if (!_members.ContainsKey(name))
+            if (change.IsCancellationRequested)
             {
-                Start(name, ct);
-                moved = true;
+                break;
             }
+
+            if (_members.ContainsKey(name))
+            {
+                continue;
+            }
+
+            Start(name, ct);
+            moved = true;
+            await SettleAsync(name, change);
         }
 
         if (moved)
@@ -207,6 +227,42 @@ internal sealed class FleetHostedService(
             if (stamp != member.Stamp)
             {
                 await ReaddressAsync(member, stamp, ct);
+            }
+        }
+    }
+
+    // The servers in the order of the chain: the carrier first, the reserve by place, and one the chain does
+    // not list behind them.
+    private List<string> Ordered(IReadOnlyList<string> names)
+    {
+        var place = new Dictionary<string, int>(StringComparer.Ordinal);
+        var order = fleet.Order;
+        for (var at = 0; at < order.Count; at++)
+        {
+            place[order[at]] = at;
+        }
+
+        return [.. names.OrderBy(name => place.TryGetValue(name, out var at) ? at : int.MaxValue)];
+    }
+
+    // Waits for a server to come up or refuse before the next one is asked for. Any move of the set ends the
+    // wait, so a switch thrown again does not queue behind the one being raised.
+    private async Task SettleAsync(string name, CancellationToken change)
+    {
+        for (var at = 0; at < RaiseSteps && !change.IsCancellationRequested; at++)
+        {
+            if (live.Of(name) is { Connected: true } or { ConnectFailed: true })
+            {
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(RaiseStep, change);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
         }
     }

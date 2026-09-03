@@ -32,36 +32,34 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanMakePrimary))]
-    [NotifyCanExecuteChangedFor(nameof(MakePrimaryCommand))]
+    [NotifyPropertyChangedFor(nameof(ShowLink))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
     private bool _multiServer;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanMakePrimary))]
-    [NotifyCanExecuteChangedFor(nameof(MakePrimaryCommand))]
     private string _primary = string.Empty;
 
     /// <summary>
-    /// Заперты ли роли: пока замер держит машину, их не двигают ни ссылка, ни бейдж.
+    /// Заперты ли места: пока замер держит машину, их не двигают.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanMakePrimary))]
-    [NotifyCanExecuteChangedFor(nameof(MakePrimaryCommand))]
     private bool _rolesLocked;
-
-    /// <summary>
-    /// Можно ли отдать машину выбранному серверу: он уже основной - нечего и просить.
-    /// </summary>
-    public bool CanMakePrimary => MultiServer
-        && !RolesLocked
-        && IsConnected
-        && ActiveConfig is { } row
-        && !string.Equals(row.Name, Primary, StringComparison.Ordinal);
 
     /// <summary>
     /// В режиме выбор только выбирает: туннель поднимают кнопкой карточки или шапкой.
     /// </summary>
     protected override bool MovesWithSelection => !MultiServer;
+
+    /// <inheritdoc/>
+    protected override bool KeepsAsked => MultiServer;
+
+    /// <summary>
+    /// Числа туннеля в режиме стоят на строке своего сервера, а не под кнопкой.
+    /// </summary>
+    public override bool ShowLink => !MultiServer && base.ShowLink;
+
+    /// <inheritdoc cref="ShowLink"/>
+    public override bool ShowLinkLoss => !MultiServer && base.ShowLinkLoss;
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)
@@ -116,10 +114,38 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
             return;
         }
 
-        // Кнопка в шапке ведёт выбранный сервер той же дорогой, что и его карточка.
-        if (ActiveConfig is { } row)
+        // Кнопка в шапке - рубильник машины: снимает весь набор разом и поднимает его тем же составом.
+        // Отдельный сервер водит его карточка.
+        MarkSet(!IsTunnelActive);
+        await base.ToggleConnection();
+    }
+
+    // Ход рубильника виден на карточках сразу: снимок дойдёт до них позже команды. Снимаются те, что стоят,
+    // поднимаются те, которыми набор помнит себя.
+    private void MarkSet(bool up)
+    {
+        var catalogue = _shell.ConfigFleet;
+        if (catalogue is null)
         {
-            await DialAsync(row);
+            return;
+        }
+
+        foreach (var row in catalogue.Configs)
+        {
+            if (row is not FleetConfigItemViewModel card)
+            {
+                continue;
+            }
+
+            var standing = card.Status is ConnectionStatus.Connected or ConnectionStatus.Connecting;
+            if (up && catalogue.Resume.Contains(card.Name, StringComparer.Ordinal))
+            {
+                card.Mark(ConnectionStatus.Connecting);
+            }
+            else if (!up && standing)
+            {
+                card.Mark(ConnectionStatus.Disconnecting);
+            }
         }
     }
 
@@ -141,7 +167,7 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
                 return;
             }
 
-            card?.Mark(back);
+            card?.Settle(back);
             Head(item, up, back);
             if (!up && OwnedByOtherAck(ack))
             {
@@ -153,8 +179,8 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         }
         finally
         {
+            // Карточку снимку не возвращаем: она держит своё состояние, пока снимок не узнает о команде.
             ToggleInFlight = false;
-            card?.Release();
         }
     }
 
@@ -168,6 +194,14 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
 
         IsTunnelActive = active;
         BoundStatus = status;
+    }
+
+    /// <inheritdoc/>
+    internal override Task<bool> EnsureDisconnectedAsync(string name)
+    {
+        // Снесённый сервер агент убирает из набора сам, а шапка тут ведёт весь набор, и трогать его ради одной
+        // конфигурации нельзя.
+        return MultiServer ? Task.FromResult(true) : base.EnsureDisconnectedAsync(name);
     }
 
     /// <inheritdoc/>
@@ -206,22 +240,6 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         for (var at = 0; at < 75 && item.Status is ConnectionStatus.Connected or ConnectionStatus.Connecting or ConnectionStatus.Disconnecting; at++)
         {
             await Task.Delay(200);
-        }
-    }
-
-    // Отдаёт машину выбранному серверу.
-    [RelayCommand(CanExecute = nameof(CanMakePrimary))]
-    private async Task MakePrimary()
-    {
-        if (ActiveConfig is not { } row)
-        {
-            return;
-        }
-
-        var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetPrimary, [row.Name]));
-        if (!ack.Ok)
-        {
-            ShowNotice(FleetNotice.Of(ack));
         }
     }
 
@@ -265,19 +283,6 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         if (!ack.Ok)
         {
             ShowNotice(FleetNotice.Of(ack));
-        }
-    }
-
-    /// <inheritdoc/>
-    protected override void OnPropertyChanged(PropertyChangedEventArgs e)
-    {
-        base.OnPropertyChanged(e);
-
-        // Ссылка «Сделать основным» смотрит на выбранную карточку и на агента, а они меняются мимо режима.
-        if (e.PropertyName is nameof(ActiveConfig) or nameof(IsConnected))
-        {
-            OnPropertyChanged(nameof(CanMakePrimary));
-            MakePrimaryCommand.NotifyCanExecuteChanged();
         }
     }
 

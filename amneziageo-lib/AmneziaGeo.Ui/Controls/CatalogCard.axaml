@@ -8,12 +8,6 @@
              x:DataType="vm:ConfigItemViewModel"
              Design.DataContext="{x:Static vm:DesignData.ConfigCard}"
              Design.Width="340">
-  <UserControl.Resources>
-    <StreamGeometry x:Key="AgCardTimerGeometry">M15,1H9V3H15M11,14H13V8H11M19.03,7.39L20.45,5.97C20,5.46 19.55,5 19.04,4.56L17.62,6C16.07,4.74 14.12,4 12,4A9,9 0 0,0 3,13A9,9 0 0,0 12,22C17,22 21,17.97 21,13C21,10.88 20.26,8.93 19.03,7.39M12,20A7,7 0 0,1 5,13A7,7 0 0,1 12,6A7,7 0 0,1 19,13A7,7 0 0,1 12,20Z</StreamGeometry>
-    <StreamGeometry x:Key="AgCardTrafficGeometry">M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z</StreamGeometry>
-    <StreamGeometry x:Key="AgCardLossGeometry">M3,13H5.79L10.1,4.79L11.28,11.5L14.5,8.75L17.29,13H21V15H16.21L14.5,12.4L10.72,15.5L9.55,8.9L7,13.85V15H3V13Z</StreamGeometry>
-  </UserControl.Resources>
-
   <!-- Действия карточки стоят на кнопках. На телевизоре тело служит входом, дальше пульт ходит
        по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick">
@@ -57,7 +51,7 @@
           <Grid Grid.Row="1" Classes="cardinfo" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0"
                 VerticalAlignment="Center">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
-              <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
+              <PathIcon Data="{DynamicResource AgCardTimerGeometry}" Width="13" Height="13"
                         Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
               <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
                          FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
@@ -75,13 +69,13 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
                         IsVisible="{Binding ShowLinkSpeed}">
-              <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="13" Height="13"
+              <PathIcon Data="{DynamicResource AgCardTrafficGeometry}" Width="13" Height="13"
                         Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
               <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
                          TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
             </StackPanel>
             <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="5">
-              <PathIcon Grid.Column="0" Data="{StaticResource AgCardLossGeometry}" Width="13" Height="13"
+              <PathIcon Grid.Column="0" Data="{DynamicResource AgCardLossGeometry}" Width="13" Height="13"
                         Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
               <TextBlock Grid.Column="1" Text="{Binding CardLossText}" FontSize="12.5"
                          Foreground="{Binding CardLossBrush}"

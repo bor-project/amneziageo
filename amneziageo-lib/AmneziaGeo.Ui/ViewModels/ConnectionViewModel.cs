@@ -24,6 +24,13 @@ internal partial class ConnectionViewModel : ViewModelBase
     // Пока команда кнопки в полёте, состояние ведёт она, а не снимок.
     protected bool ToggleInFlight { get; set; }
 
+    // Сколько кнопка держит своё состояние, если снимок так и не узнал о команде.
+    private const long AskWait = 15000;
+
+    // Чего кнопка ждёт от снимка после команды и до каких пор.
+    private bool? _askedActive;
+    private long _askedUntil;
+
     // The configuration a dial is heading for, until the tunnel binds it.
     private string? _dialTarget;
     private CancellationTokenSource? _probeCts;
@@ -270,7 +277,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Whether the home screen shows what the running tunnel carries.
     /// </summary>
-    public bool ShowLink => ConfigItemViewModel.SpeedShown && ConnState == 2 && BoundRow is not null;
+    public virtual bool ShowLink => ConfigItemViewModel.SpeedShown && ConnState == 2 && BoundRow is not null;
 
     /// <summary>
     /// Receive and send rates of the running tunnel.
@@ -317,7 +324,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Whether the home screen shows what the running tunnel loses.
     /// </summary>
-    public bool ShowLinkLoss => ConnState == 2 && BoundRow is not null;
+    public virtual bool ShowLinkLoss => ConnState == 2 && BoundRow is not null;
 
     /// <summary>
     /// The share of the running tunnel's own probes that never came back.
@@ -448,7 +455,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         RetryAttempt = snapshot.RetryAttempt;
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
-        if (!ToggleInFlight)
+        if (!ToggleInFlight && KnowsAsked(snapshot.Active))
         {
             IsTunnelActive = snapshot.Active;
         }
@@ -780,7 +787,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     /// Takes the tunnel down when it carries this configuration, so the agent lets it be removed; reports
     /// whether the configuration is free.
     /// </summary>
-    internal async Task<bool> EnsureDisconnectedAsync(string name)
+    internal virtual async Task<bool> EnsureDisconnectedAsync(string name)
     {
         // Only the configuration the tunnel is bound to: a merely selected one is dropped without touching a
         // tunnel that runs on another.
@@ -853,11 +860,50 @@ internal partial class ConnectionViewModel : ViewModelBase
         _prefs.Save();
     }
 
+    /// <summary>
+    /// Ждёт ли кнопка, пока о её команде узнает снимок. Машине с одним туннелем это не нужно, и она остаётся
+    /// на прежнем поведении.
+    /// </summary>
+    protected virtual bool KeepsAsked => false;
+
+    // Ставит состояние кнопки наперёд и ждёт, пока о команде узнает снимок: снятый до неё вернул бы шапку
+    // к прежнему виду, и она мигнула бы.
+    protected void AskActive(bool active)
+    {
+        _askedActive = KeepsAsked ? active : null;
+        _askedUntil = Environment.TickCount64 + AskWait;
+        IsTunnelActive = active;
+    }
+
+    // Обрывает ожидание и ставит названное состояние.
+    protected void SettleActive(bool active)
+    {
+        _askedActive = null;
+        IsTunnelActive = active;
+    }
+
+    // Узнал ли снимок о команде кнопки, либо ждать больше нечего.
+    private bool KnowsAsked(bool active)
+    {
+        if (_askedActive is not { } asked)
+        {
+            return true;
+        }
+
+        if (asked != active && Environment.TickCount64 < _askedUntil)
+        {
+            return false;
+        }
+
+        _askedActive = null;
+        return true;
+    }
+
     // Takes the tunnel down and reports whether it went. Optimistic state mirrors ToggleConnection so the
     // header power control does not flicker while the command is in flight.
     private async Task<bool> DisconnectAsync()
     {
-        IsTunnelActive = false;
+        AskActive(false);
         BoundStatus = ConnectionStatus.Disconnecting;
         ToggleInFlight = true;
         try
@@ -865,7 +911,7 @@ internal partial class ConnectionViewModel : ViewModelBase
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
             if (!ack.Ok)
             {
-                IsTunnelActive = true;
+                SettleActive(true);
             }
 
             return ack.Ok;
@@ -1054,7 +1100,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
 
         var connect = !IsTunnelActive;
-        IsTunnelActive = connect;
+        AskActive(connect);
         BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
         ToggleInFlight = true;
         try
@@ -1073,7 +1119,7 @@ internal partial class ConnectionViewModel : ViewModelBase
             if (!ack.Ok)
             {
                 SetDialTarget(null);
-                IsTunnelActive = !connect;
+                SettleActive(!connect);
                 if (connect && OwnedByOtherAck(ack))
                 {
                     PromptTakeover();

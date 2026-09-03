@@ -13,6 +13,9 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     private readonly Lock _gate = new();
     private readonly List<string> _order = [];
     private readonly List<string> _wanted = [];
+
+    // What stood when the set was taken down as a whole; what it comes back up on.
+    private readonly List<string> _resume = [];
     private readonly Dictionary<string, string> _roles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RuleRoute> _targets = new(StringComparer.Ordinal);
     private readonly List<(string From, string To)> _renamed = [];
@@ -47,6 +50,20 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             lock (_gate)
             {
                 return _wanted.ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the set comes back up on after it was taken down as a whole; empty while it stands.
+    /// </summary>
+    public IReadOnlyList<string> Resume
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _resume.ToArray();
             }
         }
     }
@@ -162,6 +179,59 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
+    /// Takes the whole set down, remembering what stood; answers whether anything did.
+    /// </summary>
+    public bool TakeAllDown()
+    {
+        lock (_gate)
+        {
+            if (_wanted.Count == 0)
+            {
+                return false;
+            }
+
+            _resume.Clear();
+            _resume.AddRange(_wanted);
+            _wanted.Clear();
+            TouchLocked();
+        }
+
+        Signal();
+        return true;
+    }
+
+    /// <summary>
+    /// Raises the set the machine last stood on and answers what it asks for. A set nothing is remembered for
+    /// stands up on the name given instead, so the machine still comes up on something.
+    /// </summary>
+    public IReadOnlyList<string> BringBack(string fallback)
+    {
+        string[] raised;
+        lock (_gate)
+        {
+            raised = _resume.Count > 0 ? [.. _resume] : fallback.Length > 0 ? [fallback] : [];
+            if (raised.Length == 0)
+            {
+                return [];
+            }
+
+            foreach (var name in raised)
+            {
+                if (!_wanted.Contains(name))
+                {
+                    _wanted.Add(name);
+                }
+            }
+
+            _resume.Clear();
+            TouchLocked();
+        }
+
+        Signal();
+        return raised;
+    }
+
+    /// <summary>
     /// Drops a tunnel from the set; answers whether it was in it.
     /// </summary>
     public bool Remove(string name)
@@ -194,6 +264,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         lock (_gate)
         {
             var struck = _wanted.Remove(name);
+            struck |= _resume.Remove(name);
             struck |= _order.Remove(name);
             struck |= _roles.Remove(name);
             struck |= ForgetAddressesLocked(name);
@@ -232,6 +303,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         {
             var held = Swap(_order, oldName, newName);
             held |= Swap(_wanted, oldName, newName);
+            held |= Swap(_resume, oldName, newName);
             held |= RenameRoleLocked(oldName, newName);
             held |= RenameAddressesLocked(oldName, newName);
             if (!held)
@@ -363,6 +435,8 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 
             _wanted.Clear();
             Fill(_wanted, state.Desired);
+            _resume.Clear();
+            Fill(_resume, state.Resume ?? []);
             _best = string.Empty;
             _quiet = 0;
             _renamed.Clear();
@@ -385,7 +459,8 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 new Dictionary<string, string>(_roles, StringComparer.Ordinal),
                 PrimaryLocked(),
                 _wanted.ToArray(),
-                new Dictionary<string, RuleRoute>(_targets, StringComparer.Ordinal));
+                new Dictionary<string, RuleRoute>(_targets, StringComparer.Ordinal),
+                _resume.ToArray());
         }
     }
 
@@ -410,7 +485,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 words[pair.Key] = pair.Value.Format();
             }
 
-            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty, words, _policy);
+            return new FleetSnapshot(servers, PrimaryLocked(), CarrierLocked() ?? string.Empty, words, _policy, _resume.ToArray());
         }
     }
 

@@ -9,12 +9,14 @@ namespace AmneziaGeo.Ipc.Fleet;
 /// <param name="Primary">Server that carries what no rule sends elsewhere; empty while none is named.</param>
 /// <param name="Desired">Servers wanted up.</param>
 /// <param name="Targets">Where every addressed rule rides.</param>
+/// <param name="Resume">Servers that stood when the set was taken down as a whole.</param>
 public sealed record FleetState(
     IReadOnlyList<string> Order,
     IReadOnlyDictionary<string, string> Roles,
     string Primary,
     IReadOnlyList<string> Desired,
-    IReadOnlyDictionary<string, RuleRoute> Targets)
+    IReadOnlyDictionary<string, RuleRoute> Targets,
+    IReadOnlyList<string>? Resume = null)
 {
     /// <summary>
     /// A mode never entered.

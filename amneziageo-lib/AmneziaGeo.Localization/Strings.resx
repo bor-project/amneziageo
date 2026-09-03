@@ -2068,6 +2068,15 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_HomeServerLabel" xml:space="preserve">
     <value>Server</value>
   </data>
+  <data name="Main_HomeServersSection" xml:space="preserve">
+    <value>Servers</value>
+  </data>
+  <data name="Main_HomeConnectedCount" xml:space="preserve">
+    <value>{0} connected</value>
+  </data>
+  <data name="Main_HomeMoreServers" xml:space="preserve">
+    <value>More</value>
+  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Check the servers</value>
   </data>
@@ -2250,9 +2259,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   </data>
   <data name="Main_RuleTargetBlock" xml:space="preserve">
     <value>Block</value>
-  </data>
-  <data name="Main_MakePrimaryLink" xml:space="preserve">
-    <value>Make primary</value>
   </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Settings</value>

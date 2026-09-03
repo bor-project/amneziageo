@@ -30,4 +30,10 @@ public static class FleetKeys
     /// Where every addressed rule rides, one "list:token=target,fallback" per line.
     /// </summary>
     public const string Targets = "fleet-targets";
+
+    /// <summary>
+    /// The servers that stood when the set was taken down as a whole, one per line; they are what it comes
+    /// back up on.
+    /// </summary>
+    public const string Resume = "fleet-resume";
 }

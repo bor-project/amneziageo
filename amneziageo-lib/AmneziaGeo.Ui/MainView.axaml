@@ -3,6 +3,7 @@
         xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
         xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
         xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+        xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
         xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
         xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
         x:Class="AmneziaGeo.Ui.MainView"
@@ -25,6 +26,8 @@
     <StreamGeometry x:Key="AgCloseGeometry">M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z</StreamGeometry>
     <!-- Chevron glyph. -->
     <StreamGeometry x:Key="AgChevronGeometry">M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z</StreamGeometry>
+    <!-- Caret glyph. -->
+    <StreamGeometry x:Key="AgRoleCaretGeometry">M7,10L12,15L17,10Z</StreamGeometry>
   </UserControl.Resources>
 
   <Grid>
@@ -68,7 +71,7 @@
                 <!-- Narrow screen gives the column the width it has: the fixed one is wider than a phone screen
                      and put the picker and its label past both edges. -->
                 <StackPanel Spacing="14" VerticalAlignment="Center"
-                            Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                            Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w340}"
                             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchC}">
                   <Button x:Name="HomePowerButton" Classes="powerbig" HorizontalAlignment="Center"
                           FocusAdorner="{x:Null}"
@@ -170,12 +173,95 @@
                                   IsChecked="{Binding Home.AlwaysOnMode, Mode=TwoWay}" />
                   </Grid>
 
+                  <!-- Набор: поднятые серверы, место каждого из них и выход в каталог. Место на строке - тот же
+                       бейдж со списком, что на карточке сервера. -->
+                  <StackPanel Spacing="4" IsVisible="{Binding ShowHomeFleet}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeServersSection}" Classes="muted"
+                                 FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Text="{Binding ConfigFleet.StandingText}" Classes="muted"
+                                 FontSize="11.5" VerticalAlignment="Center" />
+                    </Grid>
+                    <!-- Список набора не растёт бесконечно: за четырьмя строками он прокручивается сам, чтобы
+                         маршрутизация под ним оставалась на экране. -->
+                    <ScrollViewer MaxHeight="212" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding ConfigFleet.Standing}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="fleet:FleetConfigItemViewModel">
+                          <!-- Отклик, скорость и потери стоят справа от имени столбиком по колонкам.
+                               Значение ужимается в своей клетке и остаётся целиком в подсказке. -->
+                          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="0,6">
+                            <Ellipse Grid.Column="0" Width="7" Height="7" VerticalAlignment="Center"
+                                     Fill="{Binding CardStatusBrush}" />
+                            <StackPanel Grid.Column="1" Spacing="2">
+                              <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="SemiBold"
+                                         TextTrimming="CharacterEllipsis" />
+                              <Button Classes="rolebadge" Classes.primary="{Binding IsPrimary}"
+                                      HorizontalAlignment="Left" IsEnabled="{Binding RolesFree}"
+                                      Click="OnPickHomeSlot">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                  <TextBlock Text="{Binding SlotText}" FontSize="11" FontWeight="SemiBold"
+                                             VerticalAlignment="Center" />
+                                  <PathIcon Data="{StaticResource AgRoleCaretGeometry}" Width="9" Height="9"
+                                            VerticalAlignment="Center" />
+                                </StackPanel>
+                              </Button>
+                            </StackPanel>
+
+                            <Grid Grid.Column="2" ColumnDefinitions="52,84,40" ColumnSpacing="6"
+                                  VerticalAlignment="Center">
+                              <Grid Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="3"
+                                    ToolTip.Tip="{Binding ProbeText}">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource AgCardTimerGeometry}"
+                                          Width="12" Height="12" Foreground="{DynamicResource AgMutedBrush}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}"
+                                           FontSize="12" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                              </Grid>
+                              <Grid Grid.Column="1" ColumnDefinitions="Auto,*" ColumnSpacing="3"
+                                    IsVisible="{Binding ShowLinkSpeed}" ToolTip.Tip="{Binding CardSpeedText}">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource AgCardTrafficGeometry}"
+                                          Width="12" Height="12" Foreground="{DynamicResource AgMutedBrush}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding CardSpeedText}" Classes="muted"
+                                           FontSize="12" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                              </Grid>
+                              <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="3">
+                                <PathIcon Grid.Column="0" Data="{DynamicResource AgCardLossGeometry}"
+                                          Width="12" Height="12" Foreground="{DynamicResource AgMutedBrush}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding CardLossText}" Foreground="{Binding CardLossBrush}"
+                                           FontSize="12" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                              </Grid>
+                            </Grid>
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    </ScrollViewer>
+                    <!-- Переход в каталог: подпись со стрелкой, как имя списка маршрутизации ниже. -->
+                    <Button Classes="linkbtn" HorizontalAlignment="Left" Margin="-7,0,0,0"
+                            HorizontalContentAlignment="Left" Click="OnShowAllServers"
+                            ToolTip.Tip="{l:Tr Main_HomeServersSection}">
+                      <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="4">
+                        <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeMoreServers}" FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <PathIcon Grid.Column="1" Data="{StaticResource AgChevronGeometry}" Width="9" Height="9"
+                                  VerticalAlignment="Center" />
+                      </Grid>
+                    </Button>
+                  </StackPanel>
+
                   <!-- Config picker: the same pick the config catalogue carries. -->
                   <StackPanel Spacing="6">
-                    <TextBlock Text="{l:Tr Main_HomeServerLabel}" Classes="muted" IsVisible="{Binding HasConfigs}"
+                    <TextBlock Text="{l:Tr Main_HomeServerLabel}" Classes="muted" IsVisible="{Binding ShowHomePicker}"
                                FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                              IsVisible="{Binding HasConfigs}"
+                              IsVisible="{Binding ShowHomePicker}"
                               ItemsSource="{Binding Config.HomeConfigOptions}"
                               SelectedItem="{Binding Home.ActiveConfigChoice, Mode=TwoWay}">
                       <controls:AdaptiveComboBox.ItemTemplate>
@@ -184,12 +270,6 @@
                         </DataTemplate>
                       </controls:AdaptiveComboBox.ItemTemplate>
                     </controls:AdaptiveComboBox>
-                    <!-- Machine on several tunnels: hand it to the server the header stands on. -->
-                    <Button Classes="linkbtn" HorizontalAlignment="Center" Padding="0,2"
-                            IsVisible="{Binding MultiServer}"
-                            IsEnabled="{Binding HomeFleet.CanMakePrimary}"
-                            Command="{Binding HomeFleet.MakePrimaryCommand}"
-                            Content="{l:Tr Main_MakePrimaryLink}" />
 
                     <!-- No configs: the add-config button offers the way in right here and says it itself. -->
                     <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
@@ -201,8 +281,10 @@
                     </Button>
                   </StackPanel>
 
-                  <!-- Маршрутизация: тумблер включает, имя списка ведёт в раздел. -->
-                  <StackPanel IsVisible="{Binding HasConfigs}">
+                  <!-- Маршрутизация: тумблер включает, имя списка ведёт в раздел. Подпись стоит своей строкой,
+                       как у блока серверов над ней. -->
+                  <StackPanel IsVisible="{Binding HasConfigs}"
+                              Spacing="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gap6}">
                     <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
                                FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">

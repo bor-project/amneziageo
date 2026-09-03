@@ -1,3 +1,4 @@
+using System.Globalization;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -75,11 +76,22 @@ internal sealed class FleetStatusBroker(
             return snapshot;
         }
 
-        // The order of the set is the order of the cards, and the priority the fallback walks.
+        // The cards keep the order of the library: the priority the fallback walks is the place each server
+        // holds in the set, and it rides the card rather than the arrangement.
         var library = snapshot.Configs.ToDictionary(entry => entry.Name, StringComparer.Ordinal);
         var described = fleet.Describe([.. snapshot.Configs.Select(entry => entry.Name)]);
-        var configs = described.Servers.Select(server => Card(library[server.Name], states)).ToList();
+        var configs = snapshot.Configs.Select(entry => Card(entry, states)).ToList();
         var selected = snapshot.SelectedTarget ?? string.Empty;
+
+        // Без выбора шапка не отвечала бы ни за один из поднятых туннелей: её ведёт основной, а до него -
+        // первый сервер набора.
+        if (selected.Length == 0 || !library.ContainsKey(selected))
+        {
+            selected = described.Primary.Length > 0
+                ? described.Primary
+                : described.Servers.Count > 0 ? described.Servers[0].Name : string.Empty;
+        }
+
         var standing = selected.Length > 0 ? live.Of(selected) : null;
 
         // The header answers for the selected server alone: the machine may hold several, and the rest of the
@@ -87,6 +99,7 @@ internal sealed class FleetStatusBroker(
         return snapshot with
         {
             Configs = configs,
+            SelectedTarget = selected.Length > 0 ? selected : null,
             BoundTarget = selected.Length > 0 ? selected : null,
             BoundStatus = Status(selected, states) ?? ConnectionStatus.Disconnected,
             Active = fleet.Wanted.Contains(selected),
@@ -132,6 +145,7 @@ internal sealed class FleetStatusBroker(
             FleetOps.Disconnect => Disconnect(Named(command.Args)),
             FleetOps.SetPrimary => await RoleAsync(Named(command.Args), TunnelRoles.Primary, ct),
             FleetOps.SetRole => await RoleAsync(Named(command.Args), command.Args.Count > 1 ? command.Args[1] : string.Empty, ct),
+            FleetOps.SetSlot => await SlotAsync(command.Args, ct),
             FleetOps.Reorder => await ReorderAsync(command.Args, ct),
             FleetOps.SetTarget => await TargetAsync(command.Args, ct),
             _ => await base.UnknownAsync(command, ct),
@@ -234,6 +248,11 @@ internal sealed class FleetStatusBroker(
         // The header connects the server it shows, and in the mode that joins it to the set instead of taking
         // the machine off whatever else it stands on.
         var selected = await CurrentScope.Store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        if (selected.Length == 0)
+        {
+            selected = fleet.Primary;
+        }
+
         if (selected.Length == 0)
         {
             return new IpcAck(false, "no configuration is selected");
@@ -377,6 +396,36 @@ internal sealed class FleetStatusBroker(
                 return;
             }
         }
+    }
+
+    // The place a server holds in the chain is its priority: the first carries the machine, the rest are the
+    // reserve in order, and nought stands out of the chain.
+    private async Task<IpcAck> SlotAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var name = Named(args);
+        if (name.Length == 0)
+        {
+            return new IpcAck(false, "a server has to be named");
+        }
+
+        if (args.Count < 2 || !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot) || slot < TunnelRoles.Aside)
+        {
+            return new IpcAck(false, "a place has to be a number, nought for out of the chain");
+        }
+
+        if (!await CurrentScope.ConfigRepo.ExistsAsync(name, ct))
+        {
+            return new IpcAck(false, $"unknown config: {name}");
+        }
+
+        var turn = live.Turn;
+        if (fleet.Place(name, slot))
+        {
+            log.LogInformation("'{Name}' stands at place {Slot} of the set from now on", name, slot);
+            await SettledAsync(turn, ct);
+        }
+
+        return new IpcAck(true, $"{name}: {slot}");
     }
 
     // The order the servers are listed in is the order the mode falls back through.

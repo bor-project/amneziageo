@@ -162,8 +162,9 @@ public sealed class FleetBalancerTests
         fleet.Add("bravo");
         var stamp = fleet.Stamp;
 
+        // The head of the chain carries the machine, so it holds the pick while it answers at all.
         Assert.False(fleet.Rebalance(new Dictionary<string, int> { ["alpha"] = 90, ["bravo"] = 30 }));
-        Assert.Equal("bravo", fleet.Best);
+        Assert.Equal("alpha", fleet.Best);
         Assert.Equal(stamp, fleet.Stamp);
     }
 

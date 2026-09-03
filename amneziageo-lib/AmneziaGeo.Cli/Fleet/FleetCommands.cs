@@ -25,6 +25,8 @@ public static class FleetCommands
           fleet down <config>                 take one server out of the set
           fleet primary <config>              name the server that carries what no rule sends elsewhere
           fleet role <config> <primary|reserve|neutral>
+          fleet slot <config> <place>         place in the chain: 1 carries the machine, more is the reserve
+                                              in order, 0 stands out of the chain
           fleet order <config> [<config>...]  the order the mode falls back through
           fleet target <id|name> <rule> [<rides>] [<fallback>]
                                               where one rule of a routing list rides: auto, best, direct, block
@@ -73,7 +75,7 @@ public static class FleetCommands
 
         if (args.Count < 2)
         {
-            return Reply.Usage("usage: amneziageo fleet <status|up|down|primary|role|order|target>");
+            return Reply.Usage("usage: amneziageo fleet <status|up|down|primary|role|slot|order|target>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(2)];
@@ -84,6 +86,7 @@ public static class FleetCommands
             "down" => await DownAsync(agent, rest).ConfigureAwait(false),
             "primary" => await PrimaryAsync(agent, rest).ConfigureAwait(false),
             "role" => await RoleAsync(agent, rest).ConfigureAwait(false),
+            "slot" => await SlotAsync(agent, rest).ConfigureAwait(false),
             "order" => await OrderAsync(agent, rest).ConfigureAwait(false),
             "target" => await TargetAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown fleet command '{args[1]}'"),
@@ -136,10 +139,11 @@ public static class FleetCommands
         ]);
         Output.Line();
         Output.Table(
-            ["SERVER", "ROLE", "ASKED", "DEFAULT", "RESOLVER"],
+            ["SERVER", "PLACE", "ROLE", "ASKED", "DEFAULT", "RESOLVER"],
             [.. fleet.Servers.Select(server => (IReadOnlyList<string>)
             [
                 server.Name,
+                Place(server.Slot),
                 server.Role,
                 Yes(server.Wanted),
                 Yes(server.CarriesDefault),
@@ -208,6 +212,17 @@ public static class FleetCommands
 
         var role = TunnelRoles.Of(args[1]);
         return Reply.Report(await agent.SendAsync(FleetOps.SetRole, args[0], role).ConfigureAwait(false), $"{args[0]}: {role}");
+    }
+
+    // The place a server holds in the chain is its priority, and the rest close the gap behind it.
+    private static async Task<int> SlotAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 2 || !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var slot) || slot < TunnelRoles.Aside)
+        {
+            return Reply.Usage("usage: amneziageo fleet slot <config> <place>");
+        }
+
+        return Reply.Report(await agent.SendAsync(FleetOps.SetSlot, args[0], args[1]).ConfigureAwait(false), $"{args[0]}: {TunnelRoles.At(slot)}");
     }
 
     private static async Task<int> OrderAsync(IAgentLink agent, IReadOnlyList<string> args)
@@ -290,6 +305,9 @@ public static class FleetCommands
     }
 
     private static string Named(string name) => name.Length > 0 ? name : "-";
+
+    private static string Place(int slot) =>
+        slot > TunnelRoles.Aside ? slot.ToString(CultureInfo.InvariantCulture) : "-";
 
     private static string Yes(bool value) => value ? "yes" : "-";
 }

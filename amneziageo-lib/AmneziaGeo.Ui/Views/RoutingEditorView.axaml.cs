@@ -34,35 +34,26 @@ internal sealed partial class RoutingEditorView : UserControl
         await ExportActions.CopyToClipboardAsync(this, string.Join(Environment.NewLine, item.Entries));
     }
 
-    // Per-app tunneling source picks. Editor VM resolved via the routing VM's RoutingEditor (MenuFlyout items
-    // do not inherit the editor's DataContext).
-    private async void OnAppSourceRunning(object? sender, RoutedEventArgs e)
+    // Puts the picked path into the add row, where it is added like a typed one. Editor VM resolved via the
+    // routing VM's RoutingEditor (MenuFlyout items do not inherit the editor's DataContext).
+    private async void OnPickApplication(object? sender, RoutedEventArgs e)
     {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is { } vm)
-        {
-            await vm.EnterRunningModeAsync();
-        }
+        await PutPickedAsync(() => PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe"));
     }
 
-    private async void OnAppSourceInstalled(object? sender, RoutedEventArgs e)
+    private async void OnPickFolder(object? sender, RoutedEventArgs e)
     {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is { } vm)
-        {
-            await vm.EnterInstalledModeAsync();
-        }
+        await PutPickedAsync(PickFolderAsync);
     }
 
-    // Puts the picked path into the add row, where it is added like a typed one.
-    private async void OnBrowsePath(object? sender, RoutedEventArgs e)
+    private async Task PutPickedAsync(Func<Task<string?>> pick)
     {
         if ((DataContext as RoutingViewModel)?.RoutingEditor is not { } vm)
         {
             return;
         }
 
-        var path = vm.IsDirMethod
-            ? await PickFolderAsync()
-            : await PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe");
+        var path = await pick();
         if (!string.IsNullOrEmpty(path))
         {
             vm.RuleInput = path;

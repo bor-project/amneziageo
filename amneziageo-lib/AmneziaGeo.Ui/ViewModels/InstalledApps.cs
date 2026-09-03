@@ -72,6 +72,12 @@ internal static class InstalledApps
                     continue;
                 }
 
+                // This application is not offered: a rule on it tunnels the agent's own traffic.
+                if (AmneziaGeo.Ipc.OwnAppRule.Names(token))
+                {
+                    continue;
+                }
+
                 result.Add(new AppCandidate(Loc.Instance.Get("InstalledApps_Installed", display.Trim()), token));
             }
             catch

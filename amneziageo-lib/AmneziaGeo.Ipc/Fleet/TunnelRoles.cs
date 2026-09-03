@@ -1,10 +1,21 @@
 namespace AmneziaGeo.Ipc.Fleet;
 
 /// <summary>
-/// What a tunnel is for while several of them are up.
+/// What a tunnel is for while several of them are up. The role follows the place a tunnel holds in the chain,
+/// so it is read rather than chosen on its own.
 /// </summary>
 public static class TunnelRoles
 {
+    /// <summary>
+    /// The place a tunnel out of the chain holds.
+    /// </summary>
+    public const int Aside = 0;
+
+    /// <summary>
+    /// The place that carries the machine.
+    /// </summary>
+    public const int Lead = 1;
+
     /// <summary>
     /// Carries what no rule sends elsewhere and holds the resolver. One per machine.
     /// </summary>
@@ -49,5 +60,18 @@ public static class TunnelRoles
     public static bool Balanced(string? role)
     {
         return Of(role) is Primary or Reserve;
+    }
+
+    /// <summary>
+    /// The role a place in the chain gives.
+    /// </summary>
+    public static string At(int slot)
+    {
+        return slot switch
+        {
+            <= Aside => Neutral,
+            Lead => Primary,
+            _ => Reserve,
+        };
     }
 }

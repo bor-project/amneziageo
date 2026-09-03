@@ -126,7 +126,7 @@ public sealed class FleetControlTests
 
         Assert.True(fleet.Rename("bravo", "delta"));
 
-        Assert.Equal(["alpha", "delta"], fleet.Order);
+        Assert.Equal(["delta", "alpha"], fleet.Order);
         Assert.Equal(["alpha", "delta"], fleet.Wanted);
         Assert.Equal("delta", fleet.Primary);
         Assert.Equal("delta", fleet.Carrier);
@@ -196,7 +196,9 @@ public sealed class FleetControlTests
         Assert.Equal("bravo", fleet.Carrier);
         Assert.Equal("bravo", fleet.Primary);
         Assert.Equal(TunnelRoles.Neutral, fleet.RoleOf("charlie"));
-        Assert.Equal(["alpha", "bravo", "charlie"], fleet.Order);
+
+        // The stored primary takes the head of the chain, and what stands out of the chain goes behind it.
+        Assert.Equal(["bravo", "alpha", "charlie"], fleet.Order);
     }
 
     [Fact]
@@ -243,18 +245,21 @@ public sealed class FleetControlTests
 
         Assert.Equal(["bravo", "alpha", "charlie"], described.Servers.Select(server => server.Name));
         Assert.Equal("bravo", described.Carrier);
-        Assert.Equal(string.Empty, described.Primary);
+        Assert.Equal("bravo", described.Primary);
 
         var carrier = described.Servers[0];
         Assert.True(carrier.Wanted);
         Assert.True(carrier.CarriesDefault);
         Assert.True(carrier.HoldsResolver);
-        Assert.Equal(TunnelRoles.Reserve, carrier.Role);
+        Assert.Equal(TunnelRoles.Primary, carrier.Role);
+        Assert.Equal(TunnelRoles.Lead, carrier.Slot);
 
         var idle = described.Servers[1];
         Assert.False(idle.Wanted);
         Assert.False(idle.CarriesDefault);
+        Assert.Equal(2, idle.Slot);
         Assert.Equal(TunnelRoles.Neutral, described.Servers[2].Role);
+        Assert.Equal(TunnelRoles.Aside, described.Servers[2].Slot);
     }
 
     [Fact]

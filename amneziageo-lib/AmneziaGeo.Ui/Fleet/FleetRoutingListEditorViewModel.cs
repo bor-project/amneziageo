@@ -13,6 +13,9 @@ namespace AmneziaGeo.Ui.Fleet;
 internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewModel
 {
     private readonly IAgentConnection _link;
+
+    // Адреса правил, набранные в редакторе и ещё не отданные набору.
+    private readonly Dictionary<string, RuleRoute> _held = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, string> _targets = FleetTargets.Unaddressed;
     private string _shown = string.Empty;
 
@@ -60,13 +63,72 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
         _targets = targets;
         RouteChoices = Choices(servers, false);
         FallbackChoices = Choices(servers, true);
+        DropSettled();
         RebuildRuleItems();
+    }
+
+    /// <summary>
+    /// Куда правило едет по редактору: набранное, а пока его нет - стоящее у набора.
+    /// </summary>
+    public RuleRoute RouteOf(string token) => _held.TryGetValue(token, out var held) ? held : Stored(token);
+
+    /// <summary>
+    /// Держит адрес правила до сохранения.
+    /// </summary>
+    public void Hold(string token, RuleRoute route)
+    {
+        if (route == Stored(token))
+        {
+            _held.Remove(token);
+        }
+        else
+        {
+            _held[token] = route;
+        }
+
+        RefreshDirty();
+    }
+
+    /// <inheritdoc/>
+    protected override bool HasPendingEdits => _held.Count > 0;
+
+    /// <inheritdoc/>
+    public override async Task<bool> CommitAsync()
+    {
+        if (!await base.CommitAsync())
+        {
+            return false;
+        }
+
+        foreach (var pair in _held.ToList())
+        {
+            if (!await AddressAsync(pair.Key, pair.Value.Target.Format(), pair.Value.Fallback.Format()))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public override void CaptureBaseline()
+    {
+        _held.Clear();
+        base.CaptureBaseline();
+    }
+
+    /// <inheritdoc/>
+    public override void Revert()
+    {
+        _held.Clear();
+        base.Revert();
     }
 
     /// <summary>
     /// Говорит набору, куда едет правило.
     /// </summary>
-    public async Task AddressAsync(string token, string target, string fallback)
+    public async Task<bool> AddressAsync(string token, string target, string fallback)
     {
         var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetTarget,
             [Id.ToString(CultureInfo.InvariantCulture), token, target, fallback]));
@@ -74,6 +136,8 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
         {
             StatusMessage = FleetNotice.Of(ack);
         }
+
+        return ack.Ok;
     }
 
     /// <inheritdoc/>
@@ -85,7 +149,25 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
             return base.NewRuleRow(token);
         }
 
-        return new FleetRoutingRuleItemViewModel(token, this, RuleRoute.Parse(_targets.GetValueOrDefault(FleetTargets.Key(Id, token))));
+        return new FleetRoutingRuleItemViewModel(token, this, RouteOf(token));
+    }
+
+    // Адрес правила, стоящий у набора.
+    private RuleRoute Stored(string token) =>
+        RuleRoute.Parse(_targets.GetValueOrDefault(FleetTargets.Key(Id, token)));
+
+    // Набранное, до чего набор уже дошёл сам, перестаёт быть правкой.
+    private void DropSettled()
+    {
+        foreach (var token in _held.Keys.ToList())
+        {
+            if (_held[token] == Stored(token))
+            {
+                _held.Remove(token);
+            }
+        }
+
+        RefreshDirty();
     }
 
     // Авто, лучший, каждый сервер библиотеки, а директ и блок - только у второго списка.

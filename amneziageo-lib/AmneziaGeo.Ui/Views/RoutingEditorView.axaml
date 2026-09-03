@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
@@ -17,8 +17,6 @@
     <StreamGeometry x:Key="AgRuleSortGeometry">M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z</StreamGeometry>
     <StreamGeometry x:Key="AgGlobeGeometry">M17.9,17.39C17.64,16.59 16.89,16 16,16H15V13A1,1 0 0,0 14,12H8V10H10A1,1 0 0,0 11,9V7H13A2,2 0 0,0 15,5V4.59C17.93,5.77 20,8.64 20,12C20,14.08 19.2,15.97 17.9,17.39M11,19.93C7.05,19.44 4,16.08 4,12C4,11.38 4.08,10.78 4.21,10.21L9,15V16A2,2 0 0,0 11,18M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z</StreamGeometry>
     <StreamGeometry x:Key="AgAppGeometry">M19,4H5A2,2 0 0,0 3,6V18A2,2 0 0,0 5,20H19A2,2 0 0,0 21,18V6A2,2 0 0,0 19,4M19,18H5V8H19V18Z</StreamGeometry>
-    <StreamGeometry x:Key="AgFileGeometry">M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M6,20H18V9H12V4H6V20Z</StreamGeometry>
-    <StreamGeometry x:Key="AgFolderGeometry">M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z</StreamGeometry>
     <StreamGeometry x:Key="AgSearchGeometry">M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z</StreamGeometry>
 
     <!-- Строка подсказки: токен, что он покрывает и его тип. -->
@@ -160,52 +158,59 @@
               Item1Text="{l:Tr Main_AddByAddressTab}" Item1Param="address" Item1Active="{Binding IsAddressMethod}"
               Item1Icon="{StaticResource AgGlobeGeometry}"
               Item2Text="{Binding AppTabText}" Item2Param="app" Item2Active="{Binding IsAppMethod}"
-              Item2Icon="{StaticResource AgAppGeometry}" Item2Enabled="{Binding CanAddApps}"
-              Item3Text="{Binding FileTabText}" Item3Param="file" Item3Active="{Binding IsFileMethod}"
-              Item3Icon="{StaticResource AgFileGeometry}" Item3Enabled="{Binding CanAddApps}"
-              Item4Text="{Binding FolderTabText}" Item4Param="dir" Item4Active="{Binding IsDirMethod}"
-              Item4Icon="{StaticResource AgFolderGeometry}" Item4Enabled="{Binding CanAddApps}" />
+              Item2Icon="{StaticResource AgAppGeometry}" Item2Enabled="{Binding CanAddApps}" />
 
-          <!-- Приложения, файлы и папки исполняются только в корзине «Через VPN». -->
+          <!-- Приложения исполняются только в корзине «Через VPN». -->
           <TextBlock Text="{l:Tr Main_AppOnlyProxyHint}" Classes="muted" FontSize="11" TextWrapping="Wrap"
                      IsVisible="{Binding !CanAddApps}" />
 
-          <!-- Адрес, файл и папка вводятся одним полем; подсказки приходят выпадашкой на широком экране и
+          <!-- Адрес и приложение вводятся одним полем; подсказки приходят выпадашкой на широком экране и
                строками под полем на узком. -->
-          <StackPanel Spacing="8" IsVisible="{Binding !IsAppMethod}">
-            <Panel>
-              <TextBox x:Name="RuleBox" Classes="field" Watermark="{Binding RuleWatermark}"
-                       Text="{Binding RuleInput, Mode=TwoWay}">
-                <TextBox.InnerLeftContent>
-                  <PathIcon Data="{StaticResource AgSearchGeometry}" Width="13" Height="13" Margin="10,0,0,0"
-                            Foreground="{DynamicResource AgMutedBrush}" IsHitTestVisible="False" />
-                </TextBox.InnerLeftContent>
-                <TextBox.InnerRightContent>
-                  <Button Classes="icon" Margin="0,0,6,0" IsVisible="{Binding HasRuleInput}"
-                          Command="{Binding ClearRuleInputCommand}">
-                    <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="9" Height="9" Stretch="Uniform"
-                          Stroke="{DynamicResource AgMutedBrush}" StrokeThickness="1.4"
-                          StrokeLineCap="Round" StrokeJoin="Round" />
-                  </Button>
-                </TextBox.InnerRightContent>
-              </TextBox>
-              <Popup PlacementTarget="{Binding #RuleBox}" Placement="BottomEdgeAlignedLeft"
-                     IsLightDismissEnabled="False" IsOpen="{Binding ShowDropdownSuggestions}"
-                     Width="{Binding #RuleBox.Bounds.Width}">
-                <Border Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
-                        BorderThickness="1" CornerRadius="10" Padding="6" Margin="0,4,0,0">
-                  <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding MatchedSuggestions}"
-                                  ItemTemplate="{StaticResource SuggestionTemplate}" />
-                  </ScrollViewer>
-                </Border>
-              </Popup>
-            </Panel>
+          <StackPanel Spacing="8" IsVisible="{Binding ShowRuleInput}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <Panel Grid.Column="0">
+                <TextBox x:Name="RuleBox" Classes="field" Watermark="{Binding RuleWatermark}"
+                         Text="{Binding RuleInput, Mode=TwoWay}">
+                  <TextBox.InnerLeftContent>
+                    <PathIcon Data="{StaticResource AgSearchGeometry}" Width="13" Height="13" Margin="10,0,0,0"
+                              Foreground="{DynamicResource AgMutedBrush}" IsHitTestVisible="False" />
+                  </TextBox.InnerLeftContent>
+                  <TextBox.InnerRightContent>
+                    <Button Classes="icon" Margin="0,0,6,0" IsVisible="{Binding HasRuleInput}"
+                            Command="{Binding ClearRuleInputCommand}">
+                      <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="9" Height="9" Stretch="Uniform"
+                            Stroke="{DynamicResource AgMutedBrush}" StrokeThickness="1.4"
+                            StrokeLineCap="Round" StrokeJoin="Round" />
+                    </Button>
+                  </TextBox.InnerRightContent>
+                </TextBox>
+                <Popup PlacementTarget="{Binding #RuleBox}" Placement="BottomEdgeAlignedLeft"
+                       IsLightDismissEnabled="False" IsOpen="{Binding ShowDropdownSuggestions}"
+                       Width="{Binding #RuleBox.Bounds.Width}">
+                  <Border Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
+                          BorderThickness="1" CornerRadius="10" Padding="6" Margin="0,4,0,0">
+                    <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                      <ItemsControl ItemsSource="{Binding MatchedSuggestions}"
+                                    ItemTemplate="{StaticResource SuggestionTemplate}" />
+                    </ScrollViewer>
+                  </Border>
+                </Popup>
+              </Panel>
+
+              <!-- Приложение можно не набирать, а взять диалогом: файл программы или папка с программами. -->
+              <Button Grid.Column="1" Classes="softbtn" MinWidth="110" VerticalAlignment="Center"
+                      IsVisible="{Binding IsAppMethod}" Content="{l:Tr Main_PickButton}">
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem Header="{l:Tr Main_PickApplication}" Click="OnPickApplication" />
+                    <MenuItem Header="{l:Tr Main_PickFolder}" Click="OnPickFolder" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </Grid>
 
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-                <Button Classes="softbtn" MinWidth="110" IsVisible="{Binding IsPathMethod}"
-                        Click="OnBrowsePath" Content="{l:Tr Main_BrowseButton}" />
                 <Button Classes="accent" MinWidth="130" Command="{Binding AddRuleCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="+" />
@@ -227,52 +232,16 @@
             </Border>
           </StackPanel>
 
-          <!-- Приложение: на Windows источник и автодополнение, на Android системный список. -->
-          <StackPanel Spacing="8" IsVisible="{Binding IsAppMethod}">
-            <StackPanel Spacing="8" IsVisible="{Binding IsAppSourceWindows}">
-              <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8"
-                    HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-                <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch"
-                        Content="{l:Tr Main_SourceDropdown}"
-                        Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}">
-                  <Button.Flyout>
-                    <MenuFlyout>
-                      <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
-                      <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
-                    </MenuFlyout>
-                  </Button.Flyout>
-                </Button>
-                <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddAppCommand}"
-                        IsEnabled="{Binding IsAppPickerActive}"
-                        Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}">
-                  <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="{l:Tr Main_AddButton}" />
-                  </StackPanel>
-                </Button>
-                <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center" IsVisible="{Binding HasRules}"
-                        Command="{Binding SortRulesCommand}" ToolTip.Tip="{l:Tr Main_SortRulesTooltip}">
-                  <PathIcon Data="{StaticResource AgRuleSortGeometry}" Width="14" Height="14" />
-                </Button>
-              </Grid>
-              <AutoCompleteBox Classes="field"
-                               Watermark="{Binding AppWatermark}"
-                               Text="{Binding AppInput, Mode=TwoWay}"
-                               SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                               ItemsSource="{Binding AppSuggestions}"
-                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                               IsEnabled="{Binding IsAppPickerActive}" />
-            </StackPanel>
-
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsAppSourceAndroid}">
-              <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch"
-                      Command="{Binding PickAppsCommand}" Content="{l:Tr Main_AppsButton}" />
-              <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" IsVisible="{Binding HasRules}"
-                      Command="{Binding SortRulesCommand}" ToolTip.Tip="{l:Tr Main_SortRulesTooltip}">
-                <PathIcon Data="{StaticResource AgRuleSortGeometry}" Width="14" Height="14" />
-              </Button>
-            </Grid>
-          </StackPanel>
+          <!-- Приложение на Android берётся системным списком. -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"
+                IsVisible="{Binding !ShowRuleInput}">
+            <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch"
+                    Command="{Binding PickAppsCommand}" Content="{l:Tr Main_AppsButton}" />
+            <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" IsVisible="{Binding HasRules}"
+                    Command="{Binding SortRulesCommand}" ToolTip.Tip="{l:Tr Main_SortRulesTooltip}">
+              <PathIcon Data="{StaticResource AgRuleSortGeometry}" Width="14" Height="14" />
+            </Button>
+          </Grid>
 
           <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

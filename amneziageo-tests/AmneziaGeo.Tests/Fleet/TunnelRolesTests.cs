@@ -31,6 +31,17 @@ public sealed class TunnelRolesTests
         Assert.False(TunnelRoles.IsKnown(text));
     }
 
+    [Theory]
+    [InlineData(0, "neutral")]
+    [InlineData(-1, "neutral")]
+    [InlineData(1, "primary")]
+    [InlineData(2, "reserve")]
+    [InlineData(7, "reserve")]
+    public void ThePlaceGivesTheRole(int slot, string expected)
+    {
+        Assert.Equal(expected, TunnelRoles.At(slot));
+    }
+
     [Fact]
     public void BalancerLeavesNeutralAlone()
     {

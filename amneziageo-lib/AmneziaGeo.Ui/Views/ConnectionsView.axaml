@@ -64,20 +64,24 @@
             </TextBox>
           </Grid>
 
-          <!-- Several servers at once: the row is offered only where an agent runs it. -->
-          <controls:SettingSwitchRow Label="{l:Tr General_MultiServer}"
-                                     Description="{l:Tr General_MultiServerHint}"
-                                     IsVisible="{Binding MultiServerOffered}"
-                                     IsChecked="{Binding MultiServer, Mode=TwoWay}" />
+          <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
+               относятся. -->
+          <StackPanel Spacing="12" IsVisible="{Binding MultiServerOffered}">
+            <Border Classes="hairline" />
 
-          <!-- Место режима: у машины с одним туннелем пусто и роста не даёт. -->
-          <ContentControl Content="{Binding TunnelExtras}">
-            <ContentControl.DataTemplates>
-              <DataTemplate DataType="fleet:FleetConnectionsViewModel" x:DataType="fleet:FleetConnectionsViewModel">
-                <fleet:FleetBalanceStrip />
-              </DataTemplate>
-            </ContentControl.DataTemplates>
-          </ContentControl>
+            <controls:SettingSwitchRow Label="{l:Tr General_MultiServer}"
+                                       Description="{l:Tr General_MultiServerHint}"
+                                       IsChecked="{Binding MultiServer, Mode=TwoWay}" />
+
+            <!-- Место режима: у машины с одним туннелем пусто и роста не даёт. -->
+            <ContentControl Content="{Binding TunnelExtras}">
+              <ContentControl.DataTemplates>
+                <DataTemplate DataType="fleet:FleetConnectionsViewModel" x:DataType="fleet:FleetConnectionsViewModel">
+                  <fleet:FleetBalanceStrip />
+                </DataTemplate>
+              </ContentControl.DataTemplates>
+            </ContentControl>
+          </StackPanel>
         </StackPanel>
 
         <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->

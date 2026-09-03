@@ -478,12 +478,6 @@
   <data name="Main_AppSourceFolder" xml:space="preserve">
     <value>Папка…</value>
   </data>
-  <data name="Main_AppSourceInstalled" xml:space="preserve">
-    <value>Установленное</value>
-  </data>
-  <data name="Main_AppSourceRunning" xml:space="preserve">
-    <value>Запущенное</value>
-  </data>
   <data name="Main_AuthBasic" xml:space="preserve">
     <value>Логин и пароль</value>
   </data>
@@ -961,9 +955,6 @@
   <data name="Main_ShowQrTooltip" xml:space="preserve">
     <value>Показать QR-код списка для переноса</value>
   </data>
-  <data name="Main_SourceDropdown" xml:space="preserve">
-    <value>Источник ▾</value>
-  </data>
   <data name="Main_SourceKindTooltip" xml:space="preserve">
     <value>Тип определён по имени файла в URL</value>
   </data>
@@ -1276,12 +1267,6 @@
   <data name="RoutingEditor_AppKindService" xml:space="preserve">
     <value>{0} · служба</value>
   </data>
-  <data name="RoutingEditor_AppWatermarkInstalled" xml:space="preserve">
-    <value>имя установленного приложения</value>
-  </data>
-  <data name="RoutingEditor_AppWatermarkRunning" xml:space="preserve">
-    <value>имя запущенного приложения или службы</value>
-  </data>
   <data name="RoutingEditor_EmptyPath" xml:space="preserve">
     <value>Пустой путь.</value>
   </data>
@@ -1303,6 +1288,9 @@
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
     <value>Слишком широкий путь - выберите конкретную папку приложения.</value>
   </data>
+  <data name="RoutingEditor_OwnAppRule" xml:space="preserve">
+    <value>AmneziaGeo себя не маршрутизирует: выберите другое приложение.</value>
+  </data>
   <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
     <value>Записей: {0}</value>
   </data>
@@ -1314,9 +1302,6 @@
   </data>
   <data name="RoutingEditor_Saved" xml:space="preserve">
     <value>Сохранено</value>
-  </data>
-  <data name="RoutingEditor_SelectAppOrService" xml:space="preserve">
-    <value>Выберите приложение или службу из списка.</value>
   </data>
   <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
     <value>svchost.exe - общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
@@ -1487,6 +1472,9 @@
   </data>
   <data name="Agent_RoutingListNameTaken" xml:space="preserve">
     <value>список маршрутизации «{0}» уже есть - выберите другое имя</value>
+  </data>
+  <data name="Agent_RoutingListOwnApp" xml:space="preserve">
+    <value>Правило {0} называет сам AmneziaGeo, а его он не маршрутизирует.</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Не удалось собрать логи: {0}</value>
@@ -2218,8 +2206,8 @@
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Основной</value>
   </data>
-  <data name="Main_RoleReserve" xml:space="preserve">
-    <value>Резервный</value>
+  <data name="Main_SlotReserve" xml:space="preserve">
+    <value>Резервный {0}</value>
   </data>
   <data name="Main_RoleNeutral" xml:space="preserve">
     <value>Нейтральный</value>
@@ -2515,20 +2503,8 @@
   <data name="Main_BucketAddPrompt" xml:space="preserve">
     <value>Что добавить</value>
   </data>
-  <data name="Main_AddByFileTab" xml:space="preserve">
-    <value>Файл</value>
-  </data>
   <data name="Main_AddByFolderTab" xml:space="preserve">
     <value>Папка</value>
-  </data>
-  <data name="Main_AddFileWatermark" xml:space="preserve">
-    <value>Путь к программе, например C:\Program Files\App\app.exe</value>
-  </data>
-  <data name="Main_AddFolderWatermark" xml:space="preserve">
-    <value>Путь к папке с программами</value>
-  </data>
-  <data name="Main_BrowseButton" xml:space="preserve">
-    <value>Обзор</value>
   </data>
   <data name="Main_VpnModeTitle" xml:space="preserve">
     <value>Режим VPN для приложений</value>
@@ -2566,8 +2542,8 @@
   <data name="Main_BadgePackage" xml:space="preserve">
     <value>Пакет</value>
   </data>
-  <data name="Main_BadgePath" xml:space="preserve">
-    <value>Путь</value>
+  <data name="Main_BadgeFile" xml:space="preserve">
+    <value>Файл</value>
   </data>
   <data name="Main_BadgeFolder" xml:space="preserve">
     <value>Папка</value>
@@ -2575,17 +2551,23 @@
   <data name="Main_BadgeService" xml:space="preserve">
     <value>Служба</value>
   </data>
+  <data name="Main_PickButton" xml:space="preserve">
+    <value>Выбрать</value>
+  </data>
+  <data name="Main_PickApplication" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="Main_PickFolder" xml:space="preserve">
+    <value>Папка</value>
+  </data>
+  <data name="Main_AddAppWatermark" xml:space="preserve">
+    <value>Имя приложения или путь</value>
+  </data>
   <data name="Main_KindAddress" xml:space="preserve">
     <value>Адрес</value>
   </data>
   <data name="Main_KindApp" xml:space="preserve">
     <value>Приложение</value>
-  </data>
-  <data name="Main_KindFile" xml:space="preserve">
-    <value>Файл</value>
-  </data>
-  <data name="Main_KindFolder" xml:space="preserve">
-    <value>Папка</value>
   </data>
   <data name="Main_RuleCaption" xml:space="preserve">
     <value>{0} · {1}</value>
@@ -2606,7 +2588,7 @@
     <value>Приложение</value>
   </data>
   <data name="Main_AppOnlyProxyHint" xml:space="preserve">
-    <value>Приложения, файлы и папки добавляются только в «Через VPN».</value>
+    <value>Приложения добавляются только в «Через VPN».</value>
   </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Дополнительно</value>

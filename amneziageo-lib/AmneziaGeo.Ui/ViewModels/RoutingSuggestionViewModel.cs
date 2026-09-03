@@ -9,9 +9,17 @@ internal sealed class RoutingSuggestionViewModel
     /// ctor
     /// </summary>
     public RoutingSuggestionViewModel(string token)
+        : this(token, RuleToken.Describe(token))
+    {
+    }
+
+    /// <summary>
+    /// ctor
+    /// </summary>
+    public RoutingSuggestionViewModel(string token, string description)
     {
         Token = token;
-        Description = RuleToken.Describe(token);
+        Description = description;
         Badge = RuleToken.Badge(token);
     }
 

@@ -1,13 +1,13 @@
+using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
-using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Fleet;
 
 /// <summary>
-/// Каталог, пока машина держит несколько туннелей: карточки режима, роли на них и порядок серверов.
+/// Каталог, пока машина держит несколько туннелей: карточки режима и место каждого сервера в цепочке.
 /// </summary>
 internal sealed class FleetConfigViewModel : ConfigViewModel
 {
@@ -28,6 +28,11 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
     /// Держит ли машина несколько туннелей разом.
     /// </summary>
     public bool MultiServer { get; private set; }
+
+    /// <summary>
+    /// Сколько серверов стоит в цепочке.
+    /// </summary>
+    internal int ChainLength { get; private set; }
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)
@@ -52,19 +57,13 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
         return MultiServer ? new FleetConfigItemViewModel(this) { Name = name } : base.NewRow(name);
     }
 
-    /// <inheritdoc/>
-    protected override IpcCommand OrderCommand(IReadOnlyList<string> names)
-    {
-        return MultiServer ? new IpcCommand(FleetOps.Reorder, names) : base.OrderCommand(names);
-    }
-
     /// <summary>
-    /// Свободны ли роли: замер держит машину, и до его конца их не двигают.
+    /// Свободны ли места: замер держит машину, и до его конца их не двигают.
     /// </summary>
     internal bool RolesFree => _shell.HomeFleet?.RolesLocked != true;
 
     /// <summary>
-    /// Пересчитывает запор ролей на карточках.
+    /// Пересчитывает запор мест на карточках.
     /// </summary>
     internal void NotifyRoleGate()
     {
@@ -78,21 +77,19 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
     }
 
     /// <summary>
-    /// Ставит серверу роль. «Основной» на машине один, и просят его своим запросом.
+    /// Ставит сервер на место в цепочке.
     /// </summary>
-    internal async Task SetRoleAsync(string name, string role)
+    internal async Task SetSlotAsync(string name, int slot)
     {
-        var primary = string.Equals(role, TunnelRoles.Primary, StringComparison.Ordinal);
-        var ack = await _link.SendCommandAsync(primary
-            ? new IpcCommand(FleetOps.SetPrimary, [name])
-            : new IpcCommand(FleetOps.SetRole, [name, role]));
+        var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetSlot,
+            [name, slot.ToString(CultureInfo.InvariantCulture)]));
         if (!ack.Ok)
         {
             _shell.Home.ShowNotice(FleetNotice.Of(ack));
         }
     }
 
-    // Раскладывает набор по карточкам: состояние своё у каждого сервера, роль - из набора.
+    // Раскладывает набор по карточкам: состояние своё у каждого сервера, место - из набора.
     private void Describe(StatusSnapshot snapshot)
     {
         var servers = new Dictionary<string, FleetEntry>(StringComparer.Ordinal);
@@ -101,6 +98,7 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
             servers[server.Name] = server;
         }
 
+        ChainLength = servers.Values.Count(server => server.Slot > TunnelRoles.Aside);
         foreach (var entry in snapshot.Configs)
         {
             if (Row(entry.Name) is not { } card)
@@ -108,8 +106,12 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
                 continue;
             }
 
-            card.Status = entry.Status;
-            card.Role = servers.TryGetValue(entry.Name, out var server) ? server.Role : TunnelRoles.Default;
+            if (!card.Dialing)
+            {
+                card.Status = entry.Status;
+            }
+
+            card.Slot = servers.TryGetValue(entry.Name, out var server) ? server.Slot : TunnelRoles.Aside;
         }
     }
 

@@ -202,7 +202,7 @@
                   </StackPanel>
 
                   <!-- Маршрутизация: тумблер включает, имя списка ведёт в раздел. -->
-                  <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
+                  <StackPanel IsVisible="{Binding HasConfigs}">
                     <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
                                FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" />
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">

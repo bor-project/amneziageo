@@ -21,7 +21,8 @@ internal partial class ConnectionViewModel : ViewModelBase
     private readonly DispatcherTimer _noticeTimer;
     private readonly DispatcherTimer _networkTimer;
 
-    private bool _toggleInFlight;
+    // Пока команда кнопки в полёте, состояние ведёт она, а не снимок.
+    protected bool ToggleInFlight { get; set; }
 
     // The configuration a dial is heading for, until the tunnel binds it.
     private string? _dialTarget;
@@ -447,7 +448,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         RetryAttempt = snapshot.RetryAttempt;
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
-        if (!_toggleInFlight)
+        if (!ToggleInFlight)
         {
             IsTunnelActive = snapshot.Active;
         }
@@ -497,7 +498,7 @@ internal partial class ConnectionViewModel : ViewModelBase
             notice = Loc.Instance.Get("MainVm_NoticeDisconnectFailed");
             reconnect = true;
         }
-        else if (snapshot.Active && !_toggleInFlight && _dialTarget is null
+        else if (snapshot.Active && !ToggleInFlight && _dialTarget is null
             && string.Equals(snapshot.BoundStatus, ConnectionStatus.Connected, StringComparison.Ordinal)
             && SelectedDiffersFromBound(snapshot))
         {
@@ -858,7 +859,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     {
         IsTunnelActive = false;
         BoundStatus = ConnectionStatus.Disconnecting;
-        _toggleInFlight = true;
+        ToggleInFlight = true;
         try
         {
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
@@ -871,7 +872,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
         finally
         {
-            _toggleInFlight = false;
+            ToggleInFlight = false;
         }
     }
 
@@ -1043,7 +1044,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanToggleConnection))]
-    private async Task ToggleConnection()
+    protected virtual async Task ToggleConnection()
     {
         // The switch is on: the button leads to the system screen carrying always-on, and dials nothing.
         if (AlwaysOnRouting)
@@ -1055,7 +1056,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         var connect = !IsTunnelActive;
         IsTunnelActive = connect;
         BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
-        _toggleInFlight = true;
+        ToggleInFlight = true;
         try
         {
             // Select the config shown in the combo BEFORE dialing, so the agent's target is the one the user
@@ -1081,7 +1082,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
         finally
         {
-            _toggleInFlight = false;
+            ToggleInFlight = false;
         }
     }
 
@@ -1098,7 +1099,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     {
         IsTunnelActive = connect;
         BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
-        _toggleInFlight = true;
+        ToggleInFlight = true;
         try
         {
             if (connect)
@@ -1129,7 +1130,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
         finally
         {
-            _toggleInFlight = false;
+            ToggleInFlight = false;
         }
     }
 
@@ -1306,7 +1307,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     {
         IsTunnelActive = true;
         BoundStatus = ConnectionStatus.Connecting;
-        _toggleInFlight = true;
+        ToggleInFlight = true;
         try
         {
             if (ActiveConfig is not null)
@@ -1322,7 +1323,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
         finally
         {
-            _toggleInFlight = false;
+            ToggleInFlight = false;
         }
     }
 

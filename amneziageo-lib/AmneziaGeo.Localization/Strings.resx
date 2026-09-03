@@ -478,12 +478,6 @@
   <data name="Main_AppSourceFolder" xml:space="preserve">
     <value>Folder…</value>
   </data>
-  <data name="Main_AppSourceInstalled" xml:space="preserve">
-    <value>Installed</value>
-  </data>
-  <data name="Main_AppSourceRunning" xml:space="preserve">
-    <value>Running</value>
-  </data>
   <data name="Main_AuthBasic" xml:space="preserve">
     <value>Login and password</value>
   </data>
@@ -961,9 +955,6 @@
   <data name="Main_ShowQrTooltip" xml:space="preserve">
     <value>Show the list's QR code for transfer</value>
   </data>
-  <data name="Main_SourceDropdown" xml:space="preserve">
-    <value>Source ▾</value>
-  </data>
   <data name="Main_SourceKindTooltip" xml:space="preserve">
     <value>The type is detected from the file name in the URL</value>
   </data>
@@ -1276,12 +1267,6 @@
   <data name="RoutingEditor_AppKindService" xml:space="preserve">
     <value>{0} · service</value>
   </data>
-  <data name="RoutingEditor_AppWatermarkInstalled" xml:space="preserve">
-    <value>installed application name</value>
-  </data>
-  <data name="RoutingEditor_AppWatermarkRunning" xml:space="preserve">
-    <value>running application or service name</value>
-  </data>
   <data name="RoutingEditor_EmptyPath" xml:space="preserve">
     <value>Empty path.</value>
   </data>
@@ -1303,6 +1288,9 @@
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
     <value>Path is too broad - select a specific application folder.</value>
   </data>
+  <data name="RoutingEditor_OwnAppRule" xml:space="preserve">
+    <value>AmneziaGeo does not route itself: pick another application.</value>
+  </data>
   <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
     <value>Entries: {0}</value>
   </data>
@@ -1314,9 +1302,6 @@
   </data>
   <data name="RoutingEditor_Saved" xml:space="preserve">
     <value>Saved</value>
-  </data>
-  <data name="RoutingEditor_SelectAppOrService" xml:space="preserve">
-    <value>Select an application or service from the list.</value>
   </data>
   <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
     <value>svchost.exe is a shared service host and would tunnel a lot of unrelated traffic. Select a service from the list.</value>
@@ -1487,6 +1472,9 @@ Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_RoutingListNameTaken" xml:space="preserve">
     <value>a routing list named «{0}» already exists - pick another name</value>
+  </data>
+  <data name="Agent_RoutingListOwnApp" xml:space="preserve">
+    <value>The rule {0} names AmneziaGeo itself, which it does not route.</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Failed to collect logs: {0}</value>
@@ -2218,8 +2206,8 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Primary</value>
   </data>
-  <data name="Main_RoleReserve" xml:space="preserve">
-    <value>Reserve</value>
+  <data name="Main_SlotReserve" xml:space="preserve">
+    <value>Reserve {0}</value>
   </data>
   <data name="Main_RoleNeutral" xml:space="preserve">
     <value>Neutral</value>
@@ -2515,20 +2503,8 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_BucketAddPrompt" xml:space="preserve">
     <value>What to add</value>
   </data>
-  <data name="Main_AddByFileTab" xml:space="preserve">
-    <value>File</value>
-  </data>
   <data name="Main_AddByFolderTab" xml:space="preserve">
     <value>Folder</value>
-  </data>
-  <data name="Main_AddFileWatermark" xml:space="preserve">
-    <value>Path to the program, e.g. C:\Program Files\App\app.exe</value>
-  </data>
-  <data name="Main_AddFolderWatermark" xml:space="preserve">
-    <value>Path to a folder of programs</value>
-  </data>
-  <data name="Main_BrowseButton" xml:space="preserve">
-    <value>Browse</value>
   </data>
   <data name="Main_VpnModeTitle" xml:space="preserve">
     <value>VPN mode for apps</value>
@@ -2566,8 +2542,8 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_BadgePackage" xml:space="preserve">
     <value>Package</value>
   </data>
-  <data name="Main_BadgePath" xml:space="preserve">
-    <value>Path</value>
+  <data name="Main_BadgeFile" xml:space="preserve">
+    <value>File</value>
   </data>
   <data name="Main_BadgeFolder" xml:space="preserve">
     <value>Folder</value>
@@ -2575,17 +2551,23 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_BadgeService" xml:space="preserve">
     <value>Service</value>
   </data>
+  <data name="Main_PickButton" xml:space="preserve">
+    <value>Choose</value>
+  </data>
+  <data name="Main_PickApplication" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="Main_PickFolder" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="Main_AddAppWatermark" xml:space="preserve">
+    <value>Application name or path</value>
+  </data>
   <data name="Main_KindAddress" xml:space="preserve">
     <value>Address</value>
   </data>
   <data name="Main_KindApp" xml:space="preserve">
     <value>App</value>
-  </data>
-  <data name="Main_KindFile" xml:space="preserve">
-    <value>File</value>
-  </data>
-  <data name="Main_KindFolder" xml:space="preserve">
-    <value>Folder</value>
   </data>
   <data name="Main_RuleCaption" xml:space="preserve">
     <value>{0} · {1}</value>
@@ -2606,7 +2588,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Application</value>
   </data>
   <data name="Main_AppOnlyProxyHint" xml:space="preserve">
-    <value>Apps, files and folders are added under «Through VPN» only.</value>
+    <value>Apps are added under «Through VPN» only.</value>
   </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Advanced</value>

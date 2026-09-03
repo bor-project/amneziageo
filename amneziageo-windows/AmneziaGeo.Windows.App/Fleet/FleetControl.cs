@@ -52,7 +52,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// The servers in the order the mode lists them, which is the order it falls back through.
+    /// The servers in the chain, in the order it falls back through, with the ones out of it last.
     /// </summary>
     public IReadOnlyList<string> Order
     {
@@ -193,7 +193,6 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 
         lock (_gate)
         {
-            var carried = RoleLocked(name) == TunnelRoles.Primary;
             var struck = _wanted.Remove(name);
             struck |= _order.Remove(name);
             struck |= _roles.Remove(name);
@@ -209,11 +208,8 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 _quiet = 0;
             }
 
-            if (carried)
-            {
-                ElectLocked();
-            }
-
+            // The rest close the gap, so a struck leader leaves the machine to the one behind it.
+            NormalizeLocked();
             TouchLocked();
         }
 
@@ -277,7 +273,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// Lists the servers in the order the mode keeps them.
+    /// Lists the chain, first to last; a server it does not name leaves the mode's list.
     /// </summary>
     public void SetOrder(IReadOnlyList<string> names)
     {
@@ -285,10 +281,55 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         {
             _order.Clear();
             Fill(_order, names);
+            NormalizeLocked();
             TouchLocked();
         }
 
         Signal();
+    }
+
+    /// <summary>
+    /// Puts a server at a place in the chain; answers whether the set moved. The first place carries the
+    /// machine, a further one is the reserve in order, and a place of nought takes the server out of the chain.
+    /// </summary>
+    public bool Place(string name, int slot)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        var roundTrips = live.RoundTrips();
+        lock (_gate)
+        {
+            if (StandsLocked(name, slot))
+            {
+                return false;
+            }
+
+            _order.Remove(name);
+            if (slot <= TunnelRoles.Aside)
+            {
+                _roles[name] = TunnelRoles.Neutral;
+                _order.Add(name);
+            }
+            else
+            {
+                // The chain stands at the head of the list, so a place in it is an index into the list itself.
+                _roles[name] = TunnelRoles.Reserve;
+                _order.Insert(Math.Min(slot - 1, ChainLocked().Count), name);
+            }
+
+            NormalizeLocked();
+
+            // The leader takes the balancer's pick back the moment it is named, so the rules following the pick
+            // move with the place instead of at the next look.
+            _best = ReconsiderLocked(roundTrips);
+            TouchLocked();
+        }
+
+        Signal();
+        return true;
     }
 
     /// <summary>
@@ -306,11 +347,14 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 _roles[pair.Key] = TunnelRoles.Of(pair.Value);
             }
 
-            if (state.Primary.Length > 0)
+            // What the mode stored as the primary keeps the machine, so it stands first in the chain.
+            if (state.Primary.Length > 0 && _order.Remove(state.Primary))
             {
-                PromoteLocked(state.Primary);
+                _roles[state.Primary] = TunnelRoles.Primary;
+                _order.Insert(0, state.Primary);
             }
 
+            NormalizeLocked();
             _targets.Clear();
             foreach (var pair in state.Targets)
             {
@@ -346,17 +390,18 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// The set as the window sees it: every server of the library, in the order the mode lists them.
+    /// The set as the window sees it: every server of the library, in the order of the chain.
     /// </summary>
     public FleetSnapshot Describe(IReadOnlyList<string> library)
     {
         lock (_gate)
         {
+            AdoptLocked(library);
             var servers = new List<FleetEntry>();
             foreach (var name in ListedLocked(library))
             {
                 var duties = DutiesLocked(name);
-                servers.Add(new FleetEntry(name, RoleLocked(name), _wanted.Contains(name), duties.CarriesDefault, duties.HoldsResolver));
+                servers.Add(new FleetEntry(name, RoleLocked(name), _wanted.Contains(name), duties.CarriesDefault, duties.HoldsResolver, SlotLocked(name)));
             }
 
             var words = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -492,37 +537,24 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// Gives a tunnel its role; answers whether the set moved. A machine holds one primary, so naming a second
-    /// one demotes the first.
+    /// Gives a tunnel its role; answers whether the set moved. The role is the place: the primary stands first
+    /// in the chain, a reserve out of it joins the end, and a neutral one leaves the chain.
     /// </summary>
     public bool SetRole(string name, string role)
     {
         var given = TunnelRoles.Of(role);
-        var roundTrips = live.RoundTrips();
-        lock (_gate)
+        if (given == TunnelRoles.Primary)
         {
-            if (RoleLocked(name) == given)
-            {
-                return false;
-            }
-
-            if (given == TunnelRoles.Primary)
-            {
-                PromoteLocked(name);
-            }
-            else
-            {
-                _roles[name] = given;
-            }
-
-            // The primary takes the balancer's pick back the moment it is named, so the rules following the
-            // pick move with the role instead of at the next look.
-            _best = ReconsiderLocked(roundTrips);
-            TouchLocked();
+            return Place(name, TunnelRoles.Lead);
         }
 
-        Signal();
-        return true;
+        if (given == TunnelRoles.Neutral)
+        {
+            return Place(name, TunnelRoles.Aside);
+        }
+
+        // A reserve already in the chain keeps the place it holds, which no role names.
+        return RoleOf(name) == TunnelRoles.Neutral && Place(name, int.MaxValue);
     }
 
     /// <inheritdoc/>
@@ -868,25 +900,68 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         return string.Empty;
     }
 
-    // A machine holds one primary, so a struck one leaves the first the mode lists in its place.
-    private void ElectLocked()
+    // The servers the fallback walks, in the order it walks them.
+    private List<string> ChainLocked()
     {
-        var heir = CarrierLocked() ?? _order.FirstOrDefault(name => TunnelRoles.Balanced(RoleLocked(name)));
-        if (heir is not null)
+        return _order.Where(name => RoleLocked(name) != TunnelRoles.Neutral).ToList();
+    }
+
+    // The place a server holds in the chain; one out of it holds none.
+    private int SlotLocked(string name)
+    {
+        var at = TunnelRoles.Aside;
+        foreach (var listed in ChainLocked())
         {
-            PromoteLocked(heir);
+            at++;
+            if (string.Equals(listed, name, StringComparison.Ordinal))
+            {
+                return at;
+            }
+        }
+
+        return TunnelRoles.Aside;
+    }
+
+    // Whether a server already stands where it is asked to.
+    private bool StandsLocked(string name, int slot)
+    {
+        return slot > TunnelRoles.Aside
+            ? SlotLocked(name) == slot
+            : _order.Contains(name) && RoleLocked(name) == TunnelRoles.Neutral;
+    }
+
+    // The chain stands at the head of the list and the servers out of it after it, so a place in the list is
+    // the priority itself: the first carries the machine, the rest are the reserve in order.
+    private void NormalizeLocked()
+    {
+        var chain = ChainLocked();
+        var aside = _order.Where(name => RoleLocked(name) == TunnelRoles.Neutral).ToList();
+        _order.Clear();
+        _order.AddRange(chain);
+        _order.AddRange(aside);
+        for (var at = 0; at < chain.Count; at++)
+        {
+            _roles[chain[at]] = TunnelRoles.At(at + 1);
         }
     }
 
-    // A machine holds one primary, so naming one puts the one before it back in the balancer.
-    private void PromoteLocked(string name)
+    // A server the chain has not met joins the end of the reserve, and the first to join it carries the machine.
+    private void AdoptLocked(IReadOnlyList<string> library)
     {
-        foreach (var other in _roles.Where(r => r.Value == TunnelRoles.Primary).Select(r => r.Key).ToArray())
+        var joined = false;
+        foreach (var name in library)
         {
-            _roles[other] = TunnelRoles.Reserve;
+            if (name.Length > 0 && !_order.Contains(name))
+            {
+                _order.Add(name);
+                joined = true;
+            }
         }
 
-        _roles[name] = TunnelRoles.Primary;
+        if (joined)
+        {
+            NormalizeLocked();
+        }
     }
 
     private string RoleLocked(string name)

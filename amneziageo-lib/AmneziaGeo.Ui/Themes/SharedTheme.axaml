@@ -519,7 +519,7 @@
     <Style Selector="Button.rowselect.active">
       <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
     </Style>
-    <!-- Home server row: a flat card whose frame, not its fill, carries the connection state. -->
+    <!-- Home server row: a flat card of one fill, whose frame carries the connection state. -->
     <Style Selector="Button.serverrow">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderThickness" Value="0" />
@@ -527,10 +527,6 @@
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-    </Style>
-    <!-- Idle card: a dimmer fill than the applied one. -->
-    <Style Selector="Button.serverrow.off">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
     </Style>
     <Style Selector="Button.serverrow:focus-visible">
       <Setter Property="FocusAdorner">

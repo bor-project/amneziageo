@@ -1,3 +1,4 @@
+using System.Globalization;
 using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.ViewModels;
@@ -7,7 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.Fleet;
 
 /// <summary>
-/// Карточка сервера, пока машина держит несколько туннелей: та же карточка и роль туннеля на ней.
+/// Карточка сервера, пока машина держит несколько туннелей: та же карточка и место туннеля на ней.
 /// </summary>
 internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
 {
@@ -23,80 +24,107 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPrimary))]
-    [NotifyPropertyChangedFor(nameof(RoleText))]
-    private string _role = TunnelRoles.Default;
+    [NotifyPropertyChangedFor(nameof(SlotText))]
+    private int _slot = TunnelRoles.Aside;
+
+    /// <summary>
+    /// Ведёт ли карточка свою команду.
+    /// </summary>
+    internal bool Dialing { get; private set; }
+
+    // Ставит карточке состояние на время команды.
+    internal void Mark(string status)
+    {
+        Dialing = true;
+        Status = status;
+    }
+
+    // Возвращает карточку снимку.
+    internal void Release()
+    {
+        Dialing = false;
+    }
 
     /// <summary>
     /// Несёт ли сервер весь прочий трафик машины.
     /// </summary>
-    public bool IsPrimary => string.Equals(Role, TunnelRoles.Primary, StringComparison.Ordinal);
+    public bool IsPrimary => Slot == TunnelRoles.Lead;
 
     /// <summary>
-    /// Роль на бейдже.
+    /// Место на бейдже.
     /// </summary>
-    public string RoleText => Role switch
-    {
-        TunnelRoles.Primary => PrimaryText,
-        TunnelRoles.Neutral => NeutralText,
-        _ => ReserveText,
-    };
+    public string SlotText => Word(Slot);
 
     /// <summary>
     /// Чему бейдж принадлежит.
     /// </summary>
-    public string RoleLabel => Loc.Instance.Get("Main_CardTunnelLabel");
+    public string SlotLabel => Loc.Instance.Get("Main_CardTunnelLabel");
 
     /// <summary>
-    /// Открыт ли бейдж: пока замер держит машину, роль не меняют.
+    /// Места, на которые ставят сервер: вся цепочка, а стоящему вне её - ещё одно место в её конце.
+    /// </summary>
+    public IReadOnlyList<TunnelSlotChoice> SlotChoices
+    {
+        get
+        {
+            var places = _catalogue.ChainLength + (Slot == TunnelRoles.Aside ? 1 : 0);
+            var choices = new List<TunnelSlotChoice>(places + 1);
+            for (var slot = TunnelRoles.Lead; slot <= places; slot++)
+            {
+                choices.Add(new TunnelSlotChoice(slot, Word(slot)));
+            }
+
+            choices.Add(new TunnelSlotChoice(TunnelRoles.Aside, Word(TunnelRoles.Aside)));
+            return choices;
+        }
+    }
+
+    /// <summary>
+    /// Открыт ли бейдж: пока замер держит машину, места не меняют.
     /// </summary>
     public bool RolesFree => _catalogue.RolesFree;
 
     /// <summary>
-    /// Пересчитывает запор ролей на карточке.
+    /// Пересчитывает запор мест на карточке.
     /// </summary>
     internal void RefreshRoleGate()
     {
         OnPropertyChanged(nameof(RolesFree));
-        SetRoleCommand.NotifyCanExecuteChanged();
+        SetSlotCommand.NotifyCanExecuteChanged();
     }
-
-    /// <summary>
-    /// Роли словами - по одной на кнопку поля.
-    /// </summary>
-    public string PrimaryText => Loc.Instance.Get("Main_RolePrimary");
-
-    /// <inheritdoc cref="PrimaryText"/>
-    public string ReserveText => Loc.Instance.Get("Main_RoleReserve");
-
-    /// <inheritdoc cref="PrimaryText"/>
-    public string NeutralText => Loc.Instance.Get("Main_RoleNeutral");
 
     /// <inheritdoc/>
     public override void RefreshLocalizedLabels()
     {
         base.RefreshLocalizedLabels();
-        OnPropertyChanged(nameof(RoleLabel));
-        OnPropertyChanged(nameof(PrimaryText));
-        OnPropertyChanged(nameof(ReserveText));
-        OnPropertyChanged(nameof(NeutralText));
-        OnPropertyChanged(nameof(RoleText));
+        OnPropertyChanged(nameof(SlotLabel));
+        OnPropertyChanged(nameof(SlotText));
     }
 
-    // Ставит серверу роль; основным его делает отдельный запрос - основной на машине один.
-    [RelayCommand(CanExecute = nameof(CanSetRole))]
-    private async Task SetRole(string? role)
+    // Ставит сервер на место в цепочке.
+    [RelayCommand(CanExecute = nameof(CanSetSlot))]
+    private async Task SetSlot(int slot)
     {
-        if (role is not { Length: > 0 } || string.Equals(role, Role, StringComparison.Ordinal))
+        if (slot != Slot)
         {
-            return;
+            await _catalogue.SetSlotAsync(Name, slot);
         }
-
-        await _catalogue.SetRoleAsync(Name, role);
     }
 
-    // Роль меняют, пока её никто не держит.
-    private bool CanSetRole(string? role)
+    // Места меняют, пока их никто не держит.
+    private bool CanSetSlot(int slot)
     {
         return _catalogue.RolesFree;
+    }
+
+    // Место словами: первое несёт машину, дальше резерв по порядку, вне цепочки - нейтральный.
+    private static string Word(int slot)
+    {
+        return slot switch
+        {
+            TunnelRoles.Lead => Loc.Instance.Get("Main_RolePrimary"),
+            <= TunnelRoles.Aside => Loc.Instance.Get("Main_RoleNeutral"),
+            _ => Loc.Instance.Get("Main_SlotReserve", (slot - 1).ToString(CultureInfo.InvariantCulture)),
+        };
     }
 }

@@ -28,6 +28,12 @@ public static class FleetOps
     public const string SetRole = "fleet-set-role";
 
     /// <summary>
+    /// Command to put a server at a place in the chain. Args: name, place (the first carries the machine, a
+    /// further one is the reserve in order, and nought is out of the chain).
+    /// </summary>
+    public const string SetSlot = "fleet-set-slot";
+
+    /// <summary>
     /// Command to list the servers in the order the mode keeps them, which is the order it falls back through.
     /// Args: the names, in that order.
     /// </summary>

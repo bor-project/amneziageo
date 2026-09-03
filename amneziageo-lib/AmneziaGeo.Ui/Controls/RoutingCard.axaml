@@ -10,7 +10,7 @@
              Design.Width="340">
   <!-- Применение и настройки стоят на кнопках. На телевизоре тело служит входом, дальше пульт ходит
        по этим же контролам. -->
-  <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
+  <Button x:Name="FacePart" Classes="serverrow noclick">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">

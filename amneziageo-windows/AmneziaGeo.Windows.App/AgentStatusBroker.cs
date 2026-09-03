@@ -1363,11 +1363,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return new IpcAck(true, $"{{\"routes\":{count.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"limit\":0}}");
     }
 
-    private static bool IsAppRule(string rule)
+    private static bool IsAppRule(string rule) =>
+        TokenOf(rule).StartsWith("app:", StringComparison.OrdinalIgnoreCase);
+
+    // The rule without its role.
+    private static string TokenOf(string rule)
     {
         var bar = rule.IndexOf('|');
-        var token = bar > 0 ? rule[(bar + 1)..] : rule;
-        return token.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
+        return bar > 0 ? rule[(bar + 1)..] : rule;
     }
 
     // Rules that only take effect on a fresh tunnel: any app rule, whose matcher is built at bring-up. Ranges are
@@ -1415,6 +1418,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         if (lists.Any(l => l.Id != id && string.Equals(l.Name, name, StringComparison.Ordinal)))
         {
             return new IpcAck(false, IpcMessage.Key("Agent_RoutingListNameTaken", name));
+        }
+
+        // A rule on this application would tunnel the agent's own downloads, the resolver upstream and the
+        // websocket carrier. The window keeps such a rule out; this closes the same door to the console.
+        var own = args.Skip(2).FirstOrDefault(rule => IsAppRule(rule) && OwnAppRule.Names(TokenOf(rule)));
+        if (own is not null)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_RoutingListOwnApp", own));
         }
 
         // Proxy geo (domains/geoip) applies live; app rules and the Block bucket need a fresh tunnel, and so does

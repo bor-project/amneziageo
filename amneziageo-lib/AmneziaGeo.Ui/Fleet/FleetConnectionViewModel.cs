@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Ui.Services;
@@ -18,7 +19,7 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     private readonly MainWindowViewModel _shell;
 
     // Кто был основным до замера, кого он занял и с какой ролью взял.
-    private (string Primary, string Name, string Role) _lent = (string.Empty, string.Empty, string.Empty);
+    private (string Name, int Slot) _lent = (string.Empty, TunnelRoles.Aside);
 
     /// <summary>
     /// ctor
@@ -103,20 +104,70 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
         }
 
         // Карточка водит свой сервер и только его: живые туннели остальных остаются стоять.
+        await DialAsync(item);
+    }
+
+    /// <inheritdoc/>
+    protected override async Task ToggleConnection()
+    {
+        if (!MultiServer)
+        {
+            await base.ToggleConnection();
+            return;
+        }
+
+        // Кнопка в шапке ведёт выбранный сервер той же дорогой, что и его карточка.
+        if (ActiveConfig is { } row)
+        {
+            await DialAsync(row);
+        }
+    }
+
+    // Поднимает или снимает один сервер, ведя на время команды и карточку, и шапку.
+    private async Task DialAsync(ConfigItemViewModel item)
+    {
         var up = item.Status is ConnectionStatus.Connected or ConnectionStatus.Connecting;
-        var ack = await _link.SendCommandAsync(new IpcCommand(up ? FleetOps.Disconnect : FleetOps.Connect, [item.Name]));
-        if (ack.Ok)
+        var going = up ? ConnectionStatus.Disconnecting : ConnectionStatus.Connecting;
+        var back = up ? ConnectionStatus.Connected : ConnectionStatus.Disconnected;
+        var card = item as FleetConfigItemViewModel;
+        card?.Mark(going);
+        Head(item, !up, going);
+        ToggleInFlight = true;
+        try
+        {
+            var ack = await _link.SendCommandAsync(new IpcCommand(up ? FleetOps.Disconnect : FleetOps.Connect, [item.Name]));
+            if (ack.Ok)
+            {
+                return;
+            }
+
+            card?.Mark(back);
+            Head(item, up, back);
+            if (!up && OwnedByOtherAck(ack))
+            {
+                RequestTakeover();
+                return;
+            }
+
+            ShowNotice(FleetNotice.Of(ack));
+        }
+        finally
+        {
+            ToggleInFlight = false;
+            card?.Release();
+        }
+    }
+
+    // Шапка отвечает за выбранный сервер, поэтому его команда ведёт и её.
+    private void Head(ConfigItemViewModel item, bool active, string status)
+    {
+        if (!string.Equals(item.Name, ActiveConfig?.Name, StringComparison.Ordinal))
         {
             return;
         }
 
-        if (!up && OwnedByOtherAck(ack))
-        {
-            RequestTakeover();
-            return;
-        }
-
-        ShowNotice(FleetNotice.Of(ack));
+        IsTunnelActive = active;
+        BoundStatus = status;
     }
 
     /// <inheritdoc/>
@@ -184,8 +235,8 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
             return;
         }
 
-        // Кого машина занята у, читается до запроса: ответ на него уже переписывает основного.
-        var lent = (Primary, row.Name, row is FleetConfigItemViewModel card ? card.Role : TunnelRoles.Default);
+        // Где сервер стоял, читается до запроса: ответ на него уже переставляет цепочку.
+        var lent = (row.Name, row is FleetConfigItemViewModel card ? card.Slot : TunnelRoles.Lead);
         var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetPrimary, [row.Name]));
         if (!ack.Ok)
         {
@@ -202,22 +253,15 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     internal async Task ReturnPrimaryAsync()
     {
         var lent = _lent;
-        _lent = (string.Empty, string.Empty, string.Empty);
+        _lent = (string.Empty, TunnelRoles.Aside);
         if (lent.Name.Length == 0)
         {
             return;
         }
 
-        // Прежний основной забирает машину сам и снимает основного с занятого; без него роль возвращают ему.
-        var back = lent.Primary.Length > 0
-            ? new IpcCommand(FleetOps.SetPrimary, [lent.Primary])
-            : new IpcCommand(FleetOps.SetRole, [lent.Name, lent.Role]);
-        var ack = await _link.SendCommandAsync(back);
-        if (ack.Ok && lent.Primary.Length > 0 && !string.Equals(lent.Role, TunnelRoles.Default, StringComparison.Ordinal))
-        {
-            ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetRole, [lent.Name, lent.Role]));
-        }
-
+        // Занятый встаёт на своё место, и цепочка за ним смыкается как была.
+        var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.SetSlot,
+            [lent.Name, lent.Slot.ToString(CultureInfo.InvariantCulture)]));
         if (!ack.Ok)
         {
             ShowNotice(FleetNotice.Of(ack));

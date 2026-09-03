@@ -76,7 +76,9 @@ internal sealed partial class FleetRoutingRuleItemViewModel : RoutingRuleItemVie
             return;
         }
 
-        _ = _editor.AddressAsync(Token, Route?.Word ?? RuleTarget.Auto, Fallback?.Word ?? RuleTarget.Auto);
+        _editor.Hold(Token, new RuleRoute(
+            RuleTarget.Parse(Route?.Word ?? RuleTarget.Auto),
+            RuleTarget.Parse(Fallback?.Word ?? RuleTarget.Auto)));
     }
 
     // Строка списка, которой отвечает хранимое слово; сервер, которого больше нет, читается как «авто».

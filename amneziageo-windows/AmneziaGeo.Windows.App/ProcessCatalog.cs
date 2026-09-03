@@ -30,6 +30,11 @@ internal static class ProcessCatalog
                 servicePids.Add(pid);
             }
 
+            if (AmneziaGeo.Ipc.OwnAppRule.Names("app:svc=" + name))
+            {
+                continue;
+            }
+
             var host = pid != 0 ? QueryImagePath(pid) ?? string.Empty : string.Empty;
             entries.Add(new Entry("service", string.IsNullOrWhiteSpace(display) ? name : display, name, host));
         }
@@ -50,6 +55,12 @@ internal static class ProcessCatalog
                 if (path is null || !seenPaths.Add(path))
                 {
                     continue; // unreadable (System/Registry/Secure System) or already listed
+                }
+
+                // This application is not offered: a rule on it tunnels the agent's own traffic.
+                if (AmneziaGeo.Ipc.OwnAppRule.Names("app:path=" + path))
+                {
+                    continue;
                 }
 
                 entries.Add(new Entry("app", DescribeApp(path, process.ProcessName), path, string.Empty));

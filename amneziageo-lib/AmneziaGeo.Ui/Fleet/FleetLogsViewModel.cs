@@ -30,8 +30,9 @@ internal sealed class FleetLogsViewModel : LogsViewModel
         }
 
         home.RolesLocked = true;
-        // Машину занимает только «Авто»: он идёт по правилам, а по ним неадресованное везёт основной.
-        if (ProbePath == ProbePaths.Auto)
+        // Машину занимает всякий прогон через туннель: и «Авто» по правилам, и принудительный уедут
+        // носителем, а отчёт назовёт выбранный сервер. Мимо туннеля машина не нужна.
+        if (ProbePath != ProbePaths.Bypass)
         {
             await home.TakePrimaryAsync();
         }

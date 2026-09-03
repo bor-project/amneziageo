@@ -56,7 +56,7 @@ internal static class RuleToken
         _ when Has(token, "geoip:") => "Main_BadgeGeoIp",
         _ when Has(token, "cidr:") => "Main_BadgeCidr",
         _ when Has(token, "app:pkg=") => "Main_BadgePackage",
-        _ when Has(token, "app:path=") => "Main_BadgePath",
+        _ when Has(token, "app:path=") => "Main_BadgeFile",
         _ when Has(token, "app:dir=") => "Main_BadgeFolder",
         _ when Has(token, "app:svc=") => "Main_BadgeService",
         _ => "Main_BadgeDomain",
@@ -64,8 +64,6 @@ internal static class RuleToken
 
     private static string KindKey(string token) => token switch
     {
-        _ when Has(token, "app:path=") => "Main_KindFile",
-        _ when Has(token, "app:dir=") => "Main_KindFolder",
         _ when Has(token, "app:") => "Main_KindApp",
         _ => "Main_KindAddress",
     };

@@ -71,25 +71,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     [ObservableProperty]
     private bool _isLoading;
 
-    // Per-app tunneling add-row. App entries are stored as app: rule tokens.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAppPickerActive))]
-    [NotifyPropertyChangedFor(nameof(AppWatermark))]
-    private string _appMode = "running";
-
-    [ObservableProperty]
-    private string _appInput = string.Empty;
-
-    [ObservableProperty]
-    private AppCandidate? _appSelected;
-
-    // Add-entry method segment: address, app, file or folder.
+    // Add-entry method segment: address or application.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAddressMethod))]
     [NotifyPropertyChangedFor(nameof(IsAppMethod))]
-    [NotifyPropertyChangedFor(nameof(IsFileMethod))]
-    [NotifyPropertyChangedFor(nameof(IsDirMethod))]
-    [NotifyPropertyChangedFor(nameof(IsPathMethod))]
+    [NotifyPropertyChangedFor(nameof(ShowRuleInput))]
     [NotifyPropertyChangedFor(nameof(RuleWatermark))]
     private string _addMethod = "address";
 
@@ -596,40 +582,19 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private IReadOnlyList<string> _geoSuggestions = [];
 
     /// <summary>
-    /// App/service matches for the per-app add-row autocomplete (running mode), fetched from the agent.
-    /// </summary>
-    [ObservableProperty]
-    private IReadOnlyList<AppCandidate> _appSuggestions = [];
-
-    /// <summary>
-    /// True when the add-row is in a list-pick mode (running or installed).
-    /// </summary>
-    public bool IsAppPickerActive => AppMode is "running" or "installed";
-
-    /// <summary>
     /// True when the add-entry segment targets address entries (geo / domain / cidr).
     /// </summary>
     public bool IsAddressMethod => AddMethod == "address";
 
     /// <summary>
-    /// True when the add-entry segment targets per-application entries (experimental).
+    /// True when the add-entry segment targets per-application entries.
     /// </summary>
     public bool IsAppMethod => AddMethod == "app";
 
     /// <summary>
-    /// True when the add-entry segment targets a program file.
+    /// True while the typed add row stands: Android picks its packages through the system sheet instead.
     /// </summary>
-    public bool IsFileMethod => AddMethod == "file";
-
-    /// <summary>
-    /// True when the add-entry segment targets a folder of programs.
-    /// </summary>
-    public bool IsDirMethod => AddMethod == "dir";
-
-    /// <summary>
-    /// True while the add row takes a path typed or picked by the user.
-    /// </summary>
-    public bool IsPathMethod => IsFileMethod || IsDirMethod;
+    public bool ShowRuleInput => !IsAppMethod || !IsAppSourceAndroid;
 
     /// <summary>
     /// True when the per-application entry method is offered (Windows path matching or the Android package picker).
@@ -637,12 +602,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsAndroid();
 
     /// <summary>
-    /// True when file and folder entries are offered: Android runs package rules only.
-    /// </summary>
-    public bool IsPathMethodAvailable => OperatingSystem.IsWindows();
-
-    /// <summary>
-    /// True while the app, file and folder methods are pickable: only the Proxy bucket runs them.
+    /// True while the application method is pickable: only the Proxy bucket runs it.
     /// </summary>
     public bool CanAddApps => IsProxyRole;
 
@@ -652,27 +612,14 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public string AppTabText => IsAppMethodAvailable ? Loc.Instance.Get("Main_AddByAppTab") : string.Empty;
 
     /// <summary>
-    /// File tab caption, empty where the platform runs no path rules.
-    /// </summary>
-    public string FileTabText => IsPathMethodAvailable ? Loc.Instance.Get("Main_AddByFileTab") : string.Empty;
-
-    /// <summary>
-    /// Folder tab caption, empty where the platform runs no path rules.
-    /// </summary>
-    public string FolderTabText => IsPathMethodAvailable ? Loc.Instance.Get("Main_AddByFolderTab") : string.Empty;
-
-    /// <summary>
     /// Watermark of the add row, reflecting the selected method.
     /// </summary>
-    public string RuleWatermark => AddMethod switch
-    {
-        "file" => Loc.Instance.Get("Main_AddFileWatermark"),
-        "dir" => Loc.Instance.Get("Main_AddFolderWatermark"),
-        _ => Loc.Instance.Get("Main_AddEntryWatermark"),
-    };
+    public string RuleWatermark => IsAppMethod
+        ? Loc.Instance.Get("Main_AddAppWatermark")
+        : Loc.Instance.Get("Main_AddEntryWatermark");
 
     /// <summary>
-    /// True when the app source is the Windows running / installed / path picker.
+    /// True when applications are named by path: the file and folder pickers stand there.
     /// </summary>
     public bool IsAppSourceWindows => OperatingSystem.IsWindows();
 
@@ -736,11 +683,18 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             {
                 MatchedSuggestions.Add(new RoutingSuggestionViewModel(token));
             }
-
-            foreach (var item in MatchedSuggestions.Take(InlineSuggestionLimit))
+        }
+        else if (query.Length > 0 && IsAppMethod)
+        {
+            foreach (var match in MatchApps(query))
             {
-                TopSuggestions.Add(item);
+                MatchedSuggestions.Add(match);
             }
+        }
+
+        foreach (var item in MatchedSuggestions.Take(InlineSuggestionLimit))
+        {
+            TopSuggestions.Add(item);
         }
 
         OnPropertyChanged(nameof(HasMatchedSuggestions));
@@ -748,29 +702,50 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         OnPropertyChanged(nameof(ShowDropdownSuggestions));
     }
 
+    // Running and installed applications answer one query: each source keeps its own group, a name met twice
+    // stands once, what the list already holds drops out, and the head of the result is offered.
+    private IReadOnlyList<RoutingSuggestionViewModel> MatchApps(string query)
+    {
+        var held = new HashSet<string>(Rules.Select(AppPathToken.NormalizeAppRule), StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var matches = new List<RoutingSuggestionViewModel>();
+        foreach (var group in _appGroups)
+        {
+            foreach (var candidate in group.Where(c => Names(c, query)))
+            {
+                var token = AppPathToken.NormalizeAppRule(candidate.Token);
+                if (held.Contains(token) || !seen.Add(token))
+                {
+                    continue;
+                }
+
+                matches.Add(new RoutingSuggestionViewModel(token, candidate.Display));
+                if (matches.Count == SuggestionLimit)
+                {
+                    return matches;
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    // Matches the name and the path alike: both get typed.
+    private static bool Names(AppCandidate candidate, string query) =>
+        candidate.Display.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || candidate.Token.Contains(query, StringComparison.OrdinalIgnoreCase);
+
     partial void OnRuleInputChanged(string value) => UpdateMatchedSuggestions();
 
     partial void OnGeoSuggestionsChanged(IReadOnlyList<string> value) => UpdateMatchedSuggestions();
-
-    /// <summary>
-    /// Watermark for the app add-row input, reflects the selected source mode.
-    /// </summary>
-    public string AppWatermark => AppMode switch
-    {
-        "installed" => Loc.Instance.Get("RoutingEditor_AppWatermarkInstalled"),
-        _ => Loc.Instance.Get("RoutingEditor_AppWatermarkRunning"),
-    };
 
     /// <summary>
     /// Re-raises the localized computed labels after a language change.
     /// </summary>
     public void RefreshLocalizedLabels()
     {
-        OnPropertyChanged(nameof(AppWatermark));
         OnPropertyChanged(nameof(RuleWatermark));
         OnPropertyChanged(nameof(AppTabText));
-        OnPropertyChanged(nameof(FileTabText));
-        OnPropertyChanged(nameof(FolderTabText));
         OnPropertyChanged(nameof(RoleHint));
         RefreshCounts();
         UpdateMatchedSuggestions();
@@ -779,18 +754,12 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         RebuildRuleItems();
 
         // App suggestions bake a localized kind prefix at load; rebuild them for the new language.
-        if (AppSuggestions.Count > 0)
+        if (_appGroups.Count > 0)
         {
-            _ = ReloadAppSuggestionsAsync();
+            _appGroups.Clear();
+            _ = LoadAppsAsync();
         }
     }
-
-    private Task ReloadAppSuggestionsAsync() => AppMode switch
-    {
-        "running" => LoadRunningAsync(),
-        "installed" => LoadInstalledSuggestionsAsync(),
-        _ => Task.CompletedTask,
-    };
 
     /// <summary>
     /// Fetches geo category suggestions and the current rules for an existing list.
@@ -960,6 +929,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         ValidationMessage = string.Empty;
 
         var dirty = IsNew
+            || HasPendingEdits
             || !string.Equals(Name, _baseName, StringComparison.Ordinal)
             || !ProxyRules.SequenceEqual(_baseProxy, StringComparer.Ordinal)
             || !DirectRules.SequenceEqual(_baseDirect, StringComparer.Ordinal)
@@ -973,6 +943,16 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         RefreshTransfer();
         _ = RefreshRouteBudgetAsync();
     }
+
+    /// <summary>
+    /// Edits an heir holds beyond the name and the buckets.
+    /// </summary>
+    protected virtual bool HasPendingEdits => false;
+
+    /// <summary>
+    /// Re-reads the edits against the baseline.
+    /// </summary>
+    protected void RefreshDirty() => MarkDirty();
 
     /// <inheritdoc />
     public bool CanCommit()
@@ -993,7 +973,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <inheritdoc />
-    public void CaptureBaseline()
+    public virtual void CaptureBaseline()
     {
         _baseName = Name;
         _baseProxy = ProxyRules.ToList();
@@ -1003,7 +983,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <inheritdoc />
-    public void Revert()
+    public virtual void Revert()
     {
         _seeding = true;
         try
@@ -1039,7 +1019,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// Persists the list through the agent (#143 header Save). On a new list's first save it adopts the real
     /// id, clears IsNew, and notifies the host so its per-routing settings editor is built. Returns success.
     /// </summary>
-    public async Task<bool> CommitAsync()
+    public virtual async Task<bool> CommitAsync()
     {
         var wasNew = _id == 0;
         if (!await SaveAsync())
@@ -1131,14 +1111,15 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         AddMethod = method;
     }
 
-    // The running-app census costs an agent round-trip over every process and service, so it is taken when the
-    // per-app picker is first opened rather than on every list open. Android picks apps through its own sheet.
+    // Both censuses cost more than a list open is worth, so they are taken when the application tab is first
+    // opened. Android picks apps through its own sheet.
     partial void OnAddMethodChanged(string value)
     {
+        RuleInput = string.Empty;
         UpdateMatchedSuggestions();
-        if (value == "app" && IsAppSourceWindows && AppMode == "running" && AppSuggestions.Count == 0)
+        if (value == "app" && IsAppSourceWindows && _appGroups.Count == 0)
         {
-            _ = LoadRunningAsync();
+            _ = LoadAppsAsync();
         }
     }
 
@@ -1192,9 +1173,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             return;
         }
 
-        if (IsPathMethod)
+        if (IsAppMethod)
         {
-            AddAppToken((IsFileMethod ? "app:path=" : "app:dir=") + text);
+            AddAppToken(AppTokenOf(text));
             RuleInput = string.Empty;
             return;
         }
@@ -1208,12 +1189,31 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         RuleInput = string.Empty;
     }
 
+    // What a typed or picked application entry names: a folder if it stands on disk, a program file otherwise.
+    private static string AppTokenOf(string text)
+    {
+        if (text.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+        {
+            return text;
+        }
+
+        var path = Environment.ExpandEnvironmentVariables(text);
+        return System.IO.Directory.Exists(path) ? "app:dir=" + text : "app:path=" + text;
+    }
+
     /// <summary>
     /// Adds a suggestion picked from the inline match list to the active bucket and clears the input.
     /// </summary>
     [RelayCommand]
     private void PickSuggestion(string token)
     {
+        if (token.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+        {
+            AddAppToken(token);
+            RuleInput = string.Empty;
+            return;
+        }
+
         var rule = Normalize(token);
         if (rule.Length > 0 && !Rules.Contains(rule))
         {
@@ -1301,41 +1301,28 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         FireAutoSave();
     }
 
-    // Per-app tunneling: running autocomplete + token-add path.
+    // Per-app tunneling: the pools the input searches + the token-add path.
 
-    /// <summary>
-    /// Switches the add-row to running mode and reloads the running app/service matches.
-    /// </summary>
-    public async Task EnterRunningModeAsync()
+    // What the input matches against: running applications and services first, installed ones after.
+    private readonly List<IReadOnlyList<AppCandidate>> _appGroups = [];
+
+    // Both censuses cost a round-trip, so they are taken when the application tab is first opened.
+    private async Task LoadAppsAsync()
     {
-        AppMode = "running";
-        await LoadRunningAsync();
+        var running = await LoadRunningAsync();
+        var installed = await Task.Run(InstalledApps.List);
+        _appGroups.Clear();
+        _appGroups.Add(running);
+        _appGroups.Add(installed);
+        UpdateMatchedSuggestions();
     }
 
-    /// <summary>
-    /// Switches the add-row to installed mode and loads installed apps from the Uninstall registry.
-    /// </summary>
-    public async Task EnterInstalledModeAsync()
-    {
-        AppMode = "installed";
-        AppInput = string.Empty;
-        AppSelected = null;
-        await LoadInstalledSuggestionsAsync();
-    }
-
-    private async Task LoadInstalledSuggestionsAsync()
-    {
-        // Run registry enumeration off the UI thread.
-        AppSuggestions = await Task.Run(InstalledApps.List);
-    }
-
-    private async Task LoadRunningAsync()
+    private async Task<IReadOnlyList<AppCandidate>> LoadRunningAsync()
     {
         var response = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListProcesses, []));
         if (!response.Ok)
         {
-            AppSuggestions = [];
-            return;
+            return [];
         }
 
         var candidates = new List<AppCandidate>();
@@ -1371,25 +1358,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             candidates.Add(new AppCandidate(display, token));
         }
 
-        AppSuggestions = candidates;
-    }
-
-    /// <summary>
-    /// Adds the app/service picked in the running-mode autocomplete as an app: rule.
-    /// </summary>
-    [RelayCommand]
-    private void AddApp()
-    {
-        var token = AppSelected?.Token;
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            StatusMessage = Loc.Instance.Get("RoutingEditor_SelectAppOrService");
-            return;
-        }
-
-        AddAppToken(token);
-        AppInput = string.Empty;
-        AppSelected = null;
+        return candidates;
     }
 
     /// <summary>
@@ -1464,6 +1433,15 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private static bool IsAppMatcherSafe(string token, out string reason)
     {
         reason = string.Empty;
+
+        // A rule on this application sends the agent's own downloads, the DNS proxy upstream and the websocket
+        // carrier into the tunnel they run.
+        if (OwnAppRule.Names(token))
+        {
+            reason = Loc.Instance.Get("RoutingEditor_OwnAppRule");
+            return false;
+        }
+
         if (token.StartsWith("app:svc=", StringComparison.OrdinalIgnoreCase))
         {
             return true; // a single named service

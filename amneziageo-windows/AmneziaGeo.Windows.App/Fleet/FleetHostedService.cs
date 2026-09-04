@@ -175,16 +175,22 @@ internal sealed class FleetHostedService(
         }
 
         var wanted = fleet.Wanted;
-        var moved = false;
 
         // Taken down from the back of the chain, so the one carrying the machine is the last to go and nobody
-        // is elected in its place halfway through.
+        // is elected in its place halfway through. A set leaving whole elects nobody, so it goes down at once.
         var leaving = Ordered([.. _members.Keys.Where(running => !wanted.Contains(running))]);
         leaving.Reverse();
-        foreach (var name in leaving)
+        var moved = leaving.Count > 0;
+        if (wanted.Count == 0)
         {
-            await StopAsync(name);
-            moved = true;
+            await Task.WhenAll(leaving.Select(StopAsync).ToArray());
+        }
+        else
+        {
+            foreach (var name in leaving)
+            {
+                await StopAsync(name);
+            }
         }
 
         // Raised by place in the chain, one at a time: the carrier arms its leak protection and takes the name
@@ -382,7 +388,6 @@ internal sealed class FleetHostedService(
             return;
         }
 
-        live.Drop(name);
         logger.LogInformation("{Name}: disconnecting; {Count} tunnel(s) left up", name, _members.Count);
         member.Control.SetRunning(false);
         await member.Stop.CancelAsync();
@@ -394,6 +399,8 @@ internal sealed class FleetHostedService(
         {
         }
 
+        // Taken off the list once it is down: while it tears itself down its card shows the disconnect.
+        live.Drop(name);
         member.Stop.Dispose();
     }
 

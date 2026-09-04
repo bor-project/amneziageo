@@ -33,6 +33,11 @@ public sealed record VpnRequest(
 public sealed record ProbeRequest(string Target, string Path, string Taken, string UploadUrl);
 
 /// <summary>
+/// Серверы карточек, которые тоннельный процесс меряет вместо головы: только он умеет увести сокет мимо туннеля.
+/// </summary>
+public sealed record CardsRequest(IReadOnlyList<SweepServer> Servers, bool CarriesDefault);
+
+/// <summary>
 /// Carries the routing rules and the tunnel stage between the head and the tunnel, which run in separate
 /// processes: the head can then be unloaded whole while the tunnel keeps running.
 /// </summary>
@@ -124,6 +129,11 @@ public static class VpnBridge
     public const string ActionProbe = "org.amneziageo.android.VPN_PROBE";
 
     /// <summary>
+    /// Broadcast that makes a running tunnel measure the servers of the catalogue cards.
+    /// </summary>
+    public const string ActionCards = "org.amneziageo.android.VPN_CARDS";
+
+    /// <summary>
     /// Broadcast that reapplies the idle window.
     /// </summary>
     public const string ActionRouteTtl = "org.amneziageo.android.VPN_ROUTE_TTL";
@@ -136,6 +146,8 @@ public static class VpnBridge
     private const string ProbeFile = "probe.json";
     private const string RouteTtlFile = "route-ttl.txt";
     private const string ProbeResultFile = "probe-result.txt";
+    private const string CardsFile = "cards.json";
+    private const string CardsResultFile = "cards-result.txt";
     private const string ProcessSuffix = ":vpn";
 
     /// <summary>
@@ -606,6 +618,113 @@ public static class VpnBridge
     /// </summary>
     public static void RequestProbe(Context context) => context.SendBroadcast(Broadcast(context, ActionProbe));
 
+    /// <summary>
+    /// Оставляет серверы карточек тоннельному процессу.
+    /// </summary>
+    public static void WriteCards(CardsRequest request)
+    {
+        try
+        {
+            using var stream = File.Create(CardsPath());
+            JsonSerializer.Serialize(stream, request);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the card servers failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Читает серверы карточек, оставленные головой; ничего, когда их нет.
+    /// </summary>
+    public static CardsRequest? ReadCards()
+    {
+        try
+        {
+            var path = CardsPath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            using var stream = File.OpenRead(path);
+            var request = JsonSerializer.Deserialize<CardsRequest>(stream);
+            return request is { Servers.Count: > 0 } ? request : null;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the card servers failed: " + ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Снимает заказ, чтобы поднявшийся позже туннель не мерил его заново.
+    /// </summary>
+    public static void ClearCards()
+    {
+        try
+        {
+            File.Delete(CardsPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the card servers failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Пишет измеренное по карточкам для головы.
+    /// </summary>
+    public static void WriteCardsResult(string payload)
+    {
+        try
+        {
+            File.WriteAllText(CardsResultPath(), payload);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the card result failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Читает измеренное по карточкам; пустая строка, пока замер идёт.
+    /// </summary>
+    public static string ReadCardsResult()
+    {
+        try
+        {
+            var path = CardsResultPath();
+            return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the card result failed: " + ex);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Снимает ответ, чтобы следующий замер не получил прошлый.
+    /// </summary>
+    public static void ClearCardsResult()
+    {
+        try
+        {
+            File.Delete(CardsResultPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the card result failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Просит поднятый туннель померить серверы карточек, оставленные головой.
+    /// </summary>
+    public static void RequestCards(Context context) => context.SendBroadcast(Broadcast(context, ActionCards));
+
     private static Intent Broadcast(Context context, string action)
     {
         var intent = new Intent(action);
@@ -636,6 +755,12 @@ public static class VpnBridge
 
     private static string ProbeResultPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProbeResultFile);
+
+    private static string CardsPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", CardsFile);
+
+    private static string CardsResultPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", CardsResultFile);
 
     /// <summary>
     /// Receiver handing every broadcast to a delegate.

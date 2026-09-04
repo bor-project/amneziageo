@@ -84,6 +84,31 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     }
 
     /// <summary>
+    /// Меряет серверы для карточек каталога: тот же залп, что у свипа, но мимо туннеля, разом и без записи в
+    /// журнал проверок. Первой строкой идёт путь замера: ушёл ли он мимо туннеля и держит ли туннель дефолт.
+    /// </summary>
+    public async Task<IpcAck> ProbeServersAsync(IStateStore store, CancellationToken ct)
+    {
+        var servers = new List<SweepServer>();
+        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
+            var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            var carrier = Carrier(text, transport);
+            servers.Add(new SweepServer(
+                name,
+                await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
+                carrier.Port,
+                Connected(name)));
+        }
+
+        var live = servers.FirstOrDefault(server => server.Live);
+        var carriesDefault = live is not null && !(await ActiveListAsync(store, live.Name, ct).ConfigureAwait(false)).Split;
+        var payload = await CardProbe.RunAsync(servers, carriesDefault, PhysicalPath.Bypass(), ct).ConfigureAwait(false);
+        return new IpcAck(true, payload);
+    }
+
+    /// <summary>
     /// Says why one address, name, application or category goes where it goes.
     /// </summary>
     public async Task<IpcAck> TargetAsync(IStateStore store, string config, string target, CancellationToken ct)

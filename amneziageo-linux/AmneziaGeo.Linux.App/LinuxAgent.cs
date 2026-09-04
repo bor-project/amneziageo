@@ -814,6 +814,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpCheckServers:
                 return await CheckServersAsync(ct).ConfigureAwait(false);
 
+            case IpcContract.OpProbeServers:
+                return await ProbeServersAsync(ct).ConfigureAwait(false);
+
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, ct).ConfigureAwait(false);
 
@@ -2152,6 +2155,28 @@ internal sealed class LinuxAgent : IDisposable
 
         Record(report.Render(), report.VerdictKey != CheckVerdicts.SweepBest);
         return new IpcAck(true, report.ToPayload());
+    }
+
+    // Серверы для карточек каталога: тот же залп, что у свипа, но мимо туннеля и без записи в журнал проверок.
+    private async Task<IpcAck> ProbeServersAsync(CancellationToken ct)
+    {
+        var servers = new List<SweepServer>();
+        foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
+            var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            var carrier = Carrier(text, transport);
+            servers.Add(new SweepServer(
+                name,
+                await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
+                carrier.Port,
+                _tunnel.Running && string.Equals(name, _selectedTarget, StringComparison.Ordinal)));
+        }
+
+        var carriesDefault = _tunnel.Running && !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase);
+        var bypass = PhysicalPath.Bypass(await _tunnel.PhysicalDeviceAsync(ct).ConfigureAwait(false));
+        var payload = await CardProbe.RunAsync(servers, carriesDefault, bypass, ct).ConfigureAwait(false);
+        return new IpcAck(true, payload);
     }
 
     // Why one destination goes where it goes, under the rules in force.

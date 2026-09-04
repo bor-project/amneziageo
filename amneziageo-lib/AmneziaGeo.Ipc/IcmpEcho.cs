@@ -30,8 +30,71 @@ public static class IcmpEcho
     public static Task<int> RoundTripAsync(IPAddress address, int timeoutMs, int payloadBytes, bool dontFragment, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         return OperatingSystem.IsWindows()
-            ? SystemAsync(address, timeoutMs, payloadBytes, dontFragment)
+            ? bypass is null
+                ? SystemAsync(address, timeoutMs, payloadBytes, dontFragment)
+                : RawAsync(address, timeoutMs, payloadBytes, dontFragment, bypass, ct)
             : SocketAsync(address, timeoutMs, payloadBytes, dontFragment, bypass, ct);
+    }
+
+    // Windows: эхо по сырому сокету, потому что системный помощник интерфейс выбрать не умеет. Ответ приходит с
+    // IP-заголовком и от кого угодно, поэтому сверяется метка запроса.
+    private static async Task<int> RawAsync(IPAddress address, int timeoutMs, int payloadBytes, bool dontFragment, Func<Socket, bool> bypass, CancellationToken ct)
+    {
+        var v6 = address.AddressFamily == AddressFamily.InterNetworkV6;
+        var socket = default(Socket);
+        try
+        {
+            socket = new Socket(address.AddressFamily, SocketType.Raw, v6 ? ProtocolType.IcmpV6 : ProtocolType.Icmp);
+            bypass(socket);
+            if (dontFragment && !v6)
+            {
+                socket.DontFragment = true;
+            }
+
+            socket.Connect(new IPEndPoint(address, 0));
+        }
+        catch (Exception)
+        {
+            socket?.Dispose();
+            return -1;
+        }
+
+        using (socket)
+        using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            deadline.CancelAfter(timeoutMs);
+            var request = Request(v6, payloadBytes);
+            var reply = new byte[request.Length + 128];
+            var clock = Stopwatch.StartNew();
+            try
+            {
+                await socket.SendAsync(request, SocketFlags.None, deadline.Token).ConfigureAwait(false);
+                while (true)
+                {
+                    var received = await socket.ReceiveAsync(reply, SocketFlags.None, deadline.Token).ConfigureAwait(false);
+                    if (Mine(reply.AsSpan(0, received), v6))
+                    {
+                        return (int)clock.ElapsedMilliseconds;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+    }
+
+    // Свой ли ответ: у IPv4 перед эхом стоит IP-заголовок, дальше тип ответа и метка запроса.
+    private static bool Mine(ReadOnlySpan<byte> reply, bool v6)
+    {
+        var icmp = v6 || reply.Length == 0 ? 0 : (reply[0] & 0x0F) * 4;
+        if (icmp + 6 > reply.Length)
+        {
+            return false;
+        }
+
+        return reply[icmp] == (v6 ? 129 : 0) && reply[icmp + 4] == 0x41 && reply[icmp + 5] == 0x47;
     }
 
     private static async Task<int> SystemAsync(IPAddress address, int timeoutMs, int payloadBytes, bool dontFragment)

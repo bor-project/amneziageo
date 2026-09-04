@@ -150,6 +150,7 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _proxySettings;
     private VpnBridge.Listener? _routeTtl;
     private VpnBridge.Listener? _probes;
+    private VpnBridge.Listener? _cards;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
     private VpnBridge.Listener? _queries;
@@ -181,6 +182,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _routeTtl, VpnBridge.ActionRouteTtl);
         _probes = new VpnBridge.Listener { Handler = _ => RunProbe() };
         VpnBridge.Listen(this, _probes, VpnBridge.ActionProbe);
+        _cards = new VpnBridge.Listener { Handler = _ => RunCards() };
+        VpnBridge.Listen(this, _cards, VpnBridge.ActionCards);
         WatchUnderlay();
     }
 
@@ -275,6 +278,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_probes);
             _probes = null;
+        }
+
+        if (_cards is not null)
+        {
+            UnregisterReceiver(_cards);
+            _cards = null;
         }
 
         DropUnderlayWatch();
@@ -581,6 +590,34 @@ public sealed class GeoVpnService : VpnService
             global::Android.Util.Log.Error("GeoVpnService", "bring-up failed: " + ex);
             Teardown(VpnStage.Failed, ex.Message, ReasonFor(ex));
         }
+    }
+
+    // Меряет серверы карточек, оставленные головой. Сокет от туннеля освобождает только этот процесс, поэтому
+    // замер отдают сюда, а не пробуют там.
+    private void RunCards()
+    {
+        var request = VpnBridge.ReadCards();
+        if (request is null)
+        {
+            return;
+        }
+
+        VpnBridge.ClearCards();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var payload = await CardProbe
+                    .RunAsync(request.Servers, request.CarriesDefault, socket => Protect(socket.Handle.ToInt32()), CancellationToken.None)
+                    .ConfigureAwait(false);
+                VpnBridge.WriteCardsResult(payload);
+            }
+            catch (Exception ex)
+            {
+                global::Android.Util.Log.Warn("GeoVpnService", "the card probe failed: " + ex);
+                VpnBridge.WriteCardsResult(CardProbe.Path(bypassed: false, request.CarriesDefault));
+            }
+        });
     }
 
     // Measures the destination the head left here. Only this process can excuse a socket from the tunnel, so a

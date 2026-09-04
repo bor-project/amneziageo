@@ -1028,12 +1028,18 @@ internal partial class ConnectionViewModel : ViewModelBase
             row.Probing = true;
         }
 
-        // Поднятый туннель уводит эхо в себя: чужой сервер отвечает только тому, кто вышел мимо туннеля,
-        // и молчание в его сторону ничего не говорит о нём самом.
-        var shielded = rows.Any(row => row.ShowStatusFrame);
         ProbeRunning = true;
         try
         {
+            // Замер живёт в агенте: там он уходит физическим адаптером, и поднятый туннель его не глотает.
+            if (await AgentProbeAsync(rows, cts.Token))
+            {
+                return;
+            }
+
+            // Агент замера не знает. Меряем из окна, а поднятый туннель уводит эхо в себя: чужой сервер
+            // отвечает только тому, кто вышел мимо туннеля, и молчание в его сторону о нём ничего не говорит.
+            var shielded = rows.Any(row => row.ShowStatusFrame);
             await Task.WhenAll(rows.Select(row => shielded && !row.ShowStatusFrame
                 ? ShieldRowAsync(row)
                 : ProbeRowAsync(row, cts.Token)));
@@ -1045,6 +1051,102 @@ internal partial class ConnectionViewModel : ViewModelBase
             {
                 ProbeRunning = false;
             }
+        }
+    }
+
+    // Просит замер у агента и разносит ответ по строкам; false, когда агент этого не умеет.
+    private async Task<bool> AgentProbeAsync(IReadOnlyList<ConfigItemViewModel> rows, CancellationToken ct)
+    {
+        var ack = await SendProbeAsync();
+        if (ack is not { Ok: true } || ack.Message.Length == 0)
+        {
+            return false;
+        }
+
+        var measured = new Dictionary<string, SweepRow>(StringComparer.Ordinal);
+        var bypassed = false;
+        var carriesDefault = false;
+        foreach (var line in ack.Message.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            if (SweepRow.TryParse(line) is { } row)
+            {
+                measured[row.Config] = row;
+                continue;
+            }
+
+            var fields = line.Split('\t');
+            if (fields.Length > 0 && fields[0] == "path")
+            {
+                bypassed = fields.Contains("bypass=1", StringComparer.Ordinal);
+                carriesDefault = fields.Contains("default=1", StringComparer.Ordinal);
+            }
+        }
+
+        if (ct.IsCancellationRequested)
+        {
+            return true;
+        }
+
+        // Замер ушёл в туннель: о чужих серверах он ничего не говорит, и они остаются без числа.
+        var shielded = carriesDefault && !bypassed;
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var row in rows)
+            {
+                Settle(row, measured.GetValueOrDefault(row.Name), shielded);
+            }
+        });
+
+        return true;
+    }
+
+    // Кладёт измеренное в строку: у нечего сказать состояние прежнее, у молчания под туннелем - «не видно».
+    private static void Settle(ConfigItemViewModel row, SweepRow? measured, bool shielded)
+    {
+        row.Probing = false;
+        if (measured is null)
+        {
+            return;
+        }
+
+        if (shielded && !row.ShowStatusFrame)
+        {
+            row.ProbeState = ProbeOutcome.Shielded;
+            row.ProbeMilliseconds = 0;
+            row.ProbeLossPercent = 0;
+            return;
+        }
+
+        var outcome = measured.State switch
+        {
+            LegState.Ok or LegState.Weak => ProbeOutcome.Alive,
+            LegState.Skipped => ProbeOutcome.NoAddress,
+            _ => ProbeOutcome.NoAnswer,
+        };
+
+        // Молчание сервера, на котором стоит туннель, прошлый замер не отменяет: эхо ушло в него самого.
+        if (outcome != ProbeOutcome.Alive && (row.ShowStatusFrame || row.HandshakeAgeSeconds >= 0))
+        {
+            return;
+        }
+
+        row.ProbeState = outcome;
+        row.ProbeMilliseconds = outcome == ProbeOutcome.Alive ? Math.Max(measured.RttMs, 0) : 0;
+        row.ProbeLossPercent = outcome == ProbeOutcome.Alive && LinkHealth.LossKnown(measured.LossPercent)
+            ? measured.LossPercent
+            : 0;
+    }
+
+    // Команда замера; оборванная труба - не повод ронять экран, ответа просто нет.
+    private async Task<IpcAck?> SendProbeAsync()
+    {
+        try
+        {
+            return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeServers, []));
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
+            return null;
         }
     }
 

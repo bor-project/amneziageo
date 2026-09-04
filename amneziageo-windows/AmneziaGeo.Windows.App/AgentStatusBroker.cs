@@ -281,6 +281,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpKnownHosts => await KnownHostsAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
+                IpcContract.OpProbeServers => await checks.ProbeServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),

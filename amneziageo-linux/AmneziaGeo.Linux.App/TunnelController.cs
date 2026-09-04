@@ -698,6 +698,14 @@ internal sealed class TunnelController : IDisposable
         };
     }
 
+    /// <summary>
+    /// Устройство, которым машина выходит наружу мимо туннеля; null, когда такого нет.
+    /// </summary>
+    public async Task<string?> PhysicalDeviceAsync(CancellationToken ct)
+    {
+        return (await PhysicalHopAsync(ct).ConfigureAwait(false)).Dev;
+    }
+
     // The hop the machine reaches the internet through, which a bypassed destination is pinned to.
     private async Task<(string? Via, string? Dev)> PhysicalHopAsync(CancellationToken ct)
     {

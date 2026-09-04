@@ -461,6 +461,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, CancellationToken.None).ConfigureAwait(false);
 
+            case IpcContract.OpProbeServers:
+                return await ProbeServersAsync(CancellationToken.None).ConfigureAwait(false);
+
             case IpcContract.OpCheckServers:
                 return await CheckServersAsync(CancellationToken.None).ConfigureAwait(false);
 
@@ -2643,6 +2646,51 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private static IpcAck GetSessions()
     {
         return new IpcAck(true, VpnBridge.ReadSessions(SessionWindowSeconds).ToPayload());
+    }
+
+    // Серверы для карточек каталога. Под поднятым туннелем меряет тоннельный процесс: сокет от туннеля
+    // освобождает только он, здесь замер ушёл бы в сам туннель.
+    private async Task<IpcAck> ProbeServersAsync(CancellationToken ct)
+    {
+        var running = VpnBridge.IsRunning(Application.Context);
+        var servers = new List<SweepServer>();
+        foreach (var name in OrderedNames())
+        {
+            var text = _configs.GetValueOrDefault(name, string.Empty);
+            var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            var carrier = Carrier(text, transport);
+            servers.Add(new SweepServer(
+                name,
+                await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
+                carrier.Port,
+                running && string.Equals(name, _selectedTarget, StringComparison.Ordinal)));
+        }
+
+        // Телефон несёт весь tun: поднятый туннель забирает дефолт у любого замера отсюда.
+        return new IpcAck(true, running
+            ? await HandOverCardsAsync(servers, ct).ConfigureAwait(false)
+            : await CardProbe.RunAsync(servers, carriesDefault: false, bypass: null, ct).ConfigureAwait(false));
+    }
+
+    // Отдаёт замер туннелю и ждёт измеренного; молчащий туннель оставляет карточки без чисел, а не держит окно.
+    private static async Task<string> HandOverCardsAsync(IReadOnlyList<SweepServer> servers, CancellationToken ct)
+    {
+        VpnBridge.ClearCardsResult();
+        VpnBridge.WriteCards(new CardsRequest(servers, true));
+        VpnBridge.RequestCards(Application.Context);
+        for (var waited = 0; waited < ProbeWaitMs; waited += ProbePollMs)
+        {
+            await Task.Delay(ProbePollMs, ct).ConfigureAwait(false);
+            var payload = VpnBridge.ReadCardsResult();
+            if (payload.Length > 0)
+            {
+                VpnBridge.ClearCardsResult();
+                return payload;
+            }
+        }
+
+        VpnBridge.ClearCards();
+        return CardProbe.Path(bypassed: false, carriesDefault: true);
     }
 
     // Every saved server measured by the legs that cost only echoes. A socket cannot be excused from the tunnel

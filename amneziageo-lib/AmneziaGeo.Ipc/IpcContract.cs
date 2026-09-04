@@ -341,6 +341,14 @@ public static class IpcContract
     public const string OpCheckServers = "check-servers";
 
     /// <summary>
+    /// Command to measure every saved server for the catalogue cards: the same echo or connect burst as the
+    /// sweep, sent from the physical adapter so a raised tunnel does not swallow it. No args. The ack message
+    /// holds a "path" row saying whether the run left beside the tunnel, then one tab-separated "srv" row per
+    /// server. Nothing is stored in the check journal: this runs whenever the home screen is shown.
+    /// </summary>
+    public const string OpProbeServers = "probe-servers";
+
+    /// <summary>
     /// Command to check one destination: args are a target token - a domain, an address, "app:pkg=..." /
     /// "app:path=..." or a geo rule ("geosite:telegram"). The ack message holds tab-separated "fact" rows and a
     /// closing "verdict" row saying why that traffic goes where it goes. Stored in the check journal too.

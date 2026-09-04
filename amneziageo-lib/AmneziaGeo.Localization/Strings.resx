@@ -2224,9 +2224,6 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_CardReorder" xml:space="preserve">
     <value>Reorder</value>
   </data>
-  <data name="Main_CardTunnelLabel" xml:space="preserve">
-    <value>Tunnel</value>
-  </data>
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Primary</value>
   </data>

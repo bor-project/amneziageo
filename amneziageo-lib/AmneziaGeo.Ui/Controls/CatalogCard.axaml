@@ -13,7 +13,7 @@
   <Button x:Name="FacePart" Classes="serverrow noclick">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
-        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" Margin="12,10">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
           <!-- Имя и подключение: имя с адресом занимают строку целиком, кнопка жмётся последней. -->
           <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <StackPanel Grid.Column="0" VerticalAlignment="Center">
@@ -46,44 +46,50 @@
             </Button>
           </Grid>
 
-          <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места.
-               Отступы стоят на группах: скрытая скорость не оставляет прогала. Потери ужимаются первыми. -->
-          <Grid Grid.Row="1" Classes="cardinfo" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0"
+          <!-- Отклик, скорость и потери, следом место режима: иконка и значение, «N/A» вместо пустого места.
+               Отступы стоят на группах: скрытая скорость не оставляет прогала. Хвост за краем отсекается. -->
+          <Grid Grid.Row="1" Classes="cardinfo" ColumnDefinitions="*,Auto" Margin="0,8,0,0"
                 VerticalAlignment="Center">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
-              <PathIcon Data="{DynamicResource AgCardTimerGeometry}" Width="13" Height="13"
-                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-              <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
-                         FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                         IsVisible="{Binding !Probing}" />
-              <!-- Идёт замер: точки приподнимаются по очереди на месте отклика. -->
-              <StackPanel Orientation="Horizontal" Spacing="3" Height="13" VerticalAlignment="Center"
-                          IsVisible="{Binding Probing}">
-                <Ellipse Classes="dot d1" Classes.bounce="{Binding Probing}" Fill="{DynamicResource AgMutedBrush}"
-                         VerticalAlignment="Center" />
-                <Ellipse Classes="dot d2" Classes.bounce="{Binding Probing}" Fill="{DynamicResource AgMutedBrush}"
-                         VerticalAlignment="Center" />
-                <Ellipse Classes="dot d3" Classes.bounce="{Binding Probing}" Fill="{DynamicResource AgMutedBrush}"
-                         VerticalAlignment="Center" />
+            <StackPanel Grid.Column="0" Orientation="Horizontal" ClipToBounds="True" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
+                <PathIcon Data="{DynamicResource AgCardTimerGeometry}" Width="13" Height="13"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
+                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           IsVisible="{Binding !Probing}" />
+                <!-- Идёт замер: точки приподнимаются по очереди на месте отклика. -->
+                <StackPanel Orientation="Horizontal" Spacing="3" Height="13" VerticalAlignment="Center"
+                            IsVisible="{Binding Probing}">
+                  <Ellipse Classes="dot d1" Classes.bounce="{Binding Probing}" Fill="{DynamicResource AgMutedBrush}"
+                           VerticalAlignment="Center" />
+                  <Ellipse Classes="dot d2" Classes.bounce="{Binding Probing}" Fill="{DynamicResource AgMutedBrush}"
+                           VerticalAlignment="Center" />
+                  <Ellipse Classes="dot d3" Classes.bounce="{Binding Probing}" Fill="{DynamicResource AgMutedBrush}"
+                           VerticalAlignment="Center" />
+                </StackPanel>
               </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
+                          IsVisible="{Binding ShowLinkSpeed}">
+                <PathIcon Data="{DynamicResource AgCardTrafficGeometry}" Width="13" Height="13"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
+                <PathIcon Data="{DynamicResource AgCardLossGeometry}" Width="13" Height="13"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding CardLossText}" FontSize="12.5"
+                           Foreground="{Binding CardLossBrush}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+              <!-- Место режима: у машины с одним туннелем пусто и строки не занимает. -->
+              <ContentControl VerticalAlignment="Center"
+                              Content="{Binding $parent[controls:CatalogCard].Extras}"
+                              IsVisible="{Binding $parent[controls:CatalogCard].Extras, Converter={x:Static ObjectConverters.IsNotNull}}" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
-                        IsVisible="{Binding ShowLinkSpeed}">
-              <PathIcon Data="{DynamicResource AgCardTrafficGeometry}" Width="13" Height="13"
-                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-              <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
-                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-            </StackPanel>
-            <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="5">
-              <PathIcon Grid.Column="0" Data="{DynamicResource AgCardLossGeometry}" Width="13" Height="13"
-                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding CardLossText}" FontSize="12.5"
-                         Foreground="{Binding CardLossBrush}"
-                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-            </Grid>
             <!-- Конфигурация из подписки: перечитать её прямо с карточки, под кнопкой подключения. -->
             <!-- Ширина повторяет круг подключения, поэтому иконка встаёт ровно под ним. -->
-            <Panel Grid.Column="3" Width="42" VerticalAlignment="Center">
+            <Panel Grid.Column="1" Width="42" VerticalAlignment="Center">
               <Button x:Name="RefreshPart" Classes="cardtune" HorizontalAlignment="Center"
                       IsVisible="{Binding FromSubscription}"
                       ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"
@@ -93,11 +99,6 @@
               </Button>
             </Panel>
           </Grid>
-
-          <!-- Место режима: у машины с одним туннелем пусто и роста не даёт. -->
-          <ContentControl Grid.Row="2" Margin="0,10,0,0"
-                          Content="{Binding $parent[controls:CatalogCard].Extras}"
-                          IsVisible="{Binding $parent[controls:CatalogCard].Extras, Converter={x:Static ObjectConverters.IsNotNull}}" />
         </Grid>
 
         <!-- Подвал карточки: метки настроек слева, настройки конфигурации справа. -->

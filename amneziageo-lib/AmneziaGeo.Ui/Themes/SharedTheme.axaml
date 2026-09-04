@@ -416,19 +416,57 @@
       <Setter Property="BoxShadow" Value="0 0 10 0 #802A6FDB" />
     </Style>
 
-    <!-- Применение списка: большое радио на месте кнопки подключения. -->
-    <Style Selector="Border.cardradio">
-      <Setter Property="Width" Value="36" />
-      <Setter Property="Height" Value="36" />
-      <Setter Property="CornerRadius" Value="18" />
-      <Setter Property="BorderThickness" Value="1.5" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+    <!-- Применение списка: хром кнопки снят, вид держит тумблер внутри. -->
+    <Style Selector="Button.cardpick">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
     </Style>
-    <Style Selector="Border.cardradio.on">
-      <Setter Property="BorderThickness" Value="2" />
+    <Style Selector="Button.cardpick /template/ ContentPresenter#PART_ContentPresenter, Button.cardpick:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.cardpick:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.cardpick:pressed">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+    <Style Selector="Button.cardpick:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="10" />
+        </Template>
+      </Setter>
+    </Style>
+
+    <!-- Применение списка: тумблер на месте кнопки подключения, выбор остаётся одиночным. -->
+    <Style Selector="Border.cardswitch">
+      <Setter Property="Width" Value="40" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="BorderThickness" Value="1" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="Padding" Value="3,0" />
+    </Style>
+    <Style Selector="Border.cardswitch.on">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="BoxShadow" Value="0 0 11 0 #802A6FDB" />
+    </Style>
+    <Style Selector="Border.cardswitch > Ellipse">
+      <Setter Property="Width" Value="12" />
+      <Setter Property="Height" Value="12" />
+      <Setter Property="Fill" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.cardswitch.on > Ellipse">
+      <Setter Property="Fill" Value="White" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
     </Style>
 
     <!-- Настройки списка: круг под кнопкой применения. -->

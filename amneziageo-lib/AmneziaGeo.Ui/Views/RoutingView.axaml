@@ -55,13 +55,36 @@
       <!-- Каталог карточек: кнопка на карточке открывает настройки своего списка, драг
            переставляет карточки. -->
       <Panel IsVisible="{Binding IsSectionCatalogue}">
-        <!-- Карточки стоят одной колонкой во всю ширину пана. -->
+        <!-- Узкий экран: карточки стоят одной колонкой во всю ширину пана. -->
         <ScrollViewer IsVisible="{Binding ShowCardStack}"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <ItemsControl x:Name="CardStack" ItemsSource="{Binding RoutingLists}" controls:ListMotion.Enabled="True">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
                 <controls:RoutingCard Margin="0,0,0,8"
+                        OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
+                        SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
+                        DropCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ApplyOrderCommand}"
+                        PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}"
+                        Sheet="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).Sheet}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Широкий экран: карточки стоят в две равные колонки во всю их ширину, драг переставляет их. -->
+        <ScrollViewer IsVisible="{Binding ShowCardGrid}"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl x:Name="CardGrid" ItemsSource="{Binding RoutingLists}" VerticalAlignment="Top"
+                        controls:ListMotion.Enabled="True">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
+                <controls:RoutingCard Margin="0,0,10,10" VerticalAlignment="Top"
                         OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
                         SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
                         DropCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ApplyOrderCommand}"

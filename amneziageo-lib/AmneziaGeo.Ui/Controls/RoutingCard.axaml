@@ -14,21 +14,20 @@
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
-          <!-- Имя списка и его применение: круг стоит на месте кнопки подключения карточки сервера. -->
+          <!-- Имя списка и его применение: тумблер стоит на месте кнопки подключения карточки сервера. -->
           <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
 
-            <Button x:Name="ActivePart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
+            <Button x:Name="ActivePart" Grid.Column="1" Classes="cardpick" VerticalAlignment="Center"
                     ClickMode="Press" ToolTip.Tip="{l:Tr Main_CardActiveFlag}"
                     Command="{Binding $parent[controls:RoutingCard].SelectCommand}"
                     CommandParameter="{Binding}">
-              <Panel Width="42" Height="42">
-                <Border Classes="cardradio" Classes.on="{Binding IsSelected}"
+              <!-- Поле повторяет ширину круга подключения: под ним встаёт шестерёнка подвала. -->
+              <Panel Width="42">
+                <Border Classes="cardswitch" Classes.on="{Binding IsSelected}"
                         HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <Ellipse Width="18" Height="18" Fill="{DynamicResource AgAccentBrush}"
-                           IsVisible="{Binding IsSelected}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Ellipse />
                 </Border>
               </Panel>
             </Button>

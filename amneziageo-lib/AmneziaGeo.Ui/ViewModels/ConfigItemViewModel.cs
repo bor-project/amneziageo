@@ -159,9 +159,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// Адрес, на который встаёт туннель: у прокси - его собственный, у остальных - объявленный конфигурацией.
     /// </summary>
     public string CardAddress => UseWebSocket && WebSocketHost.Length > 0
-        ? WebSocketHost.Contains(':', StringComparison.Ordinal) || WebSocketHost.Contains('/', StringComparison.Ordinal)
-            ? WebSocketHost
-            : $"{WebSocketHost}:{WebSocketPort}"
+        ? WsEndpoint.Display(WebSocketHost, WebSocketPort)
         : Endpoint;
 
     /// <summary>

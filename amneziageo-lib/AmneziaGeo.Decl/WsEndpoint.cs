@@ -30,4 +30,33 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
 
         return new WsEndpoint(value, fallbackPort, string.Empty, string.Empty);
     }
+
+    /// <summary>
+    /// Host and port for display, without the path token and the basic-auth credentials.
+    /// </summary>
+    public static string Display(string? hostOrUrl, int fallbackPort)
+    {
+        var value = hostOrUrl?.Trim() ?? string.Empty;
+        if (value.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var parsed = Parse(value, fallbackPort, string.Empty);
+        var host = parsed.Host;
+        var scheme = host.IndexOf("://", StringComparison.Ordinal);
+        if (scheme >= 0)
+        {
+            host = host[(scheme + 3)..];
+        }
+
+        var credentials = host.LastIndexOf('@');
+        if (credentials >= 0)
+        {
+            host = host[(credentials + 1)..];
+        }
+
+        host = host.Split('/', 2)[0];
+        return host.Contains(':', StringComparison.Ordinal) ? host : $"{host}:{parsed.Port}";
+    }
 }

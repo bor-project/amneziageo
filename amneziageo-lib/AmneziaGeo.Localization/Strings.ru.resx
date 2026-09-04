@@ -2224,9 +2224,6 @@
   <data name="Main_CardReorder" xml:space="preserve">
     <value>Изменить порядок</value>
   </data>
-  <data name="Main_CardTunnelLabel" xml:space="preserve">
-    <value>Туннель</value>
-  </data>
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Основной</value>
   </data>

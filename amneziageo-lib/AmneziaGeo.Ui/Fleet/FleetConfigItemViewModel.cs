@@ -108,11 +108,6 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
     public string SlotText => Word(Slot);
 
     /// <summary>
-    /// Чему бейдж принадлежит.
-    /// </summary>
-    public string SlotLabel => Loc.Instance.Get("Main_CardTunnelLabel");
-
-    /// <summary>
     /// Места, на которые ставят сервер: вся цепочка, а стоящему вне её - ещё одно место в её конце.
     /// </summary>
     public IReadOnlyList<TunnelSlotChoice> SlotChoices
@@ -149,7 +144,6 @@ internal sealed partial class FleetConfigItemViewModel : ConfigItemViewModel
     public override void RefreshLocalizedLabels()
     {
         base.RefreshLocalizedLabels();
-        OnPropertyChanged(nameof(SlotLabel));
         OnPropertyChanged(nameof(SlotText));
     }
 

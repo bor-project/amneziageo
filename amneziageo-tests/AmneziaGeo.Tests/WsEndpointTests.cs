@@ -39,4 +39,46 @@ public sealed class WsEndpointTests
         Assert.Equal(8443, ws.Port);
         Assert.Equal("secret", ws.PathPrefix);
     }
+
+    [Fact]
+    public void TheShownAddress_LeavesOutThePathToken()
+    {
+        Assert.Equal("front.example.com:8443", WsEndpoint.Display("wss://front.example.com:8443/secret", 443));
+    }
+
+    [Fact]
+    public void TheShownAddress_LeavesOutTheCredentials()
+    {
+        Assert.Equal("front.example.com:443", WsEndpoint.Display("wss://user:pass@front.example.com:443", 443));
+    }
+
+    [Fact]
+    public void TheShownAddress_LeavesOutBothAtOnce()
+    {
+        Assert.Equal("front.example.com:8443", WsEndpoint.Display("wss://user:pass@front.example.com:8443/secret", 443));
+    }
+
+    [Fact]
+    public void AMalformedUrl_ShowsNeitherCredentialsNorPath()
+    {
+        Assert.Equal("front.example.com:443", WsEndpoint.Display("wss://user:pass@front.example.com/secret path", 443));
+    }
+
+    [Fact]
+    public void ABareHost_ShowsTheSeparatePort()
+    {
+        Assert.Equal("front.example.com:8443", WsEndpoint.Display(" front.example.com ", 8443));
+    }
+
+    [Fact]
+    public void AHostWithItsOwnPort_ShowsItAsIs()
+    {
+        Assert.Equal("front.example.com:8443", WsEndpoint.Display("front.example.com:8443", 443));
+    }
+
+    [Fact]
+    public void AnEmptyHost_ShowsNothing()
+    {
+        Assert.Equal(string.Empty, WsEndpoint.Display(null, 443));
+    }
 }

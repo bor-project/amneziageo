@@ -469,9 +469,6 @@
   <data name="Main_InboundNetworkHint" xml:space="preserve">
     <value>Off: the server alone reaches this machine. On: every device of this tunnel</value>
   </data>
-  <data name="Main_InboundAddressLabel" xml:space="preserve">
-    <value>Address in the tunnel</value>
-  </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Router</value>
   </data>

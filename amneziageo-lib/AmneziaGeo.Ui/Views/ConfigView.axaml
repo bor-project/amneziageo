@@ -273,7 +273,7 @@
           <!-- Proxy (WebSocket). -->
           <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
 
-          <Border Classes="hairline" />
+          <Border Classes="hairline" IsVisible="{Binding IsFieldRowNarrow}" />
 
           <!-- Экспорт: способ - экран QR, ссылка в буфер или файл - выпадает списком у кнопки, а на телефоне
                приходит шторкой снизу. -->
@@ -294,7 +294,7 @@
             </Button>
           </Grid>
 
-          <Border Classes="hairline" />
+          <Border Classes="hairline" IsVisible="{Binding IsFieldRowNarrow}" />
 
           <!-- Delete: description left, delete trigger right. When armed, the trigger is replaced in place by
                the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->

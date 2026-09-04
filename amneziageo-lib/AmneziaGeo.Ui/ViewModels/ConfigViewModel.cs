@@ -39,6 +39,7 @@ internal partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCardStack))]
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
+    [NotifyPropertyChangedFor(nameof(IsFieldRowNarrow))]
     private bool _isCompact;
 
     // Width of the pane the catalogue stands in, pushed by the view. The settings screen keeps the rail
@@ -46,6 +47,7 @@ internal partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCardStack))]
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
+    [NotifyPropertyChangedFor(nameof(IsFieldRowNarrow))]
     private double _paneWidth;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar so a
@@ -255,6 +257,11 @@ internal partial class ConfigViewModel : ViewModelBase
     /// Узка ли пана под карточки: меряется пана, а не окно вокруг неё.
     /// </summary>
     public bool IsNarrowPane => PaneWidth > 0 ? PaneWidth < UiLayout.CompactWidth : IsCompact;
+
+    /// <summary>
+    /// Узка ли пана под строку полей: по этой же мерке встают линии внутри блока прокси.
+    /// </summary>
+    public bool IsFieldRowNarrow => PaneWidth > 0 ? PaneWidth < UiLayout.FieldRowWidth : IsCompact;
 
     /// <summary>
     /// Сколько карточек стоит в строке каталога.

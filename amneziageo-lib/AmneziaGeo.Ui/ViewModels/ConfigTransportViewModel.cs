@@ -75,7 +75,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowInboundNetwork))]
-    [NotifyPropertyChangedFor(nameof(ShowInboundAddress))]
     private bool _allowInbound;
 
     [ObservableProperty]
@@ -94,7 +93,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// Whether that address stands in the interface.
     /// </summary>
-    public bool ShowInboundAddress => AllowInbound && TunnelAddress.Length > 0;
+    public bool ShowInboundAddress => TunnelAddress.Length > 0;
 
     // Keeps the router switch out of the interface.
     internal static bool RouterVisible => false;

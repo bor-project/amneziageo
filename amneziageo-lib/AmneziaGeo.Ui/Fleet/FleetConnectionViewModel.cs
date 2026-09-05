@@ -32,8 +32,8 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowLink))]
-    [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkStatus))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
     private bool _multiServer;
 
     [ObservableProperty]
@@ -56,10 +56,7 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     /// <summary>
     /// Числа туннеля в режиме стоят на строке своего сервера, а не под кнопкой.
     /// </summary>
-    public override bool ShowLink => !MultiServer && base.ShowLink;
-
-    /// <inheritdoc cref="ShowLink"/>
-    public override bool ShowLinkLoss => !MultiServer && base.ShowLinkLoss;
+    public override bool ShowLinkStatus => !MultiServer && base.ShowLinkStatus;
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)

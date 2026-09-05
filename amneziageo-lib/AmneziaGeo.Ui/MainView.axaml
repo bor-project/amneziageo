@@ -125,19 +125,39 @@
                     <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
                                TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}" />
                     <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
-                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectHintBrush}" />
+                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectHintBrush}"
+                               IsVisible="{Binding Home.ShowConnectHint}" />
                     <!-- Retry counter while a stalled connect keeps trying (#197). -->
                     <TextBlock Text="{Binding Home.RetryText}" FontSize="12" FontWeight="SemiBold"
                                TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}"
                                IsVisible="{Binding Home.ShowRetry}" />
-                    <!-- What the live tunnel carries, what it loses on the way, and the warning that it keeps
-                         re-establishing the session instead of carrying anything. -->
-                    <TextBlock Text="{Binding Home.LinkSpeedText}" FontSize="12"
-                               TextAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}"
-                               IsVisible="{Binding Home.ShowLink}" />
-                    <TextBlock Text="{Binding Home.LinkLossText}" FontSize="12"
-                               TextAlignment="Center" Foreground="{Binding Home.LinkLossBrush}"
-                               IsVisible="{Binding Home.ShowLinkLoss}" />
+                    <!-- What the live tunnel answers in, carries and loses: the card's icons and short values,
+                         the words in the tooltips. -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14" Margin="0,2,0,0"
+                                IsVisible="{Binding Home.ShowLinkStatus}">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <PathIcon Data="{DynamicResource AgCardTimerGeometry}" Width="13" Height="13"
+                                  Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Home.CardProbeText}" Foreground="{Binding Home.CardProbeBrush}"
+                                   FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="5"
+                                  IsVisible="{Binding Home.ShowLinkSpeed}"
+                                  ToolTip.Tip="{Binding Home.LinkSpeedText}">
+                        <PathIcon Data="{DynamicResource AgCardTrafficGeometry}" Width="13" Height="13"
+                                  Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Home.CardSpeedText}" Classes="muted" FontSize="12.5"
+                                   VerticalAlignment="Center" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="5"
+                                  ToolTip.Tip="{Binding Home.LinkLossText}">
+                        <PathIcon Data="{DynamicResource AgCardLossGeometry}" Width="13" Height="13"
+                                  Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Home.CardLossText}" Foreground="{Binding Home.CardLossBrush}"
+                                   FontSize="12.5" VerticalAlignment="Center" />
+                      </StackPanel>
+                    </StackPanel>
+                    <!-- The tunnel keeps re-establishing its session instead of carrying anything. -->
                     <TextBlock Text="{Binding Home.LinkChurnText}" FontSize="12" FontWeight="SemiBold"
                                TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.LinkChurnBrush}"
                                IsVisible="{Binding Home.LinkChurning}" />

@@ -275,12 +275,32 @@ internal partial class ConnectionViewModel : ViewModelBase
     public bool ServerSilent => ConnState == 2 && BoundRow is { LinkSilent: true };
 
     /// <summary>
-    /// Whether the home screen shows what the running tunnel carries.
+    /// Whether the home screen shows the readings of the running tunnel.
     /// </summary>
-    public virtual bool ShowLink => ConfigItemViewModel.SpeedShown && ConnState == 2 && BoundRow is not null;
+    public virtual bool ShowLinkStatus => ConnState == 2 && BoundRow is not null;
 
     /// <summary>
-    /// Receive and send rates of the running tunnel.
+    /// Whether the throughput reading stands among them.
+    /// </summary>
+    public bool ShowLinkSpeed => ConfigItemViewModel.SpeedShown && ShowLinkStatus;
+
+    /// <summary>
+    /// Round trip of the running tunnel, as on the card.
+    /// </summary>
+    public string CardProbeText => BoundRow?.ProbeText ?? string.Empty;
+
+    /// <summary>
+    /// Colour of the round trip.
+    /// </summary>
+    public IBrush CardProbeBrush => BoundRow?.ProbeBrush ?? _hintBrush;
+
+    /// <summary>
+    /// Receive and send rates of the running tunnel, as on the card.
+    /// </summary>
+    public string CardSpeedText => BoundRow?.CardSpeedText ?? string.Empty;
+
+    /// <summary>
+    /// Receive and send rates in words, for the tooltip.
     /// </summary>
     public string LinkSpeedText => BoundRow?.LinkSpeedText ?? string.Empty;
 
@@ -322,20 +342,19 @@ internal partial class ConnectionViewModel : ViewModelBase
     public IBrush NamesUnroutedBrush => _orange;
 
     /// <summary>
-    /// Whether the home screen shows what the running tunnel loses.
+    /// The share of the running tunnel's own probes that never came back, as on the card.
     /// </summary>
-    public virtual bool ShowLinkLoss => ConnState == 2 && BoundRow is not null;
+    public string CardLossText => BoundRow?.CardLossText ?? string.Empty;
 
     /// <summary>
-    /// The share of the running tunnel's own probes that never came back.
+    /// Colour of the loss: muted while the link is clean, the warning colour once it drops enough to be felt.
+    /// </summary>
+    public IBrush CardLossBrush => BoundRow?.CardLossBrush ?? _hintBrush;
+
+    /// <summary>
+    /// The share of those probes in words, for the tooltip.
     /// </summary>
     public string LinkLossText => BoundRow?.LinkLossText ?? string.Empty;
-
-    /// <summary>
-    /// Colour of the loss line: the hint it is written in while the link is clean, the warning colour once it
-    /// drops enough to be felt.
-    /// </summary>
-    public IBrush LinkLossBrush => BoundRow is { LinkLossy: true } ? _orange : _hintBrush;
 
     public string ConnectHint => ServerSilent
         ? Loc.Instance.Get("MainVm_ConnectHintServerSilent")
@@ -346,6 +365,11 @@ internal partial class ConnectionViewModel : ViewModelBase
         _ when ActiveConfig is null => Loc.Instance.Get("MainVm_ConnectHintSelectConfig"),
         _ => Loc.Instance.Get("MainVm_ConnectHintClickToConnect"),
     };
+
+    /// <summary>
+    /// Whether a hint stands under the status; the connect and disconnect prompts do not.
+    /// </summary>
+    public bool ShowConnectHint => ServerSilent || ConnState == 1 || (ConnState != 2 && ActiveConfig is null);
 
     // A stalled connect is retrying (more than one attempt made).
     public bool ShowRetry => RetryAttempt >= 1;
@@ -592,15 +616,20 @@ internal partial class ConnectionViewModel : ViewModelBase
     private void NotifyServerSilentChanged()
     {
         OnPropertyChanged(nameof(ServerSilent));
-        OnPropertyChanged(nameof(ShowLink));
+        OnPropertyChanged(nameof(ShowLinkStatus));
+        OnPropertyChanged(nameof(ShowLinkSpeed));
+        OnPropertyChanged(nameof(CardProbeText));
+        OnPropertyChanged(nameof(CardProbeBrush));
+        OnPropertyChanged(nameof(CardSpeedText));
         OnPropertyChanged(nameof(LinkSpeedText));
         OnPropertyChanged(nameof(LinkChurning));
         OnPropertyChanged(nameof(LinkChurnText));
         OnPropertyChanged(nameof(ShowNamesUnrouted));
-        OnPropertyChanged(nameof(ShowLinkLoss));
+        OnPropertyChanged(nameof(CardLossText));
+        OnPropertyChanged(nameof(CardLossBrush));
         OnPropertyChanged(nameof(LinkLossText));
-        OnPropertyChanged(nameof(LinkLossBrush));
         OnPropertyChanged(nameof(ConnectHint));
+        OnPropertyChanged(nameof(ShowConnectHint));
         OnPropertyChanged(nameof(ConnectCircleBrush));
         OnPropertyChanged(nameof(ConnectCircleBorderBrush));
         OnPropertyChanged(nameof(ConnectCircleForeground));

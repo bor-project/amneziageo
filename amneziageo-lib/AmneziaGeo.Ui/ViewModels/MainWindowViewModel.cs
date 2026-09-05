@@ -559,10 +559,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SelectSettings(string section)
     {
-        // Pressing the section already on screen steps back instead of reopening it.
+        // Pressing the section already on screen steps back inside it, and in compact mode collapses to the rail.
         if (ShowContent && SettingsSection == section)
         {
-            NavBack();
+            if (!SectionSteppedBack() && IsCompact)
+            {
+                SettingsDetailOpen = false;
+                RefreshLogsActive();
+            }
+
             return;
         }
 

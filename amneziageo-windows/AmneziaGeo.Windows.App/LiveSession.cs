@@ -13,6 +13,9 @@ internal sealed class LiveSession
     private volatile RoutingCache? _cache;
     private volatile DomainTracker? _tracker;
     private volatile DnsProxy? _proxy;
+    private volatile string _mode = string.Empty;
+    private volatile string _listName = string.Empty;
+    private volatile IReadOnlyList<string> _configRoutes = [];
 
     /// <summary>
     /// Per-destination verdict cache of the session in flight.
@@ -28,6 +31,31 @@ internal sealed class LiveSession
     /// Name proxy of the session in flight.
     /// </summary>
     public DnsProxy? Proxy => _proxy;
+
+    /// <summary>
+    /// How the session routes: by the list, everything through the tunnel, or by the configuration alone.
+    /// </summary>
+    public string Mode => _mode;
+
+    /// <summary>
+    /// Routing list in force, empty when none is assigned.
+    /// </summary>
+    public string ListName => _listName;
+
+    /// <summary>
+    /// AllowedIPs of the configuration, which is what decides while routing is off.
+    /// </summary>
+    public IReadOnlyList<string> ConfigRoutes => _configRoutes;
+
+    /// <summary>
+    /// Publishes what the session routes by.
+    /// </summary>
+    public void SetPlan(string mode, string listName, IReadOnlyList<string> configRoutes)
+    {
+        _mode = mode;
+        _listName = listName;
+        _configRoutes = configRoutes;
+    }
 
     /// <summary>
     /// Publishes the session's verdict cache.
@@ -61,5 +89,8 @@ internal sealed class LiveSession
         _cache = null;
         _tracker = null;
         _proxy = null;
+        _mode = string.Empty;
+        _listName = string.Empty;
+        _configRoutes = [];
     }
 }

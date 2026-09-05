@@ -20,8 +20,7 @@ internal static class DiagCommands
         {
             "log" => await LogAsync(agent, host, args, ct).ConfigureAwait(false),
             "runtime" => Reply.Payload(await agent.SendAsync(IpcContract.OpGetRuntimeConfig).ConfigureAwait(false)),
-            "cache" => await CacheAsync(agent, args).ConfigureAwait(false),
-            "sessions" => await SessionsAsync(agent).ConfigureAwait(false),
+            "sessions" => await SessionsAsync(agent, args).ConfigureAwait(false),
             "subnets" => Reply.Payload(await agent.SendAsync(IpcContract.OpListLocalSubnets).ConfigureAwait(false)),
             "doctor" => Doctor(agent, host),
             "check" => await CheckAsync(agent, args).ConfigureAwait(false),
@@ -281,7 +280,8 @@ internal static class DiagCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> CacheAsync(IAgentLink agent, IReadOnlyList<string> args)
+    // What the tunnel decides for right now: the address, the name it came with, where it goes and why.
+    private static async Task<int> SessionsAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
         if (!flags.Allowed("filter"))
@@ -289,35 +289,6 @@ internal static class DiagCommands
             return Reply.Usage(flags.Error!);
         }
 
-        var ack = await agent.SendAsync(IpcContract.OpGetCacheEntries).ConfigureAwait(false);
-        if (!ack.Ok)
-        {
-            return Reply.Report(ack);
-        }
-
-        if (Output.Json)
-        {
-            Output.Line(ack.Message);
-            return Exit.Ok;
-        }
-
-        var cache = JsonSerializer.Deserialize<CachePayload>(ack.Message, IpcJson.Options);
-        var entries = (IEnumerable<CacheEntry>)(cache?.Entries ?? []);
-        if (flags.Value("filter") is { Length: > 0 } filter)
-        {
-            entries = entries.Where(entry =>
-                entry.Key.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                entry.Value.Contains(filter, StringComparison.OrdinalIgnoreCase));
-        }
-
-        var rows = entries.Select(entry => (IReadOnlyList<string>)[entry.Kind, entry.Key, entry.Value]).ToList();
-        Output.Table(["KIND", "KEY", "VALUE"], rows, "the cache is empty");
-        return Exit.Ok;
-    }
-
-    // What the tunnel carries right now, busiest first, with the totals under it.
-    private static async Task<int> SessionsAsync(IAgentLink agent)
-    {
         var ack = await agent.SendAsync(IpcContract.OpGetSessions).ConfigureAwait(false);
         if (!ack.Ok)
         {
@@ -331,17 +302,37 @@ internal static class DiagCommands
         }
 
         var report = SessionReport.Parse(ack.Message);
-        var rows = report.Sessions
-            .Select(row => (IReadOnlyList<string>)[row.Host, Column(row.Name), Column(row.Route), row.Describe()])
+        var held = (IEnumerable<LiveSession>)report.Sessions;
+        if (flags.Value("filter") is { Length: > 0 } filter)
+        {
+            held = held.Where(row =>
+                row.Host.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                row.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var rows = held
+            .Select(row => (IReadOnlyList<string>)
+                [row.Host, Column(row.Name), Column(row.Route), Column(row.Reason), Left(row), row.Describe()])
             .ToList();
-        Output.Table(["DESTINATION", "NAME", "PATH", "HOLDS"], rows, "the tunnel carries nothing right now");
+        Output.Table(["ADDRESS", "NAME", "WAY", "WHY", "LEFT", "HOLDS"], rows, "the tunnel decides for nothing right now");
+        if (report.Mode.Length > 0)
+        {
+            Output.Line($"mode {report.Mode}{(report.List.Length > 0 ? $", list {report.List}" : string.Empty)}");
+        }
+
         if (report.Held > 0)
         {
-            Output.Line($"{report.Held} held, {report.Undecided} undecided, {report.Stalled} stalled, "
-                + $"{CheckFormat.Bytes(report.TotalBytes)} carried");
+            Output.Line($"{report.Held} held, {report.Tunnel} tunnelled, {report.Direct} direct, {report.Block} blocked, "
+                + $"{report.Undecided} in no rule, {report.Stalled} stalled, {CheckFormat.Bytes(report.TotalBytes)} carried");
         }
 
         return Exit.Ok;
+    }
+
+    // How long the row has before it is forgotten; a standing range has no clock.
+    private static string Left(LiveSession row)
+    {
+        return row.LeftSeconds < 0 ? "-" : $"{row.LeftSeconds} s";
     }
 
     // A column an empty value still fills.
@@ -415,13 +406,4 @@ internal static class DiagCommands
     /// </summary>
     private sealed record LogPage(IReadOnlyList<string> Lines, long FirstId, bool HasOlder, int MatchCount);
 
-    /// <summary>
-    /// The agent's cached values.
-    /// </summary>
-    private sealed record CachePayload(int Total, bool Capped, IReadOnlyList<CacheEntry> Entries);
-
-    /// <summary>
-    /// One cached value.
-    /// </summary>
-    private sealed record CacheEntry(string Kind, string Key, string Value);
 }

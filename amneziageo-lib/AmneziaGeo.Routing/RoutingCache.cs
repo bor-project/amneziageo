@@ -95,6 +95,7 @@ public sealed class RoutingCache
     // Its route must outlive every idle window - the agent's own queries to it are not attributed to any process,
     // so nothing here would ever refresh it and a sweep would take the tunnel's DNS down with it.
     private readonly GeoIpRanges _pinned;
+    private readonly IReadOnlyList<string> _pinnedRoutes;
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
     private readonly bool _split;
@@ -123,6 +124,7 @@ public sealed class RoutingCache
         SetTtl(ttlSeconds);
         _logger = logger;
         _rules = Build(proxy, direct, block, 0);
+        _pinnedRoutes = pinned is null ? [] : [.. pinned];
         _pinned = pinned is null ? GeoIpRanges.Empty : GeoIpRanges.Build([.. pinned]);
         if (_pinned.Count > 0)
         {
@@ -161,10 +163,15 @@ public sealed class RoutingCache
     public bool Split => _split;
 
     /// <summary>
+    /// Ranges held outside the cache for the connection itself: resolver, tunnel network, inbound access.
+    /// </summary>
+    public IReadOnlyList<string> PinnedRoutes => _pinnedRoutes;
+
+    /// <summary>
     /// A held destination: its verdict, what that verdict installed, whether a name settled it, and the idle time
     /// left before reclaim.
     /// </summary>
-    public sealed record Held(IPAddress Address, RouteVerdict Verdict, RoutePlan Plan, bool Routed, bool Adopted, bool ByName, int IdleSeconds, int TtlSeconds);
+    public sealed record Held(IPAddress Address, RouteVerdict Verdict, RoutePlan Plan, bool Routed, bool Adopted, bool ByName, bool ByApp, int IdleSeconds, int TtlSeconds);
 
     /// <summary>
     /// Destinations held right now, each with the time left on it.
@@ -179,7 +186,7 @@ public sealed class RoutingCache
             var entry = pair.Value;
             var idle = (int)Math.Clamp((now - Volatile.Read(ref entry.LastTouch)) / 1000, 0, ttl);
             result.Add(new Held(entry.Address, entry.Verdict, entry.Plan, entry.Routed || entry.Tunneled,
-                entry.Plan == RoutePlan.External, entry.ByName, idle, ttl));
+                entry.Plan == RoutePlan.External, entry.ByName, entry.ByApp, idle, ttl));
         }
 
         return result;

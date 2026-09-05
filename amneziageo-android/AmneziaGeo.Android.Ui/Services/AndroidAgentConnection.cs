@@ -449,11 +449,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpGetRuntimeConfig:
                 return await GetRuntimeConfigAsync();
 
-            case IpcContract.OpGetCacheEntries:
-                return await GetCacheEntriesAsync();
-
             case IpcContract.OpGetSessions:
-                return GetSessions();
+                return await GetSessionsAsync();
 
             case IpcContract.OpKnownHosts:
                 return await KnownHostsAsync(CancellationToken.None).ConfigureAwait(false);
@@ -2613,7 +2610,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // ranks by traffic where the head can read it.
     private static string? BusiestHost()
     {
-        return VpnBridge.ReadSessions(SessionWindowSeconds).Busiest?.Host;
+        var busiest = VpnBridge.ReadSessions(SessionWindowSeconds).Busiest;
+        if (busiest is null)
+        {
+            return null;
+        }
+
+        return busiest.Name.Length > 0 ? busiest.Name : busiest.Host;
     }
 
     // What the relay holds, as it left it: the tunnel runs in another process, so this is read whole rather
@@ -2640,9 +2643,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new IpcAck(true, KnownHostList.Payload(hosts));
     }
 
-    private static IpcAck GetSessions()
+    private async Task<IpcAck> GetSessionsAsync()
     {
-        return new IpcAck(true, VpnBridge.ReadSessions(SessionWindowSeconds).ToPayload());
+        var report = VpnBridge.ReadSessions(SessionWindowSeconds);
+        if (report.Mode.Length == 0)
+        {
+            return new IpcAck(true, report.ToPayload());
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var list = _selectedRoutingList is { } listId
+            && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } assigned
+                ? assigned.Name
+                : string.Empty;
+        return new IpcAck(true, (report with { List = list }).ToPayload());
     }
 
     // Every saved server measured by the legs that cost only echoes. A socket cannot be excused from the tunnel
@@ -3569,53 +3583,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("routing list : ").Append(summary?.Name ?? listId.ToString(CultureInfo.InvariantCulture)).Append('\n');
         report.Append("  routes         : ").Append(summary?.RouteCount ?? 0).Append('\n');
         report.Append("  domains        : ").Append(summary?.DomainCount ?? 0).Append('\n');
-    }
-
-    // Returns the routing list's own rules, bucket by bucket; the verdicts a running session holds are in
-    // 'sessions', which reads them from the relay.
-    private async Task<IpcAck> GetCacheEntriesAsync()
-    {
-        await EnsureInitAsync().ConfigureAwait(false);
-        var rows = new List<object>();
-        if (_selectedRoutingList is { } listId
-            && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } list)
-        {
-            AddRoutes(rows, "proxy", list.Routes);
-            AddRoutes(rows, "direct", list.DirectRoutes);
-            AddRoutes(rows, "block", list.BlockRoutes);
-            AddDomains(rows, "proxy", list.Domains);
-            AddDomains(rows, "direct", list.DirectDomains);
-            AddDomains(rows, "block", list.BlockDomains);
-        }
-
-        return Rows(rows);
-    }
-
-    // Addresses one bucket carries.
-    private static void AddRoutes(List<object> rows, string bucket, IReadOnlyList<string>? routes)
-    {
-        foreach (var route in routes ?? [])
-        {
-            rows.Add(new { kind = bucket, key = route, value = "route" });
-        }
-    }
-
-    // Names one bucket carries, each with the way it is matched.
-    private static void AddDomains(List<object> rows, string bucket, IReadOnlyList<GeoDomain>? domains)
-    {
-        foreach (var domain in domains ?? [])
-        {
-            rows.Add(new { kind = bucket, key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() });
-        }
-    }
-
-    private static IpcAck Rows(List<object> rows)
-    {
-        const int cap = 1000;
-        var total = rows.Count;
-        var capped = total > cap;
-        var entries = capped ? rows.Take(cap).ToList() : rows;
-        return new IpcAck(true, JsonSerializer.Serialize(new { total, capped, entries }));
     }
 
     private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable

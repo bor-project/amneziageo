@@ -276,7 +276,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpClearLog => await ClearLogAsync(command.Args, ct),
                 IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
-                IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
                 IpcContract.OpGetSessions => await GetSessionsAsync(ct),
                 IpcContract.OpKnownHosts => await KnownHostsAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
@@ -1225,24 +1224,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return await checks.ProbeAsync(store, config, args[0], path, upload, ct);
     }
 
-    private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
-    {
-        var (config, _) = await InspectTargetAsync(ct);
-        if (string.IsNullOrEmpty(config))
-        {
-            return new IpcAck(false, IpcMessage.Key("Agent_NoConfigSelected"));
-        }
-
-        // The tunnel runs in its own service process; without a session here the snapshot comes from there.
-        if (!inspector.HasLiveSession && RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.OpSnapshot, logger) is { Length: > 0 } served)
-        {
-            return new IpcAck(true, served);
-        }
-
-        return new IpcAck(true, System.Text.Json.JsonSerializer.Serialize(inspector.Collect()));
-    }
-
-    // What the tunnel carries right now. A tunnel this user does not own carries nothing to report.
+    // What the tunnel decides for right now. A tunnel this user does not own carries nothing to report.
     private async Task<IpcAck> GetSessionsAsync(CancellationToken ct)
     {
         var (config, applied) = await InspectTargetAsync(ct);

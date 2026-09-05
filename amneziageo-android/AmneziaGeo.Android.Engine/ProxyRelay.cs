@@ -47,6 +47,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private readonly Action<string> _log;
     private readonly Func<IPEndPoint, string?>? _owner;
     private readonly RouteVerdict _undecided;
+    private readonly string _mode;
     private readonly string _rules;
     private long _idleTtlMs;
     private Socket? _listener;
@@ -73,6 +74,9 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         _rules = $"{plan.ProxyRoutes.Count + plan.DirectRoutes.Count + plan.BlockRoutes.Count} range(s) and "
             + $"{plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count} name(s)";
         _undecided = plan.FullTunnel ? RouteVerdict.Proxy : RouteVerdict.Direct;
+        _mode = plan.FullTunnel
+            ? (plan.HasRules || plan.TunnelApps.Count > 0 ? SessionReport.ModeFull : SessionReport.ModeOff)
+            : SessionReport.ModeSplit;
         _apps = new HashSet<string>(plan.TunnelApps, StringComparer.Ordinal);
         _protect = protect;
         _log = log;
@@ -191,11 +195,27 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         var now = Environment.TickCount64;
         var all = _entries.Values.ToList();
         var undecided = 0;
+        var tunnel = 0;
+        var direct = 0;
+        var block = 0;
         foreach (var entry in all)
         {
             if (entry.Verdict == RouteVerdict.None)
             {
                 undecided++;
+            }
+
+            switch (WayOf(entry))
+            {
+                case LiveSession.PathDirect:
+                    direct++;
+                    break;
+                case LiveSession.PathBlock:
+                    block++;
+                    break;
+                default:
+                    tunnel++;
+                    break;
             }
         }
 
@@ -205,26 +225,71 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             rows.Add(Row(entry, now));
         }
 
-        return new SessionReport(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rows, all.Count, undecided, Bytes);
+        return new SessionReport(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rows, all.Count, undecided, Bytes,
+            tunnel, direct, block, _mode);
     }
 
-    // One held destination as the head reads it.
-    private static LiveSession Row(Entry entry, long now)
+    // One held destination as the head reads it: the address it goes to, the name that asked for it and why.
+    private LiveSession Row(Entry entry, long now)
     {
         var bytes = Volatile.Read(ref entry.Bytes);
         var span = Math.Max(1, now - Volatile.Read(ref entry.ReportedAt));
         var bits = (bytes - Volatile.Read(ref entry.Reported)) * 8000 / span;
+        var idle = (int)((now - Volatile.Read(ref entry.LastTouch)) / 1000);
         Volatile.Write(ref entry.Reported, bytes);
         Volatile.Write(ref entry.ReportedAt, now);
         return new LiveSession(
-            entry.Host,
+            Where(entry),
             Word(entry.Verdict),
             bytes,
             bits,
             Volatile.Read(ref entry.Live),
             (int)((now - entry.Since) / 1000),
-            (int)((now - Volatile.Read(ref entry.LastTouch)) / 1000),
-            entry.App);
+            idle,
+            entry.App,
+            IPAddress.TryParse(entry.Host, out _) ? string.Empty : entry.Host,
+            WayOf(entry),
+            ReasonOf(entry),
+            (int)Math.Max((Volatile.Read(ref _idleTtlMs) / 1000) - idle, 0));
+    }
+
+    // The address the destination is actually opened at; the name stands in until one answered.
+    private static string Where(Entry entry)
+    {
+        var addresses = entry.Addresses;
+        if (addresses.Count == 0)
+        {
+            return entry.Host;
+        }
+
+        return addresses[Volatile.Read(ref entry.Preferred) % addresses.Count].ToString();
+    }
+
+    // Where the destination goes once the application rules have had their say.
+    private string WayOf(Entry entry)
+    {
+        return Effective(entry.Verdict, entry.App) switch
+        {
+            RouteVerdict.Direct => LiveSession.PathDirect,
+            RouteVerdict.Block => LiveSession.PathBlock,
+            _ => LiveSession.PathTunnel,
+        };
+    }
+
+    // What settled the destination: a name rule first, then a range, then the application it belongs to.
+    private string ReasonOf(Entry entry)
+    {
+        if (ByName(entry.Host) != RouteVerdict.None)
+        {
+            return LiveSession.ReasonName;
+        }
+
+        if (entry.Verdict != RouteVerdict.None)
+        {
+            return LiveSession.ReasonRange;
+        }
+
+        return entry.App.Length > 0 && _apps.Contains(entry.App) ? LiveSession.ReasonApp : LiveSession.ReasonNone;
     }
 
     private static string Word(RouteVerdict verdict)

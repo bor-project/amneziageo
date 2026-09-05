@@ -16,9 +16,6 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, LiveSession session, WindowsFirewall firewall, ILogger<RuntimeInspector> logger)
 {
-    // Cache rows returned at most; the tail is dropped and the total reported.
-    private const int MaxCacheEntries = 20000;
-
     // Destinations one session report lists; the rest is counted, not named.
     private const int MaxSessionRows = AmneziaGeo.Ipc.SessionReport.MaxRows;
 
@@ -29,16 +26,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     private const string Masked = "***";
 
     private const int KeyWidth = 18;
-
-    /// <summary>
-    /// A cached value: which cache holds it, its key, its content and, for a destination, the path it takes.
-    /// </summary>
-    public sealed record CacheEntry(string Kind, string Key, string Value, string Path = "");
-
-    /// <summary>
-    /// Cached values with the total held before the cap.
-    /// </summary>
-    public sealed record CacheSnapshot(int Total, bool Capped, IReadOnlyList<CacheEntry> Entries);
 
     /// <summary>
     /// Renders the effective configuration report. Applied reads the live device, otherwise the report covers
@@ -107,10 +94,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     }
 
     /// <summary>
-    /// Collects the destinations the running tunnel holds right now: one row per live verdict, with the idle time
-    /// left on it. Nothing persisted and nothing merely materialized belongs here - those are rules, not cache.
-    /// </summary>
-    /// <summary>
     /// Whether this process is the one running the tunnel; the agent process holds no caches of its own.
     /// </summary>
     public bool HasLiveSession => session.Cache is not null || session.Tracker is not null;
@@ -131,98 +114,130 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     }
 
     /// <summary>
-    /// The destinations the running tunnel holds: read from this process when it owns the tunnel, otherwise from
-    /// the service that does.
-    /// </summary>
-    public CacheSnapshot Held(string config)
-    {
-        if (HasLiveSession)
-        {
-            return Collect();
-        }
-
-        var served = RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.OpSnapshot, logger);
-        if (served is { Length: > 0 })
-        {
-            try
-            {
-                return JsonSerializer.Deserialize<CacheSnapshot>(served) ?? Nothing;
-            }
-            catch (JsonException ex)
-            {
-                logger.LogDebug(ex, "runtime cache: unreadable reply for {Tunnel}", config);
-            }
-        }
-
-        return Nothing;
-    }
-
-    /// <summary>
-    /// The same, rendered one row per line for the support archive.
+    /// The destinations the tunnel decides for, rendered one row per line for the support archive.
     /// </summary>
     public string HeldText(string config)
     {
-        var snapshot = Held(config);
-        var text = new StringBuilder();
-        foreach (var entry in snapshot.Entries)
-        {
-            text.Append(entry.Kind.PadRight(10)).Append(entry.Key.PadRight(22))
-                .Append((entry.Path.Length == 0 ? "-" : entry.Path).PadRight(8)).Append(entry.Value).Append('\n');
-        }
-
-        if (snapshot.Capped)
-        {
-            text.Append("cut to ").Append(snapshot.Entries.Count.ToString(CultureInfo.InvariantCulture))
-                .Append(" of ").Append(snapshot.Total.ToString(CultureInfo.InvariantCulture)).Append(" entries\n");
-        }
-
-        return text.Length == 0 ? "the tunnel holds nothing right now" : text.ToString();
+        var report = HeldSessions(config);
+        return report.Sessions.Count == 0 ? "the tunnel holds nothing right now" : report.Render();
     }
 
     /// <summary>
-    /// What the tunnel carries right now, freshest first: one row per address, with the name it was resolved by
-    /// and the path it actually takes. Nothing here relays connections, so no row counts bytes.
+    /// What the tunnel decides for right now, freshest first: one row per address, with the name it was resolved
+    /// by, the path it takes and what settled it. Nothing here relays connections, so no row counts bytes.
     /// </summary>
     public AmneziaGeo.Ipc.SessionReport Sessions()
     {
-        var tracked = session.Tracker?.Snapshot() ?? [];
-        var owners = Owners(tracked);
-        var split = session.Cache?.Split ?? true;
+        var mode = session.Mode.Length > 0 ? session.Mode : AmneziaGeo.Ipc.SessionReport.ModeOff;
         var rows = new List<AmneziaGeo.Ipc.LiveSession>();
-        var listed = new HashSet<string>(StringComparer.Ordinal);
         var undecided = 0;
-        foreach (var held in session.Cache?.Snapshot() ?? [])
+        if (mode == AmneziaGeo.Ipc.SessionReport.ModeOff)
         {
-            var verdict = Verdict(held.Verdict.ToString());
-            if (verdict == AmneziaGeo.Ipc.LiveSession.Undecided)
+            foreach (var range in session.ConfigRoutes)
             {
-                undecided++;
+                rows.Add(new AmneziaGeo.Ipc.LiveSession(range, "proxy",
+                    Path: AmneziaGeo.Ipc.LiveSession.PathTunnel,
+                    Reason: AmneziaGeo.Ipc.LiveSession.ReasonConfig));
+            }
+        }
+        else
+        {
+            var tracked = session.Tracker?.Snapshot() ?? [];
+            var owners = Owners(tracked);
+            var split = session.Cache?.Split ?? true;
+            var listed = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var held in session.Cache?.Snapshot() ?? [])
+            {
+                var verdict = Verdict(held.Verdict.ToString());
+                if (verdict == AmneziaGeo.Ipc.LiveSession.Undecided)
+                {
+                    undecided++;
+                }
+
+                var address = held.Address.ToString();
+                listed.Add(address);
+                rows.Add(new AmneziaGeo.Ipc.LiveSession(address, verdict, IdleSeconds: held.IdleSeconds,
+                    Name: Owner(address, held.Adopted, owners), Path: PathOf(held, split), Reason: ReasonOf(held),
+                    LeftSeconds: Math.Max(held.TtlSeconds - held.IdleSeconds, 0)));
             }
 
-            var address = held.Address.ToString();
-            listed.Add(address);
-            rows.Add(new AmneziaGeo.Ipc.LiveSession(address, verdict, IdleSeconds: held.IdleSeconds,
-                Name: Owner(address, held.Adopted, owners), Path: PathOf(held, split)));
-        }
-
-        // A name keeps its own route, so its addresses belong here even where the cache holds none of them.
-        foreach (var domain in tracked)
-        {
-            foreach (var ip in domain.Ips)
+            // A name keeps its own route, so its addresses belong here even where the cache holds none of them.
+            foreach (var domain in tracked)
             {
-                if (listed.Add(ip))
+                foreach (var ip in domain.Ips)
                 {
-                    rows.Add(new AmneziaGeo.Ipc.LiveSession(ip, "proxy", IdleSeconds: domain.IdleSeconds,
-                        Name: domain.Domain, Path: AmneziaGeo.Ipc.LiveSession.PathTunnel));
+                    if (listed.Add(ip))
+                    {
+                        rows.Add(new AmneziaGeo.Ipc.LiveSession(ip, "proxy", IdleSeconds: domain.IdleSeconds,
+                            Name: domain.Domain, Path: AmneziaGeo.Ipc.LiveSession.PathTunnel,
+                            Reason: AmneziaGeo.Ipc.LiveSession.ReasonResolved,
+                            LeftSeconds: Math.Max(domain.TtlSeconds - domain.IdleSeconds, 0)));
+                    }
                 }
             }
         }
 
+        foreach (var range in session.Cache?.PinnedRoutes ?? [])
+        {
+            rows.Add(new AmneziaGeo.Ipc.LiveSession(range, "proxy",
+                Path: AmneziaGeo.Ipc.LiveSession.PathTunnel,
+                Reason: AmneziaGeo.Ipc.LiveSession.ReasonService));
+        }
+
+        var tunnel = 0;
+        var direct = 0;
+        var block = 0;
+        foreach (var row in rows)
+        {
+            switch (row.Route)
+            {
+                case AmneziaGeo.Ipc.LiveSession.PathTunnel:
+                    tunnel++;
+                    break;
+                case AmneziaGeo.Ipc.LiveSession.PathDirect:
+                    direct++;
+                    break;
+                case AmneziaGeo.Ipc.LiveSession.PathBlock:
+                    block++;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // A row without a clock is one of the standing ranges, so it sits under what the session actually met.
         return new AmneziaGeo.Ipc.SessionReport(
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            [.. rows.OrderBy(row => row.IdleSeconds).Take(MaxSessionRows)],
+            [.. rows.OrderBy(row => row.IdleSeconds < 0 ? int.MaxValue : row.IdleSeconds).Take(MaxSessionRows)],
             rows.Count,
-            undecided);
+            undecided,
+            0,
+            tunnel,
+            direct,
+            block,
+            mode,
+            session.ListName);
+    }
+
+    // What settled the destination, in the order the cache settles it.
+    private static string ReasonOf(RoutingCache.Held held)
+    {
+        if (held.Adopted)
+        {
+            return AmneziaGeo.Ipc.LiveSession.ReasonResolved;
+        }
+
+        if (held.ByName)
+        {
+            return AmneziaGeo.Ipc.LiveSession.ReasonName;
+        }
+
+        if (held.Verdict != RouteVerdict.None)
+        {
+            return AmneziaGeo.Ipc.LiveSession.ReasonRange;
+        }
+
+        return held.ByApp ? AmneziaGeo.Ipc.LiveSession.ReasonApp : AmneziaGeo.Ipc.LiveSession.ReasonNone;
     }
 
     // Which name holds each adopted address: the freshest one, the way the cache row reports its clock.
@@ -297,66 +312,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         return name == "None" ? AmneziaGeo.Ipc.LiveSession.Undecided : name.ToLowerInvariant();
     }
 
-    // A cache nobody answered for.
-    private static readonly CacheSnapshot Nothing = new(0, false, []);
-
-    public CacheSnapshot Collect()
-    {
-        var entries = new List<CacheEntry>();
-        var total = 0;
-
-        // Nothing here belongs to the tunnel when it runs elsewhere; reporting this process's empty state as its
-        // own would read as a diagnosis of the tunnel.
-        if (!HasLiveSession)
-        {
-            Add(entries, ref total, "state", "cache", "the tunnel service did not answer; nothing to read in this process");
-            return new CacheSnapshot(total, false, entries);
-        }
-
-        var cache = session.Cache;
-        var tracked = session.Tracker?.Snapshot();
-
-        // State first: an empty body otherwise says nothing about whether there is a session to read at all.
-        var drops = firewall.DropWatch;
-        Add(entries, ref total, "state", "cache", cache is null
-            ? "no routing cache"
-            : $"{cache.Size} entries, {cache.Active} routed, ttl {cache.TtlSeconds} s");
-        Add(entries, ref total, "state", "domains", tracked is null ? "no domain tracker" : $"{tracked.Count} tracked");
-        Add(entries, ref total, "state", "drop watch", drops.Watching ? $"on, {drops.Events} events" : "off");
-
-        // Which name holds each adopted address, so its row carries the clock it actually leaves on.
-        var owners = new Dictionary<string, (string Domain, int IdleSeconds, int TtlSeconds)>(StringComparer.Ordinal);
-        foreach (var domain in tracked ?? [])
-        {
-            foreach (var ip in domain.Ips)
-            {
-                if (!owners.TryGetValue(ip, out var known) || domain.IdleSeconds < known.IdleSeconds)
-                {
-                    owners[ip] = (domain.Domain, domain.IdleSeconds, domain.TtlSeconds);
-                }
-            }
-        }
-
-        var split = cache?.Split ?? true;
-        foreach (var held in (cache?.Snapshot() ?? []).OrderBy(entry => entry.IdleSeconds))
-        {
-            // An adopted address leaves with the name that resolved it, so it reports that name's clock.
-            var value = held.Adopted && owners.TryGetValue(held.Address.ToString(), out var owner)
-                ? $"held by {owner.Domain}, idle {owner.IdleSeconds} s, expires in {owner.TtlSeconds - owner.IdleSeconds} s"
-                : $"{(held.Routed ? "routed" : "verdict only")}{(held.ByName ? ", settled by a name" : string.Empty)}, idle {held.IdleSeconds} s, expires in {held.TtlSeconds - held.IdleSeconds} s";
-            Add(entries, ref total, held.Verdict.ToString().ToLowerInvariant(), held.Address.ToString(), value,
-                PathOf(held, split));
-        }
-
-        foreach (var domain in (tracked ?? []).OrderBy(entry => entry.Domain, StringComparer.Ordinal))
-        {
-            Add(entries, ref total, "domain", domain.Domain,
-                $"routed, idle {domain.IdleSeconds} s, expires in {domain.TtlSeconds - domain.IdleSeconds} s, {Join(domain.Ips)}");
-        }
-
-        return new CacheSnapshot(total, total > entries.Count, entries);
-    }
-
     // What the running tunnel holds. Read from this process when it runs the tunnel, otherwise from the service
     // process over the runtime pipe.
     private string Held(string config, bool applied)
@@ -392,15 +347,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         {
             logger.LogDebug(ex, "runtime counts: unreadable reply for {Tunnel}", config);
             return null;
-        }
-    }
-
-    private static void Add(List<CacheEntry> entries, ref int total, string kind, string key, string value, string path = "")
-    {
-        total++;
-        if (entries.Count < MaxCacheEntries)
-        {
-            entries.Add(new CacheEntry(kind, key, value, path));
         }
     }
 

@@ -385,17 +385,10 @@ public static class IpcContract
     public const string OpGetRuntimeConfig = "get-runtime-config";
 
     /// <summary>
-    /// Command to read the agent's cached values. No args. The ack message holds a JSON object
-    /// { total, capped, entries } where entries carries { kind, key, value } rows and kind is one of
-    /// "resolve" / "allowed-ip" / "route" / "domain".
-    /// </summary>
-    public const string OpGetCacheEntries = "get-cache-entries";
-
-    /// <summary>
-    /// Command to read what the tunnel carries right now. No args. The ack message holds the session report: one
-    /// "session" row per destination, busiest first, then a closing "held" row with the totals. Where nothing
-    /// relays connections, a row is a destination the routing holds, with its verdict and its idle clock and no
-    /// bytes to count.
+    /// Command to read what the tunnel decides for right now. No args. The ack message holds the session report:
+    /// one "session" row per address, carrying the name it was resolved by, the path it takes, what settled it and
+    /// how long it is held, then a closing "held" row with the totals, the mode and the routing list in force.
+    /// Where nothing relays connections a row counts no bytes.
     /// </summary>
     public const string OpGetSessions = "get-sessions";
 

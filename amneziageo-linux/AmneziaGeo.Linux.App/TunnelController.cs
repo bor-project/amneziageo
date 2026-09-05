@@ -67,6 +67,24 @@ internal sealed class TunnelController : IDisposable
     public string Mode { get; private set; } = "(down)";
 
     /// <summary>
+    /// How the running tunnel routes, as the journal reads it.
+    /// </summary>
+    public string RoutingMode { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Routing list in force, empty when none is assigned.
+    /// </summary>
+    public string ListName { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The name that last resolved the address, empty when none did.
+    /// </summary>
+    public string NameOf(string address)
+    {
+        return _dns?.NameOf(address) ?? string.Empty;
+    }
+
+    /// <summary>
     /// Address ranges advertised to the engine when the tunnel came up.
     /// </summary>
     public IReadOnlyList<string> Advertised { get; private set; } = [];
@@ -187,6 +205,8 @@ internal sealed class TunnelController : IDisposable
         Advertised = allowedIps;
         _sessionConfig = configText;
         Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
+        RoutingMode = Token(split, routing.HasRules);
+        ListName = routing.ListName;
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
@@ -286,6 +306,8 @@ internal sealed class TunnelController : IDisposable
         cache.Rebuild(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes);
         _dns?.ApplyRules(routing);
         Mode = _split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
+        RoutingMode = Token(_split, routing.HasRules);
+        ListName = routing.ListName;
         return true;
     }
 
@@ -335,11 +357,24 @@ internal sealed class TunnelController : IDisposable
         }
 
         Mode = "(down)";
+        RoutingMode = string.Empty;
+        ListName = string.Empty;
         Advertised = [];
         _split = false;
     }
 
     // The addresses holding a host route: into the tunnel in a split, out the physical hop in a full tunnel.
+    // How the session routes, for the journal that reports on it.
+    private static string Token(bool split, bool hasRules)
+    {
+        if (split)
+        {
+            return SessionReport.ModeSplit;
+        }
+
+        return hasRules ? SessionReport.ModeFull : SessionReport.ModeOff;
+    }
+
     private IReadOnlyCollection<string> Routed()
     {
         var routed = new List<string>();

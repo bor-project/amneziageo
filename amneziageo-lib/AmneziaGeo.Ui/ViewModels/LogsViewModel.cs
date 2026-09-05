@@ -32,8 +32,8 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Rows requested per window.
     private const int LogLimit = 400;
 
-    // Cache rows rendered at most; the rest stay behind the filters.
-    private const int CacheRowLimit = 1000;
+    // Destination rows rendered at most; the rest stay behind the filters.
+    private const int LiveRowLimit = 1000;
 
     private static readonly JsonSerializerOptions LogJson = new() { PropertyNameCaseInsensitive = true };
 
@@ -59,11 +59,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // The configuration report, as the agent rendered it.
     private string _report = string.Empty;
 
-    // The cache rows behind the rendered body, their total and whether the agent capped them.
-    private IReadOnlyList<CacheEntry> _cacheRows = [];
-    private int _cacheTotal;
-    private bool _cacheCapped;
-    private string _cacheSummary = string.Empty;
+    // The destination rows the filters left, and how many of them there are over what the agent sent.
+    private IReadOnlyList<LiveRowItem> _liveShown = [];
+    private string _liveMatches = string.Empty;
 
     /// <summary>
     /// ctor
@@ -76,15 +74,17 @@ internal sealed partial class LogsViewModel : ViewModelBase
         // Seed backing field from prefs without echoing OnChanged.
         _probePath = prefs.ProbePath;
         Loc.Instance.CultureChanged += OnCultureChanged;
+        BuildWays();
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _pollTimer.Tick += (_, _) => OnPollTick();
     }
 
     private void OnCultureChanged()
     {
-        if (IsCacheLog)
+        if (IsLiveLog)
         {
-            RenderCache();
+            BuildWays();
+            Render();
         }
 
         // The probe cards name their tokens in the reader's language: the rows are dropped so they are built
@@ -237,14 +237,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public const string ConfigType = "config";
 
     /// <summary>
-    /// The caches the routing decides by, asked of the agent instead of read from a table.
-    /// </summary>
-    public const string CacheType = "cache";
-
-    /// <summary>
     /// The selectable sources. The tokens are the same in every language.
     /// </summary>
-    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType, ConfigType, CacheType];
+    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType, ConfigType];
 
     [ObservableProperty]
     private string _selectedLogType = "ageo";
@@ -275,15 +270,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool IsConfigLog => SelectedLogType == ConfigType;
 
     /// <summary>
-    /// Whether the viewer is on the caches, which carry a kind to narrow them by.
-    /// </summary>
-    public bool IsCacheLog => SelectedLogType == CacheType;
-
-    /// <summary>
     /// Whether the viewer is on a source the agent answers out of what it holds right now: nothing is recorded
     /// behind it, so there is no history to page through and nothing to clear.
     /// </summary>
-    public bool IsRuntimeLog => IsLiveLog || IsConfigLog || IsCacheLog;
+    public bool IsRuntimeLog => IsLiveLog || IsConfigLog;
 
     /// <summary>
     /// Whether the viewer is on a stored table, which is what can be searched, paged and cleared.
@@ -291,9 +281,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool IsStoredLog => !IsRuntimeLog;
 
     /// <summary>
-    /// Whether the search field is shown: it searches a stored table, and narrows the cache rows where they lie.
+    /// Whether the search field is shown: it searches a stored table, and narrows the destinations where they lie.
     /// </summary>
-    public bool ShowSearch => IsStoredLog || IsCacheLog;
+    public bool ShowSearch => IsStoredLog || IsLiveLog;
 
     partial void OnSelectedLogTypeChanged(string value)
     {
@@ -302,7 +292,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsProbeLog));
         OnPropertyChanged(nameof(IsLiveLog));
         OnPropertyChanged(nameof(IsConfigLog));
-        OnPropertyChanged(nameof(IsCacheLog));
         OnPropertyChanged(nameof(IsRuntimeLog));
         OnPropertyChanged(nameof(IsStoredLog));
         OnPropertyChanged(nameof(ShowSearch));
@@ -587,22 +576,34 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
     }
 
-    // --- Cache kind (cache): the verdict a row carries, or every row ---
+    // --- Way (active): where a row goes, or every row ---
 
     /// <summary>
-    /// The selectable cache kinds. The tokens are the same in every language.
+    /// The paths the destinations can be narrowed to, named in the reader's language.
     /// </summary>
-    public ObservableCollection<string> CacheKinds { get; } = ["all", "state", "domain", "proxy", "direct", "block", "none"];
+    public ObservableCollection<WayChoice> WayChoices { get; } = [];
 
     [ObservableProperty]
-    private string _selectedCacheKind = "all";
+    private WayChoice? _selectedWay;
 
-    partial void OnSelectedCacheKindChanged(string value)
+    partial void OnSelectedWayChanged(WayChoice? value)
     {
-        if (IsCacheLog)
+        if (IsLiveLog)
         {
-            RenderCache();
+            Render();
         }
+    }
+
+    // Fills the path filter in the reader's language, keeping whatever it was set to.
+    private void BuildWays()
+    {
+        var token = SelectedWay?.Token ?? WayChoice.Any;
+        WayChoices.Clear();
+        WayChoices.Add(new WayChoice(WayChoice.Any, Loc.Instance.Get("Main_WayAll")));
+        WayChoices.Add(new WayChoice(LiveSession.PathTunnel, Loc.Instance.Get("Check_Verdict_proxy")));
+        WayChoices.Add(new WayChoice(LiveSession.PathDirect, Loc.Instance.Get("Check_Verdict_direct")));
+        WayChoices.Add(new WayChoice(LiveSession.PathBlock, Loc.Instance.Get("Check_Verdict_block")));
+        SelectedWay = WayChoices.FirstOrDefault(way => way.Token == token) ?? WayChoices[0];
     }
 
     // --- Routing log toggle (routes) ---
@@ -626,10 +627,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnSearchQueryChanged(string value)
     {
-        if (IsCacheLog)
+        if (IsLiveLog)
         {
-            // The cache rows are already held; narrowing them asks the agent for nothing.
-            RenderCache();
+            // The destinations are already held; narrowing them asks the agent for nothing.
+            Render();
             return;
         }
 
@@ -649,15 +650,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Loc.Instance.Get(IsNarrow ? "Main_LogSearchWatermarkShort" : "Main_LogSearchWatermark");
 
     /// <summary>
-    /// What the field beside it came to: the matches in a stored table, the rows left of the cache.
+    /// What the field beside it came to: the matches in a stored table, the destinations left of the report.
     /// </summary>
     public string SearchSummary
     {
         get
         {
-            if (IsCacheLog)
+            if (IsLiveLog)
             {
-                return _cacheSummary;
+                return _liveMatches;
             }
 
             return string.IsNullOrWhiteSpace(SearchQuery)
@@ -743,13 +744,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// Whether the body frame is dropped: the cards carry one of their own, so it would only take width off
     /// them. The report text has none, and keeps the frame at every width.
     /// </summary>
-    public bool BareBody => IsNarrow && !IsConfigLog && !IsCacheLog;
+    public bool BareBody => IsNarrow && !IsConfigLog;
 
     /// <summary>
-    /// Whether the body is the padded table: the destinations at a width that fits them, the configuration
-    /// report and the cache rows at any width, because neither reads as a column of cards.
+    /// Whether the body is the padded table: the destinations at a width that fits them, and the configuration
+    /// report at any width, because it does not read as a column of cards.
     /// </summary>
-    public bool ShowTableText => ShowBody && (IsConfigLog || IsCacheLog || (IsLiveLog && !IsNarrow));
+    public bool ShowTableText => ShowBody && (IsConfigLog || (IsLiveLog && !IsNarrow));
 
     /// <summary>
     /// Whether the stored rows are shown as cards, which is what a narrow window carries. The probes are cards
@@ -860,10 +861,8 @@ internal sealed partial class LogsViewModel : ViewModelBase
         _lines = [];
         _carried = SessionReport.Empty;
         _report = string.Empty;
-        _cacheRows = [];
-        _cacheTotal = 0;
-        _cacheCapped = false;
-        _cacheSummary = string.Empty;
+        _liveShown = [];
+        _liveMatches = string.Empty;
         LogText = string.Empty;
         LiveSummary = string.Empty;
         ClearCards();
@@ -893,10 +892,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
             return;
         }
 
-        // The configuration and the caches cost the agent a round of reads to answer and move far more slowly
-        // than a tail does, so they are re-read every other tick.
+        // The configuration and the destinations cost the agent a round of reads to answer and move far more
+        // slowly than a tail does, so they are re-read every other tick.
         _tick++;
-        if ((IsConfigLog || IsCacheLog) && _tick % 2 != 0)
+        if (IsRuntimeLog && _tick % 2 != 0)
         {
             return;
         }
@@ -982,7 +981,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     {
         if (IsLiveLog)
         {
-            return LiveSummary + "\n\n" + SessionRows.Text(_carried);
+            return LiveSummary + "\n\n" + SessionRows.Text(_liveShown);
         }
 
         return LogText.Length > 0 ? LogText : string.Join('\n', _lines);
@@ -1079,12 +1078,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         if (IsConfigLog)
         {
             await LoadRuntimeConfigAsync();
-            return;
-        }
-
-        if (IsCacheLog)
-        {
-            await LoadCacheAsync();
             return;
         }
 
@@ -1186,7 +1179,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
 
         _carried = SessionReport.Parse(ack.Message);
-        HasLogs = _carried.Sessions.Count > 0;
         SearchMatchCount = 0;
         LogCanPageOlder = false;
         LogCanPageNewer = false;
@@ -1220,94 +1212,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Render();
     }
 
-    // Reads the caches the routing decides by; the rows come whole and the filters over them are applied here.
-    private async Task LoadCacheAsync()
-    {
-        IpcAck ack;
-        try
-        {
-            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetCacheEntries, []));
-        }
-        catch
-        {
-            return;
-        }
-
-        if (!IsActive || !IsCacheLog)
-        {
-            return;
-        }
-
-        SearchMatchCount = 0;
-        LogCanPageOlder = false;
-        LogCanPageNewer = false;
-        if (!ack.Ok)
-        {
-            _cacheRows = [];
-            _cacheTotal = 0;
-            _cacheCapped = false;
-            _cacheSummary = string.Empty;
-            LogText = Describe(ack);
-            HasLogs = LogText.Length > 0;
-            OnPropertyChanged(nameof(SearchSummary));
-            return;
-        }
-
-        CacheSnapshot? snapshot;
-        try
-        {
-            snapshot = JsonSerializer.Deserialize<CacheSnapshot>(ack.Message, LogJson);
-        }
-        catch (JsonException)
-        {
-            return;
-        }
-
-        _cacheRows = snapshot?.Entries ?? [];
-        _cacheTotal = snapshot?.Total ?? 0;
-        _cacheCapped = snapshot?.Capped ?? false;
-        Render();
-    }
-
-    // Puts the cache rows on screen through the kind and the text over them.
-    private void RenderCache()
-    {
-        var needle = SearchQuery?.Trim() ?? string.Empty;
-        var text = new StringBuilder();
-        var matched = 0;
-        var shown = 0;
-        foreach (var row in _cacheRows)
-        {
-            if (SelectedCacheKind != "all" && !string.Equals(row.Kind, SelectedCacheKind, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (needle.Length > 0
-                && !row.Key.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                && !row.Value.Contains(needle, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            matched++;
-            if (shown >= CacheRowLimit)
-            {
-                continue;
-            }
-
-            shown++;
-            text.Append(row.Kind.PadRight(12)).Append(row.Key.PadRight(34)).Append(row.Value).Append('\n');
-        }
-
-        LogText = text.ToString();
-        HasLogs = LogText.Length > 0;
-        _cacheSummary = _cacheCapped
-            ? Loc.Instance.Get("MainVm_CacheShownCapped", shown, matched, _cacheTotal)
-            : Loc.Instance.Get("MainVm_CacheShown", shown, matched);
-        OnPropertyChanged(nameof(SearchSummary));
-    }
-
     // Resolves a failed ack to text: the agent sends localization keys, not sentences.
     private static string Describe(IpcAck ack)
     {
@@ -1331,13 +1235,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
         {
             ClearCards();
             LogText = _report;
-            return;
-        }
-
-        if (IsCacheLog)
-        {
-            ClearCards();
-            RenderCache();
             return;
         }
 
@@ -1385,19 +1282,51 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ProbeEntries.Clear();
     }
 
+    // Puts the destinations on screen through the path and the text over them.
     private void RenderCarried()
     {
         ClearCards();
         LiveSummary = SessionRows.Summary(_carried);
+        var needle = SearchQuery?.Trim() ?? string.Empty;
+        var way = SelectedWay?.Token ?? WayChoice.Any;
+        var rows = new List<LiveRowItem>();
+        var matched = 0;
+        foreach (var row in SessionRows.Cards(_carried))
+        {
+            if (way != WayChoice.Any && !string.Equals(row.Way, way, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (needle.Length > 0
+                && !row.Host.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                && !row.Name.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            matched++;
+            if (rows.Count < LiveRowLimit)
+            {
+                rows.Add(row);
+            }
+        }
+
+        _liveShown = rows;
+        _liveMatches = _carried.Held > _carried.Sessions.Count
+            ? Loc.Instance.Get("MainVm_LiveShownCapped", rows.Count, matched, _carried.Held)
+            : Loc.Instance.Get("MainVm_LiveShown", rows.Count, matched);
+        OnPropertyChanged(nameof(SearchSummary));
+        HasLogs = rows.Count > 0;
         if (!IsNarrow)
         {
             LiveRows.Clear();
-            LogText = SessionRows.Text(_carried);
+            LogText = SessionRows.Text(rows);
             return;
         }
 
         LogText = string.Empty;
-        Fill(LiveRows, SessionRows.Cards(_carried));
+        Fill(LiveRows, rows);
     }
 
     // Replaces a card list row by row: a list rebuilt whole loses the place the reader is at in it.
@@ -1438,9 +1367,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
         bool HasOlder,
         int MatchCount);
 
-    // OpGetCacheEntries ack row: which cache holds the value, its key and its content.
-    private sealed record CacheEntry(string Kind, string Key, string Value);
+}
 
-    // OpGetCacheEntries ack payload: the rows with the total held before the agent's cap.
-    private sealed record CacheSnapshot(int Total, bool Capped, IReadOnlyList<CacheEntry> Entries);
+/// <summary>
+/// One path the destinations can be narrowed to: the token it filters by and its name in the reader's language.
+/// </summary>
+internal sealed record WayChoice(string Token, string Name)
+{
+    /// <summary>
+    /// Token that narrows nothing.
+    /// </summary>
+    public const string Any = "all";
 }

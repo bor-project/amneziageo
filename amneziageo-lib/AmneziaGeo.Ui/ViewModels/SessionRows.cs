@@ -7,21 +7,57 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// One destination the tunnel holds: the address, the name it was resolved by, the path it takes and what is left
-/// on it.
+/// One destination the tunnel decides for: the address, the name it came with, where it goes, what settled it,
+/// how long it is held and whatever else it carries.
 /// </summary>
-internal sealed record LiveRowItem(string Host, string Name, string Route, string Detail, int Idle, bool Stalled)
+internal sealed record LiveRowItem(
+    string Host,
+    string Name,
+    string Way,
+    string WayText,
+    string Why,
+    string Left,
+    string Detail,
+    int Idle,
+    bool Stalled)
 {
+    /// <summary>
+    /// Whether the row carries anything beyond where it goes and why.
+    /// </summary>
+    public bool HasDetail => Detail.Length > 0;
+
     /// <summary>
     /// The row as one line, for the clipboard.
     /// </summary>
-    public string Line => Name.Length == 0
-        ? string.Join("  ", Host, Route, Detail)
-        : string.Join("  ", Host, Name, Route, Detail);
+    public string Line
+    {
+        get
+        {
+            var parts = new List<string> { Host };
+            if (Name.Length > 0)
+            {
+                parts.Add(Name);
+            }
+
+            parts.Add(WayText);
+            parts.Add(Why);
+            if (Left.Length > 0)
+            {
+                parts.Add(Left);
+            }
+
+            if (Detail.Length > 0)
+            {
+                parts.Add(Detail);
+            }
+
+            return string.Join("  ", parts);
+        }
+    }
 }
 
 /// <summary>
-/// Renders what the tunnel carries: the line that counts it, the rows behind it and the same rows as text.
+/// Renders what the tunnel decides for: the lines that count it, the rows behind it and the same rows as text.
 /// </summary>
 internal static class SessionRows
 {
@@ -29,14 +65,13 @@ internal static class SessionRows
     private const int ColumnLimit = 40;
 
     /// <summary>
-    /// Counts what is held, or says nothing is going.
+    /// How the session routes and what it holds, over the rows it counts.
     /// </summary>
     public static string Summary(SessionReport report)
     {
-        return report.Held == 0
-            ? Loc.Instance.Get("Check_SessionsNone")
-            : Loc.Instance.Get("Check_SessionsSummary", report.Held, report.Undecided, report.Stalled,
-                CheckFormat.Bytes(report.TotalBytes));
+        var mode = Mode(report);
+        var counts = report.Held == 0 ? Loc.Instance.Get("Check_SessionsNone") : Counts(report);
+        return mode.Length == 0 ? counts : mode + "\n" + counts;
     }
 
     /// <summary>
@@ -47,22 +82,25 @@ internal static class SessionRows
         var rows = new List<LiveRowItem>(report.Sessions.Count);
         foreach (var row in report.Sessions)
         {
-            rows.Add(new LiveRowItem(row.Host, row.Name, Way(row), Carried(row), Math.Max(row.IdleSeconds, 0), row.Stalled));
+            rows.Add(new LiveRowItem(row.Host, row.Name, row.Route, Way(row), Why(row), Left(row), Carried(row),
+                row.IdleSeconds, row.Stalled));
         }
 
-        return [.. rows.OrderBy(row => row.Idle).ThenBy(row => Key(row.Host), StringComparer.Ordinal)];
+        return [.. rows.OrderBy(row => row.Idle < 0 ? int.MaxValue : row.Idle)
+            .ThenBy(row => Key(row.Host), StringComparer.Ordinal)];
     }
 
     /// <summary>
-    /// The same rows as a padded table, for the viewer, the clipboard and the export. A column no row fills is
-    /// left out.
+    /// The rows as a padded table, for the viewer, the clipboard and the export. A column no row fills is left
+    /// out.
     /// </summary>
-    public static string Text(SessionReport report)
+    public static string Text(IReadOnlyList<LiveRowItem> rows)
     {
-        var rows = Cards(report);
         var host = Column(rows.Select(row => row.Host));
         var name = Column(rows.Select(row => row.Name));
-        var route = Column(rows.Select(row => row.Route));
+        var way = Column(rows.Select(row => row.WayText));
+        var why = Column(rows.Select(row => row.Why));
+        var left = Column(rows.Select(row => row.Left));
         var text = new StringBuilder();
         foreach (var row in rows)
         {
@@ -72,10 +110,53 @@ internal static class SessionRows
                 text.Append(row.Name.PadRight(name));
             }
 
-            text.Append(row.Route.PadRight(route)).Append(row.Detail).Append('\n');
+            text.Append(row.WayText.PadRight(way)).Append(row.Why.PadRight(why));
+            if (left > 0)
+            {
+                text.Append(row.Left.PadRight(left));
+            }
+
+            text.Append(row.Detail).Append('\n');
         }
 
         return text.ToString();
+    }
+
+    // How the session routes, said once over the rows instead of on every one of them.
+    private static string Mode(SessionReport report)
+    {
+        return report.Mode switch
+        {
+            SessionReport.ModeSplit => report.List.Length > 0
+                ? Loc.Instance.Get("Check_ModeSplitList", report.List)
+                : Loc.Instance.Get("Check_ModeSplit"),
+            SessionReport.ModeFull => report.List.Length > 0
+                ? Loc.Instance.Get("Check_ModeFullList", report.List)
+                : Loc.Instance.Get("Check_ModeFull"),
+            SessionReport.ModeOff => Loc.Instance.Get("Check_ModeOff"),
+            _ => string.Empty,
+        };
+    }
+
+    // What is held, by where it goes.
+    private static string Counts(SessionReport report)
+    {
+        var parts = new List<string>
+        {
+            Loc.Instance.Get("Check_SessionsSummary", report.Held, report.Tunnel, report.Direct, report.Block,
+                report.Undecided),
+        };
+        if (report.TotalBytes > 0)
+        {
+            parts.Add(Loc.Instance.Get("Check_SessionsMoved", CheckFormat.Bytes(report.TotalBytes)));
+        }
+
+        if (report.Stalled > 0)
+        {
+            parts.Add(Loc.Instance.Get("Check_SessionsStalled", report.Stalled));
+        }
+
+        return string.Join(" \u00b7 ", parts);
     }
 
     // Width of a column: its longest value plus a gap, or nothing when no row carries it.
@@ -114,16 +195,31 @@ internal static class SessionRows
         };
     }
 
-    // What one destination holds: which rule it goes by, how much has gone there, how fast it moves now and how
-    // long it has been idle.
+    // What settled the destination, in the window's language.
+    private static string Why(LiveSession row)
+    {
+        return row.Reason switch
+        {
+            LiveSession.ReasonRange => Loc.Instance.Get("Check_Why_range"),
+            LiveSession.ReasonName => Loc.Instance.Get("Check_Why_name"),
+            LiveSession.ReasonApp => Loc.Instance.Get("Check_Why_app"),
+            LiveSession.ReasonResolved => Loc.Instance.Get("Check_Why_resolved"),
+            LiveSession.ReasonService => Loc.Instance.Get("Check_Why_service"),
+            LiveSession.ReasonConfig => Loc.Instance.Get("Check_Why_config"),
+            _ => Loc.Instance.Get("Check_Why_none"),
+        };
+    }
+
+    // How long the destination has before it is forgotten; a standing range has no clock.
+    private static string Left(LiveSession row)
+    {
+        return row.LeftSeconds < 0 ? string.Empty : Loc.Instance.Get("Check_SessionLeft", row.LeftSeconds);
+    }
+
+    // What the destination holds beyond its verdict: the application it belongs to and what has moved there.
     private static string Carried(LiveSession row)
     {
         var parts = new List<string>();
-        if (row.Verdict == LiveSession.Undecided)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionNoRule"));
-        }
-
         if (row.App.Length > 0)
         {
             parts.Add(row.App);
@@ -144,21 +240,11 @@ internal static class SessionRows
             parts.Add(Loc.Instance.Get("Check_SessionLive", row.Live));
         }
 
-        if (row.AgeSeconds >= 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionAge", row.AgeSeconds));
-        }
-
-        if (row.IdleSeconds >= 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionIdle", row.IdleSeconds));
-        }
-
         if (row.Stalled)
         {
             parts.Add(Loc.Instance.Get("Check_SessionStalled"));
         }
 
-        return parts.Count == 0 ? "-" : string.Join(" · ", parts);
+        return string.Join(" \u00b7 ", parts);
     }
 }

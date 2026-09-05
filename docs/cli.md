@@ -19,7 +19,7 @@ amneziageo status                   # what runs, and what the next connect would
 amneziageo doctor                   # the checks an install usually trips over
 amneziageo runtime                  # the configuration the next connect would use
 amneziageo --json config list       # script-friendly output
-amneziageo cache --filter youtube   # what the agent resolved and where it routed it
+amneziageo sessions --filter youtube # every address the tunnel decides for, and why
 amneziageo log tail --level info
 amneziageo tui                      # full-screen console over SSH
 ```

@@ -458,16 +458,10 @@
     <value>Использовать IPv6</value>
   </data>
   <data name="Main_InboundTitle" xml:space="preserve">
-    <value>Доступ из туннеля</value>
+    <value>Приём входящих подключений</value>
   </data>
   <data name="Main_InboundHint" xml:space="preserve">
-    <value>Этот компьютер отвечает по своему адресу внутри туннеля</value>
-  </data>
-  <data name="Main_InboundNetworkTitle" xml:space="preserve">
-    <value>Вся сеть туннеля</value>
-  </data>
-  <data name="Main_InboundNetworkHint" xml:space="preserve">
-    <value>Выключено: доступ только с сервера. Включено: со всех устройств этого туннеля</value>
+    <value>Устройства туннеля обращаются к этому компьютеру по его адресу в туннеле</value>
   </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Роутер</value>

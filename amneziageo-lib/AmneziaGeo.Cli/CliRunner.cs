@@ -173,6 +173,7 @@ public static class CliRunner
               runtime                           the configuration the next connect would use
               sessions [--filter <text>]        every address the tunnel decides for, and why
               subnets                           local subnets, ready to paste into exclusions
+              tunnel-subnets                    private networks the configurations carry
               apps [--filter <text>]            what per-app rules can address here
               doctor                            check the things a headless install gets wrong
               check                             measure the channel leg by leg and name the culprit
@@ -212,7 +213,7 @@ public static class CliRunner
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "proxy" => await ProxyCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "hotspot" => await HotspotCommands.RunAsync(agent, arguments).ConfigureAwait(false),
-            "log" or "runtime" or "sessions" or "subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
+            "log" or "runtime" or "sessions" or "subnets" or "tunnel-subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
             "bundle" => await BundleCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "ipc" or "ops" or "apps" or "update" => await OpsCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             _ => Reply.Usage($"unknown command '{rest[0]}'; run '{host.ExeName} help'"),

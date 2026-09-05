@@ -4,29 +4,29 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// The machine's own firewall rule for inbound access: allows what arrives from the ranges a config advertises.
+/// The machine's own firewall rule for inbound access: allows what arrives at its addresses inside the tunnel.
 /// </summary>
 internal static class InboundFirewall
 {
     /// <summary>
-    /// Opens the firewall for the given ranges and returns whether the rule stands.
+    /// Opens the firewall at the given addresses and returns whether the rule stands.
     /// </summary>
-    public static bool Allow(string name, IReadOnlyList<string> ranges, ILogger logger)
+    public static bool Allow(string name, IReadOnlyList<string> addresses, ILogger logger)
     {
-        if (ranges.Count == 0)
+        if (addresses.Count == 0)
         {
             return false;
         }
 
         Remove(name, logger);
-        var remote = string.Join(',', ranges);
-        if (!Netsh($"advfirewall firewall add rule name=\"{RuleName(name)}\" dir=in action=allow remoteip={remote} profile=any", logger))
+        var local = string.Join(',', addresses);
+        if (!Netsh($"advfirewall firewall add rule name=\"{RuleName(name)}\" dir=in action=allow localip={local} profile=any", logger))
         {
             logger.LogWarning("{Name}: the firewall rule for access from the tunnel could not be written, so this machine may stay unreachable at its tunnel address", name);
             return false;
         }
 
-        logger.LogInformation("{Name}: this machine answers what arrives from {Ranges} at its address inside the tunnel", name, remote);
+        logger.LogInformation("{Name}: this machine answers what arrives at {Addresses} inside the tunnel", name, local);
         return true;
     }
 

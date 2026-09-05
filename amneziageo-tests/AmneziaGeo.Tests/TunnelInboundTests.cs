@@ -59,4 +59,46 @@ public sealed class TunnelInboundTests
     {
         Assert.Empty(TunnelInbound.Ranges(["", "not-an-address"], wholeNetwork: true));
     }
+
+    [Fact]
+    public void Hosts_DropThePrefixLength()
+    {
+        Assert.Equal(["10.9.9.11", "fde1:c450:1259:9::11"], TunnelInbound.Hosts(["10.9.9.11/24", "fde1:c450:1259:9::11/64"]));
+    }
+
+    [Fact]
+    public void Hosts_KeepABareAddressAndSkipGarbage()
+    {
+        Assert.Equal(["10.9.9.11"], TunnelInbound.Hosts(["10.9.9.11", "", "not-an-address"]));
+    }
+
+    [Fact]
+    public void Hosts_YieldOneEntryPerAddress()
+    {
+        Assert.Equal(["10.9.9.11"], TunnelInbound.Hosts(["10.9.9.11/24", "10.9.9.11/32"]));
+    }
+    [Fact]
+    public void PrefixOfTheCoveringAllowedIp_Wins()
+    {
+        Assert.Equal(["10.9.0.0/16"], TunnelInbound.Ranges(["10.9.4.7/32"], ["10.9.0.0/16", "192.168.1.0/24"], wholeNetwork: true));
+        Assert.Equal(["10.9.0.1/32"], TunnelInbound.Ranges(["10.9.4.7/32"], ["10.9.0.0/16"], wholeNetwork: false));
+    }
+
+    [Fact]
+    public void NarrowestCoveringNetwork_Wins()
+    {
+        Assert.Equal(["10.9.4.0/24"], TunnelInbound.Ranges(["10.9.4.7/32"], ["10.0.0.0/8", "10.9.0.0/16", "10.9.4.0/24"], wholeNetwork: true));
+    }
+
+    [Fact]
+    public void FullTunnelAndForeignNetworks_LeaveTheAddressAlone()
+    {
+        Assert.Equal(["10.9.4.0/24"], TunnelInbound.Ranges(["10.9.4.7/32"], ["0.0.0.0/0", "192.168.1.0/24"], wholeNetwork: true));
+    }
+
+    [Fact]
+    public void Ipv6PrefixComesFromTheCoveringAllowedIp()
+    {
+        Assert.Equal(["fd42:6d79:7671::/64"], TunnelInbound.Ranges(["fd42:6d79:7671::9/128"], ["fd42:6d79:7671::/64"], wholeNetwork: true));
+    }
 }

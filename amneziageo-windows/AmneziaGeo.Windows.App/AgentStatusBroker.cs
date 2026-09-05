@@ -229,6 +229,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
                 IpcContract.OpSetConfigExclusions => await SetConfigExclusionsAsync(command.Args, ct),
                 IpcContract.OpListLocalSubnets => ListLocalSubnets(),
+                IpcContract.OpListTunnelSubnets => await ListTunnelSubnetsAsync(ct),
                 IpcContract.OpListGeo => await ListGeoAsync(ct),
                 IpcContract.OpGetGeoEntries => await GetGeoEntriesAsync(command.Args, ct),
                 IpcContract.OpListProcesses => ListProcesses(),
@@ -1172,6 +1173,21 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     private IpcAck ListLocalSubnets()
     {
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
+    }
+
+    // Private networks named by the stored configurations, newline-separated.
+    private async Task<IpcAck> ListTunnelSubnetsAsync(CancellationToken ct)
+    {
+        var configs = new List<string>();
+        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            if (await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) is { Length: > 0 } text)
+            {
+                configs.Add(text);
+            }
+        }
+
+        return new IpcAck(true, string.Join('\n', PrivateNetworks.FromConfigs(configs)));
     }
 
     /// <summary>

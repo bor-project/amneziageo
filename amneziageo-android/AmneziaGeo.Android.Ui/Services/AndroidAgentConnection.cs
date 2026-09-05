@@ -365,6 +365,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
 
+            case IpcContract.OpListTunnelSubnets:
+                await EnsureInitAsync().ConfigureAwait(false);
+                return new IpcAck(true, string.Join('\n', PrivateNetworks.FromConfigs(await ConfigTextsAsync().ConfigureAwait(false))));
+
             // Гео-базы разбираются в пуле: разворачивание правил держит вызывающий поток, а он тут UI-шный.
             case IpcContract.OpListGeo:
                 return await Task.Run(ListGeoAsync).ConfigureAwait(false);
@@ -2101,7 +2105,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return [];
         }
 
-        return TunnelInbound.Ranges(WgConfigEditor.GetAddresses(text), transport.InboundNetwork);
+        return TunnelInbound.Ranges(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetAllowedIps(text), transport.InboundNetwork);
     }
 
     // How the session reads in the log: rules deciding each destination with the named applications added to them,
@@ -2469,6 +2473,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new IpcAck(true, skipped > 0
             ? $"{summary}, {skipped} tokens ignored (applies on reconnect)"
             : $"{summary} (applies on reconnect)");
+    }
+
+    // The text of every stored configuration.
+    private async Task<IReadOnlyList<string>> ConfigTextsAsync()
+    {
+        var texts = new List<string>();
+        foreach (var name in await _store.ListConfigNamesAsync().ConfigureAwait(false))
+        {
+            if (await _store.GetConfigTextAsync(name).ConfigureAwait(false) is { Length: > 0 } text)
+            {
+                texts.Add(text);
+            }
+        }
+
+        return texts;
     }
 
     // Asks every source whether its remote file changed, without downloading it.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using Avalonia.Media.Imaging;
 using AmneziaGeo.Ipc;
@@ -1124,7 +1125,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// Fetches the machine's local subnets from the agent and adds them to the Direct bucket.
+    /// Fetches the machine's own subnets and the private networks of the configurations, and adds them to the selected bucket.
     /// </summary>
     [RelayCommand]
     private async Task AddLocalSubnetsAsync()
@@ -1139,22 +1140,29 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
                 return;
             }
 
-            var subnets = ack.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            SelectedRole = "direct";
+            var subnets = new List<string>(SubnetLines(ack.Message));
+            // An agent that predates the command answers with a refusal; its own subnets still stand.
+            var tunnels = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListTunnelSubnets, []));
+            if (tunnels.Ok)
+            {
+                subnets.AddRange(SubnetLines(tunnels.Message));
+            }
+
+            var bucket = Rules;
             var added = 0;
             foreach (var subnet in subnets)
             {
                 var rule = Normalize(subnet);
-                if (rule.Length > 0 && !DirectRules.Contains(rule))
+                if (rule.Length > 0 && !bucket.Contains(rule))
                 {
-                    DirectRules.Add(rule);
+                    bucket.Add(rule);
                     added++;
                 }
             }
 
             StatusMessage = added > 0
                 ? Loc.Instance.Get("RoutingSettings_LocalSubnetsAdded", added)
-                : subnets.Length == 0
+                : subnets.Count == 0
                     ? Loc.Instance.Get("RoutingSettings_NoActiveLocalSubnets")
                     : Loc.Instance.Get("RoutingSettings_AllLocalSubnetsPresent");
         }
@@ -1163,6 +1171,10 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             IsBusy = false;
         }
     }
+
+    // Splits a newline-separated subnet payload.
+    private static string[] SubnetLines(string payload) =>
+        payload.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     [RelayCommand]
     private void AddRule()
@@ -1682,8 +1694,8 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             return t;
         }
 
-        // A bare CIDR/IP keeps its "/" and goes to cidr:; anything else is a host -> domain:.
-        return t.Contains('/') ? $"cidr:{t}" : $"domain:{StripHost(t)}";
+        // An address or a network goes to cidr:; anything else is a host -> domain:.
+        return t.Contains('/') || IPAddress.TryParse(t, out _) ? $"cidr:{t}" : $"domain:{StripHost(t)}";
     }
 
     // Drops the leading www. and anything past the host.

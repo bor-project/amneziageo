@@ -140,13 +140,25 @@ internal sealed class TunnelController : IDisposable
         var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
         // Inbound access: what the tunnel may reach this machine from. Off by default.
         var inboundRoutes = options.Transport?.AllowInbound == true
-            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(resolved), options.Transport.InboundNetwork)
+            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetAllowedIps(resolved), options.Transport.InboundNetwork)
             : [];
         foreach (var inbound in inboundRoutes)
         {
             if (!startupRoutes.Contains(inbound))
             {
                 startupRoutes.Add(inbound);
+            }
+        }
+
+        // Access from the tunnel needs the way back, so the private networks the list names stand from the start.
+        List<string> inboundReturn = inboundRoutes.Count > 0
+            ? [.. routing.ProxyRoutes.Where(PrivateNetworks.IsNetwork)]
+            : [];
+        foreach (var route in inboundReturn)
+        {
+            if (!startupRoutes.Contains(route))
+            {
+                startupRoutes.Add(route);
             }
         }
 
@@ -211,7 +223,7 @@ internal sealed class TunnelController : IDisposable
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
-        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes]);
+        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
         _cache = cache;
         _sessionCts = new CancellationTokenSource();
         _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));

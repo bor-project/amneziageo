@@ -139,7 +139,7 @@ internal static class RoutingCommands
             return Reply.Usage("usage: amneziageo routing create <name> [rule...]");
         }
 
-        var rules = args.Skip(1).ToArray();
+        var rules = args.Skip(1).Select(Rules.Normalize).ToArray();
         if (Rules.FirstInvalid(rules) is { } invalid)
         {
             return Reply.Usage(Invalid(invalid));
@@ -156,7 +156,7 @@ internal static class RoutingCommands
             return Reply.Usage("usage: amneziageo routing set <id|name> [rule...]");
         }
 
-        var rules = args.Skip(1).ToArray();
+        var rules = args.Skip(1).Select(Rules.Normalize).ToArray();
         if (Rules.FirstInvalid(rules) is { } invalid)
         {
             return Reply.Usage(Invalid(invalid));
@@ -174,7 +174,7 @@ internal static class RoutingCommands
             return Reply.Usage($"usage: amneziageo routing {verb} <id|name> <rule...>");
         }
 
-        var changes = args.Skip(1).ToArray();
+        var changes = args.Skip(1).Select(Rules.Normalize).ToArray();
         if (Rules.FirstInvalid(changes) is { } invalid)
         {
             return Reply.Usage(Invalid(invalid));

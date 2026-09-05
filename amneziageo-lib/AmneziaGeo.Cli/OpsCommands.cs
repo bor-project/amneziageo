@@ -55,6 +55,7 @@ internal static class OpsCommands
         [IpcContract.OpGetRuntimeConfig] = "runtime",
         [IpcContract.OpGetSessions] = "sessions",
         [IpcContract.OpListLocalSubnets] = "subnets",
+        [IpcContract.OpListTunnelSubnets] = "tunnel-subnets",
         [IpcContract.OpListProcesses] = "apps",
         [IpcContract.OpCollectDiagnostics] = "diag collect",
         [IpcContract.OpCheckUpdate] = "update check",

@@ -262,7 +262,10 @@ internal sealed class TunnelRunner(
         // Inbound access: the ranges traffic may arrive from ride along with the resolver infrastructure, so the
         // tunnel accepts them and the answers go back the same way. Off by default, and never in the reconcilable set.
         IReadOnlyList<string> inboundRoutes = transport?.AllowInbound == true
-            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(config), transport.InboundNetwork)
+            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(config), WgConfigEditor.GetAllowedIps(config), transport.InboundNetwork)
+            : [];
+        IReadOnlyList<string> inboundAddresses = inboundRoutes.Count > 0
+            ? TunnelInbound.Hosts(WgConfigEditor.GetAddresses(config))
             : [];
         foreach (var inbound in inboundRoutes)
         {
@@ -273,9 +276,26 @@ internal sealed class TunnelRunner(
             }
         }
 
+        IReadOnlyList<string> inboundReturn = inboundRoutes.Count > 0
+            ? (geo?.Routes ?? []).Where(PrivateNetworks.IsNetwork).ToList()
+            : [];
+        foreach (var route in inboundReturn)
+        {
+            resolverRoutes.Add(route);
+            if (!geoRoutes.Contains(route))
+            {
+                geoRoutes.Add(route);
+            }
+        }
+
         if (inboundRoutes.Count > 0)
         {
             logger.LogInformation("{Name}: access from the tunnel is on for {Ranges}", name, string.Join(", ", inboundRoutes));
+        }
+
+        if (inboundReturn.Count > 0)
+        {
+            logger.LogInformation("{Name}: answers to {Ranges} take the tunnel from the start, so a request that arrives first is answered too", name, string.Join(", ", inboundReturn));
         }
 
         // Reconcilable list ranges = the list's own ranges MINUS resolver infrastructure, so a range that
@@ -455,6 +475,7 @@ internal sealed class TunnelRunner(
         // otherwise pull the answers onto the physical path.
         var pinnedRoutes = new List<string>(tunnelResolver);
         pinnedRoutes.AddRange(inboundRoutes);
+        pinnedRoutes.AddRange(inboundReturn);
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
         session.SetCache(routing);
         session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
@@ -670,7 +691,7 @@ internal sealed class TunnelRunner(
         logger.LogDebug("{Name}: routes in place - the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
-        var inboundOpened = InboundFirewall.Allow(name, inboundRoutes, logger);
+        var inboundOpened = InboundFirewall.Allow(name, inboundAddresses, logger);
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;

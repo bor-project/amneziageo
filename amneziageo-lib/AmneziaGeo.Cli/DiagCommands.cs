@@ -22,6 +22,7 @@ internal static class DiagCommands
             "runtime" => Reply.Payload(await agent.SendAsync(IpcContract.OpGetRuntimeConfig).ConfigureAwait(false)),
             "sessions" => await SessionsAsync(agent, args).ConfigureAwait(false),
             "subnets" => Reply.Payload(await agent.SendAsync(IpcContract.OpListLocalSubnets).ConfigureAwait(false)),
+            "tunnel-subnets" => Reply.Payload(await agent.SendAsync(IpcContract.OpListTunnelSubnets).ConfigureAwait(false)),
             "doctor" => Doctor(agent, host),
             "check" => await CheckAsync(agent, args).ConfigureAwait(false),
             "diag" => await DiagAsync(agent, args).ConfigureAwait(false),

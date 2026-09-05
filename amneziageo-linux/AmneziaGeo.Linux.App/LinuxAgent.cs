@@ -724,6 +724,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', LocalSubnets()));
 
+            case IpcContract.OpListTunnelSubnets:
+                return new IpcAck(true, string.Join('\n', PrivateNetworks.FromConfigs(await ConfigTextsAsync(ct).ConfigureAwait(false))));
+
             case IpcContract.OpListGeo:
                 return new IpcAck(true, string.Join('\n', await _geo.CategoriesAsync(ct).ConfigureAwait(false)));
 
@@ -2590,6 +2593,21 @@ internal sealed class LinuxAgent : IDisposable
         {
             await handler(ct).ConfigureAwait(false);
         }
+    }
+
+    // The text of every stored configuration.
+    private async Task<IReadOnlyList<string>> ConfigTextsAsync(CancellationToken ct)
+    {
+        var texts = new List<string>();
+        foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            if (await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) is { Length: > 0 } text)
+            {
+                texts.Add(text);
+            }
+        }
+
+        return texts;
     }
 
     // The machine's connected local subnets, offered to the exclusions editor.

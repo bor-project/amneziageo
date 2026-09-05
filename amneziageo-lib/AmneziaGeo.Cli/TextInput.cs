@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace AmneziaGeo.Cli;
 
 /// <summary>
@@ -140,6 +142,29 @@ public static class Rules
     /// The first token a per-config geo split would silently drop, or null when every token parses.
     /// </summary>
     public static string? FirstInvalidBare(IReadOnlyList<string> rules) => First(rules, roles: false);
+
+    /// <summary>
+    /// Prefixes a bare address or network with "cidr:", leaving every other token as it stands.
+    /// </summary>
+    public static string Normalize(string rule)
+    {
+        var separator = rule.IndexOf('|');
+        var role = separator > 0 ? rule[..(separator + 1)] : string.Empty;
+        var token = rule[(separator + 1)..].Trim();
+        return IsAddress(token) ? $"{role}cidr:{token}" : rule;
+    }
+
+    // An address with an optional prefix length, written without a kind.
+    private static bool IsAddress(string token)
+    {
+        var slash = token.IndexOf('/');
+        if (slash == 0 || (slash > 0 && !int.TryParse(token[(slash + 1)..], out _)))
+        {
+            return false;
+        }
+
+        return IPAddress.TryParse(slash > 0 ? token[..slash] : token, out _);
+    }
 
     /// <summary>
     /// Drops the "proxy|" prefix, the only role a per-config geo split can hold.

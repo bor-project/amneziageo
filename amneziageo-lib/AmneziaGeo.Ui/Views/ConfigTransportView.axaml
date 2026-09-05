@@ -107,18 +107,14 @@
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
-    <!-- Доступ из туннеля: сама галочка и вопрос про сеть, который она открывает. -->
+    <!-- Приём входящих по адресу этой машины в туннеле. -->
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_InboundTitle}" Description="{l:Tr Main_InboundHint}"
                                IsChecked="{Binding AllowInbound, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
-    <!-- Адрес этой машины в туннеле: встаёт под описанием доступа. -->
+    <!-- Адрес этой машины в туннеле: встаёт под описанием приёма. -->
     <SelectableTextBlock Text="{Binding TunnelAddress}" FontSize="12.5" TextWrapping="Wrap"
                          Margin="0,-11,0,0" MaxWidth="430" HorizontalAlignment="Left"
                          IsVisible="{Binding ShowInboundAddress}" />
-
-    <controls:SettingSwitchRow Label="{l:Tr Main_InboundNetworkTitle}" Description="{l:Tr Main_InboundNetworkHint}"
-                               IsVisible="{Binding ShowInboundNetwork}"
-                               IsChecked="{Binding InboundNetwork, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
     <!-- The router decides destinations while the session runs and costs a second pass through userspace;
          turning it off leaves the route table alone with the rules. -->

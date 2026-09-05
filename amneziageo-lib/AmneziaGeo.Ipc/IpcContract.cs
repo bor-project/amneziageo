@@ -67,6 +67,12 @@ public static class IpcContract
     public const string OpListLocalSubnets = "list-local-subnets";
 
     /// <summary>
+    /// Command to list the private networks the stored configurations carry into their tunnels. No args. The
+    /// ack message holds newline-separated CIDRs.
+    /// </summary>
+    public const string OpListTunnelSubnets = "list-tunnel-subnets";
+
+    /// <summary>
     /// Command to list available geo categories; the ack message holds newline-separated rule tokens.
     /// </summary>
     public const string OpListGeo = "list-geo";

@@ -130,8 +130,8 @@
           <TextBlock Text="{Binding RouteTrimNotice}" FontSize="11.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding RouteTrims}" />
 
-          <!-- Заполняет «Напрямую» подсетями машины. -->
-          <Button Classes="linkbtn" IsVisible="{Binding IsDirectRole}"
+          <!-- Заполняет показанную корзину локальными сетями машины и туннелей. -->
+          <Button Classes="linkbtn"
                   HorizontalAlignment="Left" Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}">
             <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" TextWrapping="Wrap" />
           </Button>

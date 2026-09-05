@@ -32,7 +32,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseIpv6;
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
-    private bool _baseInboundNetwork;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
@@ -74,16 +73,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _useRouter = true;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowInboundNetwork))]
     private bool _allowInbound;
-
-    [ObservableProperty]
-    private bool _inboundNetwork;
-
-    /// <summary>
-    /// Whether the network switch stands in the interface: it says something only while inbound access is on.
-    /// </summary>
-    public bool ShowInboundNetwork => AllowInbound;
 
     /// <summary>
     /// The address this machine answers at inside the tunnel.
@@ -135,7 +125,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useIpv6 = useIpv6;
         _useRouter = useRouter;
         _allowInbound = allowInbound;
-        _inboundNetwork = inboundNetwork;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
@@ -245,12 +234,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
-    partial void OnInboundNetworkChanged(bool value)
-    {
-        MarkDirty();
-        FireAutoSave();
-    }
-
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -278,8 +261,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || MtuMode != _baseMtuMode
             || UseIpv6 != _baseUseIpv6
             || UseRouter != _baseUseRouter
-            || AllowInbound != _baseAllowInbound
-            || InboundNetwork != _baseInboundNetwork;
+            || AllowInbound != _baseAllowInbound;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -302,7 +284,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseUseIpv6 = UseIpv6;
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
-        _baseInboundNetwork = InboundNetwork;
         if (IsDirty)
         {
             IsDirty = false;
@@ -328,7 +309,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             UseIpv6 = _baseUseIpv6;
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
-            InboundNetwork = _baseInboundNetwork;
             StatusMessage = string.Empty;
         }
         finally
@@ -446,7 +426,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", InboundNetwork ? "on" : "off"]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", AllowInbound ? "on" : "off"]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;

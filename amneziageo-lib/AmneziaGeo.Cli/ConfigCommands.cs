@@ -311,7 +311,7 @@ internal static class ConfigCommands
         }
 
         // A per-config split has one bucket, so a role prefix carries nothing here.
-        var rules = args.Skip(2).Select(Rules.StripProxyRole).ToArray();
+        var rules = args.Skip(2).Select(Rules.Normalize).Select(Rules.StripProxyRole).ToArray();
         if (Rules.FirstInvalidBare(rules) is { } invalid)
         {
             return Reply.Usage($"'{invalid}' is not a rule; expected <geosite:x|geoip:x|domain:x|cidr:x|app:x>, roles belong to routing lists");

@@ -59,7 +59,6 @@ internal partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
-    [NotifyPropertyChangedFor(nameof(ConnectPillContent))]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
@@ -376,8 +375,6 @@ internal partial class ConnectionViewModel : ViewModelBase
 
     // "Attempt N" label; N counts the attempt now in flight (retries past the first).
     public string RetryText => ShowRetry ? Loc.Instance.Get("MainVm_ConnectAttempt", RetryAttempt + 1) : string.Empty;
-
-    public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
     // The notice banner's action label: retry a stalled disconnect (#14), else reconnect / retry a failed connect.
     public string NoticeActionText => TakeoverPending

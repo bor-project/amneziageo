@@ -446,7 +446,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkLossText))]
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
-    [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(CardLossText))]
     [NotifyPropertyChangedFor(nameof(CardLossBrush))]
@@ -469,12 +468,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     public string LinkLossText => LinkSteady && LinkHealth.LossKnown(LinkLossPercent)
         ? Loc.Instance.Get("Main_LinkLoss", LinkLossPercent)
         : Loc.Instance.Get("Main_LinkLossUnknown");
-
-    /// <summary>
-    /// Colour of the loss on the card: muted while the link is clean, the warning colour once it drops enough
-    /// to be felt.
-    /// </summary>
-    public IBrush LinkLossBrush => LinkLossy ? _slow : _idle;
 
     /// <summary>
     /// Что несёт туннель на карточке: обе скорости коротко, «N/A» - пока туннеля нет.
@@ -519,7 +512,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
     [NotifyPropertyChangedFor(nameof(LinkLossText))]
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
-    [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
     [NotifyPropertyChangedFor(nameof(CardSpeedText))]
     [NotifyPropertyChangedFor(nameof(CardLossText))]
     [NotifyPropertyChangedFor(nameof(CardLossBrush))]

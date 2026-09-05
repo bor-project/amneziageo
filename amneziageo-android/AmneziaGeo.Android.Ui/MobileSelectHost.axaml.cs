@@ -717,9 +717,11 @@ internal sealed partial class MobileSelectHost : UserControl
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Margin = new Thickness(0, 8, 0, 0),
-            ItemTemplate = new FuncDataTemplate<AppRow>((row, _) =>
+            // Имя и отметка берутся привязками, без чтения самой строки.
+            ItemTemplate = new FuncDataTemplate<AppRow>((_, _) =>
             {
-                var check = new CheckBox { Content = row.Label };
+                var check = new CheckBox();
+                check.Bind(ContentControl.ContentProperty, new Binding(nameof(AppRow.Label)));
                 check.Bind(Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty, new Binding(nameof(AppRow.Picked)) { Mode = BindingMode.TwoWay });
                 return check;
             }),

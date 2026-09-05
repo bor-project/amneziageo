@@ -2635,6 +2635,9 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_AppOnlyProxyHint" xml:space="preserve">
     <value>Apps are added under «Through VPN» only.</value>
   </data>
+  <data name="Main_AppProxyDirectHint" xml:space="preserve">
+    <value>Apps are added under «Through VPN» and «Direct».</value>
+  </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Advanced</value>
   </data>

@@ -652,7 +652,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(1)) ?? [];
                     var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(2)) ?? [];
                     var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
-                    return new TunnelGeo(name, reader.GetInt32(0) != 0, rules, routes, domains, ExtractApps(rules));
+                    return new TunnelGeo(name, reader.GetInt32(0) != 0, rules, routes, domains, ExtractApps(rules, RouteRole.Proxy));
                 }
             }
         }
@@ -705,7 +705,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(2)) ?? [];
                     var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(3)) ?? [];
                     var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(4)) ?? [];
-                    return new TunnelGeo(name, reader.GetInt32(1) != 0, rules, routes, domains, ExtractApps(rules));
+                    return new TunnelGeo(name, reader.GetInt32(1) != 0, rules, routes, domains, ExtractApps(rules, RouteRole.Proxy));
                 }
             }
         }
@@ -2683,7 +2683,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             excludeRoutesJson, excludeDomainsJson);
     }
 
-    // Deserializes the materialized-bucket columns into a RoutingList; apps come from the Proxy-bucket rules.
+    // Deserializes the materialized-bucket columns into a RoutingList; apps come from the rules of each bucket.
     private static RoutingList BuildRoutingList(long id, string name, IReadOnlyList<GeoRule> rules,
         string routesJson, string domainsJson, string directRoutesJson, string directDomainsJson,
         string blockRoutesJson, string blockDomainsJson, string excludeRoutesJson, string excludeDomainsJson)
@@ -2697,17 +2697,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         // Fold the removed Exclude bucket's legacy data into Direct (identical bypass semantics).
         directRoutes.AddRange(JsonSerializer.Deserialize<List<string>>(excludeRoutesJson) ?? []);
         directDomains.AddRange(JsonSerializer.Deserialize<List<GeoDomain>>(excludeDomainsJson) ?? []);
-        return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules),
-            directRoutes, directDomains, blockRoutes, blockDomains);
+        return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules, RouteRole.Proxy),
+            directRoutes, directDomains, ExtractApps(rules, RouteRole.Direct), blockRoutes, blockDomains);
     }
 
-    // Collect Proxy-bucket App-kind rule values as matcher tokens (per-app tunneling is a proxy concept).
-    private static List<string> ExtractApps(IReadOnlyList<GeoRule> rules)
+    // Collect one bucket's App-kind rule values as matcher tokens.
+    private static List<string> ExtractApps(IReadOnlyList<GeoRule> rules, RouteRole role)
     {
         var apps = new List<string>();
         foreach (var rule in rules)
         {
-            if (rule.Kind == GeoRuleKind.App && rule.Role == RouteRole.Proxy)
+            if (rule.Kind == GeoRuleKind.App && rule.Role == role)
             {
                 apps.Add(rule.Value);
             }

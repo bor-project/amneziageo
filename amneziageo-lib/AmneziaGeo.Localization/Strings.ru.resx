@@ -2635,6 +2635,9 @@
   <data name="Main_AppOnlyProxyHint" xml:space="preserve">
     <value>Приложения добавляются только в «Через VPN».</value>
   </data>
+  <data name="Main_AppProxyDirectHint" xml:space="preserve">
+    <value>Приложения добавляются в «Через VPN» и «Напрямую».</value>
+  </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Дополнительно</value>
   </data>

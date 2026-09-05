@@ -551,19 +551,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
         var planStarted = System.Environment.TickCount64;
-        var (appMode, appPkgs) = await Task.Run(async () =>
+        var (appMode, appPkgs, bypassPkgs) = await Task.Run(async () =>
         {
             var split = await ResolveAppSplitFromRoutingAsync(useRouter).ConfigureAwait(false);
             VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false));
             return split;
         }).ConfigureAwait(false);
 
-        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}, "
-            + $"plan ready in {System.Environment.TickCount64 - planStarted} ms");
+        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}"
+            + $"{BypassLine(bypassPkgs.Length)}, plan ready in {System.Environment.TickCount64 - planStarted} ms");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
             _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel), _directTcp,
-            _excludeRoutes);
+            _excludeRoutes, bypassPkgs);
         return Ok();
     }
 
@@ -590,7 +590,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -609,6 +609,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             intent.PutExtra(GeoVpnService.ExtraAppMode, appMode);
             intent.PutExtra(GeoVpnService.ExtraAppList, appPkgs);
+        }
+
+        if (bypassPkgs is { Length: > 0 })
+        {
+            intent.PutExtra(GeoVpnService.ExtraBypassApps, bypassPkgs);
         }
 
         intent.PutExtra(GeoVpnService.ExtraEngineLog, engineLog);
@@ -3330,24 +3335,26 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // The app set from the selected routing list's app:pkg rules, as the allow list the tunnel falls back to where
-    // a connection cannot be traced to its owner; ("off", []) when none.
-    private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync(bool useRouter)
+    // a connection cannot be traced to its owner, and the set its Direct bucket names, which the tunnel leaves
+    // alone whatever the mode; ("off", [], []) when none.
+    private async Task<(string Mode, string[] Packages, string[] Bypass)> ResolveAppSplitFromRoutingAsync(bool useRouter)
     {
         if (_selectedRoutingList is not { } listId || !useRouter)
         {
-            return ("off", []);
+            return ("off", [], []);
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
         var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
+        var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
+        var bypass = AppPackages(list?.DirectApps);
         if (settings is { UseGlobalProxy: true })
         {
-            return ("off", []);
+            return ("off", [], bypass);
         }
 
-        var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
         var packages = AppPackages(list?.Apps);
-        return packages.Length > 0 ? ("include", packages) : ("off", []);
+        return packages.Length > 0 ? ("include", packages, bypass) : ("off", [], bypass);
     }
 
     // What the app rules of a list do here: they add to the rules where a connection can be traced to its owner,
@@ -3614,8 +3621,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             report.Append("endpoint     : ").Append(WgConfigEditor.GetEndpoint(configText) ?? "(none)").Append('\n');
         }
 
-        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(RouterEnabled());
+        var (appMode, appPkgs, bypassPkgs) = await ResolveAppSplitFromRoutingAsync(RouterEnabled());
         report.Append("app rules    : ").Append(AppRulesLine(appMode, appPkgs.Length)).Append('\n');
+        report.Append("apps off tun : ").Append(bypassPkgs.Length == 0 ? "none" : string.Join(", ", bypassPkgs)).Append('\n');
         AppendRoutingReport(report);
         report.Append("log level    : ").Append(_logLevel).Append('\n');
         report.Append("direct tcp   : ").Append(_directTcp ? "on" : "off").Append('\n');
@@ -3623,6 +3631,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("route log    : ").Append(_routeLog ? "on" : "off").Append('\n');
         return new IpcAck(true, report.ToString());
     }
+
+    // The applications the list keeps off the tunnel, appended to the connect line.
+    private static string BypassLine(int apps) => apps == 0 ? string.Empty : $", {apps} application(s) off the tunnel";
 
     // What the applications a list names get in the session the next connect builds.
     private static string AppRulesLine(string mode, int apps)

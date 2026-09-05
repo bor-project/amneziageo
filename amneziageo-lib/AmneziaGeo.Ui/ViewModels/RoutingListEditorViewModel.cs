@@ -603,14 +603,22 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsAndroid();
 
     /// <summary>
-    /// True while the application method is pickable: only the Proxy bucket runs it.
+    /// True while the application method is pickable: the Proxy bucket everywhere, the Direct bucket where an
+    /// application can be kept out of the tunnel altogether.
     /// </summary>
-    public bool CanAddApps => IsProxyRole;
+    public bool CanAddApps => IsProxyRole || (IsDirectRole && OperatingSystem.IsAndroid());
 
     /// <summary>
     /// App tab caption, empty where the platform runs no app rules.
     /// </summary>
     public string AppTabText => IsAppMethodAvailable ? Loc.Instance.Get("Main_AddByAppTab") : string.Empty;
+
+    /// <summary>
+    /// Names the buckets that take applications, shown in the ones that take none.
+    /// </summary>
+    public string AppBucketsHint => OperatingSystem.IsAndroid()
+        ? Loc.Instance.Get("Main_AppProxyDirectHint")
+        : Loc.Instance.Get("Main_AppOnlyProxyHint");
 
     /// <summary>
     /// Watermark of the add row, reflecting the selected method.
@@ -747,6 +755,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     {
         OnPropertyChanged(nameof(RuleWatermark));
         OnPropertyChanged(nameof(AppTabText));
+        OnPropertyChanged(nameof(AppBucketsHint));
         OnPropertyChanged(nameof(RoleHint));
         RefreshCounts();
         UpdateMatchedSuggestions();
@@ -1394,49 +1403,49 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// Opens the platform app picker (Android) and applies the chosen packages to the Proxy bucket (include).
+    /// Opens the platform app picker (Android) and applies the chosen packages to the active bucket.
     /// </summary>
     [RelayCommand]
     private void PickApps()
     {
-        if (!AppSplitBridge.IsAvailable)
+        if (!AppSplitBridge.IsAvailable || !CanAddApps)
         {
             return;
         }
 
-        // App rules are include-only: they route the picked apps through the tunnel, so they live in Proxy.
-        SelectedRole = "proxy";
-        AppSplitBridge.Present(SelectedAppPackages(), ApplyPickedApps);
+        var role = SelectedRole;
+        AppSplitBridge.Present(SelectedAppPackages(), packages => ApplyPickedApps(role, packages));
     }
 
-    // The package names already in the Proxy bucket as app:pkg rules, for pre-checking the picker.
+    // The package names already in the active bucket as app:pkg rules, for pre-checking the picker.
     private IReadOnlyList<string> SelectedAppPackages()
     {
         const string prefix = "app:pkg=";
-        return [.. ProxyRules
+        return [.. BucketFor(SelectedRole)
             .Where(r => r.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             .Select(r => r[prefix.Length..])];
     }
 
-    // Replaces the Proxy bucket's app:pkg rules with the picked package set.
-    private void ApplyPickedApps(IReadOnlyCollection<string> packages)
+    // Replaces one bucket's app:pkg rules with the picked package set.
+    private void ApplyPickedApps(string role, IReadOnlyCollection<string> packages)
     {
         const string prefix = "app:pkg=";
-        for (var i = ProxyRules.Count - 1; i >= 0; i--)
+        var bucket = BucketFor(role);
+        for (var i = bucket.Count - 1; i >= 0; i--)
         {
-            if (ProxyRules[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            if (bucket[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
-                _expandedRules.Remove(ProxyRules[i]);
-                ProxyRules.RemoveAt(i);
+                _expandedRules.Remove(bucket[i]);
+                bucket.RemoveAt(i);
             }
         }
 
         foreach (var package in packages)
         {
             var token = prefix + package;
-            if (!ProxyRules.Contains(token))
+            if (!bucket.Contains(token))
             {
-                ProxyRules.Add(token);
+                bucket.Add(token);
             }
         }
     }

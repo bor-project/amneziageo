@@ -41,6 +41,7 @@ public sealed class RoutingShareStoreTests : IAsyncLifetime
             [],
             ["172.16.0.0/12"],
             [new GeoDomain(GeoDomainKind.Domain, "direct.example")],
+            [],
             ["203.0.113.0/24"],
             [new GeoDomain(GeoDomainKind.Domain, "block.example")]));
 
@@ -78,6 +79,7 @@ public sealed class RoutingShareStoreTests : IAsyncLifetime
             [],
             ["10.0.0.0/8", "192.168.0.0/16"],
             [new GeoDomain(GeoDomainKind.Domain, "alpha.example")],
+            [],
             [],
             [],
             [],

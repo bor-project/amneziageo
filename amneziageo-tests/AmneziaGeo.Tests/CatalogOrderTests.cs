@@ -70,7 +70,7 @@ public sealed class CatalogOrderTests : IAsyncLifetime
 
     private async Task SaveListAsync(string name)
     {
-        await _store.SaveRoutingListAsync(new RoutingList(0, name, [], [], [], [], [], [], [], []));
+        await _store.SaveRoutingListAsync(new RoutingList(0, name, [], [], [], [], [], [], [], [], []));
     }
 
     private async Task<IReadOnlyList<string>> ListNamesAsync()

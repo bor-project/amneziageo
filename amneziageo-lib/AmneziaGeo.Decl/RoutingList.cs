@@ -14,5 +14,6 @@ public sealed record RoutingList(
     IReadOnlyList<string> Apps,
     IReadOnlyList<string> DirectRoutes,
     IReadOnlyList<GeoDomain> DirectDomains,
+    IReadOnlyList<string> DirectApps,
     IReadOnlyList<string> BlockRoutes,
     IReadOnlyList<GeoDomain> BlockDomains);

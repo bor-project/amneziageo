@@ -160,8 +160,8 @@
               Item2Text="{Binding AppTabText}" Item2Param="app" Item2Active="{Binding IsAppMethod}"
               Item2Icon="{StaticResource AgAppGeometry}" Item2Enabled="{Binding CanAddApps}" />
 
-          <!-- Приложения исполняются только в корзине «Через VPN». -->
-          <TextBlock Text="{l:Tr Main_AppOnlyProxyHint}" Classes="muted" FontSize="11" TextWrapping="Wrap"
+          <!-- Корзины, которые принимают приложения, названы прямо в подсказке. -->
+          <TextBlock Text="{Binding AppBucketsHint}" Classes="muted" FontSize="11" TextWrapping="Wrap"
                      IsVisible="{Binding !CanAddApps}" />
 
           <!-- Адрес и приложение вводятся одним полем; подсказки приходят выпадашкой на широком экране и

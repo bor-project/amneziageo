@@ -74,6 +74,12 @@ public sealed class GeoVpnService : VpnService
     public const string ExtraAppList = "app-list";
 
     /// <summary>
+    /// Package-name list extra for the applications the tunnel leaves alone: their sockets stay off the tun and
+    /// the system shows them no vpn at all.
+    /// </summary>
+    public const string ExtraBypassApps = "bypass-apps";
+
+    /// <summary>
     /// Tunnel MTU extra; absent or 0 takes the MTU from the config text.
     /// </summary>
     public const string ExtraMtu = "mtu";
@@ -236,7 +242,7 @@ public sealed class GeoVpnService : VpnService
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
             request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog,
-            request.DirectTcp, request.ExcludeRoutes));
+            request.DirectTcp, request.ExcludeRoutes, request.BypassApps));
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -400,7 +406,7 @@ public sealed class GeoVpnService : VpnService
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
                     request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog, request.DirectTcp,
-                    request.ExcludeRoutes).ConfigureAwait(false);
+                    request.ExcludeRoutes, request.BypassApps).ConfigureAwait(false);
             }
             finally
             {
@@ -431,7 +437,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog, bool directTcp, bool excludeRoutes)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps)
     {
         try
         {
@@ -478,8 +484,8 @@ public sealed class GeoVpnService : VpnService
             var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, underlay, carrier is not null);
             Report($"packets leave at {size} bytes ({MtuModes.Text(MtuModes.From(mtuMode))})");
             var excluded = _liveTun ? hot : [];
-            var pfd = BuildTunnel(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort,
-                excluded, out var establishError);
+            var pfd = BuildTunnel(resolved, name, appMode, appList, bypassApps, size, ipv6, rules.Tunneled, servers,
+                _proxyPort, excluded, out var establishError);
             if (pfd is null)
             {
                 Teardown(VpnStage.Failed, establishError ?? "establish failed",
@@ -490,7 +496,8 @@ public sealed class GeoVpnService : VpnService
             // What this tun leaves outside itself, held for as long as it lives: its route list is fixed now and the
             // networks under it are not.
             _carved = new List<string>(rules.Local);
-            _shape = new TunShape(resolved, name, appMode, appList, size, ipv6, rules.Tunneled, servers, _proxyPort);
+            _shape = new TunShape(resolved, name, appMode, appList, bypassApps, size, ipv6, rules.Tunneled, servers,
+                _proxyPort);
             _excluded = excluded;
 
             var tunFd = pfd.DetachFd();
@@ -746,6 +753,7 @@ public sealed class GeoVpnService : VpnService
         string Name,
         string? AppMode,
         string[]? AppList,
+        string[]? BypassApps,
         int Mtu,
         bool Ipv6,
         IReadOnlyList<string> Routes,
@@ -953,6 +961,7 @@ public sealed class GeoVpnService : VpnService
         string name,
         string? appMode,
         string[]? appList,
+        string[]? bypassApps,
         int mtu,
         bool ipv6,
         IReadOnlyList<string> routes,
@@ -1011,7 +1020,8 @@ public sealed class GeoVpnService : VpnService
                 builder.SetHttpProxy(proxy);
             }
 
-            ApplyAppSplit(builder, appMode, appList);
+            var allowListed = ApplyAppSplit(builder, appMode, appList);
+            ApplyAppBypass(builder, bypassApps, allowListed);
 
             builder.SetBlocking(true);
 
@@ -1079,8 +1089,8 @@ public sealed class GeoVpnService : VpnService
 
         // Announces the swap before the replacement is established.
         AwgEngine.PrepareSwap(handle, true);
-        var pfd = BuildTunnel(shape.Config, shape.Name, shape.AppMode, shape.AppList, shape.Mtu, shape.Ipv6,
-            shape.Routes, shape.Servers, shape.ProxyPort, wanted, out var error);
+        var pfd = BuildTunnel(shape.Config, shape.Name, shape.AppMode, shape.AppList, shape.BypassApps, shape.Mtu,
+            shape.Ipv6, shape.Routes, shape.Servers, shape.ProxyPort, wanted, out var error);
         if (pfd is null)
         {
             AwgEngine.PrepareSwap(handle, false);
@@ -1549,11 +1559,11 @@ public sealed class GeoVpnService : VpnService
     // "exclude" = every app but these. A stale/uninstalled package is skipped so it cannot fail establish. An
     // allow list carries this application too: the relay serves the proxy the tunnel offers, and left off the list
     // it sends every proxied byte beside the tunnel instead of into it.
-    private void ApplyAppSplit(Builder builder, string? mode, string[]? packages)
+    private bool ApplyAppSplit(Builder builder, string? mode, string[]? packages)
     {
         if (packages is not { Length: > 0 } || string.IsNullOrEmpty(mode))
         {
-            return;
+            return false;
         }
 
         var exclude = string.Equals(mode, "exclude", StringComparison.Ordinal);
@@ -1562,7 +1572,7 @@ public sealed class GeoVpnService : VpnService
         if (!exclude && _proxyPort > 0)
         {
             Report($"{packages.Length} named application(s) ride the tunnel by connection, not by an allow list");
-            return;
+            return false;
         }
 
         var applied = 0;
@@ -1586,6 +1596,48 @@ public sealed class GeoVpnService : VpnService
         if (!exclude && applied > 0 && PackageName is { Length: > 0 } self && Listed(builder, false, self))
         {
             Report($"{applied} application(s) ride the tunnel, and this one with them to carry their proxy");
+        }
+
+        return !exclude && applied > 0;
+    }
+
+    // Keeps the named applications out of the tunnel altogether: the system routes them off the tun and reports
+    // them a plain network, so an application that refuses to run under a vpn sees none.
+    private void ApplyAppBypass(Builder builder, string[]? packages, bool allowListed)
+    {
+        if (packages is not { Length: > 0 })
+        {
+            return;
+        }
+
+        if (allowListed)
+        {
+            Report($"{packages.Length} application(s) named off the tunnel are outside it already, since only the "
+                + "listed ones enter it");
+            return;
+        }
+
+        var applied = 0;
+        foreach (var package in packages)
+        {
+            if (string.IsNullOrWhiteSpace(package))
+            {
+                continue;
+            }
+
+            if (Listed(builder, true, package))
+            {
+                applied++;
+            }
+            else
+            {
+                Report($"the routing list keeps {package} off the tunnel, which is not installed here");
+            }
+        }
+
+        if (applied > 0)
+        {
+            Report($"{applied} application(s) stay off the tunnel and see no vpn on this device");
         }
     }
 
@@ -1757,7 +1809,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetIntExtra(ExtraEngineLog, AwgEngine.LogError),
             intent.GetIntExtra(ExtraMtuMode, 0),
             intent.GetBooleanExtra(ExtraDirectTcp, true),
-            intent.GetBooleanExtra(ExtraExcludeRoutes, false));
+            intent.GetBooleanExtra(ExtraExcludeRoutes, false),
+            intent.GetStringArrayExtra(ExtraBypassApps));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

@@ -81,7 +81,7 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RemoveRoutingList_ClearsTheSelectionThatPointedAtIt()
     {
-        var id = await _store.SaveRoutingListAsync(new RoutingList(0, "list", [], [], [], [], [], [], [], []));
+        var id = await _store.SaveRoutingListAsync(new RoutingList(0, "list", [], [], [], [], [], [], [], [], []));
         await _store.SetSelectedRoutingListAsync(id);
 
         await _store.RemoveRoutingListAsync(id);

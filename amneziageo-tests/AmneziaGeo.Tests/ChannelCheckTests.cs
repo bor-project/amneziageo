@@ -317,7 +317,7 @@ public sealed class TargetCheckTests
         IReadOnlyList<GeoDomain>? blockDomains = null,
         IReadOnlyList<string>? apps = null)
     {
-        return new RoutingList(1, "main", rules ?? [], proxy ?? [], domains ?? [], apps ?? [], [], [], block ?? [], blockDomains ?? []);
+        return new RoutingList(1, "main", rules ?? [], proxy ?? [], domains ?? [], apps ?? [], [], [], [], block ?? [], blockDomains ?? []);
     }
 
     [Fact]

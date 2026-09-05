@@ -42,7 +42,7 @@ internal sealed partial class FleetConnectionsViewModel : ConnectionsViewModel
     private int _balanceMarginPercent = BalancePolicy.Default.MarginPercent;
 
     /// <inheritdoc/>
-    public override object? TunnelExtras => MultiServer ? this : null;
+    public override object? TunnelExtras => this;
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)

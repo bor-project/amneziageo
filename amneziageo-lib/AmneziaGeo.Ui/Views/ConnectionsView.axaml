@@ -36,13 +36,19 @@
                                      Description="{l:Tr General_ShowNotificationsHint}"
                                      IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
 
+          <Border Classes="rowsep" />
+
           <controls:SettingSwitchRow Label="{l:Tr General_SurviveReboot}"
                                      Description="{l:Tr General_SurviveRebootHint}"
                                      IsChecked="{Binding SurviveReboot, Mode=TwoWay}" />
 
+          <Border Classes="rowsep" />
+
           <controls:SettingSwitchRow Label="{l:Tr General_PeriodicReconnect}"
                                      Description="{l:Tr General_PeriodicReconnectHint}"
                                      IsChecked="{Binding PeriodicReconnect, Mode=TwoWay}" />
+
+          <Border Classes="rowsep" />
 
           <!-- The interval keeps its own line under the label: the number alone does not say what repeats. -->
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"
@@ -67,14 +73,16 @@
           <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
                относятся. -->
           <StackPanel Spacing="12" IsVisible="{Binding MultiServerOffered}">
-            <Border Classes="hairline" />
+            <Border Classes="rowsep" />
 
             <controls:SettingSwitchRow Label="{l:Tr General_MultiServer}"
                                        Description="{l:Tr General_MultiServerHint}"
                                        IsChecked="{Binding MultiServer, Mode=TwoWay}" />
 
-            <!-- Место режима: у машины с одним туннелем пусто и роста не даёт. -->
-            <ContentControl Content="{Binding TunnelExtras}">
+            <Border Classes="rowsep" />
+
+            <!-- Место режима: числа набора стоят на месте и при выключенном режиме, только погашены. -->
+            <ContentControl Content="{Binding TunnelExtras}" IsEnabled="{Binding MultiServer}">
               <ContentControl.DataTemplates>
                 <DataTemplate DataType="fleet:FleetConnectionsViewModel" x:DataType="fleet:FleetConnectionsViewModel">
                   <fleet:FleetBalanceStrip />
@@ -97,10 +105,12 @@
                      Foreground="{DynamicResource AgWarnBrush}"
                      IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-          <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
+          <Border Classes="rowsep" />
+
+          <StackPanel Spacing="12" IsEnabled="{Binding ProxyEnabled}">
             <!-- Every address a client can be pointed at, each one copyable; the tunnel's own address is not
                  among them - a neighbour told to use it reaches nobody. -->
-            <ItemsControl ItemsSource="{Binding ProxyEndpoints}">
+            <ItemsControl ItemsSource="{Binding ProxyEndpoints}" IsVisible="{Binding HasProxyEndpoints}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ProxyEndpointRow">
                   <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
@@ -117,6 +127,8 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <Border Classes="rowsep" IsVisible="{Binding HasProxyEndpoints}" />
+
             <!-- Each port box stands under its label, left-aligned. -->
             <StackPanel Spacing="6">
               <TextBlock Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" />
@@ -124,11 +136,15 @@
                        Text="{Binding ProxySocksPort, Mode=TwoWay}" />
             </StackPanel>
 
+            <Border Classes="rowsep" />
+
             <StackPanel Spacing="6">
               <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" />
               <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
                        Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
             </StackPanel>
+
+            <Border Classes="rowsep" />
 
             <!-- Clients: the count first, and who holds them under the arrow. -->
             <StackPanel Spacing="6">
@@ -164,6 +180,8 @@
               </Border>
             </StackPanel>
 
+            <Border Classes="rowsep" />
+
             <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
             <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
                                        Description="{l:Tr General_ProxyAnonymousHint}"
@@ -173,6 +191,8 @@
                        Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
             <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
                        Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
+
+            <Border Classes="rowsep" />
 
             <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
             <StackPanel Spacing="6">
@@ -230,11 +250,15 @@
           <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
 
-          <StackPanel Spacing="12" IsVisible="{Binding HotspotEnabled}" IsEnabled="{Binding HotspotSupported}">
+          <Border Classes="rowsep" />
+
+          <StackPanel Spacing="12" IsEnabled="{Binding HotspotSettingsEnabled}">
             <StackPanel Spacing="6">
               <TextBlock Text="{l:Tr General_HotspotSsid}" FontSize="13.5" />
               <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
             </StackPanel>
+
+            <Border Classes="rowsep" />
 
             <StackPanel Spacing="6">
               <TextBlock Text="{l:Tr General_HotspotPassword}" FontSize="13.5" />
@@ -253,6 +277,8 @@
                 </Button>
               </Grid>
             </StackPanel>
+
+            <Border Classes="rowsep" />
 
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
               <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotBand}" FontSize="13.5" VerticalAlignment="Center" />
@@ -278,11 +304,15 @@
           </StackPanel>
         </StackPanel>
 
-        <!-- Подписки одинаковы на всех платформах, поэтому стоят под вкладками, а не в одной из них. -->
-        <StackPanel Spacing="12">
+        <Border Classes="rowsep" IsVisible="{Binding ShowSubscriptions}" />
+
+        <!-- Подписки стоят на вкладке туннеля, а где её нет - на той, что несёт раздел. -->
+        <StackPanel Spacing="12" IsVisible="{Binding ShowSubscriptions}">
             <controls:SettingSwitchRow Label="{l:Tr General_SubscriptionAutoRefresh}"
                                        Description="{l:Tr General_SubscriptionAutoRefreshHint}"
                                        IsChecked="{Binding SubscriptionAutoRefresh, Mode=TwoWay}" />
+
+            <Border Classes="rowsep" />
 
             <!-- Срок сервера главнее: поле стоит там, где панель своего не назвала. -->
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"

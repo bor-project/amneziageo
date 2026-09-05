@@ -90,6 +90,11 @@ internal partial class ConnectionsViewModel : ViewModelBase
     public bool SubscriptionIntervalEnabled => SubscriptionAutoRefresh;
 
     /// <summary>
+    /// The access point settings are editable where it can be raised and it is asked for.
+    /// </summary>
+    public bool HotspotSettingsEnabled => HotspotSupported && HotspotEnabled;
+
+    /// <summary>
     /// Whether the tunnel settings are offered (Windows only: the Android agent does not apply them).
     /// </summary>
     public bool CanConfigureConnection => OperatingSystem.IsWindows();
@@ -150,6 +155,12 @@ internal partial class ConnectionsViewModel : ViewModelBase
     private bool _hasProxyClients;
 
     /// <summary>
+    /// Whether the proxy names an address to point a client at.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hasProxyEndpoints;
+
+    /// <summary>
     /// Addresses a client points at, one row per front and address; every one of them is copyable.
     /// </summary>
     public ObservableCollection<ProxyEndpointRow> ProxyEndpoints { get; } = [];
@@ -196,6 +207,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsTunnelTab))]
     [NotifyPropertyChangedFor(nameof(IsProxyTab))]
     [NotifyPropertyChangedFor(nameof(IsWifiTab))]
+    [NotifyPropertyChangedFor(nameof(ShowSubscriptions))]
     private string _shareTab = DefaultTab();
 
     /// <summary>
@@ -203,6 +215,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    [NotifyPropertyChangedFor(nameof(HotspotSettingsEnabled))]
     private bool _hotspotEnabled;
 
     /// <summary>
@@ -238,6 +251,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotBlocked))]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    [NotifyPropertyChangedFor(nameof(HotspotSettingsEnabled))]
     private bool _hotspotSupported;
 
     /// <summary>
@@ -311,6 +325,12 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// Whether the access point tab is shown.
     /// </summary>
     public bool IsWifiTab => CanShareHotspot && ShareTab == WifiTab;
+
+    /// <summary>
+    /// Whether the subscription settings are shown: on the tunnel tab, and where there is none, on the tab that
+    /// carries the section.
+    /// </summary>
+    public bool ShowSubscriptions => CanConfigureConnection ? IsTunnelTab : IsProxyTab;
 
     /// <summary>
     /// Whether the access point fields are locked out.
@@ -660,6 +680,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
             }
         }
 
+        HasProxyEndpoints = rows.Count > 0;
         Sync(ProxyEndpoints, rows);
     }
 

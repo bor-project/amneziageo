@@ -37,6 +37,12 @@
       <Setter Property="IsVisible" Value="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}}" />
     </Style>
 
+    <!-- Divider between setting rows. -->
+    <Style Selector="Border.rowsep">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AgBorderBrush}" />
+    </Style>
+
     <!-- Frame around a list of rows. A narrow screen drops it: the rows carry their own outlines. -->
     <Style Selector="Border.rulebox">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />

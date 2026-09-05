@@ -17,7 +17,9 @@ public sealed record LiveSession(
     int IdleSeconds = -1,
     string App = "",
     string Name = "",
-    string Path = "")
+    string Path = "",
+    string Reason = "",
+    int LeftSeconds = -1)
 {
     /// <summary>
     /// Seconds a held connection may carry nothing before it counts as stalled.
@@ -43,6 +45,41 @@ public sealed record LiveSession(
     /// Path a dropped destination takes.
     /// </summary>
     public const string PathBlock = "block";
+
+    /// <summary>
+    /// Decided by an address range of the rules.
+    /// </summary>
+    public const string ReasonRange = "range";
+
+    /// <summary>
+    /// Decided by a name rule.
+    /// </summary>
+    public const string ReasonName = "name";
+
+    /// <summary>
+    /// Decided by an application rule.
+    /// </summary>
+    public const string ReasonApp = "app";
+
+    /// <summary>
+    /// Brought in by a tracked name, whose route it keeps.
+    /// </summary>
+    public const string ReasonResolved = "resolved";
+
+    /// <summary>
+    /// Named by no rule, so the mode decides.
+    /// </summary>
+    public const string ReasonNone = "none";
+
+    /// <summary>
+    /// Held outside the rules for the connection itself: resolver, tunnel network, inbound access.
+    /// </summary>
+    public const string ReasonService = "service";
+
+    /// <summary>
+    /// Taken from the AllowedIPs of the server configuration, which decides while routing is off.
+    /// </summary>
+    public const string ReasonConfig = "config";
 
     /// <summary>
     /// Whether something is connected there and nothing has moved for the stall window.
@@ -89,6 +126,12 @@ public sealed record LiveSession(
             row.Append("\tpath=").Append(Path);
         }
 
+        if (Reason.Length > 0)
+        {
+            row.Append("\treason=").Append(Reason);
+        }
+
+        Pair(row, "left", LeftSeconds);
         return row.ToString();
     }
 
@@ -123,7 +166,9 @@ public sealed record LiveSession(
             (int)Number(values, "idle"),
             values.GetValueOrDefault("app", string.Empty),
             values.GetValueOrDefault("name", string.Empty),
-            values.GetValueOrDefault("path", string.Empty));
+            values.GetValueOrDefault("path", string.Empty),
+            values.GetValueOrDefault("reason", string.Empty),
+            (int)Number(values, "left"));
     }
 
     /// <summary>
@@ -193,12 +238,32 @@ public sealed record SessionReport(
     IReadOnlyList<LiveSession> Sessions,
     int Held = 0,
     int Undecided = 0,
-    long TotalBytes = 0)
+    long TotalBytes = 0,
+    int Tunnel = 0,
+    int Direct = 0,
+    int Block = 0,
+    string Mode = "",
+    string List = "")
 {
     /// <summary>
     /// Destinations one report carries; the rest is counted, not listed.
     /// </summary>
-    public const int MaxRows = 200;
+    public const int MaxRows = 2000;
+
+    /// <summary>
+    /// Routing decides each destination; what no rule names leaves past the tunnel.
+    /// </summary>
+    public const string ModeSplit = "split";
+
+    /// <summary>
+    /// Everything rides the tunnel except what the rules pull out of it.
+    /// </summary>
+    public const string ModeFull = "full";
+
+    /// <summary>
+    /// No routing list: the AllowedIPs of the server configuration decide alone.
+    /// </summary>
+    public const string ModeOff = "off";
 
     /// <summary>
     /// A report holding nothing, which is what a tunnel without a relay has to say.
@@ -233,7 +298,12 @@ public sealed record SessionReport(
             Held.ToString(CultureInfo.InvariantCulture),
             Undecided.ToString(CultureInfo.InvariantCulture),
             TotalBytes.ToString(CultureInfo.InvariantCulture),
-            UnixMs.ToString(CultureInfo.InvariantCulture)));
+            UnixMs.ToString(CultureInfo.InvariantCulture),
+            Tunnel.ToString(CultureInfo.InvariantCulture),
+            Direct.ToString(CultureInfo.InvariantCulture),
+            Block.ToString(CultureInfo.InvariantCulture),
+            Mode,
+            List.Replace('\t', ' ')));
 
         return string.Join('\n', rows);
     }
@@ -248,6 +318,11 @@ public sealed record SessionReport(
         var undecided = 0;
         var total = 0L;
         var stamp = 0L;
+        var tunnel = 0;
+        var direct = 0;
+        var block = 0;
+        var mode = string.Empty;
+        var list = string.Empty;
         foreach (var row in payload.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
         {
             if (LiveSession.TryParse(row) is { } session)
@@ -257,16 +332,26 @@ public sealed record SessionReport(
             }
 
             var parts = row.Split('\t');
-            if (parts.Length >= 5 && parts[0] == "held")
+            if (parts.Length < 5 || parts[0] != "held")
             {
-                held = (int)Number(parts[1]);
-                undecided = (int)Number(parts[2]);
-                total = Number(parts[3]);
-                stamp = Number(parts[4]);
+                continue;
+            }
+
+            held = (int)Number(parts[1]);
+            undecided = (int)Number(parts[2]);
+            total = Number(parts[3]);
+            stamp = Number(parts[4]);
+            if (parts.Length >= 10)
+            {
+                tunnel = (int)Number(parts[5]);
+                direct = (int)Number(parts[6]);
+                block = (int)Number(parts[7]);
+                mode = parts[8];
+                list = parts[9];
             }
         }
 
-        return new SessionReport(stamp, sessions, held, undecided, total);
+        return new SessionReport(stamp, sessions, held, undecided, total, tunnel, direct, block, mode, list);
     }
 
     /// <summary>
@@ -275,8 +360,18 @@ public sealed record SessionReport(
     public string Render()
     {
         var text = new StringBuilder();
-        text.Append("relay holds ").Append(Held.ToString(CultureInfo.InvariantCulture)).Append(" destination(s), ")
-            .Append(Undecided.ToString(CultureInfo.InvariantCulture)).Append(" undecided, ")
+        text.Append("mode ").Append(Mode.Length == 0 ? "-" : Mode);
+        if (List.Length > 0)
+        {
+            text.Append(", list ").Append(List);
+        }
+
+        text.Append('\n');
+        text.Append("holds ").Append(Held.ToString(CultureInfo.InvariantCulture)).Append(" destination(s), ")
+            .Append(Tunnel.ToString(CultureInfo.InvariantCulture)).Append(" tunnelled, ")
+            .Append(Direct.ToString(CultureInfo.InvariantCulture)).Append(" direct, ")
+            .Append(Block.ToString(CultureInfo.InvariantCulture)).Append(" blocked, ")
+            .Append(Undecided.ToString(CultureInfo.InvariantCulture)).Append(" in no rule, ")
             .Append(Stalled.ToString(CultureInfo.InvariantCulture)).Append(" stalled, ")
             .Append(CheckFormat.Bytes(TotalBytes)).Append(" carried\n");
         foreach (var session in Sessions)
@@ -284,6 +379,7 @@ public sealed record SessionReport(
             text.Append("  ").Append(session.Host.PadRight(24))
                 .Append(Column(session.Name, 28))
                 .Append(Column(session.Route, 8))
+                .Append(Column(session.Reason, 10))
                 .Append(session.Describe()).Append('\n');
         }
 

@@ -799,9 +799,6 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpGetRuntimeConfig:
                 return await GetRuntimeConfigAsync(ct).ConfigureAwait(false);
 
-            case IpcContract.OpGetCacheEntries:
-                return await GetCacheEntriesAsync(ct).ConfigureAwait(false);
-
             case IpcContract.OpGetSessions:
                 return GetSessions();
 
@@ -1973,41 +1970,95 @@ internal sealed class LinuxAgent : IDisposable
         return new IpcAck(true, KnownHostList.Payload(hosts));
     }
 
+    // What the tunnel decides for right now: one row per address, with the name it was resolved by, the path it
+    // takes and what settled it. While routing is off the AllowedIPs of the configuration answer instead.
     private IpcAck GetSessions()
     {
+        var mode = _tunnel.RoutingMode.Length > 0 ? _tunnel.RoutingMode : SessionReport.ModeOff;
         var rows = new List<LiveSession>();
-        foreach (var host in _tunnel.Tunneled)
+        var undecided = 0;
+        if (mode == SessionReport.ModeOff)
         {
-            rows.Add(new LiveSession(host, "proxy"));
+            foreach (var range in _tunnel.Advertised)
+            {
+                rows.Add(new LiveSession(range, "proxy", Path: LiveSession.PathTunnel,
+                    Reason: LiveSession.ReasonConfig));
+            }
+        }
+        else
+        {
+            var split = _tunnel.Cache?.Split ?? true;
+            foreach (var held in _tunnel.Cache?.Snapshot() ?? [])
+            {
+                var verdict = held.Verdict == RouteVerdict.None
+                    ? LiveSession.Undecided
+                    : held.Verdict.ToString().ToLowerInvariant();
+                if (verdict == LiveSession.Undecided)
+                {
+                    undecided++;
+                }
+
+                var address = held.Address.ToString();
+                rows.Add(new LiveSession(address, verdict, IdleSeconds: held.IdleSeconds,
+                    Name: _tunnel.NameOf(address), Path: PathOf(held, split), Reason: ReasonOf(held),
+                    LeftSeconds: Math.Max(held.TtlSeconds - held.IdleSeconds, 0)));
+            }
         }
 
-        foreach (var host in _tunnel.Bypassed)
+        foreach (var range in _tunnel.Cache?.PinnedRoutes ?? [])
         {
-            rows.Add(new LiveSession(host, "direct"));
+            rows.Add(new LiveSession(range, "proxy", Path: LiveSession.PathTunnel,
+                Reason: LiveSession.ReasonService));
         }
 
+        var tunnel = rows.Count(row => row.Route == LiveSession.PathTunnel);
+        var direct = rows.Count(row => row.Route == LiveSession.PathDirect);
+        var block = rows.Count(row => row.Route == LiveSession.PathBlock);
         var report = new SessionReport(
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            [.. rows.Take(SessionReport.MaxRows)],
-            rows.Count);
+            [.. rows.OrderBy(row => row.IdleSeconds < 0 ? int.MaxValue : row.IdleSeconds).Take(SessionReport.MaxRows)],
+            rows.Count,
+            undecided,
+            0,
+            tunnel,
+            direct,
+            block,
+            mode,
+            _tunnel.ListName);
         return new IpcAck(true, report.ToPayload());
     }
 
-    private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
+    // Where the address goes; an entry the verdict installed nothing for follows the default of the mode.
+    private static string PathOf(RoutingCache.Held held, bool split)
     {
-        var rows = new List<object>();
-        rows.AddRange(_tunnel.Tunneled.Select(host => (object)new { kind = "live", key = host, value = "tunnel" }));
-        rows.AddRange(_tunnel.Bypassed.Select(host => (object)new { kind = "live", key = host, value = "direct" }));
-        if (await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
-            && await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false) is { } list)
+        return held.Plan switch
         {
-            rows.AddRange(list.Routes.Select(route => (object)new { kind = "proxy", key = route, value = "geoip" }));
-            rows.AddRange(list.Domains.Select(domain => (object)new { kind = "domain", key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() }));
+            RoutePlan.Tunnel or RoutePlan.External => LiveSession.PathTunnel,
+            RoutePlan.Permit or RoutePlan.Bypass => LiveSession.PathDirect,
+            RoutePlan.Drop => LiveSession.PathBlock,
+            _ => split ? LiveSession.PathDirect : LiveSession.PathTunnel,
+        };
+    }
+
+    // What settled the destination, in the order the cache settles it.
+    private static string ReasonOf(RoutingCache.Held held)
+    {
+        if (held.Adopted)
+        {
+            return LiveSession.ReasonResolved;
         }
 
-        const int cap = 1000;
-        var capped = rows.Count > cap;
-        return new IpcAck(true, JsonSerializer.Serialize(new { total = rows.Count, capped, entries = capped ? rows.Take(cap).ToList() : rows }));
+        if (held.ByName)
+        {
+            return LiveSession.ReasonName;
+        }
+
+        if (held.Verdict != RouteVerdict.None)
+        {
+            return LiveSession.ReasonRange;
+        }
+
+        return held.ByApp ? LiveSession.ReasonApp : LiveSession.ReasonNone;
     }
 
     // Asks every source whether its remote file changed, without downloading it.

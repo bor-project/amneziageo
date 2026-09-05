@@ -95,13 +95,19 @@
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                        ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
            </StackPanel>
-           <!-- The cache is narrowed by the verdict a row carries. It takes the level's slot: only one of the
-                two is ever shown. -->
-           <StackPanel Grid.Column="1" Spacing="4" Width="132" Margin="10,0,0,0" IsVisible="{Binding IsCacheLog}">
-             <TextBlock Text="{l:Tr Main_CacheKindTitle}" FontWeight="SemiBold" FontSize="15"
+           <!-- The destinations are narrowed by where they go. It takes the level's slot: only one of the two
+                is ever shown. -->
+           <StackPanel Grid.Column="1" Spacing="4" Width="132" Margin="10,0,0,0" IsVisible="{Binding IsLiveLog}">
+             <TextBlock Text="{l:Tr Main_WayTitle}" FontWeight="SemiBold" FontSize="15"
                         IsVisible="{Binding !IsShort}" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                       ItemsSource="{Binding CacheKinds}" SelectedItem="{Binding SelectedCacheKind, Mode=TwoWay}" />
+                       ItemsSource="{Binding WayChoices}" SelectedItem="{Binding SelectedWay, Mode=TwoWay}">
+               <controls:AdaptiveComboBox.ItemTemplate>
+                 <DataTemplate x:DataType="vm:WayChoice">
+                   <TextBlock Text="{Binding Name}" />
+                 </DataTemplate>
+               </controls:AdaptiveComboBox.ItemTemplate>
+             </controls:AdaptiveComboBox>
            </StackPanel>
          </Grid>
 
@@ -297,7 +303,7 @@
                                    TextWrapping="Wrap" Margin="16,13" />
             </ScrollViewer>
 
-            <!-- A padded table: the destinations, the configuration report, the cache rows. The columns only
+            <!-- A padded table: the destinations and the configuration report. The columns only
                  line up without wrapping, so this one carries its own sideways scroll. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                           IsVisible="{Binding ShowTableText}">
@@ -438,7 +444,7 @@
                           <TextBlock Grid.Column="1" Text="{Binding Host}" FontSize="13" FontWeight="SemiBold"
                                      TextTrimming="CharacterEllipsis"
                                      Foreground="{DynamicResource AgFgBrush}" />
-                          <TextBlock Grid.Column="2" Text="{Binding Route}" FontSize="11.5"
+                          <TextBlock Grid.Column="2" Text="{Binding WayText}" FontSize="11.5"
                                      VerticalAlignment="Center"
                                      Foreground="{DynamicResource AgAccentBrush}" />
                           <!-- A finger scrolls the card rather than selecting inside it, so the whole row goes
@@ -451,8 +457,16 @@
                         <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
                                    IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                    Foreground="{DynamicResource AgFgBrush}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <TextBlock Grid.Column="0" Text="{Binding Why}" FontSize="11.5"
+                                     TextTrimming="CharacterEllipsis"
+                                     Foreground="{DynamicResource AgMutedBrush}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Left}" FontSize="11.5"
+                                     Foreground="{DynamicResource AgMuted2Brush}" />
+                        </Grid>
                         <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="11.5"
-                                   Foreground="{DynamicResource AgMutedBrush}" />
+                                   IsVisible="{Binding HasDetail}"
+                                   Foreground="{DynamicResource AgMuted2Brush}" />
                       </StackPanel>
                     </Border>
                   </DataTemplate>
@@ -471,12 +485,7 @@
                          IsVisible="{Binding IsRuntimeLog}"
                          Foreground="{DynamicResource AgMutedBrush}" HorizontalAlignment="Center" />
               <TextBlock Text="{l:Tr Main_LogEmptyHint}" Classes="muted" FontSize="12"
-                         IsVisible="{Binding !IsCacheLog}"
                          HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="280" />
-              <!-- Why the cache can stand empty while the tunnel is up. -->
-              <TextBlock Text="{l:Tr Main_CacheEmptyHint}" Classes="muted" FontSize="12"
-                         IsVisible="{Binding IsCacheLog}"
-                         HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320" />
             </StackPanel>
             <!-- Loader while a window loads. -->
             <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">

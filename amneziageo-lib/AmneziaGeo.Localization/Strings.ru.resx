@@ -766,8 +766,11 @@
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Уровень</value>
   </data>
-  <data name="Main_CacheKindTitle" xml:space="preserve">
-    <value>Тип записи</value>
+  <data name="Main_WayTitle" xml:space="preserve">
+    <value>Куда</value>
+  </data>
+  <data name="Main_WayAll" xml:space="preserve">
+    <value>все</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
     <value>ЛОГИН</value>
@@ -1807,13 +1810,10 @@
   <data name="Main_ConfigEmptyTitle" xml:space="preserve">
     <value>Данных нет</value>
   </data>
-  <data name="Main_CacheEmptyHint" xml:space="preserve">
-    <value>Кеш наполняется, пока туннель поднят: адреса отслеживаемых доменов и вердикты по адресам. Вердиктов не будет, если список Direct ставится целиком при подключении, а не по требованию.</value>
-  </data>
-  <data name="MainVm_CacheShown" xml:space="preserve">
+  <data name="MainVm_LiveShown" xml:space="preserve">
     <value>{0} из {1}</value>
   </data>
-  <data name="MainVm_CacheShownCapped" xml:space="preserve">
+  <data name="MainVm_LiveShownCapped" xml:space="preserve">
     <value>{0} из {1}, агент отдал {2}</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
@@ -2321,19 +2321,13 @@
     <value>Обновлено. Перезапустите приложение.</value>
   </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
-    <value>Назначений: {0}, не определено {1}, без движения {2}, передано {3}.</value>
+    <value>Адресов: {0}, в туннель {1}, мимо {2}, блок {3}, не в правилах {4}.</value>
   </data>
   <data name="Check_SessionsNone" xml:space="preserve">
     <value>Сейчас через туннель ничего не идёт.</value>
   </data>
   <data name="Check_SessionLive" xml:space="preserve">
     <value>соединений: {0}</value>
-  </data>
-  <data name="Check_SessionAge" xml:space="preserve">
-    <value>держится {0} с</value>
-  </data>
-  <data name="Check_SessionIdle" xml:space="preserve">
-    <value>простой {0} с</value>
   </data>
   <data name="Check_SessionStalled" xml:space="preserve">
     <value>застой</value>
@@ -2359,8 +2353,50 @@
   <data name="Main_LogPausedHint" xml:space="preserve">
     <value>Пауза, пока нажат Ctrl</value>
   </data>
-  <data name="Check_SessionNoRule" xml:space="preserve">
-    <value>нет правила</value>
+  <data name="Check_Why_range" xml:space="preserve">
+    <value>по диапазону</value>
+  </data>
+  <data name="Check_Why_name" xml:space="preserve">
+    <value>по имени</value>
+  </data>
+  <data name="Check_Why_app" xml:space="preserve">
+    <value>по приложению</value>
+  </data>
+  <data name="Check_Why_resolved" xml:space="preserve">
+    <value>адрес имени</value>
+  </data>
+  <data name="Check_Why_none" xml:space="preserve">
+    <value>не в правилах</value>
+  </data>
+  <data name="Check_Why_service" xml:space="preserve">
+    <value>служебный</value>
+  </data>
+  <data name="Check_Why_config" xml:space="preserve">
+    <value>из конфига</value>
+  </data>
+  <data name="Check_SessionLeft" xml:space="preserve">
+    <value>осталось {0} с</value>
+  </data>
+  <data name="Check_SessionsMoved" xml:space="preserve">
+    <value>передано {0}</value>
+  </data>
+  <data name="Check_SessionsStalled" xml:space="preserve">
+    <value>без движения {0}</value>
+  </data>
+  <data name="Check_ModeSplit" xml:space="preserve">
+    <value>Маршрутизация включена.</value>
+  </data>
+  <data name="Check_ModeSplitList" xml:space="preserve">
+    <value>Маршрутизация по списку &quot;{0}&quot;.</value>
+  </data>
+  <data name="Check_ModeFull" xml:space="preserve">
+    <value>Полный туннель.</value>
+  </data>
+  <data name="Check_ModeFullList" xml:space="preserve">
+    <value>Полный туннель, список &quot;{0}&quot;.</value>
+  </data>
+  <data name="Check_ModeOff" xml:space="preserve">
+    <value>Маршрутизация выключена, решают AllowedIPs из конфига.</value>
   </data>
   <data name="Probe_TargetWatermark" xml:space="preserve">
     <value>домен или адрес</value>

@@ -457,6 +457,8 @@ internal sealed class TunnelRunner(
         pinnedRoutes.AddRange(inboundRoutes);
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
         session.SetCache(routing);
+        session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
+            WgConfigEditor.GetAllowedIps(config));
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.
         _ = Task.Run(() => RuntimeSnapshotPipe.ServeAsync(name, (op, ct) => ServeAsync(op, routing, name, ct), logger, sessionCts.Token));
@@ -1276,7 +1278,7 @@ internal sealed class TunnelRunner(
             return report.ToPayload();
         }
 
-        return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
+        return inspector.Sessions().ToPayload();
     }
 
     // Re-reads which tunnel standing alongside carries which names. Only the one holding this machine's
@@ -1570,5 +1572,16 @@ internal sealed class TunnelRunner(
         {
             await Task.Delay(500, ct);
         }
+    }
+
+    // How the session routes, for the journal that reports on it.
+    private static string RoutingMode(bool split, bool hasList)
+    {
+        if (split)
+        {
+            return SessionReport.ModeSplit;
+        }
+
+        return hasList ? SessionReport.ModeFull : SessionReport.ModeOff;
     }
 }

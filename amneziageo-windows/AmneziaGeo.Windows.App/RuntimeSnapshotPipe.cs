@@ -18,11 +18,6 @@ internal static class RuntimeSnapshotPipe
     private const int RetryDelayMs = 250;
 
     /// <summary>
-    /// Asks for the live cache snapshot.
-    /// </summary>
-    public const string OpSnapshot = "snapshot";
-
-    /// <summary>
     /// Announces that the routing rules changed and the cache must be re-decided.
     /// </summary>
     public const string OpRules = "rules";

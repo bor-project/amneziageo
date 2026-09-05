@@ -142,6 +142,7 @@ public sealed class GeoVpnService : VpnService
     private InetSocketAddress? _proxyEnd;
     private WsCarrier? _carrier;
     private ProxyRelay? _relay;
+    private SessionReport? _routed;
     private LocalProxyServer? _proxy;
     private TunShape? _shape;
     private IReadOnlyList<string> _excluded = [];
@@ -463,6 +464,7 @@ public sealed class GeoVpnService : VpnService
             _liveTun = excludeRoutes && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu;
             var hot = excludeRoutes ? HotDirect() : [];
             var rules = await MaterializeAsync(plan, servers, _proxyPort > 0, _liveTun ? [] : hot).ConfigureAwait(false);
+            _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
                 Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
@@ -666,6 +668,43 @@ public sealed class GeoVpnService : VpnService
         IReadOnlyList<string> Allowed,
         IReadOnlyList<string> Local,
         string Verdicts);
+
+    // What the route table alone decides, as the journal reads it: the ranges handed to the tun and the engine.
+    // Nothing is met here, so no row carries a clock.
+    private static SessionReport RoutedReport(GeoRoutingPlan plan, Materialized rules)
+    {
+        var rows = new List<LiveSession>();
+        var listed = plan.HasRules || plan.TunnelApps.Count > 0;
+        var reason = listed ? LiveSession.ReasonRange : LiveSession.ReasonConfig;
+        foreach (var range in plan.BlockRoutes)
+        {
+            rows.Add(new LiveSession(range, "block", Path: LiveSession.PathBlock, Reason: reason));
+        }
+
+        foreach (var range in plan.DirectRoutes)
+        {
+            rows.Add(new LiveSession(range, "direct", Path: LiveSession.PathDirect, Reason: reason));
+        }
+
+        foreach (var range in listed ? plan.ProxyRoutes : rules.Tunneled)
+        {
+            rows.Add(new LiveSession(range, "proxy", Path: LiveSession.PathTunnel, Reason: reason));
+        }
+
+        var mode = plan.FullTunnel
+            ? (listed ? SessionReport.ModeFull : SessionReport.ModeOff)
+            : SessionReport.ModeSplit;
+        return new SessionReport(
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            [.. rows.Take(SessionReport.MaxRows)],
+            rows.Count,
+            0,
+            0,
+            listed ? plan.ProxyRoutes.Count : rules.Tunneled.Count,
+            plan.DirectRoutes.Count,
+            plan.BlockRoutes.Count,
+            mode);
+    }
 
     // Whether the session raises the relay. Every byte it carries crosses userspace twice, so it stands only where
     // the route table cannot say the same thing: a connection to attribute to an application, or more ranges than
@@ -1305,6 +1344,11 @@ public sealed class GeoVpnService : VpnService
             }
             else
             {
+                if (_routed is { } routed)
+                {
+                    VpnBridge.WriteSessions(routed with { UnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+                }
+
                 Report($"tunnel {tunnel / 1024} KiB");
             }
 

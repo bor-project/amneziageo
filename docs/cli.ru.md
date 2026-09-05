@@ -19,7 +19,7 @@ amneziageo status                   # что работает и что возь
 amneziageo doctor                   # проверки, на которых обычно спотыкается установка
 amneziageo runtime                  # конфигурация, которую возьмёт следующее подключение
 amneziageo --json config list       # вывод для скриптов
-amneziageo cache --filter youtube   # что агент разрешил и куда направил
+amneziageo sessions --filter youtube # каждый адрес, который решает туннель, и почему
 amneziageo log tail --level info
 amneziageo tui                      # полноэкранная консоль по SSH
 ```

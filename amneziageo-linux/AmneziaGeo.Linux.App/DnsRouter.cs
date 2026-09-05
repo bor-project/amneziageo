@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Geo;
@@ -18,6 +19,9 @@ internal sealed class DnsRouter : IDisposable
     private const int TcpBacklog = 16;
     private const int MaxMessageLength = 65535;
 
+    // Addresses kept with the name that answered them; past this the whole set is dropped and filled again.
+    private const int MaxNames = 8192;
+
     private readonly bool _split;
     private readonly bool _stripV6;
     private volatile DomainMatcher _proxyDomains;
@@ -26,6 +30,7 @@ internal sealed class DnsRouter : IDisposable
     private readonly IReadOnlyList<IPAddress> _tunnelResolvers;
     private readonly IReadOnlyList<IPAddress> _lanResolvers;
     private readonly RoutingCache _routes;
+    private readonly ConcurrentDictionary<string, string> _names = new(StringComparer.Ordinal);
     private readonly AgentLog _log;
     private readonly CancellationTokenSource _cts = new();
     private Socket? _udp;
@@ -52,6 +57,14 @@ internal sealed class DnsRouter : IDisposable
     /// Address the router listens on.
     /// </summary>
     public static IPAddress Listen { get; } = IPAddress.Parse("127.0.0.71");
+
+    /// <summary>
+    /// The name that last answered with the address, empty when none did.
+    /// </summary>
+    public string NameOf(string address)
+    {
+        return _names.GetValueOrDefault(address, string.Empty);
+    }
 
     /// <summary>
     /// Takes the edited rules over; the next lookup is answered by them.
@@ -291,10 +304,22 @@ internal sealed class DnsRouter : IDisposable
                 _routes.Note(value, verdict);
             }
 
+            Remember(name, address.ToString());
             _log.Route($"{name} -> {address} {verdict.ToString().ToLowerInvariant()}");
         }
 
         return false;
+    }
+
+    // Keeps the name an address came with, dropping the whole set once it has grown past what a journal needs.
+    private void Remember(string name, string address)
+    {
+        if (_names.Count >= MaxNames)
+        {
+            _names.Clear();
+        }
+
+        _names[address] = name;
     }
 
     // Direct wins over proxy on an overlap, and a blocked name is refused before either.

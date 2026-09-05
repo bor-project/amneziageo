@@ -267,25 +267,20 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     private Dictionary<string, HeldRoute> Held(string config)
     {
         var map = new Dictionary<string, HeldRoute>(StringComparer.Ordinal);
-        foreach (var entry in inspector.Held(config).Entries)
+        foreach (var row in inspector.HeldSessions(config).Sessions)
         {
-            if (entry.Kind is "state" or "domain")
-            {
-                continue;
-            }
-
-            map[entry.Key] = new HeldRoute(Role(entry), $"held as {entry.Kind}, {entry.Value}");
+            map[row.Host] = new HeldRoute(Role(row), row.Describe());
         }
 
         return map;
     }
 
-    // The role the installed path amounts to; the verdict answers for an entry that installed nothing.
-    private static RoleToken Role(RuntimeInspector.CacheEntry entry)
+    // The role the installed path amounts to; the verdict answers for a row that installed nothing.
+    private static RoleToken Role(AmneziaGeo.Ipc.LiveSession row)
     {
-        return (entry.Path.Length > 0 ? entry.Path : entry.Kind) switch
+        return row.Route switch
         {
-            AmneziaGeo.Ipc.LiveSession.PathTunnel or "proxy" => RoleToken.Proxy,
+            AmneziaGeo.Ipc.LiveSession.PathTunnel => RoleToken.Proxy,
             AmneziaGeo.Ipc.LiveSession.PathDirect => RoleToken.Direct,
             AmneziaGeo.Ipc.LiveSession.PathBlock => RoleToken.Block,
             _ => RoleToken.None,

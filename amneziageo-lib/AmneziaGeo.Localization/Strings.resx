@@ -766,8 +766,11 @@
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Level</value>
   </data>
-  <data name="Main_CacheKindTitle" xml:space="preserve">
-    <value>Record kind</value>
+  <data name="Main_WayTitle" xml:space="preserve">
+    <value>Where</value>
+  </data>
+  <data name="Main_WayAll" xml:space="preserve">
+    <value>all</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
     <value>LOGIN</value>
@@ -1807,13 +1810,10 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_ConfigEmptyTitle" xml:space="preserve">
     <value>No data</value>
   </data>
-  <data name="Main_CacheEmptyHint" xml:space="preserve">
-    <value>The cache fills while the tunnel is up: addresses of tracked domains and per-address verdicts. There are no verdicts when the Direct list is installed in full at connect instead of on demand.</value>
-  </data>
-  <data name="MainVm_CacheShown" xml:space="preserve">
+  <data name="MainVm_LiveShown" xml:space="preserve">
     <value>{0} of {1}</value>
   </data>
-  <data name="MainVm_CacheShownCapped" xml:space="preserve">
+  <data name="MainVm_LiveShownCapped" xml:space="preserve">
     <value>{0} of {1}, agent returned {2}</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
@@ -2321,19 +2321,13 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Updated. Restart the app to finish.</value>
   </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
-    <value>{0} destination(s), {1} undecided, {2} without movement, {3} carried.</value>
+    <value>{0} address(es): {1} tunnelled, {2} direct, {3} blocked, {4} in no rule.</value>
   </data>
   <data name="Check_SessionsNone" xml:space="preserve">
     <value>Nothing is going through the tunnel right now.</value>
   </data>
   <data name="Check_SessionLive" xml:space="preserve">
     <value>{0} connection(s)</value>
-  </data>
-  <data name="Check_SessionAge" xml:space="preserve">
-    <value>open {0} s</value>
-  </data>
-  <data name="Check_SessionIdle" xml:space="preserve">
-    <value>idle {0} s</value>
   </data>
   <data name="Check_SessionStalled" xml:space="preserve">
     <value>stalled</value>
@@ -2359,8 +2353,50 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Main_LogPausedHint" xml:space="preserve">
     <value>Paused while Ctrl is held</value>
   </data>
-  <data name="Check_SessionNoRule" xml:space="preserve">
-    <value>no rule</value>
+  <data name="Check_Why_range" xml:space="preserve">
+    <value>by range</value>
+  </data>
+  <data name="Check_Why_name" xml:space="preserve">
+    <value>by name</value>
+  </data>
+  <data name="Check_Why_app" xml:space="preserve">
+    <value>by application</value>
+  </data>
+  <data name="Check_Why_resolved" xml:space="preserve">
+    <value>address of a name</value>
+  </data>
+  <data name="Check_Why_none" xml:space="preserve">
+    <value>in no rule</value>
+  </data>
+  <data name="Check_Why_service" xml:space="preserve">
+    <value>service</value>
+  </data>
+  <data name="Check_Why_config" xml:space="preserve">
+    <value>from the config</value>
+  </data>
+  <data name="Check_SessionLeft" xml:space="preserve">
+    <value>{0} s left</value>
+  </data>
+  <data name="Check_SessionsMoved" xml:space="preserve">
+    <value>{0} carried</value>
+  </data>
+  <data name="Check_SessionsStalled" xml:space="preserve">
+    <value>{0} without movement</value>
+  </data>
+  <data name="Check_ModeSplit" xml:space="preserve">
+    <value>Routing is on.</value>
+  </data>
+  <data name="Check_ModeSplitList" xml:space="preserve">
+    <value>Routing by the list &quot;{0}&quot;.</value>
+  </data>
+  <data name="Check_ModeFull" xml:space="preserve">
+    <value>Full tunnel.</value>
+  </data>
+  <data name="Check_ModeFullList" xml:space="preserve">
+    <value>Full tunnel, list &quot;{0}&quot;.</value>
+  </data>
+  <data name="Check_ModeOff" xml:space="preserve">
+    <value>Routing is off, the AllowedIPs of the config decide.</value>
   </data>
   <data name="Probe_TargetWatermark" xml:space="preserve">
     <value>domain or address</value>

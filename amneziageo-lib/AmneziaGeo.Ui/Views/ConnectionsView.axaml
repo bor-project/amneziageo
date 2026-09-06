@@ -79,8 +79,6 @@
                                        Description="{l:Tr General_MultiServerHint}"
                                        IsChecked="{Binding MultiServer, Mode=TwoWay}" />
 
-            <Border Classes="rowsep" />
-
             <!-- Место режима: числа набора стоят на месте и при выключенном режиме, только погашены. -->
             <ContentControl Content="{Binding TunnelExtras}" IsEnabled="{Binding MultiServer}">
               <ContentControl.DataTemplates>

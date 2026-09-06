@@ -7,7 +7,7 @@
              x:DataType="vm:GeneralViewModel">
   <!-- Running update download in place of the header name: the bar with its percent and the cancel link
        under it. -->
-  <StackPanel VerticalAlignment="Top" HorizontalAlignment="Center" Spacing="1" Margin="0,16,0,0">
+  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="1">
     <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center">
       <ProgressBar Minimum="0" Maximum="100" Width="100" Height="4"
                    MinWidth="0" MinHeight="0" VerticalAlignment="Center"

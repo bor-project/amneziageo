@@ -53,16 +53,17 @@
                 <PathIcon Data="{DynamicResource AgCloseGeometry}" Width="15" Height="15"
                           Foreground="{DynamicResource AgMutedBrush}" />
               </Button>
-              <!-- Title over the whole row: centred on the window, not on the space the gear leaves. -->
-              <TextBlock Grid.Column="0" Grid.ColumnSpan="3" Text="AmneziaGeo"
-                         FontSize="15" FontWeight="SemiBold" IsHitTestVisible="False"
-                         VerticalAlignment="Center" HorizontalAlignment="Center"
-                         Foreground="{DynamicResource AgMutedBrush}"
-                         IsVisible="{Binding !HeaderDownloadVisible}" />
-              <Panel Grid.Column="0" Grid.ColumnSpan="3" HorizontalAlignment="Center"
-                     IsVisible="{Binding HeaderDownloadVisible}">
-                <controls:HeaderDownload DataContext="{Binding General}" />
-              </Panel>
+              <!-- Title over the whole row: centred on the window, moved aside when the buttons crowd it. -->
+              <controls:HeaderCenter Grid.Column="0" Grid.ColumnSpan="3">
+                <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" IsHitTestVisible="False"
+                           VerticalAlignment="Center" HorizontalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource AgMutedBrush}"
+                           IsVisible="{Binding !HeaderDownloadVisible}" />
+                <Panel IsVisible="{Binding HeaderDownloadVisible}">
+                  <controls:HeaderDownload DataContext="{Binding General}" />
+                </Panel>
+              </controls:HeaderCenter>
             </Grid>
           </Panel>
         </Border>
@@ -393,16 +394,17 @@
           <!-- Connect control (right), the same pill the compact home header carries. -->
           <controls:ConnectPill Grid.Column="2" DataContext="{Binding Home}" />
 
-          <!-- App name and the running download over the whole row, centred on the window. -->
-          <TextBlock Grid.Column="0" Grid.ColumnSpan="3" Text="AmneziaGeo"
-                     FontSize="15" FontWeight="SemiBold" IsHitTestVisible="False"
-                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="{DynamicResource AgMutedBrush}"
-                     IsVisible="{Binding ShowHeaderName}" />
-          <Panel Grid.Column="0" Grid.ColumnSpan="3" HorizontalAlignment="Center"
-                 IsVisible="{Binding HeaderDownloadVisible}">
-            <controls:HeaderDownload DataContext="{Binding General}" />
-          </Panel>
+          <!-- App name and the running download centred on the window, moved aside when the edges crowd them. -->
+          <controls:HeaderCenter Grid.Column="0" Grid.ColumnSpan="3">
+            <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" IsHitTestVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource AgMutedBrush}"
+                       IsVisible="{Binding ShowHeaderName}" />
+            <Panel IsVisible="{Binding HeaderDownloadVisible}">
+              <controls:HeaderDownload DataContext="{Binding General}" />
+            </Panel>
+          </controls:HeaderCenter>
         </Grid>
       </Border>
 

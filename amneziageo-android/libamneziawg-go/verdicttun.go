@@ -304,7 +304,8 @@ type verdictTun struct {
 
 	protect atomic.Pointer[func(int) bool]
 	relay   atomic.Int32
-	mine    atomic.Pointer[func(uint32, uint16, uint32, uint16) bool]
+	split   atomic.Bool
+	owner   atomic.Pointer[func(uint8, uint32, uint16, uint32, uint16) int]
 	owners  sync.Map
 	owned   atomic.Int64
 
@@ -314,6 +315,8 @@ type verdictTun struct {
 	blocked atomic.Uint64
 	passed  atomic.Uint64
 	seen    atomic.Uint64
+	aside6  atomic.Uint64
+	kept6   atomic.Uint64
 }
 
 func newVerdictTun(inner tun.Device, ttl time.Duration) *verdictTun {
@@ -419,21 +422,51 @@ func (d *verdictTun) setProtector(fn func(int) bool) {
 	d.protect.Store(&fn)
 }
 
-// Столько ответов о владельце потока держим разом.
+// Столько ответов о владельце держим разом.
 const ownerCacheMax = 8192
 
-// Релей, который решает потоки, и вопрос хосту о том, чей поток.
-func (d *verdictTun) setRelay(port int, mine func(uint32, uint16, uint32, uint16) bool) {
-	if mine != nil {
-		d.mine.Store(&mine)
+// Владелец, каким его называет хост.
+const (
+	ownerOther = 0
+	ownerSelf  = 1
+	ownerNamed = 2
+)
+
+// Протоколы, о владельце которых спрашиваем.
+const (
+	protoTcp = 6
+	protoUdp = 17
+)
+
+// Релей, который решает потоки, режим списка и вопрос хосту о том, чьё это соединение.
+func (d *verdictTun) setRelay(port int, split bool, owner func(uint8, uint32, uint16, uint32, uint16) int) {
+	if owner != nil {
+		d.owner.Store(&owner)
 	}
 
 	d.relay.Store(int32(port))
+	d.split.Store(split)
 	d.owners.Clear()
 	d.owned.Store(0)
 	if fwd := d.tcp.Load(); fwd != nil {
 		fwd.setRelay(port)
 	}
+}
+
+// Куда идёт датаграмма, которую ни одно правило по адресу не назвало: приложение из правил едет туннелем,
+// остальные - мимо него, как и потоки того же приложения. Полный туннель не спрашивает: там всё едет туннелем.
+func (d *verdictTun) datagram(packet []byte) bool {
+	if d.relay.Load() <= 0 || !d.split.Load() || len(packet) < 28 || packet[9] != syscall.IPPROTO_UDP {
+		return false
+	}
+
+	if d.whose(packet, protoUdp) == ownerOther {
+		d.aside6.Add(1)
+		return true
+	}
+
+	d.kept6.Add(1)
+	return false
 }
 
 // Отдаёт поток релею, пока тот поднят; наш собственный едет туннелем, иначе он вернулся бы сюда же.
@@ -450,26 +483,31 @@ func (d *verdictTun) stream(packet []byte) bool {
 	return fwd.send(packet)
 }
 
-// Наш ли процесс открыл поток; ответ хоста держится по паре портов, пока поток жив.
+// Наш ли процесс открыл поток.
 func (d *verdictTun) ours(packet []byte) bool {
+	return d.whose(packet, protoTcp) == ownerSelf
+}
+
+// Чьё это соединение, как его называет хост; ответ держится по протоколу и паре портов, пока оно живо.
+func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	head := int(packet[0]&0x0f) * 4
 	if head < 20 || len(packet) < head+4 {
-		return false
+		return ownerOther
 	}
 
 	srcPort := binary.BigEndian.Uint16(packet[head : head+2])
 	dstPort := binary.BigEndian.Uint16(packet[head+2 : head+4])
-	key := uint32(srcPort)<<16 | uint32(dstPort)
+	key := uint64(proto)<<32 | uint64(srcPort)<<16 | uint64(dstPort)
 	if kept, ok := d.owners.Load(key); ok {
-		return kept.(bool)
+		return kept.(int)
 	}
 
-	fn := d.mine.Load()
+	fn := d.owner.Load()
 	if fn == nil {
-		return false
+		return ownerOther
 	}
 
-	answer := (*fn)(binary.BigEndian.Uint32(packet[12:16]), srcPort, binary.BigEndian.Uint32(packet[16:20]), dstPort)
+	answer := (*fn)(proto, binary.BigEndian.Uint32(packet[12:16]), srcPort, binary.BigEndian.Uint32(packet[16:20]), dstPort)
 	if d.owned.Add(1) > ownerCacheMax {
 		d.owners.Clear()
 		d.owned.Store(1)
@@ -528,10 +566,11 @@ func (d *verdictTun) stats() string {
 	}
 
 	return fmt.Sprintf(
-		"named %d, blocked %d, direct %d, sent %d, answered %d, dropped %d, refused %d, %d flow(s), %d live; %s",
+		"named %d, blocked %d, direct %d, sent %d, answered %d, dropped %d, refused %d, %d flow(s), %d live; "+
+			"datagram(s) %d off the tunnel by owner, %d kept on it; %s",
 		d.seen.Load(), d.blocked.Load(), d.passed.Load(),
 		d.fwd.sent.Load(), d.fwd.back.Load(), d.fwd.dropped.Load(), d.fwd.refused.Load(),
-		d.fwd.count(), d.live.size(), streams)
+		d.fwd.count(), d.live.size(), d.aside6.Load(), d.kept6.Load(), streams)
 }
 
 // Что реально используется прямо сейчас.
@@ -589,7 +628,10 @@ func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 					continue
 				}
 			default:
-				if d.stream(bufs[i][offset : offset+sizes[i]]) {
+				// Поток решает релей, датаграмму - её владелец: приложение из правил едет туннелем, чужая
+				// уходит мимо, как ушёл бы поток того же приложения.
+				packet := bufs[i][offset : offset+sizes[i]]
+				if d.stream(packet) || (d.datagram(packet) && d.aside(packet)) {
 					d.passed.Add(1)
 					continue
 				}

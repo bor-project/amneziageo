@@ -135,6 +135,9 @@ public sealed class GeoVpnService : VpnService
     private const int HotTtlSeconds = 3600;
     private const int KeepaliveSeconds = 25;
     private const int TcpProtocol = 6;
+    private const int OwnerOther = 0;
+    private const int OwnerSelf = 1;
+    private const int OwnerNamed = 2;
     private const int ExitDelayMs = 1_000;
 
     // Ends the process after the service is gone. An empty cached process keeps the whole runtime resident, and the
@@ -142,6 +145,7 @@ public sealed class GeoVpnService : VpnService
     private static readonly Handler _exit = new(Looper.MainLooper!);
 
     private readonly ConcurrentDictionary<int, string> _packages = new();
+    private readonly HashSet<string> _tunnelApps = new(StringComparer.Ordinal);
     private int _handle = -1;
     private int _proxyPort;
     private ConnectivityManager? _connectivity;
@@ -531,7 +535,7 @@ public sealed class GeoVpnService : VpnService
                     + "the only way past the tunnel");
             }
 
-            if (_proxyPort > 0 && AwgEngine.SetRelay(handle, _proxyPort, Mine))
+            if (_proxyPort > 0 && AwgEngine.SetRelay(handle, _proxyPort, !plan.FullTunnel, Owner))
             {
                 Report("streams are taken off the tun and decided in the relay, so the applications are offered no "
                     + "proxy and see none");
@@ -1016,6 +1020,12 @@ public sealed class GeoVpnService : VpnService
 
             builder.SetMtu(mtu);
 
+            _tunnelApps.Clear();
+            foreach (var package in appList ?? [])
+            {
+                _tunnelApps.Add(package);
+            }
+
             var allowListed = ApplyAppSplit(builder, appMode, appList);
             ApplyAppBypass(builder, bypassApps, allowListed);
 
@@ -1317,20 +1327,33 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // Whether this process opened the stream: its own connections ride the tunnel, or they would come back into the
-    // hand-over they came from.
-    private bool Mine(uint source, ushort sourcePort, uint destination, ushort destinationPort)
+    // Whose connection this is: this process, an application the rules name, or neither. Our own connections ride
+    // the tunnel, or they would come back into the hand-over they came from; a named application rides it because
+    // the rules say so, and its datagrams go where its streams go.
+    private int Owner(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
     {
         try
         {
             var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
             var local = new InetSocketAddress(Dotted(source), sourcePort);
             var remote = new InetSocketAddress(Dotted(destination), destinationPort);
-            return manager?.GetConnectionOwnerUid(TcpProtocol, local, remote) == global::Android.OS.Process.MyUid();
+            var uid = manager?.GetConnectionOwnerUid(protocol, local, remote) ?? -1;
+            if (uid < 0)
+            {
+                return OwnerOther;
+            }
+
+            if (uid == global::Android.OS.Process.MyUid())
+            {
+                return OwnerSelf;
+            }
+
+            var named = _packages.GetOrAdd(uid, static (id, service) => service.Named(id), this);
+            return _tunnelApps.Contains(named) ? OwnerNamed : OwnerOther;
         }
         catch (Java.Lang.Exception)
         {
-            return false;
+            return OwnerOther;
         }
     }
 

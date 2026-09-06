@@ -12,8 +12,8 @@ internal static partial class AwgEngine
     // Кто отпускает сокет мимо туннеля.
     private static Func<int, bool>? _protect;
 
-    // Кто называет владельца потока.
-    private static Func<uint, ushort, uint, ushort, bool>? _mine;
+    // Кто называет владельца соединения.
+    private static Func<int, uint, ushort, uint, ushort, int>? _owner;
 
     /// <summary>
     /// Движок молчит.
@@ -139,26 +139,28 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
-    /// Points the shim at the relay that decides streams, with the call that tells whose stream it is.
+    /// Points the shim at the relay that decides streams, with the call that tells whose connection it is: 1 for
+    /// this process, 2 for an application the rules name, 0 for the rest. A split list also decides datagrams by
+    /// that answer.
     /// </summary>
-    public static unsafe bool SetRelay(int handle, int port, Func<uint, ushort, uint, ushort, bool> mine)
+    public static unsafe bool SetRelay(int handle, int port, bool split, Func<int, uint, ushort, uint, ushort, int> owner)
     {
-        _mine = mine;
-        return SetRelayNative(handle, port, &MineNative) == 0;
+        _owner = owner;
+        return SetRelayNative(handle, port, split ? 1 : 0, &OwnerNative) == 0;
     }
 
     [UnmanagedCallersOnly]
-    private static int MineNative(uint source, ushort sourcePort, uint destination, ushort destinationPort)
+    private static int OwnerNative(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
     {
-        var mine = _mine;
-        if (mine is null)
+        var owner = _owner;
+        if (owner is null)
         {
             return 0;
         }
 
         try
         {
-            return mine(source, sourcePort, destination, destinationPort) ? 1 : 0;
+            return owner(protocol, source, sourcePort, destination, destinationPort);
         }
         catch
         {
@@ -225,5 +227,5 @@ internal static partial class AwgEngine
     private static unsafe partial int SetProtectorNative(int handle, delegate* unmanaged<int, int> protect);
 
     [LibraryImport(Lib, EntryPoint = "wgSetRelay")]
-    private static unsafe partial int SetRelayNative(int handle, int port, delegate* unmanaged<uint, ushort, uint, ushort, int> mine);
+    private static unsafe partial int SetRelayNative(int handle, int port, int split, delegate* unmanaged<int, uint, ushort, uint, ushort, int> owner);
 }

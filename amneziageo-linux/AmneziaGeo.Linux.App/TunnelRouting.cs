@@ -14,12 +14,13 @@ internal sealed record TunnelRouting(
     IReadOnlyList<string> DirectRoutes,
     IReadOnlyList<GeoDomain> DirectDomains,
     IReadOnlyList<string> BlockRoutes,
-    IReadOnlyList<GeoDomain> BlockDomains)
+    IReadOnlyList<GeoDomain> BlockDomains,
+    IReadOnlyList<string> TunnelApps)
 {
     /// <summary>
     /// No list selected: a full tunnel by the config's own AllowedIPs.
     /// </summary>
-    public static TunnelRouting None { get; } = new(false, string.Empty, [], [], [], [], [], []);
+    public static TunnelRouting None { get; } = new(false, string.Empty, [], [], [], [], [], [], []);
 
     /// <summary>
     /// Whether any bucket carries a rule.
@@ -27,7 +28,8 @@ internal sealed record TunnelRouting(
     public bool HasRules =>
         ProxyRoutes.Count > 0 || ProxyDomains.Count > 0
         || DirectRoutes.Count > 0 || DirectDomains.Count > 0
-        || BlockRoutes.Count > 0 || BlockDomains.Count > 0;
+        || BlockRoutes.Count > 0 || BlockDomains.Count > 0
+        || TunnelApps.Count > 0;
 
     /// <summary>
     /// Reads the globally selected list and the mode it runs in.
@@ -56,6 +58,7 @@ internal sealed record TunnelRouting(
             list.DirectRoutes,
             list.DirectDomains,
             list.BlockRoutes,
-            list.BlockDomains);
+            list.BlockDomains,
+            list.Apps);
     }
 }

@@ -38,6 +38,7 @@ internal sealed class TunnelController : IDisposable
     private WsCarrier? _carrier;
     private DnsRouter? _dns;
     private RoutingCache? _cache;
+    private AppTunnel? _apps;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
     private string _sessionConfig = string.Empty;
@@ -221,6 +222,14 @@ internal sealed class TunnelController : IDisposable
         ListName = routing.ListName;
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
+        _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
+            [.. routing.DirectRoutes, .. routing.BlockRoutes], _log, ct).ConfigureAwait(false);
+        applier.Attach(_apps);
+        if (_apps is not null && !applier.CarryEverything())
+        {
+            _log.Warn("apps", "the peer would not take the whole range, so the applications reach only what the rules "
+                + "already advertised");
+        }
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
         var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
@@ -347,6 +356,13 @@ internal sealed class TunnelController : IDisposable
         {
             _cache = null;
             cache.RemoveAll();
+        }
+
+        if (_apps is { } apps)
+        {
+            _apps = null;
+            await apps.StopAsync().ConfigureAwait(false);
+            apps.Dispose();
         }
 
         if (_pinnedEndpoint is { } pinned)

@@ -23,6 +23,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     private readonly AgentLog _log;
     private readonly HashSet<string> _live = new(StringComparer.Ordinal);
     private readonly object _sync = new();
+    private AppTunnel? _apps;
     private int _endpointWarned;
 
     /// <summary>
@@ -44,6 +45,20 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     public int Generation => Session;
 
     /// <summary>
+    /// Makes the peer carry every destination. The carried applications leave through the tunnel without asking the
+    /// cache first, so the engine has to accept what it never advertised for them.
+    /// </summary>
+    public bool CarryEverything() => Advertise("0.0.0.0/0");
+
+    /// <summary>
+    /// Hands over the per-application path, so a decided destination is steered for the carried applications too.
+    /// </summary>
+    public void Attach(AppTunnel? apps)
+    {
+        _apps = apps;
+    }
+
+    /// <summary>
     /// Permits one host address through the physical path; nothing to install, that path carries no kill-switch.
     /// </summary>
     public bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation)
@@ -51,6 +66,9 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         outId = 0;
         inId = 0;
         generation = Session;
+        // The carried applications default into the tunnel, so an address a rule kept direct needs a route of its
+        // own there.
+        _apps?.Steer(address, $"{GeoIpRanges.Format(address)}/32", _gateway, _device, false);
         return true;
     }
 
@@ -74,6 +92,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
             return true;
         }
 
+        _apps?.Steer(address, host, null, null, true);
         return Ip("route", "replace", "blackhole", host);
     }
 
@@ -83,6 +102,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     public bool TryAddRoute(IPAddress address, out uint interfaceIndex)
     {
         interfaceIndex = 0;
+        _apps?.Steer(AppTunnel.Numeric(address), Cidr(address), _gateway, _device, false);
         return _gateway is not null && _device is not null
             && Ip("route", "replace", Cidr(address), "via", _gateway, "dev", _device);
     }
@@ -92,6 +112,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     /// </summary>
     public void RemoveRoute(IPAddress address, uint interfaceIndex)
     {
+        _apps?.Unsteer(Cidr(address));
         Ip("route", "del", Cidr(address));
     }
 
@@ -106,6 +127,10 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         {
             return false;
         }
+
+        // The tunnel is where the carried applications go by default, so a route that held this address outside it
+        // has to give way.
+        _apps?.Unsteer(host);
 
         if (Ip("route", "replace", host, "dev", _iface))
         {
@@ -132,6 +157,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         {
             var host = Cidr(address);
             hosts.Add(host);
+            _apps?.Unsteer(host);
             Ip("route", "del", host, "dev", _iface);
         }
 
@@ -147,6 +173,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         {
             if (blackhole != 0)
             {
+                _apps?.Unsteer($"{GeoIpRanges.Format((uint)blackhole)}/32");
                 Ip("route", "del", "blackhole", $"{GeoIpRanges.Format((uint)blackhole)}/32");
             }
         }

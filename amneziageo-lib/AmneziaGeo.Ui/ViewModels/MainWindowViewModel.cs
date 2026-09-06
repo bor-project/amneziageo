@@ -54,6 +54,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderName))]
+    [NotifyPropertyChangedFor(nameof(SectionTitleVisible))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(ShowSplitter))]
@@ -68,6 +70,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderName))]
+    [NotifyPropertyChangedFor(nameof(SectionTitleVisible))]
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private bool _settingsDetailOpen;
@@ -265,7 +269,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool AppUpdateBannerVisible => General.UpdateBannerVisible
         && !UiPlatform.IsTelevision
+        && !General.DownloadActive
         && !(IsSettings && IsSettingsGeneral);
+
+    /// <summary>
+    /// Whether the header carries the running download in place of the app name. A television keeps the name:
+    /// its offer lives in the home column.
+    /// </summary>
+    public bool HeaderDownloadVisible => General.DownloadActive && !UiPlatform.IsTelevision;
+
+    /// <summary>
+    /// Whether the settings header shows the app name: no section detail open and no download running.
+    /// </summary>
+    public bool ShowHeaderName => !IsSectionDetail && !HeaderDownloadVisible;
+
+    /// <summary>
+    /// Whether the settings header shows the open section name.
+    /// </summary>
+    public bool SectionTitleVisible => IsSectionDetail && !HeaderDownloadVisible;
 
     /// <summary>
     /// Whether the home column carries the update offer itself. Television only; its row opens the sheet that
@@ -645,6 +666,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(AppUpdateBannerVisible));
             OnPropertyChanged(nameof(ShowHomeUpdate));
+        }
+
+        if (e.PropertyName == nameof(GeneralViewModel.DownloadActive))
+        {
+            OnPropertyChanged(nameof(AppUpdateBannerVisible));
+            OnPropertyChanged(nameof(HeaderDownloadVisible));
+            OnPropertyChanged(nameof(ShowHeaderName));
+            OnPropertyChanged(nameof(SectionTitleVisible));
         }
     }
 

@@ -207,6 +207,13 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="Foreground" Value="White" />
     </Style>
+    <Style Selector="Button.accent:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="White" BorderThickness="2" CornerRadius="7" Margin="3" />
+        </Template>
+      </Setter>
+    </Style>
     <Style Selector="Button.accent:pressed">
       <Setter Property="Opacity" Value="0.72" />
     </Style>

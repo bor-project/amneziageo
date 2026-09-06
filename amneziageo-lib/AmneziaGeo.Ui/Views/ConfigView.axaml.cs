@@ -45,14 +45,32 @@ internal sealed partial class ConfigView : UserControl
         base.OnAttachedToVisualTree(e);
         _keys = TopLevel.GetTopLevel(this);
         _keys?.AddHandler(KeyDownEvent, OnCatalogKey, RoutingStrategies.Tunnel);
+        CardStack.AddHandler(KeyDownEvent, OnCardsKey);
+        CardGrid.AddHandler(KeyDownEvent, OnCardsKey);
     }
 
     /// <inheritdoc/>
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        CardStack.RemoveHandler(KeyDownEvent, OnCardsKey);
+        CardGrid.RemoveHandler(KeyDownEvent, OnCardsKey);
         _keys?.RemoveHandler(KeyDownEvent, OnCatalogKey);
         _keys = null;
         base.OnDetachedFromVisualTree(e);
+    }
+
+    // Вверх с первой карточки пульт уходит на кнопки над списком.
+    private void OnCardsKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not Key.Up || sender is not ItemsControl list
+            || TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is not Visual focused
+            || list.ContainerFromIndex(0) is not Visual first
+            || !(ReferenceEquals(first, focused) || first.IsVisualAncestorOf(focused)))
+        {
+            return;
+        }
+
+        e.Handled = AddButton.Focus(NavigationMethod.Directional);
     }
 
     // Ctrl со стрелкой двигает отмеченную карточку: тело карточки фокус вне телевизора не берёт,

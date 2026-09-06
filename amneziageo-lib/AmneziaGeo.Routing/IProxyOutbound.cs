@@ -50,6 +50,25 @@ public interface IProxyOutbound
     /// Opens one destination.
     /// </summary>
     Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, CancellationToken ct);
+
+    /// <summary>
+    /// Opens one destination for a session whose own pair is known, which names the program behind it. An outbound
+    /// that decides nothing per program answers as it would without the pair.
+    /// </summary>
+    Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, IPEndPoint? source, CancellationToken ct)
+        => ConnectAsync(host, port, ct);
+}
+
+/// <summary>
+/// Where the datagrams of one flow leave. A proxy that carries them holds no connection of its own to lean on,
+/// so the socket is opened here and the rules decide it the same way a stream is decided.
+/// </summary>
+public interface IDatagramOutbound
+{
+    /// <summary>
+    /// Opens the socket a flow leaves on, or null where a rule refuses the destination.
+    /// </summary>
+    Socket? Open(IPEndPoint? source, IPEndPoint destination);
 }
 
 /// <summary>

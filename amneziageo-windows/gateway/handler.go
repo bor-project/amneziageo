@@ -19,11 +19,22 @@ const readBuffer = 65535
 // by the rules of this machine and nothing here.
 type handler struct {
 	proxy string
+	named bool
 	log   *lines
 
 	access  sync.Mutex
 	control net.Conn
 	relay   M.Socksaddr
+}
+
+// The pair the proxy is told about, when it asked to be told: without it a session arrives from this process and
+// names no program of its own.
+func (h *handler) source(source M.Socksaddr) M.Socksaddr {
+	if !h.named {
+		return M.Socksaddr{}
+	}
+
+	return source
 }
 
 // Nothing rides the adapter without passing the local proxy, so no session is ever routed straight out.
@@ -44,7 +55,7 @@ func (h *handler) NewConnectionEx(
 	destination M.Socksaddr,
 	onClose N.CloseHandlerFunc,
 ) {
-	upstream, _, err := dial(h.proxy, commandConnect, destination)
+	upstream, _, err := dial(h.proxy, commandConnect, h.source(source), destination)
 	if err != nil {
 		conn.Close()
 		h.log.Warn("tcp ", destination.String(), ": ", err)
@@ -62,12 +73,16 @@ func (h *handler) NewPacketConnectionEx(
 	destination M.Socksaddr,
 	onClose N.CloseHandlerFunc,
 ) {
-	relayAddress, err := h.datagrams()
+	relayAddress, control, err := h.relayFor(source)
 	if err != nil {
 		conn.Close()
 		h.log.Warn("udp ", destination.String(), ": ", err)
 		finish(onClose, err)
 		return
+	}
+
+	if control != nil {
+		defer control.Close()
 	}
 
 	socket, err := net.DialUDP("udp", nil, relayAddress.UDPAddr())
@@ -90,9 +105,26 @@ func (h *handler) NewPacketConnectionEx(
 	finish(onClose, nil)
 }
 
-// Where the datagrams of every flow go. One relay serves them all: a relay per flow would hold a connection to
-// the local proxy per flow, and a client that opens many of them runs the machine out of ports. The proxy tells
-// them apart by the port each flow sends from.
+// Where the datagrams of one flow go. Where the proxy was told to expect a source, the flow gets a relay of its
+// own, because that is what carries the name of the program behind it; everything else shares one relay, which
+// keeps a client that opens many flows from running the machine out of ports.
+func (h *handler) relayFor(source M.Socksaddr) (M.Socksaddr, net.Conn, error) {
+	if !h.named || !source.IsValid() {
+		address, err := h.datagrams()
+		return address, nil, err
+	}
+
+	control, address, err := associate(h.proxy, source)
+	if err != nil {
+		return M.Socksaddr{}, nil, err
+	}
+
+	return address, control, nil
+}
+
+// Where the datagrams of every unnamed flow go. One relay serves them all: a relay per flow would hold a
+// connection to the local proxy per flow, and a client that opens many of them runs the machine out of ports.
+// The proxy tells them apart by the port each flow sends from.
 func (h *handler) datagrams() (M.Socksaddr, error) {
 	h.access.Lock()
 	defer h.access.Unlock()
@@ -100,7 +132,7 @@ func (h *handler) datagrams() (M.Socksaddr, error) {
 		return h.relay, nil
 	}
 
-	control, address, err := associate(h.proxy)
+	control, address, err := associate(h.proxy, M.Socksaddr{})
 	if err != nil {
 		return M.Socksaddr{}, err
 	}

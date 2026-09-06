@@ -41,6 +41,45 @@ public sealed class LocalProxyServerTests : IDisposable
     }
 
     [Fact]
+    public async Task ANamedSession_CarriesThePairItWasOpenedFor()
+    {
+        var outbound = new TestOutbound(_destination);
+        var options = Options();
+        Listen(outbound, options);
+        var client = await DialAsync(options.SocksPort);
+
+        await client.SendAsync(Named("10.1.2.3", 51234, "93.184.216.34", 443), SocketFlags.None);
+        await client.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None);
+        Assert.Equal([5, 0], await ReadAsync(client, 2));
+        await client.SendAsync(Request("93.184.216.34", 443), SocketFlags.None);
+        var reply = await ReadAsync(client, 10);
+
+        Assert.Equal(5, reply[0]);
+        Assert.Equal(0, reply[1]);
+        Assert.Equal("93.184.216.34", outbound.Host);
+        Assert.NotNull(outbound.Source);
+        Assert.Equal("10.1.2.3", outbound.Source!.Address.ToString());
+        Assert.Equal(51234, outbound.Source.Port);
+    }
+
+    [Fact]
+    public async Task ASessionWithoutAPair_ReachesTheOutboundAllTheSame()
+    {
+        var outbound = new TestOutbound(_destination);
+        var options = Options();
+        Listen(outbound, options);
+        var client = await DialAsync(options.SocksPort);
+
+        await client.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None);
+        Assert.Equal([5, 0], await ReadAsync(client, 2));
+        await client.SendAsync(Request("example.test", 80), SocketFlags.None);
+        await ReadAsync(client, 10);
+
+        Assert.Equal("example.test", outbound.Host);
+        Assert.Null(outbound.Source);
+    }
+
+    [Fact]
     public async Task Socks5_WithAPassword_TakesTheRightOneAndRefusesTheWrongOne()
     {
         var options = Secured("bor:secret");
@@ -371,6 +410,20 @@ public sealed class LocalProxyServerTests : IDisposable
 
     // A SOCKS5 request naming the destination by name, which is what a client that leaves resolution to the
     // proxy sends.
+    // The mark a gateway writes ahead of the greeting: it names the pair the session was opened for.
+    private static byte[] Named(string source, int sourcePort, string destination, int destinationPort)
+    {
+        var head = new byte[16];
+        "AGSR"u8.CopyTo(head);
+        IPAddress.Parse(source).GetAddressBytes().CopyTo(head, 4);
+        head[8] = (byte)(sourcePort >> 8);
+        head[9] = (byte)(sourcePort & 0xFF);
+        IPAddress.Parse(destination).GetAddressBytes().CopyTo(head, 10);
+        head[14] = (byte)(destinationPort >> 8);
+        head[15] = (byte)(destinationPort & 0xFF);
+        return head;
+    }
+
     private static byte[] Request(string host, int port, byte command = 1)
     {
         var name = Encoding.ASCII.GetBytes(host);
@@ -555,11 +608,21 @@ public sealed class LocalProxyServerTests : IDisposable
         /// </summary>
         public int Port { get; private set; }
 
+        /// <summary>
+        /// Pair the last session was opened for, when it named one.
+        /// </summary>
+        public IPEndPoint? Source { get; private set; }
+
         /// <inheritdoc/>
-        public async Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, CancellationToken ct)
+        public Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, CancellationToken ct) =>
+            ConnectAsync(host, port, null, ct);
+
+        /// <inheritdoc/>
+        public async Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, IPEndPoint? source, CancellationToken ct)
         {
             Host = host;
             Port = port;
+            Source = source;
             if (outcome != ProxyOutcome.Ok)
             {
                 return (null, outcome);

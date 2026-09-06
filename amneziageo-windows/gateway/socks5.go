@@ -10,6 +10,9 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 )
 
+// Метка перед приветствием: за ней идёт пара, для которой соединение открыто.
+var sourceMark = [4]byte{'A', 'G', 'S', 'R'}
+
 const (
 	version5         = 0x05
 	noAuth           = 0x00
@@ -22,14 +25,23 @@ const (
 	greetTimeout     = 10 * time.Second
 )
 
-// Opens the command given at the local proxy and answers with the connection and the address it bound.
-func dial(proxy string, command byte, destination M.Socksaddr) (net.Conn, M.Socksaddr, error) {
+// Opens the command given at the local proxy and answers with the connection and the address it bound. A source
+// is named ahead of the greeting where the proxy asked for it: the pair tells it which program the session
+// belongs to, which the greeting alone cannot say.
+func dial(proxy string, command byte, source, destination M.Socksaddr) (net.Conn, M.Socksaddr, error) {
 	conn, err := net.DialTimeout("tcp", proxy, greetTimeout)
 	if err != nil {
 		return nil, M.Socksaddr{}, fmt.Errorf("reach the local proxy: %w", err)
 	}
 
 	conn.SetDeadline(time.Now().Add(greetTimeout))
+	if source.IsValid() {
+		if err = named(conn, source, destination); err != nil {
+			conn.Close()
+			return nil, M.Socksaddr{}, err
+		}
+	}
+
 	bound, err := greet(conn, command, destination)
 	if err != nil {
 		conn.Close()
@@ -38,6 +50,31 @@ func dial(proxy string, command byte, destination M.Socksaddr) (net.Conn, M.Sock
 
 	conn.SetDeadline(time.Time{})
 	return conn, bound, nil
+}
+
+// Пишет пару, для которой открыто соединение: метка, адрес и порт источника, адрес и порт назначения.
+func named(conn net.Conn, source, destination M.Socksaddr) error {
+	head := make([]byte, 0, 16)
+	head = append(head, sourceMark[:]...)
+	head = appendPair(head, source)
+	head = appendPair(head, destination)
+	if len(head) != 16 {
+		return nil
+	}
+
+	_, err := conn.Write(head)
+	return err
+}
+
+// Дописывает адрес и порт четвёртой семьи; чужая семья оставляет запись пустой.
+func appendPair(head []byte, address M.Socksaddr) []byte {
+	if !address.IsValid() || !address.Addr.Is4() {
+		return head
+	}
+
+	octets := address.Addr.As4()
+	head = append(head, octets[:]...)
+	return binary.BigEndian.AppendUint16(head, address.Port)
 }
 
 func greet(conn net.Conn, command byte, destination M.Socksaddr) (M.Socksaddr, error) {
@@ -71,8 +108,10 @@ func greet(conn net.Conn, command byte, destination M.Socksaddr) (M.Socksaddr, e
 }
 
 // Opens a datagram relay at the local proxy and answers with the control connection and the address to send to.
-func associate(proxy string) (net.Conn, M.Socksaddr, error) {
-	control, bound, err := dial(proxy, commandAssociate, M.SocksaddrFrom(unspecified, 0))
+// A named source travels with the request: the proxy then knows which program the flow belongs to, which the
+// datagrams themselves never say.
+func associate(proxy string, source M.Socksaddr) (net.Conn, M.Socksaddr, error) {
+	control, bound, err := dial(proxy, commandAssociate, source, M.SocksaddrFrom(unspecified, 0))
 	if err != nil {
 		return nil, M.Socksaddr{}, err
 	}

@@ -29,24 +29,26 @@ func main() {
 	name := flag.String("name", "AmneziaGeo Gateway", "name of the adapter to raise")
 	address := flag.String("address", "", "address the adapter carries, with prefix")
 	routes := flag.String("routes", "", "prefixes routed into the adapter, comma separated")
+	except := flag.String("except", "", "prefixes kept out of the adapter, comma separated")
 	dns := flag.String("dns", "", "resolver the adapter hands out")
 	proxy := flag.String("proxy", "", "address of the local proxy every connection goes to")
 	mtu := flag.Uint("mtu", 1420, "how much the adapter carries in one packet")
 	parent := flag.Int("parent", 0, "process this one does not outlive")
+	named := flag.Bool("named", false, "name the source pair of every session to the proxy")
 	flag.Parse()
 
-	if err := run(*name, *address, *routes, *dns, *proxy, uint32(*mtu), *parent); err != nil {
+	if err := run(*name, *address, *routes, *except, *dns, *proxy, uint32(*mtu), *parent, *named); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(name, address, routes, dns, proxy string, mtu uint32, parent int) error {
+func run(name, address, routes, except, dns, proxy string, mtu uint32, parent int, named bool) error {
 	if proxy == "" {
 		return fmt.Errorf("no local proxy given")
 	}
 
-	options, err := adapter(name, address, routes, dns, mtu)
+	options, err := adapter(name, address, routes, except, dns, mtu)
 	if err != nil {
 		return err
 	}
@@ -100,7 +102,7 @@ func run(name, address, routes, dns, proxy string, mtu uint32, parent int) error
 		TunOptions:      options,
 		UDPTimeout:      udpTimeout,
 		ICMPTimeout:     icmpTimeout,
-		Handler:         &handler{proxy: proxy, log: log},
+		Handler:         &handler{proxy: proxy, named: named, log: log},
 		Logger:          log,
 		InterfaceFinder: finder,
 	})
@@ -124,7 +126,7 @@ func run(name, address, routes, dns, proxy string, mtu uint32, parent int) error
 
 // The adapter the clients are routed into: the address it answers on, the prefixes that reach it, and the
 // resolver it hands to whoever asks it for one.
-func adapter(name, address, routes, dns string, mtu uint32) (tun.Options, error) {
+func adapter(name, address, routes, except, dns string, mtu uint32) (tun.Options, error) {
 	prefix, err := netip.ParsePrefix(address)
 	if err != nil {
 		return tun.Options{}, fmt.Errorf("address %q: %w", address, err)
@@ -152,6 +154,22 @@ func adapter(name, address, routes, dns string, mtu uint32) (tun.Options, error)
 		}
 
 		options.Inet4RouteAddress = append(options.Inet4RouteAddress, route)
+	}
+
+	// Что остаётся снаружи: сам сервер, к которому идёт туннель, и сети этой машины. Заверни их сюда - и туннель
+	// будет искать себя же.
+	for _, item := range strings.Split(except, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+
+		route, routeErr := netip.ParsePrefix(item)
+		if routeErr != nil {
+			return tun.Options{}, fmt.Errorf("exception %q: %w", item, routeErr)
+		}
+
+		options.Inet4RouteExcludeAddress = append(options.Inet4RouteExcludeAddress, route)
 	}
 
 	if dns != "" {

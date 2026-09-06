@@ -527,6 +527,51 @@ internal sealed class TunnelRunner(
             }
         }
 
+        // Sessions of the named applications are taken onto an adapter of their own, where each is decided knowing
+        // which program opened it. A routing table names no program, so this is the only place the rule can hold
+        // for one application without holding for every other that shares the address.
+        if (matcher is not null && AppGateway.Wanted())
+        {
+            _appGateway = AppGateway.TryStart(
+                TunnelDevice.NameOf(name),
+                apps,
+                matcher.MatchPids,
+                GeoIpRanges.Build(geo?.Routes ?? []),
+                GeoIpRanges.Build(listDirect),
+                GeoIpRanges.Build(blockRoutes),
+                [.. exclusionCidrs, underlayProbe is { } server ? server + "/32" : string.Empty],
+                effectiveMtu,
+                loggerFactory.CreateLogger<AppGateway>());
+            if (_appGateway is not null && WgConfigEditor.GetPeerPublicKey(config) is { } carrier)
+            {
+                // A session taken onto the adapter leaves through the tunnel without the cache having decided its
+                // address first, so the peer has to accept what was never advertised for it. The engine answers only
+                // once its own pipe stands, which is why this waits for it instead of being said here and now.
+                _ = Task.Run(async () =>
+                {
+                    for (var attempt = 0; attempt < CarryEverythingTries; attempt++)
+                    {
+                        try
+                        {
+                            uapi.AddAllowedIps(TunnelDevice.NameOf(name), carrier, ["0.0.0.0/0"]);
+                            logger.LogInformation("{Name}: the peer carries every destination while the applications ride their own adapter", name);
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            if (attempt == CarryEverythingTries - 1)
+                            {
+                                logger.LogWarning(ex, "{Name}: the peer would not take the whole range, so the carried applications reach only what the rules advertised", name);
+                                return;
+                            }
+
+                            await Task.Delay(CarryEverythingWaitMs, sessionCts.Token);
+                        }
+                    }
+                }, sessionCts.Token);
+            }
+        }
+
         // An app that reaches bare addresses has no name to resolve, so each of them is learned by watching the app
         // fail once. Remembering them turns that into a one-off: they are routed at the next bring-up, and the
         // moment one of them reappears the rest go with it.
@@ -775,6 +820,8 @@ internal sealed class TunnelRunner(
             // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
             session.Clear();
+            _appGateway?.Dispose();
+            _appGateway = null;
             // Before the engine closes, so the host routes go away with their permits still known.
             routing?.RemoveAll();
             // The batched withdrawals leave now: the device is about to go, and a queued one would never be sent.
@@ -1231,7 +1278,12 @@ internal sealed class TunnelRunner(
 
     // What this tunnel is on the hook for, and the names the ones standing alongside carry.
     private TunnelDuties _duties = TunnelDuties.Sole;
+    // Столько раз спрашиваем движок, прежде чем оставить приложения с тем, что объявили правила.
+    private const int CarryEverythingTries = 15;
+    private const int CarryEverythingWaitMs = 2000;
+
     private FleetLentNames? _lent;
+    private AppGateway? _appGateway;
 
     private const int FirewallArmAttempts = 4;
     private static readonly TimeSpan FirewallArmRetryDelay = TimeSpan.FromSeconds(2);

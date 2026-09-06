@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
@@ -21,11 +22,15 @@ public sealed class LocalProxyServer : IDisposable
     private const int BufferSize = 16384;
     private const int Backlog = 128;
     private const byte Version5 = 0x05;
+    private const byte SourceMark = (byte)'A';
+    private const int SourceRest = 15;
     private const byte Version4 = 0x04;
     private const byte NoAuth = 0x00;
     private const byte UserPass = 0x02;
     private const byte NoMethod = 0xFF;
     private const byte CommandConnect = 0x01;
+    private const byte CommandAssociate = 0x03;
+    private const int DatagramLimit = 65535;
     private const byte AddressIpV4 = 0x01;
     private const byte AddressName = 0x03;
     private const byte AddressIpV6 = 0x04;
@@ -38,6 +43,7 @@ public sealed class LocalProxyServer : IDisposable
     private static readonly string[] ForeignLinks = ["tun", "ppp", "sit", "ip6tnl", "dummy"];
 
     private readonly IProxyOutbound _outbound;
+    private readonly IDatagramOutbound? _datagrams;
     private readonly Action<string> _log;
     private readonly ConcurrentDictionary<Socket, byte> _open = new();
     private readonly ConcurrentDictionary<Socket, ProxyPeer> _clients = new();
@@ -55,8 +61,9 @@ public sealed class LocalProxyServer : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public LocalProxyServer(IProxyOutbound outbound, Action<string> log)
+    public LocalProxyServer(IProxyOutbound outbound, Action<string> log, IDatagramOutbound? datagrams = null)
     {
+        _datagrams = datagrams;
         _outbound = outbound;
         _log = log;
     }
@@ -283,6 +290,28 @@ public sealed class LocalProxyServer : IDisposable
         }
     }
 
+    // Takes a session whose pair was named ahead of the greeting: the pair says which program opened it, which the
+    // greeting alone never says.
+    private async Task ServeNamedAsync(Socket client, CancellationToken ct)
+    {
+        var head = new byte[SourceRest];
+        if (!await ReadExactAsync(client, head, ct).ConfigureAwait(false)
+            || head[0] != (byte)'G' || head[1] != (byte)'S' || head[2] != (byte)'R')
+        {
+            Interlocked.Increment(ref _refused);
+            return;
+        }
+
+        var source = new IPEndPoint(new IPAddress(head.AsSpan(3, 4).ToArray()), BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(7)));
+        if (await ReadByteAsync(client, ct).ConfigureAwait(false) != Version5)
+        {
+            Interlocked.Increment(ref _refused);
+            return;
+        }
+
+        await ServeSocksAsync(client, source, ct).ConfigureAwait(false);
+    }
+
     // Takes one client: names the protocol by its first byte and hands what it asks for to the outbound.
     private async Task ServeAsync(Socket client, CancellationToken ct)
     {
@@ -302,9 +331,15 @@ public sealed class LocalProxyServer : IDisposable
                 return;
             }
 
+            if (first == SourceMark)
+            {
+                await ServeNamedAsync(client, ct).ConfigureAwait(false);
+                return;
+            }
+
             if (first == Version5)
             {
-                await ServeSocksAsync(client, ct).ConfigureAwait(false);
+                await ServeSocksAsync(client, null, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -338,7 +373,7 @@ public sealed class LocalProxyServer : IDisposable
 
     // RFC 1928 with the user/password of RFC 1929; only CONNECT is served, so a client asking for UDP is told so
     // instead of being left waiting.
-    private async Task ServeSocksAsync(Socket client, CancellationToken ct)
+    private async Task ServeSocksAsync(Socket client, IPEndPoint? source, CancellationToken ct)
     {
         var count = await ReadByteAsync(client, ct).ConfigureAwait(false);
         if (count <= 0)
@@ -373,6 +408,16 @@ public sealed class LocalProxyServer : IDisposable
             return;
         }
 
+        if (head[1] == CommandAssociate && _datagrams is not null)
+        {
+            // The client names an address of its own here, and it is of no use: what it sends from is what answers
+            // it, and that is only known once a datagram arrives.
+            await ReadAddressAsync(client, head[3], ct).ConfigureAwait(false);
+            await ReadPortAsync(client, ct).ConfigureAwait(false);
+            await ServeDatagramsAsync(client, source, ct).ConfigureAwait(false);
+            return;
+        }
+
         if (head[1] != CommandConnect)
         {
             await SendAsync(client, Reply(ReplyNoCommand), ct).ConfigureAwait(false);
@@ -388,7 +433,7 @@ public sealed class LocalProxyServer : IDisposable
             return;
         }
 
-        var (link, outcome) = await _outbound.ConnectAsync(host, port, ct).ConfigureAwait(false);
+        var (link, outcome) = await _outbound.ConnectAsync(host, port, source, ct).ConfigureAwait(false);
         if (link is null)
         {
             Count(outcome);
@@ -407,6 +452,199 @@ public sealed class LocalProxyServer : IDisposable
         }
     }
 
+    // Carries the datagrams of one association. The client keeps the stream open for as long as it wants them
+    // carried, so the flows live and die with it. Each destination gets a socket of its own, which is what lets a
+    // rule decide them apart, and answers go back the way they came.
+    private async Task ServeDatagramsAsync(Socket client, IPEndPoint? source, CancellationToken ct)
+    {
+        var outbound = _datagrams;
+        if (outbound is null)
+        {
+            await SendAsync(client, Reply(ReplyNoCommand), ct).ConfigureAwait(false);
+            return;
+        }
+
+        using var relay = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        relay.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var bound = (IPEndPoint)relay.LocalEndPoint!;
+        await SendAsync(client, Bound(bound), ct).ConfigureAwait(false);
+        Interlocked.Increment(ref _served);
+
+        using var life = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var flows = new ConcurrentDictionary<IPEndPoint, Socket>();
+        try
+        {
+            // The association ends with the stream that asked for it; nothing else says when the flows are done.
+            var watching = WatchAsync(client, life);
+            await PumpDatagramsAsync(relay, flows, outbound, source, life.Token).ConfigureAwait(false);
+            await watching.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (SocketException)
+        {
+        }
+        finally
+        {
+            foreach (var pair in flows)
+            {
+                pair.Value.Dispose();
+            }
+        }
+    }
+
+    // Takes what the client sends and hands each datagram to the flow of its destination.
+    private async Task PumpDatagramsAsync(
+        Socket relay,
+        ConcurrentDictionary<IPEndPoint, Socket> flows,
+        IDatagramOutbound outbound,
+        IPEndPoint? source,
+        CancellationToken ct)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(DatagramLimit);
+        var client = new IPEndPoint(IPAddress.Loopback, 0);
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var got = await relay.ReceiveFromAsync(buffer.AsMemory(0, DatagramLimit), SocketFlags.None, client, ct).ConfigureAwait(false);
+                var payload = Payload(buffer.AsSpan(0, got.ReceivedBytes), out var destination).ToArray();
+                if (destination is null || payload.Length == 0)
+                {
+                    continue;
+                }
+
+                var flow = flows.GetOrAdd(destination, key => Flow(relay, outbound, source, key, (IPEndPoint)got.RemoteEndPoint, ct)!);
+                if (flow is null)
+                {
+                    flows.TryRemove(destination, out _);
+                    Interlocked.Increment(ref _blocked);
+                    continue;
+                }
+
+                await flow.SendToAsync(payload, SocketFlags.None, destination, ct).ConfigureAwait(false);
+                Interlocked.Add(ref _bytes, payload.Length);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    // Opens one flow and starts carrying its answers back to the client.
+    private Socket? Flow(
+        Socket relay,
+        IDatagramOutbound outbound,
+        IPEndPoint? source,
+        IPEndPoint destination,
+        IPEndPoint client,
+        CancellationToken ct)
+    {
+        var socket = outbound.Open(source, destination);
+        if (socket is null)
+        {
+            return null;
+        }
+
+        _ = Task.Run(() => AnswerAsync(relay, socket, destination, client, ct), CancellationToken.None);
+        return socket;
+    }
+
+    // Sends back what the destination answers, wrapped the way the client expects it.
+    private async Task AnswerAsync(Socket relay, Socket flow, IPEndPoint destination, IPEndPoint client, CancellationToken ct)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(DatagramLimit);
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var got = await flow.ReceiveFromAsync(buffer.AsMemory(0, DatagramLimit), SocketFlags.None, destination, ct).ConfigureAwait(false);
+                var answer = Wrapped(buffer.AsSpan(0, got.ReceivedBytes), (IPEndPoint)got.RemoteEndPoint);
+                await relay.SendToAsync(answer, SocketFlags.None, client, ct).ConfigureAwait(false);
+                Interlocked.Add(ref _bytes, got.ReceivedBytes);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (SocketException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    // Ends the association when the stream that asked for it goes away.
+    private static async Task WatchAsync(Socket client, CancellationTokenSource life)
+    {
+        var idle = new byte[1];
+        try
+        {
+            while (await client.ReceiveAsync(idle, SocketFlags.None, life.Token).ConfigureAwait(false) > 0)
+            {
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        await life.CancelAsync().ConfigureAwait(false);
+    }
+
+    // The destination and the payload of one datagram; null where the head is not one this proxy carries.
+    private static ReadOnlySpan<byte> Payload(ReadOnlySpan<byte> datagram, out IPEndPoint? destination)
+    {
+        destination = null;
+        // reserved, reserved, fragment, kind
+        if (datagram.Length < 10 || datagram[2] != 0)
+        {
+            return default;
+        }
+
+        if (datagram[3] != AddressIpV4)
+        {
+            return default;
+        }
+
+        var address = new IPAddress(datagram.Slice(4, 4).ToArray());
+        var port = (datagram[8] << 8) | datagram[9];
+        destination = new IPEndPoint(address, port);
+        return datagram[10..];
+    }
+
+    // One answer, wrapped with the address it came from.
+    private static byte[] Wrapped(ReadOnlySpan<byte> payload, IPEndPoint from)
+    {
+        var octets = from.Address.GetAddressBytes();
+        var answer = new byte[10 + payload.Length];
+        answer[3] = AddressIpV4;
+        octets.CopyTo(answer, 4);
+        answer[8] = (byte)(from.Port >> 8);
+        answer[9] = (byte)(from.Port & 0xFF);
+        payload.CopyTo(answer.AsSpan(10));
+        return answer;
+    }
+
+    // The reply that names where the datagrams are taken.
+    private static byte[] Bound(IPEndPoint at)
+    {
+        var octets = at.Address.GetAddressBytes();
+        var reply = new byte[10];
+        reply[0] = Version5;
+        reply[1] = ReplyOk;
+        reply[3] = AddressIpV4;
+        octets.CopyTo(reply, 4);
+        reply[8] = (byte)(at.Port >> 8);
+        reply[9] = (byte)(at.Port & 0xFF);
+        return reply;
+    }
     // RFC 1929: the pair is compared whole against every account the settings name.
     private async Task<bool> AuthenticateAsync(Socket client, CancellationToken ct)
     {

@@ -303,6 +303,10 @@ type verdictTun struct {
 	tcp  atomic.Pointer[tcpForwarder]
 
 	protect atomic.Pointer[func(int) bool]
+	relay   atomic.Int32
+	mine    atomic.Pointer[func(uint32, uint16, uint32, uint16) bool]
+	owners  sync.Map
+	owned   atomic.Int64
 
 	stop chan struct{}
 	once sync.Once
@@ -415,6 +419,66 @@ func (d *verdictTun) setProtector(fn func(int) bool) {
 	d.protect.Store(&fn)
 }
 
+// Столько ответов о владельце потока держим разом.
+const ownerCacheMax = 8192
+
+// Релей, который решает потоки, и вопрос хосту о том, чей поток.
+func (d *verdictTun) setRelay(port int, mine func(uint32, uint16, uint32, uint16) bool) {
+	if mine != nil {
+		d.mine.Store(&mine)
+	}
+
+	d.relay.Store(int32(port))
+	d.owners.Clear()
+	d.owned.Store(0)
+	if fwd := d.tcp.Load(); fwd != nil {
+		fwd.setRelay(port)
+	}
+}
+
+// Отдаёт поток релею, пока тот поднят; наш собственный едет туннелем, иначе он вернулся бы сюда же.
+func (d *verdictTun) stream(packet []byte) bool {
+	if d.relay.Load() <= 0 || len(packet) < 40 || packet[9] != syscall.IPPROTO_TCP {
+		return false
+	}
+
+	fwd := d.tcp.Load()
+	if fwd == nil || d.ours(packet) {
+		return false
+	}
+
+	return fwd.send(packet)
+}
+
+// Наш ли процесс открыл поток; ответ хоста держится по паре портов, пока поток жив.
+func (d *verdictTun) ours(packet []byte) bool {
+	head := int(packet[0]&0x0f) * 4
+	if head < 20 || len(packet) < head+4 {
+		return false
+	}
+
+	srcPort := binary.BigEndian.Uint16(packet[head : head+2])
+	dstPort := binary.BigEndian.Uint16(packet[head+2 : head+4])
+	key := uint32(srcPort)<<16 | uint32(dstPort)
+	if kept, ok := d.owners.Load(key); ok {
+		return kept.(bool)
+	}
+
+	fn := d.mine.Load()
+	if fn == nil {
+		return false
+	}
+
+	answer := (*fn)(binary.BigEndian.Uint32(packet[12:16]), srcPort, binary.BigEndian.Uint32(packet[16:20]), dstPort)
+	if d.owned.Add(1) > ownerCacheMax {
+		d.owners.Clear()
+		d.owned.Store(1)
+	}
+
+	d.owners.Store(key, answer)
+	return answer
+}
+
 // Поднимает или гасит свой стек под потоки мимо туннеля.
 func (d *verdictTun) setTcpDirect(on bool) error {
 	if !on {
@@ -438,6 +502,7 @@ func (d *verdictTun) setTcpDirect(on bool) error {
 		return err
 	}
 
+	fwd.setRelay(int(d.relay.Load()))
 	d.tcp.Store(fwd)
 	return nil
 }
@@ -516,8 +581,15 @@ func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 				d.blocked.Add(1)
 				continue
 			case verdictDirect:
-				// Датаграмма и поток уходят со своих защищённых сокетов; остальное едет туннелем.
-				if d.aside(bufs[i][offset : offset+sizes[i]]) {
+				// Поток решается в релее, если тот поднят; иначе датаграмма и поток уходят со своих
+				// защищённых сокетов, а остальное едет туннелем.
+				packet := bufs[i][offset : offset+sizes[i]]
+				if d.stream(packet) || d.aside(packet) {
+					d.passed.Add(1)
+					continue
+				}
+			default:
+				if d.stream(bufs[i][offset : offset+sizes[i]]) {
 					d.passed.Add(1)
 					continue
 				}

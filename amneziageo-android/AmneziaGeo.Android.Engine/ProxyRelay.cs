@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -10,16 +11,20 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Android.Engine;
 
 /// <summary>
-/// Local HTTP proxy the tunnel offers to the applications. A request arrives as a name, so the destination is
-/// decided while the session runs instead of at connect: a blocked name is refused, a direct one leaves on a
-/// protected socket, and one no rule names follows the tunnel flag. A decision is held for an idle window, extended
-/// by traffic and by every live connection, and dropped once nothing has used it - the next request decides again.
-/// A plain request carries one destination, so its connection ends with the response and the next request is decided
-/// on its own; a tunnel opened by CONNECT carries the one name it was opened for.
+/// Local relay the tunnel decides its streams in. A stream arrives either as a proxy request or handed over by the
+/// tun ahead of its own first bytes, and in both cases carries a name, so the destination is decided while the
+/// session runs instead of at connect: a blocked name is refused, a direct one leaves on a protected socket, and one
+/// no rule names follows the tunnel flag. A decision is held for an idle window, extended by traffic and by every
+/// live connection, and dropped once nothing has used it - the next stream decides again. A plain request carries
+/// one destination, so its connection ends with the response and the next request is decided on its own; a tunnel
+/// opened by CONNECT carries the one name it was opened for.
 /// </summary>
 internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 {
     private const int HeadLimit = 8192;
+    private const int StreamHead = 16;
+    private const uint StreamMark = 0x41475354;
+    private const int FirstBytesMs = 400;
     private const int BufferSize = 65536;
 
     // What one direction carries before it is counted. Counting every read puts an atomic and a clock read on the
@@ -45,7 +50,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Func<int, bool> _protect;
     private readonly Action<string> _log;
-    private readonly Func<IPEndPoint, string?>? _owner;
+    private readonly Func<IPEndPoint, IPEndPoint?, string?>? _owner;
     private readonly RouteVerdict _undecided;
     private readonly string _mode;
     private readonly string _rules;
@@ -62,7 +67,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public ProxyRelay(GeoRoutingPlan plan, Func<int, bool> protect, Action<string> log, Func<IPEndPoint, string?>? owner)
+    public ProxyRelay(GeoRoutingPlan plan, Func<int, bool> protect, Action<string> log, Func<IPEndPoint, IPEndPoint?, string?>? owner)
     {
         _proxyNames = new DomainMatcher(plan.ProxyDomains);
         _directNames = new DomainMatcher(plan.DirectDomains);
@@ -359,11 +364,15 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             }
 
             entry = Touch(request.Host);
-            var app = NoteOwner(client, entry);
+            var app = NoteOwner(client, entry, request);
             if (entry.Verdict == RouteVerdict.Block)
             {
                 Interlocked.Increment(ref _blocked);
-                await SendAsync(client, "HTTP/1.1 403 Forbidden\r\n\r\n", ct).ConfigureAwait(false);
+                if (!request.Transparent)
+                {
+                    await SendAsync(client, "HTTP/1.1 403 Forbidden\r\n\r\n", ct).ConfigureAwait(false);
+                }
+
                 return;
             }
 
@@ -373,11 +382,30 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             if (target is null)
             {
                 Interlocked.Increment(ref _refused);
-                await SendAsync(client, "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n", ct).ConfigureAwait(false);
+                if (!request.Transparent)
+                {
+                    await SendAsync(client, "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n", ct).ConfigureAwait(false);
+                }
+
                 return;
             }
 
             Interlocked.Increment(ref _served);
+            if (request.Transparent)
+            {
+                // The bytes that named the destination belong to the stream and go on to it.
+                if (request.Head.Length > 0)
+                {
+                    await target.SendAsync(request.Head, SocketFlags.None, ct).ConfigureAwait(false);
+                    Count(entry, request.Head.Length);
+                }
+
+                await Task.WhenAll(
+                    PumpAsync(client, target, entry, ct),
+                    PumpAsync(target, client, entry, ct)).ConfigureAwait(false);
+                return;
+            }
+
             if (request.Connect)
             {
                 await SendAsync(client, "HTTP/1.1 200 Connection established\r\n\r\n", ct).ConfigureAwait(false);
@@ -745,16 +773,21 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     // is asked per connection: two applications share a destination and only the owner says which this one is. A
     // destination a rule decided takes the name for the display alone and asks once, because every answer costs two
     // round trips into the system.
-    private string NoteOwner(Socket client, Entry entry)
+    private string NoteOwner(Socket client, Entry entry, Request request)
     {
         if (_owner is null
-            || (entry.App.Length > 0 && (_apps.Count == 0 || entry.Verdict != RouteVerdict.None))
-            || client.RemoteEndPoint is not IPEndPoint peer)
+            || (entry.App.Length > 0 && (_apps.Count == 0 || entry.Verdict != RouteVerdict.None)))
         {
             return entry.App;
         }
 
-        var name = _owner(peer);
+        var peer = request.Source ?? client.RemoteEndPoint as IPEndPoint;
+        if (peer is null)
+        {
+            return entry.App;
+        }
+
+        var name = _owner(peer, request.Destination);
         if (name is null)
         {
             return entry.App;
@@ -823,13 +856,19 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         }
     }
 
-    // Reads the request head into a pooled buffer.
+    // Reads what the client opens with: a proxy request, or a stream the tun handed over ahead of its first bytes.
     private static async Task<Request?> ReadRequestAsync(Socket client, CancellationToken ct)
     {
         var head = ArrayPool<byte>.Shared.Rent(HeadLimit);
         try
         {
-            var length = await ReadHeadAsync(client, head, HeadLimit, ct).ConfigureAwait(false);
+            var opening = await ReadAtLeastAsync(client, head, StreamHead, ct).ConfigureAwait(false);
+            if (opening == StreamHead && BinaryPrimitives.ReadUInt32BigEndian(head) == StreamMark)
+            {
+                return await ReadStreamAsync(client, head, ct).ConfigureAwait(false);
+            }
+
+            var length = await ReadHeadAsync(client, head, HeadLimit, opening, ct).ConfigureAwait(false);
             return length > 0 ? ParseRequest(head, length) : null;
         }
         finally
@@ -838,10 +877,63 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         }
     }
 
-    // Reads until the head ends, keeping whatever body arrived with it.
-    private static async Task<int> ReadHeadAsync(Socket client, byte[] buffer, int limit, CancellationToken ct)
+    // Reads a stream handed over by the tun: the header names the pair it was opened for, the bytes after it usually
+    // name the destination as well.
+    private static async Task<Request?> ReadStreamAsync(Socket client, byte[] head, CancellationToken ct)
+    {
+        var source = new IPEndPoint(new IPAddress(head[4..8]), BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(8)));
+        var destination = new IPEndPoint(new IPAddress(head[10..14]), BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(14)));
+        var first = await ReadFirstAsync(client, head, ct).ConfigureAwait(false);
+        var name = StreamName.From(head.AsSpan(0, first)) ?? destination.Address.ToString();
+        return new Request(name, destination.Port, false, first > 0 ? head[..first] : [], source, destination);
+    }
+
+    // The bytes the client opens the stream with; one that waits for the server to speak first carries none.
+    private static async Task<int> ReadFirstAsync(Socket client, byte[] buffer, CancellationToken ct)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        wait.CancelAfter(FirstBytesMs);
+        try
+        {
+            var read = await client.ReceiveAsync(buffer.AsMemory(0, HeadLimit), SocketFlags.None, wait.Token).ConfigureAwait(false);
+            return Math.Max(read, 0);
+        }
+        catch (System.OperationCanceledException)
+        {
+            return 0;
+        }
+        catch (SocketException)
+        {
+            return 0;
+        }
+    }
+
+    // Reads the opening bytes, or fewer when the client stopped sending.
+    private static async Task<int> ReadAtLeastAsync(Socket client, byte[] buffer, int size, CancellationToken ct)
     {
         var used = 0;
+        while (used < size)
+        {
+            var read = await client.ReceiveAsync(buffer.AsMemory(used, size - used), SocketFlags.None, ct).ConfigureAwait(false);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            used += read;
+        }
+
+        return used;
+    }
+
+    // Reads until the head ends, keeping whatever body arrived with it.
+    private static async Task<int> ReadHeadAsync(Socket client, byte[] buffer, int limit, int used, CancellationToken ct)
+    {
+        if (used > 0 && HeadEnd(buffer, used) > 0)
+        {
+            return used;
+        }
+
         while (used < limit)
         {
             var read = await client.ReceiveAsync(buffer.AsMemory(used, limit - used), SocketFlags.None, ct).ConfigureAwait(false);
@@ -930,7 +1022,11 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     /// <summary>
     /// What one proxied request asks for.
     /// </summary>
-    private sealed record Request(string Host, int Port, bool Connect, byte[] Head);
+    private sealed record Request(string Host, int Port, bool Connect, byte[] Head, IPEndPoint? Source = null, IPEndPoint? Destination = null)
+    {
+        // Whether the tun handed the stream over instead of the client asking the proxy for it.
+        public bool Transparent => Destination is not null;
+    }
 
     /// <summary>
     /// One destination the local proxy holds open, counted against the entry that decided it.

@@ -16,6 +16,13 @@ package main
 typedef int (*ag_protect_fn)(int fd);
 
 static int ag_call_protect(ag_protect_fn fn, int fd) { return fn(fd); }
+
+// Хост называет владельца потока; ненулевое значит наш собственный процесс.
+typedef int (*ag_mine_fn)(unsigned int src, unsigned short srcPort, unsigned int dst, unsigned short dstPort);
+
+static int ag_call_mine(ag_mine_fn fn, unsigned int src, unsigned short srcPort, unsigned int dst, unsigned short dstPort) {
+	return fn(src, srcPort, dst, dstPort);
+}
 */
 import "C"
 
@@ -212,6 +219,24 @@ func wgSetProtector(handle int32, fn C.ag_protect_fn) int32 {
 	}
 	t.tun.setProtector(func(fd int) bool {
 		return C.ag_call_protect(fn, C.int(fd)) != 0
+	})
+	return 0
+}
+
+//export wgSetRelay
+func wgSetRelay(handle int32, port int32, fn C.ag_mine_fn) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+
+	if port <= 0 {
+		t.tun.setRelay(0, nil)
+		return 0
+	}
+
+	t.tun.setRelay(int(port), func(src uint32, srcPort uint16, dst uint32, dstPort uint16) bool {
+		return C.ag_call_mine(fn, C.uint(src), C.ushort(srcPort), C.uint(dst), C.ushort(dstPort)) != 0
 	})
 	return 0
 }

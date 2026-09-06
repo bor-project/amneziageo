@@ -525,10 +525,16 @@ public sealed class GeoVpnService : VpnService
                     + "the engine, which decides them on the packet");
             }
 
-            if (directTcp && AwgEngine.SetTcpDirect(handle, true))
+            if ((directTcp || _proxyPort > 0) && AwgEngine.SetTcpDirect(handle, true))
             {
                 Report("a stream to a direct range leaves on a protected socket as well, so the relay is no longer "
                     + "the only way past the tunnel");
+            }
+
+            if (_proxyPort > 0 && AwgEngine.SetRelay(handle, _proxyPort, Mine))
+            {
+                Report("streams are taken off the tun and decided in the relay, so the applications are offered no "
+                    + "proxy and see none");
             }
 
             // Passes the idle window to the engine.
@@ -576,7 +582,7 @@ public sealed class GeoVpnService : VpnService
             _ = Task.Run(() => ReportLinkAsync(loss, keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
-                Report($"local proxy on {ProxyHost}:{_proxyPort} offered to the applications, "
+                Report($"streams are decided on {ProxyHost}:{_proxyPort}, which no application is told about, "
                     + $"route ttl {plan.TtlSeconds} s");
             }
 
@@ -1010,16 +1016,6 @@ public sealed class GeoVpnService : VpnService
 
             builder.SetMtu(mtu);
 
-            // Hands the applications a proxy of our own: a request then arrives as a name, before the client has
-            // resolved it, which is the only per-destination signal this platform gives a session in progress.
-            var proxy = proxyPort > 0 && Build.VERSION.SdkInt >= BuildVersionCodes.Q
-                ? ProxyInfo.BuildDirectProxy(ProxyHost, proxyPort)
-                : null;
-            if (proxy is not null)
-            {
-                builder.SetHttpProxy(proxy);
-            }
-
             var allowListed = ApplyAppSplit(builder, appMode, appList);
             ApplyAppBypass(builder, bypassApps, allowListed);
 
@@ -1289,20 +1285,23 @@ public sealed class GeoVpnService : VpnService
         return GeoIpRanges.Format(network) + "/" + prefix;
     }
 
-    // Names the application behind a loopback connection to the proxy; null when the system will not tell. The
-    // manager, the proxy end of the pair and the packages a uid owns are held: each costs a round trip into another
-    // process, and none of them changes while the tunnel stands.
-    private string? ResolveOwner(System.Net.IPEndPoint peer)
+    // Names the application behind a connection; null when the system will not tell. A stream handed over by the tun
+    // names the pair it was opened for, a proxy request names its loopback end. The manager, the proxy end of the
+    // pair and the packages a uid owns are held: each costs a round trip into another process, and none of them
+    // changes while the tunnel stands.
+    private string? ResolveOwner(System.Net.IPEndPoint peer, System.Net.IPEndPoint? destination)
     {
         try
         {
-            if (Build.VERSION.SdkInt < BuildVersionCodes.Q || _proxyPort == 0)
+            if (Build.VERSION.SdkInt < BuildVersionCodes.Q || (destination is null && _proxyPort == 0))
             {
                 return null;
             }
 
             var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
-            var remote = _proxyEnd ??= new InetSocketAddress(ProxyHost, _proxyPort);
+            var remote = destination is null
+                ? _proxyEnd ??= new InetSocketAddress(ProxyHost, _proxyPort)
+                : new InetSocketAddress(destination.Address.ToString(), destination.Port);
             var local = new InetSocketAddress(peer.Address.ToString(), peer.Port);
             var uid = manager?.GetConnectionOwnerUid(TcpProtocol, local, remote) ?? -1;
             if (uid < 0)
@@ -1317,6 +1316,27 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
     }
+
+    // Whether this process opened the stream: its own connections ride the tunnel, or they would come back into the
+    // hand-over they came from.
+    private bool Mine(uint source, ushort sourcePort, uint destination, ushort destinationPort)
+    {
+        try
+        {
+            var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
+            var local = new InetSocketAddress(Dotted(source), sourcePort);
+            var remote = new InetSocketAddress(Dotted(destination), destinationPort);
+            return manager?.GetConnectionOwnerUid(TcpProtocol, local, remote) == global::Android.OS.Process.MyUid();
+        }
+        catch (Java.Lang.Exception)
+        {
+            return false;
+        }
+    }
+
+    // An address written the way the system takes it.
+    private static string Dotted(uint address) =>
+        $"{(address >> 24) & 0xFF}.{(address >> 16) & 0xFF}.{(address >> 8) & 0xFF}.{address & 0xFF}";
 
     // The package a uid owns, or the uid itself where the system names none.
     private string Named(int uid)

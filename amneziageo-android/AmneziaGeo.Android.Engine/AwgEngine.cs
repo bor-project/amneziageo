@@ -12,6 +12,9 @@ internal static partial class AwgEngine
     // Кто отпускает сокет мимо туннеля.
     private static Func<int, bool>? _protect;
 
+    // Кто называет владельца потока.
+    private static Func<uint, ushort, uint, ushort, bool>? _mine;
+
     /// <summary>
     /// Движок молчит.
     /// </summary>
@@ -135,6 +138,34 @@ internal static partial class AwgEngine
         return SetProtectorNative(handle, &ProtectNative) == 0;
     }
 
+    /// <summary>
+    /// Points the shim at the relay that decides streams, with the call that tells whose stream it is.
+    /// </summary>
+    public static unsafe bool SetRelay(int handle, int port, Func<uint, ushort, uint, ushort, bool> mine)
+    {
+        _mine = mine;
+        return SetRelayNative(handle, port, &MineNative) == 0;
+    }
+
+    [UnmanagedCallersOnly]
+    private static int MineNative(uint source, ushort sourcePort, uint destination, ushort destinationPort)
+    {
+        var mine = _mine;
+        if (mine is null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return mine(source, sourcePort, destination, destinationPort) ? 1 : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     [UnmanagedCallersOnly]
     private static int ProtectNative(int fd)
     {
@@ -192,4 +223,7 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgSetProtector")]
     private static unsafe partial int SetProtectorNative(int handle, delegate* unmanaged<int, int> protect);
+
+    [LibraryImport(Lib, EntryPoint = "wgSetRelay")]
+    private static unsafe partial int SetRelayNative(int handle, int port, delegate* unmanaged<uint, ushort, uint, ushort, int> mine);
 }

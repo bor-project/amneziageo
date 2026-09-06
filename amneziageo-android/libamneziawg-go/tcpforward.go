@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,9 @@ const tcpQueue = 512
 // Идентификатор единственного интерфейса стека.
 const tcpNic tcpip.NICID = 1
 
+// Метка потока, переданного релею.
+var tcpStreamMark = [4]byte{'A', 'G', 'S', 'T'}
+
 // Терминирует поток с вердиктом «мимо туннеля» и переливает его в свой защищённый сокет.
 type tcpForwarder struct {
 	stack *stack.Stack
@@ -48,6 +52,7 @@ type tcpForwarder struct {
 	tun   tun2Writer
 
 	protect *atomic.Pointer[func(int) bool]
+	relay   atomic.Int32
 
 	opened  atomic.Uint64
 	refused atomic.Uint64
@@ -126,8 +131,7 @@ func (f *tcpForwarder) accept(request *tcp.ForwarderRequest) {
 // которой ничего нет.
 func (f *tcpForwarder) serve(request *tcp.ForwarderRequest) {
 	id := request.ID()
-	address := id.LocalAddress.As4()
-	outbound, err := f.dial(&net.TCPAddr{IP: net.IPv4(address[0], address[1], address[2], address[3]), Port: int(id.LocalPort)})
+	outbound, err := f.open(id.RemoteAddress.As4(), id.RemotePort, id.LocalAddress.As4(), id.LocalPort)
 	if err != nil {
 		f.refused.Add(1)
 		request.Complete(true)
@@ -147,6 +151,36 @@ func (f *tcpForwarder) serve(request *tcp.ForwarderRequest) {
 	f.opened.Add(1)
 	f.live.Add(1)
 	go f.pump(gonet.NewTCPConn(&queue, endpoint), outbound)
+}
+
+// Порт релея, который решает потоки; ноль уводит их прямо в сеть.
+func (f *tcpForwarder) setRelay(port int) {
+	f.relay.Store(int32(port))
+}
+
+// Открывает выход потока: в релей вместе с парой, для которой он открыт, либо прямо в сеть.
+func (f *tcpForwarder) open(src [4]byte, srcPort uint16, dst [4]byte, dstPort uint16) (net.Conn, error) {
+	if port := int(f.relay.Load()); port > 0 {
+		relay, err := net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", port), tcpDialTimeout)
+		if err != nil {
+			return nil, err
+		}
+
+		var head [16]byte
+		copy(head[0:4], tcpStreamMark[:])
+		copy(head[4:8], src[:])
+		binary.BigEndian.PutUint16(head[8:10], srcPort)
+		copy(head[10:14], dst[:])
+		binary.BigEndian.PutUint16(head[14:16], dstPort)
+		if _, err := relay.Write(head[:]); err != nil {
+			relay.Close()
+			return nil, err
+		}
+
+		return relay, nil
+	}
+
+	return f.dial(&net.TCPAddr{IP: net.IPv4(dst[0], dst[1], dst[2], dst[3]), Port: int(dstPort)})
 }
 
 // Сокет наружу защищается до соединения, иначе поток уйдёт обратно в tun.

@@ -35,12 +35,11 @@ internal sealed class AppGateway : IDisposable
     }
 
     /// <summary>
-    /// Whether this machine was asked for the per-application path. It stays off until it is asked for: the path
-    /// takes every session of the machine onto an adapter of its own, and a machine that never tried it should not
-    /// find itself there after an update.
+    /// Whether this machine takes the per-application path. The environment variable set to zero keeps it on the
+    /// address-only scheme.
     /// </summary>
     public static bool Wanted() =>
-        string.Equals(Environment.GetEnvironmentVariable("AMNEZIAGEO_APP_GATEWAY"), "1", StringComparison.Ordinal);
+        !string.Equals(Environment.GetEnvironmentVariable("AMNEZIAGEO_APP_GATEWAY"), "0", StringComparison.Ordinal);
 
     /// <summary>
     /// Raises the path, or null when the rules name no application, the gateway is missing, or it refuses to

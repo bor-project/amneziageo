@@ -546,6 +546,13 @@ internal sealed class TunnelRunner(
         // for one application without holding for every other that shares the address.
         if (matcher is not null && AppGateway.Wanted())
         {
+            // The carrier's address is kept out of the adapter beside the local networks.
+            var keptOut = new List<string>(exclusionCidrs);
+            if (underlayProbe is { } underlay)
+            {
+                keptOut.Add(underlay + "/32");
+            }
+
             _appGateway = AppGateway.TryStart(
                 TunnelDevice.NameOf(name),
                 apps,
@@ -553,7 +560,7 @@ internal sealed class TunnelRunner(
                 GeoIpRanges.Build(geo?.Routes ?? []),
                 GeoIpRanges.Build(listDirect),
                 GeoIpRanges.Build(blockRoutes),
-                [.. exclusionCidrs, underlayProbe is { } server ? server + "/32" : string.Empty],
+                keptOut,
                 effectiveMtu,
                 loggerFactory.CreateLogger<AppGateway>());
             if (_appGateway is not null && WgConfigEditor.GetPeerPublicKey(config) is { } carrier)

@@ -302,9 +302,22 @@ internal sealed class TunnelRunner(
         // coincides with a tunnel-DNS resolver /32 stays advertised (in _staticRoutes) but is never in _listRoutes.
         var listRoutes = (geo?.Routes ?? []).Where(r => !resolverRoutes.Contains(r)).ToList();
 
-        // Split starts empty: only the resolver infrastructure is advertised, and a proxy destination earns its
-        // /32 on contact. Materializing a geo database up front is what put thousands of routes on the adapter.
-        var startupRoutes = geoSplit ? resolverRoutes.ToList() : geoRoutes;
+        // A range a rule names outright stands from the start: it is one line, not a database, and a destination
+        // inside it is otherwise reached only by contact the tracker sees, which an echo request never makes.
+        var namedRanges = geoSplit
+            ? GeoMaterializer.NamedRanges(activeList?.Rules ?? geo?.Rules ?? [], RouteRole.Proxy)
+                .Where(route => !resolverRoutes.Contains(route))
+                .ToList()
+            : new List<string>();
+
+        if (namedRanges.Count > 0)
+        {
+            logger.LogInformation("{Name}: {Ranges} take the tunnel from the start", name, string.Join(", ", namedRanges));
+        }
+
+        // Split starts with those and the resolver infrastructure, and a database destination earns its /32 on
+        // contact. Materializing a geo database up front is what put thousands of routes on the adapter.
+        var startupRoutes = geoSplit ? resolverRoutes.Concat(namedRanges).ToList() : geoRoutes;
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), startupRoutes);
         if (stripV6)
         {
@@ -498,7 +511,8 @@ internal sealed class TunnelRunner(
             {
                 // Started after the geo-domain sink is attached to avoid a rebuild race.
                 // With lazy ranges the tracker owns only what it installs: the advertised set at bring-up is the
-                // resolver infrastructure, and the list's own ranges are decided per destination by the cache.
+                // resolver infrastructure and the ranges the rules name, and a database category is decided per
+                // destination by the cache.
                 var trackerStatic = geoSplit ? startupRoutes : geoRoutes;
                 var trackerList = geoSplit ? new List<string>() : listRoutes;
                 tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, trackerStatic, trackerList, appSettings.RouteTtlSeconds, stripV6, geoSplit, routing, synReset);

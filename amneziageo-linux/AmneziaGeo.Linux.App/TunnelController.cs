@@ -139,6 +139,16 @@ internal sealed class TunnelController : IDisposable
         var split = routing.Split && routing.HasRules;
         var tunnelResolvers = TunnelResolvers(resolved);
         var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
+        // A range a rule names outright stands from the start: it is otherwise reached only by contact the
+        // tracker sees, which an echo request never makes.
+        var namedRanges = split ? GeoMaterializer.NamedRanges(routing.Rules, RouteRole.Proxy) : [];
+        foreach (var named in namedRanges)
+        {
+            if (!startupRoutes.Contains(named))
+            {
+                startupRoutes.Add(named);
+            }
+        }
         // Inbound access: what the tunnel may reach this machine from. Off by default.
         var inboundRoutes = options.Transport?.AllowInbound == true
             ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetAllowedIps(resolved), options.Transport.InboundNetwork)

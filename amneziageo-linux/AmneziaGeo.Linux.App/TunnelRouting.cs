@@ -9,6 +9,7 @@ namespace AmneziaGeo.Linux.App;
 internal sealed record TunnelRouting(
     bool Split,
     string ListName,
+    IReadOnlyList<GeoRule> Rules,
     IReadOnlyList<string> ProxyRoutes,
     IReadOnlyList<GeoDomain> ProxyDomains,
     IReadOnlyList<string> DirectRoutes,
@@ -20,7 +21,7 @@ internal sealed record TunnelRouting(
     /// <summary>
     /// No list selected: a full tunnel by the config's own AllowedIPs.
     /// </summary>
-    public static TunnelRouting None { get; } = new(false, string.Empty, [], [], [], [], [], [], []);
+    public static TunnelRouting None { get; } = new(false, string.Empty, [], [], [], [], [], [], [], []);
 
     /// <summary>
     /// Whether any bucket carries a rule.
@@ -53,6 +54,7 @@ internal sealed record TunnelRouting(
         return new TunnelRouting(
             split,
             list.Name,
+            list.Rules,
             list.Routes,
             list.Domains,
             list.DirectRoutes,

@@ -40,6 +40,25 @@ public static class GeoMaterializer
     }
 
     /// <summary>
+    /// Ranges the rules name outright in the given bucket, in the order they appear.
+    /// </summary>
+    public static IReadOnlyList<string> NamedRanges(IReadOnlyList<GeoRule> rules, RouteRole role)
+    {
+        var ranges = new List<string>();
+        foreach (var rule in rules)
+        {
+            if (rule.Kind != GeoRuleKind.Cidr || rule.Role != role || ranges.Contains(rule.Value, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            ranges.Add(rule.Value);
+        }
+
+        return ranges;
+    }
+
+    /// <summary>
     /// Expands one geo key into both facets: the addresses the databases give it and the names, including the
     /// domain suffixes a country owns.
     /// </summary>

@@ -1883,7 +1883,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Unavailable sites</value>
   </data>
   <data name="Preset_ClosedHint" xml:space="preserve">
-    <value>The VPN carries sites from a ready list, the selected region goes direct.</value>
+    <value>The VPN carries sites from a ready list, everything else goes direct.</value>
   </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Everything but the selected region</value>

@@ -172,7 +172,7 @@ internal partial class RoutingViewModel : ViewModelBase
         _regionProbe ??= DetectRegionAsync();
     }
 
-    // Регион устройства: внешний адрес, часовой пояс, система. Ручной выбор он не трогает.
+    // Регион устройства: внешний адрес, сотовая сеть, часовой пояс, система. Ручной выбор он не трогает.
     private async Task DetectRegionAsync()
     {
         var code = await RegionProbe.DetectAsync(
@@ -1462,6 +1462,8 @@ internal partial class RoutingViewModel : ViewModelBase
 
             if (preset.LocalSubnets)
             {
+                // Подсети ложатся в корзину «Напрямую», а не в открытую по умолчанию «Через VPN».
+                editor.SelectedRole = "direct";
                 await editor.AddLocalSubnetsCommand.ExecuteAsync(null);
             }
 

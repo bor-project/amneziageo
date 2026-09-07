@@ -34,11 +34,6 @@ internal static class RoutingPresets
     public static readonly string[] ClosedRules = ["geosite:ru-blocked", "geoip:ru-blocked"];
 
     /// <summary>
-    /// Заготовленные списки сервисов, работающих только изнутри своей страны.
-    /// </summary>
-    public static readonly string[] InsideRules = ["geosite:ru-available-only-inside"];
-
-    /// <summary>
     /// Наборы в порядке показа: сверху точечный, снизу самый грубый.
     /// </summary>
     public static readonly RoutingPreset[] All =
@@ -55,9 +50,9 @@ internal static class RoutingPresets
                 "geosite:telegram",
                 "geoip:telegram",
             ],
-            [.. InsideRules, "geoip:{0}"],
+            [],
             false,
-            true,
+            false,
             false),
         new(
             "AllButLocal",

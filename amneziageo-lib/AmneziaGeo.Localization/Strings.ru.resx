@@ -1883,7 +1883,7 @@
     <value>Недоступные сайты</value>
   </data>
   <data name="Preset_ClosedHint" xml:space="preserve">
-    <value>Через VPN идут сайты из готового списка, напрямую - выбранный регион.</value>
+    <value>Через VPN идут сайты из готового списка, остальное - напрямую.</value>
   </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Всё, кроме выбранного региона</value>

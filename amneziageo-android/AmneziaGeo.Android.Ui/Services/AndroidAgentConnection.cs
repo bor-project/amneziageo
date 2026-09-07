@@ -551,19 +551,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
         var planStarted = System.Environment.TickCount64;
-        var (appMode, appPkgs, bypassPkgs) = await Task.Run(async () =>
-        {
-            var split = await ResolveAppSplitFromRoutingAsync(useRouter).ConfigureAwait(false);
-            VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false));
-            return split;
-        }).ConfigureAwait(false);
+        var session = await Task.Run(() => RaiseSessionPlanAsync(useRouter)).ConfigureAwait(false);
 
-        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}"
-            + $"{BypassLine(bypassPkgs.Length)}, plan ready in {System.Environment.TickCount64 - planStarted} ms");
+        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(session.Mode, session.Packages.Length)}"
+            + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
-            appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
+            session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel), _directTcp,
-            _excludeRoutes, bypassPkgs);
+            _excludeRoutes, session.Bypass);
         return Ok();
     }
 
@@ -2033,6 +2028,62 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
+    // The plan the session routes by stays on disk while the list, its settings and the session around it hold:
+    // unfolding a large list costs seconds, and a switch back to a list already seen would pay them again.
+    private async Task<(string Mode, string[] Packages, string[] Bypass, bool Rebuilt)> RaiseSessionPlanAsync(bool useRouter)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var stamp = await ReadListStampAsync().ConfigureAwait(false);
+        var settings = await ReadListSettingsAsync().ConfigureAwait(false);
+        var split = AppSplit(stamp, settings, useRouter);
+        var mark = RoutingPlanStamp.Of(stamp, settings, InboundRanges(), useRouter, PerAppSupported, _routeTtl);
+        if (VpnBridge.PlanExists() && string.Equals(VpnBridge.ReadPlanStamp(), mark, StringComparison.Ordinal))
+        {
+            return (split.Mode, split.Packages, split.Bypass, false);
+        }
+
+        VpnBridge.WritePlanStamp(string.Empty);
+        if (VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false)))
+        {
+            VpnBridge.WritePlanStamp(mark);
+        }
+
+        return (split.Mode, split.Packages, split.Bypass, true);
+    }
+
+    // Поколение и правила выбранного списка, без развёрнутых корзин.
+    private async Task<RoutingListStamp?> ReadListStampAsync() =>
+        _selectedRoutingList is { } listId ? await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false) : null;
+
+    // Настройки движения выбранного списка.
+    private async Task<RoutingSettings?> ReadListSettingsAsync() =>
+        _selectedRoutingList is { } listId ? await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false) : null;
+
+    // Соединение приписывается своему владельцу начиная с Android 10.
+    private static bool PerAppSupported => Build.VERSION.SdkInt >= BuildVersionCodes.Q;
+
+    // Приложения, которым отдан туннель, и те, что идут мимо него.
+    private static (string Mode, string[] Packages, string[] Bypass) AppSplit(RoutingListStamp? list, RoutingSettings? settings, bool useRouter)
+    {
+        if (list is null || !useRouter)
+        {
+            return ("off", [], []);
+        }
+
+        var bypass = AppPackages(RuleApps(list.Rules, RouteRole.Direct));
+        if (settings is { UseGlobalProxy: true })
+        {
+            return ("off", [], bypass);
+        }
+
+        var packages = AppPackages(RuleApps(list.Rules, RouteRole.Proxy));
+        return packages.Length > 0 ? ("include", packages, bypass) : ("off", [], bypass);
+    }
+
+    // Значения правил приложений одной корзины.
+    private static IReadOnlyList<string> RuleApps(IReadOnlyList<GeoRule> rules, RouteRole role) =>
+        [.. rules.Where(rule => rule.Kind == GeoRuleKind.App && rule.Role == role).Select(rule => rule.Value)];
+
     // The rules the session routes by. Addresses stay ranges and names stay names: a name resolved to a fresh
     // address keeps its verdict, which a set of host routes fixed at connect never could.
     private async Task<GeoRoutingPlan> BuildPlanAsync(bool useRouter)
@@ -2070,7 +2121,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // which is what the whole tunnel below stands for.
         var apps = AppPackages(list.Apps);
         var perApp = settings is not { UseGlobalProxy: true } && useRouter && apps.Length > 0;
-        var attributed = Build.VERSION.SdkInt >= BuildVersionCodes.Q;
+        var attributed = PerAppSupported;
         var plan = new GeoRoutingPlan(
             proxyRoutes,
             directRoutes,
@@ -3346,15 +3397,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
-        var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
-        var bypass = AppPackages(list?.DirectApps);
-        if (settings is { UseGlobalProxy: true })
-        {
-            return ("off", [], bypass);
-        }
-
-        var packages = AppPackages(list?.Apps);
-        return packages.Length > 0 ? ("include", packages, bypass) : ("off", [], bypass);
+        return AppSplit(await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false), settings, useRouter);
     }
 
     // What the app rules of a list do here: they add to the rules where a connection can be traced to its owner,

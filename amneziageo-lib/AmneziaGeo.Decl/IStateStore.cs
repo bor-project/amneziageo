@@ -219,6 +219,12 @@ public interface IStateStore
     Task<RoutingList?> GetRoutingListAsync(long id, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns a routing list's generation and rules without deserializing its materialized buckets, so a
+    /// caller that only has to tell the list apart from its previous state skips the large read. Null if absent.
+    /// </summary>
+    Task<RoutingListStamp?> GetRoutingListStampAsync(long id, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns the routing list by name, or null if absent.
     /// </summary>
     Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default);

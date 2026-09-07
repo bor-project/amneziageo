@@ -2246,6 +2246,41 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task<RoutingListStamp?> GetRoutingListStampAsync(long id, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            if (await ReadRoutingListHeadAsync(connection, id, ct).ConfigureAwait(false) is not { } head)
+            {
+                return null;
+            }
+
+            var rules = await ReadRoutingListRulesAsync(connection, id, ct).ConfigureAwait(false);
+            return new RoutingListStamp(id, head.Name, head.Generation, rules);
+        }
+    }
+
+    // Reads a list's name and generation, leaving the materialized columns alone.
+    private static async Task<(string Name, long Generation)?> ReadRoutingListHeadAsync(SqliteConnection connection, long id, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = "SELECT name, generation FROM routing_lists WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                return await reader.ReadAsync(ct).ConfigureAwait(false)
+                    ? (reader.GetString(0), reader.GetInt64(1))
+                    : null;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default)
     {
         var lists = new List<(long Id, string Name, string Routes, string Domains, string DirectRoutes, string DirectDomains, string BlockRoutes, string BlockDomains, string ExcludeRoutes, string ExcludeDomains)>();

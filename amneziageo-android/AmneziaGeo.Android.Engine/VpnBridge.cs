@@ -140,6 +140,7 @@ public static class VpnBridge
     public const string ActionRouteTtl = "org.amneziageo.android.VPN_ROUTE_TTL";
 
     private const string PlanFile = "plan.json";
+    private const string PlanStampFile = "plan-stamp.txt";
     private const string ProxyFile = "proxy.json";
     private const string ProxyStateFile = "proxy-state.json";
     private const string SessionsFile = "sessions.txt";
@@ -245,16 +246,62 @@ public static class VpnBridge
     /// <summary>
     /// Writes the rules the next session routes by; the lists are too large for a Binder transaction.
     /// </summary>
-    public static void WritePlan(GeoRoutingPlan plan)
+    public static bool WritePlan(GeoRoutingPlan plan)
     {
         try
         {
             using var stream = File.Create(PlanPath());
             JsonSerializer.Serialize(stream, plan);
+            return true;
         }
         catch (Exception ex)
         {
             global::Android.Util.Log.Warn("VpnBridge", "writing the routing plan failed: " + ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether the rules of a session stand on disk.
+    /// </summary>
+    public static bool PlanExists() => File.Exists(PlanPath());
+
+    /// <summary>
+    /// Returns the stamp of the rules on disk, empty when there is none.
+    /// </summary>
+    public static string ReadPlanStamp()
+    {
+        try
+        {
+            var path = PlanStampPath();
+            return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the routing plan stamp failed: " + ex);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Stamps the rules on disk; an empty stamp drops the mark and the next session builds them again.
+    /// </summary>
+    public static void WritePlanStamp(string stamp)
+    {
+        try
+        {
+            var path = PlanStampPath();
+            if (stamp.Length == 0)
+            {
+                File.Delete(path);
+                return;
+            }
+
+            File.WriteAllText(path, stamp);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the routing plan stamp failed: " + ex);
         }
     }
 
@@ -735,6 +782,9 @@ public static class VpnBridge
 
     private static string PlanPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", PlanFile);
+
+    private static string PlanStampPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", PlanStampFile);
 
     private static string ProxyPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProxyFile);

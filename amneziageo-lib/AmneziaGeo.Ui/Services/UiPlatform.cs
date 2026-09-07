@@ -33,4 +33,9 @@ internal static class UiPlatform
     /// was laid out at divides by it.
     /// </summary>
     public static double HandScale { get; set; } = 1;
+
+    /// <summary>
+    /// The region of the cellular network the device stands in, empty on a device without one.
+    /// </summary>
+    public static Func<string>? NetworkRegion { get; set; }
 }

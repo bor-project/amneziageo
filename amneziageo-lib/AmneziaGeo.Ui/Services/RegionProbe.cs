@@ -11,7 +11,7 @@ using AmneziaGeo.Ui.ViewModels;
 namespace AmneziaGeo.Ui.Services;
 
 /// <summary>
-/// Регион устройства без запроса прав: внешний адрес, часовой пояс, настройка системы.
+/// Регион устройства без запроса прав: внешний адрес, сотовая сеть, часовой пояс, настройка системы.
 /// </summary>
 internal static class RegionProbe
 {
@@ -29,7 +29,7 @@ internal static class RegionProbe
     private static Dictionary<string, string>? _zones;
 
     /// <summary>
-    /// Код региона по порядку источников: адрес, часовой пояс, система.
+    /// Код региона по порядку источников: адрес, сотовая сеть, часовой пояс, система.
     /// </summary>
     public static async Task<string> DetectAsync(bool allowNetwork, CancellationToken ct)
     {
@@ -38,8 +38,16 @@ internal static class RegionProbe
             return address;
         }
 
+        if (ByNetwork() is { Length: 2 } cell)
+        {
+            return cell;
+        }
+
         return ByTimeZone() is { Length: 2 } zone ? zone : BySystem();
     }
+
+    // Страна сотовой сети: её код приходит от вышки, и поднятый туннель на него не влияет.
+    private static string ByNetwork() => UiPlatform.NetworkRegion?.Invoke() ?? string.Empty;
 
     /// <summary>
     /// Регион по настройке системы.

@@ -29,6 +29,24 @@ public sealed partial class App : Avalonia.Application
     // The narrow side from which android calls a device a tablet.
     private const int TabletWidthDp = 600;
 
+    // Страна сотовой сети: её отдаёт вышка, а при её молчании - оператор SIM.
+    private static string NetworkRegion()
+    {
+        try
+        {
+            var telephony = global::Android.App.Application.Context
+                .GetSystemService(global::Android.Content.Context.TelephonyService) as global::Android.Telephony.TelephonyManager;
+            return Region(telephony?.NetworkCountryIso) is { Length: 2 } network ? network : Region(telephony?.SimCountryIso);
+        }
+        catch (global::Java.Lang.Exception)
+        {
+            return string.Empty;
+        }
+    }
+
+    // Двухбуквенный код в нижнем регистре.
+    private static string Region(string? code) => code is { Length: 2 } text ? text.ToLowerInvariant() : string.Empty;
+
     private static UiPreferences? _preferences;
     private AndroidAgentConnection? _connection;
 
@@ -53,6 +71,7 @@ public sealed partial class App : Avalonia.Application
             UiPlatform.SupportsGeoPreview = false;
             UiPlatform.UsesActionSheets = true;
             UiPlatform.HandScale = HandScale();
+            UiPlatform.NetworkRegion = NetworkRegion;
             if (!UiPlatform.IsTelevision)
             {
                 Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))

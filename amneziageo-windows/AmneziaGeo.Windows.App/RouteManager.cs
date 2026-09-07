@@ -360,7 +360,7 @@ internal sealed partial class RouteManager
     private static IReadOnlyList<string> ScanLocalSubnets()
     {
         var result = new List<string>();
-        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        foreach (var ni in NetworkAdapters.All())
         {
             if (ni.OperationalStatus != OperationalStatus.Up
                 || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel
@@ -405,7 +405,7 @@ internal sealed partial class RouteManager
     {
         var result = new List<(IPAddress Network, byte Prefix)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        foreach (var ni in NetworkAdapters.All())
         {
             if (ni.OperationalStatus != OperationalStatus.Up
                 || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel
@@ -784,7 +784,7 @@ internal sealed partial class RouteManager
     /// </summary>
     public uint? FindInterfaceIndex(string adapterName)
     {
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        foreach (var nic in NetworkAdapters.All())
         {
             if (nic.Name != adapterName)
             {

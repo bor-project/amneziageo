@@ -46,23 +46,32 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     private bool _rolesLocked;
 
     /// <summary>
-    /// В режиме выбор только выбирает: туннель поднимают кнопкой карточки или шапкой.
+    /// Стоит ли в наборе один сервер.
     /// </summary>
-    protected override bool MovesWithSelection => !MultiServer;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLinkStatus))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
+    private bool _solo = true;
+
+    /// <summary>
+    /// В режиме выбор только выбирает, а с одним сервером ведёт его.
+    /// </summary>
+    protected override bool MovesWithSelection => !MultiServer || Solo;
 
     /// <inheritdoc/>
     protected override bool KeepsAsked => MultiServer;
 
     /// <summary>
-    /// Числа туннеля в режиме стоят на строке своего сервера, а не под кнопкой.
+    /// Числа туннеля в режиме стоят на строке своего сервера, а с одним сервером - под кнопкой.
     /// </summary>
-    public override bool ShowLinkStatus => !MultiServer && base.ShowLinkStatus;
+    public override bool ShowLinkStatus => (!MultiServer || Solo) && base.ShowLinkStatus;
 
     /// <inheritdoc/>
     public override void Apply(StatusSnapshot snapshot)
     {
         // Режим читается до шапки: по нему карточки берут состояние из снимка, а не с кнопки.
         MultiServer = snapshot.MultiServer;
+        Solo = _shell.FleetSolo;
         Primary = snapshot.Fleet?.Primary ?? string.Empty;
         base.Apply(snapshot);
     }
@@ -191,6 +200,44 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
 
         IsTunnelActive = active;
         BoundStatus = status;
+    }
+
+    /// <inheritdoc/>
+    protected override async Task MoveTunnelAsync(ConfigItemViewModel row)
+    {
+        if (!MultiServer)
+        {
+            await base.MoveTunnelAsync(row);
+            return;
+        }
+
+        ActiveConfig = row;
+        foreach (var card in Standing(row.Name))
+        {
+            var ack = await _link.SendCommandAsync(new IpcCommand(FleetOps.Disconnect, [card.Name]));
+            if (!ack.Ok)
+            {
+                ShowNotice(FleetNotice.Of(ack));
+                return;
+            }
+
+            card.Mark(ConnectionStatus.Disconnecting);
+            await WaitForMemberDownAsync(card);
+        }
+
+        await DialAsync(row);
+    }
+
+    // Поднятые серверы набора, кроме названного.
+    private List<FleetConfigItemViewModel> Standing(string name)
+    {
+        var catalogue = _shell.ConfigFleet;
+        if (catalogue is null)
+        {
+            return [];
+        }
+
+        return [.. catalogue.Standing.Where(card => !string.Equals(card.Name, name, StringComparison.Ordinal))];
     }
 
     /// <inheritdoc/>

@@ -87,15 +87,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowHomeFleet))]
     private bool _multiServer;
 
+    // Держит ли набор один сервер: с ним главный экран стоит тот же, что на машине с одним туннелем.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowHomePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeFleet))]
+    private bool _fleetSolo = true;
+
     /// <summary>
     /// Стоит ли на главном экране выбор одного сервера.
     /// </summary>
-    public bool ShowHomePicker => HasConfigs && !MultiServer;
+    public bool ShowHomePicker => HasConfigs && (!MultiServer || FleetSolo);
 
     /// <summary>
     /// Стоит ли на главном экране список набора.
     /// </summary>
-    public bool ShowHomeFleet => HasConfigs && MultiServer;
+    public bool ShowHomeFleet => HasConfigs && MultiServer && !FleetSolo;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
@@ -736,6 +742,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         MultiServer = snapshot.MultiServer;
         Config.Apply(snapshot);
+        FleetSolo = ConfigFleet is not { } fleet || fleet.Standing.Count < 2;
         Routing.Apply(snapshot);
         Sources.Apply(snapshot);
         HasConfigs = Config.Configs.Count > 0;

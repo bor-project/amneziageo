@@ -17,8 +17,9 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class AppGateway : IDisposable
 {
-    private const string AdapterName = "AmneziaGeo Apps";
-    private const string AdapterAddress = "172.31.73.1/24";
+    private const string AdapterPrefix = "AmneziaGeo Apps";
+    private const int FirstOctet = 73;
+    private const int LastOctet = 99;
     private const string GatewayExe = "gateway.exe";
     private const int StartWaitMs = 4000;
 
@@ -35,11 +36,11 @@ internal sealed class AppGateway : IDisposable
     }
 
     /// <summary>
-    /// Whether this machine takes the per-application path. The environment variable set to zero keeps it on the
-    /// address-only scheme.
+    /// Whether this machine was asked for the per-application path. It stays off until the environment variable
+    /// is set to one: the path takes every session of the machine onto an adapter of its own.
     /// </summary>
     public static bool Wanted() =>
-        !string.Equals(Environment.GetEnvironmentVariable("AMNEZIAGEO_APP_GATEWAY"), "0", StringComparison.Ordinal);
+        string.Equals(Environment.GetEnvironmentVariable("AMNEZIAGEO_APP_GATEWAY"), "1", StringComparison.Ordinal);
 
     /// <summary>
     /// Raises the path, or null when the rules name no application, the gateway is missing, or it refuses to
@@ -75,6 +76,13 @@ internal sealed class AppGateway : IDisposable
             return null;
         }
 
+        var adapter = $"{AdapterPrefix} {tunnelAdapter}";
+        if (Address(adapter) is not { } address)
+        {
+            logger.LogWarning("no address range was free for {Adapter}, so the applications keep being routed by address", adapter);
+            return null;
+        }
+
         var outbound = new GatewayProxyOutbound(named, proxy, direct, block,
             () => Index(tunnelAdapter), () => Physical(tunnelAdapter), logger);
         var server = new LocalProxyServer(outbound, line => logger.LogDebug("apps: {Line}", line), outbound);
@@ -86,7 +94,7 @@ internal sealed class AppGateway : IDisposable
             return null;
         }
 
-        var process = Launch(exe, port, kept, mtu, logger);
+        var process = Launch(exe, adapter, address, port, kept, mtu, logger);
         if (process is null)
         {
             server.Dispose();
@@ -132,7 +140,7 @@ internal sealed class AppGateway : IDisposable
     }
 
     // Starts the adapter that takes the sessions: everything enters it except what is kept out by name.
-    private static Process? Launch(string exe, int port, IReadOnlyList<string> kept, int mtu, ILogger logger)
+    private static Process? Launch(string exe, string adapter, string address, int port, IReadOnlyList<string> kept, int mtu, ILogger logger)
     {
         try
         {
@@ -144,9 +152,9 @@ internal sealed class AppGateway : IDisposable
                 RedirectStandardError = true,
             };
             info.ArgumentList.Add("--name");
-            info.ArgumentList.Add(AdapterName);
+            info.ArgumentList.Add(adapter);
             info.ArgumentList.Add("--address");
-            info.ArgumentList.Add(AdapterAddress);
+            info.ArgumentList.Add(address);
             info.ArgumentList.Add("--routes");
             info.ArgumentList.Add(Taken());
             if (kept.Count > 0)
@@ -206,6 +214,53 @@ internal sealed class AppGateway : IDisposable
         return string.IsNullOrWhiteSpace(wanted) ? "0.0.0.0/0" : wanted.Trim();
     }
 
+    // The address the adapter carries, or null when every range is held.
+    internal static string? Range(HashSet<int> taken)
+    {
+        for (var octet = FirstOctet; octet <= LastOctet; octet++)
+        {
+            if (!taken.Contains(octet))
+            {
+                return $"172.31.{octet}.1/24";
+            }
+        }
+
+        return null;
+    }
+
+    // The 172.31 range no other adapter of this machine holds.
+    private static string? Address(string adapter) => Range(Held(adapter));
+
+    // Third octets of 172.31 the other adapters hold.
+    private static HashSet<int> Held(string adapter)
+    {
+        var taken = new HashSet<int>();
+        foreach (var item in NetworkAdapters.All())
+        {
+            if (string.Equals(item.Name, adapter, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                foreach (var unicast in item.GetIPProperties().UnicastAddresses)
+                {
+                    var bytes = unicast.Address.GetAddressBytes();
+                    if (unicast.Address.AddressFamily == AddressFamily.InterNetwork && bytes[0] == 172 && bytes[1] == 31)
+                    {
+                        taken.Add(bytes[2]);
+                    }
+                }
+            }
+            catch (NetworkInformationException)
+            {
+            }
+        }
+
+        return taken;
+    }
+
     // A port nothing else holds; the listener takes it right after.
     private static int FreePort()
     {
@@ -226,7 +281,7 @@ internal sealed class AppGateway : IDisposable
     // Index of the adapter a name belongs to, or zero.
     private static uint Index(string adapter)
     {
-        foreach (var item in NetworkInterface.GetAllNetworkInterfaces())
+        foreach (var item in NetworkAdapters.All())
         {
             if (!string.Equals(item.Name, adapter, StringComparison.OrdinalIgnoreCase)
                 || item.OperationalStatus != OperationalStatus.Up)
@@ -250,7 +305,7 @@ internal sealed class AppGateway : IDisposable
     // Index of the link this machine reaches the world by, leaving out the tunnel and the adapter of this path.
     private static uint Physical(string tunnelAdapter)
     {
-        foreach (var item in NetworkInterface.GetAllNetworkInterfaces())
+        foreach (var item in NetworkAdapters.All())
         {
             // Every adapter of ours is skipped, not just this path's: the access point raises one of its own with
             // a gateway on it, and a session sent there would be taken again instead of leaving the machine.

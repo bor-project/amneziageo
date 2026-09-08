@@ -6,9 +6,31 @@ namespace AmneziaGeo.Windows.App.Fleet;
 /// </summary>
 internal sealed class FleetLive
 {
+    // How long a tunnel that lost the link keeps the rules addressed to it: a reconnect is not a move of them.
+    private const long HoldMs = 20_000;
+
     private readonly Lock _gate = new();
     private readonly Dictionary<string, AgentControl> _up = new(StringComparer.Ordinal);
+
+    // The tunnels that have stood at least once, and when the ones standing no longer lost the link.
+    private readonly HashSet<string> _stood = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _fell = new(StringComparer.Ordinal);
+    private CancellationTokenSource _change = new();
     private long _turn;
+
+    /// <summary>
+    /// Fires when a tunnel of the set stands up or gives up.
+    /// </summary>
+    public CancellationToken ChangeToken
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _change.Token;
+            }
+        }
+    }
 
     /// <summary>
     /// Counts the rounds the tunnels were brought in line with the set in.
@@ -21,6 +43,22 @@ internal sealed class FleetLive
     public void Turned()
     {
         Interlocked.Increment(ref _turn);
+    }
+
+    /// <summary>
+    /// Says a tunnel of the set moved between standing and not.
+    /// </summary>
+    public void Stirred()
+    {
+        CancellationTokenSource old;
+        lock (_gate)
+        {
+            old = _change;
+            _change = new CancellationTokenSource();
+        }
+
+        old.Cancel();
+        old.Dispose();
     }
 
     /// <summary>
@@ -42,6 +80,8 @@ internal sealed class FleetLive
         lock (_gate)
         {
             _up.Remove(name);
+            _stood.Remove(name);
+            _fell.Remove(name);
         }
     }
 
@@ -56,6 +96,16 @@ internal sealed class FleetLive
             {
                 _up[newName] = control;
             }
+
+            if (_stood.Remove(oldName))
+            {
+                _stood.Add(newName);
+            }
+
+            if (_fell.Remove(oldName, out var since))
+            {
+                _fell[newName] = since;
+            }
         }
     }
 
@@ -67,6 +117,57 @@ internal sealed class FleetLive
         lock (_gate)
         {
             _up.Clear();
+            _stood.Clear();
+            _fell.Clear();
+        }
+    }
+
+    /// <summary>
+    /// The tunnels of the set carrying nothing addressed to them: raised but not standing, and past the wait a
+    /// reconnect is given. One the list does not name yet is still on its way up, so it keeps its own rules.
+    /// </summary>
+    public IReadOnlySet<string> Fallen()
+    {
+        var now = Environment.TickCount64;
+        lock (_gate)
+        {
+            var fallen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var pair in _up)
+            {
+                if (pair.Value.ConnectFailed)
+                {
+                    _fell.Remove(pair.Key);
+                    fallen.Add(pair.Key);
+                    continue;
+                }
+
+                if (pair.Value.Connected)
+                {
+                    _stood.Add(pair.Key);
+                    _fell.Remove(pair.Key);
+                    continue;
+                }
+
+                if (!_stood.Contains(pair.Key))
+                {
+                    _fell.Remove(pair.Key);
+                    fallen.Add(pair.Key);
+                    continue;
+                }
+
+                if (!_fell.TryGetValue(pair.Key, out var since))
+                {
+                    since = now;
+                    _fell[pair.Key] = since;
+                }
+
+                if (now - since >= HoldMs)
+                {
+                    fallen.Add(pair.Key);
+                }
+            }
+
+            return fallen;
         }
     }
 

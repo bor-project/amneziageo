@@ -547,13 +547,14 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     public long StampOf(string name)
     {
         var roundTrips = live.RoundTrips();
+        var fallen = Standing(live.Fallen(), name);
         lock (_gate)
         {
             var hash = new HashCode();
             foreach (var key in _targets.Keys.Order(StringComparer.Ordinal))
             {
                 hash.Add(key, StringComparer.Ordinal);
-                hash.Add(ShareOfLocked(key, name, roundTrips));
+                hash.Add(ShareOfLocked(key, name, roundTrips, fallen));
             }
 
             return hash.ToHashCode();
@@ -561,14 +562,15 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// The tunnel a rule rides: what it names while the set holds it, else what it falls to. A keyword answers
-    /// for itself; null means nobody takes it, and the rule leaves every tunnel's share.
+    /// The tunnel a rule rides: what it names while the set holds it and it stands, else what it falls to. A
+    /// keyword answers for itself; null means nobody takes it, and the rule leaves every tunnel's share.
     /// </summary>
-    public string? Rides(RuleRoute route, IReadOnlyDictionary<string, int>? roundTrips = null)
+    public string? Rides(RuleRoute route, IReadOnlyDictionary<string, int>? roundTrips = null, IReadOnlySet<string>? fallen = null)
     {
+        var down = fallen ?? live.Fallen();
         lock (_gate)
         {
-            return ResolveLocked(route.Target, roundTrips) ?? ResolveLocked(route.Fallback, roundTrips);
+            return ResolveLocked(route.Target, roundTrips, down) ?? ResolveLocked(route.Fallback, roundTrips, down);
         }
     }
 
@@ -645,6 +647,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     public override IReadOnlyList<GeoRule> Share(string name, long listId, IReadOnlyList<GeoRule> rules)
     {
         var roundTrips = live.RoundTrips();
+        var fallen = Standing(live.Fallen(), name);
         var share = new List<GeoRule>(rules.Count);
         var moved = false;
         foreach (var rule in rules)
@@ -657,7 +660,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
                 continue;
             }
 
-            var rides = Rides(TargetOf(FleetTargets.Key(listId, GeoConfigurator.Format(rule))), roundTrips);
+            var rides = Rides(TargetOf(FleetTargets.Key(listId, GeoConfigurator.Format(rule))), roundTrips, fallen);
             if (string.Equals(rides, name, StringComparison.Ordinal))
             {
                 share.Add(rule);
@@ -689,14 +692,28 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         }
     }
 
-    // One end of a rule: the server it points at while the set holds it.
-    private string? ResolveLocked(RuleTarget target, IReadOnlyDictionary<string, int>? roundTrips)
+    // The fallen tunnels bar the one cutting its own share: that one is being raised, so what names it stays
+    // with it instead of riding its fallback until it answers.
+    private static IReadOnlySet<string> Standing(IReadOnlySet<string> fallen, string name)
+    {
+        if (!fallen.Contains(name))
+        {
+            return fallen;
+        }
+
+        var rest = new HashSet<string>(fallen, StringComparer.Ordinal);
+        rest.Remove(name);
+        return rest;
+    }
+
+    // One end of a rule: the server it points at while the set holds it and it stands.
+    private string? ResolveLocked(RuleTarget target, IReadOnlyDictionary<string, int>? roundTrips, IReadOnlySet<string> fallen)
     {
         return target.Mode switch
         {
             RuleTarget.Block => RuleTarget.Block,
             RuleTarget.Direct => RuleTarget.Direct,
-            RuleTarget.Server => _wanted.Contains(target.Name) ? target.Name : null,
+            RuleTarget.Server => _wanted.Contains(target.Name) && !fallen.Contains(target.Name) ? target.Name : null,
             RuleTarget.Best => BestLocked(roundTrips) ?? CarrierLocked(),
             _ => CarrierLocked(),
         };
@@ -860,10 +877,10 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     // How one rule reads on a tunnel: its own, kept off the tunnel, dropped, or somebody else's.
-    private int ShareOfLocked(string key, string name, IReadOnlyDictionary<string, int> roundTrips)
+    private int ShareOfLocked(string key, string name, IReadOnlyDictionary<string, int> roundTrips, IReadOnlySet<string> fallen)
     {
         var route = _targets[key];
-        var rides = ResolveLocked(route.Target, roundTrips) ?? ResolveLocked(route.Fallback, roundTrips);
+        var rides = ResolveLocked(route.Target, roundTrips, fallen) ?? ResolveLocked(route.Fallback, roundTrips, fallen);
         if (string.Equals(rides, name, StringComparison.Ordinal))
         {
             return 1;

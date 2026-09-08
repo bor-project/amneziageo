@@ -25,6 +25,9 @@ internal sealed class FleetHostedService(
 {
     private readonly Dictionary<string, FleetMember> _members = new(StringComparer.Ordinal);
 
+    // The tunnels carrying nothing addressed to them at the last look.
+    private IReadOnlySet<string> _fallen = new HashSet<string>(StringComparer.Ordinal);
+
     private IStateStore store => activeScope.Store;
     private ConfigRepository configRepo => activeScope.ConfigRepo;
 
@@ -51,12 +54,13 @@ internal sealed class FleetHostedService(
             // Latched before the set is read, so a request that lands while it is being served is not lost. The
             // stop is one of the three: the wait ends with the supervisor, not only with a request.
             using (var change = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, fleet.ChangeToken, selected.ChangeToken))
+            using (var idle = CancellationTokenSource.CreateLinkedTokenSource(change.Token, live.ChangeToken))
             {
                 await SyncAsync(stoppingToken, change.Token);
                 live.Turned();
                 Mirror();
                 await PersistAsync(stoppingToken);
-                await IdleAsync(change.Token);
+                await IdleAsync(idle.Token);
             }
         }
 
@@ -363,8 +367,37 @@ internal sealed class FleetHostedService(
         var member = factory.Start(name, duties, fleet.StampOf(name), ct);
         _members[name] = member;
         live.Publish(name, member.Control);
+        _ = WatchAsync(member, member.Stop.Token);
         logger.LogInformation("{Name}: connecting as one of {Count} tunnel(s); it {Carries} what no rule sends elsewhere",
             name, _members.Count, duties.CarriesDefault ? "carries" : "does not carry");
+    }
+
+    // Wakes the loop when a tunnel of the set stands up or gives up, so the rules addressed to it move with it.
+    private async Task WatchAsync(FleetMember member, CancellationToken ct)
+    {
+        var stood = member.Control.Connected;
+        var gaveUp = member.Control.ConnectFailed;
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await member.Control.WaitForStatusAsync(ct);
+                if (member.Control.Connected == stood && member.Control.ConnectFailed == gaveUp)
+                {
+                    continue;
+                }
+
+                stood = member.Control.Connected;
+                gaveUp = member.Control.ConnectFailed;
+                live.Stirred();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     // Carries a renamed tunnel over: its supervisor resolves the configuration under the new name from here on.
@@ -435,6 +468,14 @@ internal sealed class FleetHostedService(
             if (fleet.Rebalance(live.RoundTrips()))
             {
                 logger.LogInformation("the balancer holds '{Name}' from now on; the tunnels take the rules riding it over again", fleet.Best);
+            }
+
+            // The wait a fallen tunnel keeps its rules for runs out between requests, so the look ends it.
+            var fallen = live.Fallen();
+            if (!fallen.SetEquals(_fallen))
+            {
+                _fallen = fallen;
+                live.Stirred();
             }
         }
     }

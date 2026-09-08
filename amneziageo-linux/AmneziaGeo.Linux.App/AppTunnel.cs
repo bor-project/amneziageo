@@ -30,6 +30,7 @@ internal sealed class AppTunnel : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly HashSet<int> _placed = [];
     private Task? _syncing;
+    private ProcEvents? _events;
     private bool _up;
     private bool _disposed;
 
@@ -76,6 +77,7 @@ internal sealed class AppTunnel : IDisposable
 
         tunnel._up = true;
         tunnel._syncing = Task.Run(() => tunnel.SyncingAsync(tunnel._cts.Token), CancellationToken.None);
+        tunnel._events = ProcEvents.TryListen(tunnel.Carry, log);
         log.Info("apps", $"{images.Count} application(s) ride {interfaceName} by cgroup, and their traffic alone");
         return tunnel;
     }
@@ -122,6 +124,8 @@ internal sealed class AppTunnel : IDisposable
     public async Task StopAsync()
     {
         _up = false;
+        _events?.Dispose();
+        _events = null;
         await _cts.CancelAsync().ConfigureAwait(false);
         if (_syncing is not null)
         {
@@ -158,6 +162,7 @@ internal sealed class AppTunnel : IDisposable
         }
 
         _disposed = true;
+        _events?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
     }
@@ -324,8 +329,8 @@ internal sealed class AppTunnel : IDisposable
         }
     }
 
-    // Keeps the cgroup filled: a process that starts later is carried from the next pass on, and its children come
-    // with it on their own.
+    // Keeps the cgroup filled with what the connector did not report: a process the pass finds is carried from then
+    // on, and its children come with it on their own.
     private async Task SyncingAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -351,23 +356,39 @@ internal sealed class AppTunnel : IDisposable
     {
         foreach (var entry in Directory.EnumerateDirectories("/proc"))
         {
-            var leaf = Path.GetFileName(entry);
-            if (!int.TryParse(leaf, NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid) || _placed.Contains(pid))
+            if (int.TryParse(Path.GetFileName(entry), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid))
             {
-                continue;
+                Carry(pid);
             }
+        }
+    }
 
-            var image = Image(pid);
-            if (image is null || !_images.Names(image))
-            {
-                continue;
-            }
+    // Puts one process into the cgroup when the rules name the image it runs.
+    private void Carry(int pid)
+    {
+        if (!_up)
+        {
+            return;
+        }
 
-            if (Place(CgroupPath, pid))
+        lock (_placed)
+        {
+            if (!_placed.Add(pid))
             {
-                _placed.Add(pid);
-                _log.Info("apps", $"{image} rides the tunnel from now on");
+                return;
             }
+        }
+
+        var image = Image(pid);
+        if (image is not null && _images.Names(image) && Place(CgroupPath, pid))
+        {
+            _log.Info("apps", $"{image} rides the tunnel from now on");
+            return;
+        }
+
+        lock (_placed)
+        {
+            _placed.Remove(pid);
         }
     }
 
@@ -419,6 +440,9 @@ internal sealed class AppTunnel : IDisposable
         {
         }
 
-        _placed.Clear();
+        lock (_placed)
+        {
+            _placed.Clear();
+        }
     }
 }

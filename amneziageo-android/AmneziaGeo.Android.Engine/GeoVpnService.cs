@@ -142,6 +142,8 @@ public sealed class GeoVpnService : VpnService
     private const int OwnerOther = 0;
     private const int OwnerSelf = 1;
     private const int OwnerNamed = 2;
+    private const int OwnerHoldMs = 3_000;
+    private const int OwnersHeld = 4096;
     private const int ExitDelayMs = 1_000;
 
     // Ends the process after the service is gone. An empty cached process keeps the whole runtime resident, and the
@@ -149,6 +151,7 @@ public sealed class GeoVpnService : VpnService
     private static readonly Handler _exit = new(Looper.MainLooper!);
 
     private readonly ConcurrentDictionary<int, string> _packages = new();
+    private readonly ConcurrentDictionary<ulong, (int Verdict, long Until)> _owners = new();
     private readonly HashSet<string> _tunnelApps = new(StringComparer.Ordinal);
     private int _handle = -1;
     private int _proxyPort;
@@ -1041,6 +1044,8 @@ public sealed class GeoVpnService : VpnService
                 _tunnelApps.Add(package);
             }
 
+            _owners.Clear();
+
             var allowListed = ApplyAppSplit(builder, appMode, appList);
             ApplyAppBypass(builder, bypassApps, allowListed);
 
@@ -1416,10 +1421,48 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
+    // Whose flow this is, held for a moment: a program that ends between two datagrams takes its socket out of the
+    // table the system answers from, and the answer it earned stands in for it until the moment passes.
+    private int Owner(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
+    {
+        var flow = ((ulong)(uint)protocol << 48) | ((ulong)sourcePort << 32) | destination;
+        var now = System.Environment.TickCount64;
+        if (_owners.TryGetValue(flow, out var held) && held.Until > now)
+        {
+            return held.Verdict;
+        }
+
+        var verdict = Ask(protocol, source, sourcePort, destination, destinationPort);
+        if (verdict == OwnerOther)
+        {
+            return verdict;
+        }
+
+        if (_owners.Count > OwnersHeld)
+        {
+            Forget(now);
+        }
+
+        _owners[flow] = (verdict, now + OwnerHoldMs);
+        return verdict;
+    }
+
+    // Drops the verdicts whose moment has passed.
+    private void Forget(long now)
+    {
+        foreach (var pair in _owners)
+        {
+            if (pair.Value.Until <= now)
+            {
+                _owners.TryRemove(pair.Key, out _);
+            }
+        }
+    }
+
     // Whose connection this is: this process, an application the rules name, or neither. Our own connections ride
     // the tunnel, or they would come back into the hand-over they came from; a named application rides it because
     // the rules say so, and its datagrams go where its streams go.
-    private int Owner(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
+    private int Ask(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
     {
         try
         {
@@ -2024,6 +2067,7 @@ public sealed class GeoVpnService : VpnService
         _proxyPort = 0;
         _proxyEnd = null;
         _packages.Clear();
+        _owners.Clear();
         _carrier?.Dispose();
         _carrier = null;
         if (_handle >= 0)

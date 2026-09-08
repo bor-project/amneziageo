@@ -59,6 +59,15 @@ public static class GeoMaterializer
     }
 
     /// <summary>
+    /// Ranges the rules name outright in the given bucket and this tunnel carries of them.
+    /// </summary>
+    public static IReadOnlyList<string> NamedRanges(IReadOnlyList<GeoRule> rules, RouteRole role, IReadOnlyCollection<string> carried)
+    {
+        var mine = new HashSet<string>(carried, StringComparer.Ordinal);
+        return [.. NamedRanges(rules, role).Where(mine.Contains)];
+    }
+
+    /// <summary>
     /// Expands one geo key into both facets: the addresses the databases give it and the names, including the
     /// domain suffixes a country owns.
     /// </summary>

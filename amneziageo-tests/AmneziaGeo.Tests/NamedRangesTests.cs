@@ -49,4 +49,26 @@ public sealed class NamedRangesTests
 
         Assert.Equal(new[] { "192.168.5.0/24", "192.168.1.0/24" }, GeoMaterializer.NamedRanges(rules, RouteRole.Proxy));
     }
+
+    [Fact]
+    public void NamedRanges_TakesOnlyTheRangesTheShareCarries()
+    {
+        List<GeoRule> rules =
+        [
+            new(GeoRuleKind.Cidr, "192.168.1.0/24"),
+            new(GeoRuleKind.Cidr, "10.9.9.0/24"),
+        ];
+
+        Assert.Equal(
+            new[] { "10.9.9.0/24" },
+            GeoMaterializer.NamedRanges(rules, RouteRole.Proxy, ["10.9.9.0/24", "8.8.8.8/32"]));
+    }
+
+    [Fact]
+    public void NamedRanges_TakesNothingWhileTheShareCarriesNothing()
+    {
+        List<GeoRule> rules = [new(GeoRuleKind.Cidr, "192.168.1.0/24")];
+
+        Assert.Empty(GeoMaterializer.NamedRanges(rules, RouteRole.Proxy, []));
+    }
 }

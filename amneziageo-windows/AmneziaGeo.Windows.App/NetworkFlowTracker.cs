@@ -46,6 +46,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     // Every v4 destination is offered here regardless of app rules, on connect and on a first datagram: it drives the
     // on-demand Direct routes for addresses that never went through the resolver.
     private readonly Action<uint, bool>? _noteV4;
+    private readonly ProcessImages? _images;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
     // Seen destinations; ETW handler is single-threaded, no lock needed.
@@ -76,7 +77,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null)
     {
         _matcher = matcher;
         _tracker = tracker;
@@ -87,6 +88,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             ? BitConverter.ToUInt32(excludeEndpoint.GetAddressBytes(), 0)
             : 0;
         _noteV4 = noteV4;
+        _images = images;
         _logger = logger;
     }
 
@@ -107,6 +109,8 @@ internal sealed class NetworkFlowTracker : IDisposable
                 {
                     _logger.LogDebug("a leftover monitoring session {Name} was found and restarted", sessionName);
                 }
+
+                EnableStarts();
 
                 _session.Source.AllEvents += evt => Handle(evt, ct);
                 _logger.LogInformation("watching app connections (session {Name}, IPv6 {V6}); connections of tunneled apps are routed as they appear", sessionName, _tunnelV6);
@@ -150,6 +154,26 @@ internal sealed class NetworkFlowTracker : IDisposable
         {
             _logger.LogDebug(ex, "this system cannot narrow the network events, so all of them are read - slightly more CPU, same behaviour");
             return _session!.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, keywords);
+        }
+    }
+
+    // Reads the program starts from this same session, which is what puts a start ahead of the packets that follow
+    // it: two sessions are flushed apart from each other.
+    private void EnableStarts()
+    {
+        if (_images is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var options = new TraceEventProviderOptions { EventIDsToEnable = [ProcessImages.StartId] };
+            _session!.EnableProvider(ProcessImages.Provider, TraceEventLevel.Informational, ProcessImages.Keyword, options);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "program starts cannot be read here, so a program that ends before its traffic is decided keeps missing its rule");
         }
     }
 
@@ -213,6 +237,12 @@ internal sealed class NetworkFlowTracker : IDisposable
         if (!_forgetFlow.IsEmpty)
         {
             DrainFlowForgets();
+        }
+
+        if (_images is not null && evt.ProviderGuid == ProcessImages.Provider)
+        {
+            _images.Note(evt);
+            return;
         }
 
         switch ((int)evt.ID)

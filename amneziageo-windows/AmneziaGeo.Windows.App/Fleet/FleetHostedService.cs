@@ -301,10 +301,21 @@ internal sealed class FleetHostedService(
         try
         {
             var before = await AppsOfAsync(member.Name, ct);
+            var stood = await RangesOfAsync(member.Name, ct);
             await RoutingProjection.ProjectAsync(store, geo, fleet, member.Name, logger, ct);
             if (!(await AppsOfAsync(member.Name, ct)).SetEquals(before))
             {
                 logger.LogInformation("{Name}: the app rules addressed to it changed, so it is connected again to take them up", member.Name);
+                await StopAsync(member.Name);
+                Start(member.Name, ct);
+                return;
+            }
+
+            // A range a rule names outright stands on the adapter from bring-up, so a share that gains or loses one
+            // is dialled again.
+            if (!(await RangesOfAsync(member.Name, ct)).SetEquals(stood))
+            {
+                logger.LogInformation("{Name}: the address ranges addressed to it changed, so it is connected again to take them up", member.Name);
                 await StopAsync(member.Name);
                 Start(member.Name, ct);
                 return;
@@ -337,6 +348,21 @@ internal sealed class FleetHostedService(
     {
         var projected = await store.GetActiveTunnelGeoAsync(name, ct);
         return projected is null ? [] : new HashSet<string>(projected.Apps, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // The address ranges the tunnel's share names outright.
+    private async Task<HashSet<string>> RangesOfAsync(string name, CancellationToken ct)
+    {
+        var projected = await store.GetActiveTunnelGeoAsync(name, ct);
+        if (projected is null)
+        {
+            return [];
+        }
+
+        var listId = await store.GetActiveRoutingListIdAsync(name, ct);
+        var list = listId is null ? null : await store.GetRoutingListAsync(listId.Value, ct);
+        var named = GeoMaterializer.NamedRanges(list?.Rules ?? projected.Rules, RouteRole.Proxy, projected.Routes);
+        return new HashSet<string>(named, StringComparer.Ordinal);
     }
 
     // The mode's own state is written once a request has moved the set: a start that did not raise what it

@@ -13,6 +13,7 @@ internal sealed class AppMatcher
     private const int MaxAncestryDepth = 8;
 
     private readonly ILogger _logger;
+    private readonly ProcessImages? _images;
 
     // Parsed matchers.
     private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
@@ -31,9 +32,10 @@ internal sealed class AppMatcher
     /// <summary>
     /// ctor
     /// </summary>
-    public AppMatcher(IReadOnlyList<string> matchers, ILogger logger)
+    public AppMatcher(IReadOnlyList<string> matchers, ILogger logger, ProcessImages? images = null)
     {
         _logger = logger;
+        _images = images;
 
         foreach (var raw in matchers)
         {
@@ -301,14 +303,21 @@ internal sealed class AppMatcher
         return false;
     }
 
-    private static (string? Path, long Created) ResolveProc(uint pid, Dictionary<uint, (string? Path, long Created)> cache)
+    private (string? Path, long Created) ResolveProc(uint pid, Dictionary<uint, (string? Path, long Created)> cache)
     {
         if (cache.TryGetValue(pid, out var hit))
         {
             return hit;
         }
 
+        // A program that ended between its packet and this question answers no more, so the image held from its
+        // start stands in for it.
         var proc = QueryProc(pid);
+        if (proc.Path is null && _images is not null && _images.TryGet(pid, out var held))
+        {
+            proc = (ToDosPath(held.Path), held.Created);
+        }
+
         cache[pid] = proc;
         return proc;
     }

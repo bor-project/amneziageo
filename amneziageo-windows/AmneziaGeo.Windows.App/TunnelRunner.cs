@@ -304,8 +304,10 @@ internal sealed class TunnelRunner(
 
         // A range a rule names outright stands from the start: it is one line, not a database, and a destination
         // inside it is otherwise reached only by contact the tracker sees, which an echo request never makes.
+        // The list names the ranges, the projection says which of them this tunnel carries: one addressed to
+        // another server of the set stands on that server's adapter, not on this one.
         var namedRanges = geoSplit
-            ? GeoMaterializer.NamedRanges(activeList?.Rules ?? geo?.Rules ?? [], RouteRole.Proxy)
+            ? GeoMaterializer.NamedRanges(activeList?.Rules ?? geo?.Rules ?? [], RouteRole.Proxy, geo?.Routes ?? [])
                 .Where(route => !resolverRoutes.Contains(route))
                 .ToList()
             : new List<string>();
@@ -530,7 +532,10 @@ internal sealed class TunnelRunner(
         AppDnsTracker? appDns = null;
         if (trackApps && tracker is not null)
         {
-            var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>());
+            // The image of every program is held from its start, so one that ends before its traffic is decided is
+            // matched by the rules all the same.
+            _processImages = new ProcessImages();
+            var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>(), _processImages);
             if (candidate.HasMatchers)
             {
                 matcher = candidate;
@@ -541,6 +546,10 @@ internal sealed class TunnelRunner(
                 // The same rule over the connection table: a half-open attempt is seen there whether or not the
                 // firewall reported its drop, and one already permitted outside is moved back onto the tunnel.
                 liveDestinations.SetAppMatch(matcher.MatchPids);
+            }
+            else
+            {
+                _processImages = null;
             }
         }
 
@@ -782,7 +791,7 @@ internal sealed class TunnelRunner(
         // without a DNS lookup earns its Direct route.
         if ((tracker is not null && (matcher is not null || allUdp)) || routing is not null)
         {
-            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note);
+            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note, _processImages);
             // A released destination must lose its dedupe record too, or the next packet to it is skipped and the
             // route never comes back.
             tracker?.SetForgetSink(flowTracker.Forget);
@@ -846,6 +855,7 @@ internal sealed class TunnelRunner(
             session.Clear();
             _appGateway?.Dispose();
             _appGateway = null;
+            _processImages = null;
             if (routing is not null)
             {
                 // Written out before the entries go, so the next session starts from the destinations this one used.
@@ -1314,6 +1324,7 @@ internal sealed class TunnelRunner(
 
     private FleetLentNames? _lent;
     private AppGateway? _appGateway;
+    private ProcessImages? _processImages;
 
     private const int FirewallArmAttempts = 4;
     private static readonly TimeSpan FirewallArmRetryDelay = TimeSpan.FromSeconds(2);

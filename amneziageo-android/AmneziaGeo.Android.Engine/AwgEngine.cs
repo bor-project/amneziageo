@@ -113,6 +113,15 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
+    /// Hands the shim the addresses of an earlier session, shaped as <see cref="LiveAddresses"/> returns them.
+    /// Answers how many were taken.
+    /// </summary>
+    public static int PreloadLive(int handle, string text)
+    {
+        return string.IsNullOrEmpty(text) ? 0 : Math.Max(PreloadLiveNative(handle, text), 0);
+    }
+
+    /// <summary>
     /// Reads what the verdict layer and its forwarder have counted.
     /// </summary>
     public static string? Stats(int handle)
@@ -222,6 +231,9 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgLiveAddresses")]
     private static partial IntPtr LiveAddressesNative(int handle);
+
+    [LibraryImport(Lib, EntryPoint = "wgPreloadLive", StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int PreloadLiveNative(int handle, string text);
 
     [LibraryImport(Lib, EntryPoint = "wgSetProtector")]
     private static unsafe partial int SetProtectorNative(int handle, delegate* unmanaged<int, int> protect);

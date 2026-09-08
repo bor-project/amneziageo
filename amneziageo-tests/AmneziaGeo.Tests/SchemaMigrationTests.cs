@@ -97,7 +97,7 @@ public sealed class SchemaMigrationTests
             }
         }
 
-        SqliteConnection.ClearAllPools();
+        ClearPool(path);
     }
 
     private static async Task<List<string>> ColumnsAsync(string path, string table)
@@ -126,9 +126,16 @@ public sealed class SchemaMigrationTests
         return columns;
     }
 
+    // Drops the pooled connections to this test's database alone.
+    private static void ClearPool(string path)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        SqliteConnection.ClearPool(connection);
+    }
+
     private static void Cleanup(string path)
     {
-        SqliteConnection.ClearAllPools();
+        ClearPool(path);
         foreach (var file in Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*"))
         {
             try

@@ -279,6 +279,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(IsDirectRole))]
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
+    [NotifyPropertyChangedFor(nameof(AddSubnetsText))]
     [NotifyPropertyChangedFor(nameof(CanAddApps))]
     private string _selectedRole = "proxy";
 
@@ -531,6 +532,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         _ => Loc.Instance.Get("Main_RoleProxyHint"),
     };
 
+    /// <summary>
+    /// Localized label of the button filling the active bucket with networks.
+    /// </summary>
+    public string AddSubnetsText => IsProxyRole
+        ? Loc.Instance.Get("Main_AddTunnelSubnetsButton")
+        : Loc.Instance.Get("Main_AddLocalSubnetsButton");
+
     // After the active bucket swaps, re-project it and refresh the suggestion filter for the newly shown bucket.
     partial void OnSelectedRoleChanged(string value)
     {
@@ -757,6 +765,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         OnPropertyChanged(nameof(AppTabText));
         OnPropertyChanged(nameof(AppBucketsHint));
         OnPropertyChanged(nameof(RoleHint));
+        OnPropertyChanged(nameof(AddSubnetsText));
         RefreshCounts();
         UpdateMatchedSuggestions();
 
@@ -1134,7 +1143,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// Fetches the machine's own subnets and the private networks of the configurations, and adds them to the selected bucket.
+    /// Fills the shown bucket with networks: the tunnel bucket takes the private networks of the configurations,
+    /// each addressed to the one naming it, and the other buckets take the machine's own subnets. A network the
+    /// machine stands in itself is never offered for the tunnel.
     /// </summary>
     [RelayCommand]
     private async Task AddLocalSubnetsAsync()
@@ -1142,36 +1153,39 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         IsBusy = true;
         try
         {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListLocalSubnets, []));
+            var listed = IsProxyRole ? IpcContract.OpListTunnelSubnets : IpcContract.OpListLocalSubnets;
+            var ack = await _connection.SendCommandAsync(new IpcCommand(listed, []));
             if (!ack.Ok)
             {
                 StatusMessage = ack.Message;
                 return;
             }
 
-            var subnets = new List<string>(SubnetLines(ack.Message));
-            // An agent that predates the command answers with a refusal; its own subnets still stand.
-            var tunnels = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListTunnelSubnets, []));
-            if (tunnels.Ok)
-            {
-                subnets.AddRange(SubnetLines(tunnels.Message));
-            }
-
+            var offered = SubnetLines(ack.Message);
             var bucket = Rules;
             var added = 0;
-            foreach (var subnet in subnets)
+            foreach (var line in offered)
             {
-                var rule = Normalize(subnet);
-                if (rule.Length > 0 && !bucket.Contains(rule))
+                var tab = line.IndexOf('\t');
+                var config = tab > 0 ? line[..tab] : string.Empty;
+                var rule = Normalize(tab >= 0 ? line[(tab + 1)..] : line);
+                if (rule.Length == 0 || bucket.Contains(rule))
                 {
-                    bucket.Add(rule);
-                    added++;
+                    continue;
                 }
+
+                if (config.Length > 0)
+                {
+                    Address(rule, config);
+                }
+
+                bucket.Add(rule);
+                added++;
             }
 
             StatusMessage = added > 0
                 ? Loc.Instance.Get("RoutingSettings_LocalSubnetsAdded", added)
-                : subnets.Count == 0
+                : offered.Length == 0
                     ? Loc.Instance.Get("RoutingSettings_NoActiveLocalSubnets")
                     : Loc.Instance.Get("RoutingSettings_AllLocalSubnetsPresent");
         }
@@ -1179,6 +1193,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         {
             IsBusy = false;
         }
+    }
+
+    // The address a network of a configuration is added with; an editor holding no addresses adds it plain.
+    protected virtual void Address(string token, string config)
+    {
     }
 
     // Splits a newline-separated subnet payload.

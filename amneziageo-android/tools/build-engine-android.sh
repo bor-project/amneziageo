@@ -182,7 +182,7 @@ for abi in $ABIS; do
 
   missing=""
   for symbol in wgTurnOn wgTurnOff wgGetSocketV4 wgGetConfig wgSetConfig wgSetVerdicts wgPrepareSwap wgSwapTun \
-    wgSetVerdictTtl wgTunnelStats wgSetProtector wgSetTcpDirect wgSetRelay wgLiveAddresses; do
+    wgSetVerdictTtl wgTunnelStats wgSetProtector wgSetTcpDirect wgSetRelay wgLiveAddresses wgPreloadLive; do
     grep -qa "$symbol" "$so" || missing="$missing $symbol"
   done
   if [ -n "$missing" ]; then

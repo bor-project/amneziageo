@@ -38,6 +38,7 @@ internal sealed class TunnelController : IDisposable
     private WsCarrier? _carrier;
     private DnsRouter? _dns;
     private RoutingCache? _cache;
+    private IRouteMemory? _memory;
     private AppTunnel? _apps;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
@@ -242,8 +243,14 @@ internal sealed class TunnelController : IDisposable
         }
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
+        // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
         var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
         _cache = cache;
+        if (_memory is { } memory)
+        {
+            cache.SetMemory(memory);
+        }
+
         _sessionCts = new CancellationTokenSource();
         _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
         StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers);
@@ -256,6 +263,11 @@ internal sealed class TunnelController : IDisposable
     /// Sets how long a destination keeps its route on the running connection.
     /// </summary>
     public void SetRouteTtl(int seconds) => _cache?.SetTtl(seconds);
+
+    /// <summary>
+    /// Hands over the store the cache keeps its hottest destinations in between sessions.
+    /// </summary>
+    public void SetRouteMemory(IRouteMemory memory) => _memory = memory;
 
     /// <summary>
     /// Binds the tunnel socket to another source port, leaving the session, its routes and its DNS standing. A
@@ -365,6 +377,7 @@ internal sealed class TunnelController : IDisposable
         if (_cache is { } cache)
         {
             _cache = null;
+            await cache.PersistAsync(CancellationToken.None).ConfigureAwait(false);
             cache.RemoveAll();
         }
 

@@ -262,5 +262,14 @@ func wgLiveAddresses(handle int32) *C.char {
 	return C.CString(t.tun.snapshot())
 }
 
+//export wgPreloadLive
+func wgPreloadLive(handle int32, text *C.char) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+	return int32(t.tun.preload(C.GoString(text)))
+}
+
 // c-shared requires a main function; it is never invoked.
 func main() {}

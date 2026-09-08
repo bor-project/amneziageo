@@ -725,7 +725,7 @@ internal sealed class LinuxAgent : IDisposable
                 return new IpcAck(true, string.Join('\n', LocalSubnets()));
 
             case IpcContract.OpListTunnelSubnets:
-                return new IpcAck(true, string.Join('\n', PrivateNetworks.FromConfigs(await ConfigTextsAsync(ct).ConfigureAwait(false))));
+                return new IpcAck(true, string.Join('\n', await ConfigSubnetsAsync(ct).ConfigureAwait(false)));
 
             case IpcContract.OpListGeo:
                 return new IpcAck(true, string.Join('\n', await _geo.CategoriesAsync(ct).ConfigureAwait(false)));
@@ -906,6 +906,7 @@ internal sealed class LinuxAgent : IDisposable
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport);
+        _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName));
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is { } refusal)
         {
@@ -2596,18 +2597,29 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     // The text of every stored configuration.
-    private async Task<IReadOnlyList<string>> ConfigTextsAsync(CancellationToken ct)
+    // The private networks the stored configurations name, each behind the name of the one naming it and a
+    // tab, without the ones the machine stands in itself.
+    private async Task<IReadOnlyList<string>> ConfigSubnetsAsync(CancellationToken ct)
     {
-        var texts = new List<string>();
+        var own = LocalSubnets().ToArray();
+        var lines = new List<string>();
         foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
-            if (await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) is { Length: > 0 } text)
+            if (await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) is not { Length: > 0 } text)
             {
-                texts.Add(text);
+                continue;
+            }
+
+            foreach (var network in PrivateNetworks.FromConfig(text))
+            {
+                if (!PrivateNetworks.Overlaps(network, own))
+                {
+                    lines.Add($"{name}\t{network}");
+                }
             }
         }
 
-        return texts;
+        return lines;
     }
 
     // The machine's connected local subnets, offered to the exclusions editor.

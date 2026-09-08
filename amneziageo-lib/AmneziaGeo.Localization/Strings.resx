@@ -409,6 +409,9 @@
   <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
     <value>Add local networks</value>
   </data>
+  <data name="Main_AddTunnelSubnetsButton" xml:space="preserve">
+    <value>Add connection networks</value>
+  </data>
   <data name="Main_DiagnosticsSection" xml:space="preserve">
     <value>Diagnostics</value>
   </data>

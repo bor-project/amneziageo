@@ -110,7 +110,8 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
             var dbPath = TunnelPaths.StateDbFile();
             var configsDir = TunnelPaths.ConfigurationsDirectory();
 
-            store.ClearPool();
+            var suspension = await store.SuspendAsync().ConfigureAwait(false);
+            await using var held = suspension.ConfigureAwait(false);
 
             var restored = 0;
             try

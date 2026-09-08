@@ -17,6 +17,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         DataSource = databasePath,
     }.ToString();
 
+    private readonly ConnectionGate _gate = new();
+
     private const int SchemaVersion = 1;
 
     // Marks the one-time rewrite of the former MTU default to "unset".
@@ -36,27 +38,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
         catch (SqliteException)
         {
-            SqliteConnection.ClearAllPools();
-            CorruptQuarantine.MoveAsideSidecars(databasePath);
+            await QuarantineAsync(CorruptQuarantine.MoveAsideSidecars, ct).ConfigureAwait(false);
             try
             {
                 await InitializeCoreAsync(ct).ConfigureAwait(false);
             }
             catch (SqliteException)
             {
-                SqliteConnection.ClearAllPools();
-                CorruptQuarantine.MoveAside(databasePath);
+                await QuarantineAsync(CorruptQuarantine.MoveAside, ct).ConfigureAwait(false);
                 await InitializeCoreAsync(ct).ConfigureAwait(false);
             }
         }
     }
 
+    // Moves the database or its sidecars aside with the store suspended.
+    private async Task QuarantineAsync(Action<string> moveAside, CancellationToken ct)
+    {
+        var suspension = await SuspendAsync(ct).ConfigureAwait(false);
+        await using (suspension.ConfigureAwait(false))
+        {
+            moveAside(databasePath);
+        }
+    }
+
     private async Task InitializeCoreAsync(CancellationToken ct)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             // WAL is persisted in the DB header (set once): the 1-5s domain poll reader and on-demand hydration
             // no longer block on the writer's lock, and BackupToAsync's wal_checkpoint(TRUNCATE) becomes
@@ -179,6 +189,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         ip         TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         UNIQUE (tunnel, domain, ip)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS route_memory (
+                        tunnel     TEXT NOT NULL,
+                        address    TEXT NOT NULL,
+                        verdict    TEXT NOT NULL,
+                        by_name    INTEGER NOT NULL,
+                        by_app     INTEGER NOT NULL,
+                        seen_at    TEXT NOT NULL,
+                        PRIMARY KEY (tunnel, address)
                     );
 
                     CREATE TABLE IF NOT EXISTS geo_sources (
@@ -592,10 +612,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -625,10 +645,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<TunnelGeo?> GetTunnelGeoAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -661,10 +681,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<TunnelGeo?> GetActiveTunnelGeoAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -714,10 +734,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, IReadOnlyList<string> directRoutes, IReadOnlyList<GeoDomain> directDomains, IReadOnlyList<string> blockRoutes, IReadOnlyList<GeoDomain> blockDomains, long? routingListId, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -759,10 +779,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -794,10 +814,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<long?> GetActiveRoutingListIdAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -817,10 +837,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var names = new List<string>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -844,10 +864,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveTunnelGeoAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -862,10 +882,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<ConfigTransport?> GetConfigTransportAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -890,10 +910,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetConfigTransportAsync(ConfigTransport transport, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -933,10 +953,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveConfigTransportAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -951,10 +971,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<ConfigDns?> GetConfigDnsAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -979,10 +999,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetConfigDnsAsync(ConfigDns dns, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1006,10 +1026,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveConfigDnsAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1024,10 +1044,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<ConfigExclusions?> GetConfigExclusionsAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1052,10 +1072,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetConfigExclusionsAsync(ConfigExclusions exclusions, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1079,10 +1099,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveConfigExclusionsAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1097,10 +1117,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1130,10 +1150,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var sources = new List<GeoSource>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1157,10 +1177,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveGeoSourceAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1177,10 +1197,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var subscriptions = new List<Subscription>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1219,10 +1239,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveSubscriptionAsync(Subscription subscription, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1262,10 +1282,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveSubscriptionAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1287,10 +1307,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var members = new List<SubscriptionMember>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1324,10 +1344,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveSubscriptionMemberAsync(SubscriptionMember member, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1354,10 +1374,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveSubscriptionMemberAsync(string subscription, string remark, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1373,10 +1393,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RenameSubscriptionMemberAsync(string configName, string newConfigName, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1394,10 +1414,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     public async Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, long listId, CancellationToken ct = default)
     {
         var timestamp = Timestamp();
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
@@ -1438,14 +1458,118 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task SaveRememberedRoutesAsync(string tunnel, IReadOnlyList<RememberedRoute> routes, CancellationToken ct = default)
+    {
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var connection = lease.Connection;
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                var delete = connection.CreateCommand();
+                await using (delete.ConfigureAwait(false))
+                {
+                    delete.Transaction = transaction;
+                    delete.CommandText = "DELETE FROM route_memory WHERE tunnel = $tunnel;";
+                    delete.Parameters.AddWithValue("$tunnel", tunnel);
+                    await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                var insert = connection.CreateCommand();
+                await using (insert.ConfigureAwait(false))
+                {
+                    insert.Transaction = transaction;
+                    insert.CommandText =
+                        """
+                        INSERT OR REPLACE INTO route_memory (tunnel, address, verdict, by_name, by_app, seen_at)
+                        VALUES ($tunnel, $address, $verdict, $name, $app, $seen);
+                        """;
+                    insert.Parameters.AddWithValue("$tunnel", tunnel);
+                    var address = insert.Parameters.Add("$address", SqliteType.Text);
+                    var verdict = insert.Parameters.Add("$verdict", SqliteType.Text);
+                    var byName = insert.Parameters.Add("$name", SqliteType.Integer);
+                    var byApp = insert.Parameters.Add("$app", SqliteType.Integer);
+                    var seen = insert.Parameters.Add("$seen", SqliteType.Text);
+                    foreach (var route in routes)
+                    {
+                        address.Value = route.Address;
+                        verdict.Value = route.Verdict;
+                        byName.Value = route.ByName ? 1 : 0;
+                        byApp.Value = route.ByApp ? 1 : 0;
+                        seen.Value = route.SeenAt.ToString("O", CultureInfo.InvariantCulture);
+                        await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RememberedRoute>> ListRememberedRoutesAsync(string tunnel, CancellationToken ct = default)
+    {
+        var routes = new List<RememberedRoute>();
+
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var connection = lease.Connection;
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT address, verdict, by_name, by_app, seen_at FROM route_memory WHERE tunnel = $tunnel ORDER BY seen_at DESC;";
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        routes.Add(new RememberedRoute(
+                            reader.GetString(0),
+                            reader.GetString(1),
+                            reader.GetInt32(2) != 0,
+                            reader.GetInt32(3) != 0,
+                            ReadMoment(reader.GetString(4)) ?? DateTimeOffset.UtcNow));
+                    }
+                }
+            }
+        }
+
+        return routes;
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveRememberedRoutesAsync(string tunnel, CancellationToken ct = default)
+    {
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var connection = lease.Connection;
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM route_memory WHERE tunnel = $tunnel;";
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<DomainResolution>> ListDomainResolutionsAsync(string tunnel, CancellationToken ct = default)
     {
         var resolutions = new List<DomainResolution>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1498,10 +1622,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveDomainResolutionsAsync(string tunnel, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1516,10 +1640,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task DeleteDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1538,10 +1662,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var ips = new List<string>();
         DateTimeOffset? resolvedAt = null;
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1574,10 +1698,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveGeoFileAsync(GeoFileMetadata metadata, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1610,10 +1734,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<GeoFileMetadata?> GetGeoFileAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1645,10 +1769,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var files = new List<GeoFileMetadata>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1677,10 +1801,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetGeoUpdateAvailableAsync(string name, bool available, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1696,10 +1820,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<string?> GetSettingAsync(string key, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1718,10 +1842,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1745,10 +1869,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetSettingAsync(string key, string value, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1772,10 +1896,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<bool> ConfigExistsAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1790,10 +1914,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<string?> GetConfigTextAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1810,10 +1934,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var names = new List<string>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1837,10 +1961,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetConfigOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
@@ -1866,10 +1990,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveConfigAsync(string name, string text, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1894,10 +2018,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RenameConfigAsync(string oldName, string newName, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1914,10 +2038,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveConfigAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1932,10 +2056,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveTunnelStateAsync(TunnelState state, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1959,10 +2083,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<TunnelState?> GetTunnelStateAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -1994,10 +2118,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var states = new List<TunnelState>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2026,10 +2150,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveTunnelStateAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2044,10 +2168,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task BackupToAsync(string destinationPath, CancellationToken ct = default)
     {
-        var source = new SqliteConnection(_connectionString);
-        await using (source.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await source.OpenAsync(ct).ConfigureAwait(false);
+            var source = lease.Connection;
 
             var checkpoint = source.CreateCommand();
             await using (checkpoint.ConfigureAwait(false))
@@ -2071,9 +2195,48 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task<IAsyncDisposable> SuspendAsync(CancellationToken ct = default)
+    {
+        var suspension = await _gate.SuspendAsync(ct).ConfigureAwait(false);
+        ClearPoolCore();
+        return suspension;
+    }
+
+    /// <summary>
+    /// Waits for the database work in flight and drops the pooled connections.
+    /// </summary>
     public void ClearPool()
     {
-        SqliteConnection.ClearAllPools();
+        using (_gate.Suspend())
+        {
+            ClearPoolCore();
+        }
+    }
+
+    // Drops the pooled connections to this database.
+    private void ClearPoolCore()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        SqliteConnection.ClearPool(connection);
+    }
+
+    // Opens a connection under a work slot held until the lease is disposed.
+    private async Task<ConnectionLease> LeaseAsync(CancellationToken ct)
+    {
+        await _gate.EnterAsync(ct).ConfigureAwait(false);
+        var connection = new SqliteConnection(_connectionString);
+        try
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            _gate.Leave();
+            throw;
+        }
+
+        return new ConnectionLease(_gate, connection);
     }
 
     /// <inheritdoc/>
@@ -2090,10 +2253,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var excludeRoutesJson = "[]";
         var excludeDomainsJson = "[]";
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
@@ -2226,10 +2389,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<RoutingList?> GetRoutingListAsync(long id, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
             return await ReadRoutingListAsync(connection, "id = $key", "$key", id, ct).ConfigureAwait(false);
         }
     }
@@ -2237,10 +2400,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
             return await ReadRoutingListAsync(connection, "name = $key", "$key", name, ct).ConfigureAwait(false);
         }
     }
@@ -2248,10 +2411,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<RoutingListStamp?> GetRoutingListStampAsync(long id, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
             if (await ReadRoutingListHeadAsync(connection, id, ct).ConfigureAwait(false) is not { } head)
             {
                 return null;
@@ -2285,10 +2448,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var lists = new List<(long Id, string Name, string Routes, string Domains, string DirectRoutes, string DirectDomains, string BlockRoutes, string BlockDomains, string ExcludeRoutes, string ExcludeDomains)>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2331,10 +2494,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var result = new List<RoutingListSummary>();
 
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2388,10 +2551,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
@@ -2417,10 +2580,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveRoutingListAsync(long id, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
@@ -2482,10 +2645,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<long?> GetActiveRoutingListGenerationAsync(string tunnel, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2508,10 +2671,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2577,10 +2740,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<RoutingSettings?> GetRoutingSettingsAsync(long routingListId, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2605,10 +2768,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SetRoutingSettingsAsync(RoutingSettings settings, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -2638,10 +2801,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default)
     {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
+            var connection = lease.Connection;
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))

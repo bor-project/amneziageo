@@ -367,7 +367,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpListTunnelSubnets:
                 await EnsureInitAsync().ConfigureAwait(false);
-                return new IpcAck(true, string.Join('\n', PrivateNetworks.FromConfigs(await ConfigTextsAsync().ConfigureAwait(false))));
+                return new IpcAck(true, string.Join('\n', await ConfigSubnetsAsync().ConfigureAwait(false)));
 
             // Гео-базы разбираются в пуле: разворачивание правил держит вызывающий поток, а он тут UI-шный.
             case IpcContract.OpListGeo:
@@ -2531,19 +2531,29 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : $"{summary} (applies on reconnect)");
     }
 
-    // The text of every stored configuration.
-    private async Task<IReadOnlyList<string>> ConfigTextsAsync()
+    // The private networks the stored configurations name, each behind the name of the one naming it and a
+    // tab, without the ones the device stands in itself.
+    private async Task<IReadOnlyList<string>> ConfigSubnetsAsync()
     {
-        var texts = new List<string>();
+        var own = GeoVpnService.LocalSubnets().ToArray();
+        var lines = new List<string>();
         foreach (var name in await _store.ListConfigNamesAsync().ConfigureAwait(false))
         {
-            if (await _store.GetConfigTextAsync(name).ConfigureAwait(false) is { Length: > 0 } text)
+            if (await _store.GetConfigTextAsync(name).ConfigureAwait(false) is not { Length: > 0 } text)
             {
-                texts.Add(text);
+                continue;
+            }
+
+            foreach (var network in PrivateNetworks.FromConfig(text))
+            {
+                if (!PrivateNetworks.Overlaps(network, own))
+                {
+                    lines.Add($"{name}\t{network}");
+                }
             }
         }
 
-        return texts;
+        return lines;
     }
 
     // Asks every source whether its remote file changed, without downloading it.

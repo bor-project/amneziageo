@@ -209,6 +209,22 @@ public interface IStateStore
     Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default);
 
     /// <summary>
+    /// Replaces the destinations remembered for a tunnel with these ones. They are what the routing cache used
+    /// most recently, so the next session starts from them instead of an empty table.
+    /// </summary>
+    Task SaveRememberedRoutesAsync(string tunnel, IReadOnlyList<RememberedRoute> routes, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the destinations remembered for a tunnel, freshest first.
+    /// </summary>
+    Task<IReadOnlyList<RememberedRoute>> ListRememberedRoutesAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes everything remembered for a tunnel.
+    /// </summary>
+    Task RemoveRememberedRoutesAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a routing list. Returns the row id.
     /// </summary>
     Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default);
@@ -347,7 +363,8 @@ public interface IStateStore
     Task BackupToAsync(string destinationPath, CancellationToken ct = default);
 
     /// <summary>
-    /// Releases pooled database connections so the database file can be replaced.
+    /// Holds new database work off, waits for the work in flight and releases the pooled connections until
+    /// the returned handle is disposed.
     /// </summary>
-    void ClearPool();
+    Task<IAsyncDisposable> SuspendAsync(CancellationToken ct = default);
 }

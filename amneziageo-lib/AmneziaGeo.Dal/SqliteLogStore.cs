@@ -60,6 +60,8 @@ public sealed class SqliteLogStore : IDisposable
 
     private readonly string _databasePath;
 
+    private readonly ConnectionGate _gate = new();
+
     // Set while the store cannot be written to, cleared when it can again.
     private volatile string? _failure;
 
@@ -101,11 +103,49 @@ public sealed class SqliteLogStore : IDisposable
     public string? LastFailure => _failure;
 
     /// <summary>
-    /// Drops the pooled connections to the database file, so a caller can move it aside.
+    /// Waits for the database work in flight and drops the pooled connections, so a caller can move the file
+    /// aside.
     /// </summary>
     public void ClearPool()
     {
-        SqliteConnection.ClearAllPools();
+        using (_gate.Suspend())
+        {
+            ClearPoolCore();
+        }
+    }
+
+    // Drops the pooled connections to this database.
+    private void ClearPoolCore()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        SqliteConnection.ClearPool(connection);
+    }
+
+    // Moves the database or its sidecars aside with the store suspended.
+    private async Task QuarantineAsync(Action<string> moveAside, CancellationToken ct)
+    {
+        var suspension = await _gate.SuspendAsync(ct).ConfigureAwait(false);
+        await using (suspension.ConfigureAwait(false))
+        {
+            ClearPoolCore();
+            moveAside(_databasePath);
+        }
+    }
+
+    // Opens a configured connection under a work slot held until the lease is disposed.
+    private async Task<ConnectionLease> LeaseAsync(CancellationToken ct)
+    {
+        await _gate.EnterAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var connection = await OpenAsync(ct).ConfigureAwait(false);
+            return new ConnectionLease(_gate, connection);
+        }
+        catch (Exception)
+        {
+            _gate.Leave();
+            throw;
+        }
     }
 
     // Opens the store, quarantining a corrupt file in two steps. Never throws: a failure is recorded and the
@@ -119,8 +159,7 @@ public sealed class SqliteLogStore : IDisposable
         }
         catch (SqliteException)
         {
-            SqliteConnection.ClearAllPools();
-            CorruptQuarantine.MoveAsideSidecars(_databasePath);
+            await QuarantineAsync(CorruptQuarantine.MoveAsideSidecars, ct).ConfigureAwait(false);
         }
 
         try
@@ -130,8 +169,7 @@ public sealed class SqliteLogStore : IDisposable
         }
         catch (SqliteException)
         {
-            SqliteConnection.ClearAllPools();
-            CorruptQuarantine.MoveAside(_databasePath);
+            await QuarantineAsync(CorruptQuarantine.MoveAside, ct).ConfigureAwait(false);
         }
 
         try
@@ -148,9 +186,10 @@ public sealed class SqliteLogStore : IDisposable
 
     private async Task InitializeCoreAsync(CancellationToken ct)
     {
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var wal = connection.CreateCommand();
             await using (wal.ConfigureAwait(false))
             {
@@ -244,9 +283,10 @@ public sealed class SqliteLogStore : IDisposable
     public async Task<LogPage> QueryAsync(string table, long? beforeId, int limit, int? minLevelId, string? search, CancellationToken ct = default)
     {
         var name = Validate(table);
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
@@ -284,9 +324,10 @@ public sealed class SqliteLogStore : IDisposable
     public async Task<int> CountAsync(string table, int? minLevelId, string? search, CancellationToken ct = default)
     {
         var name = Validate(table);
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
@@ -308,9 +349,10 @@ public sealed class SqliteLogStore : IDisposable
         await FlushAsync(ct).ConfigureAwait(false);
         var found = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
@@ -349,9 +391,10 @@ public sealed class SqliteLogStore : IDisposable
     {
         var name = Validate(table);
         await FlushAsync(ct).ConfigureAwait(false);
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
@@ -372,9 +415,10 @@ public sealed class SqliteLogStore : IDisposable
             return 0;
         }
 
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
@@ -478,9 +522,10 @@ public sealed class SqliteLogStore : IDisposable
         var name = Validate(table);
         await FlushAsync(ct).ConfigureAwait(false);
 
-        var connection = await OpenAsync(ct).ConfigureAwait(false);
-        await using (connection.ConfigureAwait(false))
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
         {
+            var connection = lease.Connection;
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
@@ -652,9 +697,10 @@ public sealed class SqliteLogStore : IDisposable
     {
         try
         {
-            var connection = await OpenAsync(ct).ConfigureAwait(false);
-            await using (connection.ConfigureAwait(false))
+            var lease = await LeaseAsync(ct).ConfigureAwait(false);
+            await using (lease.ConfigureAwait(false))
             {
+                var connection = lease.Connection;
                 var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
                 await using (transaction.ConfigureAwait(false))
                 {

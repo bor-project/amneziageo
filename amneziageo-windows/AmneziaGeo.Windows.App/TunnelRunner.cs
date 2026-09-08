@@ -490,6 +490,9 @@ internal sealed class TunnelRunner(
         pinnedRoutes.AddRange(inboundRoutes);
         pinnedRoutes.AddRange(inboundReturn);
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
+        // What the previous session used most is taken back from the store: the verdicts an address settled are
+        // taken again under the list in force now, and each route follows the first packet as it always does.
+        routing.SetMemory(new StoredRouteMemory(store, name));
         session.SetCache(routing);
         session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
             WgConfigEditor.GetAllowedIps(config));
@@ -843,6 +846,12 @@ internal sealed class TunnelRunner(
             session.Clear();
             _appGateway?.Dispose();
             _appGateway = null;
+            if (routing is not null)
+            {
+                // Written out before the entries go, so the next session starts from the destinations this one used.
+                await routing.PersistAsync(CancellationToken.None);
+            }
+
             // Before the engine closes, so the host routes go away with their permits still known.
             routing?.RemoveAll();
             // The batched withdrawals leave now: the device is about to go, and a queued one would never be sent.

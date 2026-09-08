@@ -130,10 +130,10 @@
           <TextBlock Text="{Binding RouteTrimNotice}" FontSize="11.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding RouteTrims}" />
 
-          <!-- Заполняет показанную корзину локальными сетями машины и туннелей. -->
+          <!-- Заполняет показанную корзину: туннельную - сетями подключений, остальные - сетями машины. -->
           <Button Classes="linkbtn"
                   HorizontalAlignment="Left" Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}">
-            <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding AddSubnetsText}" TextWrapping="Wrap" />
           </Button>
 
           <!-- Что добавить: тип записи слева, геобазы ссылкой справа. -->

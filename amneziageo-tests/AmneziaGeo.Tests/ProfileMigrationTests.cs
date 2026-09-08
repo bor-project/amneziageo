@@ -11,13 +11,11 @@ namespace AmneziaGeo.Tests;
 public sealed class ProfileMigrationTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"ageo-mig-{Guid.NewGuid():N}.db");
-    private SqliteStateStore? _store;
 
     /// <inheritdoc />
     public void Dispose()
     {
-        _store?.ClearPool();
-        SqliteConnection.ClearAllPools();
+        ClearPool();
         foreach (var path in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm", _dbPath + ".pre-profiles.bak" })
         {
             TryDelete(path);
@@ -133,9 +131,16 @@ public sealed class ProfileMigrationTests : IDisposable
 
     private async Task<SqliteStateStore> OpenAsync()
     {
-        _store = new SqliteStateStore(_dbPath);
-        await _store.InitializeAsync();
-        return _store;
+        var store = new SqliteStateStore(_dbPath);
+        await store.InitializeAsync();
+        return store;
+    }
+
+    // Drops the pooled connections to this test's database alone.
+    private void ClearPool()
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = _dbPath }.ToString());
+        SqliteConnection.ClearPool(connection);
     }
 
     private bool TableExists(string name)

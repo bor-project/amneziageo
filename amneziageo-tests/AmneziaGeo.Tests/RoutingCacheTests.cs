@@ -1,4 +1,5 @@
 using System.Net;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -115,9 +116,11 @@ public sealed class RoutingCacheTests
         public LiveDestinations Snapshot() => new([], []);
     }
 
-    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300, IReadOnlyCollection<string>? pinned = null)
+    // Hot defaults to none here: the idle window is what most of these tests are about, and the entries a real
+    // cache keeps whatever it says are exercised on their own.
+    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300, IReadOnlyCollection<string>? pinned = null, int hot = 0)
     {
-        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance, pinned);
+        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance, pinned, hot: hot);
     }
 
     private static uint Numeric(string address)
@@ -786,5 +789,107 @@ public sealed class RoutingCacheTests
         cache.Adopt([IPAddress.Parse("1.1.1.1"), IPAddress.Parse("1.1.1.2")]);
 
         Assert.Equal(1, cache.Size);
+    }
+
+    [Fact]
+    public void WithinTheHotCount_AnIdleEntryIsKept()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], hot: 2);
+        cache.Note(Numeric(YandexAddress));
+        cache.Note(Numeric("77.88.55.243"));
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Empty(applier.Removed);
+        Assert.Equal(2, cache.Size);
+        Assert.Equal(2, cache.Active);
+    }
+
+    [Fact]
+    public void PastTheHotCount_TheLeastRecentlyUsedGoesOnTheIdleWindow()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], hot: 1);
+        var now = DateTimeOffset.UtcNow;
+        cache.Restore([
+            new RememberedRoute(YandexAddress, nameof(RouteVerdict.Direct), false, false, now),
+            new RememberedRoute("77.88.55.243", nameof(RouteVerdict.Direct), false, false, now.AddHours(-1)),
+        ]);
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(YandexAddress, held.Address.ToString());
+    }
+
+    [Fact]
+    public void RestoredEntry_KeepsTheVerdictANameSettled()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, hot: 8);
+
+        cache.Restore([new RememberedRoute(YandexAddress, nameof(RouteVerdict.Proxy), true, false, DateTimeOffset.UtcNow)]);
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(RouteVerdict.Proxy, held.Verdict);
+        Assert.True(held.ByName);
+    }
+
+    [Fact]
+    public void RestoredAddress_TakesItsVerdictUnderTheListInForce()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, block: [YandexRange], hot: 8);
+
+        cache.Restore([new RememberedRoute(YandexAddress, nameof(RouteVerdict.Direct), false, false, DateTimeOffset.UtcNow)]);
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(RouteVerdict.Block, held.Verdict);
+    }
+
+    [Fact]
+    public void Restore_TakesNoMoreThanTheHotCount()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], hot: 2);
+        var now = DateTimeOffset.UtcNow;
+
+        cache.Restore([
+            new RememberedRoute(YandexAddress, nameof(RouteVerdict.Direct), false, false, now),
+            new RememberedRoute("77.88.55.243", nameof(RouteVerdict.Direct), false, false, now),
+            new RememberedRoute("77.88.55.244", nameof(RouteVerdict.Direct), false, false, now),
+        ]);
+
+        Assert.Equal(2, cache.Size);
+    }
+
+    [Fact]
+    public void Hot_CarriesOnlyTheEntriesTheNextSessionStartsFrom()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], hot: 1);
+        cache.Note(Numeric(YandexAddress));
+        cache.Note(Numeric("77.88.55.243"));
+
+        Assert.Single(cache.Hot());
+    }
+
+    [Fact]
+    public void ANewCache_TakesBackWhatThePreviousOneUsed()
+    {
+        var first = Cache(new FakeApplier { Generation = 1 }, split: false, direct: [YandexRange], hot: 8);
+        first.Note(Numeric(YandexAddress));
+
+        var applier = new FakeApplier { Generation = 1 };
+        var second = Cache(applier, split: false, direct: [YandexRange], hot: 8);
+        second.Restore(first.Hot());
+
+        Assert.Equal(1, second.Size);
+        Assert.Empty(applier.Added);
+
+        second.Note(Numeric(YandexAddress));
+
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
     }
 }

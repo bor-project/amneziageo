@@ -1175,19 +1175,29 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
     }
 
-    // Private networks named by the stored configurations, newline-separated.
+    // Private networks named by the stored configurations, each behind the name of the one naming it and a
+    // tab, without the ones the machine stands in itself; newline-separated.
     private async Task<IpcAck> ListTunnelSubnetsAsync(CancellationToken ct)
     {
-        var configs = new List<string>();
+        var own = routes.LocalSubnets();
+        var lines = new List<string>();
         foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
-            if (await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) is { Length: > 0 } text)
+            if (await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) is not { Length: > 0 } text)
             {
-                configs.Add(text);
+                continue;
+            }
+
+            foreach (var network in PrivateNetworks.FromConfig(text))
+            {
+                if (!PrivateNetworks.Overlaps(network, own))
+                {
+                    lines.Add($"{name}\t{network}");
+                }
             }
         }
 
-        return new IpcAck(true, string.Join('\n', PrivateNetworks.FromConfigs(configs)));
+        return new IpcAck(true, string.Join('\n', lines));
     }
 
     /// <summary>

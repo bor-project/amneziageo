@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Threading.Channels;
+using AmneziaGeo.Decl;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Routing;
@@ -57,6 +58,11 @@ public sealed class RoutingCache
     private const int MaxApplied = 8192;
     // Entries overall. A verdict without resources costs a dictionary slot, so it gets a wider ceiling.
     private const int MaxEntries = 65536;
+    // Entries the idle window never takes: the hottest destinations by last use, kept across a reconnect and a
+    // restart so what the machine actually talks to stays decided.
+    public const int HotEntries = 2048;
+    // How often the hottest entries are written out while the cache runs.
+    private const int PersistIntervalMs = 60_000;
 
     private sealed class Entry
     {
@@ -113,12 +119,18 @@ public sealed class RoutingCache
     private int _installed;
     private int _reclaimed;
     private int _capacityWarned;
+    // Entries this cache holds whatever the idle window says.
+    private readonly int _hot;
+    // Where the hottest entries are kept between sessions; absent until an agent hands one over.
+    private IRouteMemory? _memory;
+    private long _persistedAt;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null, bool carriesDefault = true)
+    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null, bool carriesDefault = true, int hot = HotEntries)
     {
+        _hot = Math.Clamp(hot, 0, MaxEntries);
         _applier = applier;
         _live = live;
         _split = split;
@@ -449,6 +461,8 @@ public sealed class RoutingCache
     public async Task RunAsync(CancellationToken ct)
     {
         var scans = 0;
+        await RestoreAsync(ct).ConfigureAwait(false);
+        Volatile.Write(ref _persistedAt, Environment.TickCount64);
         try
         {
             while (!ct.IsCancellationRequested)
@@ -468,6 +482,11 @@ public sealed class RoutingCache
                     if (++scans % Volatile.Read(ref _scansPerSweep) == 0)
                     {
                         Sweep(active.All, Environment.TickCount64);
+                    }
+
+                    if (Environment.TickCount64 - Volatile.Read(ref _persistedAt) >= PersistIntervalMs)
+                    {
+                        await PersistAsync(ct).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)
@@ -493,6 +512,156 @@ public sealed class RoutingCache
         var moved = Redecide(rules);
         _logger.LogInformation("routing rules reloaded: {Proxy} tunnel, {Direct} direct, {Block} blocked range(s); {Moved} destination(s) in use changed side at once, the rest keep the path they had",
             rules.Proxy.Count, rules.Direct.Count, rules.Block.Count, moved);
+    }
+
+    /// <summary>
+    /// Hands the cache the store that carries its hottest entries between sessions.
+    /// </summary>
+    public void SetMemory(IRouteMemory memory)
+    {
+        _memory = memory;
+    }
+
+    /// <summary>
+    /// The hottest destinations by last use, freshest first: what a reconnect and a restart start from.
+    /// </summary>
+    public IReadOnlyList<RememberedRoute> Hot()
+    {
+        var now = Environment.TickCount64;
+        var stamp = DateTimeOffset.UtcNow;
+        var rows = new List<(long Touch, Entry Entry)>();
+        foreach (var pair in _entries)
+        {
+            // An adopted address belongs to the domain tracker, which persists its names itself.
+            if (pair.Value.Plan == RoutePlan.External)
+            {
+                continue;
+            }
+
+            rows.Add((Volatile.Read(ref pair.Value.LastTouch), pair.Value));
+        }
+
+        rows.Sort(static (left, right) => right.Touch.CompareTo(left.Touch));
+        var hot = new List<RememberedRoute>(Math.Min(rows.Count, _hot));
+        foreach (var (touch, entry) in rows)
+        {
+            if (hot.Count == _hot)
+            {
+                break;
+            }
+
+            hot.Add(new RememberedRoute(entry.Address.ToString(), entry.Verdict.ToString(), entry.ByName, entry.ByApp,
+                stamp.AddMilliseconds(touch - now)));
+        }
+
+        return hot;
+    }
+
+    /// <summary>
+    /// Takes back the destinations an earlier session held. A verdict an address settled is taken again under the
+    /// list in force now; one a name settled is carried over, because no address range can reach it. Nothing is
+    /// installed here - the route and the filter follow the first packet, as they do for an address seen anew.
+    /// </summary>
+    public int Restore(IReadOnlyList<RememberedRoute> routes)
+    {
+        var now = Environment.TickCount64;
+        var stamp = DateTimeOffset.UtcNow;
+        var rules = Volatile.Read(ref _rules);
+        var taken = 0;
+        foreach (var route in routes)
+        {
+            if (taken == _hot || Volatile.Read(ref _size) >= MaxEntries)
+            {
+                break;
+            }
+
+            if (!IPAddress.TryParse(route.Address, out var address)
+                || !GeoIpRanges.TryToNumeric(address, out var value)
+                || _pinned.Contains(value)
+                || _entries.ContainsKey(value))
+            {
+                continue;
+            }
+
+            var carried = Carried(route);
+            var verdict = carried ?? Evaluate(rules, value);
+            var entry = new Entry
+            {
+                Address = address,
+                Numeric = value,
+                Verdict = verdict,
+                Plan = Decide(verdict, route.ByApp),
+                ByApp = route.ByApp,
+                ByName = carried is not null,
+                Rules = rules.Generation,
+                LastTouch = now - (long)Math.Max((stamp - route.SeenAt).TotalMilliseconds, 0),
+            };
+
+            if (_entries.TryAdd(value, entry))
+            {
+                Interlocked.Increment(ref _size);
+                taken++;
+            }
+        }
+
+        if (taken > 0)
+        {
+            _logger.LogInformation("{Count} destination(s) used before this session are decided again from the start; each takes its route on the first packet, and the {Hot} most recently used are never forgotten while unused",
+                taken, _hot);
+        }
+
+        return taken;
+    }
+
+    // The verdict a name settled, carried over as it stands: no address range can reach it again.
+    private static RouteVerdict? Carried(RememberedRoute route)
+    {
+        return route.ByName && Enum.TryParse<RouteVerdict>(route.Verdict, out var verdict) ? verdict : null;
+    }
+
+    /// <summary>
+    /// Writes the hottest entries out, so the next session starts from them.
+    /// </summary>
+    public async Task PersistAsync(CancellationToken ct)
+    {
+        if (_memory is not { } memory)
+        {
+            return;
+        }
+
+        Volatile.Write(ref _persistedAt, Environment.TickCount64);
+        try
+        {
+            await memory.SaveAsync(Hot(), ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "routing cache: keeping the hottest destinations failed");
+        }
+    }
+
+    // Takes back what an earlier session left, once per run.
+    private async Task RestoreAsync(CancellationToken ct)
+    {
+        if (_memory is not { } memory)
+        {
+            return;
+        }
+
+        try
+        {
+            Restore(await memory.LoadAsync(ct).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "routing cache: taking back the destinations of the previous session failed");
+        }
     }
 
     /// <summary>
@@ -845,11 +1014,19 @@ public sealed class RoutingCache
     // this owns the decision.
     internal void Sweep(HashSet<uint> busy, long now)
     {
+        // Below the hottest count nothing is reclaimed at all: the idle window only decides which of the entries
+        // past it goes.
+        if (HotFloor() is not { } hot)
+        {
+            return;
+        }
+
         var stale = new List<KeyValuePair<uint, Entry>>();
         var idleTtlMs = Volatile.Read(ref _idleTtlMs);
         foreach (var pair in _entries)
         {
-            if (now - Volatile.Read(ref pair.Value.LastTouch) <= idleTtlMs)
+            var touch = Volatile.Read(ref pair.Value.LastTouch);
+            if (now - touch <= idleTtlMs || touch >= hot)
             {
                 continue;
             }
@@ -921,13 +1098,53 @@ public sealed class RoutingCache
         }
     }
 
+    // Last use the hottest entries stay above; null while the cache holds no more than the count they take.
+    private long? HotFloor()
+    {
+        if (_hot == 0)
+        {
+            return long.MaxValue;
+        }
+
+        if (Volatile.Read(ref _size) <= _hot)
+        {
+            return null;
+        }
+
+        var touches = new long[Math.Min(Volatile.Read(ref _size), MaxEntries)];
+        var count = 0;
+        foreach (var pair in _entries)
+        {
+            if (count == touches.Length)
+            {
+                break;
+            }
+
+            touches[count++] = Volatile.Read(ref pair.Value.LastTouch);
+        }
+
+        if (count <= _hot)
+        {
+            return null;
+        }
+
+        Array.Sort(touches, 0, count);
+        return touches[count - _hot];
+    }
+
     // Drops verdict-only entries at capacity: they hold no system resources, so refilling one costs a binary search.
     private void TrimUnapplied()
     {
+        var hot = HotFloor();
         var dropped = 0;
         foreach (var pair in _entries)
         {
             if (pair.Value.Plan != RoutePlan.None)
+            {
+                continue;
+            }
+
+            if (hot is { } floor && Volatile.Read(ref pair.Value.LastTouch) >= floor)
             {
                 continue;
             }

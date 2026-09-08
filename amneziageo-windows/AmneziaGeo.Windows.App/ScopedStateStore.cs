@@ -216,6 +216,16 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default) => user.GetDomainResolutionAsync(tunnel, domain, ct);
 
     /// <inheritdoc/>
+    public Task SaveRememberedRoutesAsync(string tunnel, IReadOnlyList<RememberedRoute> routes, CancellationToken ct = default)
+        => user.SaveRememberedRoutesAsync(tunnel, routes, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<RememberedRoute>> ListRememberedRoutesAsync(string tunnel, CancellationToken ct = default) => user.ListRememberedRoutesAsync(tunnel, ct);
+
+    /// <inheritdoc/>
+    public Task RemoveRememberedRoutesAsync(string tunnel, CancellationToken ct = default) => user.RemoveRememberedRoutesAsync(tunnel, ct);
+
+    /// <inheritdoc/>
     public Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default) => user.SaveRoutingListAsync(list, ct);
 
     /// <inheritdoc/>
@@ -278,8 +288,5 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task BackupToAsync(string destinationPath, CancellationToken ct = default) => user.BackupToAsync(destinationPath, ct);
 
     /// <inheritdoc/>
-    public void ClearPool()
-    {
-        user.ClearPool();
-    }
+    public Task<IAsyncDisposable> SuspendAsync(CancellationToken ct = default) => user.SuspendAsync(ct);
 }

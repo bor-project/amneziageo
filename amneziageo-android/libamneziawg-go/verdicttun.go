@@ -25,6 +25,10 @@ import (
 // Окно простоя записи по умолчанию.
 const defaultVerdictTtl = 300 * time.Second
 
+// Записи, которые окно простоя не забирает: самые свежие по последнему касанию. Они же переезжают в следующую
+// сессию.
+const hotEntries = 2048
+
 // Шаг уборки записей.
 const (
 	minSweepInterval = 5 * time.Second
@@ -254,13 +258,54 @@ func (l *liveSet) sweep(nanos int64) {
 }
 
 func (l *liveSet) sweepLocked(nanos int64) {
+	l.swept.Store(nanos)
+	if len(l.items) <= hotEntries {
+		return
+	}
+
 	deadline := nanos - l.ttl.Load()
+	floor := l.hotFloorLocked()
 	for addr, item := range l.items {
-		if item.last.Load() < deadline {
+		last := item.last.Load()
+		if last < deadline && last < floor {
 			delete(l.items, addr)
 		}
 	}
-	l.swept.Store(nanos)
+}
+
+// Касание, ниже которого запись выходит из числа самых свежих.
+func (l *liveSet) hotFloorLocked() int64 {
+	touches := make([]int64, 0, len(l.items))
+	for _, item := range l.items {
+		touches = append(touches, item.last.Load())
+	}
+	sort.Slice(touches, func(i, j int) bool { return touches[i] < touches[j] })
+	return touches[len(touches)-hotEntries]
+}
+
+// Кладёт запись прошлой сессии; занятый адрес и полная карта её не берут.
+func (l *liveSet) take(addr uint32, v verdict, last int64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, exists := l.items[addr]; exists || len(l.items) >= l.max {
+		return false
+	}
+
+	item := &touch{v: v}
+	item.last.Store(last)
+	l.items[addr] = item
+	return true
+}
+
+// Роль из снимка; всё неузнанное идёт в туннель, как и адрес без правила.
+func parseVerdict(text string) verdict {
+	switch text {
+	case "direct":
+		return verdictDirect
+	case "block":
+		return verdictBlock
+	}
+	return verdictProxy
 }
 
 // Сколько адресов под учётом.
@@ -393,6 +438,43 @@ func (d *verdictTun) relayEvents(from tun.Device) {
 // Задаёт окно простоя учёта адресов.
 func (d *verdictTun) setTtl(ttl time.Duration) {
 	d.live.setTtl(ttl)
+}
+
+// Берёт назад адреса прошлой сессии: строки «адрес роль возраст-в-секундах», как их отдаёт снимок. Роль берётся
+// из таблицы, которая стоит сейчас, и только адрес вне её правил приходит с той, что записана в строке.
+func (d *verdictTun) preload(text string) int {
+	nanos := time.Now().UnixNano()
+	taken := 0
+	for _, line := range strings.Split(text, "\n") {
+		if taken >= hotEntries {
+			break
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) != 3 {
+			continue
+		}
+
+		addr, ok := parseIPv4(parts[0])
+		if !ok {
+			continue
+		}
+
+		age, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil || age < 0 {
+			continue
+		}
+
+		v, listed := d.verdictFor(addr)
+		if !listed {
+			v = parseVerdict(parts[1])
+		}
+
+		if d.live.take(addr, v, nanos-age*int64(time.Second)) {
+			taken++
+		}
+	}
+	return taken
 }
 
 // Отпускает простаивающие записи по расписанию.

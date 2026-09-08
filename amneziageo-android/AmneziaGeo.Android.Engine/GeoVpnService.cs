@@ -132,8 +132,12 @@ public sealed class GeoVpnService : VpnService
     private const int TrafficPollMs = 250;
     private const string HotFile = "hot-direct.txt";
     private const int HotMax = 1024;
+    // Decided addresses carried into the next session, and the file they wait in.
+    private const string LiveFile = "live-cache.txt";
+    private const int LiveMax = 2048;
     private const int HotTtlSeconds = 3600;
     private const int KeepaliveSeconds = 25;
+    private const int NameBudgetMs = 15_000;
     private const int TcpProtocol = 6;
     private const int OwnerOther = 0;
     private const int OwnerSelf = 1;
@@ -529,6 +533,15 @@ public sealed class GeoVpnService : VpnService
                     + "the engine, which decides them on the packet");
             }
 
+            // What the previous session used: the engine takes these addresses back before the first packet, so a
+            // reconnect and a restart find them decided instead of unknown. A range the rules name now overrides
+            // the role the file carries.
+            var preloaded = AwgEngine.PreloadLive(handle, LiveCache());
+            if (preloaded > 0)
+            {
+                Report($"{preloaded} address(es) used before this session are decided from the start");
+            }
+
             if ((directTcp || _proxyPort > 0) && AwgEngine.SetTcpDirect(handle, true))
             {
                 Report("a stream to a direct range leaves on a protected socket as well, so the relay is no longer "
@@ -809,14 +822,13 @@ public sealed class GeoVpnService : VpnService
                 + $"decided on contact; a destination no rule names goes "
                 + $"{(plan.FullTunnel ? "through the tunnel" : "direct")}");
 
-            // A blocked name is refused by the relay, but traffic that never reaches the relay is stopped by the
-            // peer's address list alone, so blocked names become addresses even here.
+            // A blocked name is refused on the stream that carries it. It is not resolved here: the answer would
+            // come from the resolver the device sits behind rather than the tunnel's, and a catalogue of names
+            // costs a query each before the tun is even up.
             if (plan.BlockDomains.Count > 0)
             {
-                var resolver = new GeoDomainRouteResolver();
-                block.AddRange(await resolver.ResolveAsync(plan.BlockDomains).ConfigureAwait(false));
-                Report($"{plan.BlockDomains.Count} blocked name(s) resolved to addresses as well, so what bypasses "
-                    + "the relay is dropped too");
+                Report($"{plan.BlockDomains.Count} blocked name(s) are refused on the relay; a datagram that never "
+                    + "reaches it is stopped by a blocked range alone");
             }
 
             // A direct range stays out of the route table: the shim decides it on the packet and sends the
@@ -833,15 +845,18 @@ public sealed class GeoVpnService : VpnService
         else if (plan.HasDomains)
         {
             var clock = Stopwatch.StartNew();
+            // The names become addresses under a deadline, so a catalogue of them cannot hold up the connect.
+            using var budget = new CancellationTokenSource(NameBudgetMs);
             var resolver = new GeoDomainRouteResolver();
             var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
-            var named = await resolver.ResolveAsync(plan.DirectDomains).ConfigureAwait(false);
-            proxy.AddRange(await resolver.ResolveAsync(plan.ProxyDomains).ConfigureAwait(false));
+            var named = await resolver.ResolveAsync(plan.DirectDomains, budget.Token).ConfigureAwait(false);
+            proxy.AddRange(await resolver.ResolveAsync(plan.ProxyDomains, budget.Token).ConfigureAwait(false));
             direct.AddRange(named);
             kept.AddRange(named);
-            block.AddRange(await resolver.ResolveAsync(plan.BlockDomains).ConfigureAwait(false));
-            Report($"{names} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms; "
-                + "a name that moves to another address will no longer match");
+            block.AddRange(await resolver.ResolveAsync(plan.BlockDomains, budget.Token).ConfigureAwait(false));
+            Report($"{names} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms"
+                + (budget.IsCancellationRequested ? ", the rest ran out of their time" : string.Empty)
+                + "; a name that moves to another address will no longer match");
         }
 
         // Excludes the last session's direct addresses at connect.
@@ -1160,6 +1175,80 @@ public sealed class GeoVpnService : VpnService
         catch (Exception ex)
         {
             global::Android.Util.Log.Warn("GeoVpnService", "keeping the addresses of this session failed: " + ex);
+        }
+    }
+
+    // Keeps the addresses this session decided for the next one, freshest first.
+    private void KeepLive()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, LiveFile);
+            var live = LiveLines(AwgEngine.LiveAddresses(_handle));
+            if (live.Count == 0)
+            {
+                System.IO.File.Delete(path);
+                return;
+            }
+
+            System.IO.File.WriteAllLines(path, live);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "keeping the decided addresses of this session failed: " + ex);
+        }
+    }
+
+    // The freshest lines of a snapshot, no more than the next session takes back.
+    private static IReadOnlyList<string> LiveLines(string? live)
+    {
+        if (string.IsNullOrEmpty(live))
+        {
+            return [];
+        }
+
+        var rows = new List<(string Line, int Age)>();
+        foreach (var line in live.Split('\n'))
+        {
+            var parts = line.Split(' ');
+            if (parts.Length == 3 && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var age))
+            {
+                rows.Add((line, age));
+            }
+        }
+
+        rows.Sort((left, right) => left.Age.CompareTo(right.Age));
+        return [.. rows.Take(LiveMax).Select(row => row.Line)];
+    }
+
+    // The addresses of the last session, aged by the time the tunnel spent down.
+    private string LiveCache()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, LiveFile);
+            if (!System.IO.File.Exists(path))
+            {
+                return string.Empty;
+            }
+
+            var down = (int)Math.Max((DateTime.UtcNow - System.IO.File.GetLastWriteTimeUtc(path)).TotalSeconds, 0);
+            var lines = new List<string>();
+            foreach (var line in System.IO.File.ReadAllLines(path))
+            {
+                var parts = line.Split(' ');
+                if (parts.Length == 3 && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var age))
+                {
+                    lines.Add($"{parts[0]} {parts[1]} {age + down}");
+                }
+            }
+
+            return string.Join('\n', lines);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "reading the decided addresses of the last session failed: " + ex);
+            return string.Empty;
         }
     }
 
@@ -1940,6 +2029,7 @@ public sealed class GeoVpnService : VpnService
         if (_handle >= 0)
         {
             KeepHotDirect();
+            KeepLive();
             AwgEngine.TurnOff(_handle);
             _handle = -1;
         }

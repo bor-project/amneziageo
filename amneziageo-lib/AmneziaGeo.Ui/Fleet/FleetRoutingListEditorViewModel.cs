@@ -141,6 +141,16 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
     }
 
     /// <inheritdoc/>
+    protected override void Address(string token, string config)
+    {
+        // Сеть подключения едет на него, а пока он не поднят - напрямую: машина в своей сети сидит и без туннеля.
+        if (RouteChoices.Any(choice => string.Equals(choice.Word, config, StringComparison.Ordinal)))
+        {
+            Hold(token, new RuleRoute(new RuleTarget(RuleTarget.Server, config), new RuleTarget(RuleTarget.Direct)));
+        }
+    }
+
+    /// <inheritdoc/>
     protected override RoutingRuleItemViewModel NewRuleRow(string token)
     {
         // Сервер называет только правило, ведущее в туннель: прямое и заблокированное читаются одинаково всеми.

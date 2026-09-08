@@ -46,6 +46,14 @@ public static class ConfigRename
 
         await store.RemoveDomainResolutionsAsync(oldName, ct).ConfigureAwait(false);
 
+        var remembered = await store.ListRememberedRoutesAsync(oldName, ct).ConfigureAwait(false);
+        if (remembered.Count > 0)
+        {
+            await store.SaveRememberedRoutesAsync(newName, remembered, ct).ConfigureAwait(false);
+        }
+
+        await store.RemoveRememberedRoutesAsync(oldName, ct).ConfigureAwait(false);
+
         var state = await store.GetTunnelStateAsync(oldName, ct).ConfigureAwait(false);
         if (state is not null)
         {

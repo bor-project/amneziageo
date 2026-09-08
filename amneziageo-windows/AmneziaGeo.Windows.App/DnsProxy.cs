@@ -456,9 +456,8 @@ internal sealed class DnsProxy
         var addedNew = HasAddedDomains(previous, domains);
         if (_tracker is not null && !ct.IsCancellationRequested)
         {
-            // Actualization: drop domains that left the lists, then seed the ones that were added.
+            // Drops the domains that left the lists; a newly listed one resolves when something first asks for it.
             PruneDepartedDomains();
-            _ = SeedNewDomainsAsync(previous, domains, ct);
         }
 
         return addedNew;
@@ -503,46 +502,6 @@ internal sealed class DnsProxy
             {
                 RouteLog.Note($"prune: dropped {removed} departed domain(s)");
             }
-        }
-    }
-
-    // Best-effort resolve+route of hosts newly added since the previous matcher build.
-    private async Task SeedNewDomainsAsync(IReadOnlyList<GeoDomain> previous, IReadOnlyList<GeoDomain> current, CancellationToken ct)
-    {
-        var tracker = _tracker;
-        if (tracker is null)
-        {
-            return;
-        }
-
-        var old = new HashSet<string>(RuleHosts(previous), StringComparer.Ordinal);
-        var added = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var host in RuleHosts(current))
-        {
-            if (!old.Contains(host) && !tracker.IsTracked(host))
-            {
-                added.Add(host);
-            }
-        }
-
-        if (added.Count == 0)
-        {
-            return;
-        }
-
-        _logger.LogInformation("resolving {Count} newly added domain(s) now, so they work without a first-use delay", added.Count);
-        using var gate = new SemaphoreSlim(8);
-        try
-        {
-            await Task.WhenAll(added.Select(h => ResolveOneAsync(gate, tracker, h, ct)));
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            // Fire-and-forget; the matcher is already swapped.
-            _logger.LogDebug(ex, "the newly added domains could not be resolved up front; they resolve when first used");
         }
     }
 

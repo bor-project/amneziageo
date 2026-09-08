@@ -35,6 +35,27 @@ public class PrivateNetworksTests
     }
 
     [Fact]
+    public void TheNetworksOfATunnel_TakeTheAddressNetworkAlongsideTheAllowedOnes()
+    {
+        var config = "[Interface]\nAddress = 10.9.9.13/24\n[Peer]\nAllowedIPs = 10.9.9.0/24, 192.168.1.0/24";
+        Assert.Equal(["10.9.9.0/24", "192.168.1.0/24"], PrivateNetworks.ForTunnel(config, []));
+    }
+
+    [Fact]
+    public void TheNetworkOfABareAddress_StandsWhileThePeerAllowsEverything()
+    {
+        var config = "[Interface]\nAddress = 10.9.9.13/32\n[Peer]\nAllowedIPs = 0.0.0.0/0";
+        Assert.Equal(["10.9.9.0/24"], PrivateNetworks.ForTunnel(config, []));
+    }
+
+    [Fact]
+    public void ANetworkTheMachineStandsIn_IsLeftOutOfTheTunnelNetworks()
+    {
+        var config = "[Interface]\nAddress = 10.9.9.13/24\n[Peer]\nAllowedIPs = 10.9.9.0/24, 192.168.1.0/24";
+        Assert.Equal(["10.9.9.0/24"], PrivateNetworks.ForTunnel(config, ["192.168.1.47/24"]));
+    }
+
+    [Fact]
     public void ANetworkTheMachineStandsIn_IsFoundAmongItsOwn()
     {
         Assert.True(PrivateNetworks.Overlaps("192.168.1.0/24", ["10.0.110.0/24", "192.168.1.0/24"]));

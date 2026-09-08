@@ -317,9 +317,29 @@ internal sealed class TunnelRunner(
             logger.LogInformation("{Name}: {Ranges} take the tunnel from the start", name, string.Join(", ", namedRanges));
         }
 
+        // The ranges every bucket of the list names, so a network a rule speaks about is left to that rule.
+        var listNamed = GeoMaterializer.NamedRanges(activeList?.Rules ?? geo?.Rules ?? []);
+
+        // The private networks the configuration itself reaches, less the ones this machine stands in.
+        var configNetworks = geoSplit
+            ? PrivateNetworks.ForTunnel(config, routes.LocalSubnets())
+                .Where(network => !resolverRoutes.Contains(network) && !PrivateNetworks.Overlaps(network, listNamed))
+                .ToList()
+            : new List<string>();
+
+        if (configNetworks.Count > 0)
+        {
+            logger.LogInformation("{Name}: {Ranges} are the networks the configuration itself reaches, so they take the tunnel from the start too", name, string.Join(", ", configNetworks));
+        }
+
+        // Verdicts take them as well, or a destination inside one is decided by the list alone.
+        IReadOnlyList<string> proxyRanges = configNetworks.Count > 0
+            ? [.. geo?.Routes ?? [], .. configNetworks]
+            : geo?.Routes ?? [];
+
         // Split starts with those and the resolver infrastructure, and a database destination earns its /32 on
         // contact. Materializing a geo database up front is what put thousands of routes on the adapter.
-        var startupRoutes = geoSplit ? resolverRoutes.Concat(namedRanges).ToList() : geoRoutes;
+        var startupRoutes = geoSplit ? resolverRoutes.Concat(namedRanges).Concat(configNetworks).ToList() : geoRoutes;
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), startupRoutes);
         if (stripV6)
         {
@@ -491,9 +511,9 @@ internal sealed class TunnelRunner(
         var pinnedRoutes = new List<string>(tunnelResolver);
         pinnedRoutes.AddRange(inboundRoutes);
         pinnedRoutes.AddRange(inboundReturn);
-        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
+        var routing = new RoutingCache(applier, liveDestinations, geoSplit, proxyRanges, listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
         // What the previous session used most is taken back from the store: the verdicts an address settled are
-        // taken again under the list in force now, and each route follows the first packet as it always does.
+        // taken again under the list in force now, and each takes its path with the connection.
         routing.SetMemory(new StoredRouteMemory(store, name));
         session.SetCache(routing);
         session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
@@ -568,7 +588,7 @@ internal sealed class TunnelRunner(
             _appGateway = AppGateway.TryStart(
                 TunnelDevice.NameOf(name),
                 apps,
-                matcher.MatchPids,
+                matcher.Owned,
                 GeoIpRanges.Build(geo?.Routes ?? []),
                 GeoIpRanges.Build(listDirect),
                 GeoIpRanges.Build(blockRoutes),

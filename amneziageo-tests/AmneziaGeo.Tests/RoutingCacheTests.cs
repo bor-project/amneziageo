@@ -37,6 +37,8 @@ public sealed class RoutingCacheTests
 
         public int UntunnelCalls { get; private set; }
 
+        public int TunnelBatches { get; private set; }
+
         public bool RouteFails { get; set; }
 
         public bool TunnelFails { get; set; }
@@ -87,6 +89,22 @@ public sealed class RoutingCacheTests
 
             Tunneled.Add(address.ToString());
             return true;
+        }
+
+        public IReadOnlyList<IPAddress> AddTunnel(IReadOnlyList<IPAddress> addresses)
+        {
+            TunnelBatches++;
+            if (TunnelFails)
+            {
+                return [];
+            }
+
+            foreach (var address in addresses)
+            {
+                Tunneled.Add(address.ToString());
+            }
+
+            return addresses;
         }
 
         public void RemoveTunnel(IReadOnlyCollection<IPAddress> addresses)
@@ -891,5 +909,65 @@ public sealed class RoutingCacheTests
         second.Note(Numeric(YandexAddress));
 
         Assert.Equal(new[] { YandexAddress }, applier.Added);
+    }
+
+    [Fact]
+    public async Task Warming_PutsARestoredAddressOnItsRouteWithoutWaitingForAPacket()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], hot: 8);
+        cache.Restore([new RememberedRoute(YandexAddress, nameof(RouteVerdict.Direct), false, false, DateTimeOffset.UtcNow)]);
+
+        await cache.WarmAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
+        Assert.Equal(1, cache.Active);
+    }
+
+    [Fact]
+    public async Task Warming_TakesTheRestoredTunnelAddressesInOneBatch()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: [YandexRange], hot: 8);
+        var now = DateTimeOffset.UtcNow;
+        cache.Restore([
+            new RememberedRoute(YandexAddress, nameof(RouteVerdict.Proxy), false, false, now),
+            new RememberedRoute("77.88.55.243", nameof(RouteVerdict.Proxy), false, false, now),
+        ]);
+
+        await cache.WarmAsync(CancellationToken.None);
+
+        Assert.Equal(2, applier.Tunneled.Count);
+        Assert.Equal(1, applier.TunnelBatches);
+        Assert.Equal(2, cache.Active);
+    }
+
+    [Fact]
+    public async Task Warming_KeepsTheAgeEachDestinationCameBackWith()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange, "8.8.8.0/24"], ttlSeconds: 300, hot: 1);
+        cache.Restore([new RememberedRoute(YandexAddress, nameof(RouteVerdict.Direct), false, false, DateTimeOffset.UtcNow.AddHours(-1))]);
+
+        await cache.WarmAsync(CancellationToken.None);
+        cache.Note(Numeric("8.8.8.8"));
+        cache.Sweep([], Environment.TickCount64);
+
+        Assert.Contains(YandexAddress, applier.Added);
+        Assert.Equal(new[] { YandexAddress }, applier.Removed);
+    }
+
+    [Fact]
+    public async Task Warming_InstallsNothingForADestinationNoRangeNamesAnyMore()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, hot: 8);
+        cache.Restore([new RememberedRoute(YandexAddress, nameof(RouteVerdict.Direct), false, false, DateTimeOffset.UtcNow)]);
+
+        await cache.WarmAsync(CancellationToken.None);
+
+        Assert.Empty(applier.Added);
+        Assert.Equal(0, cache.Active);
     }
 }

@@ -310,8 +310,6 @@
                                        Description="{l:Tr General_SubscriptionAutoRefreshHint}"
                                        IsChecked="{Binding SubscriptionAutoRefresh, Mode=TwoWay}" />
 
-            <Border Classes="rowsep" />
-
             <!-- Срок сервера главнее: поле стоит там, где панель своего не назвала. -->
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"
                   IsEnabled="{Binding SubscriptionIntervalEnabled}">

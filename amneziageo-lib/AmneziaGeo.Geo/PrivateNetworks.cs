@@ -1,4 +1,5 @@
 ﻿using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
 namespace AmneziaGeo.Geo;
@@ -41,6 +42,53 @@ public static class PrivateNetworks
             if (IsNetwork(network) && !found.Contains(network, StringComparer.OrdinalIgnoreCase))
             {
                 found.Add(network);
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Returns the private networks one configuration reaches, less the ones this machine stands in itself.
+    /// </summary>
+    public static IReadOnlyList<string> ForTunnel(string config, IEnumerable<string> local)
+    {
+        var own = local as IReadOnlyCollection<string> ?? [.. local];
+        var found = new List<string>(FromConfig(config));
+        var addresses = TunnelInbound.Ranges(WgConfigEditor.GetAddresses(config), WgConfigEditor.GetAllowedIps(config), true);
+        foreach (var network in addresses)
+        {
+            if (IsNetwork(network) && !found.Contains(network, StringComparer.OrdinalIgnoreCase))
+            {
+                found.Add(network);
+            }
+        }
+
+        return [.. found.Where(network => !Overlaps(network, own))];
+    }
+
+    /// <summary>
+    /// Returns the networks this machine stands in itself.
+    /// </summary>
+    public static IReadOnlyList<string> Local()
+    {
+        var found = new List<string>();
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+            {
+                continue;
+            }
+
+            foreach (var address in nic.GetIPProperties().UnicastAddresses)
+            {
+                var entry = $"{address.Address}/{address.PrefixLength}";
+                if (address.Address.AddressFamily == AddressFamily.InterNetwork
+                    && address.PrefixLength > 0
+                    && !found.Contains(entry, StringComparer.OrdinalIgnoreCase))
+                {
+                    found.Add(entry);
+                }
             }
         }
 

@@ -140,6 +140,30 @@ internal sealed class AppMatcher
     }
 
     /// <summary>
+    /// Whether a pid belongs to the app rules, or null when nothing names the program behind it any more.
+    /// </summary>
+    internal bool? Owned(uint pid)
+    {
+        if (pid == 0)
+        {
+            return null;
+        }
+
+        if (ResolveServicePids().Contains(pid))
+        {
+            return true;
+        }
+
+        var cache = new Dictionary<uint, (string? Path, long Created)>();
+        if (MatchesByImageOrAncestor(pid, SnapshotProcessTree(), cache))
+        {
+            return true;
+        }
+
+        return cache.TryGetValue(pid, out var proc) && proc.Path is not null ? false : null;
+    }
+
+    /// <summary>
     /// Has any matcher.
     /// </summary>
     public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0 || _packages.Count > 0;

@@ -239,28 +239,28 @@
     <value>Keep retrying at a fixed interval while a connection stays inactive.</value>
   </data>
   <data name="General_MultiServer" xml:space="preserve">
-    <value>Several servers</value>
+    <value>Allow several VPNs</value>
   </data>
   <data name="General_MultiServerHint" xml:space="preserve">
-    <value>Keep several tunnels up at once and give every rule a server of its own.</value>
+    <value>Connect to several VPN servers at once.</value>
   </data>
   <data name="General_BalanceInterval" xml:space="preserve">
-    <value>Rebalance every</value>
+    <value>Check interval</value>
   </data>
   <data name="General_BalanceIntervalHint" xml:space="preserve">
-    <value>How often the set is looked over to see whether the rules riding the quickest server should move.</value>
+    <value>How often to check whether a rule should switch to another server.</value>
   </data>
   <data name="General_BalanceStrikes" xml:space="preserve">
-    <value>Silent looks before a handover</value>
+    <value>Checks before a switch</value>
   </data>
   <data name="General_BalanceStrikesHint" xml:space="preserve">
-    <value>How many looks in a row a silent server keeps what rides it; one look is a tunnel being dialled again.</value>
+    <value>How many checks in a row a server answers none of before its rule switches to another.</value>
   </data>
   <data name="General_BalanceMargin" xml:space="preserve">
-    <value>Handover threshold</value>
+    <value>Switch threshold</value>
   </data>
   <data name="General_BalanceMarginHint" xml:space="preserve">
-    <value>Share of the current server's round trip another one answers within to take its rules.</value>
+    <value>How much faster another server answers to have a rule switched to it.</value>
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Retry interval</value>

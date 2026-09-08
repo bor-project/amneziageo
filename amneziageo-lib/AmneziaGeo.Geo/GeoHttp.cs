@@ -25,12 +25,12 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
     {
         try
         {
-            return await http.SendAsync(request, completion, ct);
+            return await http.SendAsync(request, completion, ct).ConfigureAwait(false);
         }
         catch (HttpRequestException ex) when (IsCertificateFailure(ex))
         {
             Report(request.RequestUri?.ToString(), ex);
-            return await _unverified.Value.SendAsync(Clone(request), completion, ct);
+            return await _unverified.Value.SendAsync(Clone(request), completion, ct).ConfigureAwait(false);
         }
     }
 
@@ -49,12 +49,12 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
     {
         try
         {
-            return await http.GetStringAsync(url, ct);
+            return await http.GetStringAsync(url, ct).ConfigureAwait(false);
         }
         catch (HttpRequestException ex) when (IsCertificateFailure(ex))
         {
             Report(url, ex);
-            return await _unverified.Value.GetStringAsync(url, ct);
+            return await _unverified.Value.GetStringAsync(url, ct).ConfigureAwait(false);
         }
     }
 

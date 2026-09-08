@@ -5,7 +5,7 @@ using System.Runtime.Versioning;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Enumerates installed applications from the Windows "Uninstall" registry for the per-app tunneling picker. Read in the UI process so both per-machine (HKLM, 64- and 32-bit) and per-user (HKCU) installs are visible; the agent runs as SYSTEM and would miss the user's HKCU.
+/// Enumerates installed applications for the per-app tunneling picker: the Windows "Uninstall" registry here, the desktop entries on Linux. Read in the UI process so both per-machine (HKLM, 64- and 32-bit) and per-user (HKCU) installs are visible; the agent runs as SYSTEM and would miss the user's HKCU.
 /// </summary>
 internal static class InstalledApps
 {
@@ -17,6 +17,11 @@ internal static class InstalledApps
     /// </summary>
     public static IReadOnlyList<AppCandidate> List()
     {
+        if (OperatingSystem.IsLinux())
+        {
+            return DesktopEntries.List();
+        }
+
         if (!OperatingSystem.IsWindows())
         {
             return [];

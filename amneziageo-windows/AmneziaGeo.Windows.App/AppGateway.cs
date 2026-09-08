@@ -49,7 +49,7 @@ internal sealed class AppGateway : IDisposable
     public static AppGateway? TryStart(
         string tunnelAdapter,
         IReadOnlyList<string> apps,
-        Func<IReadOnlyCollection<uint>, HashSet<uint>>? named,
+        Func<uint, bool?>? owner,
         GeoIpRanges proxy,
         GeoIpRanges direct,
         GeoIpRanges block,
@@ -57,7 +57,7 @@ internal sealed class AppGateway : IDisposable
         int mtu,
         ILogger logger)
     {
-        if (apps.Count == 0 || named is null)
+        if (apps.Count == 0 || owner is null)
         {
             return null;
         }
@@ -83,7 +83,8 @@ internal sealed class AppGateway : IDisposable
             return null;
         }
 
-        var outbound = new GatewayProxyOutbound(named, proxy, direct, block,
+        var unknownRidesTunnel = UnknownRidesTunnel(Environment.GetEnvironmentVariable("AMNEZIAGEO_APP_GATEWAY_UNKNOWN"));
+        var outbound = new GatewayProxyOutbound(owner, unknownRidesTunnel, proxy, direct, block,
             () => Index(tunnelAdapter), () => Physical(tunnelAdapter), logger);
         var server = new LocalProxyServer(outbound, line => logger.LogDebug("apps: {Line}", line), outbound);
         var options = new LocalProxyOptions { Enabled = true, SocksPort = port, HttpPort = port, AllowAnonymous = true };
@@ -109,7 +110,8 @@ internal sealed class AppGateway : IDisposable
         }
 
         logger.LogInformation("{Count} application(s) are carried by their own adapter, and every session on it is "
-            + "decided knowing which program opened it", apps.Count);
+            + "decided knowing which program opened it; a session whose program nothing names {Verdict}",
+            apps.Count, unknownRidesTunnel ? "rides the tunnel" : "leaves past it");
         return new AppGateway(process, server, logger);
     }
 
@@ -213,6 +215,10 @@ internal sealed class AppGateway : IDisposable
         var wanted = Environment.GetEnvironmentVariable("AMNEZIAGEO_APP_GATEWAY_ROUTES");
         return string.IsNullOrWhiteSpace(wanted) ? "0.0.0.0/0" : wanted.Trim();
     }
+
+    // Which side a session whose program nothing names takes; the tunnel is where an app rule would have sent it.
+    internal static bool UnknownRidesTunnel(string? wanted) =>
+        !string.Equals(wanted?.Trim(), "direct", StringComparison.OrdinalIgnoreCase);
 
     // The address the adapter carries, or null when every range is held.
     internal static string? Range(HashSet<int> taken)

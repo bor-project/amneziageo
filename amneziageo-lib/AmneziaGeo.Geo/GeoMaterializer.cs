@@ -59,6 +59,12 @@ public static class GeoMaterializer
     }
 
     /// <summary>
+    /// Ranges the rules name outright, whichever bucket they sit in.
+    /// </summary>
+    public static IReadOnlyList<string> NamedRanges(IReadOnlyList<GeoRule> rules) =>
+        [.. NamedRanges(rules, RouteRole.Proxy), .. NamedRanges(rules, RouteRole.Direct), .. NamedRanges(rules, RouteRole.Block)];
+
+    /// <summary>
     /// Ranges the rules name outright in the given bucket and this tunnel carries of them.
     /// </summary>
     public static IReadOnlyList<string> NamedRanges(IReadOnlyList<GeoRule> rules, RouteRole role, IReadOnlyCollection<string> carried)

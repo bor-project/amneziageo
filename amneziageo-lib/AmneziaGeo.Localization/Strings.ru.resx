@@ -239,28 +239,28 @@
     <value>Повторять попытки с заданным интервалом, пока подключение неактивно.</value>
   </data>
   <data name="General_MultiServer" xml:space="preserve">
-    <value>Несколько серверов</value>
+    <value>Разрешить несколько VPN</value>
   </data>
   <data name="General_MultiServerHint" xml:space="preserve">
-    <value>Держать несколько туннелей одновременно и давать каждому правилу свой сервер.</value>
+    <value>Подключаться к нескольким VPN-серверам одновременно.</value>
   </data>
   <data name="General_BalanceInterval" xml:space="preserve">
-    <value>Пересматривать каждые</value>
+    <value>Интервал проверки</value>
   </data>
   <data name="General_BalanceIntervalHint" xml:space="preserve">
-    <value>Как часто набор пересматривается, не пора ли правилам переехать на другой сервер.</value>
+    <value>Как часто проверять, стоит ли переключить правило на другой сервер.</value>
   </data>
   <data name="General_BalanceStrikes" xml:space="preserve">
-    <value>Молчаливых проверок до передачи</value>
+    <value>Проверок перед переключением</value>
   </data>
   <data name="General_BalanceStrikesHint" xml:space="preserve">
-    <value>Сколько проверок подряд молчащий сервер держит то, что на нём едет; одна проверка - это переподключение туннеля.</value>
+    <value>Сколько проверок подряд сервер должен не отвечать, прежде чем правило переключится на другой.</value>
   </data>
   <data name="General_BalanceMargin" xml:space="preserve">
-    <value>Порог перехода</value>
+    <value>Порог переключения</value>
   </data>
   <data name="General_BalanceMarginHint" xml:space="preserve">
-    <value>Доля отклика текущего сервера, в которую другой должен уложиться, чтобы забрать его правила.</value>
+    <value>Насколько быстрее должен отвечать другой сервер, чтобы переключить на него правило.</value>
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Интервал повтора</value>

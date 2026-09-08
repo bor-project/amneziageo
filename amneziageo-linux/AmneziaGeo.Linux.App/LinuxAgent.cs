@@ -722,7 +722,7 @@ internal sealed class LinuxAgent : IDisposable
                 return await SetConfigExclusionsAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpListLocalSubnets:
-                return new IpcAck(true, string.Join('\n', LocalSubnets()));
+                return new IpcAck(true, string.Join('\n', PrivateNetworks.Local()));
 
             case IpcContract.OpListTunnelSubnets:
                 return new IpcAck(true, string.Join('\n', await ConfigSubnetsAsync(ct).ConfigureAwait(false)));
@@ -783,9 +783,8 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpCollectDiagnostics:
                 return await CollectDiagnosticsAsync(ct).ConfigureAwait(false);
 
-            // Nothing here routes by application: the tunnel is a kernel interface with no per-process verdict.
             case IpcContract.OpListProcesses:
-                return new IpcAck(false, IpcMessage.Key("Agent_PerAppUnsupported"));
+                return ListProcesses();
 
             case IpcContract.OpSetSetting:
                 return await SetSettingAsync(args, ct).ConfigureAwait(false);
@@ -2139,6 +2138,13 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
+    // Running programs for the per-application picker; rows are tab-separated: kind, label, value, detail.
+    private static IpcAck ListProcesses()
+    {
+        var lines = ProcessCatalog.List().Select(e => string.Join('\t', e.Kind, e.Label, e.Value, e.Detail));
+        return new IpcAck(true, string.Join('\n', lines));
+    }
+
     // Counts the routes a rule set would put into the tunnel; a Linux host carries any number of them.
     private async Task<IpcAck> CountRoutesAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -2601,7 +2607,7 @@ internal sealed class LinuxAgent : IDisposable
     // tab, without the ones the machine stands in itself.
     private async Task<IReadOnlyList<string>> ConfigSubnetsAsync(CancellationToken ct)
     {
-        var own = LocalSubnets().ToArray();
+        var own = PrivateNetworks.Local();
         var lines = new List<string>();
         foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
@@ -2620,26 +2626,6 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         return lines;
-    }
-
-    // The machine's connected local subnets, offered to the exclusions editor.
-    private static IEnumerable<string> LocalSubnets()
-    {
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
-            {
-                continue;
-            }
-
-            foreach (var address in nic.GetIPProperties().UnicastAddresses)
-            {
-                if (address.Address.AddressFamily == AddressFamily.InterNetwork && address.PrefixLength > 0)
-                {
-                    yield return $"{address.Address}/{address.PrefixLength}";
-                }
-            }
-        }
     }
 
     private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable

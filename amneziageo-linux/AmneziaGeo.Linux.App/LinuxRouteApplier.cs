@@ -142,6 +142,42 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     }
 
     /// <summary>
+    /// Routes addresses into the tunnel in one batch: the peer takes the whole set in a single request and
+    /// iproute2 the whole set in a single run.
+    /// </summary>
+    public IReadOnlyList<IPAddress> AddTunnel(IReadOnlyList<IPAddress> addresses)
+    {
+        if (addresses.Count == 0 || _peerKey is null)
+        {
+            return [];
+        }
+
+        var cidrs = new List<string>(addresses.Count);
+        foreach (var address in addresses)
+        {
+            cidrs.Add(Cidr(address));
+        }
+
+        if (!AdvertiseMany(cidrs))
+        {
+            return [];
+        }
+
+        foreach (var cidr in cidrs)
+        {
+            _apps?.Unsteer(cidr);
+        }
+
+        if (!RouteMany(cidrs))
+        {
+            Withdraw(cidrs);
+            return [];
+        }
+
+        return addresses;
+    }
+
+    /// <summary>
     /// Withdraws tunnelled addresses: their routes go first, so the traffic falls back to the physical path before
     /// the peer stops carrying them.
     /// </summary>
@@ -237,6 +273,89 @@ internal sealed class LinuxRouteApplier : IRouteApplier
             catch (Exception ex)
             {
                 _log.Error("route", "withdrawing addresses from the engine failed", ex);
+            }
+        }
+    }
+
+    // Hands the peer the whole set at once: the control channel takes a set, not an addition per range.
+    private bool AdvertiseMany(IReadOnlyList<string> cidrs)
+    {
+        if (_peerKey is null)
+        {
+            return false;
+        }
+
+        lock (_sync)
+        {
+            var added = new List<string>(cidrs.Count);
+            foreach (var cidr in cidrs)
+            {
+                if (_live.Add(cidr))
+                {
+                    added.Add(cidr);
+                }
+            }
+
+            if (added.Count == 0)
+            {
+                return true;
+            }
+
+            try
+            {
+                _daemon.ReplaceAllowedIpsAsync(_peerKey, [.. _advertised, .. _live]).GetAwaiter().GetResult();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                foreach (var cidr in added)
+                {
+                    _live.Remove(cidr);
+                }
+
+                _log.Error("route", $"advertising {added.Count} address(es) to the engine failed", ex);
+                return false;
+            }
+        }
+    }
+
+    // Adds the tunnel routes in one iproute2 run.
+    private bool RouteMany(IReadOnlyList<string> cidrs)
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            var lines = new List<string>(cidrs.Count);
+            foreach (var cidr in cidrs)
+            {
+                lines.Add($"route replace {cidr} dev {_iface}");
+            }
+
+            File.WriteAllLines(file, lines);
+            var (exitCode, output) = Shell.RunAsync("ip", CancellationToken.None, "-batch", file).GetAwaiter().GetResult();
+            if (exitCode != 0)
+            {
+                _log.Warn("route", $"routing {cidrs.Count} address(es) into {_iface} failed: {output}");
+                return false;
+            }
+
+            _log.Route($"{cidrs.Count} address(es) into {_iface}");
+            return true;
+        }
+        catch (IOException ex)
+        {
+            _log.Error("route", "writing the batch of tunnel routes failed", ex);
+            return false;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(file);
+            }
+            catch (IOException ex)
+            {
+                _log.Debug("route", $"the batch file {file} stayed behind: {ex.Message}");
             }
         }
     }

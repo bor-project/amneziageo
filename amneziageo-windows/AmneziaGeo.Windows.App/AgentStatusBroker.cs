@@ -26,6 +26,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     protected BrokerScope CurrentScope => _connectionScope.Value ?? (_defaultScope ??= ScopeFor(AppDataRoot.Base()));
 
+    // The tunnel this broker drives.
+    protected AgentControl Control => control;
+
     // Resolve the acting user's data surfaces from the current connection scope.
     private IStateStore store => CurrentScope.Store;
     private ConfigRepository configRepo => CurrentScope.ConfigRepo;

@@ -38,7 +38,7 @@ internal sealed partial class RoutingEditorView : UserControl
     // routing VM's RoutingEditor (MenuFlyout items do not inherit the editor's DataContext).
     private async void OnPickApplication(object? sender, RoutedEventArgs e)
     {
-        await PutPickedAsync(() => PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe"));
+        await PutPickedAsync(() => PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), Extensions()));
     }
 
     private async void OnPickFolder(object? sender, RoutedEventArgs e)
@@ -94,6 +94,9 @@ internal sealed partial class RoutingEditorView : UserControl
         }
     }
 
+    // What a program file is called: a Linux one carries no extension at all.
+    private static string[] Extensions() => OperatingSystem.IsWindows() ? ["exe"] : [];
+
     private async Task<string?> PickFileAsync(string title, params string[] extensions)
     {
         if (TopLevel.GetTopLevel(this) is not { } top)
@@ -106,7 +109,7 @@ internal sealed partial class RoutingEditorView : UserControl
         {
             Title = title,
             AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType(title) { Patterns = patterns }],
+            FileTypeFilter = patterns.Count == 0 ? null : [new FilePickerFileType(title) { Patterns = patterns }],
         };
 
         var files = await top.StorageProvider.OpenFilePickerAsync(options);

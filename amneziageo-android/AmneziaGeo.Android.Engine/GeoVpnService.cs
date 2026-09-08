@@ -480,7 +480,7 @@ public sealed class GeoVpnService : VpnService
             // Live tun replacement from Android 13.
             _liveTun = excludeRoutes && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu;
             var hot = excludeRoutes ? HotDirect() : [];
-            var rules = await MaterializeAsync(plan, servers, _proxyPort > 0, _liveTun ? [] : hot).ConfigureAwait(false);
+            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, _liveTun ? [] : hot).ConfigureAwait(false);
             _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
@@ -791,7 +791,7 @@ public sealed class GeoVpnService : VpnService
     // named belongs. A route table holds addresses and not protocols, so the tun there carries every datagram
     // except the direct ranges it leaves out. Without the relay a name has to become an address here and stay that
     // way for the session: a route table cannot be edited once the tun is established.
-    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot)
+    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
         var direct = relayed ? [] : new List<string>(plan.DirectRoutes);
@@ -809,6 +809,15 @@ public sealed class GeoVpnService : VpnService
         if (local.Count == 0)
         {
             Report("no local subnet found, the tun will carry the network the device sits on as well");
+        }
+
+        // The private networks the configuration itself reaches, less the ones the device stands in.
+        foreach (var network in PrivateNetworks.ForTunnel(config, local))
+        {
+            if (!proxy.Contains(network, StringComparer.OrdinalIgnoreCase))
+            {
+                proxy.Add(network);
+            }
         }
 
         direct.AddRange(local);

@@ -103,6 +103,38 @@ internal sealed class RouteApplier(
     }
 
     /// <summary>
+    /// Routes addresses into the tunnel in one batch: the routes go in one at a time, the advertisement as a single
+    /// request, and no half-open connection is reset - these destinations are taken back before any traffic to them.
+    /// </summary>
+    public IReadOnlyList<IPAddress> AddTunnel(IReadOnlyList<IPAddress> addresses)
+    {
+        var index = TunnelIndex();
+        if (addresses.Count == 0 || index is null || peerPublicKey is null)
+        {
+            return [];
+        }
+
+        var taken = new List<IPAddress>(addresses.Count);
+        var cidrs = new List<string>(addresses.Count);
+        foreach (var address in addresses)
+        {
+            if (routes.AddTunnelRoute(address, index.Value))
+            {
+                taken.Add(address);
+                cidrs.Add(Cidr(address));
+            }
+        }
+
+        if (!uapi.AddAllowedIps(tunnelName, peerPublicKey, cidrs))
+        {
+            routes.RemoveTunnelRoutes(taken, index.Value);
+            return [];
+        }
+
+        return taken;
+    }
+
+    /// <summary>
     /// Withdraws tunnelled addresses: their routes go now, so the traffic falls back to the physical path, and the
     /// advertisements leave with the next batched request.
     /// </summary>

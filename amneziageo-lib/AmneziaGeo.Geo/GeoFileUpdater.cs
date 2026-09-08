@@ -22,8 +22,8 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
     /// </summary>
     public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<GeoDownload>? progress = null, CancellationToken ct = default)
     {
-        var existing = await store.GetGeoFileAsync(source.Name, ct);
-        var fresh = await DownloadAsync(source.Url, existing, progress, ct);
+        var existing = await store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
+        var fresh = await DownloadAsync(source.Url, existing, progress, ct).ConfigureAwait(false);
         if (fresh is null)
         {
             return existing!;
@@ -33,11 +33,11 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
 
         var count = CountEntries(source, data);
 
-        await files.WriteAsync(source.Name, data, ct);
+        await files.WriteAsync(source.Name, data, ct).ConfigureAwait(false);
 
         var sha = Convert.ToHexStringLower(SHA256.HashData(data));
         var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count, etag, lastModified);
-        await store.SaveGeoFileAsync(metadata, ct);
+        await store.SaveGeoFileAsync(metadata, ct).ConfigureAwait(false);
         return metadata;
     }
 
@@ -90,7 +90,7 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
             }
         }
 
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stall.Token);
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stall.Token).ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.NotModified && existing is not null)
         {
             return null;
@@ -107,16 +107,16 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
         var total = response.Content.Headers.ContentLength;
         var lastModified = response.Content.Headers.LastModified?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
 
-        using var source = await response.Content.ReadAsStreamAsync(stall.Token);
+        using var source = await response.Content.ReadAsStreamAsync(stall.Token).ConfigureAwait(false);
         using var buffer = new MemoryStream(total is > 0 and < int.MaxValue ? (int)total : 0);
         var chunk = new byte[81920];
         long read = 0;
         var lastPercent = -1;
         int n;
-        while ((n = await source.ReadAsync(chunk, stall.Token)) > 0)
+        while ((n = await source.ReadAsync(chunk, stall.Token).ConfigureAwait(false)) > 0)
         {
             stall.CancelAfter(_stallTimeout);
-            await buffer.WriteAsync(chunk.AsMemory(0, n), stall.Token);
+            await buffer.WriteAsync(chunk.AsMemory(0, n), stall.Token).ConfigureAwait(false);
             read += n;
             if (total is > 0)
             {

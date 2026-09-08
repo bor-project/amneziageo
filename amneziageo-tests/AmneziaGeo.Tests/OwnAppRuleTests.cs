@@ -18,6 +18,9 @@ public sealed class OwnAppRuleTests
     [InlineData("app:path=C:/Program Files/AmneziaGeo/AmneziaGeo.Windows.Ui.exe")]
     [InlineData("app:svc=AmneziaGeoAgent")]
     [InlineData("app:svc=AmneziaGeo$bor-winlp-lv")]
+    [InlineData("app:path=/usr/lib/amneziageo/AmneziaGeo.Linux.App")]
+    [InlineData("app:path=/usr/lib/amneziageo-gui/AmneziaGeo.Linux.Ui")]
+    [InlineData("app:path=/usr/bin/amneziageo")]
     public void OwnImagesAndServicesAreNamed(string token)
     {
         Assert.True(OwnAppRule.Names(token));

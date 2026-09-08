@@ -26,9 +26,9 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
             rules.Add(rule);
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
         var (routes, domains, apps) = GeoMaterializer.Materialize(rules, index);
-        await store.SaveTunnelGeoAsync(new TunnelGeo(name, on, rules, routes, domains, apps), ct);
+        await store.SaveTunnelGeoAsync(new TunnelGeo(name, on, rules, routes, domains, apps), ct).ConfigureAwait(false);
         return (rules.Count, routes.Count, domains.Count, skipped);
     }
 
@@ -48,8 +48,8 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
             }
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
-        return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index), ct);
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
+        return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index), ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -67,7 +67,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
             }
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
         return MaterializeRoutingList(0, string.Empty, rules, index);
     }
 
@@ -112,11 +112,11 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
     /// </summary>
     public async Task RematerializeAllRoutingListsAsync(CancellationToken ct = default)
     {
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
-        var lists = await store.ListRoutingListsAsync(ct);
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
+        var lists = await store.ListRoutingListsAsync(ct).ConfigureAwait(false);
         foreach (var list in lists)
         {
-            await store.SaveRoutingListAsync(MaterializeRoutingList(list.Id, list.Name, list.Rules, index), ct);
+            await store.SaveRoutingListAsync(MaterializeRoutingList(list.Id, list.Name, list.Rules, index), ct).ConfigureAwait(false);
         }
     }
 
@@ -135,7 +135,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
     /// </summary>
     public async Task<IReadOnlyList<string>> CategoriesAsync(CancellationToken ct = default)
     {
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
         var tokens = new List<string>();
         foreach (var category in index.Categories())
         {
@@ -162,7 +162,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
             return [];
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
         var routes = new List<string>();
         var domains = new List<GeoDomain>();
         GeoMaterializer.Expand(StripPrefix(rule.Value), index, routes, domains);

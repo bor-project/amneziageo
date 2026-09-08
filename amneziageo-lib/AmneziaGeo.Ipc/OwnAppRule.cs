@@ -13,6 +13,10 @@ public static class OwnAppRule
         "amneziageo.windows.app.exe",
         "amneziageo.windows.tray.exe",
         "amneziageo.windows.ui.exe",
+        "amneziageo",
+        "amneziageo.linux.app",
+        "amneziageo.linux.ui",
+        "amneziawg-go",
     ];
 
     /// <summary>
@@ -53,7 +57,7 @@ public static class OwnAppRule
 
     // Where this process runs from, in the same words a rule is written in.
     private static string OwnFolder() =>
-        AppPathToken.Tokenize(AppContext.BaseDirectory.TrimEnd('\\', '/'));
+        AppPathToken.Tokenize(AppContext.BaseDirectory.Replace('/', '\\').TrimEnd('\\'));
 
     // What the token names, without its kind.
     private static string Value(string token)

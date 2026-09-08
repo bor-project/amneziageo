@@ -51,6 +51,22 @@ public sealed class NamedRangesTests
     }
 
     [Fact]
+    public void NamedRanges_TakesEveryBucketAtOnceWhenNoneIsAsked()
+    {
+        List<GeoRule> rules =
+        [
+            new(GeoRuleKind.Cidr, "192.168.1.0/24"),
+            new(GeoRuleKind.Cidr, "10.0.110.0/24", RouteRole.Direct),
+            new(GeoRuleKind.Cidr, "172.16.0.0/12", RouteRole.Block),
+            new(GeoRuleKind.GeoIp, "geoip:ru"),
+        ];
+
+        Assert.Equal(
+            new[] { "192.168.1.0/24", "10.0.110.0/24", "172.16.0.0/12" },
+            GeoMaterializer.NamedRanges(rules));
+    }
+
+    [Fact]
     public void NamedRanges_TakesOnlyTheRangesTheShareCarries()
     {
         List<GeoRule> rules =

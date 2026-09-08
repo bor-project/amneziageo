@@ -13,7 +13,8 @@ namespace AmneziaGeo.Windows.App;
 /// back into the adapter it was terminated on.
 /// </summary>
 internal sealed class GatewayProxyOutbound(
-    Func<IReadOnlyCollection<uint>, HashSet<uint>>? named,
+    Func<uint, bool?>? owner,
+    bool unknownRidesTunnel,
     GeoIpRanges proxy,
     GeoIpRanges direct,
     GeoIpRanges block,
@@ -66,13 +67,13 @@ internal sealed class GatewayProxyOutbound(
             return true;
         }
 
-        if (direct.Contains(address) || source is null || named is null)
+        if (direct.Contains(address) || source is null || owner is null)
         {
             return false;
         }
 
         var pid = TcpTableProbe.OwnerOf(source, destination);
-        var carried = pid != 0 && named([pid]).Contains(pid);
+        var carried = Side(pid);
         logger.LogDebug("the session {Source} to {Destination} belongs to pid {Pid} and {Verdict}",
             source, destination, pid, carried ? "rides the tunnel" : "leaves past it");
         return carried;
@@ -144,16 +145,30 @@ internal sealed class GatewayProxyOutbound(
             return true;
         }
 
-        if (direct.Contains(address) || source is null || named is null)
+        if (direct.Contains(address) || source is null || owner is null)
         {
             return false;
         }
 
         var pid = TcpTableProbe.OwnerOfDatagram(source);
-        var carried = pid != 0 && named([pid]).Contains(pid);
+        var carried = Side(pid);
         logger.LogDebug("the flow from {Source} belongs to pid {Pid} and {Verdict}", source, pid,
             carried ? "rides the tunnel" : "leaves past it");
         return carried;
+    }
+
+    // The side a pid takes: what the rules say about its program, or the policy while nothing names it. A program
+    // that lived for milliseconds is gone before its first datagram is asked about.
+    private bool Side(uint pid)
+    {
+        if (owner!(pid) is { } known)
+        {
+            return known;
+        }
+
+        logger.LogDebug("nothing names the program behind pid {Pid}, so its traffic {Verdict}", pid,
+            unknownRidesTunnel ? "rides the tunnel" : "leaves past it");
+        return unknownRidesTunnel;
     }
 
     private static async Task<IReadOnlyList<IPAddress>> ResolveAsync(string host, CancellationToken ct)

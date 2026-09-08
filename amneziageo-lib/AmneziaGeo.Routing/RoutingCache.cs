@@ -63,6 +63,8 @@ public sealed class RoutingCache
     public const int HotEntries = 2048;
     // How often the hottest entries are written out while the cache runs.
     private const int PersistIntervalMs = 60_000;
+    // Restored destinations installed in one go before the thread is given back.
+    private const int WarmBatch = 128;
 
     private sealed class Entry
     {
@@ -559,8 +561,8 @@ public sealed class RoutingCache
 
     /// <summary>
     /// Takes back the destinations an earlier session held. A verdict an address settled is taken again under the
-    /// list in force now; one a name settled is carried over, because no address range can reach it. Nothing is
-    /// installed here - the route and the filter follow the first packet, as they do for an address seen anew.
+    /// list in force now; one a name settled is carried over, because no address range can reach it. What the
+    /// verdicts ask the system for is installed by the warming pass that follows.
     /// </summary>
     public int Restore(IReadOnlyList<RememberedRoute> routes)
     {
@@ -606,7 +608,7 @@ public sealed class RoutingCache
 
         if (taken > 0)
         {
-            _logger.LogInformation("{Count} destination(s) used before this session are decided again from the start; each takes its route on the first packet, and the {Hot} most recently used are never forgotten while unused",
+            _logger.LogInformation("{Count} destination(s) used before this session are decided again from the start, and the {Hot} most recently used are never forgotten while unused",
                 taken, _hot);
         }
 
@@ -617,6 +619,113 @@ public sealed class RoutingCache
     private static RouteVerdict? Carried(RememberedRoute route)
     {
         return route.ByName && Enum.TryParse<RouteVerdict>(route.Verdict, out var verdict) ? verdict : null;
+    }
+
+    /// <summary>
+    /// Installs what the restored destinations ask for, so traffic resuming to one of them finds its path already
+    /// standing instead of earning it with a packet of its own.
+    /// </summary>
+    public async Task WarmAsync(CancellationToken ct)
+    {
+        var tunnelled = new List<Entry>();
+        var rest = new List<Entry>();
+        foreach (var pair in _entries)
+        {
+            if (Installed(pair.Value))
+            {
+                continue;
+            }
+
+            if (pair.Value.Plan == RoutePlan.Tunnel)
+            {
+                tunnelled.Add(pair.Value);
+            }
+            else if (pair.Value.Plan is RoutePlan.Bypass or RoutePlan.Permit or RoutePlan.Drop)
+            {
+                rest.Add(pair.Value);
+            }
+        }
+
+        var taken = await TunnelAsync(tunnelled, ct).ConfigureAwait(false);
+        taken += await InstallAsync(rest, ct).ConfigureAwait(false);
+        if (taken > 0)
+        {
+            _logger.LogInformation("{Count} destination(s) of the previous session take their path with the connection; {Applied} host route(s) are in use of the {Max} allowed",
+                taken, Volatile.Read(ref _applied), MaxApplied);
+        }
+    }
+
+    // Puts the restored destinations into the tunnel in batches: one advertisement per batch instead of one per
+    // address, and the thread back between them.
+    private async Task<int> TunnelAsync(IReadOnlyList<Entry> entries, CancellationToken ct)
+    {
+        var taken = 0;
+        for (var at = 0; at < entries.Count && !ct.IsCancellationRequested; at += WarmBatch)
+        {
+            var size = Math.Min(Math.Min(WarmBatch, MaxApplied - Volatile.Read(ref _applied)), entries.Count - at);
+            if (size <= 0)
+            {
+                break;
+            }
+
+            var batch = entries.Skip(at).Take(size).ToList();
+            var addresses = new List<IPAddress>(size);
+            foreach (var entry in batch)
+            {
+                addresses.Add(entry.Address);
+            }
+
+            var installed = new HashSet<IPAddress>(_applier.AddTunnel(addresses));
+            foreach (var entry in batch)
+            {
+                if (installed.Contains(entry.Address) && Hold(entry))
+                {
+                    taken++;
+                }
+            }
+
+            await Task.Delay(1, ct).ConfigureAwait(false);
+        }
+
+        return taken;
+    }
+
+    // Installs the restored destinations that ride the physical path, each keeping the age it came back with.
+    private async Task<int> InstallAsync(IReadOnlyList<Entry> entries, CancellationToken ct)
+    {
+        var taken = 0;
+        for (var at = 0; at < entries.Count && !ct.IsCancellationRequested; at++)
+        {
+            Apply(entries[at], Volatile.Read(ref entries[at].LastTouch));
+            if (Installed(entries[at]))
+            {
+                taken++;
+            }
+
+            if ((at + 1) % WarmBatch == 0)
+            {
+                await Task.Delay(1, ct).ConfigureAwait(false);
+            }
+        }
+
+        return taken;
+    }
+
+    // Marks a destination as riding the tunnel after a batch took it there.
+    private bool Hold(Entry entry)
+    {
+        lock (entry)
+        {
+            if (entry.Tunneled)
+            {
+                return false;
+            }
+
+            entry.Tunneled = true;
+            Interlocked.Increment(ref _applied);
+            Interlocked.Increment(ref _installed);
+            return true;
+        }
     }
 
     /// <summary>
@@ -653,7 +762,10 @@ public sealed class RoutingCache
 
         try
         {
-            Restore(await memory.LoadAsync(ct).ConfigureAwait(false));
+            if (Restore(await memory.LoadAsync(ct).ConfigureAwait(false)) > 0)
+            {
+                await WarmAsync(ct).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {

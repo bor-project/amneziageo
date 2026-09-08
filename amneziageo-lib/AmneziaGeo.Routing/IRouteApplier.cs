@@ -39,6 +39,11 @@ public interface IRouteApplier
     bool TryTunnel(IPAddress address);
 
     /// <summary>
+    /// Routes addresses into the tunnel in one batch and advertises them together, reporting the ones that took it.
+    /// </summary>
+    IReadOnlyList<IPAddress> AddTunnel(IReadOnlyList<IPAddress> addresses);
+
+    /// <summary>
     /// Withdraws tunnelled addresses in one batch: their routes now, their advertisements with the next batch.
     /// </summary>
     void RemoveTunnel(IReadOnlyCollection<IPAddress> addresses);

@@ -38,6 +38,8 @@ internal sealed class TunnelController : IDisposable
     private WsCarrier? _carrier;
     private DnsRouter? _dns;
     private RoutingCache? _cache;
+    private IReadOnlyList<string> _configNetworks = [];
+    private IReadOnlyList<string> _appRules = [];
     private IRouteMemory? _memory;
     private AppTunnel? _apps;
     private CancellationTokenSource? _sessionCts;
@@ -150,6 +152,20 @@ internal sealed class TunnelController : IDisposable
                 startupRoutes.Add(named);
             }
         }
+        // The private networks the configuration itself reaches, less the ones this machine stands in and the
+        // ones a rule of the list already names.
+        var listNamed = GeoMaterializer.NamedRanges(routing.Rules);
+        _configNetworks = split
+            ? [.. PrivateNetworks.ForTunnel(resolved, PrivateNetworks.Local()).Where(network => !PrivateNetworks.Overlaps(network, listNamed))]
+            : [];
+        foreach (var network in _configNetworks)
+        {
+            if (!startupRoutes.Contains(network))
+            {
+                startupRoutes.Add(network);
+            }
+        }
+
         // Inbound access: what the tunnel may reach this machine from. Off by default.
         var inboundRoutes = options.Transport?.AllowInbound == true
             ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetAllowedIps(resolved), options.Transport.InboundNetwork)
@@ -235,6 +251,7 @@ internal sealed class TunnelController : IDisposable
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
         _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
             [.. routing.DirectRoutes, .. routing.BlockRoutes], _log, ct).ConfigureAwait(false);
+        _appRules = routing.TunnelApps;
         applier.Attach(_apps);
         if (_apps is not null && !applier.CarryEverything())
         {
@@ -244,7 +261,7 @@ internal sealed class TunnelController : IDisposable
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
         // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
-        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
+        var cache = new RoutingCache(applier, new ProcNet(), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
         _cache = cache;
         if (_memory is { } memory)
         {
@@ -346,13 +363,23 @@ internal sealed class TunnelController : IDisposable
             return false;
         }
 
-        cache.Rebuild(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes);
+        // The matcher is built with the tunnel, so a changed set of applications waits for the next one.
+        if (!new HashSet<string>(_appRules, StringComparer.Ordinal).SetEquals(routing.TunnelApps))
+        {
+            return false;
+        }
+
+        cache.Rebuild(Proxied(routing), routing.DirectRoutes, routing.BlockRoutes);
         _dns?.ApplyRules(routing);
         Mode = _split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
         RoutingMode = Token(_split, routing.HasRules);
         ListName = routing.ListName;
         return true;
     }
+
+    // The ranges that ride the tunnel: what the list names and the networks the configuration reaches.
+    private IReadOnlyList<string> Proxied(TunnelRouting routing) =>
+        _configNetworks.Count == 0 ? routing.ProxyRoutes : [.. routing.ProxyRoutes, .. _configNetworks];
 
     /// <summary>
     /// Tears the tunnel down; the interface goes with the daemon process.
@@ -384,6 +411,7 @@ internal sealed class TunnelController : IDisposable
         if (_apps is { } apps)
         {
             _apps = null;
+            _appRules = [];
             await apps.StopAsync().ConfigureAwait(false);
             apps.Dispose();
         }

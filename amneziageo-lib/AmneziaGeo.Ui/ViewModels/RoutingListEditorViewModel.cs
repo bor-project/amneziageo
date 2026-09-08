@@ -608,7 +608,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// <summary>
     /// True when the per-application entry method is offered (Windows path matching or the Android package picker).
     /// </summary>
-    public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsAndroid();
+    public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsAndroid();
 
     /// <summary>
     /// True while the application method is pickable: the Proxy bucket everywhere, the Direct bucket where an
@@ -638,7 +638,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// <summary>
     /// True when applications are named by path: the file and folder pickers stand there.
     /// </summary>
-    public bool IsAppSourceWindows => OperatingSystem.IsWindows();
+    public bool IsAppSourcePath => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
 
     /// <summary>
     /// True when the app source is the Android installed-app picker.
@@ -1136,7 +1136,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     {
         RuleInput = string.Empty;
         UpdateMatchedSuggestions();
-        if (value == "app" && IsAppSourceWindows && _appGroups.Count == 0)
+        if (value == "app" && IsAppSourcePath && _appGroups.Count == 0)
         {
             _ = LoadAppsAsync();
         }
@@ -1386,12 +1386,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             }
             else
             {
-                // Default an app to its containing folder, hoisted above a versioned subfolder so the rule
-                // survives the app's auto-update into a new version folder (#204).
-                var dir = System.IO.Path.GetDirectoryName(value);
-                token = !string.IsNullOrEmpty(dir)
-                    ? $"app:dir={AppPathToken.StripVersionedLeaf(dir)}"
-                    : $"app:path={value}";
+                token = OperatingSystem.IsLinux() ? $"app:path={value}" : Folder(value);
                 display = Loc.Instance.Get("RoutingEditor_AppKindApplication", label);
             }
 
@@ -1399,6 +1394,16 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         }
 
         return candidates;
+    }
+
+    // An application taken by its containing folder, hoisted above a versioned subfolder so the rule survives
+    // the app's auto-update into a new version folder (#204).
+    private static string Folder(string image)
+    {
+        var dir = System.IO.Path.GetDirectoryName(image);
+        return string.IsNullOrEmpty(dir)
+            ? $"app:path={image}"
+            : $"app:dir={AppPathToken.StripVersionedLeaf(dir)}";
     }
 
     /// <summary>
@@ -1470,6 +1475,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     // Rejects matchers that would tunnel far more than one app.
+    // Folders of a Linux machine that carry its programs rather than one application.
+    private static readonly string[] SystemDirectories =
+    [
+        "\\bin", "\\sbin", "\\lib", "\\opt", "\\snap", "\\usr", "\\usr\\bin", "\\usr\\sbin", "\\usr\\lib",
+        "\\usr\\local", "\\usr\\local\\bin", "\\usr\\share",
+    ];
+
     private static bool IsAppMatcherSafe(string token, out string reason)
     {
         reason = string.Empty;
@@ -1509,6 +1521,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             || norm.Contains("\\edgewebview\\", StringComparison.Ordinal))
         {
             reason = Loc.Instance.Get("RoutingEditor_WebViewHostTooBroad");
+            return false;
+        }
+
+        // A folder that holds the programs of a whole machine names them all.
+        if (SystemDirectories.Contains(norm))
+        {
+            reason = Loc.Instance.Get("RoutingEditor_PathTooBroad");
             return false;
         }
 

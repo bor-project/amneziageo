@@ -9,26 +9,32 @@ namespace AmneziaGeo.Windows.App;
 internal static class InboundFirewall
 {
     /// <summary>
-    /// Opens the firewall at the given addresses and returns whether the rule stands.
+    /// Opens the firewall at the given addresses for the ranges the tunnel carries and returns whether the rule
+    /// stands. Nothing outside those ranges reaches the machine through it.
     /// </summary>
-    public static bool Allow(string name, IReadOnlyList<string> addresses, ILogger logger)
+    public static bool Allow(string name, IReadOnlyList<string> addresses, IReadOnlyList<string> ranges, ILogger logger)
     {
-        if (addresses.Count == 0)
+        if (addresses.Count == 0 || ranges.Count == 0)
         {
             return false;
         }
 
         Remove(name, logger);
         var local = string.Join(',', addresses);
-        if (!Netsh($"advfirewall firewall add rule name=\"{RuleName(name)}\" dir=in action=allow localip={local} profile=any", logger))
+        var remote = string.Join(',', ranges);
+        if (!Netsh(Rule(name, local, remote), logger))
         {
             logger.LogWarning("{Name}: the firewall rule for access from the tunnel could not be written, so this machine may stay unreachable at its tunnel address", name);
             return false;
         }
 
-        logger.LogInformation("{Name}: this machine answers what arrives at {Addresses} inside the tunnel", name, local);
+        logger.LogInformation("{Name}: this machine answers what arrives at {Addresses} from {Ranges} inside the tunnel", name, local, remote);
         return true;
     }
+
+    // The rule as netsh takes it: what arrives at these addresses of the machine from these ranges alone.
+    internal static string Rule(string name, string local, string remote) =>
+        $"advfirewall firewall add rule name=\"{RuleName(name)}\" dir=in action=allow localip={local} remoteip={remote} profile=any";
 
     /// <summary>
     /// Drops the rule.

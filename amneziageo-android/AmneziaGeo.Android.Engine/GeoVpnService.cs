@@ -144,6 +144,9 @@ public sealed class GeoVpnService : VpnService
     private const int OwnerNamed = 2;
     private const int OwnerHoldMs = 3_000;
     private const int OwnersHeld = 4096;
+    // How long an address refused by name waits before the engine takes it, so a burst of them costs one rebuild.
+    private const int RefusedDelayMs = 1_000;
+    private const int RefusedHeld = 1024;
     private const int ExitDelayMs = 1_000;
 
     // Ends the process after the service is gone. An empty cached process keeps the whole runtime resident, and the
@@ -153,6 +156,9 @@ public sealed class GeoVpnService : VpnService
     private readonly ConcurrentDictionary<int, string> _packages = new();
     private readonly ConcurrentDictionary<ulong, (int Verdict, long Until)> _owners = new();
     private readonly HashSet<string> _tunnelApps = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
+    private string _verdicts = string.Empty;
+    private int _refusing;
     private int _handle = -1;
     private int _proxyPort;
     private ConnectivityManager? _connectivity;
@@ -474,7 +480,7 @@ public sealed class GeoVpnService : VpnService
             }
 
             var servers = DnsServers(resolved);
-            var relay = NeedsRelay(plan) ? new ProxyRelay(plan, Protect, Report, ResolveOwner) : null;
+            var relay = NeedsRelay(plan) ? new ProxyRelay(plan, Protect, Report, ResolveOwner, Refuse) : null;
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
             // Live tun replacement from Android 13.
@@ -530,6 +536,7 @@ public sealed class GeoVpnService : VpnService
             // The protector goes in before the ranges: a direct datagram sent on an unprotected socket comes
             // straight back into the tun.
             AwgEngine.SetProtector(handle, Protect);
+            _verdicts = rules.Verdicts;
             if (rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts))
             {
                 Report($"{plan.BlockRoutes.Count} blocked and {plan.DirectRoutes.Count} direct range(s) handed to "
@@ -2037,6 +2044,58 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Applies the idle window to both caches.
+    // Takes the address behind a name the relay refused: the engine refuses its datagrams too, so a name in the
+    // block list is not walked around over QUIC.
+    private void Refuse(System.Net.IPAddress address)
+    {
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork || _verdicts.Length == 0)
+        {
+            return;
+        }
+
+        lock (_refused)
+        {
+            if (_refused.Count >= RefusedHeld || !_refused.Add(address.ToString()))
+            {
+                return;
+            }
+        }
+
+        if (Interlocked.Exchange(ref _refusing, 1) == 0)
+        {
+            _ = Task.Run(HandRefusedAsync);
+        }
+    }
+
+    // Hands what has gathered to the engine in one go.
+    private async Task HandRefusedAsync()
+    {
+        await Task.Delay(RefusedDelayMs).ConfigureAwait(false);
+        Interlocked.Exchange(ref _refusing, 0);
+        var handle = _handle;
+        string[] addresses;
+        lock (_refused)
+        {
+            addresses = [.. _refused];
+        }
+
+        if (handle < 0 || addresses.Length == 0)
+        {
+            return;
+        }
+
+        var spec = new StringBuilder(_verdicts);
+        foreach (var address in addresses)
+        {
+            spec.Append('\n').Append(address).Append("/32=block");
+        }
+
+        if (AwgEngine.SetVerdicts(handle, spec.ToString()))
+        {
+            Report($"{addresses.Length} address(es) behind blocked names are refused to datagrams as well");
+        }
+    }
+
     private void ApplyRouteTtl()
     {
         var seconds = VpnBridge.ReadRouteTtl();
@@ -2077,6 +2136,12 @@ public sealed class GeoVpnService : VpnService
         _proxyEnd = null;
         _packages.Clear();
         _owners.Clear();
+        _verdicts = string.Empty;
+        lock (_refused)
+        {
+            _refused.Clear();
+        }
+
         _carrier?.Dispose();
         _carrier = null;
         if (_handle >= 0)

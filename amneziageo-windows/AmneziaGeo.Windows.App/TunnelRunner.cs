@@ -789,7 +789,9 @@ internal sealed class TunnelRunner(
         logger.LogDebug("{Name}: routes in place - the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
-        var inboundOpened = InboundFirewall.Allow(name, inboundAddresses, logger);
+        // The rule takes the ranges the tunnel carries, so the address of the machine is open to them alone.
+        var inboundOpened = InboundFirewall.Allow(name, inboundAddresses,
+            [.. inboundRoutes.Concat(inboundReturn).Distinct(StringComparer.OrdinalIgnoreCase)], logger);
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;

@@ -51,6 +51,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private readonly Func<int, bool> _protect;
     private readonly Action<string> _log;
     private readonly Func<IPEndPoint, IPEndPoint?, string?>? _owner;
+    private readonly Action<IPAddress>? _refuse;
     private readonly RouteVerdict _undecided;
     private readonly string _mode;
     private readonly string _rules;
@@ -67,7 +68,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public ProxyRelay(GeoRoutingPlan plan, Func<int, bool> protect, Action<string> log, Func<IPEndPoint, IPEndPoint?, string?>? owner)
+    public ProxyRelay(GeoRoutingPlan plan, Func<int, bool> protect, Action<string> log, Func<IPEndPoint, IPEndPoint?, string?>? owner, Action<IPAddress>? refuse = null)
     {
         _proxyNames = new DomainMatcher(plan.ProxyDomains);
         _directNames = new DomainMatcher(plan.DirectDomains);
@@ -86,6 +87,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         _protect = protect;
         _log = log;
         _owner = owner;
+        _refuse = refuse;
     }
 
     /// <summary>
@@ -368,6 +370,12 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             if (entry.Verdict == RouteVerdict.Block)
             {
                 Interlocked.Increment(ref _blocked);
+                // The stream names the address behind the blocked name, so a datagram to it is refused as well.
+                if (request.Destination is { } refused && !string.Equals(entry.Host, refused.Address.ToString(), StringComparison.Ordinal))
+                {
+                    _refuse?.Invoke(refused.Address);
+                }
+
                 if (!request.Transparent)
                 {
                     await SendAsync(client, "HTTP/1.1 403 Forbidden\r\n\r\n", ct).ConfigureAwait(false);

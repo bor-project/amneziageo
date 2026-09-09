@@ -1,9 +1,9 @@
 [submodule "amneziageo-windows/amneziawg-windows"]
 	path = amneziageo-windows/amneziawg-windows
-	url = https://github.com/amnezia-vpn/amneziawg-windows.git
+	url = https://github.com/bor-project/amneziawg-windows.git
 [submodule "amneziageo-android/amneziawg-go"]
 	path = amneziageo-android/amneziawg-go
-	url = https://github.com/amnezia-vpn/amneziawg-go.git
+	url = https://github.com/bor-project/amneziawg-go.git
 [submodule "amneziageo-windows/sing-tun"]
 	path = amneziageo-windows/sing-tun
 	url = https://github.com/bor-project/sing-tun.git

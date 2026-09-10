@@ -505,13 +505,14 @@ public sealed class RoutingCache
     /// <summary>
     /// Swaps the rule sets after a live list edit and decides every destination already held against them, moving
     /// the ones that changed side there and then. Without this a rule change would reach an address in use only
-    /// once its traffic stopped for the whole idle window - which under load never happens.
+    /// once its traffic stopped for the whole idle window - which under load never happens. A held address a name
+    /// settles is decided by <paramref name="byName"/>, the rest by the ranges.
     /// </summary>
-    public void Rebuild(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block)
+    public void Rebuild(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, Func<IPAddress, RouteVerdict>? byName = null)
     {
         var rules = Build(proxy, direct, block, Volatile.Read(ref _rules).Generation + 1);
         Volatile.Write(ref _rules, rules);
-        var moved = Redecide(rules);
+        var moved = Redecide(rules, byName);
         _logger.LogInformation("routing rules reloaded: {Proxy} tunnel, {Direct} direct, {Block} blocked range(s); {Moved} destination(s) in use changed side at once, the rest keep the path they had",
             rules.Proxy.Count, rules.Direct.Count, rules.Block.Count, moved);
     }
@@ -853,10 +854,9 @@ public sealed class RoutingCache
         Install(entry, now);
     }
 
-    // Decides every held destination against the rules just installed and moves the ones that changed side.
-    // A verdict a name settled goes with the old rules: the name decides again on its next answer, and until
-    // then the ranges own the address.
-    private int Redecide(RuleSet rules)
+    // Decides every held destination against the rules just installed, by its name where the name rules settle it
+    // and by the ranges otherwise, and moves the ones that changed side.
+    private int Redecide(RuleSet rules, Func<IPAddress, RouteVerdict>? byName)
     {
         var moved = 0;
         var now = Environment.TickCount64;
@@ -869,8 +869,9 @@ public sealed class RoutingCache
                 continue;
             }
 
-            entry.ByName = false;
-            var verdict = Evaluate(rules, entry.Numeric);
+            var named = byName?.Invoke(entry.Address) ?? RouteVerdict.None;
+            entry.ByName = named != RouteVerdict.None;
+            var verdict = entry.ByName ? named : Evaluate(rules, entry.Numeric);
             if (verdict == entry.Verdict)
             {
                 continue;

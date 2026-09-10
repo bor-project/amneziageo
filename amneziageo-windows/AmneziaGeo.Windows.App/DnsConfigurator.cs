@@ -15,11 +15,6 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 {
-    /// <summary>
-    /// Reads every adapter's resolvers into a deduped pool (gateway adapter's first), so the proxy can race
-    /// non-geo queries across all providers - a multi-WAN box where one provider censors a name is answered
-    /// by another.
-    /// </summary>
     // A machine sends its lookups to one place, so a record another tunnel left is not the redirect in force.
     // Left where it is, it would be put back over this one and take the machine's name lookups off the tunnel
     // holding them.
@@ -38,15 +33,24 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
     }
 
+    /// <summary>
+    /// Reads every adapter's resolvers into a deduped pool (gateway adapter's first), so the proxy can race
+    /// non-geo queries across all providers - a multi-WAN box where one provider censors a name is answered
+    /// by another. An adapter the loopback redirect holds answers with the servers it has of its own.
+    /// </summary>
     public IReadOnlyList<string> CaptureUpstream()
     {
+        var recorded = RecordedServers();
         var gateway = new List<string>();
         var others = new List<string>();
         foreach (var adapter in Adapters())
         {
             using (adapter)
             {
-                var dns = (adapter["DNSServerSearchOrder"] as string[] ?? []).Where(s => !IsLoopback(s)).ToArray();
+                var live = adapter["DNSServerSearchOrder"] as string[] ?? [];
+                var dns = AdapterGuid(adapter) is { } guid
+                    ? OwnResolvers(live, recorded.GetValueOrDefault(guid, Array.Empty<string>()), DhcpServers(V4InterfacesKey, guid))
+                    : OwnResolvers(live, [], []);
                 if (dns.Length == 0)
                 {
                     continue;
@@ -67,6 +71,47 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
 
         return pool;
+    }
+
+    /// <summary>
+    /// The resolvers an adapter has of its own: its live list, or while the loopback redirect holds it the servers
+    /// the record kept for it, else those its DHCP lease offers.
+    /// </summary>
+    internal static string[] OwnResolvers(string[] live, string[] recorded, string[] dhcp)
+    {
+        var own = live.Where(s => !IsLoopback(s)).ToArray();
+        if (own.Length > 0 || !live.Any(IsLoopback))
+        {
+            return own;
+        }
+
+        var kept = recorded.Where(s => !IsLoopback(s)).ToArray();
+        return kept.Length > 0 ? kept : [.. dhcp.Where(s => !IsLoopback(s))];
+    }
+
+    // The IPv4 servers each recorded adapter had before the redirect, by GUID, from every tunnel's record.
+    private Dictionary<string, string[]> RecordedServers()
+    {
+        var recorded = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in TunnelPaths.DnsStateFiles())
+        {
+            try
+            {
+                foreach (var entry in DnsStateFile.Read(file).Entries)
+                {
+                    if (entry.Guid is { } guid && !recorded.ContainsKey(guid))
+                    {
+                        recorded[guid] = Resolve(entry, guid).V4;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "the DNS record {File} could not be read; the adapters it names answer with their DHCP servers", Path.GetFileName(file));
+            }
+        }
+
+        return recorded;
     }
 
     /// <summary>

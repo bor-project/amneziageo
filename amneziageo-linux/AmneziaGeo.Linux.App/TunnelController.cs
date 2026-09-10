@@ -369,8 +369,9 @@ internal sealed class TunnelController : IDisposable
             return false;
         }
 
-        cache.Rebuild(Proxied(routing), routing.DirectRoutes, routing.BlockRoutes);
+        // Names take the edit first: the rebuild decides each held address by the name it came with.
         _dns?.ApplyRules(routing);
+        cache.Rebuild(Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, address => _dns?.VerdictOf(address) ?? RouteVerdict.None);
         Mode = _split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
         RoutingMode = Token(_split, routing.HasRules);
         ListName = routing.ListName;

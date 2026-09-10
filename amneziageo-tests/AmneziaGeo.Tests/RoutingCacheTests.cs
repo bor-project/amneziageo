@@ -970,4 +970,30 @@ public sealed class RoutingCacheTests
         Assert.Empty(applier.Added);
         Assert.Equal(0, cache.Active);
     }
+
+    [Fact]
+    public void ARebuild_MovesAHeldAddressToTheSideItsNameNowAsksFor()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        cache.Rebuild([], [], [], _ => RouteVerdict.Direct);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Untunneled);
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
+
+    [Fact]
+    public void ARebuild_KeepsInTheTunnelAnAddressItsNameStillSendsThere()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        cache.Rebuild([], [], [], _ => RouteVerdict.Proxy);
+
+        Assert.Empty(applier.Untunneled);
+        Assert.Equal(RouteVerdict.Proxy, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
 }

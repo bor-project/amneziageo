@@ -67,6 +67,14 @@ internal sealed class DnsRouter : IDisposable
     }
 
     /// <summary>
+    /// The verdict the name rules give an address by the name it was resolved from; None when no name settles it.
+    /// </summary>
+    public RouteVerdict VerdictOf(IPAddress address)
+    {
+        return _names.TryGetValue(address.ToString(), out var name) ? Decide(name) : RouteVerdict.None;
+    }
+
+    /// <summary>
     /// Takes the edited rules over; the next lookup is answered by them.
     /// </summary>
     public void ApplyRules(TunnelRouting routing)

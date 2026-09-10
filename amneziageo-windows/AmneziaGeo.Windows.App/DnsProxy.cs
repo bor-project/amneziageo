@@ -303,9 +303,9 @@ internal sealed class DnsProxy
     /// </summary>
     public async Task<IReadOnlyList<string>> CarryAsync(string name)
     {
-        if (!_matcher.IsTunneled(name))
+        if (NameVerdict(name) != RouteVerdict.Proxy)
         {
-            _logger.LogDebug("{Name}: no rule of this tunnel names it, so it is not carried here", name);
+            _logger.LogDebug("{Name}: no rule of this tunnel sends it through the tunnel, so it is not carried here", name);
             return [];
         }
 
@@ -391,6 +391,9 @@ internal sealed class DnsProxy
         _bypass.Clear();
 
         _logger.LogInformation("direct and blocked names reloaded without reconnecting: {Local} local suffix(es), {Block} blocked rule(s) now in effect", locals.Count, blockDomains.Count);
+
+        // A tracked name a Direct or Block rule now claims leaves the tunnel at once.
+        PruneDepartedDomains();
         return true;
     }
 
@@ -411,6 +414,41 @@ internal sealed class DnsProxy
         }
 
         return _matcher.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
+    }
+
+    /// <summary>
+    /// Where the name rules send a lookup ahead of the tunnel rules.
+    /// </summary>
+    internal enum NamePath
+    {
+        /// <summary>
+        /// Left to the tunnel rules.
+        /// </summary>
+        Open,
+
+        /// <summary>
+        /// A name of the own network, asked of its resolver.
+        /// </summary>
+        Lan,
+
+        /// <summary>
+        /// A name a Direct rule claims, kept off the tunnel.
+        /// </summary>
+        Direct,
+    }
+
+    /// <summary>
+    /// The path of a lookup ahead of the tunnel rules; a Direct name stays off the tunnel with or without the own
+    /// network's resolver.
+    /// </summary>
+    internal NamePath PathOf(string name)
+    {
+        if (_lanUpstream is not null && IsLocalName(name))
+        {
+            return NamePath.Lan;
+        }
+
+        return _hasDirectDomains && _directMatcher.IsTunneled(name) ? NamePath.Direct : NamePath.Open;
     }
 
     // Suffixes as the local check wants them: trimmed, dotless at the ends, lower case.
@@ -472,37 +510,63 @@ internal sealed class DnsProxy
 
     private static string DomainKey(GeoDomain domain) => string.Concat(domain.Kind.ToString(), "|", domain.Value);
 
-    // Removes tracked domains that no longer match any current routing rule. Union semantics of the
-    // materialized set mean a domain contributed by several rules/categories survives until the LAST
-    // one drops it - so "youtube in 3 lists" is only untracked when none of them list it anymore.
+    // Takes out of the tunnel the tracked domains the name rules no longer send there; one a Block or Direct rule
+    // now claims gives its addresses that verdict at once.
     private void PruneDepartedDomains()
     {
         var tracker = _tracker;
-        var matcher = _matcher;
         if (tracker is null)
         {
             return;
         }
 
         var removed = 0;
-        foreach (var host in tracker.TrackedHosts())
+        foreach (var (host, verdict) in Departed(tracker.TrackedHosts()))
         {
-            if (!matcher.IsTunneled(host))
+            var ips = verdict is RouteVerdict.Direct or RouteVerdict.Block ? tracker.KnownIps(host) : null;
+            tracker.Remove(host);
+            _lastRevalidate.TryRemove(host, out _);
+            removed++;
+            if (ips is null || _routing is not { } routing)
             {
-                tracker.Remove(host);
-                _lastRevalidate.TryRemove(host, out _);
-                removed++;
+                continue;
+            }
+
+            foreach (var ip in ips)
+            {
+                if (IPAddress.TryParse(ip, out var address))
+                {
+                    routing.Note(address, verdict);
+                }
             }
         }
 
         if (removed > 0)
         {
-            _logger.LogInformation("{Count} domain(s) left the rules and were taken out of the tunnel", removed);
+            _logger.LogInformation("{Count} domain(s) left the rules or went to a direct or block rule, and were taken out of the tunnel", removed);
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"prune: dropped {removed} departed domain(s)");
             }
         }
+    }
+
+    /// <summary>
+    /// The tracked domains the name rules no longer send through the tunnel, each with the verdict that takes over.
+    /// </summary>
+    internal IReadOnlyList<(string Host, RouteVerdict Verdict)> Departed(IEnumerable<string> hosts)
+    {
+        var departed = new List<(string Host, RouteVerdict Verdict)>();
+        foreach (var host in hosts)
+        {
+            var verdict = NameVerdict(host);
+            if (verdict != RouteVerdict.Proxy)
+            {
+                departed.Add((host, verdict));
+            }
+        }
+
+        return departed;
     }
 
     // Resolvable rule hosts (full/domain) of a materialized domain set, normalized.
@@ -627,8 +691,12 @@ internal sealed class DnsProxy
                 return;
             }
 
-            // Local/LAN names resolve via the LAN resolver and stay off the tunnel.
-            var isLocal = name is not null && _lanUpstream is not null && IsLocalName(name);
+            // Local/LAN names resolve via the LAN resolver and stay off the tunnel, and so does a Direct name
+            // whatever proxy rule names it too.
+            var path = name is null ? NamePath.Open : PathOf(name);
+            var isLocal = path == NamePath.Lan;
+            var direct = path == NamePath.Direct;
+            var kept = path != NamePath.Open;
 
             // Negative cache: a name already proven to be in no geo rule bypasses the matcher and the tunnel.
             var bypassed = name is not null && IsBypassed(name);
@@ -636,25 +704,25 @@ internal sealed class DnsProxy
             // App-tunnel: a name recently queried by a matched app resolves through the tunnel and routes its
             // answer, even with no geo rule. Its decision comes from DNS-Client ETW, not the geo matcher, so it
             // overrides the bypass negative-cache.
-            var appDns = name is not null && !isLocal && _appDns is not null && _appDns.IsTunneled(name);
+            var appDns = name is not null && !kept && _appDns is not null && _appDns.IsTunneled(name);
 
             // Matched names resolve via the clean tunnel resolver; others use the local resolver.
-            var geoMatch = !isLocal && !bypassed && name is not null ? _matcher.Match(name) : null;
+            var geoMatch = !kept && !bypassed && name is not null ? _matcher.Match(name) : null;
             var matched = geoMatch is not null || appDns;
 
             // A name no rule here matches may still be named by a rule riding another tunnel of the set. This
             // machine looks addresses up in one place, so that tunnel never sees the name: it is handed over.
-            var lentTo = !isLocal && !bypassed && !matched && name is not null ? _lentOwner?.Invoke(name) : null;
+            var lentTo = !kept && !bypassed && !matched && name is not null ? _lentOwner?.Invoke(name) : null;
 
             // Remember a non-local miss so the matcher isn't re-run for it until the lists change. An app-tunnel
             // name is matched, so it is never bypassed.
-            if (name is not null && !isLocal && !bypassed && !matched && lentTo is null)
+            if (name is not null && !kept && !bypassed && !matched && lentTo is null)
             {
                 MarkBypassed(name);
             }
 
             // Why this name is treated the way it is, spelled out for the log line below.
-            var decision = DecisionLabel(isLocal, appDns, geoMatch);
+            var decision = DecisionLabel(isLocal, direct, appDns, geoMatch);
 
             byte[] response;
             var fromCache = false;
@@ -696,7 +764,7 @@ internal sealed class DnsProxy
                 outcome = $"answered from its {known.Count} known address(es), already in the tunnel - checking in the background that they still respond";
             }
             else if (matched && type == TypeA && _tracker is not null
-                     && await _tracker.TryHydrateFromCacheAsync(name!, n => _matcher.IsTunneled(n)).ConfigureAwait(false) is { Count: > 0 } hydrated)
+                     && await _tracker.TryHydrateFromCacheAsync(name!, n => NameVerdict(n) == RouteVerdict.Proxy).ConfigureAwait(false) is { Count: > 0 } hydrated)
             {
                 // Not in memory but cached in the DB from an earlier session: restore that last-good set and its
                 // routes without hitting the (lossy) tunnel resolver, then background-probe it as with a
@@ -749,7 +817,7 @@ internal sealed class DnsProxy
                         name, TypeLabel(type), decision, ResolverLabel(isLocal, matched, lanRace, upstream), result.Error.Message);
                     if (RouteLog.Enabled && name is not null && result.Leader)
                     {
-                        RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
+                        RouteLog.Note(FormatRouteQuery(name, type, isLocal, direct, matched, appDns, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
                     }
 
                     // Answer SERVFAIL instead of dropping the query, so the client fails fast and
@@ -772,7 +840,7 @@ internal sealed class DnsProxy
                 // The app-tunnel mark can land while this local forward was in flight. If the name flipped to
                 // app-tunneled, don't serve or cache the local (possibly poisoned) answer: drop it and fail
                 // transient so the app's retry resolves through the tunnel instead.
-                if (!matched && name is not null && _appDns is not null && _appDns.IsTunneled(name))
+                if (!matched && !kept && name is not null && _appDns is not null && _appDns.IsTunneled(name))
                 {
                     InvalidateName(name);
                     var servfail = DnsMessage.BuildServFail(query);
@@ -805,7 +873,7 @@ internal sealed class DnsProxy
                 // Routing-log line for a real resolution, written only by the coalescing leader.
                 if (RouteLog.Enabled && name is not null && result.Leader)
                 {
-                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, addresses, failure: null));
+                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, direct, matched, appDns, geoMatch, upstream, started, addresses, failure: null));
                 }
 
                 outcome = rescued
@@ -1390,10 +1458,10 @@ internal sealed class DnsProxy
     }
 
     // Routing-log line: resolved addresses, upstream, matched rule, round-trip time.
-    private static string FormatRouteQuery(string name, int type, bool isLocal, bool matched, bool appDns, DomainMatcher.GeoMatch? geoMatch, IPAddress upstream, long startedTimestamp, IReadOnlyList<string>? ips, string? failure)
+    private static string FormatRouteQuery(string name, int type, bool isLocal, bool direct, bool matched, bool appDns, DomainMatcher.GeoMatch? geoMatch, IPAddress upstream, long startedTimestamp, IReadOnlyList<string>? ips, string? failure)
     {
         var ms = ElapsedMs(startedTimestamp);
-        var decision = isLocal ? "LAN" : matched ? "TUNNEL" : "LOCAL";
+        var decision = isLocal ? "LAN" : direct ? "DIRECT" : matched ? "TUNNEL" : "LOCAL";
         var rule = matched && geoMatch is { } gm ? "  rule=" + RuleLabel(gm) : matched && appDns ? "  rule=app" : string.Empty;
         if (failure is not null)
         {
@@ -1426,11 +1494,16 @@ internal sealed class DnsProxy
     };
 
     // Why this name is sent where it is sent, in words.
-    private static string DecisionLabel(bool isLocal, bool appDns, DomainMatcher.GeoMatch? geoMatch)
+    private static string DecisionLabel(bool isLocal, bool direct, bool appDns, DomainMatcher.GeoMatch? geoMatch)
     {
         if (isLocal)
         {
             return "a name of your own network";
+        }
+
+        if (direct)
+        {
+            return "matches a direct rule, which keeps it off the tunnel";
         }
 
         if (geoMatch is { } match)
@@ -1471,10 +1544,11 @@ internal sealed class DnsProxy
             ips.Add(ip.ToString());
         }
 
-        // Re-check membership at Add time: _matcher may have swapped (a list edit) between the match that
-        // routed this query here and now - do not (re-)route a domain that just left the routing lists. An
-        // app-tunnel name has no geo rule, so it routes on the app decision alone.
-        if (ips.Count > 0 && (appDns || _matcher.IsTunneled(name)))
+        // Re-check membership at Add time: the rules may have swapped (a list edit) between the match that routed
+        // this query here and now - do not (re-)route a domain that just left the routing lists or that a Direct or
+        // Block rule now claims. An app-tunnel name has no geo rule, so it routes on the app decision alone.
+        var byName = NameVerdict(name);
+        if (ips.Count > 0 && (byName == RouteVerdict.Proxy || (appDns && byName == RouteVerdict.None)))
         {
             // Hot path: add-only union with the cache; a partial answer never drops a working IP.
             _tracker?.Add(name, ips);
@@ -1500,7 +1574,7 @@ internal sealed class DnsProxy
         var hosts = new HashSet<string>(StringComparer.Ordinal);
         foreach (var host in RuleHosts(_domains))
         {
-            if (!tracker.IsTracked(host))
+            if (!tracker.IsTracked(host) && NameVerdict(host) == RouteVerdict.Proxy)
             {
                 hosts.Add(host);
             }
@@ -1546,9 +1620,9 @@ internal sealed class DnsProxy
                     if (ips.Count > 0)
                     {
                         // Seed/pre-resolve is add-only. Re-check membership at Add time: a long seed retry can
-                        // complete after a later list edit dropped this host (and after PruneDepartedDomains
-                        // ran), which would otherwise re-install a zombie route for a departed domain.
-                        if (_matcher.IsTunneled(host))
+                        // complete after a later list edit dropped this host or gave it to a Direct or Block rule
+                        // (and after PruneDepartedDomains ran), which would otherwise re-install a zombie route.
+                        if (NameVerdict(host) == RouteVerdict.Proxy)
                         {
                             tracker.Add(host, ips.Select(a => a.ToString()).ToList());
                         }

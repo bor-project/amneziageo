@@ -317,8 +317,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             || (IsCompact && SettingsDetailOpen));
 
     /// <summary>
-    /// Whether the reconnect offer belongs in the section footer: the editable sections carry it there instead
-    /// of the floating notice.
+    /// Whether the reconnect offer belongs in the section footer: the editable sections carry it there.
     /// </summary>
     public bool ReconnectPromptInSection => ShowContent && SettingsSection is "config" or "routing";
 

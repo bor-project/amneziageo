@@ -109,8 +109,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     private bool _reconnectAvailable;
 
-    // Settings changed on the live tunnel: the editable sections offer the reconnect in their footer, the rest
-    // of the app in the notice banner.
+    // Settings changed on the live tunnel: the mark by the connect control and the section footer offer the reconnect.
     [ObservableProperty]
     private bool _restartPending;
 
@@ -464,6 +463,11 @@ internal partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Шторка оболочки: знак предлагает в ней переподключиться.
+    /// </summary>
+    public ActionSheetViewModel Sheet => _host.Sheet;
+
+    /// <summary>
     /// Applies the connection state, active-config matching, and top-center notice from the snapshot. Runs
     /// after the config catalogue is reconciled, so the matching reads the fresh rows.
     /// </summary>
@@ -510,8 +514,8 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
 
         // Top-center notice (auto-hides after 5s, dismissable): a different config is selected while a
-        // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
-        // connect failure. Shown once per distinct notice, not re-armed while the same one holds.
+        // tunnel is up (reconnect to apply - no auto-switch) or a connect failure. Shown once per distinct
+        // notice, not re-armed while the same one holds.
         string? notice = null;
         var reconnect = false;
         if (snapshot.ConnectFailed)
@@ -531,17 +535,10 @@ internal partial class ConnectionViewModel : ViewModelBase
             && SelectedDiffersFromBound(snapshot))
         {
             // A different config is selected on the live tunnel: reuse the reconnect banner so its action applies
-            // the switch (Reconnect dials the newly selected ActiveConfig), like the settings-changed case below.
+            // the switch (Reconnect dials the newly selected ActiveConfig).
             // A switch names the new target while the old one still runs, so the banner waits for the tunnel to
             // carry it rather than blinking through every switch.
             notice = Loc.Instance.Get("MainVm_NoticeConfigSelected", snapshot.SelectedTarget);
-            reconnect = true;
-        }
-        else if (snapshot.RestartRequired && !_host.ReconnectPromptInSection)
-        {
-            // Settings changed on the live tunnel: bound == selected, so reconnecting the active config applies them.
-            // An editable section carries the same offer in its footer, so the banner stays out of its way.
-            notice = Loc.Instance.Get("MainVm_NoticeSettingsChanged");
             reconnect = true;
         }
 

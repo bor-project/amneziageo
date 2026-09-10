@@ -13,6 +13,7 @@ internal sealed partial class ConnectPill : UserControl
     public ConnectPill()
     {
         InitializeComponent();
+        HintPart.FocusFallback = TogglePart;
     }
 
     /// <summary>

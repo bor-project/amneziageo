@@ -130,8 +130,13 @@
 
                   <!-- Status and hint wrap inside the column, so a long hint neither clips nor widens it. -->
                   <StackPanel HorizontalAlignment="Center" Spacing="4">
-                    <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
-                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}" />
+                    <!-- The status and the mark of settings waiting for a reconnect beside it. -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="4">
+                      <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
+                                 TextAlignment="Center" TextWrapping="Wrap" VerticalAlignment="Center"
+                                 Foreground="{Binding Home.ConnectStatusBrush}" />
+                      <controls:RestartHint x:Name="HomeRestartHint" DataContext="{Binding Home}" />
+                    </StackPanel>
                     <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
                                TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectHintBrush}"
                                IsVisible="{Binding Home.ShowConnectHint}" />

@@ -1181,6 +1181,9 @@
       <StreamGeometry x:Key="AgCardTrafficGeometry">M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z</StreamGeometry>
       <StreamGeometry x:Key="AgCardLossGeometry">M3,13H5.79L10.1,4.79L11.28,11.5L14.5,8.75L17.29,13H21V15H16.21L14.5,12.4L10.72,15.5L9.55,8.9L7,13.85V15H3V13Z</StreamGeometry>
       <StreamGeometry x:Key="AgPowerGeometry">M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z</StreamGeometry>
+
+      <!-- Знак настроек, ждущих переподключения. -->
+      <StreamGeometry x:Key="AgAlertGeometry">M11,15H13V17H11V15M11,7H13V13H11V7M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z</StreamGeometry>
     </ResourceDictionary>
   </Styles.Resources>
 

@@ -33,6 +33,7 @@ public sealed partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
+        HomeRestartHint.FocusFallback = HomePowerButton;
         DataContextChanged += OnDataContextChanged;
         SizeChanged += OnViewSizeChanged;
         ContentScroll.SizeChanged += OnContentSizeChanged;

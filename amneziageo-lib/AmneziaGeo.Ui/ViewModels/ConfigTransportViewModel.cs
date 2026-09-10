@@ -427,7 +427,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
                 [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", AllowInbound ? "on" : "off"]));
-            // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
+            // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
         }

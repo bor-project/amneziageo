@@ -1470,6 +1470,7 @@ internal partial class RoutingViewModel : ViewModelBase
             if (RoutingSettings is { } settings)
             {
                 settings.UseGlobalProxy = preset.UseGlobalProxy;
+                settings.AllUdp = preset.AllUdp;
             }
 
             _assignAfterSave = true;

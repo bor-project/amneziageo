@@ -277,7 +277,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
                 UseGlobalProxy ? "full" : "split",
                 UseGlobalProxy ? "on" : "off",
             ]));
-            // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
+            // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             if (!ack.Ok)
             {

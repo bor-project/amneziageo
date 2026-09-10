@@ -15,6 +15,7 @@ internal sealed record RoutingPreset(
     string[] Proxy,
     string[] Direct,
     bool UseGlobalProxy,
+    bool AllUdp,
     bool LocalSubnets,
     bool NeedsCountry);
 
@@ -44,6 +45,7 @@ internal static class RoutingPresets
                 .. ClosedRules,
                 "geosite:youtube",
                 "geosite:meta",
+                "geosite:whatsapp",
                 "geosite:twitter",
                 "geosite:discord",
                 "geosite:openai",
@@ -52,6 +54,7 @@ internal static class RoutingPresets
             ],
             [],
             false,
+            true,
             false,
             false),
         new(
@@ -59,6 +62,7 @@ internal static class RoutingPresets
             [],
             ["geoip:{0}"],
             true,
+            false,
             true,
             true),
         new(
@@ -66,6 +70,7 @@ internal static class RoutingPresets
             [],
             [],
             true,
+            false,
             true,
             false),
     ];

@@ -1009,6 +1009,12 @@
   <data name="Main_ReconnectPrompt" xml:space="preserve">
     <value>Сохранено - переподключитесь, чтобы применить</value>
   </data>
+  <data name="Main_RestartSheetTitle" xml:space="preserve">
+    <value>Настройки изменены</value>
+  </data>
+  <data name="Main_RestartSheetSubtitle" xml:space="preserve">
+    <value>Они применятся после переподключения.</value>
+  </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>Обновление</value>
   </data>

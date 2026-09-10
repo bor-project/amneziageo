@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             x:Class="AmneziaGeo.Ui.Controls.RestartHint"
+             x:CompileBindings="True"
+             x:DataType="vm:ConnectionViewModel"
+             IsVisible="{Binding RestartPending}">
+  <!-- Mark of saved settings the live tunnel has not taken yet: it offers the reconnect that applies them. -->
+  <Button x:Name="MarkPart" Classes="icon" Padding="3" VerticalAlignment="Center"
+          Click="OnMarkClick" PointerEntered="OnMarkPointerEntered">
+    <PathIcon Data="{DynamicResource AgAlertGeometry}" Width="18" Height="18"
+              Foreground="{DynamicResource AgWarnBrush}" />
+    <FlyoutBase.AttachedFlyout>
+      <Flyout Placement="BottomEdgeAlignedRight">
+        <StackPanel MaxWidth="240" Spacing="2">
+          <TextBlock Text="{l:Tr MainVm_NoticeSettingsChanged}" FontSize="12" TextWrapping="Wrap" />
+          <Button Classes="linkbtn" HorizontalAlignment="Left" Margin="-7,0,0,-4"
+                  Content="{l:Tr Main_ReconnectApplyButton}" Click="OnReconnectClick" />
+        </StackPanel>
+      </Flyout>
+    </FlyoutBase.AttachedFlyout>
+  </Button>
+</UserControl>

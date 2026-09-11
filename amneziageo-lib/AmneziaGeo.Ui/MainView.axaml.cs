@@ -331,14 +331,14 @@ public sealed partial class MainView : UserControl
                 Glyphs.Close,
                 () => general.CancelDownloadCommand.Execute(null)));
         }
-        else if (general.UpdateDownloaded)
+        else if (general.UpdateDownloaded && !general.UpdateInstalling)
         {
             options.Add(new ActionOption(
                 Loc.Instance.Get("Main_InstallButton"),
                 Glyphs.Install,
                 () => general.ApplyUpdateCommand.Execute(null)));
         }
-        else
+        else if (!general.UpdateDownloaded)
         {
             options.Add(new ActionOption(
                 Loc.Instance.Get("Main_DownloadButton"),

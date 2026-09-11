@@ -17,6 +17,12 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 {
     private const string MsiPackageId = "AmneziaGeoMsi";
 
+    // Held by a setup run from its start until it has finished.
+    private const string RunLockName = @"Global\AmneziaGeo.Installer.Run";
+
+    // ERROR_INSTALL_ALREADY_RUNNING.
+    private const int InstallAlreadyRunning = 1618;
+
     // What to run after the installed newer bundle is removed by its own uninstaller.
     private enum ChainStep
     {
@@ -29,6 +35,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private InstallerViewModel _vm = null!;
     private IBootstrapperCommand _command = null!;
     private Window? _mainWindow;
+    private Mutex? _runLock;
 
     private bool _interactive;
     private bool _msiPresent;
@@ -69,6 +76,17 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     /// <inheritdoc/>
     protected override void Run()
     {
+        ApplyCommandLineVariables();
+
+        // A setup started while another one runs waits for it to end and quits without touching the install.
+        if (_command.Relation == RelationType.None && _command.Action != LaunchAction.Uninstall && !TakeRunLock())
+        {
+            engine.Log(LogLevel.Standard, "Another AmneziaGeo setup is running; this one waits for it to end and quits.");
+            WaitForOtherRun();
+            engine.Quit(InstallAlreadyRunning);
+            return;
+        }
+
         _dispatcher = Dispatcher.CurrentDispatcher;
         _vm = new InstallerViewModel(OnUserAction, OnUserClose);
 
@@ -211,6 +229,69 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private bool IsUpdateFlow()
     {
         return string.Equals(engine.GetVariableString("UPDATEFLOW"), "1", StringComparison.Ordinal);
+    }
+
+    // Sets the bundle variables the command line overrides.
+    private void ApplyCommandLineVariables()
+    {
+        try
+        {
+            var data = new BootstrapperApplicationData(new FileInfo(_command.BootstrapperApplicationDataPath));
+            _command.ParseCommandLine().SetOverridableVariables(data.Bundle.OverridableVariables, engine);
+        }
+        catch (Exception ex)
+        {
+            engine.Log(LogLevel.Error, $"The command line variables were not applied: {ex}");
+        }
+    }
+
+    // Takes the lock of a setup run; false while another run holds it.
+    private bool TakeRunLock()
+    {
+        try
+        {
+            var runLock = new Mutex(false, RunLockName, out var createdNew);
+            if (!createdNew)
+            {
+                runLock.Dispose();
+                return false;
+            }
+
+            _runLock = runLock;
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    // Waits until no other setup run holds the lock.
+    private static void WaitForOtherRun()
+    {
+        while (OtherRunHolds())
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(1));
+        }
+    }
+
+    // Whether another setup run holds the lock.
+    private static bool OtherRunHolds()
+    {
+        try
+        {
+            if (!Mutex.TryOpenExisting(RunLockName, out var other))
+            {
+                return false;
+            }
+
+            other.Dispose();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
     }
 
     private void ProbeAutoConnect()
@@ -916,6 +997,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void Finish(bool ok, string message)
     {
+        _runLock?.Dispose();
+        _runLock = null;
         _result = ok ? 0 : 1;
         _dispatcher.BeginInvoke(() =>
         {

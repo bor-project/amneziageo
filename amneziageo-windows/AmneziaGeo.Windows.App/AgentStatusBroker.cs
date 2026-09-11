@@ -76,6 +76,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // Serializes the update download-phase / cancel transitions, which arrive from concurrent pipe handlers.
     private readonly object _updateStateGate = new();
 
+    // How long an install is held when its setup cannot be followed.
+    private static readonly TimeSpan _installHold = TimeSpan.FromMinutes(10);
+
     // At most one geo-refresh session at a time; concurrent triggers queue (sources unioned, force OR-ed).
     private readonly object _geoSessionGate = new();
     private bool _geoRunning;
@@ -2522,12 +2525,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             "downloading" => UpdateDownloadPhase.Downloading,
             "downloaded" => UpdateDownloadPhase.Downloaded,
+            "installing" => UpdateDownloadPhase.Installing,
             _ => UpdateDownloadPhase.Idle,
         };
         var newFailed = phase == "failed";
         var percent = args.Count > 1 && int.TryParse(args[1], out var parsed) ? parsed : 0;
         var setupPath = args.Count > 2 ? args[2] : string.Empty;
         var version = args.Count > 3 ? args[3] : string.Empty;
+        var installer = newPhase == UpdateDownloadPhase.Installing && args.Count > 4 && int.TryParse(args[4], out var pid) ? pid : 0;
 
         bool phaseChanged;
         bool percentChanged;
@@ -2542,6 +2547,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             updateState.DownloadPercent = percent;
             updateState.DownloadedSetupPath = setupPath;
             updateState.DownloadedVersion = version;
+            updateState.InstallerPid = installer;
             // Clear a pending cancel only on a phase transition (a fresh start drops a stale one, a stop consumes
             // it); a per-percent tick must not clear it, so a cancel set mid-download survives until the byte-pump
             // sees it (#17).
@@ -2556,7 +2562,55 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             await BroadcastIfChangedAsync(ct);
         }
 
+        if (newPhase == UpdateDownloadPhase.Installing)
+        {
+            _ = WatchInstallerAsync(installer);
+        }
+
         return new IpcAck(true, "ok");
+    }
+
+    // Holds the install until its setup ends, then offers the downloaded update again if this agent is still here.
+    private async Task WatchInstallerAsync(int pid)
+    {
+        try
+        {
+            if (pid > 0)
+            {
+                using var setup = System.Diagnostics.Process.GetProcessById(pid);
+                await setup.WaitForExitAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await Task.Delay(_installHold).ConfigureAwait(false);
+            }
+        }
+        catch (ArgumentException)
+        {
+            // The setup has already ended.
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            logger.LogWarning(ex, "cannot follow the update setup {Pid}; the install is held for {Minutes} min", pid, (int)_installHold.TotalMinutes);
+            await Task.Delay(_installHold).ConfigureAwait(false);
+        }
+
+        if (!EndInstall(pid))
+        {
+            return;
+        }
+
+        logger.LogInformation("the update setup {Pid} ended and the agent was not replaced; the downloaded update can be installed again", pid);
+        await BroadcastIfChangedAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    // Returns an install to Downloaded under the update gate.
+    private bool EndInstall(int pid)
+    {
+        lock (_updateStateGate)
+        {
+            return updateState.EndInstall(pid);
+        }
     }
 
     // Flags a cancel on a running download so it rides the next snapshot; the UI that owns the byte-pump aborts
@@ -2739,9 +2793,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var update = updateState.Latest;
         // A download only counts as ready when its version still matches the offered one, so a newer check
         // drops a setup downloaded for the previous version.
-        var downloadedForCurrent = updateState.DownloadPhase == UpdateDownloadPhase.Downloaded
-            && update is not null
-            && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
+        var downloadedForCurrent = update is not null && updateState.ReadyFor(update.Version);
+        var installing = downloadedForCurrent && updateState.DownloadPhase == UpdateDownloadPhase.Installing;
         var connectFailed = owned && control.ConnectFailed;
         var disconnectFailed = owned && control.DisconnectFailed;
         return Describe(new StatusSnapshot(Version(), boundTarget, configs, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
@@ -2780,6 +2833,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             updateState.CheckFailed,
             Volatile.Read(ref _geoUpdatedTick),
             AppSettings.BuildTarget,
+            UpdateInstalling: installing,
             ProxyEnabled: settings.ProxyEnabled,
             ProxySocksPort: settings.ProxySocksPort,
             ProxyHttpPort: settings.ProxyHttpPort,

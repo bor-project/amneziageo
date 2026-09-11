@@ -30,6 +30,7 @@ internal sealed class LinuxUpdater : IDisposable
     private CancellationTokenSource? _download;
     private string _downloadedVersion = string.Empty;
     private bool _disposed;
+    private bool _applying;
 
     /// <summary>
     /// ctor
@@ -240,11 +241,37 @@ internal sealed class LinuxUpdater : IDisposable
     public async Task<IpcAck> InstallAsync(CancellationToken ct)
     {
         var assets = _assets;
-        if (!Downloaded || assets.Count == 0)
+        lock (_gate)
         {
-            return new IpcAck(false, IpcMessage.Key("Agent_UpdateNothingDownloaded"));
+            if (Installing || _applying)
+            {
+                return new IpcAck(true, IpcMessage.Key("Agent_UpdateInstallRunning"));
+            }
+
+            if (!Downloaded || assets.Count == 0)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateNothingDownloaded"));
+            }
+
+            _applying = true;
         }
 
+        try
+        {
+            return await ApplyAsync(assets, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _applying = false;
+            }
+        }
+    }
+
+    // Verifies the packages and starts the transient unit that installs them.
+    private async Task<IpcAck> ApplyAsync(IReadOnlyList<PendingAsset> assets, CancellationToken ct)
+    {
         foreach (var asset in assets)
         {
             if (!await VerifyAsync(asset, ct).ConfigureAwait(false))

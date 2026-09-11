@@ -19,7 +19,7 @@ internal sealed class UpdateState
     public int DownloadPercent { get; set; }
 
     /// <summary>
-    /// Full path of the downloaded setup, set when the phase is Downloaded.
+    /// Full path of the downloaded setup.
     /// </summary>
     public string DownloadedSetupPath { get; set; } = string.Empty;
 
@@ -47,6 +47,35 @@ internal sealed class UpdateState
     /// Whether the last manual update check failed; rides the snapshot so the tray suppresses the up-to-date notice.
     /// </summary>
     public bool CheckFailed { get; set; }
+
+    /// <summary>
+    /// Process id of the setup the window started, set while the phase is Installing.
+    /// </summary>
+    public int InstallerPid { get; set; }
+
+    /// <summary>
+    /// Whether the setup downloaded for this version is on disk, installing or not.
+    /// </summary>
+    public bool ReadyFor(string? version)
+    {
+        return DownloadPhase is UpdateDownloadPhase.Downloaded or UpdateDownloadPhase.Installing
+            && string.Equals(DownloadedVersion, version, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Returns an install to Downloaded once the setup it waits on has ended; answers whether it did.
+    /// </summary>
+    public bool EndInstall(int pid)
+    {
+        if (DownloadPhase != UpdateDownloadPhase.Installing || InstallerPid != pid)
+        {
+            return false;
+        }
+
+        DownloadPhase = UpdateDownloadPhase.Downloaded;
+        InstallerPid = 0;
+        return true;
+    }
 }
 
 /// <summary>
@@ -57,4 +86,5 @@ internal enum UpdateDownloadPhase
     Idle,
     Downloading,
     Downloaded,
+    Installing,
 }

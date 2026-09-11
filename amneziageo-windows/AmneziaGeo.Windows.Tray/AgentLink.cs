@@ -71,6 +71,11 @@ internal static class AgentLink
     public static volatile bool UpdateDownloaded;
 
     /// <summary>
+    /// Whether the downloaded update is being installed, so the tray offers no second install.
+    /// </summary>
+    public static volatile bool UpdateInstalling;
+
+    /// <summary>
     /// Whether a setup download is currently running, so the tray can confirm before an exit cancels it (#21).
     /// </summary>
     public static volatile bool DownloadInProgress;
@@ -320,6 +325,7 @@ internal static class AgentLink
         var notify = true;
         var updateAvail = false;
         var updateDownloaded = false;
+        var updateInstalling = false;
         var updateDownloading = false;
         var updateDownloadPercent = 0;
         var updateFailed = false;
@@ -375,6 +381,10 @@ internal static class AgentLink
             {
                 updateDownloaded = reader.TokenType == JsonTokenType.True;
             }
+            else if (prop == "updateInstalling" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                updateInstalling = reader.TokenType == JsonTokenType.True;
+            }
             else if (prop == "updateDownloading" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
             {
                 updateDownloading = reader.TokenType == JsonTokenType.True;
@@ -425,6 +435,7 @@ internal static class AgentLink
         ShowNotifications = notify;
         UpdateAvailable = updateAvail;
         UpdateDownloaded = updateDownloaded;
+        UpdateInstalling = updateInstalling;
         DownloadInProgress = updateDownloading;
         DownloadPercent = updateDownloadPercent;
         DownloadFailed = updateFailed;

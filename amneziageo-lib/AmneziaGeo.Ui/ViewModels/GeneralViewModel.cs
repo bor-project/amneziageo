@@ -39,6 +39,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string _agentPhase = string.Empty;
     private string? _installingVersion;
 
+    // Windows: set while this window verifies and starts the setup.
+    private bool _applying;
+
     // Set by the host to run the byte-pump under the process-alive pin, so closing a window mid-download neither
     // quits the app nor aborts the download (#21). Falls back to a direct download when unset.
     private Action? _pinnedDownloadRunner;
@@ -380,6 +383,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             _downloadedSetupPath = null;
             _downloadedVersion = null;
         }
+
+        // A setup this or another window started holds the install until it ends.
+        var installing = _applying || snapshot.UpdateInstalling;
+        if (installing != UpdateInstalling)
+        {
+            UpdateInstalling = installing;
+            UpdateStatus = installing ? Loc.Instance.Get("MainVm_UpdateInstalling") : string.Empty;
+        }
     }
 
     // Linux: the agent runs the download and the install, so the window follows the phase it publishes.
@@ -624,13 +635,19 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     // Reports the setup download phase to the agent so the tray and every window share one state.
-    private async Task ReportDownloadAsync(string phase, int percent, string path, string version)
+    private async Task ReportDownloadAsync(string phase, int percent, string path, string version, int installer = 0)
     {
         try
         {
             await _connection.SendCommandAsync(new IpcCommand(
                 IpcContract.OpReportUpdateDownload,
-                [phase, percent.ToString(System.Globalization.CultureInfo.InvariantCulture), path, version]));
+                [
+                    phase,
+                    percent.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    path,
+                    version,
+                    installer.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ]));
         }
         catch
         {
@@ -712,12 +729,27 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             return;
         }
 
+        var setupPath = _downloadedSetupPath;
+        var version = _downloadedVersion ?? UpdateVersion;
+
+        // A setup already running from this file is the install in progress.
+        if (SetupRunning(setupPath))
+        {
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateInstalling");
+            return;
+        }
+
+        _applying = true;
+        UpdateInstalling = true;
+
         // Verify integrity before running the installer; a mismatch drops the file and returns to the download
         // step. A manifest without a hash (legacy) verifies as trusted so the flow still works.
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateVerifying");
-        if (!await VerifySetupAsync(_downloadedSetupPath, _expectedSha256))
+        if (!await VerifySetupAsync(setupPath, _expectedSha256))
         {
-            TryDeletePartial(_downloadedSetupPath);
+            _applying = false;
+            UpdateInstalling = false;
+            TryDeletePartial(setupPath);
             _downloadedSetupPath = null;
             _downloadedVersion = null;
             UpdateDownloaded = false;
@@ -732,13 +764,16 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             // Full display (no /passive) so the run shows its progress, but every choice is already made here and
             // passed on the command line: the BA skips its options step and applies straight away. UseShellExecute
             // lets the bundle elevate (UAC) once.
-            Process.Start(new ProcessStartInfo(_downloadedSetupPath)
+            using var setup = Process.Start(new ProcessStartInfo(setupPath)
             {
                 UseShellExecute = true,
                 Arguments = BuildInstallerArguments(),
             });
 
             InstallerLaunched = true;
+
+            // The agent holds the install until this setup ends.
+            await ReportDownloadAsync("installing", 100, setupPath, version, setup?.Id ?? 0);
 
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
@@ -748,6 +783,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            _applying = false;
+            UpdateInstalling = false;
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
         }
     }
@@ -838,6 +875,18 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             await ApplyUpdate();
         }
+    }
+
+    // Whether a process of this setup file is running.
+    private static bool SetupRunning(string path)
+    {
+        var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(path));
+        foreach (var process in processes)
+        {
+            process.Dispose();
+        }
+
+        return processes.Length > 0;
     }
 
     // Hashes the downloaded setup and compares it to the manifest hash. An empty expected hash (legacy manifest)

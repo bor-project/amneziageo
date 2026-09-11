@@ -120,6 +120,11 @@ internal static class Labels
     public static string InstallUpdate { get; private set; } = "Install update";
 
     /// <summary>
+    /// «Установка обновления…» / "Installing update…": inactive menu item while the setup runs.
+    /// </summary>
+    public static string InstallingUpdate { get; private set; } = "Installing update…";
+
+    /// <summary>
     /// «Загрузка: {0}%» / "Downloading: {0}%": inactive menu item showing download progress (#17).
     /// </summary>
     public static string DownloadingUpdate { get; private set; } = "Downloading: {0}%";
@@ -215,6 +220,7 @@ internal static class Labels
             UpToDateInfo = "У вас последняя версия";
             DownloadUpdate = "Скачать обновление";
             InstallUpdate = "Установить обновление";
+            InstallingUpdate = "Установка обновления…";
             DownloadingUpdate = "Загрузка: {0}%";
             CancelDownload = "Отменить загрузку";
             UpdateFoundInfo = "Доступна новая версия {0}. Нажмите, чтобы скачать.";

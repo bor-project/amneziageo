@@ -2314,6 +2314,9 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
   <data name="Agent_UpdateInstallStarted" xml:space="preserve">
     <value>Installing {0}.</value>
   </data>
+  <data name="Agent_UpdateInstallRunning" xml:space="preserve">
+    <value>The update is already being installed.</value>
+  </data>
   <data name="Agent_UpdateInstallFailed" xml:space="preserve">
     <value>The install could not start: {0}</value>
   </data>

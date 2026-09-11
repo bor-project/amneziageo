@@ -32,6 +32,7 @@ internal sealed class AndroidUpdater : IDisposable
     private string _offeredVersion = string.Empty;
     private CancellationTokenSource? _download;
     private bool _disposed;
+    private bool _applying;
 
     /// <summary>
     /// ctor
@@ -226,11 +227,37 @@ internal sealed class AndroidUpdater : IDisposable
     /// </summary>
     public async Task<IpcAck> InstallAsync(CancellationToken ct)
     {
-        if (!Downloaded || SetupPath.Length == 0)
+        lock (_gate)
         {
-            return new IpcAck(false, IpcMessage.Key("Agent_UpdateNothingDownloaded"));
+            if (Installing || _applying)
+            {
+                return new IpcAck(true, IpcMessage.Key("Agent_UpdateInstallRunning"));
+            }
+
+            if (!Downloaded || SetupPath.Length == 0)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateNothingDownloaded"));
+            }
+
+            _applying = true;
         }
 
+        try
+        {
+            return await ApplyAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _applying = false;
+            }
+        }
+    }
+
+    // Verifies the package and opens an install session for it.
+    private async Task<IpcAck> ApplyAsync(CancellationToken ct)
+    {
         if (!await VerifyAsync(SetupPath, Sha256, ct).ConfigureAwait(false))
         {
             Downloaded = false;

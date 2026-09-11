@@ -2314,6 +2314,9 @@
   <data name="Agent_UpdateInstallStarted" xml:space="preserve">
     <value>Устанавливается {0}.</value>
   </data>
+  <data name="Agent_UpdateInstallRunning" xml:space="preserve">
+    <value>Обновление уже устанавливается.</value>
+  </data>
   <data name="Agent_UpdateInstallFailed" xml:space="preserve">
     <value>Установка не запустилась: {0}</value>
   </data>

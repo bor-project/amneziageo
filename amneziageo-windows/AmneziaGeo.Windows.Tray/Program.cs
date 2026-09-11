@@ -817,6 +817,12 @@ internal static unsafe class Program
     // Installs the already-downloaded setup in the GUI process (verify + launch, windowless).
     private static void LaunchInstall()
     {
+        if (AgentLink.UpdateInstalling)
+        {
+            ClientLog.Info("update install not started: its setup is already running");
+            return;
+        }
+
         LaunchUi("update install", "--apply");
     }
 
@@ -912,8 +918,9 @@ internal static unsafe class Program
 
         // Update items only on builds with an update channel configured, matching the settings window which
         // hides its whole update section without one. The items reflect the update state: an inactive "Checking…"
-        // while a check runs (#15); a progress line plus Cancel while a download runs (#17); Install once a setup
-        // is downloaded; Download when an update is available (#16); else Check.
+        // while a check runs (#15); a progress line plus Cancel while a download runs (#17); an inactive
+        // "Installing…" while the setup runs; Install once a setup is downloaded; Download when an update is
+        // available (#16); else Check.
         if (AgentLink.HasUpdateUrl)
         {
             Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
@@ -925,6 +932,10 @@ internal static unsafe class Program
             {
                 Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, 0, string.Format(Labels.DownloadingUpdate, AgentLink.DownloadPercent));
                 Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CANCELDOWNLOAD, Labels.CancelDownload);
+            }
+            else if (AgentLink.UpdateInstalling)
+            {
+                Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, 0, Labels.InstallingUpdate);
             }
             else if (AgentLink.UpdateDownloaded)
             {

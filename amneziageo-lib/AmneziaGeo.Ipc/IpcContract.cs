@@ -288,10 +288,10 @@ public static class IpcContract
 
     /// <summary>
     /// Command for the UI process that owns the setup download to report its phase to the agent, so the tray
-    /// and every window share one download state. Args: [0] phase ("idle" / "downloading" / "downloaded"),
-    /// [1] percent (0..100), [2] setup path (set when downloaded), [3] version the setup carries. The phase
-    /// rides the next status snapshot (UpdateDownloading / UpdateDownloaded / UpdateDownloadPercent /
-    /// UpdateSetupPath).
+    /// and every window share one download state. Args: [0] phase ("idle" / "downloading" / "downloaded" /
+    /// "installing"), [1] percent (0..100), [2] setup path (set when downloaded), [3] version the setup carries,
+    /// [4] process id of the running setup (installing). The phase rides the next status snapshot
+    /// (UpdateDownloading / UpdateDownloaded / UpdateInstalling / UpdateDownloadPercent / UpdateSetupPath).
     /// </summary>
     public const string OpReportUpdateDownload = "report-update-download";
 

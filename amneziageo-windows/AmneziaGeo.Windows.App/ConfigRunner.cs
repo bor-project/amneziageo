@@ -934,6 +934,7 @@ internal sealed class ConfigRunner(
                 }
 
                 logger.LogWarning("{Member}: the tunnel did not stop in {Sec}s, ending process {Pid} by force; this also drops its firewall protection", member, (int)_stopTimeout.TotalSeconds, pid);
+                serviceManager.KeepDown(member);
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }

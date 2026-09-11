@@ -118,7 +118,7 @@ public static class CliRunner
               routing show <id|name>
               routing create <name> [rule...]
               routing set <id|name> [rule...]       replace every rule
-              routing add <id|name> <rule...>       append rules
+              routing add <id|name> <rule...>       append rules; a listed token takes the new role
               routing delete-rule <id|name> <rule...>
               routing remove <id|name>
               routing settings <id|name>

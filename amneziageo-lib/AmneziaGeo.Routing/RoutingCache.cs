@@ -1324,6 +1324,7 @@ public sealed class RoutingCache
 
         entry.FilterOut = 0;
         entry.FilterIn = 0;
+        entry.Generation = 0;
     }
 
     // Block wins over Direct: a blocked address must never earn a bypass. Direct wins over Proxy: an address in both

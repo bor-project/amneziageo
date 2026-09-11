@@ -12,4 +12,8 @@
     <ProjectReference Include="..\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AmneziaGeo.Tests" />
+  </ItemGroup>
+
 </Project>

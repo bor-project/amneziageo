@@ -996,4 +996,30 @@ public sealed class RoutingCacheTests
         Assert.Empty(applier.Untunneled);
         Assert.Equal(RouteVerdict.Proxy, cache.Classify(IPAddress.Parse(YandexAddress)));
     }
+
+    [Fact]
+    public void ARebuild_PutsBackThePermitOfAnAddressItMoves()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Direct);
+
+        cache.Rebuild([], [], []);
+
+        Assert.NotEmpty(applier.Deleted);
+        Assert.Equal(2, applier.Permitted.Count);
+    }
+
+    [Fact]
+    public void ARebuild_DropsAnAddressItMovesToBlock()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Direct);
+
+        cache.Rebuild([], [], [YandexRange]);
+
+        Assert.Equal(RouteVerdict.Block, cache.Classify(IPAddress.Parse(YandexAddress)));
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Dropped);
+    }
 }

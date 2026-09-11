@@ -23,6 +23,7 @@ internal sealed class ServiceManager
         var binPath = $"\"{ServiceHost()}\" --service \"{name}\"{root}";
         if (Exists(name))
         {
+            RestartOnCrash(serviceName);
             // The tunnel reads its library from the root baked into ImagePath, and the owner may have changed
             // since the service was created.
             return string.IsNullOrEmpty(ownerRoot) ? 0 : Run("config", serviceName, "binPath=", binPath).Code;
@@ -46,6 +47,7 @@ internal sealed class ServiceManager
             return created;
         }
 
+        RestartOnCrash(serviceName);
         return Sc("sidtype", serviceName, "unrestricted");
     }
 
@@ -157,6 +159,14 @@ internal sealed class ServiceManager
     }
 
     /// <summary>
+    /// Takes the restart after a crash off a tunnel service whose process is about to be ended on purpose.
+    /// </summary>
+    public void KeepDown(string name)
+    {
+        Run("failure", TunnelPaths.ServiceName(name), "reset=", "0", "actions=", string.Empty);
+    }
+
+    /// <summary>
     /// Stops a service of the system under the name it carries itself and starts it again. Answers whether
     /// it stands afterwards; a service its own trigger brings straight back answers that it is running
     /// already, which is not a fault.
@@ -239,6 +249,12 @@ internal sealed class ServiceManager
     public int AgentStatus()
     {
         return Sc("query", TunnelPaths.AgentServiceName());
+    }
+
+    // Has the service manager start a tunnel service again when its process dies without being stopped.
+    private static void RestartOnCrash(string serviceName)
+    {
+        Run("failure", serviceName, "reset=", "3600", "actions=", "restart/2000/restart/5000/restart/30000");
     }
 
     // Resolves the service host executable, using the co-located apphost when hosted under dotnet.

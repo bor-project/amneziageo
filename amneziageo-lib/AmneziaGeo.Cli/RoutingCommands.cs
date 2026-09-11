@@ -186,20 +186,33 @@ internal static class RoutingCommands
             return Reply.Report(current);
         }
 
-        var rules = Split(current.Message).ToList();
+        var before = Split(current.Message);
+        var rules = before.ToList();
         foreach (var change in changes)
         {
             if (add)
             {
-                if (!rules.Any(rule => Same(rule, change)))
+                // A token the list already holds takes the role of the new rule in its own place.
+                var at = rules.FindIndex(rule => Same(rule, change));
+                if (at < 0)
                 {
                     rules.Add(change);
+                }
+                else
+                {
+                    rules[at] = change;
                 }
             }
             else
             {
                 rules.RemoveAll(rule => Same(rule, change));
             }
+        }
+
+        if (rules.SequenceEqual(before, StringComparer.Ordinal))
+        {
+            Output.Info($"{list.Name}: {rules.Count.ToString(CultureInfo.InvariantCulture)} rules, nothing to change");
+            return Exit.Ok;
         }
 
         var ack = await agent.SendAsync(IpcContract.OpSaveRoutingList, [list.Id.ToString(CultureInfo.InvariantCulture), list.Name, .. rules]).ConfigureAwait(false);

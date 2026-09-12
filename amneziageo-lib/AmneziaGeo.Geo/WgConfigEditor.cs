@@ -138,6 +138,23 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the interface private key declared in the config.
+    /// </summary>
+    public static string? GetPrivateKey(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("PrivateKey", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Returns the peer public key declared in the config.
     /// </summary>
     public static string? GetPeerPublicKey(string config)

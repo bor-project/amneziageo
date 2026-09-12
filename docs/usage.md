@@ -67,6 +67,8 @@ The probe answers the question of where a connection actually went. Give it a do
 
 The report shows the path the traffic took and the rule behind it (tunnel by rule, bypass by default, blocked by rule), latency, jitter, loss, the size of packets that get through, and download and upload speed. Speed is measured against a speed service, by default `https://speed.cloudflare.com/__up`; the address is set in the probe settings.
 
+A server of AmneziaGeo can measure the speed itself. Where it does, the probe measures against that server instead, and the probe settings say so under the field: the application asks the server about it with the keys of the configuration, and nothing of yours goes to a service on the internet. An address typed into the field outranks that, and a server that does not offer it leaves the built-in service to decide.
+
 ## Example: Discord where UDP is blocked
 
 1. Create a list and name it `discord`.

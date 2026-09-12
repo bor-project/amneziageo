@@ -654,6 +654,8 @@ internal sealed class LinuxAgent : IDisposable
         switch (command.Op)
         {
             case IpcContract.OpAttachUi:
+                // The window will ask where the speed is measured; the servers are asked now so it has the answer.
+                ServerSpeed.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
                 return Ok();
 
             case IpcContract.OpLogClient:
@@ -821,6 +823,9 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpSpeedService:
+                return await SpeedServiceAsync(ct).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
@@ -2277,12 +2282,13 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(true, refused.ToPayload());
         }
 
+        var (upload, own) = await UploadAsync(path, args.Count > 2 ? args[2] : string.Empty, ct).ConfigureAwait(false);
         var cache = _tunnel.Cache;
         var address = await ProbeAddressAsync(target, ct).ConfigureAwait(false);
         var held = HoldProbe(cache, address, path);
         try
         {
-            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), args.Count > 2 ? args[2] : string.Empty);
+            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), upload, OwnUpload: own);
             var report = await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
             RecordProbe(report);
             return new IpcAck(true, report.ToPayload());
@@ -2291,6 +2297,44 @@ internal sealed class LinuxAgent : IDisposable
         {
             ReleaseProbe(cache, address, held);
         }
+    }
+
+    // Where the speed of a probe is measured, as the servers have already answered; the asking runs behind it.
+    private async Task<IpcAck> SpeedServiceAsync(CancellationToken ct)
+    {
+        ServerSpeed.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+
+        return new IpcAck(true, ServerSpeed.Shared.Told(_selectedTarget ?? string.Empty).ToPayload());
+    }
+
+    // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
+    private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
+    {
+        if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
+        {
+            return (chosen, false);
+        }
+
+        var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var offer = await ServerSpeed.Shared
+            .TicketAsync(new SpeedTarget(config, text, _tunnel.Running), ct)
+            .ConfigureAwait(false);
+
+        return ServerSpeed.Upload(chosen, offer, path);
+    }
+
+    // Every config whose server can be asked whether it measures.
+    private async Task<IReadOnlyList<SpeedTarget>> TargetsAsync(CancellationToken ct)
+    {
+        var targets = new List<SpeedTarget>();
+        foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
+            var running = _tunnel.Running && string.Equals(name, _selectedTarget, StringComparison.Ordinal);
+            targets.Add(new SpeedTarget(name, text, running));
+        }
+
+        return targets;
     }
 
     // Holds the address on the path asked for; auto holds nothing.

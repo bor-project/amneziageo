@@ -31,7 +31,7 @@ public sealed record VpnRequest(
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that
 /// owns it, so the run happens there and its payload comes back through a file.
 /// </summary>
-public sealed record ProbeRequest(string Target, string Path, string Taken, string UploadUrl);
+public sealed record ProbeRequest(string Target, string Path, string Taken, string UploadUrl, bool OwnUpload = false);
 
 /// <summary>
 /// Серверы карточек, которые тоннельный процесс меряет вместо головы: только он умеет увести сокет мимо туннеля.

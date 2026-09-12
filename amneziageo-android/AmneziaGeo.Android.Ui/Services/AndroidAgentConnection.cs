@@ -280,6 +280,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             // One head, one process: presence needs no announcing here.
             case IpcContract.OpAttachUi:
+                // The window will ask where the speed is measured; the servers are asked now so it has the answer.
+                ServerSpeed.Shared.Warm(Targets());
                 return Ok();
 
             case IpcContract.OpAddConfig:
@@ -473,6 +475,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
+
+            case IpcContract.OpSpeedService:
+                return await SpeedServiceAsync().ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -2885,13 +2890,45 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var taken = path == ProbePaths.Auto ? routed.Taken : path;
+        var (url, own) = await UploadAsync(path, upload, ct).ConfigureAwait(false);
         if (running && path == ProbePaths.Bypass)
         {
-            return ProbeAck(await HandOverAsync(target, path, taken, upload, ct).ConfigureAwait(false));
+            return ProbeAck(await HandOverAsync(target, path, taken, url, own, ct).ConfigureAwait(false));
         }
 
-        var options = new TargetProbeOptions(target, path, taken, upload);
+        var options = new TargetProbeOptions(target, path, taken, url, OwnUpload: own);
         return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
+    }
+
+    // Where the speed of a probe is measured, as the servers have already answered; the asking runs behind it.
+    private Task<IpcAck> SpeedServiceAsync()
+    {
+        ServerSpeed.Shared.Warm(Targets());
+
+        return Task.FromResult(new IpcAck(true, ServerSpeed.Shared.Told(_selectedTarget ?? string.Empty).ToPayload()));
+    }
+
+    // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
+    private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
+    {
+        if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
+        {
+            return (chosen, false);
+        }
+
+        var target = new SpeedTarget(config, _configs.GetValueOrDefault(config, string.Empty), VpnBridge.IsRunning(Application.Context));
+        var offer = await ServerSpeed.Shared.TicketAsync(target, ct).ConfigureAwait(false);
+
+        return ServerSpeed.Upload(chosen, offer, path);
+    }
+
+    // Every config whose server can be asked whether it measures; their texts live in this agent's own JSON.
+    private IReadOnlyList<SpeedTarget> Targets()
+    {
+        var running = VpnBridge.IsRunning(Application.Context);
+
+        return [.. _configs.Select(entry =>
+            new SpeedTarget(entry.Key, entry.Value, running && string.Equals(entry.Key, _selectedTarget, StringComparison.Ordinal)))];
     }
 
     // Where the rules in force send a destination, said the way the desktops say it, and whether that is the
@@ -2914,10 +2951,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Hands the run to the tunnel and waits for what it measured; a tunnel that never answers leaves the path
     // unmeasured rather than the caller waiting on it.
-    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, CancellationToken ct)
+    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, bool own, CancellationToken ct)
     {
         VpnBridge.ClearProbeResult();
-        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload));
+        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload, own));
         VpnBridge.RequestProbe(Application.Context);
         for (var waited = 0; waited < ProbeWaitMs; waited += ProbePollMs)
         {

@@ -148,21 +148,74 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             return new IpcAck(true, refused.ToPayload());
         }
 
+        var (upload, own) = await UploadAsync(store, config, path, uploadUrl, ct).ConfigureAwait(false);
+
         // The cache that decides where an address goes belongs to the process running the tunnel; when that is
         // the tunnel's own service, the run is handed over to it whole.
         var report = Connected(config) && !inspector.HasLiveSession
-            ? await HandOverAsync(config, target, path, uploadUrl, ct).ConfigureAwait(false)
-            : await ProbeRoute.RunAsync(session.Cache, target, path, uploadUrl, ct).ConfigureAwait(false);
+            ? await HandOverAsync(config, target, path, upload, own, ct).ConfigureAwait(false)
+            : await ProbeRoute.RunAsync(session.Cache, target, path, upload, own, ct).ConfigureAwait(false);
         await RecordProbeAsync(report, ct).ConfigureAwait(false);
         return new IpcAck(true, report.ToPayload());
     }
 
+    /// <summary>
+    /// Where the speed of a probe is measured: the server of the config when it offers that, and the service
+    /// the settings name otherwise. The servers are asked in the background, so this answers out of what they
+    /// have already said and the window waits on nothing.
+    /// </summary>
+    public async Task<IpcAck> SpeedAsync(IStateStore store, string config, CancellationToken ct)
+    {
+        await WarmSpeedAsync(store, ct).ConfigureAwait(false);
+
+        return new IpcAck(true, ServerSpeed.Shared.Told(config).ToPayload());
+    }
+
+    /// <summary>
+    /// Asks the servers of every config whether they measure the speed themselves. The asking runs in the
+    /// background, so a window attaching or opening its probe screen has the answer without waiting for one.
+    /// </summary>
+    public async Task WarmSpeedAsync(IStateStore store, CancellationToken ct)
+    {
+        ServerSpeed.Shared.Warm(await TargetsAsync(store, ct).ConfigureAwait(false));
+    }
+
+    // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
+    private async Task<(string Url, bool Own)> UploadAsync(
+        IStateStore store, string config, string path, string chosen, CancellationToken ct)
+    {
+        if (chosen.Length > 0 || string.IsNullOrEmpty(config))
+        {
+            return (chosen, false);
+        }
+
+        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var offer = await ServerSpeed.Shared
+            .TicketAsync(new SpeedTarget(config, text, Connected(config)), ct)
+            .ConfigureAwait(false);
+
+        return ServerSpeed.Upload(chosen, offer, path);
+    }
+
+    // Every config whose server can be asked whether it measures.
+    private async Task<IReadOnlyList<SpeedTarget>> TargetsAsync(IStateStore store, CancellationToken ct)
+    {
+        var targets = new List<SpeedTarget>();
+        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
+            targets.Add(new SpeedTarget(name, text, Connected(name)));
+        }
+
+        return targets;
+    }
+
     // Hands the run to the tunnel's service process and reads its report back.
     private async Task<ProbeReport> HandOverAsync(
-        string config, string target, string path, string uploadUrl, CancellationToken ct)
+        string config, string target, string path, string uploadUrl, bool own, CancellationToken ct)
     {
         var served = await Task.Run(
-            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl), logger),
+            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl, own), logger),
             ct).ConfigureAwait(false);
         return served is { Length: > 0 }
             ? ProbeReport.Parse(served, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())

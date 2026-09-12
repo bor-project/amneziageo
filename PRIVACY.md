@@ -10,7 +10,8 @@ library.
 |---|---|---|
 | `github.com`, `api.github.com` | on an update check and on the download you start | read `update.json`, fetch the setup |
 | `github.com/Loyalsoldier/v2ray-rules-dat` | when the geo databases are refreshed | download `geoip.dat` and `geosite.dat` |
-| `speed.cloudflare.com` | only while you run the built-in speed probe | measure the channel |
+| `speed.cloudflare.com` | only while you run the built-in speed probe, and only where your own server does not measure | measure the channel |
+| the panel of the server from your own configuration | when the window attaches to the agent, when the probe screen is opened and when a probe runs | ask what the server offers, and measure against it where it does |
 | the server from your own configuration | while the tunnel is up | carry your traffic |
 
 Nothing else is contacted on the application's own initiative. Every other address is one your own traffic

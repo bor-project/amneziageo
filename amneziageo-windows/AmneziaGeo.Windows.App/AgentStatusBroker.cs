@@ -209,6 +209,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             // Task Manager end-task, or an upgrade gap) and comes down only on an explicit user disconnect / exit
             // or an agent-service stop. A VPN must not fail open when its front-end dies.
             logger.LogInformation("UI session attached");
+            // The window will ask where the speed is measured; the servers are asked now so it has the answer.
+            _ = WarmSpeedAsync(ct);
             var attachAck = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: new IpcAck(true, "attached")), IpcJson.Options);
             await connection.SendAsync(attachAck, ct);
             return;
@@ -290,6 +292,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpProbeServers => await checks.ProbeServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
+                IpcContract.OpSpeedService => await SpeedServiceAsync(ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => await UnknownAsync(command, ct),
             };
@@ -1316,6 +1319,26 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
         var upload = args.Count > 2 ? args[2] : string.Empty;
         return await checks.ProbeAsync(store, config, args[0], path, upload, ct);
+    }
+
+    // Where the speed of a probe is measured, for the config this window reports on.
+    private async Task<IpcAck> SpeedServiceAsync(CancellationToken ct)
+    {
+        var (config, _) = await InspectTargetAsync(ct);
+        return await checks.SpeedAsync(store, config, ct);
+    }
+
+    // Asks the servers whether they measure the speed themselves; a server that cannot be reached is left out.
+    private async Task WarmSpeedAsync(CancellationToken ct)
+    {
+        try
+        {
+            await checks.WarmSpeedAsync(store, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "the servers could not be asked about measuring the speed");
+        }
     }
 
     // What the tunnel decides for right now. A tunnel this user does not own carries nothing to report.

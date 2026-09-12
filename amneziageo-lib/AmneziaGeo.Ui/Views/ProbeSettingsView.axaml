@@ -12,7 +12,7 @@
       <StackPanel Spacing="8">
         <TextBlock Text="{l:Tr Probe_UploadServiceTitle}" FontWeight="SemiBold" FontSize="15"
                    TextWrapping="Wrap" />
-        <TextBlock Text="{l:Tr Probe_UploadServiceHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding UploadHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
         <TextBox Classes="field" Text="{Binding UploadUrl, Mode=TwoWay}"
                  Watermark="{Binding UploadDefault}" />
       </StackPanel>

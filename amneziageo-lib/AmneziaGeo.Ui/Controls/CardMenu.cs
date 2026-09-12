@@ -6,7 +6,7 @@ using AmneziaGeo.Ui.ViewModels;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Меню карточки каталога: открывается долгим нажатием центральной кнопки на телевизоре.
+/// Меню карточки каталога: открывается долгим нажатием центральной кнопки или клавишей меню.
 /// </summary>
 internal static class CardMenu
 {

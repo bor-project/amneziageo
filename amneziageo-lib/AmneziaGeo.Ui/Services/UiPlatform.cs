@@ -11,6 +11,11 @@ internal static class UiPlatform
     public static bool IsTelevision { get; set; }
 
     /// <summary>
+    /// Whether focus is walked by keys: a remote on the television, Tab and the arrows on a desktop.
+    /// </summary>
+    public static bool WalksFocus => IsTelevision || !OperatingSystem.IsAndroid();
+
+    /// <summary>
     /// Whether the add / export choices open as a bottom sheet. Off on desktop, where the same choices drop out
     /// of the button as a menu.
     /// </summary>

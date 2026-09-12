@@ -427,7 +427,7 @@
               IsVisible="{Binding ShowRail}">
         <ScrollViewer>
           <StackPanel x:Name="RailMenu" Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12"
-                      KeyboardNavigation.TabNavigation="Cycle" KeyDown="OnRailKeyDown">
+                      KeyboardNavigation.TabNavigation="Continue" KeyDown="OnRailKeyDown">
               <Button x:Name="RailConfig" Classes="rowselect" Classes.active="{Binding IsSettingsConfig}" Margin="0,3"
                       XYFocus.Up="{Binding ElementName=RailGeneral}"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="config">

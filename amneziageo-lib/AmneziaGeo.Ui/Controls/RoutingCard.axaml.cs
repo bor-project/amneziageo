@@ -55,8 +55,8 @@ internal sealed partial class RoutingCard : UserControl
         _press = new DispatcherTimer { Interval = MenuHold };
         _press.Tick += OnPressHeld;
 
-        // Тело карточки берёт фокус только на телевизоре: там оно - вход в её контролы.
-        FacePart.Focusable = UiPlatform.IsTelevision;
+        // Тело карточки берёт фокус там, где по ней ходят клавишами: оно - вход в её контролы.
+        FacePart.Focusable = UiPlatform.WalksFocus;
         ApplyStopFocus();
 
         // Тоннельно: жест читается раньше, чем его возьмут контролы карточки.
@@ -66,7 +66,7 @@ internal sealed partial class RoutingCard : UserControl
         AddHandler(PointerCaptureLostEvent, OnCardCaptureLost, RoutingStrategies.Tunnel);
         GotFocus += OnCardGotFocus;
 
-        if (UiPlatform.IsTelevision)
+        if (UiPlatform.WalksFocus)
         {
             AddHandler(KeyDownEvent, OnCardKeyDown, RoutingStrategies.Tunnel);
             AddHandler(KeyUpEvent, OnCardKeyUp, RoutingStrategies.Tunnel);
@@ -204,6 +204,13 @@ internal sealed partial class RoutingCard : UserControl
             return;
         }
 
+        // Клавиша меню выносит те же действия, что и удержание.
+        if (e.Key is Key.Apps || (e.Key is Key.F10 && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+        {
+            e.Handled = ShowMenu();
+            return;
+        }
+
         if (e.Key is Key.Enter or Key.Space && !_entered)
         {
             if (!_holding)
@@ -263,13 +270,22 @@ internal sealed partial class RoutingCard : UserControl
     private void OnPressHeld(object? sender, EventArgs e)
     {
         _press.Stop();
-        if (!_holding || DataContext is not RoutingListSummaryViewModel item)
+        if (_holding)
         {
-            return;
+            _menued = ShowMenu();
+        }
+    }
+
+    // Действия карточки: настройки и перестановка.
+    private bool ShowMenu()
+    {
+        if (DataContext is not RoutingListSummaryViewModel item)
+        {
+            return false;
         }
 
-        _menued = true;
         CardMenu.Present(FacePart, Sheet, item.Name, Open, Take);
+        return true;
     }
 
     // Берёт карточку в перестановку: дальше её водят стрелки, а пульт остаётся на теле.
@@ -407,10 +423,10 @@ internal sealed partial class RoutingCard : UserControl
         }
     }
 
-    // Пока пульт не вошёл в карточку, её контролы не берут фокус: стрелка ходит по карточкам, а не по кнопкам.
+    // Пока фокус не вошёл в карточку, её контролы его не берут: шаг ходит по карточкам, а не по кнопкам.
     private void ApplyStopFocus()
     {
-        var stop = _entered || !UiPlatform.IsTelevision;
+        var stop = _entered || !UiPlatform.WalksFocus;
         ActivePart.Focusable = stop;
         SettingsPart.Focusable = stop;
         TagsPart.Stops = stop;

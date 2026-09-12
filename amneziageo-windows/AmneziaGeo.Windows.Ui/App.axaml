@@ -4,6 +4,6 @@
              RequestedThemeVariant="Light">
   <Application.Styles>
     <StyleInclude Source="avares://AmneziaGeo.Ui/Themes/SharedTheme.axaml" />
-    <StyleInclude Source="avares://AmneziaGeo.Ui/Themes/FlatFocus.axaml" />
+    <StyleInclude Source="avares://AmneziaGeo.Ui/Themes/DesktopFocus.axaml" />
   </Application.Styles>
 </Application>

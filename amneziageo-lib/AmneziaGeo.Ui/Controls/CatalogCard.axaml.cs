@@ -60,8 +60,8 @@ internal sealed partial class CatalogCard : UserControl
         _press = new DispatcherTimer { Interval = MenuHold };
         _press.Tick += OnPressHeld;
 
-        // Тело карточки берёт фокус только на телевизоре: там оно - вход в её контролы.
-        FacePart.Focusable = UiPlatform.IsTelevision;
+        // Тело карточки берёт фокус там, где по ней ходят клавишами: оно - вход в её контролы.
+        FacePart.Focusable = UiPlatform.WalksFocus;
         ApplyStopFocus();
 
         // Тоннельно: жест читается раньше, чем его возьмёт кнопка карточки.
@@ -71,7 +71,7 @@ internal sealed partial class CatalogCard : UserControl
         AddHandler(PointerCaptureLostEvent, OnCardCaptureLost, RoutingStrategies.Tunnel);
         GotFocus += OnCardGotFocus;
 
-        if (UiPlatform.IsTelevision)
+        if (UiPlatform.WalksFocus)
         {
             AddHandler(KeyDownEvent, OnCardKeyDown, RoutingStrategies.Tunnel);
             AddHandler(KeyUpEvent, OnCardKeyUp, RoutingStrategies.Tunnel);
@@ -158,6 +158,7 @@ internal sealed partial class CatalogCard : UserControl
     {
         base.OnAttachedToVisualTree(e);
         ApplyOrderLook();
+        Dispatcher.UIThread.Post(ApplyStopFocus, DispatcherPriority.Loaded);
     }
 
     /// <inheritdoc/>
@@ -230,6 +231,13 @@ internal sealed partial class CatalogCard : UserControl
             return;
         }
 
+        // Клавиша меню выносит те же действия, что и удержание.
+        if (e.Key is Key.Apps || (e.Key is Key.F10 && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
+        {
+            e.Handled = ShowMenu();
+            return;
+        }
+
         if (e.Key is Key.Enter or Key.Space && !_entered)
         {
             if (!_holding)
@@ -290,13 +298,22 @@ internal sealed partial class CatalogCard : UserControl
     private void OnPressHeld(object? sender, EventArgs e)
     {
         _press.Stop();
-        if (!_holding || DataContext is not ConfigItemViewModel item)
+        if (_holding)
         {
-            return;
+            _menued = ShowMenu();
+        }
+    }
+
+    // Действия карточки: настройки и перестановка.
+    private bool ShowMenu()
+    {
+        if (DataContext is not ConfigItemViewModel item)
+        {
+            return false;
         }
 
-        _menued = true;
         CardMenu.Present(FacePart, Sheet, item.Name, Open, Take);
+        return true;
     }
 
     // Берёт карточку в перестановку: дальше её водят стрелки, а пульт остаётся на теле.
@@ -459,17 +476,30 @@ internal sealed partial class CatalogCard : UserControl
             rows.Add([RefreshPart]);
         }
 
+        var extras = ExtraStops().Where(stop => stop is { IsVisible: true, IsEnabled: true }).ToList();
+        if (extras.Count > 0)
+        {
+            rows.Add([.. extras]);
+        }
+
         rows.Add([.. TagsPart.Presses(), SettingsPart]);
         return rows;
     }
 
-    // Пока пульт не вошёл в карточку, её контролы не берут фокус: стрелка ходит по карточкам, а не по кнопкам.
+    // Пока фокус не вошёл в карточку, её контролы его не берут: шаг ходит по карточкам, а не по кнопкам.
     private void ApplyStopFocus()
     {
-        var stop = _entered || !UiPlatform.IsTelevision;
+        var stop = _entered || !UiPlatform.WalksFocus;
         ConnectPart.Focusable = stop;
         RefreshPart.Focusable = stop;
         SettingsPart.Focusable = stop;
         TagsPart.Stops = stop;
+        foreach (var extra in ExtraStops())
+        {
+            extra.Focusable = stop;
+        }
     }
+
+    // Кнопки, добавленные оболочкой в строку состояния карточки.
+    private IEnumerable<Button> ExtraStops() => ExtrasPart.GetVisualDescendants().OfType<Button>();
 }

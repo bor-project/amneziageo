@@ -83,7 +83,7 @@
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               </StackPanel>
               <!-- Место режима: у машины с одним туннелем пусто и строки не занимает. -->
-              <ContentControl VerticalAlignment="Center"
+              <ContentControl x:Name="ExtrasPart" VerticalAlignment="Center"
                               Content="{Binding $parent[controls:CatalogCard].Extras}"
                               IsVisible="{Binding $parent[controls:CatalogCard].Extras, Converter={x:Static ObjectConverters.IsNotNull}}" />
             </StackPanel>

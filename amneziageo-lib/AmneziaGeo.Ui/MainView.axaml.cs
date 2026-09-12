@@ -145,6 +145,7 @@ public sealed partial class MainView : UserControl
         {
             _topLevel.BackRequested += OnBackRequested;
             _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
+            _topLevel.AddHandler(KeyDownEvent, OnSeatKeyDown, RoutingStrategies.Tunnel);
         }
 
         FocusCurrentScreen();
@@ -157,6 +158,7 @@ public sealed partial class MainView : UserControl
         {
             _topLevel.BackRequested -= OnBackRequested;
             _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
+            _topLevel.RemoveHandler(KeyDownEvent, OnSeatKeyDown);
             _topLevel = null;
         }
 
@@ -171,6 +173,39 @@ public sealed partial class MainView : UserControl
             e.Handled = true;
         }
     }
+
+    // Навигационная клавиша сажает потерянный фокус.
+    private void OnSeatKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (!e.Handled && e.Key is Key.Tab or Key.Down or Key.Up or Key.Left or Key.Right)
+        {
+            e.Handled = SeatFocus();
+        }
+    }
+
+    // Ставит фокус на начало показанного экрана.
+    private bool SeatFocus()
+    {
+        if (!UiPlatform.WalksFocus || _vm is null || _vm.Sheet.IsOpen || Focused())
+        {
+            return false;
+        }
+
+        if (!_vm.IsSettings)
+        {
+            return HomePowerButton.IsEffectivelyVisible && HomePowerButton.Focus(NavigationMethod.Directional);
+        }
+
+        return (ContentPane.IsEffectivelyVisible && Controls.PaneFocus.FocusFirst(ContentPane))
+            || FocusRail(NavigationMethod.Directional);
+    }
+
+    // Фокус стоит на контроле, который ещё на экране.
+    private bool Focused() =>
+        _topLevel?.FocusManager?.GetFocusedElement() is Control control
+        && !ReferenceEquals(control, _topLevel)
+        && control.IsEffectivelyVisible
+        && control.GetVisualRoot() is not null;
 
     // Android back button. Unhandled it finishes the activity, so settings would quit the app instead of
     // stepping back; the system still gets it from home.

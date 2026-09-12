@@ -65,25 +65,25 @@
     <value>Туннель</value>
   </data>
   <data name="General_NetworkRepairSection" xml:space="preserve">
-    <value>Сброс настроек</value>
+    <value>Восстановление сети</value>
   </data>
   <data name="General_NetworkRepairHint" xml:space="preserve">
-    <value>Убирает DNS, прописанный приложением адаптерам, если пропал интернет. Конфигурации и маршруты не трогает.</value>
+    <value>Если пропал интернет, возвращает сетевым адаптерам прежние DNS-серверы. Конфигурации и маршруты не меняются.</value>
   </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
-    <value>Сбросить</value>
+    <value>Восстановить</value>
   </data>
   <data name="General_NetworkRepairDone" xml:space="preserve">
-    <value>Сброс запущен. Подтвердите запрос прав.</value>
+    <value>Восстановление запущено: подтвердите его в окне контроля учётных записей.</value>
   </data>
   <data name="General_NetworkRepairFailed" xml:space="preserve">
-    <value>Не удалось запустить сброс.</value>
+    <value>Не удалось запустить восстановление.</value>
   </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
   </data>
   <data name="General_ShowNotificationsHint" xml:space="preserve">
-    <value>Показывать оповещения в трее: подключение, обновления приложения и баз.</value>
+    <value>Сообщать в трее о подключении, обновлениях приложения и баз.</value>
   </data>
   <data name="General_AllowPrerelease" xml:space="preserve">
     <value>Проверять предварительные версии</value>
@@ -98,10 +98,10 @@
     <value>Разрешить подключения</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>Доступен этому устройству и локальной сети.</value>
+    <value>Программы на этом компьютере и устройства в локальной сети смогут выходить в интернет через туннель.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
-    <value>Работает только при поднятом туннеле.</value>
+    <value>Работает, только пока туннель подключён.</value>
   </data>
   <data name="General_ProxySocksPort" xml:space="preserve">
     <value>Порт SOCKS5</value>
@@ -110,16 +110,16 @@
     <value>Порт HTTP</value>
   </data>
   <data name="General_ProxyAnonymous" xml:space="preserve">
-    <value>Пускать без пароля</value>
+    <value>Подключение без пароля</value>
   </data>
   <data name="General_ProxyAnonymousHint" xml:space="preserve">
-    <value>Клиенту хватит адреса и порта.</value>
+    <value>Подключиться можно по адресу и порту, без логина и пароля.</value>
   </data>
   <data name="General_ProxyOpenWarning" xml:space="preserve">
-    <value>Прокси открыт всем в этой сети.</value>
+    <value>Прокси доступен любому устройству в этой сети.</value>
   </data>
   <data name="General_ProxyNoAccountWarning" xml:space="preserve">
-    <value>Нет учётных записей - никто не подключится.</value>
+    <value>Добавьте учётную запись, иначе никто не сможет подключиться.</value>
   </data>
   <data name="General_ProxyUser" xml:space="preserve">
     <value>Пользователь</value>
@@ -128,7 +128,7 @@
     <value>Пароль</value>
   </data>
   <data name="General_ProxyAuthHint" xml:space="preserve">
-    <value>Клиент входит под любой из них.</value>
+    <value>Для подключения подойдёт любая из них.</value>
   </data>
   <data name="General_ProxyAccounts" xml:space="preserve">
     <value>Учётные записи</value>
@@ -140,7 +140,7 @@
     <value>Показать, кто подключён</value>
   </data>
   <data name="General_ProxyNoClients" xml:space="preserve">
-    <value>Никто не подключён.</value>
+    <value>Сейчас никто не подключён.</value>
   </data>
   <data name="General_ProxyClientConnections" xml:space="preserve">
     <value>подключений: {0}</value>
@@ -161,7 +161,7 @@
     <value>Точка доступа</value>
   </data>
   <data name="General_HotspotEnabledHint" xml:space="preserve">
-    <value>Устройства подключаются к ней и выходят через туннель.</value>
+    <value>Компьютер раздаёт Wi-Fi, а подключённые устройства выходят в интернет через туннель.</value>
   </data>
   <data name="General_HotspotSsid" xml:space="preserve">
     <value>Имя сети</value>
@@ -182,10 +182,10 @@
     <value>5 ГГц</value>
   </data>
   <data name="General_HotspotBandAdapter" xml:space="preserve">
-    <value>Диапазон выбрал адаптер.</value>
+    <value>Адаптер сам выбрал диапазон.</value>
   </data>
   <data name="General_HotspotBandActual" xml:space="preserve">
-    <value>Работает на {0}.</value>
+    <value>Сеть работает на частоте {0}.</value>
   </data>
   <data name="General_HotspotNoAdapter" xml:space="preserve">
     <value>Wi-Fi-адаптер не найден.</value>
@@ -194,25 +194,25 @@
     <value>Wi-Fi выключен.</value>
   </data>
   <data name="General_HotspotNoApMode" xml:space="preserve">
-    <value>Адаптер не работает точкой доступа.</value>
+    <value>Этот адаптер не умеет раздавать Wi-Fi.</value>
   </data>
   <data name="General_HotspotNoTools" xml:space="preserve">
-    <value>Не установлены hostapd и dnsmasq.</value>
+    <value>Для раздачи Wi-Fi нужны пакеты hostapd и dnsmasq.</value>
   </data>
   <data name="General_HotspotServiceOff" xml:space="preserve">
-    <value>Служба общего доступа к интернету остановлена.</value>
+    <value>Служба «Общий доступ к подключению к Интернету» остановлена.</value>
   </data>
   <data name="General_HotspotNoPlatform" xml:space="preserve">
-    <value>Точка доступа на этой системе недоступна.</value>
+    <value>Раздача Wi-Fi в этой системе не поддерживается.</value>
   </data>
   <data name="General_HotspotNeedsName" xml:space="preserve">
-    <value>Задайте имя сети и пароль.</value>
+    <value>Укажите имя сети и пароль.</value>
   </data>
   <data name="General_HotspotBadSsid" xml:space="preserve">
-    <value>Имя сети - от 1 до 32 байт.</value>
+    <value>Имя сети слишком длинное: до 32 латинских букв или до 16 русских.</value>
   </data>
   <data name="General_HotspotBadPassword" xml:space="preserve">
-    <value>Пароль - от 8 до 63 символов.</value>
+    <value>Пароль должен быть от 8 до 63 символов.</value>
   </data>
   <data name="General_HotspotClients" xml:space="preserve">
     <value>Устройства</value>
@@ -221,7 +221,7 @@
     <value>{0} из {1}</value>
   </data>
   <data name="General_HotspotRunning" xml:space="preserve">
-    <value>Точка доступа поднята.</value>
+    <value>Точка доступа работает.</value>
   </data>
   <data name="General_HotspotRevealTooltip" xml:space="preserve">
     <value>Показать пароль</value>
@@ -230,13 +230,13 @@
     <value>Восстанавливать после перезагрузки</value>
   </data>
   <data name="General_SurviveRebootHint" xml:space="preserve">
-    <value>Автоподключение выбранной конфигурации при запуске компьютера.</value>
+    <value>Подключать выбранную конфигурацию при включении компьютера.</value>
   </data>
   <data name="General_PeriodicReconnect" xml:space="preserve">
-    <value>Периодическое авто-переподключение</value>
+    <value>Переподключаться автоматически</value>
   </data>
   <data name="General_PeriodicReconnectHint" xml:space="preserve">
-    <value>Повторять попытки с заданным интервалом, пока подключение неактивно.</value>
+    <value>Если подключение пропало, повторять попытки через заданный интервал.</value>
   </data>
   <data name="General_MultiServer" xml:space="preserve">
     <value>Разрешить несколько VPN</value>
@@ -254,13 +254,13 @@
     <value>Проверок перед переключением</value>
   </data>
   <data name="General_BalanceStrikesHint" xml:space="preserve">
-    <value>Сколько проверок подряд сервер должен не отвечать, прежде чем правило переключится на другой.</value>
+    <value>После скольких проверок без ответа подряд правило переходит на другой сервер.</value>
   </data>
   <data name="General_BalanceMargin" xml:space="preserve">
     <value>Порог переключения</value>
   </data>
   <data name="General_BalanceMarginHint" xml:space="preserve">
-    <value>Насколько быстрее должен отвечать другой сервер, чтобы переключить на него правило.</value>
+    <value>Насколько быстрее должен отвечать другой сервер, чтобы правило перешло на него.</value>
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Интервал повтора</value>
@@ -332,7 +332,7 @@
     <value>МАРШРУТИЗАЦИЯ</value>
   </data>
   <data name="BundleExport_RoutingRulesHint" xml:space="preserve">
-    <value>Снимите галочки с правил, которые не нужно выгружать (например приложения на этой машине).</value>
+    <value>Снимите отметки с правил, которые не нужно переносить (например, приложения этого компьютера).</value>
   </data>
   <data name="BundleExport_SendToAppButton" xml:space="preserve">
     <value>Отправить…</value>
@@ -410,13 +410,13 @@
     <value>Добавить локальные сети</value>
   </data>
   <data name="Main_AddTunnelSubnetsButton" xml:space="preserve">
-    <value>Добавить сети подключений</value>
+    <value>Добавить сети VPN-подключений</value>
   </data>
   <data name="Main_DiagnosticsSection" xml:space="preserve">
     <value>Диагностика</value>
   </data>
   <data name="Main_ArchiveHint" xml:space="preserve">
-    <value>Складывает журналы, настройки и состояние туннеля в один zip для отправки в поддержку. Ключи и учётные данные в нём скрыты.</value>
+    <value>Собирает журналы, настройки и состояние туннеля в один zip-архив для поддержки. Ключи и пароли в нём скрыты.</value>
   </data>
   <data name="Main_ArchiveButton" xml:space="preserve">
     <value>Собрать архив</value>
@@ -455,25 +455,25 @@
     <value>Время жизни маршрута</value>
   </data>
   <data name="Main_RouteTtlHint" xml:space="preserve">
-    <value>Сколько адрес живёт в кеше</value>
+    <value>Сколько адрес хранится в кеше</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Использовать IPv6</value>
   </data>
   <data name="Main_InboundTitle" xml:space="preserve">
-    <value>Приём входящих подключений</value>
+    <value>Разрешить входящие подключения из VPN-сети</value>
   </data>
   <data name="Main_InboundHint" xml:space="preserve">
-    <value>Устройства туннеля обращаются к этому компьютеру по его адресу в туннеле</value>
+    <value>Другие устройства в VPN-сети смогут подключаться к этому компьютеру по его VPN-адресам:</value>
   </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Роутер</value>
   </data>
   <data name="Main_RouterHint" xml:space="preserve">
-    <value>Решение по каждому соединению, поэтому работают правила по приложениям и именам; без него решает таблица маршрутов, а имена определяются один раз при подключении</value>
+    <value>Каждое соединение проверяется по правилам, поэтому работают правила для приложений и доменов. Без роутера решает таблица маршрутов, а домены определяются один раз при подключении</value>
   </data>
   <data name="RoutingEditor_RoutesTrimmed" xml:space="preserve">
-    <value>Список не помещается: прямой путь сохраняют {0} из {1} диапазонов «Директ», остальные пойдут через туннель.</value>
+    <value>Список не помещается целиком: напрямую пойдут только {0} из {1} диапазонов «Напрямую», остальные пойдут через туннель.</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
@@ -626,7 +626,7 @@
     <value>Удаление конфигурации</value>
   </data>
   <data name="Main_DeleteConfigPrompt" xml:space="preserve">
-    <value>Удалить «{0}» насовсем. Работающий на ней туннель перейдёт на соседний сервер.</value>
+    <value>Удалить конфигурацию «{0}»? Это действие нельзя отменить.</value>
   </data>
   <data name="Main_NoticeTunnelMoved" xml:space="preserve">
     <value>Туннель перешёл на «{0}»: сервера, на котором он работал, больше нет.</value>
@@ -638,7 +638,7 @@
     <value>Удаление списка</value>
   </data>
   <data name="Main_DeleteListPrompt" xml:space="preserve">
-    <value>Удалить «{0}» насовсем</value>
+    <value>Удалить список «{0}»? Вернуть его не получится.</value>
   </data>
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
@@ -668,7 +668,7 @@
     <value>Записи</value>
   </data>
   <data name="Main_ExclusionsHint" xml:space="preserve">
-    <value>Адреса, которые не заворачивать в VPN. По одному в строке. IP/подсеть идут напрямую мимо туннеля; домен резолвится локальным DNS (уходит напрямую, только если адрес локальный).</value>
+    <value>Адреса, которые пойдут мимо VPN, по одному в строке. IP-адрес или подсеть идут напрямую; домен определяется через локальный DNS и идёт напрямую, только если его адрес локальный.</value>
   </data>
   <data name="Main_ExclusionsLabel" xml:space="preserve">
     <value>ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)</value>
@@ -692,10 +692,10 @@
     <value>выключена</value>
   </data>
   <data name="Main_GeoDismissTooltip" xml:space="preserve">
-    <value>Позже - можно обновить в настройках</value>
+    <value>Позже: обновить можно в настройках</value>
   </data>
   <data name="Main_GeoKindsHint" xml:space="preserve">
-    <value>geosite - категории доменов, geoip - страны.</value>
+    <value>geosite: категории доменов, geoip: страны.</value>
   </data>
   <data name="Main_ImportButton" xml:space="preserve">
     <value>Импорт…</value>
@@ -737,19 +737,19 @@
     <value>Блок</value>
   </data>
   <data name="Main_RoleProxyHint" xml:space="preserve">
-    <value>Направлять через туннель.</value>
+    <value>Трафик идёт через туннель.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Мимо туннеля.</value>
+    <value>Трафик идёт напрямую, мимо туннеля.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Полностью блокировать.</value>
+    <value>Трафик блокируется.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>
   </data>
   <data name="Main_GlobalProxyHint" xml:space="preserve">
-    <value>Заворачивать в туннель всё, кроме «Директ»</value>
+    <value>Всё идёт через туннель, кроме «Напрямую»</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Загрузить файл…</value>
@@ -812,7 +812,7 @@
     <value>- не выбрано -</value>
   </data>
   <data name="Main_RoutingNoneHint" xml:space="preserve">
-    <value>Использует адреса из оригинального конфига.</value>
+    <value>Используются адреса из исходной конфигурации.</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
     <value>ПАРОЛЬ</value>
@@ -851,7 +851,7 @@
     <value>Прокси</value>
   </data>
   <data name="Main_ProxyWebSocketHint" xml:space="preserve">
-    <value>Использовать WS там, где UDP недоступен</value>
+    <value>Для сетей, где UDP заблокирован</value>
   </data>
   <data name="Main_ExportConfigTitle" xml:space="preserve">
     <value>Экспорт конфигурации</value>
@@ -911,10 +911,10 @@
     <value>Переименовать</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>Записывает маршруты и разрешения адресов.</value>
+    <value>Записывает в журнал маршруты и найденные адреса доменов.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
-    <value>Логировать подключения</value>
+    <value>Записывать подключения в журнал</value>
   </data>
   <data name="Main_RoutingCopyTooltip" xml:space="preserve">
     <value>Скопировать список в буфер обмена</value>
@@ -971,7 +971,7 @@
     <value>Тип определён по имени файла в URL</value>
   </data>
   <data name="Main_SourceRowTooltip" xml:space="preserve">
-    <value>Правый клик или ⋮ - обновить / удалить базу</value>
+    <value>Правый клик или ⋮: обновить или удалить базу</value>
   </data>
   <data name="Main_SourcesLabel" xml:space="preserve">
     <value>Источники</value>
@@ -1007,7 +1007,7 @@
     <value>Позже</value>
   </data>
   <data name="Main_ReconnectPrompt" xml:space="preserve">
-    <value>Сохранено - переподключитесь, чтобы применить</value>
+    <value>Сохранено. Переподключитесь, чтобы применить</value>
   </data>
   <data name="Main_RestartSheetTitle" xml:space="preserve">
     <value>Настройки изменены</value>
@@ -1031,7 +1031,7 @@
     <value>Сохранить...</value>
   </data>
   <data name="Qr_TooLargeHint" xml:space="preserve">
-    <value>Слишком большой для QR - используйте «Сохранить...» или «Копировать».</value>
+    <value>Не помещается в QR-код: используйте «Сохранить...» или «Копировать».</value>
   </data>
   <data name="Qr_WindowTitle" xml:space="preserve">
     <value>QR-код</value>
@@ -1112,7 +1112,7 @@
     <value>Изменить</value>
   </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
-    <value>QR распознан, но это не конфигурация</value>
+    <value>QR-код прочитан, но в нём нет конфигурации</value>
   </data>
   <data name="MainCode_QrNotFound" xml:space="preserve">
     <value>QR-код не найден на картинке</value>
@@ -1139,7 +1139,7 @@
     <value>Конфигурация «{0}» уже есть. Введите другое имя.</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
-    <value>Не распознано (.conf или vpn://)</value>
+    <value>Не похоже на конфигурацию: нужен файл .conf или ссылка vpn://</value>
   </data>
   <data name="MainVm_Connect" xml:space="preserve">
     <value>Подключить</value>
@@ -1175,10 +1175,10 @@
     <value>н/д</value>
   </data>
   <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
-    <value>Не удалось подключиться - сервер не ответил.</value>
+    <value>Не удалось подключиться: сервер не ответил.</value>
   </data>
   <data name="MainVm_NoticeDisconnectFailed" xml:space="preserve">
-    <value>Не удалось завершить отключение - служба туннеля не остановилась.</value>
+    <value>Не удалось отключиться: служба туннеля не остановилась.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
     <value>Не удалось подключиться: конфигурация не найдена.</value>
@@ -1190,19 +1190,19 @@
     <value>Служба туннеля не запустилась ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_UnderlayUnreachable" xml:space="preserve">
-    <value>Транспорт (wstunnel) не поднялся - сервер недоступен.</value>
+    <value>Не удалось запустить транспорт wstunnel: сервер недоступен.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_AdapterStartFailed" xml:space="preserve">
-    <value>Не удалось поднять сетевой адаптер туннеля.</value>
+    <value>Не удалось включить сетевой адаптер туннеля.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
-    <value>Сервер не ответил (нет рукопожатия) - недоступен или отклонил ключ.</value>
+    <value>Сервер не ответил: он недоступен или не принял ключ.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_LoopbackBlocked" xml:space="preserve">
-    <value>На этой машине закрыт UDP на петле - перевозчик WebSocket передаёт туннель движку через неё, разрешите UDP на lo.</value>
+    <value>На этом компьютере закрыт UDP на локальном интерфейсе lo, а через него WebSocket передаёт туннель движку. Разрешите UDP на lo.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
-    <value>Транспорт отклонил соединение - проверьте TLS-сертификат сервера ({0}).</value>
+    <value>Транспорт отклонил соединение: проверьте TLS-сертификат сервера ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>Время ожидания подключения истекло.</value>
@@ -1217,7 +1217,7 @@
     <value>Не удалось подключиться: разрешение на VPN отклонено.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TooManyRoutes" xml:space="preserve">
-    <value>Список маршрутизации больше, чем это устройство принимает за раз ({0}).</value>
+    <value>Список маршрутизации слишком большой для этого устройства ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TunnelSetupFailed" xml:space="preserve">
     <value>Не удалось создать интерфейс туннеля ({0}).</value>
@@ -1247,7 +1247,7 @@
     <value>Запуск установщика…</value>
   </data>
   <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
-    <value>Обновление скачано - можно устанавливать.</value>
+    <value>Обновление скачано, можно устанавливать.</value>
   </data>
   <data name="MainVm_UpdateVerifying" xml:space="preserve">
     <value>Проверка установщика…</value>
@@ -1298,16 +1298,16 @@
     <value>Импортировано правил: {0}. Введите имя, чтобы сохранить.</value>
   </data>
   <data name="RoutingEditor_ImportedNameTaken" xml:space="preserve">
-    <value>Список «{0}» уже есть - сохраняем как «{1}».</value>
+    <value>Список «{0}» уже есть, поэтому новый сохранится как «{1}».</value>
   </data>
   <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
     <value>Не похоже на список маршрутизации.</value>
   </data>
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
-    <value>Слишком широкий путь - выберите конкретную папку приложения.</value>
+    <value>Путь слишком общий: выберите папку конкретного приложения.</value>
   </data>
   <data name="RoutingEditor_OwnAppRule" xml:space="preserve">
-    <value>AmneziaGeo себя не маршрутизирует: выберите другое приложение.</value>
+    <value>Сам AmneziaGeo в правила не добавляется: выберите другое приложение.</value>
   </data>
   <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
     <value>Записей: {0}</value>
@@ -1322,13 +1322,13 @@
     <value>Сохранено</value>
   </data>
   <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
-    <value>svchost.exe - общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
+    <value>svchost.exe обслуживает сразу много служб, и в туннель попадёт лишнее. Выберите конкретную службу из списка.</value>
   </data>
   <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
-    <value>Это общий хост WebView2 - правило на нём затуннелит все приложения на WebView2. Добавьте конкретное приложение, его веб-трафик пойдёт вместе с ним.</value>
+    <value>Это общий процесс WebView2: правило для него отправит в туннель все приложения на WebView2. Добавьте нужное приложение, и его веб-трафик пойдёт вместе с ним.</value>
   </data>
   <data name="RoutingEditor_TooManyRoutes" xml:space="preserve">
-    <value>Список разворачивается в {0} маршрутов, устройство выдерживает {1}. Сократите список или уберите диапазоны из туннеля.</value>
+    <value>Из списка получается {0} маршрутов, а это устройство выдерживает {1}. Сократите список или уберите диапазоны из туннеля.</value>
   </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>Все локальные сети уже в списке.</value>
@@ -1343,7 +1343,7 @@
     <value>{0} правил · {1} маршрутов · {2} доменов</value>
   </data>
   <data name="ScanCode_QrNotConfig" xml:space="preserve">
-    <value>QR распознан, но это не конфигурация - продолжаю…</value>
+    <value>QR-код прочитан, но в нём нет конфигурации. Ищу дальше…</value>
   </data>
   <data name="ScanVm_AimCameraAtQr" xml:space="preserve">
     <value>Наведите камеру на QR-код…</value>
@@ -1385,7 +1385,7 @@
     <value>Вытеснено</value>
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
-    <value>MTU: 576-1500 (пусто = 1280).</value>
+    <value>MTU должен быть от 576 до 1500. Если оставить поле пустым, будет 1280.</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Укажите корректный порт WebSocket (1-65535).</value>
@@ -1394,19 +1394,19 @@
     <value>Проверяю сервер WebSocket…</value>
   </data>
   <data name="Transport_ProbeNoAddress" xml:space="preserve">
-    <value>Адрес сервера WebSocket не определяется: проверьте имя хоста.</value>
+    <value>Не удаётся найти адрес сервера WebSocket: проверьте имя хоста.</value>
   </data>
   <data name="Transport_ProbeNoAnswer" xml:space="preserve">
     <value>Сервер WebSocket не отвечает: проверьте порт и доступность сервера.</value>
   </data>
   <data name="Transport_ProbeTls" xml:space="preserve">
-    <value>На сервере WebSocket не установился TLS: на этом порту нет HTTPS или сертификат не подошёл.</value>
+    <value>Не удалось установить TLS-соединение с сервером WebSocket: на этом порту нет HTTPS или сертификат не подходит.</value>
   </data>
   <data name="Transport_ProbeRefused" xml:space="preserve">
     <value>Сервер WebSocket отклонил подключение: {0}</value>
   </data>
   <data name="Transport_ProbeDenied" xml:space="preserve">
-    <value>Сервер WebSocket отказал в доступе: не подошёл токен или логин и пароль.</value>
+    <value>Сервер WebSocket отказал в доступе: неверный токен или логин и пароль.</value>
   </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Доступна версия {0}</value>
@@ -1447,25 +1447,25 @@
     <value>конфигурация скопирована: {0}</value>
   </data>
   <data name="Agent_SubscriptionBadUrl" xml:space="preserve">
-    <value>не адрес подписки: {0}</value>
+    <value>это не адрес подписки: {0}</value>
   </data>
   <data name="Agent_SubscriptionNameTaken" xml:space="preserve">
-    <value>подписка {0} уже заведена</value>
+    <value>подписка {0} уже добавлена</value>
   </data>
   <data name="Agent_SubscriptionUnknown" xml:space="preserve">
     <value>нет такой подписки: {0}</value>
   </data>
   <data name="Agent_SubscriptionFailed" xml:space="preserve">
-    <value>подписка {0} не прочитана: {1}</value>
+    <value>не удалось загрузить подписку {0}: {1}</value>
   </data>
   <data name="Agent_SubscriptionAdded" xml:space="preserve">
     <value>подписка {0}: конфигураций {1}</value>
   </data>
   <data name="Agent_SubscriptionRefreshed" xml:space="preserve">
-    <value>добавлено {0}, переписано {1}, пропало {2}</value>
+    <value>добавлено {0}, обновлено {1}, исчезло {2}</value>
   </data>
   <data name="Agent_SubscriptionRemoved" xml:space="preserve">
-    <value>подписка {0} снята</value>
+    <value>подписка {0} удалена</value>
   </data>
   <data name="Main_QrSubscriptionTabShort" xml:space="preserve">
     <value>Подписка</value>
@@ -1474,25 +1474,25 @@
     <value>импортирован {0}</value>
   </data>
   <data name="Agent_ConfigNameTaken" xml:space="preserve">
-    <value>конфигурация «{0}» уже есть - выберите другое имя</value>
+    <value>конфигурация «{0}» уже есть, выберите другое имя</value>
   </data>
   <data name="Agent_ConfigRejected" xml:space="preserve">
-    <value>конфигурация отклонена - {0}</value>
+    <value>конфигурация отклонена: {0}</value>
   </data>
   <data name="Agent_ConfigUnsupportedKey" xml:space="preserve">
-    <value>конфигурации нужен AmneziaWG новее, чем понимает эта версия - незнакомый параметр «{0}»</value>
+    <value>для этой конфигурации нужна более новая версия AmneziaWG: неизвестный параметр «{0}»</value>
   </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>сохранён {0}</value>
   </data>
   <data name="Agent_ConnectWaiting" xml:space="preserve">
-    <value>туннель поднят, ждёт первого ответа сервера</value>
+    <value>туннель запущен, ждём первого ответа сервера</value>
   </data>
   <data name="Agent_RoutingListNameTaken" xml:space="preserve">
-    <value>список маршрутизации «{0}» уже есть - выберите другое имя</value>
+    <value>список маршрутизации «{0}» уже есть, выберите другое имя</value>
   </data>
   <data name="Agent_RoutingListOwnApp" xml:space="preserve">
-    <value>Правило {0} называет сам AmneziaGeo, а его он не маршрутизирует.</value>
+    <value>Правило {0} указывает на сам AmneziaGeo, а его трафик не маршрутизируется.</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Не удалось собрать логи: {0}</value>
@@ -1519,7 +1519,7 @@
     <value>Загружено {0} из {1}; не удалось: {2}.</value>
   </data>
   <data name="Agent_ListsDownloadedProcessFailed" xml:space="preserve">
-    <value>Списки скачаны, но не удалось обработать: {0}</value>
+    <value>Списки скачаны, но обработать их не удалось: {0}</value>
   </data>
   <data name="Agent_NameTaken" xml:space="preserve">
     <value>имя {0} уже занято</value>
@@ -1596,9 +1596,9 @@
 Запустите AmneziaGeoSetup.exe - это и есть установщик.</value>
   </data>
   <data name="Installer_WrongArchitecture" xml:space="preserve">
-    <value>Этот установщик собран для 64-разрядной Intel-машины, а у вас ARM64.
+    <value>Этот установщик для компьютеров x64, а у вас ARM64.
 
-Скачайте установщик для ARM64: сборка x64 ставится, но туннель на ней здесь не поднимается.</value>
+Скачайте установщик для ARM64: версия x64 установится, но туннель на ней не заработает.</value>
   </data>
   <data name="InstallerBa_ApplyError" xml:space="preserve">
     <value>Ошибка (0x{0:X8}).</value>
@@ -1607,16 +1607,16 @@
     <value>Нельзя установить более раннюю версию поверх установленной. Сначала удалите AmneziaGeo.</value>
   </data>
   <data name="InstallerBa_GeoUpToDate" xml:space="preserve">
-    <value>Базы гео актуальны - загрузка не требуется.</value>
+    <value>Гео-базы актуальны, загрузка не нужна.</value>
   </data>
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
-    <value>Не удалось обновить базы гео ({0}). Можно сделать это позже в приложении.</value>
+    <value>Не удалось обновить гео-базы ({0}). Это можно сделать позже в приложении.</value>
   </data>
   <data name="InstallerBa_NewerNotFound" xml:space="preserve">
     <value>Деинсталлятор установленной версии не найден. Удалите AmneziaGeo через «Установка и удаление программ» и повторите.</value>
   </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
-    <value>Не удалось спланировать операцию.</value>
+    <value>Не удалось подготовить операцию.</value>
   </data>
   <data name="InstallerBa_RemoveNewerFailed" xml:space="preserve">
     <value>Не удалось удалить установленную версию. Удалите AmneziaGeo через «Установка и удаление программ» и повторите.</value>
@@ -1640,13 +1640,13 @@
     <value>Закрыть</value>
   </data>
   <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
-    <value>Скачать обновления файлов баз гео</value>
+    <value>Скачать обновления гео-баз</value>
   </data>
   <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
     <value>Запустить AmneziaGeo после установки</value>
   </data>
   <data name="InstallerUi_AutoConnect" xml:space="preserve">
-    <value>Подключиться</value>
+    <value>Подключиться после запуска</value>
   </data>
   <data name="InstallerUi_DesktopShortcut" xml:space="preserve">
     <value>Ярлык на рабочем столе</value>
@@ -1667,13 +1667,13 @@
     <value>AmneziaGeo уже установлен. Можно обновить, восстановить или удалить.</value>
   </data>
   <data name="InstallerVm_CheckingGeoUpdates" xml:space="preserve">
-    <value>Проверка обновлений баз гео…</value>
+    <value>Проверка обновлений гео-баз…</value>
   </data>
   <data name="InstallerVm_CheckingInstall" xml:space="preserve">
     <value>Проверка установки…</value>
   </data>
   <data name="InstallerVm_DownloadingGeo" xml:space="preserve">
-    <value>Загрузка файлов баз гео…</value>
+    <value>Загрузка гео-баз…</value>
   </data>
   <data name="InstallerVm_Install" xml:space="preserve">
     <value>Установить</value>
@@ -1748,7 +1748,7 @@
     <value>Сбросить настройки</value>
   </data>
   <data name="InstallerVm_DeleteConfigAndCache" xml:space="preserve">
-    <value>Удалить конфигурацию и кэш</value>
+    <value>Удалить конфигурации и кеш</value>
   </data>
   <data name="InstallerVm_OptionsInstall" xml:space="preserve">
     <value>Параметры установки</value>
@@ -1778,19 +1778,19 @@
     <value>Добавлено конфигураций: {0}</value>
   </data>
   <data name="Drop_ImportedRouting" xml:space="preserve">
-    <value>Добавлено настроек маршрутизации: {0}</value>
+    <value>Добавлено списков маршрутизации: {0}</value>
   </data>
   <data name="Drop_Skipped" xml:space="preserve">
     <value>Пропущено: {0}</value>
   </data>
   <data name="Drop_BundleHint" xml:space="preserve">
-    <value>Бэкап импортируется в окне импорта</value>
+    <value>Резервную копию можно загрузить в окне импорта</value>
   </data>
   <data name="Main_ConfigNameWatermark" xml:space="preserve">
     <value>Название конфигурации</value>
   </data>
   <data name="Main_RequiredEmptyWarning" xml:space="preserve">
-    <value>Обязательное поле - изменения не сохранятся, пока оно пустое.</value>
+    <value>Обязательное поле: пока оно пустое, изменения не сохранятся.</value>
   </data>
   <data name="Launcher_Title" xml:space="preserve">
     <value>Быстрый запуск</value>
@@ -1817,7 +1817,7 @@
     <value>{0} из {1}</value>
   </data>
   <data name="MainVm_LiveShownCapped" xml:space="preserve">
-    <value>{0} из {1}, агент отдал {2}</value>
+    <value>{0} из {1}, агент передал {2}</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
     <value>Журнал</value>
@@ -1835,13 +1835,13 @@
     <value>Linux-агент пока не обрабатывает «{0}».</value>
   </data>
   <data name="Agent_UpdateRunByWindow" xml:space="preserve">
-    <value>На этой системе обновление скачивает и устанавливает само окно приложения.</value>
+    <value>В этой системе обновление скачивается и устанавливается из окна приложения.</value>
   </data>
   <data name="Agent_PerAppUnsupported" xml:space="preserve">
-    <value>Маршрутизация по приложениям на этой системе не реализована.</value>
+    <value>Маршрутизация по приложениям в этой системе не поддерживается.</value>
   </data>
   <data name="Android_PerConfigResolverUnsupported" xml:space="preserve">
-    <value>Свой DNS и свои исключения у конфигурации на Android ни на что не влияют: имена разрешаются внутри туннеля, а исключения задаются в списке маршрутизации.</value>
+    <value>На Android собственные DNS и исключения конфигурации не действуют: домены определяются внутри туннеля, а исключения задаются в списке маршрутизации.</value>
   </data>
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Разрешите AmneziaGeo устанавливать приложения и нажмите «Установить» ещё раз.</value>
@@ -1865,7 +1865,7 @@
     <value>Готовый набор</value>
   </data>
   <data name="Main_MethodPresetHint" xml:space="preserve">
-    <value>Ничего не настраивать</value>
+    <value>Без ручной настройки</value>
   </data>
   <data name="Main_MethodManualTitle" xml:space="preserve">
     <value>Вручную</value>
@@ -1877,7 +1877,7 @@
     <value>Импорт</value>
   </data>
   <data name="Main_MethodImportHint" xml:space="preserve">
-    <value>Готовый список со стороны</value>
+    <value>Готовый список из файла, буфера или QR-кода</value>
   </data>
   <data name="Preset_SectionTitle" xml:space="preserve">
     <value>Готовый набор</value>
@@ -1886,13 +1886,13 @@
     <value>Блокировать рекламу</value>
   </data>
   <data name="Preset_AdsHint" xml:space="preserve">
-    <value>Добавить к любому набору</value>
+    <value>Добавляется к любому набору</value>
   </data>
   <data name="Preset_ClosedName" xml:space="preserve">
     <value>Недоступные сайты</value>
   </data>
   <data name="Preset_ClosedHint" xml:space="preserve">
-    <value>Через VPN идут сайты из готового списка, остальное - напрямую.</value>
+    <value>Через VPN идут сайты из готового списка, остальное идёт напрямую.</value>
   </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Всё, кроме выбранного региона</value>
@@ -1904,7 +1904,7 @@
     <value>Всё через VPN</value>
   </data>
   <data name="Preset_EverythingHint" xml:space="preserve">
-    <value>Через VPN идёт всё без исключений, напрямую - домашняя сеть.</value>
+    <value>Через VPN идёт всё, кроме домашней сети.</value>
   </data>
   <data name="Preset_RegionTitle" xml:space="preserve">
     <value>Регион</value>
@@ -1922,7 +1922,7 @@
     <value>Поиск</value>
   </data>
   <data name="Preset_RegionMore" xml:space="preserve">
-    <value>Ещё {0} по поиску</value>
+    <value>Ещё {0}: уточните поиск</value>
   </data>
   <data name="Preset_Applying" xml:space="preserve">
     <value>Применение набора…</value>
@@ -1940,10 +1940,10 @@
     <value>VPN используется другой учётной записью.</value>
   </data>
   <data name="MainVm_NoticeTunnelOwnedByOther" xml:space="preserve">
-    <value>VPN подключён под другой учётной записью. Переключить на ваш?</value>
+    <value>VPN подключён под другой учётной записью. Переключить на вашу?</value>
   </data>
   <data name="Main_TakeoverButton" xml:space="preserve">
-    <value>Переключить на свой</value>
+    <value>Переключить на свою</value>
   </data>
   <data name="FileBrowser_ScopedHint" xml:space="preserve">
     <value>Android скрывает файлы, которые не принадлежат приложению. Разрешите доступ ко всем файлам или скопируйте конфигурацию в папку приложения:</value>
@@ -1976,16 +1976,16 @@
     <value>Состояние</value>
   </data>
   <data name="Tui_Hint" xml:space="preserve">
-    <value>Tab - переход между панелями, F10 - выход</value>
+    <value>Tab: переход между панелями, F10: выход</value>
   </data>
   <data name="Tui_Tunnel" xml:space="preserve">
     <value>Туннель</value>
   </data>
   <data name="Tui_Up" xml:space="preserve">
-    <value>поднят</value>
+    <value>подключён</value>
   </data>
   <data name="Tui_Down" xml:space="preserve">
-    <value>опущен</value>
+    <value>отключён</value>
   </data>
   <data name="Tui_Agent" xml:space="preserve">
     <value>Агент</value>
@@ -2045,19 +2045,19 @@
     <value>Одно правило в строке: proxy|geosite:x, direct|geoip:ru, block|domain:y</value>
   </data>
   <data name="Tui_BadRule" xml:space="preserve">
-    <value>«{0}» - не правило</value>
+    <value>«{0}» не похоже на правило</value>
   </data>
   <data name="Tui_Downloading" xml:space="preserve">
     <value>Идёт загрузка баз, это займёт время</value>
   </data>
   <data name="Tui_LogEmpty" xml:space="preserve">
-    <value>Журнал пуст: поднимите уровень на экране Общие</value>
+    <value>Журнал пуст: повысьте уровень журнала на экране «Общие»</value>
   </data>
   <data name="Agent_NoConfigSelected" xml:space="preserve">
     <value>Конфигурация не выбрана.</value>
   </data>
   <data name="Main_AlwaysOnMode" xml:space="preserve">
-    <value>Постоянная VPN: кнопка открывает системный экран</value>
+    <value>Включён постоянный VPN: кнопка открывает системные настройки</value>
   </data>
   <data name="Main_HomeRoutingHint" xml:space="preserve">
     <value>Включить или выключить маршрутизацию</value>
@@ -2120,7 +2120,7 @@
     <value>потери в туннеле: пока нет данных</value>
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
-    <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
+    <value>правила по доменам не работают: адреса сайтов на этом компьютере определяет другая программа (например, корпоративный VPN-клиент). Такие сайты идут мимо туннеля или не открываются</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Выбран</value>
@@ -2132,7 +2132,7 @@
     <value>{0} прокси</value>
   </data>
   <data name="Main_CardRulesDirect" xml:space="preserve">
-    <value>{0} директ</value>
+    <value>{0} напрямую</value>
   </data>
   <data name="Main_CardRulesBlock" xml:space="preserve">
     <value>{0} блок</value>
@@ -2168,19 +2168,19 @@
     <value>до {0}</value>
   </data>
   <data name="Main_SubscriptionChecked" xml:space="preserve">
-    <value>прочитана {0}</value>
+    <value>обновлена {0}</value>
   </data>
   <data name="Main_SubscriptionNever" xml:space="preserve">
-    <value>ещё не читалась</value>
+    <value>ещё не обновлялась</value>
   </data>
   <data name="Main_SubscriptionRefresh" xml:space="preserve">
     <value>Обновить</value>
   </data>
   <data name="Main_SubscriptionRemove" xml:space="preserve">
-    <value>Снять</value>
+    <value>Удалить</value>
   </data>
   <data name="Main_SubscriptionRemovePrompt" xml:space="preserve">
-    <value>Снять подписку вместе с тем, что она принесла?</value>
+    <value>Удалить подписку? Её конфигурации можно оставить.</value>
   </data>
   <data name="Main_SubscriptionKeepConfigs" xml:space="preserve">
     <value>Оставить конфигурации</value>
@@ -2189,28 +2189,28 @@
     <value>Удалить вместе с ними</value>
   </data>
   <data name="Main_SubscriptionHint" xml:space="preserve">
-    <value>Адрес подписки узнаётся сам: вставьте его сюда, конфигурации придут вместе с ним.</value>
+    <value>Вставьте сюда адрес подписки: приложение распознает его и загрузит конфигурации.</value>
   </data>
   <data name="Main_SubscriptionInsecure" xml:space="preserve">
-    <value>Адрес без шифрования: ключи подписки поедут открытым текстом, и по дороге их прочитает кто угодно.</value>
+    <value>Адрес без шифрования: ключи из подписки передаются открытым текстом, их может перехватить кто угодно.</value>
   </data>
   <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
     <value>Автообновление подписок</value>
   </data>
   <data name="General_SubscriptionAutoRefreshHint" xml:space="preserve">
-    <value>Изменённая в панели конфигурация переписывается сама; применяется на следующем подключении.</value>
+    <value>Если конфигурацию изменили в панели, она обновится сама и применится при следующем подключении.</value>
   </data>
   <data name="General_SubscriptionInterval" xml:space="preserve">
     <value>Как часто обновлять</value>
   </data>
   <data name="General_SubscriptionIntervalHint" xml:space="preserve">
-    <value>Берётся там, где панель не назвала свой срок.</value>
+    <value>Действует, если панель не задала свой интервал.</value>
   </data>
   <data name="General_SubscriptionRefreshAll" xml:space="preserve">
     <value>Обновить подписки сейчас</value>
   </data>
   <data name="General_SubscriptionRefreshAllHint" xml:space="preserve">
-    <value>Читает все подписки разом, не дожидаясь срока.</value>
+    <value>Обновляет все подписки сразу, не дожидаясь срока.</value>
   </data>
   <data name="General_SubscriptionRefreshAllButton" xml:space="preserve">
     <value>Обновить все</value>
@@ -2237,13 +2237,13 @@
     <value>Маршрут</value>
   </data>
   <data name="Main_RuleFallbackLabel" xml:space="preserve">
-    <value>Фоллбек</value>
+    <value>Запасной</value>
   </data>
   <data name="Main_RuleRouteTooltip" xml:space="preserve">
-    <value>Куда правило едет</value>
+    <value>Куда идёт трафик правила</value>
   </data>
   <data name="Main_RuleRouteEntriesTooltip" xml:space="preserve">
-    <value>Куда правило едет и содержимое категории</value>
+    <value>Куда идёт трафик правила и что входит в категорию</value>
   </data>
   <data name="Main_RuleTargetAuto" xml:space="preserve">
     <value>Авто</value>
@@ -2252,7 +2252,7 @@
     <value>Лучший</value>
   </data>
   <data name="Main_RuleTargetDirect" xml:space="preserve">
-    <value>Директ</value>
+    <value>Напрямую</value>
   </data>
   <data name="Main_RuleTargetBlock" xml:space="preserve">
     <value>Блок</value>
@@ -2288,7 +2288,7 @@
     <value>В релизе нет пакета {0} для {1}.</value>
   </data>
   <data name="Agent_UpdateNothingToDownload" xml:space="preserve">
-    <value>Обновление не предлагается.</value>
+    <value>Нет обновления для загрузки.</value>
   </data>
   <data name="Agent_UpdateDownloadStarted" xml:space="preserve">
     <value>Скачивается {0}.</value>
@@ -2303,7 +2303,7 @@
     <value>Скачивание отменено.</value>
   </data>
   <data name="Agent_UpdateNothingDownloaded" xml:space="preserve">
-    <value>Ничего не скачано.</value>
+    <value>Обновление ещё не скачано.</value>
   </data>
   <data name="Agent_UpdateVerifyFailed" xml:space="preserve">
     <value>{0} не совпадает с опубликованной контрольной суммой.</value>
@@ -2327,7 +2327,7 @@
     <value>Обновлено. Перезапустите приложение.</value>
   </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
-    <value>Адресов: {0}, в туннель {1}, мимо {2}, блок {3}, не в правилах {4}.</value>
+    <value>Всего адресов {0}: через туннель {1}, напрямую {2}, заблокировано {3}, вне правил {4}.</value>
   </data>
   <data name="Check_SessionsNone" xml:space="preserve">
     <value>Сейчас через туннель ничего не идёт.</value>
@@ -2336,7 +2336,7 @@
     <value>соединений: {0}</value>
   </data>
   <data name="Check_SessionStalled" xml:space="preserve">
-    <value>застой</value>
+    <value>нет движения</value>
   </data>
   <data name="Check_Verdict_proxy" xml:space="preserve">
     <value>туннель</value>
@@ -2354,7 +2354,7 @@
     <value>{0} Мбит/с</value>
   </data>
   <data name="Main_CopyShownButton" xml:space="preserve">
-    <value>Копировать показанное</value>
+    <value>Копировать видимое</value>
   </data>
   <data name="Main_LogPausedHint" xml:space="preserve">
     <value>Пауза, пока нажат Ctrl</value>
@@ -2369,10 +2369,10 @@
     <value>по приложению</value>
   </data>
   <data name="Check_Why_resolved" xml:space="preserve">
-    <value>адрес имени</value>
+    <value>адрес домена</value>
   </data>
   <data name="Check_Why_none" xml:space="preserve">
-    <value>не в правилах</value>
+    <value>вне правил</value>
   </data>
   <data name="Check_Why_service" xml:space="preserve">
     <value>служебный</value>
@@ -2402,7 +2402,7 @@
     <value>Полный туннель, список &quot;{0}&quot;.</value>
   </data>
   <data name="Check_ModeOff" xml:space="preserve">
-    <value>Маршрутизация выключена, решают AllowedIPs из конфига.</value>
+    <value>Маршрутизация выключена: трафик определяют AllowedIPs из конфигурации.</value>
   </data>
   <data name="Probe_TargetWatermark" xml:space="preserve">
     <value>домен или адрес</value>
@@ -2414,7 +2414,7 @@
     <value>Туннель</value>
   </data>
   <data name="Probe_PathBypass" xml:space="preserve">
-    <value>Мимо</value>
+    <value>Напрямую</value>
   </data>
   <data name="Probe_LegReach" xml:space="preserve">
     <value>отклик</value>
@@ -2435,7 +2435,7 @@
     <value>обрыв</value>
   </data>
   <data name="Probe_StateUnknown" xml:space="preserve">
-    <value>молчит</value>
+    <value>нет ответа</value>
   </data>
   <data name="Probe_StateSkipped" xml:space="preserve">
     <value>пропуск</value>
@@ -2447,16 +2447,16 @@
     <value>туннель по умолчанию</value>
   </data>
   <data name="Probe_TakenBypassRule" xml:space="preserve">
-    <value>мимо по правилу</value>
+    <value>напрямую по правилу</value>
   </data>
   <data name="Probe_TakenBypassDefault" xml:space="preserve">
-    <value>мимо по умолчанию</value>
+    <value>напрямую по умолчанию</value>
   </data>
   <data name="Probe_TakenBlocked" xml:space="preserve">
     <value>блок по правилу</value>
   </data>
   <data name="Probe_TakenNoRouting" xml:space="preserve">
-    <value>мимо, маршрутизация не отвечает</value>
+    <value>напрямую: маршрутизация не отвечает</value>
   </data>
   <data name="Probe_Measured" xml:space="preserve">
     <value>{0} Мбит/с приём, {1} Мбит/с отдача против {2}</value>
@@ -2465,16 +2465,16 @@
     <value>{0} Мбит/с приём, {1} Мбит/с отдача</value>
   </data>
   <data name="Probe_NoRate" xml:space="preserve">
-    <value>{0} отвечает, но отдаёт слишком мало, чтобы замерить скорость</value>
+    <value>{0} отвечает, но данных слишком мало, чтобы замерить скорость</value>
   </data>
   <data name="Probe_Unreachable" xml:space="preserve">
     <value>{0} не ответил</value>
   </data>
   <data name="Probe_PathUnavailable" xml:space="preserve">
-    <value>система не может пустить трафик {0}, замер не состоялся</value>
+    <value>система не может направить трафик {0}, замер не выполнен</value>
   </data>
   <data name="Probe_NotConnected" xml:space="preserve">
-    <value>туннель не поднят, этот путь не замерить</value>
+    <value>туннель не подключён, этот путь не проверить</value>
   </data>
   <data name="Probe_SideThrough" xml:space="preserve">
     <value>в туннель</value>
@@ -2507,10 +2507,10 @@
     <value>принято {0}, отдано {1}</value>
   </data>
   <data name="Probe_NoteThin" xml:space="preserve">
-    <value>отдал {0}, мало для замера</value>
+    <value>получено {0}, мало для замера</value>
   </data>
   <data name="Probe_NoteNothing" xml:space="preserve">
-    <value>ничего не отдал для замера</value>
+    <value>данных для замера не пришло</value>
   </data>
   <data name="Probe_NoteAgainst" xml:space="preserve">
     <value>против {0}</value>
@@ -2570,7 +2570,7 @@
     <value>Выбранные</value>
   </data>
   <data name="Main_VpnModeSelectedHint" xml:space="preserve">
-    <value>Прочее напрямую</value>
+    <value>Остальное напрямую</value>
   </data>
   <data name="Main_VpnModeFull" xml:space="preserve">
     <value>Полный туннель</value>
@@ -2579,7 +2579,7 @@
     <value>Кроме исключений</value>
   </data>
   <data name="Main_VpnModeHintSelected" xml:space="preserve">
-    <value>VPN используется только для элементов, направленных «Через VPN».</value>
+    <value>Через VPN идут только записи из группы «Через VPN».</value>
   </data>
   <data name="Main_VpnModeHintFull" xml:space="preserve">
     <value>В туннель уходит всё, кроме «Напрямую» и «Блок».</value>

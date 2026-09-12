@@ -21,6 +21,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const byte WeightHyperV = 14;
     // Block-list filters outrank every permit so a blocked destination is dropped regardless of LAN/tunnel/DHCP.
     private const byte WeightBlockList = 15;
+    // The inbound block outranks every permit too: the tunnel adapter, the LAN ranges its addresses fall into, and this app.
+    private const byte WeightInbound = 15;
 
     // Infrastructure ranges (not user-controllable); LAN bypass comes from extraCidrs.
     private static readonly string[] LanInfraCidrsV4 =
@@ -83,9 +85,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// <summary>
     /// Arms the kill-switch; permits before block. Block-list destinations are dropped per address on contact,
     /// not materialized here. With <paramref name="softBlock"/> the outbound v4 block drops packets instead of
-    /// refusing connect, so a program retries into the verdict rather than failing on it. Returns false on failure.
+    /// refusing connect, so a program retries into the verdict rather than failing on it. With
+    /// <paramref name="blockInbound"/> nothing inside the tunnel may open a connection to this machine.
+    /// Returns false on failure.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null, bool softBlock = false, IPAddress? underlayEndpoint = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null, bool softBlock = false, IPAddress? underlayEndpoint = null, bool blockInbound = false)
     {
         lock (_gate)
         {
@@ -112,9 +116,13 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
             try
             {
-                if (killSwitch)
+                if (killSwitch || blockInbound)
                 {
                     CreateSublayer(engine);
+                }
+
+                if (killSwitch)
+                {
                     PermitApp(engine);
 
                     // Permit wstunnel.exe (carries the encrypted underlay in a child process).
@@ -159,6 +167,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     BlockAll(engine);
                 }
 
+                var inboundHeld = blockInbound && BlockInbound(engine, luid);
+
                 if (batched)
                 {
                     var commit = FwpmTransactionCommit0(engine);
@@ -177,6 +187,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 else
                 {
                     logger.LogInformation("adapter {Index} holds no blocking rules of its own; what leaves this machine is decided by the tunnel that carries it", tunnelInterfaceIndex);
+                }
+
+                if (inboundHeld)
+                {
+                    logger.LogInformation("nothing inside the tunnel can open a connection to this machine on adapter {Index}; what this machine opens itself keeps answering", tunnelInterfaceIndex);
                 }
 
                 if (softBlock)
@@ -450,12 +465,20 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void CreateSublayer(IntPtr engine)
     {
-        var namePtr = Marshal.StringToHGlobalUni("AmneziaGeo kill-switch");
+        if (!CreateSublayer(engine, SublayerKey, "AmneziaGeo kill-switch"))
+        {
+            throw new InvalidOperationException("FwpmSubLayerAdd0 failed");
+        }
+    }
+
+    private bool CreateSublayer(IntPtr engine, Guid key, string name)
+    {
+        var namePtr = Marshal.StringToHGlobalUni(name);
         try
         {
             var sublayer = new FWPM_SUBLAYER0
             {
-                subLayerKey = SublayerKey,
+                subLayerKey = key,
                 displayData = new FWPM_DISPLAY_DATA0 { name = namePtr },
                 weight = 0xFFFF,
             };
@@ -464,8 +487,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             {
                 // Leftover sublayer from a prior or overlapping session (reconnect churn, in-place upgrade). Drop it
                 // when it is ours to drop, then re-add; if a live session still owns it, reuse it so the permits install.
-                var key = SublayerKey;
-                var del = FwpmSubLayerDeleteByKey0(engine, ref key);
+                var existing = key;
+                var del = FwpmSubLayerDeleteByKey0(engine, ref existing);
                 if (del == 0 || del == FwpSublayerNotFound)
                 {
                     rc = FwpmSubLayerAdd0(engine, ref sublayer, IntPtr.Zero);
@@ -474,14 +497,17 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 if (rc == FwpAlreadyExists)
                 {
                     logger.LogWarning("the leak-protection group left by a previous session is still held by it, so this session reuses it; its blocking rules stay in force until that session lets go");
-                    return;
+                    return true;
                 }
             }
 
             if (rc != 0)
             {
-                throw new InvalidOperationException($"FwpmSubLayerAdd0 failed 0x{rc:X8}");
+                logger.LogWarning("the filtering group {Name} could not be created (0x{Code:X8})", name, rc);
+                return false;
             }
+
+            return true;
         }
         finally
         {
@@ -581,6 +607,101 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
 
         return ids;
+    }
+
+    // Connections opened from the tunnel towards this machine. The ALE accept layer sees the first packet of an
+    // inbound flow only, so what this machine opened itself keeps answering; ICMP stays blocked at echo alone, which
+    // leaves discovery and the errors a live flow needs.
+    private bool BlockInbound(IntPtr engine, ulong luid)
+    {
+        if (TryBlockInbound(engine, luid, SublayerKey, out var wrongSession))
+        {
+            return true;
+        }
+
+        if (!wrongSession)
+        {
+            return false;
+        }
+
+        // The shared group belongs to the session of another tunnel, which admits no filters of ours; this one gets its own.
+        var key = InboundSublayerKey(luid);
+        if (!CreateSublayer(engine, key, "AmneziaGeo inbound block"))
+        {
+            return false;
+        }
+
+        return TryBlockInbound(engine, luid, key, out _);
+    }
+
+    private bool TryBlockInbound(IntPtr engine, ulong luid, Guid sublayer, out bool wrongSession)
+    {
+        wrongSession = false;
+        var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
+        try
+        {
+            Marshal.WriteInt64(luidPtr, (long)luid);
+            var first = BlockInboundProtocol(engine, luidPtr, sublayer, LayerAleAuthRecvAcceptV4, ProtocolTcp, null, "TCP");
+            if (first != 0)
+            {
+                wrongSession = first == FwpWrongSession;
+                if (wrongSession)
+                {
+                    logger.LogDebug("the shared filtering group belongs to the session of another tunnel, so this one installs its block in a group of its own");
+                }
+                else
+                {
+                    logger.LogWarning("connections from the tunnel could not be held off this machine (0x{Code:X8}); it stays reachable at its address inside the tunnel", first);
+                }
+
+                return false;
+            }
+
+            var rest = BlockInboundProtocol(engine, luidPtr, sublayer, LayerAleAuthRecvAcceptV4, ProtocolUdp, null, "UDP")
+                | BlockInboundProtocol(engine, luidPtr, sublayer, LayerAleAuthRecvAcceptV4, ProtocolIcmpV4, IcmpV4Echo, "ping")
+                | BlockInboundProtocol(engine, luidPtr, sublayer, LayerAleAuthRecvAcceptV6, ProtocolTcp, null, "TCP v6")
+                | BlockInboundProtocol(engine, luidPtr, sublayer, LayerAleAuthRecvAcceptV6, ProtocolUdp, null, "UDP v6")
+                | BlockInboundProtocol(engine, luidPtr, sublayer, LayerAleAuthRecvAcceptV6, ProtocolIcmpV6, IcmpV6Echo, "ping v6");
+            if (rest != 0)
+            {
+                logger.LogWarning("part of the tunnel traffic towards this machine is not held off (0x{Code:X8}); the address inside the tunnel stays reachable over what is missing", rest);
+            }
+
+            return true;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(luidPtr);
+        }
+    }
+
+    private uint BlockInboundProtocol(IntPtr engine, IntPtr luidPtr, Guid sublayer, Guid layer, byte protocol, ushort? icmpType, string what)
+    {
+        var cond = new List<FWPM_FILTER_CONDITION0>
+        {
+            Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
+            Condition(CondIpProtocol, MatchEqual, FwpUint8, protocol),
+        };
+
+        if (icmpType is { } type)
+        {
+            cond.Add(Condition(CondIpLocalPort, MatchEqual, FwpUint16, type));
+        }
+
+        return AddRaw(engine, sublayer, layer, WeightInbound, ActionBlock, 0, [.. cond], $"Block inbound {what} from the tunnel", out _);
+    }
+
+    // Own group per tunnel adapter, so two tunnels never reach into each other's session.
+    private static Guid InboundSublayerKey(ulong luid)
+    {
+        var bytes = InboundSublayerBase.ToByteArray();
+        var tail = BitConverter.GetBytes(luid);
+        for (var i = 0; i < tail.Length; i++)
+        {
+            bytes[8 + i] ^= tail[i];
+        }
+
+        return new Guid(bytes);
     }
 
     private void PermitLoopback(IntPtr engine)
@@ -932,6 +1053,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private uint AddRaw(IntPtr engine, Guid layer, byte weight, uint actionType, uint flags, FWPM_FILTER_CONDITION0[] conditions, string name, out ulong id)
     {
+        return AddRaw(engine, SublayerKey, layer, weight, actionType, flags, conditions, name, out id);
+    }
+
+    private uint AddRaw(IntPtr engine, Guid sublayer, Guid layer, byte weight, uint actionType, uint flags, FWPM_FILTER_CONDITION0[] conditions, string name, out ulong id)
+    {
         var namePtr = Marshal.StringToHGlobalUni(name);
         var conditionSize = Marshal.SizeOf<FWPM_FILTER_CONDITION0>();
         var conditionArray = IntPtr.Zero;
@@ -949,7 +1075,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             var filter = new FWPM_FILTER0
             {
                 layerKey = layer,
-                subLayerKey = SublayerKey,
+                subLayerKey = sublayer,
                 weight = new FWP_VALUE0 { type = FwpUint8, value = weight },
                 flags = flags,
                 numFilterConditions = (uint)conditions.Length,
@@ -996,6 +1122,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // ---- interop ------------------------------------------------------------------------------
 
     private static readonly Guid SublayerKey = new("c3a4f1d2-8b6e-4a2f-9c5d-1e7a3b9f4d80");
+
+    // Base of the per-adapter group holding the inbound block.
+    private static readonly Guid InboundSublayerBase = new("5f2d7c14-9a3e-4b6d-8f21-0c4e9a7b35d0");
 
     // Layer / condition GUIDs (fwpmu.h).
     private static readonly Guid LayerAleAuthConnectV4 = new(0xc38d57d1, 0x05a7, 0x4c33, 0x90, 0x4f, 0x7f, 0xbc, 0xee, 0xe6, 0x0e, 0x82);
@@ -1054,6 +1183,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // FWP error codes (fwpmtypes.h).
     private const uint FwpAlreadyExists = 0x80320009; // FWP_E_ALREADY_EXISTS
     private const uint FwpSublayerNotFound = 0x80320007; // FWP_E_SUBLAYER_NOT_FOUND
+    private const uint FwpWrongSession = 0x8032000C; // FWP_E_WRONG_SESSION
 
     // FWP_MATCH_TYPE.
     private const uint MatchEqual = 0;
@@ -1082,6 +1212,13 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const uint ConditionFlagIsLoopback = 0x00000001;
     private const uint ConditionL2IsVm2Vm = 0x00000010;
     private const byte ProtocolUdp = 17;
+    private const byte ProtocolTcp = 6;
+    private const byte ProtocolIcmpV4 = 1;
+    private const byte ProtocolIcmpV6 = 58;
+
+    // ICMP type, carried in the local-port field on the ALE layers.
+    private const ushort IcmpV4Echo = 8;
+    private const ushort IcmpV6Echo = 128;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FWP_VALUE0

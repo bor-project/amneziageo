@@ -10,6 +10,7 @@ namespace AmneziaGeo.Tests.Fleet;
 /// The console of the mode answers only for the mode: with it off the shared commands stay the shared ones,
 /// and with it on the set is printed and moved by name.
 /// </summary>
+[Collection("Output")]
 public sealed class FleetCommandsTests : IDisposable
 {
     private readonly BufferConsoleSink _console = new();

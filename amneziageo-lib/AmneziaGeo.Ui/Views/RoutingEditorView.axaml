@@ -173,7 +173,8 @@
                          Text="{Binding RuleInput, Mode=TwoWay}">
                   <TextBox.InnerLeftContent>
                     <PathIcon Data="{StaticResource AgSearchGeometry}" Width="13" Height="13" Margin="10,0,0,0"
-                              Foreground="{DynamicResource AgMutedBrush}" IsHitTestVisible="False" />
+                              Foreground="{DynamicResource AgMutedBrush}" IsHitTestVisible="False"
+                              IsVisible="{Binding SearchIconShown}" />
                   </TextBox.InnerLeftContent>
                   <TextBox.InnerRightContent>
                     <Button Classes="icon" Margin="0,0,6,0" IsVisible="{Binding HasRuleInput}"

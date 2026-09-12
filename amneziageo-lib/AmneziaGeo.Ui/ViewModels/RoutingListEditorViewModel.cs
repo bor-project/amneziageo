@@ -629,6 +629,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         : Loc.Instance.Get("Main_AppOnlyProxyHint");
 
     /// <summary>
+    /// Whether the search field carries a magnifier beside the hint.
+    /// </summary>
+    public static bool SearchIconShown => !OperatingSystem.IsAndroid();
+
+    /// <summary>
     /// Watermark of the add row, reflecting the selected method.
     /// </summary>
     public string RuleWatermark => IsAppMethod

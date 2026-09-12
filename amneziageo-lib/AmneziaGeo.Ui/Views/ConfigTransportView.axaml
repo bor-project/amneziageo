@@ -83,19 +83,24 @@
     <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
-    <!-- The box stands beside its heading, where a switch stands in the rows around it. -->
-    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
-      <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+    <!-- The box stands beside its heading, where a switch stands in the rows around it. A narrow card has no
+         width for both, so the pair drops under the heading. -->
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
+      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" VerticalAlignment="Center">
         <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
         <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <StackPanel Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                  Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}"
+                  Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
         <controls:AdaptiveComboBox Classes="field" Width="132" SelectedIndex="{Binding MtuMode, Mode=TwoWay}">
           <ComboBoxItem Content="{l:Tr Main_MtuModeAuto}" />
           <ComboBoxItem Content="{l:Tr Main_MtuModeConfig}" />
           <ComboBoxItem Content="{l:Tr Main_MtuModeCustom}" />
         </controls:AdaptiveComboBox>
-        <TextBox Classes="field" Width="90" IsReadOnly="{Binding IsMtuReadOnly}"
+        <TextBox Classes="field" Width="90" IsEnabled="{Binding !IsMtuReadOnly}"
                  controls:NumericInput.Minimum="576" controls:NumericInput.Maximum="1500" Text="{Binding Mtu}" />
       </StackPanel>
     </Grid>
@@ -105,16 +110,18 @@
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
                                IsChecked="{Binding UseIpv6, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
-
     <!-- Приём входящих по адресу этой машины в туннеле. -->
-    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_InboundTitle}" Description="{l:Tr Main_InboundHint}"
-                               IsChecked="{Binding AllowInbound, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+    <StackPanel Spacing="14" IsVisible="{Binding InboundAvailable}">
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
-    <!-- Адрес этой машины в туннеле: встаёт под описанием приёма. -->
-    <SelectableTextBlock Text="{Binding TunnelAddress}" FontSize="12.5" TextWrapping="Wrap"
-                         Margin="0,-11,0,0" MaxWidth="430" HorizontalAlignment="Left"
-                         IsVisible="{Binding ShowInboundAddress}" />
+      <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_InboundTitle}" Description="{l:Tr Main_InboundHint}"
+                                 IsChecked="{Binding AllowInbound, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+      <!-- Адрес этой машины в туннеле: встаёт под описанием приёма. -->
+      <SelectableTextBlock Text="{Binding TunnelAddress}" FontSize="12.5" TextWrapping="Wrap"
+                           Margin="0,-11,0,0" MaxWidth="430" HorizontalAlignment="Left"
+                           IsVisible="{Binding ShowInboundAddress}" />
+    </StackPanel>
 
     <!-- The router decides destinations while the session runs and costs a second pass through userspace;
          turning it off leaves the route table alone with the rules. -->

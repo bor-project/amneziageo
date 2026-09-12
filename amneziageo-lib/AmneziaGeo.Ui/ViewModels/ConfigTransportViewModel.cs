@@ -83,7 +83,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// Whether that address stands in the interface.
     /// </summary>
-    public bool ShowInboundAddress => TunnelAddress.Length > 0;
+    public bool ShowInboundAddress => InboundAvailable && TunnelAddress.Length > 0;
+
+    /// <summary>
+    /// Whether this platform holds connections from the tunnel off the machine; only there is the switch worth showing.
+    /// </summary>
+    public static bool InboundAvailable => !OperatingSystem.IsAndroid();
 
     // Keeps the router switch out of the interface.
     internal static bool RouterVisible => false;

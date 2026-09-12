@@ -47,6 +47,7 @@ internal sealed class TunnelController : IDisposable
     private string _sessionConfig = string.Empty;
     private bool _split;
     private bool _resolverApplied;
+    private bool _inboundBlocked;
     private bool _disposed;
 
     /// <summary>
@@ -242,6 +243,10 @@ internal sealed class TunnelController : IDisposable
             return Refused(failure);
         }
 
+        // Inbound access off holds the tunnel off this machine; with it on the ranges above carry it and no table stands.
+        _inboundBlocked = options.Transport?.AllowInbound != true
+            && await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
+
         Advertised = allowedIps;
         _sessionConfig = configText;
         Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
@@ -415,6 +420,12 @@ internal sealed class TunnelController : IDisposable
             _appRules = [];
             await apps.StopAsync().ConfigureAwait(false);
             apps.Dispose();
+        }
+
+        if (_inboundBlocked)
+        {
+            _inboundBlocked = false;
+            await InboundFirewall.RemoveAsync(ct).ConfigureAwait(false);
         }
 
         if (_pinnedEndpoint is { } pinned)

@@ -22,18 +22,28 @@ internal partial class ConnectionsViewModel : ViewModelBase
     // Set while Apply seeds the settings from the snapshot; suppresses their autosave push.
     private bool _suppressSettingPush;
 
+    // Показ раздела подписок; со скрытым разделом автообновление работает как прежде.
+    private const bool SubscriptionsShown = false;
+
     // How long after an edit of the accounts a snapshot is left to catch up before it may reseed the rows.
     private const int AccountEditWindowMs = 3000;
 
     // When the accounts were last edited here.
     private long _accountsTouchedAt;
 
-    // When the name or the password of the access point was last edited here.
-    private long _hotspotTouchedAt;
+    // The access point fields as the agent holds them; Cancel returns to them and Save moves them.
+    private string _baseHotspotSsid = string.Empty;
+    private string _baseHotspotPassword = string.Empty;
+    private int _baseBandIndex;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
+
+    // Set by the shell while the section is on screen; the Save / Cancel bar shows only there.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    private bool _isActiveSection;
 
     /// <summary>
     /// Auto-connect the selected config on service start (survive a reboot).
@@ -93,6 +103,25 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// The access point settings are editable where it can be raised and it is asked for.
     /// </summary>
     public bool HotspotSettingsEnabled => HotspotSupported && HotspotEnabled;
+
+    /// <summary>
+    /// Whether the access point fields differ from what the agent holds.
+    /// </summary>
+    public bool HotspotDirty => !string.Equals(HotspotSsid, _baseHotspotSsid, StringComparison.Ordinal)
+        || !string.Equals(HotspotPassword, _baseHotspotPassword, StringComparison.Ordinal)
+        || SelectedBandIndex != _baseBandIndex;
+
+    /// <summary>
+    /// Whether the footer Save / Cancel bar is shown.
+    /// </summary>
+    public bool ShowSaveBar => IsActiveSection && HotspotDirty;
+
+    /// <summary>
+    /// Whether the footer Save button is enabled: the name and the password are each empty or valid.
+    /// </summary>
+    public bool CanSave => HotspotDirty
+        && (HotspotSsid.Length == 0 || SettingKeys.IsValidHotspotSsid(HotspotSsid))
+        && (HotspotPassword.Length == 0 || SettingKeys.IsValidHotspotPassword(HotspotPassword));
 
     /// <summary>
     /// Whether the tunnel settings are offered (Windows only: the Android agent does not apply them).
@@ -223,6 +252,9 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    [NotifyPropertyChangedFor(nameof(HotspotDirty))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private int _selectedBandIndex;
 
     /// <summary>
@@ -230,6 +262,9 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    [NotifyPropertyChangedFor(nameof(HotspotDirty))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _hotspotSsid = string.Empty;
 
     /// <summary>
@@ -237,6 +272,9 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
+    [NotifyPropertyChangedFor(nameof(HotspotDirty))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _hotspotPassword = string.Empty;
 
     /// <summary>
@@ -330,7 +368,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// Whether the subscription settings are shown: on the tunnel tab, and where there is none, on the tab that
     /// carries the section.
     /// </summary>
-    public bool ShowSubscriptions => CanConfigureConnection ? IsTunnelTab : IsProxyTab;
+    public bool ShowSubscriptions => SubscriptionsShown && (CanConfigureConnection ? IsTunnelTab : IsProxyTab);
 
     /// <summary>
     /// Whether the access point fields are locked out.
@@ -465,9 +503,13 @@ internal partial class ConnectionsViewModel : ViewModelBase
         ProxyHttpPort = snapshot.ProxyHttpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ApplyProxyAccounts(snapshot.ProxyCredentials);
         HotspotEnabled = ShareModes.CarriesWifi(snapshot.ShareMode);
-        SelectedBandIndex = BandIndex(snapshot.HotspotBand);
-        ApplyHotspotSecrets(snapshot);
+        ApplyHotspotFields(snapshot);
         _suppressSettingPush = false;
+        if (!SubscriptionsShown && !SubscriptionAutoRefresh)
+        {
+            SubscriptionAutoRefresh = true;
+        }
+
         ApplyProxyEndpoints(snapshot);
         ApplyProxyClients(snapshot);
         ProxyErrorText = snapshot.ProxyEnabled ? snapshot.ProxyError : string.Empty;
@@ -504,41 +546,51 @@ internal partial class ConnectionsViewModel : ViewModelBase
         }
     }
 
-    partial void OnSelectedBandIndexChanged(int value)
+    /// <summary>
+    /// Sends the edited access point fields to the agent.
+    /// </summary>
+    [RelayCommand]
+    private async Task SaveSection()
     {
-        if (!_suppressSettingPush && value >= 0)
-        {
-            _ = SetSettingAsync(SettingKeys.HotspotBand, BandToken);
-        }
-    }
-
-    // A half-typed name is not a name; an empty one takes the access point down.
-    partial void OnHotspotSsidChanged(string value)
-    {
-        if (_suppressSettingPush)
+        if (!CanSave)
         {
             return;
         }
 
-        _hotspotTouchedAt = Environment.TickCount64;
-        if (value.Length == 0 || SettingKeys.IsValidHotspotSsid(value))
+        var ssid = HotspotSsid;
+        var password = HotspotPassword;
+        var band = SelectedBandIndex;
+        var bandToken = BandToken;
+        if (!string.Equals(ssid, _baseHotspotSsid, StringComparison.Ordinal))
         {
-            _ = SetSettingAsync(SettingKeys.HotspotSsid, value);
+            await SetSettingAsync(SettingKeys.HotspotSsid, ssid);
         }
+
+        if (!string.Equals(password, _baseHotspotPassword, StringComparison.Ordinal))
+        {
+            await SetSettingAsync(SettingKeys.HotspotPassword, password);
+        }
+
+        if (band != _baseBandIndex)
+        {
+            await SetSettingAsync(SettingKeys.HotspotBand, bandToken);
+        }
+
+        _baseHotspotSsid = ssid;
+        _baseHotspotPassword = password;
+        _baseBandIndex = band;
+        RaiseHotspotDirty();
     }
 
-    partial void OnHotspotPasswordChanged(string value)
+    /// <summary>
+    /// Returns the access point fields to what the agent holds.
+    /// </summary>
+    [RelayCommand]
+    private void CancelSection()
     {
-        if (_suppressSettingPush)
-        {
-            return;
-        }
-
-        _hotspotTouchedAt = Environment.TickCount64;
-        if (value.Length == 0 || SettingKeys.IsValidHotspotPassword(value))
-        {
-            _ = SetSettingAsync(SettingKeys.HotspotPassword, value);
-        }
+        HotspotSsid = _baseHotspotSsid;
+        HotspotPassword = _baseHotspotPassword;
+        SelectedBandIndex = _baseBandIndex;
     }
 
     /// <summary>
@@ -648,16 +700,29 @@ internal partial class ConnectionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ProxyAdmitsNobody));
     }
 
-    // The name and the password come back from the agent only when nothing was typed here in the last seconds.
-    private void ApplyHotspotSecrets(StatusSnapshot snapshot)
+    // Takes the access point fields the agent holds, leaving an unsaved edit in place.
+    private void ApplyHotspotFields(StatusSnapshot snapshot)
     {
-        if (Environment.TickCount64 - _hotspotTouchedAt < AccountEditWindowMs)
+        var edited = HotspotDirty;
+        _baseHotspotSsid = snapshot.HotspotSsid;
+        _baseHotspotPassword = snapshot.HotspotPassword;
+        _baseBandIndex = BandIndex(snapshot.HotspotBand);
+        if (!edited)
         {
-            return;
+            HotspotSsid = _baseHotspotSsid;
+            HotspotPassword = _baseHotspotPassword;
+            SelectedBandIndex = _baseBandIndex;
         }
 
-        HotspotSsid = snapshot.HotspotSsid;
-        HotspotPassword = snapshot.HotspotPassword;
+        RaiseHotspotDirty();
+    }
+
+    // Re-reads the edit state after the baseline moved.
+    private void RaiseHotspotDirty()
+    {
+        OnPropertyChanged(nameof(HotspotDirty));
+        OnPropertyChanged(nameof(ShowSaveBar));
+        OnPropertyChanged(nameof(CanSave));
     }
 
     // Where a client points: every address of this machine the neighbours can reach, and loopback only where

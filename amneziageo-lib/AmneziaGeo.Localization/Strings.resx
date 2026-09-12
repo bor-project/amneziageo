@@ -65,25 +65,25 @@
     <value>Tunnel</value>
   </data>
   <data name="General_NetworkRepairSection" xml:space="preserve">
-    <value>Reset settings</value>
+    <value>Network repair</value>
   </data>
   <data name="General_NetworkRepairHint" xml:space="preserve">
-    <value>Clears the DNS the app set on the adapters when the internet is gone. Configurations and routes stay.</value>
+    <value>If the internet is gone, restores the network adapters' original DNS servers. Configurations and routes stay as they are.</value>
   </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
-    <value>Reset</value>
+    <value>Repair</value>
   </data>
   <data name="General_NetworkRepairDone" xml:space="preserve">
-    <value>Reset started. Confirm the elevation prompt.</value>
+    <value>Repair started: confirm it in the User Account Control prompt.</value>
   </data>
   <data name="General_NetworkRepairFailed" xml:space="preserve">
-    <value>Could not start the reset.</value>
+    <value>Could not start the repair.</value>
   </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Show notifications</value>
   </data>
   <data name="General_ShowNotificationsHint" xml:space="preserve">
-    <value>Show tray notifications: connection, app and database updates.</value>
+    <value>Tray notices about the connection and about app and database updates.</value>
   </data>
   <data name="General_AllowPrerelease" xml:space="preserve">
     <value>Check for prerelease versions</value>
@@ -98,10 +98,10 @@
     <value>Allow connections</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>Open to this device and the local network.</value>
+    <value>Apps on this computer and devices on the local network can go online through the tunnel.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
-    <value>Works only while the tunnel is up.</value>
+    <value>Works only while the tunnel is connected.</value>
   </data>
   <data name="General_ProxySocksPort" xml:space="preserve">
     <value>SOCKS5 port</value>
@@ -110,16 +110,16 @@
     <value>HTTP port</value>
   </data>
   <data name="General_ProxyAnonymous" xml:space="preserve">
-    <value>Admit without a password</value>
+    <value>Connect without a password</value>
   </data>
   <data name="General_ProxyAnonymousHint" xml:space="preserve">
-    <value>The address and the port are enough.</value>
+    <value>Clients connect with just the address and port, no login or password.</value>
   </data>
   <data name="General_ProxyOpenWarning" xml:space="preserve">
-    <value>The proxy is open to everyone on this network.</value>
+    <value>Any device on this network can use the proxy.</value>
   </data>
   <data name="General_ProxyNoAccountWarning" xml:space="preserve">
-    <value>No accounts, so nobody can connect.</value>
+    <value>Add an account, otherwise nobody can connect.</value>
   </data>
   <data name="General_ProxyUser" xml:space="preserve">
     <value>User</value>
@@ -128,7 +128,7 @@
     <value>Password</value>
   </data>
   <data name="General_ProxyAuthHint" xml:space="preserve">
-    <value>A client is admitted under any one of these.</value>
+    <value>Any of these accounts can be used to connect.</value>
   </data>
   <data name="General_ProxyAccounts" xml:space="preserve">
     <value>Accounts</value>
@@ -140,7 +140,7 @@
     <value>Show who is connected</value>
   </data>
   <data name="General_ProxyNoClients" xml:space="preserve">
-    <value>Nobody is connected.</value>
+    <value>Nobody is connected right now.</value>
   </data>
   <data name="General_ProxyClientConnections" xml:space="preserve">
     <value>{0} connection(s)</value>
@@ -161,7 +161,7 @@
     <value>Access point</value>
   </data>
   <data name="General_HotspotEnabledHint" xml:space="preserve">
-    <value>Devices join it and go out through the tunnel.</value>
+    <value>This computer shares Wi-Fi, and connected devices go online through the tunnel.</value>
   </data>
   <data name="General_HotspotSsid" xml:space="preserve">
     <value>Network name</value>
@@ -182,37 +182,37 @@
     <value>5 GHz</value>
   </data>
   <data name="General_HotspotBandAdapter" xml:space="preserve">
-    <value>The adapter picked the band itself.</value>
+    <value>The adapter chose the band itself.</value>
   </data>
   <data name="General_HotspotBandActual" xml:space="preserve">
-    <value>Running on {0}.</value>
+    <value>The network runs on {0}.</value>
   </data>
   <data name="General_HotspotNoAdapter" xml:space="preserve">
-    <value>No Wi-Fi adapter.</value>
+    <value>No Wi-Fi adapter found.</value>
   </data>
   <data name="General_HotspotRadioOff" xml:space="preserve">
-    <value>Wi-Fi is off.</value>
+    <value>Wi-Fi is turned off.</value>
   </data>
   <data name="General_HotspotNoApMode" xml:space="preserve">
-    <value>This adapter does not run as an access point.</value>
+    <value>This adapter can't share Wi-Fi.</value>
   </data>
   <data name="General_HotspotNoTools" xml:space="preserve">
-    <value>hostapd and dnsmasq are not installed.</value>
+    <value>Sharing Wi-Fi needs the hostapd and dnsmasq packages.</value>
   </data>
   <data name="General_HotspotServiceOff" xml:space="preserve">
     <value>The Internet Connection Sharing service is stopped.</value>
   </data>
   <data name="General_HotspotNoPlatform" xml:space="preserve">
-    <value>An access point is not available on this system.</value>
+    <value>Wi-Fi sharing isn't supported on this system.</value>
   </data>
   <data name="General_HotspotNeedsName" xml:space="preserve">
-    <value>Set a network name and a password.</value>
+    <value>Enter a network name and a password.</value>
   </data>
   <data name="General_HotspotBadSsid" xml:space="preserve">
-    <value>The name takes 1 to 32 bytes.</value>
+    <value>The network name is too long: up to 32 Latin letters, fewer in other scripts.</value>
   </data>
   <data name="General_HotspotBadPassword" xml:space="preserve">
-    <value>The password takes 8 to 63 characters.</value>
+    <value>The password must be 8 to 63 characters.</value>
   </data>
   <data name="General_HotspotClients" xml:space="preserve">
     <value>Devices</value>
@@ -221,7 +221,7 @@
     <value>{0} of {1}</value>
   </data>
   <data name="General_HotspotRunning" xml:space="preserve">
-    <value>The access point is up.</value>
+    <value>The access point is running.</value>
   </data>
   <data name="General_HotspotRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
@@ -233,10 +233,10 @@
     <value>Auto-connect the selected configuration when the computer starts.</value>
   </data>
   <data name="General_PeriodicReconnect" xml:space="preserve">
-    <value>Periodic auto-reconnect</value>
+    <value>Reconnect automatically</value>
   </data>
   <data name="General_PeriodicReconnectHint" xml:space="preserve">
-    <value>Keep retrying at a fixed interval while a connection stays inactive.</value>
+    <value>If the connection drops, keep retrying at the set interval.</value>
   </data>
   <data name="General_MultiServer" xml:space="preserve">
     <value>Allow several VPNs</value>
@@ -254,13 +254,13 @@
     <value>Checks before a switch</value>
   </data>
   <data name="General_BalanceStrikesHint" xml:space="preserve">
-    <value>How many checks in a row a server answers none of before its rule switches to another.</value>
+    <value>How many failed checks in a row before a rule switches to another server.</value>
   </data>
   <data name="General_BalanceMargin" xml:space="preserve">
     <value>Switch threshold</value>
   </data>
   <data name="General_BalanceMarginHint" xml:space="preserve">
-    <value>How much faster another server answers to have a rule switched to it.</value>
+    <value>How much faster another server must answer for a rule to switch to it.</value>
   </data>
   <data name="General_ReconnectInterval" xml:space="preserve">
     <value>Retry interval</value>
@@ -410,13 +410,13 @@
     <value>Add local networks</value>
   </data>
   <data name="Main_AddTunnelSubnetsButton" xml:space="preserve">
-    <value>Add connection networks</value>
+    <value>Add VPN connection networks</value>
   </data>
   <data name="Main_DiagnosticsSection" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
   <data name="Main_ArchiveHint" xml:space="preserve">
-    <value>Packs the logs, the settings and the state of the tunnel into one zip to send to support. Keys and credentials in it are masked.</value>
+    <value>Packs logs, settings and tunnel state into one zip for support. Keys and passwords in it are masked.</value>
   </data>
   <data name="Main_ArchiveButton" xml:space="preserve">
     <value>Collect archive</value>
@@ -461,19 +461,19 @@
     <value>Use IPv6</value>
   </data>
   <data name="Main_InboundTitle" xml:space="preserve">
-    <value>Incoming connections</value>
+    <value>Allow incoming connections from the VPN network</value>
   </data>
   <data name="Main_InboundHint" xml:space="preserve">
-    <value>Devices of the tunnel reach this machine at its address inside it</value>
+    <value>Other devices on the VPN network can reach this computer at its VPN addresses:</value>
   </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Router</value>
   </data>
   <data name="Main_RouterHint" xml:space="preserve">
-    <value>Every connection gets its own verdict, so application and name rules apply; off leaves it to the route table, with names resolved once at connect</value>
+    <value>Each connection is checked against the rules, so app and domain rules work. Without it the route table decides, and domains are resolved once at connect</value>
   </data>
   <data name="RoutingEditor_RoutesTrimmed" xml:space="preserve">
-    <value>The list does not fit: {0} of {1} Direct ranges keep the direct path, the rest ride the tunnel.</value>
+    <value>The list doesn't fit: only {0} of {1} Direct ranges go direct, the rest go through the tunnel.</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
@@ -626,7 +626,7 @@
     <value>Delete configuration</value>
   </data>
   <data name="Main_DeleteConfigPrompt" xml:space="preserve">
-    <value>Deletes "{0}" for good. A tunnel running on it moves to the next server.</value>
+    <value>Delete the configuration "{0}"? This cannot be undone.</value>
   </data>
   <data name="Main_NoticeTunnelMoved" xml:space="preserve">
     <value>The tunnel moved to "{0}": the server it ran on is gone.</value>
@@ -638,7 +638,7 @@
     <value>Delete list</value>
   </data>
   <data name="Main_DeleteListPrompt" xml:space="preserve">
-    <value>Deletes "{0}" for good</value>
+    <value>Delete the list "{0}"? It can't be restored.</value>
   </data>
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Routing list</value>
@@ -668,7 +668,7 @@
     <value>Entries</value>
   </data>
   <data name="Main_ExclusionsHint" xml:space="preserve">
-    <value>Addresses not to route into the VPN. One per line. An IP/subnet goes directly, bypassing the tunnel; a domain is resolved via the local DNS (goes directly only if the address is local).</value>
+    <value>Addresses that bypass the VPN, one per line. An IP address or subnet goes direct; a domain is resolved via the local DNS and goes direct only if its address is local.</value>
   </data>
   <data name="Main_ExclusionsLabel" xml:space="preserve">
     <value>EXCLUSIONS (DIRECT ACCESS)</value>
@@ -692,10 +692,10 @@
     <value>off</value>
   </data>
   <data name="Main_GeoDismissTooltip" xml:space="preserve">
-    <value>Later - you can update it in settings</value>
+    <value>Later: you can update in settings</value>
   </data>
   <data name="Main_GeoKindsHint" xml:space="preserve">
-    <value>geosite - domain categories, geoip - countries.</value>
+    <value>geosite: domain categories, geoip: countries.</value>
   </data>
   <data name="Main_ImportButton" xml:space="preserve">
     <value>Import…</value>
@@ -737,13 +737,13 @@
     <value>Block</value>
   </data>
   <data name="Main_RoleProxyHint" xml:space="preserve">
-    <value>Route these through the tunnel.</value>
+    <value>Traffic goes through the tunnel.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Keep these off the tunnel.</value>
+    <value>Traffic goes direct, past the tunnel.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Block these entirely.</value>
+    <value>Traffic is blocked.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Global proxy</value>
@@ -851,7 +851,7 @@
     <value>Proxy</value>
   </data>
   <data name="Main_ProxyWebSocketHint" xml:space="preserve">
-    <value>Use WS where UDP is not available</value>
+    <value>For networks where UDP is blocked</value>
   </data>
   <data name="Main_ExportConfigTitle" xml:space="preserve">
     <value>Export configuration</value>
@@ -911,7 +911,7 @@
     <value>Rename</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>Records routes and address resolutions.</value>
+    <value>Logs routes and resolved domain addresses.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
     <value>Log connections</value>
@@ -971,7 +971,7 @@
     <value>The type is detected from the file name in the URL</value>
   </data>
   <data name="Main_SourceRowTooltip" xml:space="preserve">
-    <value>Right-click or ⋮ - update / delete the database</value>
+    <value>Right-click or ⋮: update or delete the database</value>
   </data>
   <data name="Main_SourcesLabel" xml:space="preserve">
     <value>Sources</value>
@@ -1007,7 +1007,7 @@
     <value>Later</value>
   </data>
   <data name="Main_ReconnectPrompt" xml:space="preserve">
-    <value>Saved - reconnect to apply</value>
+    <value>Saved. Reconnect to apply</value>
   </data>
   <data name="Main_RestartSheetTitle" xml:space="preserve">
     <value>Settings changed</value>
@@ -1031,7 +1031,7 @@
     <value>Save...</value>
   </data>
   <data name="Qr_TooLargeHint" xml:space="preserve">
-    <value>Too large for a QR code - use “Save...” or “Copy”.</value>
+    <value>Too large for a QR code: use “Save...” or “Copy”.</value>
   </data>
   <data name="Qr_WindowTitle" xml:space="preserve">
     <value>QR code</value>
@@ -1112,7 +1112,7 @@
     <value>Edit</value>
   </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
-    <value>QR recognized, but it is not a configuration</value>
+    <value>The QR code was read, but it holds no configuration</value>
   </data>
   <data name="MainCode_QrNotFound" xml:space="preserve">
     <value>No QR code found in the image</value>
@@ -1139,7 +1139,7 @@
     <value>A configuration named «{0}» already exists. Enter another name.</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
-    <value>Not recognized (.conf or vpn://)</value>
+    <value>Not a configuration: expected a .conf file or a vpn:// link</value>
   </data>
   <data name="MainVm_Connect" xml:space="preserve">
     <value>Connect</value>
@@ -1175,10 +1175,10 @@
     <value>n/a</value>
   </data>
   <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
-    <value>Could not connect - the server did not respond.</value>
+    <value>Could not connect: the server did not respond.</value>
   </data>
   <data name="MainVm_NoticeDisconnectFailed" xml:space="preserve">
-    <value>Could not finish the disconnect - the tunnel service did not stop.</value>
+    <value>Could not disconnect: the tunnel service did not stop.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
     <value>Could not connect: configuration not found.</value>
@@ -1190,19 +1190,19 @@
     <value>The tunnel service did not start ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_UnderlayUnreachable" xml:space="preserve">
-    <value>Transport (wstunnel) did not come up - server unreachable.</value>
+    <value>The wstunnel transport did not start: the server is unreachable.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_AdapterStartFailed" xml:space="preserve">
     <value>Could not bring up the tunnel network adapter.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
-    <value>The server did not answer (no handshake) - unreachable or key rejected.</value>
+    <value>The server did not answer: it is unreachable or rejected the key.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_LoopbackBlocked" xml:space="preserve">
-    <value>UDP on the loopback is blocked on this machine - the websocket carrier hands the tunnel to the engine there, so let UDP through on lo.</value>
+    <value>UDP on the loopback (lo) is blocked on this computer, and WebSocket hands the tunnel to the engine through it. Allow UDP on lo.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
-    <value>The transport refused the connection - check the server TLS certificate ({0}).</value>
+    <value>The transport refused the connection: check the server TLS certificate ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>The connection timed out.</value>
@@ -1217,7 +1217,7 @@
     <value>Could not connect: the VPN permission was refused.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TooManyRoutes" xml:space="preserve">
-    <value>The routing list is larger than this device takes in one transaction ({0}).</value>
+    <value>The routing list is too large for this device ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TunnelSetupFailed" xml:space="preserve">
     <value>Could not create the tunnel interface ({0}).</value>
@@ -1247,7 +1247,7 @@
     <value>Launching installer…</value>
   </data>
   <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
-    <value>Update downloaded - ready to install.</value>
+    <value>Update downloaded, ready to install.</value>
   </data>
   <data name="MainVm_UpdateVerifying" xml:space="preserve">
     <value>Verifying installer…</value>
@@ -1298,13 +1298,13 @@
     <value>Imported rules: {0}. Enter a name to save.</value>
   </data>
   <data name="RoutingEditor_ImportedNameTaken" xml:space="preserve">
-    <value>A routing list named «{0}» already exists - saving as «{1}».</value>
+    <value>A routing list named «{0}» already exists, so this one is saved as «{1}».</value>
   </data>
   <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
     <value>This does not look like a routing list.</value>
   </data>
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
-    <value>Path is too broad - select a specific application folder.</value>
+    <value>The path is too broad: select a specific application folder.</value>
   </data>
   <data name="RoutingEditor_OwnAppRule" xml:space="preserve">
     <value>AmneziaGeo does not route itself: pick another application.</value>
@@ -1325,10 +1325,10 @@
     <value>svchost.exe is a shared service host and would tunnel a lot of unrelated traffic. Select a service from the list.</value>
   </data>
   <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
-    <value>This is the shared WebView2 host and would tunnel every app that uses WebView2. Add the specific application instead - its in-app web traffic is routed with it.</value>
+    <value>This is the shared WebView2 host and would tunnel every app that uses WebView2. Add the specific application instead: its in-app web traffic is routed with it.</value>
   </data>
   <data name="RoutingEditor_TooManyRoutes" xml:space="preserve">
-    <value>The list turns into {0} routes, this device carries {1}. Shorten it, or move the ranges out of the tunnel.</value>
+    <value>The list expands to {0} routes, but this device handles {1}. Shorten it, or move the ranges out of the tunnel.</value>
   </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>All local subnets are already in the list.</value>
@@ -1343,7 +1343,7 @@
     <value>{0} rules · {1} routes · {2} domains</value>
   </data>
   <data name="ScanCode_QrNotConfig" xml:space="preserve">
-    <value>QR recognized, but it is not a configuration - continuing…</value>
+    <value>The QR code holds no configuration. Still looking…</value>
   </data>
   <data name="ScanVm_AimCameraAtQr" xml:space="preserve">
     <value>Point the camera at the QR code…</value>
@@ -1385,7 +1385,7 @@
     <value>Preempted</value>
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
-    <value>MTU: 576-1500 (empty = 1280).</value>
+    <value>MTU must be 576 to 1500; leave it empty for 1280.</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Enter a valid WebSocket port (1-65535).</value>
@@ -1400,13 +1400,13 @@
     <value>The WebSocket server does not answer: check the port and that the server is reachable.</value>
   </data>
   <data name="Transport_ProbeTls" xml:space="preserve">
-    <value>TLS did not come up on the WebSocket server: no HTTPS on this port, or the certificate did not fit.</value>
+    <value>Could not set up TLS with the WebSocket server: no HTTPS on this port, or the certificate doesn't match.</value>
   </data>
   <data name="Transport_ProbeRefused" xml:space="preserve">
     <value>The WebSocket server turned the connection down: {0}</value>
   </data>
   <data name="Transport_ProbeDenied" xml:space="preserve">
-    <value>The WebSocket server denied access: the token, or the login and password, did not fit.</value>
+    <value>The WebSocket server denied access: wrong token, or wrong login and password.</value>
   </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Version {0} available</value>
@@ -1447,7 +1447,7 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>config copied: {0}</value>
   </data>
   <data name="Agent_SubscriptionBadUrl" xml:space="preserve">
-    <value>not a subscription address: {0}</value>
+    <value>this is not a subscription address: {0}</value>
   </data>
   <data name="Agent_SubscriptionNameTaken" xml:space="preserve">
     <value>subscription {0} already exists</value>
@@ -1456,13 +1456,13 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>unknown subscription: {0}</value>
   </data>
   <data name="Agent_SubscriptionFailed" xml:space="preserve">
-    <value>subscription {0} could not be read: {1}</value>
+    <value>could not load subscription {0}: {1}</value>
   </data>
   <data name="Agent_SubscriptionAdded" xml:space="preserve">
     <value>subscription {0}: {1} configs</value>
   </data>
   <data name="Agent_SubscriptionRefreshed" xml:space="preserve">
-    <value>{0} added, {1} rewritten, {2} gone</value>
+    <value>{0} added, {1} updated, {2} gone</value>
   </data>
   <data name="Agent_SubscriptionRemoved" xml:space="preserve">
     <value>subscription {0} removed</value>
@@ -1474,13 +1474,13 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>imported {0}</value>
   </data>
   <data name="Agent_ConfigNameTaken" xml:space="preserve">
-    <value>a configuration named «{0}» already exists - pick another name</value>
+    <value>a configuration named «{0}» already exists, pick another name</value>
   </data>
   <data name="Agent_ConfigRejected" xml:space="preserve">
-    <value>configuration rejected - {0}</value>
+    <value>configuration rejected: {0}</value>
   </data>
   <data name="Agent_ConfigUnsupportedKey" xml:space="preserve">
-    <value>the configuration needs a newer AmneziaWG than this version speaks - unknown setting «{0}»</value>
+    <value>this configuration needs a newer AmneziaWG: unknown setting «{0}»</value>
   </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>saved {0}</value>
@@ -1489,10 +1489,10 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>the tunnel is up, waiting for the server's first answer</value>
   </data>
   <data name="Agent_RoutingListNameTaken" xml:space="preserve">
-    <value>a routing list named «{0}» already exists - pick another name</value>
+    <value>a routing list named «{0}» already exists, pick another name</value>
   </data>
   <data name="Agent_RoutingListOwnApp" xml:space="preserve">
-    <value>The rule {0} names AmneziaGeo itself, which it does not route.</value>
+    <value>The rule {0} points at AmneziaGeo itself, whose traffic is not routed.</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Failed to collect logs: {0}</value>
@@ -1596,9 +1596,9 @@ Renamed on import: several names clashed with existing ones.</value>
 Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Installer_WrongArchitecture" xml:space="preserve">
-    <value>This installer is built for an Intel 64-bit machine, and this one is ARM64.
+    <value>This installer is for x64 computers, and this one is ARM64.
 
-Download the ARM64 installer: the x64 build installs but its tunnel never comes up here.</value>
+Download the ARM64 installer: the x64 version installs, but its tunnel won't work here.</value>
   </data>
   <data name="InstallerBa_ApplyError" xml:space="preserve">
     <value>Error (0x{0:X8}).</value>
@@ -1607,7 +1607,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Cannot install an earlier version over the installed one. Remove AmneziaGeo first.</value>
   </data>
   <data name="InstallerBa_GeoUpToDate" xml:space="preserve">
-    <value>Geo databases are up to date - no download needed.</value>
+    <value>Geo databases are up to date, no download needed.</value>
   </data>
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
     <value>Failed to update the geo databases ({0}). You can do this later in the application.</value>
@@ -1616,7 +1616,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>The uninstaller of the installed version was not found. Remove AmneziaGeo through Apps and features and try again.</value>
   </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
-    <value>Failed to plan the operation.</value>
+    <value>Failed to prepare the operation.</value>
   </data>
   <data name="InstallerBa_RemoveNewerFailed" xml:space="preserve">
     <value>Failed to remove the installed version. Remove AmneziaGeo through Apps and features and try again.</value>
@@ -1640,7 +1640,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Close</value>
   </data>
   <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
-    <value>Download geo database file updates</value>
+    <value>Download geo database updates</value>
   </data>
   <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
     <value>Launch AmneziaGeo after install</value>
@@ -1673,7 +1673,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Checking installation…</value>
   </data>
   <data name="InstallerVm_DownloadingGeo" xml:space="preserve">
-    <value>Downloading geo database files…</value>
+    <value>Downloading geo databases…</value>
   </data>
   <data name="InstallerVm_Install" xml:space="preserve">
     <value>Install</value>
@@ -1784,13 +1784,13 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Skipped: {0}</value>
   </data>
   <data name="Drop_BundleHint" xml:space="preserve">
-    <value>A backup is imported in the import window</value>
+    <value>Import the backup in the import window</value>
   </data>
   <data name="Main_ConfigNameWatermark" xml:space="preserve">
     <value>Configuration name</value>
   </data>
   <data name="Main_RequiredEmptyWarning" xml:space="preserve">
-    <value>Required field - changes will not be saved while it is empty.</value>
+    <value>Required field: changes won't be saved while it's empty.</value>
   </data>
   <data name="Launcher_Title" xml:space="preserve">
     <value>Quick launch</value>
@@ -1838,10 +1838,10 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>The application window downloads and installs the update on this system.</value>
   </data>
   <data name="Agent_PerAppUnsupported" xml:space="preserve">
-    <value>Per-app tunneling has no implementation on this system.</value>
+    <value>Per-app tunneling isn't supported on this system.</value>
   </data>
   <data name="Android_PerConfigResolverUnsupported" xml:space="preserve">
-    <value>A config's own DNS and bypass list change nothing on Android: names are resolved inside the tunnel, and bypasses belong to the routing list.</value>
+    <value>On Android a configuration's own DNS and exclusions have no effect: domains are resolved inside the tunnel, and exclusions are set in the routing list.</value>
   </data>
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Allow AmneziaGeo to install applications, then press Install again.</value>
@@ -1865,7 +1865,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Preset</value>
   </data>
   <data name="Main_MethodPresetHint" xml:space="preserve">
-    <value>Nothing to configure</value>
+    <value>No setup needed</value>
   </data>
   <data name="Main_MethodManualTitle" xml:space="preserve">
     <value>By hand</value>
@@ -1877,7 +1877,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Import</value>
   </data>
   <data name="Main_MethodImportHint" xml:space="preserve">
-    <value>A ready list from elsewhere</value>
+    <value>A ready list from a file, the clipboard or a QR code</value>
   </data>
   <data name="Preset_SectionTitle" xml:space="preserve">
     <value>Preset</value>
@@ -1904,7 +1904,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Everything through VPN</value>
   </data>
   <data name="Preset_EverythingHint" xml:space="preserve">
-    <value>The VPN carries everything with no exceptions, the home network stays direct.</value>
+    <value>The VPN carries everything except the home network.</value>
   </data>
   <data name="Preset_RegionTitle" xml:space="preserve">
     <value>Region</value>
@@ -2051,13 +2051,13 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Downloading the bases; this takes a while</value>
   </data>
   <data name="Tui_LogEmpty" xml:space="preserve">
-    <value>The log is empty: raise the level on the Общие screen</value>
+    <value>The log is empty: raise the log level on the General screen</value>
   </data>
   <data name="Agent_NoConfigSelected" xml:space="preserve">
     <value>No configuration selected.</value>
   </data>
   <data name="Main_AlwaysOnMode" xml:space="preserve">
-    <value>Always-on VPN: the button opens the system screen</value>
+    <value>Always-on VPN is on: the button opens the system settings</value>
   </data>
   <data name="Main_HomeRoutingHint" xml:space="preserve">
     <value>Turn routing on or off</value>
@@ -2120,7 +2120,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>tunnel packet loss: no data yet</value>
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
-    <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
+    <value>domain rules are not working: another program on this computer resolves site addresses (a corporate VPN client, for example). Those sites bypass the tunnel or do not open at all</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Selected</value>
@@ -2168,10 +2168,10 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>until {0}</value>
   </data>
   <data name="Main_SubscriptionChecked" xml:space="preserve">
-    <value>read {0}</value>
+    <value>updated {0}</value>
   </data>
   <data name="Main_SubscriptionNever" xml:space="preserve">
-    <value>not read yet</value>
+    <value>not updated yet</value>
   </data>
   <data name="Main_SubscriptionRefresh" xml:space="preserve">
     <value>Refresh</value>
@@ -2180,7 +2180,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Remove</value>
   </data>
   <data name="Main_SubscriptionRemovePrompt" xml:space="preserve">
-    <value>Remove the subscription and what it brought in?</value>
+    <value>Remove the subscription? You can keep its configurations.</value>
   </data>
   <data name="Main_SubscriptionKeepConfigs" xml:space="preserve">
     <value>Keep the configurations</value>
@@ -2189,28 +2189,28 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Remove them too</value>
   </data>
   <data name="Main_SubscriptionHint" xml:space="preserve">
-    <value>A subscription address is recognised on its own: paste it here and the configurations come with it.</value>
+    <value>Paste a subscription address here: the app recognises it and loads the configurations.</value>
   </data>
   <data name="Main_SubscriptionInsecure" xml:space="preserve">
-    <value>This address is not encrypted: the keys of the subscription travel in the open, for anyone on the way to read.</value>
+    <value>This address is not encrypted: the subscription keys travel in plain text and anyone on the way can read them.</value>
   </data>
   <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
     <value>Subscription auto-refresh</value>
   </data>
   <data name="General_SubscriptionAutoRefreshHint" xml:space="preserve">
-    <value>A configuration the panel changed is rewritten on its own; it applies on the next connect.</value>
+    <value>A configuration changed in the panel updates on its own and applies on the next connection.</value>
   </data>
   <data name="General_SubscriptionInterval" xml:space="preserve">
     <value>How often to refresh</value>
   </data>
   <data name="General_SubscriptionIntervalHint" xml:space="preserve">
-    <value>Used where the panel names no interval of its own.</value>
+    <value>Applies when the panel sets no interval of its own.</value>
   </data>
   <data name="General_SubscriptionRefreshAll" xml:space="preserve">
     <value>Refresh the subscriptions now</value>
   </data>
   <data name="General_SubscriptionRefreshAllHint" xml:space="preserve">
-    <value>Reads every subscription at once, without waiting for its interval.</value>
+    <value>Refreshes every subscription now, without waiting for its interval.</value>
   </data>
   <data name="General_SubscriptionRefreshAllButton" xml:space="preserve">
     <value>Refresh all</value>
@@ -2240,10 +2240,10 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Fallback</value>
   </data>
   <data name="Main_RuleRouteTooltip" xml:space="preserve">
-    <value>Where the rule rides</value>
+    <value>Where the rule's traffic goes</value>
   </data>
   <data name="Main_RuleRouteEntriesTooltip" xml:space="preserve">
-    <value>Where the rule rides, and what the category contains</value>
+    <value>Where the rule's traffic goes and what the category contains</value>
   </data>
   <data name="Main_RuleTargetAuto" xml:space="preserve">
     <value>Auto</value>
@@ -2288,7 +2288,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>The release carries no {0} package for {1}.</value>
   </data>
   <data name="Agent_UpdateNothingToDownload" xml:space="preserve">
-    <value>No update is on offer.</value>
+    <value>There is no update to download.</value>
   </data>
   <data name="Agent_UpdateDownloadStarted" xml:space="preserve">
     <value>Downloading {0}.</value>
@@ -2303,7 +2303,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Download cancelled.</value>
   </data>
   <data name="Agent_UpdateNothingDownloaded" xml:space="preserve">
-    <value>Nothing is downloaded yet.</value>
+    <value>The update isn't downloaded yet.</value>
   </data>
   <data name="Agent_UpdateVerifyFailed" xml:space="preserve">
     <value>{0} does not match the published checksum.</value>
@@ -2369,7 +2369,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>by application</value>
   </data>
   <data name="Check_Why_resolved" xml:space="preserve">
-    <value>address of a name</value>
+    <value>address of a domain</value>
   </data>
   <data name="Check_Why_none" xml:space="preserve">
     <value>in no rule</value>
@@ -2402,7 +2402,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Full tunnel, list &quot;{0}&quot;.</value>
   </data>
   <data name="Check_ModeOff" xml:space="preserve">
-    <value>Routing is off, the AllowedIPs of the config decide.</value>
+    <value>Routing is off: the config's AllowedIPs decide.</value>
   </data>
   <data name="Probe_TargetWatermark" xml:space="preserve">
     <value>domain or address</value>
@@ -2414,7 +2414,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>Tunnel</value>
   </data>
   <data name="Probe_PathBypass" xml:space="preserve">
-    <value>Past</value>
+    <value>Direct</value>
   </data>
   <data name="Probe_LegReach" xml:space="preserve">
     <value>reach</value>
@@ -2435,7 +2435,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>bad</value>
   </data>
   <data name="Probe_StateUnknown" xml:space="preserve">
-    <value>unknown</value>
+    <value>no answer</value>
   </data>
   <data name="Probe_StateSkipped" xml:space="preserve">
     <value>skipped</value>
@@ -2447,16 +2447,16 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>tunnel by default</value>
   </data>
   <data name="Probe_TakenBypassRule" xml:space="preserve">
-    <value>bypass by rule</value>
+    <value>direct by rule</value>
   </data>
   <data name="Probe_TakenBypassDefault" xml:space="preserve">
-    <value>bypass by default</value>
+    <value>direct by default</value>
   </data>
   <data name="Probe_TakenBlocked" xml:space="preserve">
     <value>blocked by rule</value>
   </data>
   <data name="Probe_TakenNoRouting" xml:space="preserve">
-    <value>bypass, no live routing to ask</value>
+    <value>direct: routing does not answer</value>
   </data>
   <data name="Probe_Measured" xml:space="preserve">
     <value>{0} Mbit/s in, {1} Mbit/s out against {2}</value>
@@ -2465,16 +2465,16 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>{0} Mbit/s in, {1} Mbit/s out</value>
   </data>
   <data name="Probe_NoRate" xml:space="preserve">
-    <value>{0} answers but hands over too little to time a rate</value>
+    <value>{0} answers, but sends too little data to measure the speed</value>
   </data>
   <data name="Probe_Unreachable" xml:space="preserve">
     <value>{0} never answered</value>
   </data>
   <data name="Probe_PathUnavailable" xml:space="preserve">
-    <value>this system cannot hold traffic {0}, so nothing was measured</value>
+    <value>this system cannot send traffic {0}, so nothing was measured</value>
   </data>
   <data name="Probe_NotConnected" xml:space="preserve">
-    <value>no tunnel runs, so this path could not be measured</value>
+    <value>the tunnel is not connected, so this path could not be measured</value>
   </data>
   <data name="Probe_SideThrough" xml:space="preserve">
     <value>through the tunnel</value>
@@ -2507,10 +2507,10 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>rx {0}, tx {1}</value>
   </data>
   <data name="Probe_NoteThin" xml:space="preserve">
-    <value>handed over {0}, too little to time</value>
+    <value>got {0}, too little to measure</value>
   </data>
   <data name="Probe_NoteNothing" xml:space="preserve">
-    <value>handed over nothing to time</value>
+    <value>no data came in to measure</value>
   </data>
   <data name="Probe_NoteAgainst" xml:space="preserve">
     <value>against {0}</value>
@@ -2540,7 +2540,7 @@ Download the ARM64 installer: the x64 build installs but its tunnel never comes 
     <value>the upload never started</value>
   </data>
   <data name="Probe_NoteNoTime" xml:space="preserve">
-    <value>took nothing to time</value>
+    <value>nothing to measure</value>
   </data>
   <data name="Probe_RunButton" xml:space="preserve">
     <value>Measure</value>

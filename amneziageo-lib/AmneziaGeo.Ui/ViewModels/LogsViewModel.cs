@@ -96,6 +96,8 @@ internal partial class LogsViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(SearchSummary));
+        OnPropertyChanged(nameof(SearchSummaryInField));
+        OnPropertyChanged(nameof(SearchSummaryBelow));
         OnPropertyChanged(nameof(SearchWatermark));
     }
 
@@ -296,6 +298,8 @@ internal partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsStoredLog));
         OnPropertyChanged(nameof(ShowSearch));
         OnPropertyChanged(nameof(SearchSummary));
+        OnPropertyChanged(nameof(SearchSummaryInField));
+        OnPropertyChanged(nameof(SearchSummaryBelow));
         OnPropertyChanged(nameof(ShowControlBar));
         OnPropertyChanged(nameof(ShowControlBarRow));
         OnPropertyChanged(nameof(ShowBarNav));
@@ -637,6 +641,8 @@ internal partial class LogsViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SearchSummary))]
+    [NotifyPropertyChangedFor(nameof(SearchSummaryInField))]
+    [NotifyPropertyChangedFor(nameof(SearchSummaryBelow))]
     private string _searchQuery = string.Empty;
 
     partial void OnSearchQueryChanged(string value)
@@ -654,7 +660,14 @@ internal partial class LogsViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SearchSummary))]
+    [NotifyPropertyChangedFor(nameof(SearchSummaryInField))]
+    [NotifyPropertyChangedFor(nameof(SearchSummaryBelow))]
     private int _searchMatchCount;
+
+    /// <summary>
+    /// Whether the search field carries a magnifier beside the hint.
+    /// </summary>
+    public static bool SearchIconShown => !OperatingSystem.IsAndroid();
 
     /// <summary>
     /// The hint in the search field. A narrow pane leaves it no room for what is searched through, so there it
@@ -680,6 +693,16 @@ internal partial class LogsViewModel : ViewModelBase
                 : Loc.Instance.Get("MainVm_LogSearchMatches", SearchMatchCount);
         }
     }
+
+    /// <summary>
+    /// The summary while it stands inside the field, which is where a wide pane keeps it.
+    /// </summary>
+    public string SearchSummaryInField => IsNarrow ? string.Empty : SearchSummary;
+
+    /// <summary>
+    /// The summary while it stands under the field, which is where a narrow pane keeps it.
+    /// </summary>
+    public string SearchSummaryBelow => IsNarrow ? SearchSummary : string.Empty;
 
     // --- Log body ---
 
@@ -1331,6 +1354,8 @@ internal partial class LogsViewModel : ViewModelBase
             ? Loc.Instance.Get("MainVm_LiveShownCapped", rows.Count, matched, _carried.Held)
             : Loc.Instance.Get("MainVm_LiveShown", rows.Count, matched);
         OnPropertyChanged(nameof(SearchSummary));
+        OnPropertyChanged(nameof(SearchSummaryInField));
+        OnPropertyChanged(nameof(SearchSummaryBelow));
         HasLogs = rows.Count > 0;
         if (!IsNarrow)
         {

@@ -663,6 +663,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         Config.IsActiveSection = SettingsSection == "config";
         Routing.IsActiveSection = SettingsSection == "routing";
+        Connections.IsActiveSection = SettingsSection == "connections";
     }
 
     private void OnGeneralPropertyChanged(object? sender, PropertyChangedEventArgs e)

@@ -56,14 +56,16 @@ internal sealed partial class MobileSelectHost : UserControl
         AdaptiveComboBox.SelectPresenter = _showSelect;
         RootGrid.Children.Insert(0, content);
 
-        // A text field must not summon the keyboard just by being focused: on TV the remote drives focus across
-        // the whole screen and the keyboard would swallow every key, Escape included; on a phone a stray touch
-        // would land in the field and start editing a live setting. The select press raises it on TV, the second
-        // tap into the focused field on a phone.
-        Styles.Add(new Style(x => x.OfType<TextBox>())
+        // A text field on TV must not summon the keyboard just by being focused: the remote drives focus across
+        // the whole screen and the keyboard would swallow every key, Escape included. The select press raises it
+        // there; on a phone the tap into the field does.
+        if (UiPlatform.IsTelevision)
         {
-            Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
-        });
+            Styles.Add(new Style(x => x.OfType<TextBox>())
+            {
+                Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
+            });
+        }
 
         SizeChanged += OnHostSizeChanged;
     }
@@ -325,6 +327,21 @@ internal sealed partial class MobileSelectHost : UserControl
         _keyboardTarget = null;
     }
 
+    // Takes the keyboard off the window through the platform manager.
+    private static void HideSoftInput()
+    {
+        var activity = MainActivity.Current;
+        var token = activity?.Window?.DecorView?.WindowToken;
+        if (token is null)
+        {
+            return;
+        }
+
+        var manager = activity?.GetSystemService(global::Android.Content.Context.InputMethodService)
+            as global::Android.Views.InputMethods.InputMethodManager;
+        manager?.HideSoftInputFromWindow(token, global::Android.Views.InputMethods.HideSoftInputFlags.None);
+    }
+
     // Takes the field back from the input method and re-seats focus, which drops the keyboard and keeps the field.
     private void CloseKeyboard(TextBox box)
     {
@@ -344,9 +361,9 @@ internal sealed partial class MobileSelectHost : UserControl
         _focusAtPress = _topLevel?.FocusManager?.GetFocusedElement() as Control;
     }
 
-    // Raises the keyboard on a tap into the field that already held the focus. The tap that brings the focus in
-    // leaves it at that: a stray touch then costs nothing, and the field the back button silenced comes back with
-    // one more tap.
+    // Raises the keyboard on a tap into a focused field the input method was taken from: that is how the field
+    // the back button silenced comes back, and on TV how the second tap does what the select press does.
+    // A tap anywhere else takes the keyboard down.
     private void OnTopLevelPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         // Ends the press once the control under it has had the release: the mark belongs to that press alone.
@@ -357,11 +374,21 @@ internal sealed partial class MobileSelectHost : UserControl
                 _focusAtPress = null;
             });
 
-        if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox box
-            && ReferenceEquals(_focusAtPress, box)
-            && !InputMethod.GetIsInputMethodEnabled(box)
-            && e.Source is Visual source
-            && ReferenceEquals(source.FindAncestorOfType<TextBox>(true), box))
+        var box = _topLevel?.FocusManager?.GetFocusedElement() as TextBox;
+        var tapped = (e.Source as Visual)?.FindAncestorOfType<TextBox>(true);
+        if (tapped is null)
+        {
+            if (box is not null && IsKeyboardOpen())
+            {
+                CloseKeyboard(box);
+            }
+
+            HideSoftInput();
+            return;
+        }
+
+        if (box is not null && ReferenceEquals(tapped, box)
+            && ReferenceEquals(_focusAtPress, box) && !InputMethod.GetIsInputMethodEnabled(box))
         {
             OpenKeyboard(box);
         }

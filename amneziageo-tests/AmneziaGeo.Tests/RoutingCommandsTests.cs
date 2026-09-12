@@ -8,6 +8,7 @@ namespace AmneziaGeo.Tests;
 /// A routing list holds a token once: adding it in another role moves it to that role, and an edit that changes
 /// nothing is not saved, so the running tunnel is not handed the same rules again.
 /// </summary>
+[Collection("Output")]
 public sealed class RoutingCommandsTests : IDisposable
 {
     private readonly BufferConsoleSink _console = new();

@@ -204,7 +204,7 @@
        </StackPanel>
 
        <!-- Viewer: body fills the rest under the control bar. -->
-       <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,*">
+       <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto,*">
 
         <!-- Search fills the row; the log actions take its end. The live source has nothing stored to search,
              to clear or to page through, so it carries the export alone. The gap before an action is carried by
@@ -219,12 +219,13 @@
                    Watermark="{Binding SearchWatermark}">
             <TextBox.InnerLeftContent>
               <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
-                        Margin="10,0,4,0" Foreground="{DynamicResource AgMuted2Brush}" />
+                        Margin="10,0,4,0" Foreground="{DynamicResource AgMuted2Brush}"
+                        IsVisible="{Binding SearchIconShown}" />
             </TextBox.InnerLeftContent>
             <TextBox.InnerRightContent>
-              <TextBlock Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5" Margin="0,0,10,0"
+              <TextBlock Text="{Binding SearchSummaryInField}" Classes="muted" FontSize="11.5" Margin="0,0,10,0"
                          VerticalAlignment="Center"
-                         IsVisible="{Binding SearchSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                         IsVisible="{Binding SearchSummaryInField, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </TextBox.InnerRightContent>
           </TextBox>
           <Button Grid.Column="1" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Command="{Binding ClearLogCommand}"
@@ -258,9 +259,14 @@
                         ToolTip.Tip="{l:Tr Main_LogFollowLabel}" />
         </Grid>
 
+        <!-- What the search came to, under the field on a narrow pane. -->
+        <TextBlock Grid.Row="1" Text="{Binding SearchSummaryBelow}" Classes="muted" FontSize="11.5"
+                   Margin="2,6,2,0" TextWrapping="Wrap"
+                   IsVisible="{Binding SearchSummaryBelow, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
         <!-- Arrows keep the nav at icon width; the caption and the switch take the free end of the row. The live
              source has nothing to page and follows always, so it shows the row only while the viewer is frozen. -->
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8"
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8"
               Margin="{Binding BarMargin}" IsVisible="{Binding ShowControlBarRow}">
           <Grid.Resources>
             <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
@@ -286,12 +292,12 @@
         </Grid>
 
         <!-- What the tunnel carries in one line, over the destinations it counts. -->
-        <TextBlock Grid.Row="2" IsVisible="{Binding IsLiveLog}" Margin="2,12,2,0"
+        <TextBlock Grid.Row="3" IsVisible="{Binding IsLiveLog}" Margin="2,12,2,0"
                    Text="{Binding LiveSummary}" TextWrapping="Wrap" FontSize="12.5"
                    Foreground="{DynamicResource AgFgBrush}" />
 
         <!-- Log body (shared): text / cards / empty state / loader. Fills the pane width. -->
-        <Border Grid.Row="3" x:Name="BodyFrame" Classes="logbody" Classes.bare="{Binding BareBody}"
+        <Border Grid.Row="4" x:Name="BodyFrame" Classes="logbody" Classes.bare="{Binding BareBody}"
                 Classes.short="{Binding IsShort}">
           <Panel>
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"

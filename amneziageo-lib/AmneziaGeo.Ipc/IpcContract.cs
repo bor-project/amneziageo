@@ -371,6 +371,13 @@ public static class IpcContract
     public const string OpProbeTarget = "probe-target";
 
     /// <summary>
+    /// Command to ask where the speed of a probe is measured: the server of the selected config when it offers
+    /// that, and the service in the settings otherwise. Takes no args. The ack message holds a JSON object
+    /// { own: bool, server: string (the config behind the server), against: string (its host and port) }.
+    /// </summary>
+    public const string OpSpeedService = "speed-service";
+
+    /// <summary>
     /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");
     /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
     /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less

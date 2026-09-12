@@ -140,7 +140,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             ? new FleetConnectionViewModel(this, connection, prefs)
             : new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
-        Probe = new ProbeSettingsViewModel(prefs);
+        Probe = new ProbeSettingsViewModel(connection, prefs);
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
         UpdateActiveSection();
@@ -517,6 +517,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Nav = "settings";
         SettingsSection = "probe";
         SettingsDetailOpen = true;
+        Probe.EnterSection();
         RefreshLogsActive();
     }
 
@@ -620,6 +621,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRefreshSources, []));
         }
+
+        // Settings reopen on the section they were left on, which fires no section change of its own.
+        if (value == "settings" && IsSettingsProbe)
+        {
+            Probe.EnterSection();
+        }
     }
 
     // Persist the selected settings section (#51) whenever it changes.
@@ -648,6 +655,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             Routing.AbandonCreate();
             Routing.LeaveSection();
+        }
+
+        // Entering the probe section asks where the speed is measured; the answer lands after the screen is up.
+        if (value == "probe")
+        {
+            Probe.EnterSection();
         }
 
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.

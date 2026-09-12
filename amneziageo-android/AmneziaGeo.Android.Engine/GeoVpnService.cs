@@ -678,7 +678,7 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 var options = new TargetProbeOptions(request.Target, request.Path, request.Taken, request.UploadUrl,
-                    socket => Protect(socket.Handle.ToInt32()));
+                    socket => Protect(socket.Handle.ToInt32()), request.OwnUpload);
                 var report = await TargetProbe.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
                 VpnBridge.WriteProbeResult(report.ToPayload());
             }

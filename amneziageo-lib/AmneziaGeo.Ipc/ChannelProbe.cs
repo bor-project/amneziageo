@@ -502,15 +502,21 @@ public static class ChannelProbe
 
     /// <summary>
     /// Measures what a URL accepts over the path the bypass selects: the body is generated for the same budget
-    /// the download is pulled for, and the rate is what left in that time.
+    /// the download is pulled for, and the rate is what left in that time. A leg sent to the server of the
+    /// configuration takes its certificate as it stands, the panel answering on an address of its own.
     /// </summary>
-    public static async Task<CheckLeg> UploadAsync(string name, string url, Func<Socket, bool>? bypass, CancellationToken ct)
+    public static async Task<CheckLeg> UploadAsync(string name, string url, Func<Socket, bool>? bypass, bool own, CancellationToken ct)
     {
         var handler = new SocketsHttpHandler
         {
             AutomaticDecompression = System.Net.DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(5),
         };
+
+        if (own)
+        {
+            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        }
 
         if (bypass is not null)
         {

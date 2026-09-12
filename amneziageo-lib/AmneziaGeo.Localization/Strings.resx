@@ -2557,6 +2557,9 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Probe_UploadServiceHint" xml:space="preserve">
     <value>The address the speed is checked against. Default: https://speed.cloudflare.com/__up.</value>
   </data>
+  <data name="Probe_UploadServiceHintOwn" xml:space="preserve">
+    <value>The address the speed is checked against. Default: the server {0}.</value>
+  </data>
   <data name="Main_BucketAddPrompt" xml:space="preserve">
     <value>What to add</value>
   </data>

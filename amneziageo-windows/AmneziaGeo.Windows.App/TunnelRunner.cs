@@ -1409,6 +1409,7 @@ internal sealed class TunnelRunner(
                 asked.Length > 1 ? asked[1] : string.Empty,
                 asked.Length > 2 && asked[2].Length > 0 ? asked[2] : ProbePaths.Auto,
                 asked.Length > 3 ? asked[3] : string.Empty,
+                asked.Length > 4 && asked[4] == RuntimeSnapshotPipe.OwnUpload,
                 ct);
             logger.LogInformation("probe: {Header}", report.Render().Split('\n')[0].Trim());
             return report.ToPayload();

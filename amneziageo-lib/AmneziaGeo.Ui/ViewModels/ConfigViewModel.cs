@@ -750,6 +750,7 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.AllowInbound = entry.AllowInbound;
             existing.InboundNetwork = entry.InboundNetwork;
             existing.Address = entry.Address;
+            existing.ApiPort = entry.ApiPort;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
@@ -1053,6 +1054,7 @@ internal partial class ConfigViewModel : ViewModelBase
             item.UseRouter ? "on" : "off",
             item.AllowInbound ? "on" : "off",
             item.InboundNetwork ? "on" : "off",
+            item.ApiPort > 0 ? item.ApiPort.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
         ]));
         if (ack is not { Ok: true })
         {
@@ -1104,7 +1106,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.ApiPort ?? 0);
         RefreshEditBar();
     }
 

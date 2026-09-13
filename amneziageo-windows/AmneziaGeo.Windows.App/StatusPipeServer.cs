@@ -92,12 +92,14 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentControl co
                 {
                     // Active session: poll so connect progress and liveness reach the UI promptly.
                     await Task.Delay(_pushInterval, ct);
+                    await broker.ObserveOffersAsync(ct);
                     await broker.BroadcastIfChangedAsync(ct);
                 }
                 else
                 {
                     // Idle without a tunnel: wake on a status change instead of rebuilding the snapshot every 2s.
                     var wait = control.WaitForStatusAsync(ct);
+                    await broker.ObserveOffersAsync(ct);
                     await broker.BroadcastIfChangedAsync(ct);
                     await wait;
                 }

@@ -979,6 +979,9 @@
   <data name="Main_SourcesSection" xml:space="preserve">
     <value>Geo sources</value>
   </data>
+  <data name="Main_ApiPortLabel" xml:space="preserve">
+    <value>API port</value>
+  </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
     <value>MTU</value>
   </data>
@@ -1386,6 +1389,9 @@
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU must be 576 to 1500; leave it empty for 1280.</value>
+  </data>
+  <data name="Transport_InvalidApiPort" xml:space="preserve">
+    <value>Enter an API port from 1 to 65535.</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Enter a valid WebSocket port (1-65535).</value>

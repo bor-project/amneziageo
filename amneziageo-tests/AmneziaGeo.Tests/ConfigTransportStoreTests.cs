@@ -92,6 +92,16 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Transport_KeepsTheApiPortOfTheServer()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("api", false, string.Empty, 443, ApiPort: 9443));
+        await _store.SetConfigTransportAsync(new ConfigTransport("endpoint", false, string.Empty, 443));
+
+        Assert.Equal(9443, (await _store.GetConfigTransportAsync("api"))!.ApiPort);
+        Assert.Equal(0, (await _store.GetConfigTransportAsync("endpoint"))!.ApiPort);
+    }
+
+    [Fact]
     public async Task Transport_RefusesAccessFromTheTunnelByDefault()
     {
         await _store.SetConfigTransportAsync(new ConfigTransport("quiet", false, string.Empty, 443));

@@ -280,8 +280,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             // One head, one process: presence needs no announcing here.
             case IpcContract.OpAttachUi:
-                // The window will ask where the speed is measured; the servers are asked now so it has the answer.
-                ServerSpeed.Shared.Warm(Targets());
+                // The window will ask what the servers offer; the servers are asked now so it has the answer.
+                ServerOffers.Shared.Warm(Targets());
                 return Ok();
 
             case IpcContract.OpAddConfig:
@@ -476,8 +476,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
 
-            case IpcContract.OpSpeedService:
-                return await SpeedServiceAsync().ConfigureAwait(false);
+            case IpcContract.OpServerOffer:
+                return await ServerOfferAsync().ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -719,8 +719,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _boundStatus = ConnectionStatus.Connected;
                 _boundTarget = session;
                 ClearConnectFailure();
+                if (session is { Length: > 0 } && ServerOffers.Shared.Observe(session, true))
+                {
+                    ServerOffers.Shared.Warm(Targets());
+                }
+
                 break;
             case VpnStage.Disconnected:
+                if (_boundTarget is { Length: > 0 } dropped)
+                {
+                    ServerOffers.Shared.Observe(dropped, false);
+                }
+
                 _active = false;
                 _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
@@ -974,6 +984,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             AllowInbound: transport?.AllowInbound ?? false,
             InboundNetwork: transport?.InboundNetwork ?? false,
             Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
+            ApiPort: transport?.ApiPort ?? 0,
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -1682,7 +1693,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.Mtu,
                         transport.UseIpv6,
                         transport.MtuMode,
-                        transport.UseRouter),
+                        transport.UseRouter,
+                        ApiPort: transport.ApiPort),
                 null));
         }
 
@@ -1923,7 +1935,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.ApiPort)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1970,7 +1982,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var useRouter = args.Count > 7 ? IsOn(args[7]) : previous?.UseRouter ?? true;
         var allowInbound = args.Count > 8 ? IsOn(args[8]) : previous?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : previous?.InboundNetwork ?? false;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork)).ConfigureAwait(false);
+        var apiPort = args.Count > 10 ? ConfigTransport.ApiPortOf(args[10]) : previous?.ApiPort ?? 0;
+        if (apiPort < 0)
+        {
+            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidApiPort"));
+        }
+
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, apiPort)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
@@ -2900,12 +2918,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
     }
 
-    // Where the speed of a probe is measured, as the servers have already answered; the asking runs behind it.
-    private Task<IpcAck> SpeedServiceAsync()
+    // Returns what the server of the selected config offers and asks the servers that changed behind it.
+    private Task<IpcAck> ServerOfferAsync()
     {
-        ServerSpeed.Shared.Warm(Targets());
+        ServerOffers.Shared.Warm(Targets());
 
-        return Task.FromResult(new IpcAck(true, ServerSpeed.Shared.Told(_selectedTarget ?? string.Empty).ToPayload()));
+        return Task.FromResult(new IpcAck(true, ServerOffers.Shared.Offer(_selectedTarget ?? string.Empty).ToPayload()));
     }
 
     // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
@@ -2916,19 +2934,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return (chosen, false);
         }
 
-        var target = new SpeedTarget(config, _configs.GetValueOrDefault(config, string.Empty), VpnBridge.IsRunning(Application.Context));
-        var offer = await ServerSpeed.Shared.TicketAsync(target, ct).ConfigureAwait(false);
+        var target = new OfferTarget(config, _configs.GetValueOrDefault(config, string.Empty), VpnBridge.IsRunning(Application.Context), _transports.GetValueOrDefault(config)?.ApiPort ?? 0);
+        var offer = await ServerOffers.Shared.SpeedAsync(target, ct).ConfigureAwait(false);
 
-        return ServerSpeed.Upload(chosen, offer, path);
+        return ServerOffers.Upload(chosen, offer, path);
     }
 
     // Every config whose server can be asked whether it measures; their texts live in this agent's own JSON.
-    private IReadOnlyList<SpeedTarget> Targets()
+    private IReadOnlyList<OfferTarget> Targets()
     {
         var running = VpnBridge.IsRunning(Application.Context);
 
         return [.. _configs.Select(entry =>
-            new SpeedTarget(entry.Key, entry.Value, running && string.Equals(entry.Key, _selectedTarget, StringComparison.Ordinal)))];
+            new OfferTarget(entry.Key, entry.Value, running && string.Equals(entry.Key, _selectedTarget, StringComparison.Ordinal), _transports.GetValueOrDefault(entry.Key)?.ApiPort ?? 0))];
     }
 
     // Where the rules in force send a destination, said the way the desktops say it, and whether that is the

@@ -209,8 +209,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             // Task Manager end-task, or an upgrade gap) and comes down only on an explicit user disconnect / exit
             // or an agent-service stop. A VPN must not fail open when its front-end dies.
             logger.LogInformation("UI session attached");
-            // The window will ask where the speed is measured; the servers are asked now so it has the answer.
-            _ = WarmSpeedAsync(ct);
+            // The window will ask what the servers offer; the servers are asked now so it has the answer.
+            _ = WarmOffersAsync(ct);
             var attachAck = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: new IpcAck(true, "attached")), IpcJson.Options);
             await connection.SendAsync(attachAck, ct);
             return;
@@ -292,7 +292,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpProbeServers => await checks.ProbeServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
-                IpcContract.OpSpeedService => await SpeedServiceAsync(ct),
+                IpcContract.OpServerOffer => await ServerOfferAsync(ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => await UnknownAsync(command, ct),
             };
@@ -684,7 +684,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var tr = await store.GetConfigTransportAsync(name, ct);
             if (tr is not null)
             {
-                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork);
+                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.ApiPort);
             }
 
             PortableBundle.GeoBlock? geoBlock = null;
@@ -813,7 +813,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 await configRepo.EditFromTextAsync(incoming, block.ConfigText, ct);
                 if (block.Transport is { } trE)
                 {
-                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter, trE.AllowInbound, trE.InboundNetwork), ct);
+                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter, trE.AllowInbound, trE.InboundNetwork, trE.ApiPort), ct);
                 }
 
                 await ApplyConfigDataAsync(incoming, block, ct);
@@ -848,7 +848,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             if (block.Transport is { } tr)
             {
-                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork), ct);
+                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.ApiPort), ct);
             }
 
             await ApplyConfigDataAsync(finalName, block, ct);
@@ -1100,12 +1100,19 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             ? args[9].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes"
             : previous?.InboundNetwork ?? false;
 
-        var updated = new ConfigTransport(args[0], on, host, port, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork);
+        // Optional 11th arg: the API port of the server, empty for the port of the Endpoint.
+        var apiPort = args.Count > 10 ? ConfigTransport.ApiPortOf(args[10]) : previous?.ApiPort ?? 0;
+        if (apiPort < 0)
+        {
+            return new IpcAck(false, "invalid API port (1-65535)");
+        }
+
+        var updated = new ConfigTransport(args[0], on, host, port, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, apiPort);
         await store.SetConfigTransportAsync(updated, ct);
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
-        if (previous != updated && IsRunningMember(args[0]))
+        if ((previous is null || previous with { ApiPort = updated.ApiPort } != updated) && IsRunningMember(args[0]))
         {
             MarkRestartRequired(args[0]);
         }
@@ -1321,23 +1328,38 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return await checks.ProbeAsync(store, config, args[0], path, upload, ct);
     }
 
-    // Where the speed of a probe is measured, for the config this window reports on.
-    private async Task<IpcAck> SpeedServiceAsync(CancellationToken ct)
+    // What the server of the config this window reports on offers.
+    private async Task<IpcAck> ServerOfferAsync(CancellationToken ct)
     {
         var (config, _) = await InspectTargetAsync(ct);
-        return await checks.SpeedAsync(store, config, ct);
+        return await checks.OfferAsync(store, config, ct);
     }
 
-    // Asks the servers whether they measure the speed themselves; a server that cannot be reached is left out.
-    private async Task WarmSpeedAsync(CancellationToken ct)
+    // Asks the servers what they offer.
+    private async Task WarmOffersAsync(CancellationToken ct)
     {
         try
         {
-            await checks.WarmSpeedAsync(store, ct);
+            await checks.WarmOffersAsync(store, ct);
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "the servers could not be asked about measuring the speed");
+            logger.LogDebug(ex, "the servers could not be asked what they offer");
+        }
+    }
+
+    /// <summary>
+    /// Asks the servers again when a tunnel has come up.
+    /// </summary>
+    public async Task ObserveOffersAsync(CancellationToken ct)
+    {
+        try
+        {
+            await checks.ObserveOffersAsync(store, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "the servers could not be asked what they offer");
         }
     }
 
@@ -2784,7 +2806,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var handshake = bound ? handshakeAge : -1;
             var reading = bound ? link : LinkReading.Empty;
             var member = members.GetValueOrDefault(name);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText))));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), transport?.ApiPort ?? 0));
         }
 
         var routingLists = new List<RoutingListEntry>();

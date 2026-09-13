@@ -158,6 +158,7 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
 
             sb.AppendLine($"    ipv6:       {(transport?.UseIpv6 == true ? "on" : "off")}");
             sb.AppendLine($"    router:     {(transport?.UseRouter != false ? "on" : "off")}");
+            sb.AppendLine($"    api port:   {(transport is { ApiPort: > 0 } ? transport.ApiPort.ToString(CultureInfo.InvariantCulture) : "endpoint")}");
             sb.AppendLine($"    inbound:    {(transport?.AllowInbound != true ? "off" : transport.InboundNetwork ? "tunnel network" : "server only")}");
 
             var geo = await store.GetTunnelGeoAsync(config, ct).ConfigureAwait(false);

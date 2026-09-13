@@ -91,6 +91,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private string _address = string.Empty;
 
+    [ObservableProperty]
+    private int _apiPort;
+
     // Отбила ли проверка прокси, каким его знает карточка.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]

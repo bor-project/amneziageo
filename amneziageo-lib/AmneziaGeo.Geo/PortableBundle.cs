@@ -55,7 +55,7 @@ public static class PortableBundle
     /// <summary>
     /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.
     /// </summary>
-    public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu, bool UseIpv6 = false, MtuMode MtuMode = MtuMode.Auto, bool UseRouter = true, bool AllowInbound = false, bool InboundNetwork = false);
+    public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu, bool UseIpv6 = false, MtuMode MtuMode = MtuMode.Auto, bool UseRouter = true, bool AllowInbound = false, bool InboundNetwork = false, int ApiPort = 0);
 
     /// <summary>
     /// Geo split toggle and rule tokens.

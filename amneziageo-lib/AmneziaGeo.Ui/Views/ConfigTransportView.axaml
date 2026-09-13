@@ -123,6 +123,20 @@
                            IsVisible="{Binding ShowInboundAddress}" />
     </StackPanel>
 
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
+    <!-- Порт API сервера. -->
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
+      <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr Main_ApiPortLabel}" FontWeight="SemiBold" FontSize="15"
+                 VerticalAlignment="Center" />
+      <TextBox Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+               Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+               Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+               Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}"
+               Classes="field" Width="90" HorizontalAlignment="Left" VerticalAlignment="Center"
+               Text="{Binding ApiPort}" Watermark="{Binding ApiPortDefault}" />
+    </Grid>
+
     <!-- The router decides destinations while the session runs and costs a second pass through userspace;
          turning it off leaves the route table alone with the rules. -->
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_RouterTitle}" Description="{l:Tr Main_RouterHint}"

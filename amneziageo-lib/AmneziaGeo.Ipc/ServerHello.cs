@@ -1,26 +1,51 @@
 using System.Globalization;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
-/// Where a server of ours measures the speed for one client, and for how long the pass in the addresses answers.
-/// The addresses carry the host the server was asked at, so one asked inside the tunnel measures inside it.
+/// What a server of ours offers one configuration: where it answered and the arguments of every feature by name.
 /// </summary>
-public sealed record SpeedOffer(string Origin, string Down, string Up, long Limit, DateTimeOffset Expires, bool Inside);
-
-/// <summary>
-/// What the window is told about where a probe measures its speed: the server of the configuration when it
-/// offers that, and nothing when the service in the settings decides.
-/// </summary>
-public sealed record SpeedService(bool Own, string Server, string Against)
+/// <param name="Config">The configuration the offer belongs to.</param>
+/// <param name="Origin">The scheme, host and port the server answered at; empty when no server of ours answered.</param>
+/// <param name="Inside">Whether the server answered inside the tunnel.</param>
+/// <param name="Version">The version of the server.</param>
+/// <param name="Client">The name the server holds the client under.</param>
+/// <param name="Features">The arguments of every feature, by feature name.</param>
+public sealed record ServerOffer(
+    string Config,
+    string Origin,
+    bool Inside,
+    string Version,
+    string Client,
+    IReadOnlyDictionary<string, JsonElement> Features)
 {
     /// <summary>
-    /// Nothing offered, so the service in the settings stands.
+    /// No server of ours.
     /// </summary>
-    public static SpeedService None { get; } = new(false, string.Empty, string.Empty);
+    public static ServerOffer None { get; } = new(string.Empty, string.Empty, false, string.Empty, string.Empty, new Dictionary<string, JsonElement>());
+
+    /// <summary>
+    /// Whether a server of ours answered.
+    /// </summary>
+    [JsonIgnore]
+    public bool Ours => Origin.Length > 0;
+
+    /// <summary>
+    /// Returns the host and port the server answered at.
+    /// </summary>
+    public string Authority() =>
+        Uri.TryCreate(Origin, UriKind.Absolute, out var parsed) ? parsed.Authority : Origin;
+
+    /// <summary>
+    /// Returns the arguments of a feature, or null when it is not offered.
+    /// </summary>
+    public JsonElement? Arguments(string name) =>
+        Features.TryGetValue(name, out var arguments) && arguments.ValueKind == JsonValueKind.Object ? arguments : null;
 
     /// <summary>
     /// Renders it as the ack payload.
@@ -30,11 +55,13 @@ public sealed record SpeedService(bool Own, string Server, string Against)
     /// <summary>
     /// Reads it back from the ack payload.
     /// </summary>
-    public static SpeedService Parse(string payload)
+    public static ServerOffer Parse(string payload)
     {
         try
         {
-            return JsonSerializer.Deserialize<SpeedService>(payload, IpcJson.Options) ?? None;
+            var offer = JsonSerializer.Deserialize<ServerOffer>(payload, IpcJson.Options);
+
+            return offer is { Features: not null } ? offer : None;
         }
         catch (JsonException)
         {
@@ -44,8 +71,62 @@ public sealed record SpeedService(bool Own, string Server, string Against)
 }
 
 /// <summary>
-/// Asks a server what it is and what it offers the client holding a configuration. Nothing here needs an account
-/// of the panel: the answer to its challenge is counted from the keys the configuration already carries.
+/// Arguments of the speed feature.
+/// </summary>
+/// <param name="Down">The address a run pulls bytes from.</param>
+/// <param name="Up">The address a run sends bytes to.</param>
+/// <param name="Limit">The most bytes one leg carries.</param>
+/// <param name="Expires">When the pass in the addresses stops answering.</param>
+public sealed record SpeedArgs(string Down, string Up, long Limit, DateTimeOffset Expires)
+{
+    /// <summary>
+    /// The key of the feature in the dictionary.
+    /// </summary>
+    public const string Name = "speed";
+
+    /// <summary>
+    /// Returns the arguments of the feature in an offer, or null when they are absent or broken.
+    /// </summary>
+    public static SpeedArgs? Of(ServerOffer? offer)
+    {
+        if (offer?.Arguments(Name) is not { } arguments)
+        {
+            return null;
+        }
+
+        var down = ServerHello.Text(arguments, "down");
+        var up = ServerHello.Text(arguments, "up");
+        if (down.Length == 0 || up.Length == 0)
+        {
+            return null;
+        }
+
+        var limit = arguments.TryGetProperty("limit", out var bytes) && bytes.TryGetInt64(out var most) ? most : 0;
+
+        return new SpeedArgs(down, up, limit, Until(arguments));
+    }
+
+    // Reads when the pass stops answering, a minute from now when the server names no time.
+    private static DateTimeOffset Until(JsonElement arguments)
+    {
+        return arguments.TryGetProperty("expires", out var when)
+            && when.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(when.GetString(), CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var stamp)
+                ? stamp
+                : DateTimeOffset.UtcNow.AddMinutes(1);
+    }
+}
+
+/// <summary>
+/// What one address answered to the hello.
+/// </summary>
+/// <param name="Offer">The offer of a server of ours, null when none answered.</param>
+/// <param name="Heard">Whether the address answered anything at all.</param>
+public sealed record HelloReply(ServerOffer? Offer, bool Heard);
+
+/// <summary>
+/// Asks a server what it is and what it offers the client holding a configuration.
 /// </summary>
 public static class ServerHello
 {
@@ -55,51 +136,47 @@ public static class ServerHello
     public const string ServerName = "amneziageo";
 
     /// <summary>
-    /// The port the panel answers on where nothing names another.
-    /// </summary>
-    public const int PanelPort = 8443;
-
-    /// <summary>
-    /// The offer that measures the speed against the server itself.
-    /// </summary>
-    public const string SpeedFeature = "speed";
-
-    /// <summary>
     /// The path the point of the server sits at.
     /// </summary>
     public const string Path = "/api/hello";
 
-    // What one leg of the exchange is given: a server that is not there is left behind rather than waited for.
+    /// <summary>
+    /// The header the countersign of the server travels in.
+    /// </summary>
+    public const string ProofHeader = "Amneziageo-Proof";
+
     private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Asks one address what it offers this configuration; anything but a server of ours answers nothing.
+    /// Asks one address what it offers this configuration.
     /// </summary>
-    public static async Task<SpeedOffer?> AskAsync(string origin, string privateKey, string serverKey, bool inside, CancellationToken ct)
+    public static async Task<HelloReply> AskAsync(string origin, string privateKey, string serverKey, bool inside, CancellationToken ct)
     {
         if (!Curve25519.IsKey(privateKey) || !Curve25519.IsKey(serverKey))
         {
-            return null;
+            return new HelloReply(null, false);
         }
 
-        var handler = new SocketsHttpHandler { ConnectTimeout = _timeout };
-        // Takes the certificate of the panel as it stands: it answers on an address of its own, most often inside
-        // the tunnel, where no name a certificate is issued for exists.
-        handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        var heard = false;
+        var handler = new SocketsHttpHandler { ConnectTimeout = _timeout, UseProxy = false };
 
         try
         {
             using var client = new HttpClient(handler) { Timeout = _timeout };
-            var challenge = await ChallengeAsync(client, origin, ct).ConfigureAwait(false);
+            using var greeting = await client.GetAsync(origin + Path, ct).ConfigureAwait(false);
+            heard = true;
+            var challenge = await ChallengeAsync(greeting, ct).ConfigureAwait(false);
             if (challenge.Length == 0)
             {
-                return null;
+                return new HelloReply(null, true);
             }
 
+            var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(PeerProof.NonceBytes));
             var answer = new
             {
                 key = Curve25519.PublicOf(privateKey),
                 challenge,
+                nonce,
                 proof = PeerProof.Answer(privateKey, serverKey, challenge),
             };
 
@@ -107,14 +184,21 @@ public static class ServerHello
             using var response = await client.PostAsync(origin + Path, body, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                return null;
+                return new HelloReply(null, true);
             }
 
-            return Speed(origin, await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false), inside);
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            var countersign = response.Headers.TryGetValues(ProofHeader, out var values) ? values.FirstOrDefault() : null;
+            if (!PeerProof.Countersigns(privateKey, serverKey, nonce, bytes, countersign))
+            {
+                return new HelloReply(null, true);
+            }
+
+            return new HelloReply(Offer(origin, bytes, inside), true);
         }
         catch (Exception ex) when (Refused(ex))
         {
-            return null;
+            return new HelloReply(null, heard);
         }
         finally
         {
@@ -122,62 +206,59 @@ public static class ServerHello
         }
     }
 
-    // The challenge the server hands out, and the word that says it is one of ours.
-    private static async Task<string> ChallengeAsync(HttpClient client, string origin, CancellationToken ct)
-    {
-        using var response = await client.GetAsync(origin + Path, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return string.Empty;
-        }
-
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
-        return Ours(json.RootElement) ? Text(json.RootElement, "challenge") : string.Empty;
-    }
-
-    // What the answer offers for the speed; a server that does not measure for this client offers none.
-    private static SpeedOffer? Speed(string origin, string body, bool inside)
-    {
-        using var json = JsonDocument.Parse(body);
-        var root = json.RootElement;
-        if (!Ours(root) || !root.TryGetProperty(SpeedFeature, out var speed) || speed.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        var down = Text(speed, "down");
-        var up = Text(speed, "up");
-        if (down.Length == 0 || up.Length == 0)
-        {
-            return null;
-        }
-
-        var limit = speed.TryGetProperty("limit", out var bytes) && bytes.TryGetInt64(out var most) ? most : 0;
-
-        return new SpeedOffer(origin, down, up, limit, Expires(speed), inside);
-    }
-
-    // When the pass stops answering; one the server does not date is taken as good for a minute.
-    private static DateTimeOffset Expires(JsonElement speed)
-    {
-        return speed.TryGetProperty("expires", out var when)
-            && when.ValueKind == JsonValueKind.String
-            && DateTimeOffset.TryParse(when.GetString(), CultureInfo.InvariantCulture,
-                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var stamp)
-                ? stamp
-                : DateTimeOffset.UtcNow.AddMinutes(1);
-    }
-
-    // Whether the answer comes from a server of ours.
-    private static bool Ours(JsonElement root) =>
-        string.Equals(Text(root, "server"), ServerName, StringComparison.Ordinal);
-
-    private static string Text(JsonElement element, string name) =>
+    /// <summary>
+    /// Returns a string property of a JSON object, empty when it is absent.
+    /// </summary>
+    public static string Text(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? string.Empty
             : string.Empty;
 
-    // A server that refuses, answers nothing or answers something else leaves the offer unknown.
+    // Reads the challenge from a greeting of a server of ours.
+    private static async Task<string> ChallengeAsync(HttpResponseMessage greeting, CancellationToken ct)
+    {
+        if (!greeting.IsSuccessStatusCode)
+        {
+            return string.Empty;
+        }
+
+        using var json = JsonDocument.Parse(await greeting.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+
+        return json.RootElement.ValueKind == JsonValueKind.Object && Ours(json.RootElement)
+            ? Text(json.RootElement, "challenge")
+            : string.Empty;
+    }
+
+    // Reads the dictionary of features from a countersigned answer.
+    private static ServerOffer? Offer(string origin, byte[] body, bool inside)
+    {
+        using var json = JsonDocument.Parse(body);
+        var root = json.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || !Ours(root))
+        {
+            return null;
+        }
+
+        var features = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (root.TryGetProperty("features", out var offered) && offered.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var feature in offered.EnumerateObject())
+            {
+                if (feature.Value.ValueKind == JsonValueKind.Object)
+                {
+                    features[feature.Name] = feature.Value.Clone();
+                }
+            }
+        }
+
+        return new ServerOffer(string.Empty, origin, inside, Text(root, "version"), Text(root, "client"), features);
+    }
+
+    // Tells whether an answer comes from a server of ours.
+    private static bool Ours(JsonElement root) =>
+        string.Equals(Text(root, "server"), ServerName, StringComparison.Ordinal);
+
+    // Tells whether a failure means the address offers nothing.
     private static bool Refused(Exception ex) =>
         ex is HttpRequestException or IOException or SocketException or OperationCanceledException
             or JsonException or FormatException or ArgumentException or InvalidOperationException or NotSupportedException or UriFormatException;

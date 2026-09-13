@@ -13,10 +13,7 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The point a client opens on the server of its own configuration: the answer that proves the key, what the
-/// server offers for the speed, what is kept of that for the window, and which of those offers a probe is
-/// allowed to measure against. The keys never travel, so an answer both sides count the same is the whole of
-/// the proof, and the window is answered out of what was asked before rather than over the network.
+/// The hello of a server of ours: the proofs of both sides, the dictionary of features, and when it is asked again.
 /// </summary>
 public sealed class ServerHelloTests
 {
@@ -45,19 +42,89 @@ public sealed class ServerHelloTests
     }
 
     [Fact]
-    public async Task AServerOfOurs_HandsOverWhereItMeasuresTheSpeed()
+    public void TheCountersign_IsTheSameOnBothSidesAndBoundToTheNonceAndTheBody()
+    {
+        var client = Keys();
+        var server = Keys();
+        var body = "{\"features\":{}}"u8.ToArray();
+
+        var theirs = PeerProof.Countersign(server.Private, client.Public, "nonce", body);
+
+        Assert.True(PeerProof.Countersigns(client.Private, server.Public, "nonce", body, theirs));
+        Assert.False(PeerProof.Countersigns(client.Private, server.Public, "other", body, theirs));
+        Assert.False(PeerProof.Countersigns(client.Private, server.Public, "nonce", "{}"u8, theirs));
+        Assert.False(PeerProof.Countersigns(client.Private, Keys().Public, "nonce", body, theirs));
+        Assert.False(PeerProof.Countersigns(client.Private, server.Public, "nonce", body, null));
+    }
+
+    [Fact]
+    public async Task AServerOfOurs_HandsOverItsFeaturesByName()
     {
         var client = Keys();
         var server = Keys();
         using var panel = new Panel(server.Private, client.Public);
 
-        var offer = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
+        var reply = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
 
-        Assert.NotNull(offer);
-        Assert.Equal(panel.Origin + "/api/speed/up?ticket=pass-1", offer.Up);
-        Assert.Equal(104857600L, offer.Limit);
-        Assert.True(offer.Inside);
+        Assert.NotNull(reply.Offer);
+        Assert.True(reply.Offer.Ours);
+        Assert.True(reply.Offer.Inside);
+        Assert.Equal("milena", reply.Offer.Client);
+        Assert.Equal(["future", "speed", "subscription"], reply.Offer.Features.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(client.Public, panel.Proven);
+    }
+
+    [Fact]
+    public async Task TheArgumentsOfAKnownFeature_AreReadAndTheUnknownOnesPassedOver()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+
+        var reply = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
+        var speed = SpeedArgs.Of(reply.Offer);
+
+        Assert.NotNull(speed);
+        Assert.Equal(panel.Origin + "/api/speed/up?ticket=pass-1", speed.Up);
+        Assert.Equal(104857600L, speed.Limit);
+    }
+
+    [Fact]
+    public async Task AFeatureWithBrokenArguments_IsNotOffered()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public) { Broken = true };
+
+        var reply = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
+
+        Assert.NotNull(reply.Offer);
+        Assert.Null(SpeedArgs.Of(reply.Offer));
+    }
+
+    [Fact]
+    public async Task AnAnswerTheServerKeyDidNotCountersign_IsTakenAsNoServerOfOurs()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public) { Signer = Keys().Private };
+
+        var reply = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
+
+        Assert.Null(reply.Offer);
+        Assert.True(reply.Heard);
+    }
+
+    [Fact]
+    public async Task AnAnswerChangedOnTheWay_IsTakenAsNoServerOfOurs()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public) { Tamper = true };
+
+        var reply = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
+
+        Assert.Null(reply.Offer);
     }
 
     [Fact]
@@ -66,9 +133,9 @@ public sealed class ServerHelloTests
         var server = Keys();
         using var panel = new Panel(server.Private, Keys().Public);
 
-        var offer = await ServerHello.AskAsync(panel.Origin, Keys().Private, server.Public, true, CancellationToken.None);
+        var reply = await ServerHello.AskAsync(panel.Origin, Keys().Private, server.Public, true, CancellationToken.None);
 
-        Assert.Null(offer);
+        Assert.Null(reply.Offer);
     }
 
     [Fact]
@@ -77,18 +144,18 @@ public sealed class ServerHelloTests
         var server = Keys();
         using var panel = new Panel(server.Private, Keys().Public) { Name = "someone-else" };
 
-        var offer = await ServerHello.AskAsync(panel.Origin, Keys().Private, server.Public, false, CancellationToken.None);
+        var reply = await ServerHello.AskAsync(panel.Origin, Keys().Private, server.Public, false, CancellationToken.None);
 
-        Assert.Null(offer);
+        Assert.Null(reply.Offer);
     }
 
     [Fact]
-    public void BeforeAnyServerIsAsked_TheWindowIsToldTheServiceStands()
+    public void BeforeAnyServerIsAsked_TheWindowIsToldNoServerOfOurs()
     {
-        var told = new ServerSpeed().Told("stand");
+        var offer = new ServerOffers(TimeSpan.Zero).Offer("stand");
 
-        Assert.False(told.Own);
-        Assert.Equal(string.Empty, told.Against);
+        Assert.False(offer.Ours);
+        Assert.Null(SpeedArgs.Of(offer));
     }
 
     [Fact]
@@ -97,29 +164,92 @@ public sealed class ServerHelloTests
         var client = Keys();
         var server = Keys();
         using var panel = new Panel(server.Private, client.Public);
-        var speed = new ServerSpeed(panel.Port);
+        var offers = new ServerOffers(TimeSpan.Zero);
 
-        await speed.WarmAsync([Target(client.Private, server.Public)], CancellationToken.None);
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], CancellationToken.None);
 
-        var told = speed.Told("stand");
-        Assert.True(told.Own);
-        Assert.Equal("stand", told.Server);
-        Assert.Equal("localhost:" + panel.Port.ToString(CultureInfo.InvariantCulture), told.Against);
+        var offer = offers.Offer("stand");
+        Assert.NotNull(SpeedArgs.Of(offer));
+        Assert.Equal("stand", offer.Config);
+        Assert.Equal("127.0.0.1:" + panel.Port.ToString(CultureInfo.InvariantCulture), offer.Authority());
     }
 
     [Fact]
-    public async Task AskingTheSameServerAgainWhileItsAnswerStands_CostsNothing()
+    public async Task WithoutAReconnect_TheServerIsNotAskedAgain()
     {
         var client = Keys();
         var server = Keys();
         using var panel = new Panel(server.Private, client.Public);
-        var speed = new ServerSpeed(panel.Port);
+        var offers = new ServerOffers(TimeSpan.Zero);
 
-        await speed.WarmAsync([Target(client.Private, server.Public)], CancellationToken.None);
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], CancellationToken.None);
         var asked = panel.Asked;
-        await speed.WarmAsync([Target(client.Private, server.Public)], CancellationToken.None);
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], CancellationToken.None);
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port) with { Connected = false }], CancellationToken.None);
 
         Assert.Equal(asked, panel.Asked);
+    }
+
+    [Fact]
+    public async Task AfterAReconnect_TheServerIsAskedAgain()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], CancellationToken.None);
+        var asked = panel.Asked;
+        Assert.False(offers.Observe("stand", true));
+        offers.Observe("stand", false);
+        Assert.True(offers.Observe("stand", true));
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], CancellationToken.None);
+
+        Assert.True(panel.Asked > asked);
+    }
+
+    [Fact]
+    public async Task AConfigWithoutAnUpTunnel_IsNotAsked()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port) with { Connected = false }], CancellationToken.None);
+
+        Assert.Equal(0, panel.Asked);
+        Assert.False(offers.Offer("stand").Ours);
+    }
+
+    [Fact]
+    public async Task TheApiPortOfTheSettings_OutranksThePortOfTheEndpoint()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+
+        await offers.WarmAsync([Target(client.Private, server.Public, 9) with { ApiPort = panel.Port }], CancellationToken.None);
+
+        Assert.True(offers.Offer("stand").Ours);
+        Assert.Equal(panel.Port, new Uri(offers.Offer("stand").Origin).Port);
+    }
+
+    [Fact]
+    public async Task AChangedConfig_IsAskedAgain()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], CancellationToken.None);
+        var asked = panel.Asked;
+        var changed = Target(client.Private, server.Public, panel.Port) with { Text = Target(client.Private, server.Public, panel.Port).Text + "MTU = 1280\n" };
+        await offers.WarmAsync([changed], CancellationToken.None);
+
+        Assert.True(panel.Asked > asked);
     }
 
     [Fact]
@@ -128,12 +258,12 @@ public sealed class ServerHelloTests
         var client = Keys();
         var server = Keys();
         using var panel = new Panel(server.Private, client.Public);
-        var speed = new ServerSpeed(panel.Port);
-        var target = Target(client.Private, server.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+        var target = Target(client.Private, server.Public, panel.Port);
 
-        await speed.WarmAsync([target], CancellationToken.None);
-        var first = await speed.TicketAsync(target, CancellationToken.None);
-        var second = await speed.TicketAsync(target, CancellationToken.None);
+        await offers.WarmAsync([target], CancellationToken.None);
+        var first = SpeedArgs.Of(await offers.SpeedAsync(target, CancellationToken.None));
+        var second = SpeedArgs.Of(await offers.SpeedAsync(target, CancellationToken.None));
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -145,22 +275,22 @@ public sealed class ServerHelloTests
     {
         var server = Keys();
         using var panel = new Panel(server.Private, Keys().Public);
-        var speed = new ServerSpeed(panel.Port);
-        var target = Target(Keys().Private, server.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+        var target = Target(Keys().Private, server.Public, panel.Port);
 
-        await speed.WarmAsync([target], CancellationToken.None);
+        await offers.WarmAsync([target], CancellationToken.None);
         var asked = panel.Asked;
-        var offer = await speed.TicketAsync(target, CancellationToken.None);
+        var offer = await offers.SpeedAsync(target, CancellationToken.None);
 
         Assert.Null(offer);
-        Assert.False(speed.Told("stand").Own);
+        Assert.False(offers.Offer("stand").Ours);
         Assert.Equal(asked, panel.Asked);
     }
 
     [Fact]
     public void TheServiceInTheSettings_OutranksTheServerOffer()
     {
-        var chosen = ServerSpeed.Upload("https://speed.example/__up", Offer(false), ProbePaths.Auto);
+        var chosen = ServerOffers.Upload("https://speed.example/__up", Offer(false), ProbePaths.Auto);
 
         Assert.Equal("https://speed.example/__up", chosen.Url);
         Assert.False(chosen.Own);
@@ -169,7 +299,7 @@ public sealed class ServerHelloTests
     [Fact]
     public void WithNothingChosenAndNothingOffered_TheBuiltInServiceDecides()
     {
-        var chosen = ServerSpeed.Upload(string.Empty, null, ProbePaths.Auto);
+        var chosen = ServerOffers.Upload(string.Empty, null, ProbePaths.Auto);
 
         Assert.Equal(string.Empty, chosen.Url);
         Assert.False(chosen.Own);
@@ -178,8 +308,8 @@ public sealed class ServerHelloTests
     [Fact]
     public void AServerReachedInsideTheTunnel_IsNotMeasuredPastIt()
     {
-        var inside = ServerSpeed.Upload(string.Empty, Offer(true), ProbePaths.Bypass);
-        var through = ServerSpeed.Upload(string.Empty, Offer(true), ProbePaths.Tunnel);
+        var inside = ServerOffers.Upload(string.Empty, Offer(true), ProbePaths.Bypass);
+        var through = ServerOffers.Upload(string.Empty, Offer(true), ProbePaths.Tunnel);
 
         Assert.Equal(string.Empty, inside.Url);
         Assert.Equal("https://10.9.0.1:8443/api/speed/up?ticket=pass", through.Url);
@@ -189,7 +319,7 @@ public sealed class ServerHelloTests
     [Fact]
     public void AServerReachedAtItsEndpoint_IsMeasuredOnEitherPath()
     {
-        var beside = ServerSpeed.Upload(string.Empty, Offer(false), ProbePaths.Bypass);
+        var beside = ServerOffers.Upload(string.Empty, Offer(false), ProbePaths.Bypass);
 
         Assert.True(beside.Own);
     }
@@ -197,13 +327,19 @@ public sealed class ServerHelloTests
     [Fact]
     public void WhatTheWindowIsTold_SurvivesTheAckItTravelsIn()
     {
-        var told = new SpeedService(true, "home", "10.9.0.1:8443");
+        var read = ServerOffer.Parse(Offer(true).ToPayload());
 
-        var read = SpeedService.Parse(told.ToPayload());
+        Assert.True(read.Ours);
+        Assert.Equal("home", read.Config);
+        Assert.Equal("10.9.0.1:8443", read.Authority());
+        Assert.Equal("https://10.9.0.1:8443/api/speed/up?ticket=pass", SpeedArgs.Of(read)?.Up);
+    }
 
-        Assert.True(read.Own);
-        Assert.Equal("home", read.Server);
-        Assert.Equal("10.9.0.1:8443", read.Against);
+    [Fact]
+    public void AnAckThatIsNotAnOffer_IsReadAsNoServerOfOurs()
+    {
+        Assert.False(ServerOffer.Parse("not json").Ours);
+        Assert.False(ServerOffer.Parse("{}").Ours);
     }
 
     [Fact]
@@ -216,19 +352,26 @@ public sealed class ServerHelloTests
         Assert.Equal(keys.Public, WgConfigEditor.GetPeerPublicKey(text));
     }
 
-    // A configuration dialled at the host the panel of the tests answers on, with no tunnel up.
-    private static SpeedTarget Target(string privateKey, string serverKey) => new(
+    // A configuration whose up tunnel reaches the panel of the tests at 127.0.0.1.
+    private static OfferTarget Target(string privateKey, string serverKey, int endpointPort) => new(
         "stand",
-        $"[Interface]\nPrivateKey = {privateKey}\nAddress = 10.9.0.5/32\n\n[Peer]\nPublicKey = {serverKey}\nEndpoint = localhost:51820\n",
-        false);
+        $"[Interface]\nPrivateKey = {privateKey}\nAddress = 127.0.0.5/24\n\n[Peer]\nPublicKey = {serverKey}\nEndpoint = 192.0.2.1:{endpointPort.ToString(CultureInfo.InvariantCulture)}\n",
+        true);
 
-    private static SpeedOffer Offer(bool inside) => new(
-        "https://10.9.0.1:8443",
-        "https://10.9.0.1:8443/api/speed/down?bytes=25000000&ticket=pass",
-        "https://10.9.0.1:8443/api/speed/up?ticket=pass",
-        104857600,
-        DateTimeOffset.UtcNow.AddMinutes(5),
-        inside);
+    private static ServerOffer Offer(bool inside)
+    {
+        using var json = JsonDocument.Parse(
+            "{\"down\":\"https://10.9.0.1:8443/api/speed/down?bytes=25000000&ticket=pass\","
+            + "\"up\":\"https://10.9.0.1:8443/api/speed/up?ticket=pass\",\"limit\":104857600}");
+
+        return new ServerOffer(
+            "home",
+            "https://10.9.0.1:8443",
+            inside,
+            "1.0.3.0",
+            "milena",
+            new Dictionary<string, JsonElement> { [SpeedArgs.Name] = json.RootElement.Clone() });
+    }
 
     private static (string Private, string Public) Keys()
     {
@@ -237,8 +380,7 @@ public sealed class ServerHelloTests
         return (secret, Curve25519.PublicOf(secret));
     }
 
-    // A panel of ours, as far as the point goes: it hands out a challenge, counts the answer from its own key,
-    // and offers the addresses only to the peer it carries, with a fresh pass every time.
+    // A panel of ours as far as the hello goes.
     private sealed class Panel : IDisposable
     {
         private const string Challenge = "kR2s8yPZ1q0mVb7uW5xT4cE6nA3dH9fLpQjXsYzKrMg=";
@@ -255,9 +397,10 @@ public sealed class ServerHelloTests
         public Panel(string privateKey, string known)
         {
             _privateKey = privateKey;
+            Signer = privateKey;
             Known = known;
             Port = Free();
-            Origin = "http://localhost:" + Port.ToString(CultureInfo.InvariantCulture);
+            Origin = "http://127.0.0.1:" + Port.ToString(CultureInfo.InvariantCulture);
             _listener.Prefixes.Add(Origin + "/");
             _listener.Start();
             _ = Task.Run(ServeAsync);
@@ -282,6 +425,21 @@ public sealed class ServerHelloTests
         /// The word it answers under.
         /// </summary>
         public string Name { get; init; } = ServerHello.ServerName;
+
+        /// <summary>
+        /// The private key it countersigns with.
+        /// </summary>
+        public string Signer { get; init; }
+
+        /// <summary>
+        /// Whether the speed arguments lack the upload address.
+        /// </summary>
+        public bool Broken { get; init; }
+
+        /// <summary>
+        /// Whether the body changes after it is countersigned.
+        /// </summary>
+        public bool Tamper { get; init; }
 
         /// <summary>
         /// The public key of the peer whose answer held, empty while none has.
@@ -325,53 +483,61 @@ public sealed class ServerHelloTests
             var body = context.Request.HttpMethod == "POST"
                 ? await new StreamReader(context.Request.InputStream).ReadToEndAsync().ConfigureAwait(false)
                 : string.Empty;
-            var answer = body.Length == 0 ? Greeting() : Features(body, context.Response);
+            var answer = body.Length == 0 ? Encoding.UTF8.GetBytes(Greeting()) : Features(body, context.Response);
 
             context.Response.ContentType = "application/json";
-            var bytes = Encoding.UTF8.GetBytes(answer);
-            await context.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
+            await context.Response.OutputStream.WriteAsync(answer).ConfigureAwait(false);
             context.Response.Close();
         }
 
         private string Greeting() =>
             JsonSerializer.Serialize(new { server = Name, version = "1.0.3.0", challenge = Challenge });
 
-        private string Features(string body, HttpListenerResponse response)
+        private byte[] Features(string body, HttpListenerResponse response)
         {
             using var asked = JsonDocument.Parse(body);
             var key = asked.RootElement.GetProperty("key").GetString() ?? string.Empty;
+            var nonce = asked.RootElement.GetProperty("nonce").GetString() ?? string.Empty;
             var proof = asked.RootElement.GetProperty("proof").GetString() ?? string.Empty;
             if (!string.Equals(key, Known, StringComparison.Ordinal))
             {
                 response.StatusCode = 403;
 
-                return JsonSerializer.Serialize(new { error = "unknown-peer" });
+                return JsonSerializer.SerializeToUtf8Bytes(new { error = "unknown-peer" });
             }
 
             if (PeerProof.Answer(_privateKey, key, Challenge) != proof)
             {
                 response.StatusCode = 403;
 
-                return JsonSerializer.Serialize(new { error = "bad-proof" });
+                return JsonSerializer.SerializeToUtf8Bytes(new { error = "bad-proof" });
             }
 
             Proven = key;
             var pass = "pass-" + Interlocked.Increment(ref _passes).ToString(CultureInfo.InvariantCulture);
-
-            return JsonSerializer.Serialize(new
+            var answer = JsonSerializer.SerializeToUtf8Bytes(new
             {
                 server = Name,
                 version = "1.0.3.0",
                 client = "milena",
-                features = new[] { ServerHello.SpeedFeature },
-                speed = new
+                features = new Dictionary<string, object>
                 {
-                    down = Origin + "/api/speed/down?bytes=25000000&ticket=" + pass,
-                    up = Origin + "/api/speed/up?ticket=" + pass,
-                    limit = 104857600,
-                    expires = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+                    ["speed"] = Broken
+                        ? (object)new { down = Origin + "/api/speed/down?ticket=" + pass }
+                        : new
+                        {
+                            down = Origin + "/api/speed/down?bytes=25000000&ticket=" + pass,
+                            up = Origin + "/api/speed/up?ticket=" + pass,
+                            limit = 104857600,
+                            expires = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+                        },
+                    ["subscription"] = new { url = "https://localhost:2096/sub/one", updateHours = 12 },
+                    ["future"] = new { anything = true },
                 },
             });
+            response.Headers[ServerHello.ProofHeader] = PeerProof.Countersign(Signer, key, nonce, answer);
+
+            return Tamper ? Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(answer).Replace("milena", "mallory", StringComparison.Ordinal)) : answer;
         }
 
         // A port nothing else holds right now.

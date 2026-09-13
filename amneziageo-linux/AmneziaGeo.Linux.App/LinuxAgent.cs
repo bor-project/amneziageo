@@ -447,6 +447,7 @@ internal sealed class LinuxAgent : IDisposable
     private async Task SuperviseAsync(CancellationToken ct)
     {
         await SuperviseHotspotAsync(ct).ConfigureAwait(false);
+        await ObserveOffersAsync(ct).ConfigureAwait(false);
         var counters = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
         var age = -1;
         var reading = LinkReading.Empty;
@@ -654,8 +655,8 @@ internal sealed class LinuxAgent : IDisposable
         switch (command.Op)
         {
             case IpcContract.OpAttachUi:
-                // The window will ask where the speed is measured; the servers are asked now so it has the answer.
-                ServerSpeed.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+                // The window will ask what the servers offer; the servers are asked now so it has the answer.
+                ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
                 return Ok();
 
             case IpcContract.OpLogClient:
@@ -824,8 +825,8 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, ct).ConfigureAwait(false);
 
-            case IpcContract.OpSpeedService:
-                return await SpeedServiceAsync(ct).ConfigureAwait(false);
+            case IpcContract.OpServerOffer:
+                return await ServerOfferAsync(ct).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
@@ -1412,7 +1413,13 @@ internal sealed class LinuxAgent : IDisposable
         var useRouter = args.Count > 7 ? IsOn(args[7]) : stored?.UseRouter ?? true;
         var allowInbound = args.Count > 8 ? IsOn(args[8]) : stored?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : stored?.InboundNetwork ?? false;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork), ct).ConfigureAwait(false);
+        var apiPort = args.Count > 10 ? ConfigTransport.ApiPortOf(args[10]) : stored?.ApiPort ?? 0;
+        if (apiPort < 0)
+        {
+            return new IpcAck(false, "invalid API port (1-65535)");
+        }
+
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, apiPort), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -2299,13 +2306,28 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    // Where the speed of a probe is measured, as the servers have already answered; the asking runs behind it.
-    private async Task<IpcAck> SpeedServiceAsync(CancellationToken ct)
+    // Returns what the server of the selected config offers and asks the servers that changed behind it.
+    private async Task<IpcAck> ServerOfferAsync(CancellationToken ct)
     {
-        ServerSpeed.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+        ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
 
-        return new IpcAck(true, ServerSpeed.Shared.Told(_selectedTarget ?? string.Empty).ToPayload());
+        return new IpcAck(true, ServerOffers.Shared.Offer(_selectedTarget ?? string.Empty).ToPayload());
     }
+
+    // Asks the servers again when the tunnel of the selected config has come up.
+    private async Task ObserveOffersAsync(CancellationToken ct)
+    {
+        if (_selectedTarget is { Length: > 0 } selected && ServerOffers.Shared.Observe(selected, Up(selected)))
+        {
+            ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+        }
+    }
+
+    // Tells whether the tunnel of a config is up.
+    private bool Up(string config) =>
+        _tunnel.Running
+        && _boundStatus == ConnectionStatus.Connected
+        && string.Equals(config, _selectedTarget, StringComparison.Ordinal);
 
     // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
     private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
@@ -2316,22 +2338,23 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
-        var offer = await ServerSpeed.Shared
-            .TicketAsync(new SpeedTarget(config, text, _tunnel.Running), ct)
+        var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        var offer = await ServerOffers.Shared
+            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0), ct)
             .ConfigureAwait(false);
 
-        return ServerSpeed.Upload(chosen, offer, path);
+        return ServerOffers.Upload(chosen, offer, path);
     }
 
     // Every config whose server can be asked whether it measures.
-    private async Task<IReadOnlyList<SpeedTarget>> TargetsAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<OfferTarget>> TargetsAsync(CancellationToken ct)
     {
-        var targets = new List<SpeedTarget>();
+        var targets = new List<OfferTarget>();
         foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
             var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
-            var running = _tunnel.Running && string.Equals(name, _selectedTarget, StringComparison.Ordinal);
-            targets.Add(new SpeedTarget(name, text, running));
+            var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            targets.Add(new OfferTarget(name, text, Up(name), transport?.ApiPort ?? 0));
         }
 
         return targets;
@@ -2562,7 +2585,8 @@ internal sealed class LinuxAgent : IDisposable
             transport?.UseRouter ?? true,
             transport?.AllowInbound ?? false,
             transport?.InboundNetwork ?? false,
-            string.Join(", ", WgConfigEditor.GetAddresses(text)));
+            string.Join(", ", WgConfigEditor.GetAddresses(text)),
+            transport?.ApiPort ?? 0);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

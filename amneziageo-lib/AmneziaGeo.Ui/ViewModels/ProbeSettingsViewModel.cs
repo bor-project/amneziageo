@@ -37,22 +37,22 @@ internal sealed partial class ProbeSettingsViewModel : ViewModelBase
         _prefs.Save();
     }
 
-    // Where the agent last said the speed is measured.
+    // What the server of the selected configuration offers, as the agent last said.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UploadDefault))]
     [NotifyPropertyChangedFor(nameof(UploadHint))]
-    private SpeedService _service = SpeedService.None;
+    private ServerOffer _offer = ServerOffer.None;
 
     /// <summary>
     /// The service used while the field is left empty: the server of the tunnel where it measures itself.
     /// </summary>
-    public string UploadDefault => Service.Own ? Service.Against : ChannelProbe.DefaultUploadUrl;
+    public string UploadDefault => SpeedArgs.Of(Offer) is not null ? Offer.Authority() : ChannelProbe.DefaultUploadUrl;
 
     /// <summary>
     /// The line under the field, naming what an empty field falls back to.
     /// </summary>
-    public string UploadHint => Service.Own
-        ? Loc.Instance.Get("Probe_UploadServiceHintOwn", Service.Server)
+    public string UploadHint => SpeedArgs.Of(Offer) is not null
+        ? Loc.Instance.Get("Probe_UploadServiceHintOwn", Offer.Config)
         : Loc.Instance.Get("Probe_UploadServiceHint");
 
     // Times the agent is asked again while it is still asking the servers, and the wait between them.
@@ -81,17 +81,17 @@ internal sealed partial class ProbeSettingsViewModel : ViewModelBase
         _asking = true;
         try
         {
-            for (var attempt = 0; attempt < Attempts && !Service.Own; attempt++)
+            for (var attempt = 0; attempt < Attempts && SpeedArgs.Of(Offer) is null; attempt++)
             {
                 if (attempt > 0)
                 {
                     await Task.Delay(GapMs);
                 }
 
-                var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSpeedService, []));
+                var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpServerOffer, []));
                 if (ack.Ok)
                 {
-                    Service = SpeedService.Parse(ack.Message);
+                    Offer = ServerOffer.Parse(ack.Message);
                 }
             }
         }

@@ -32,6 +32,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseIpv6;
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
+    private string _baseApiPort = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
@@ -74,6 +75,14 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     [ObservableProperty]
     private bool _allowInbound;
+
+    [ObservableProperty]
+    private string _apiPort = string.Empty;
+
+    /// <summary>
+    /// The port the API of the server is asked at while the field is empty.
+    /// </summary>
+    public string ApiPortDefault => EndpointPort(_endpoint);
 
     /// <summary>
     /// The address this machine answers at inside the tunnel.
@@ -121,7 +130,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "")
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", int apiPort = 0)
     {
         _connection = connection;
         ConfigName = name;
@@ -130,6 +139,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useIpv6 = useIpv6;
         _useRouter = useRouter;
         _allowInbound = allowInbound;
+        _apiPort = apiPort > 0 ? apiPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
@@ -239,6 +249,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnApiPortChanged(string value) => MarkDirty();
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -266,7 +278,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || MtuMode != _baseMtuMode
             || UseIpv6 != _baseUseIpv6
             || UseRouter != _baseUseRouter
-            || AllowInbound != _baseAllowInbound;
+            || AllowInbound != _baseAllowInbound
+            || !string.Equals(ApiPort, _baseApiPort, StringComparison.Ordinal);
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -289,6 +302,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseUseIpv6 = UseIpv6;
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
+        _baseApiPort = ApiPort ?? string.Empty;
         if (IsDirty)
         {
             IsDirty = false;
@@ -314,6 +328,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             UseIpv6 = _baseUseIpv6;
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
+            ApiPort = _baseApiPort;
             StatusMessage = string.Empty;
         }
         finally
@@ -343,6 +358,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     public void SeedEndpoint(string endpoint)
     {
         _endpoint = endpoint;
+        OnPropertyChanged(nameof(ApiPortDefault));
         if (!string.IsNullOrWhiteSpace(WebSocketHost))
         {
             return;
@@ -404,6 +420,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             return false;
         }
 
+        if (ConfigTransport.ApiPortOf(ApiPort) < 0)
+        {
+            StatusMessage = Loc.Instance.Get("Transport_InvalidApiPort");
+            return false;
+        }
+
         return true;
     }
 
@@ -431,7 +453,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", AllowInbound ? "on" : "off"]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", AllowInbound ? "on" : "off", ApiPort.Trim()]));
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
@@ -658,6 +680,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
                 ? part[..part.LastIndexOf('/')]
                 : part);
         return string.Join(", ", parts);
+    }
+
+    private static string EndpointPort(string endpoint)
+    {
+        var colon = endpoint.LastIndexOf(':');
+        return colon > 0 ? endpoint[(colon + 1)..].Trim() : string.Empty;
     }
 
     private static string EndpointHost(string endpoint)

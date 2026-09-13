@@ -979,6 +979,9 @@
   <data name="Main_SourcesSection" xml:space="preserve">
     <value>Источники geo</value>
   </data>
+  <data name="Main_ApiPortLabel" xml:space="preserve">
+    <value>Порт API</value>
+  </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
     <value>MTU</value>
   </data>
@@ -1386,6 +1389,9 @@
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU должен быть от 576 до 1500. Если оставить поле пустым, будет 1280.</value>
+  </data>
+  <data name="Transport_InvalidApiPort" xml:space="preserve">
+    <value>Укажите порт API от 1 до 65535.</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Укажите корректный порт WebSocket (1-65535).</value>

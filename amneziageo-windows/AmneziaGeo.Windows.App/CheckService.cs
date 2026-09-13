@@ -160,24 +160,38 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     }
 
     /// <summary>
-    /// Where the speed of a probe is measured: the server of the config when it offers that, and the service
-    /// the settings name otherwise. The servers are asked in the background, so this answers out of what they
-    /// have already said and the window waits on nothing.
+    /// Returns what the server of a config offers, from memory, and asks the servers that changed in the background.
     /// </summary>
-    public async Task<IpcAck> SpeedAsync(IStateStore store, string config, CancellationToken ct)
+    public async Task<IpcAck> OfferAsync(IStateStore store, string config, CancellationToken ct)
     {
-        await WarmSpeedAsync(store, ct).ConfigureAwait(false);
+        await WarmOffersAsync(store, ct).ConfigureAwait(false);
 
-        return new IpcAck(true, ServerSpeed.Shared.Told(config).ToPayload());
+        return new IpcAck(true, ServerOffers.Shared.Offer(config).ToPayload());
     }
 
     /// <summary>
-    /// Asks the servers of every config whether they measure the speed themselves. The asking runs in the
-    /// background, so a window attaching or opening its probe screen has the answer without waiting for one.
+    /// Asks the servers of the configs that changed since they were last asked, in the background.
     /// </summary>
-    public async Task WarmSpeedAsync(IStateStore store, CancellationToken ct)
+    public async Task WarmOffersAsync(IStateStore store, CancellationToken ct)
     {
-        ServerSpeed.Shared.Warm(await TargetsAsync(store, ct).ConfigureAwait(false));
+        ServerOffers.Shared.Warm(await TargetsAsync(store, ct).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Asks the servers again when a tunnel has come up.
+    /// </summary>
+    public async Task ObserveOffersAsync(IStateStore store, CancellationToken ct)
+    {
+        var rose = false;
+        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            rose |= ServerOffers.Shared.Observe(name, Connected(name));
+        }
+
+        if (rose)
+        {
+            await WarmOffersAsync(store, ct).ConfigureAwait(false);
+        }
     }
 
     // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
@@ -190,21 +204,23 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         }
 
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
-        var offer = await ServerSpeed.Shared
-            .TicketAsync(new SpeedTarget(config, text, Connected(config)), ct)
+        var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        var offer = await ServerOffers.Shared
+            .SpeedAsync(new OfferTarget(config, text, Connected(config), transport?.ApiPort ?? 0), ct)
             .ConfigureAwait(false);
 
-        return ServerSpeed.Upload(chosen, offer, path);
+        return ServerOffers.Upload(chosen, offer, path);
     }
 
     // Every config whose server can be asked whether it measures.
-    private async Task<IReadOnlyList<SpeedTarget>> TargetsAsync(IStateStore store, CancellationToken ct)
+    private async Task<IReadOnlyList<OfferTarget>> TargetsAsync(IStateStore store, CancellationToken ct)
     {
-        var targets = new List<SpeedTarget>();
+        var targets = new List<OfferTarget>();
         foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
             var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
-            targets.Add(new SpeedTarget(name, text, Connected(name)));
+            var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            targets.Add(new OfferTarget(name, text, Connected(name), transport?.ApiPort ?? 0));
         }
 
         return targets;

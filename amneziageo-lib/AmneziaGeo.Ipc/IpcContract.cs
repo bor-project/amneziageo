@@ -42,8 +42,9 @@ public static class IpcContract
 
     /// <summary>
     /// Command to set a config's WebSocket transport, tunnel MTU override, and IPv6 opt-in. Args: name, on/off,
-    /// port, optional host, optional mtu, optional ipv6 (on/off; absent keeps the stored value). Applies on the
-    /// next connect.
+    /// port, optional host, optional mtu, optional ipv6 (on/off; absent keeps the stored value), optional mtu mode,
+    /// router, inbound and inbound network, optional API port of the server (empty for the port of the Endpoint;
+    /// absent keeps the stored value). Applies on the next connect.
     /// </summary>
     public const string OpSetWebSocket = "set-websocket";
 
@@ -371,11 +372,11 @@ public static class IpcContract
     public const string OpProbeTarget = "probe-target";
 
     /// <summary>
-    /// Command to ask where the speed of a probe is measured: the server of the selected config when it offers
-    /// that, and the service in the settings otherwise. Takes no args. The ack message holds a JSON object
-    /// { own: bool, server: string (the config behind the server), against: string (its host and port) }.
+    /// Command to read what the server of the selected config offers. Takes no args. The ack message holds a
+    /// JSON object { config, origin, inside, version, client, features: { name: arguments } }; an empty origin
+    /// means no server of ours answered.
     /// </summary>
-    public const string OpSpeedService = "speed-service";
+    public const string OpServerOffer = "server-offer";
 
     /// <summary>
     /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");

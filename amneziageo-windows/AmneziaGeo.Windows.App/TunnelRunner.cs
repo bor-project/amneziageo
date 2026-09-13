@@ -74,6 +74,14 @@ internal sealed class TunnelRunner(
     }
 
     /// <summary>
+    /// The resolvers a tunnel routes through itself: every one while it looks names up, none otherwise.
+    /// </summary>
+    internal static IReadOnlyList<string> RoutedResolvers(IReadOnlyList<string> resolvers, bool holdsResolver, bool carriesNames, bool probesLink)
+    {
+        return holdsResolver || carriesNames || probesLink ? resolvers : [];
+    }
+
+    /// <summary>
     /// Runs the native tunnel service loop.
     /// </summary>
     public async Task RunAsync(string name)
@@ -175,8 +183,20 @@ internal sealed class TunnelRunner(
         WsTunnelTransport? wsTransport = null;
 
         var geo = await store.GetActiveTunnelGeoAsync(name);
+        // The ranges of this tunnel's share, cut around the networks this machine stands in.
+        var aroundLocal = PrivateNetworks.AroundLocal(geo?.Routes ?? [], routes.LocalSubnets());
+        var carriedRoutes = aroundLocal.Carried;
+        if (aroundLocal.Left.Count > 0)
+        {
+            logger.LogInformation("{Name}: {Ranges} lie inside a network this machine stands in, so they stay on its own adapter and off the tunnel", name, string.Join(", ", aroundLocal.Left));
+        }
 
-        var geoRoutes = new List<string>(geo?.Routes ?? []);
+        if (aroundLocal.Kept.Count > 0)
+        {
+            logger.LogInformation("{Name}: {Networks} are networks this machine stands in, so they stay outside the tunnel although a wider range of the list takes it", name, string.Join(", ", aroundLocal.Kept));
+        }
+
+        var geoRoutes = new List<string>(carriedRoutes);
         var domains = geo?.Domains ?? [];
         var apps = geo?.Apps ?? [];
 
@@ -219,7 +239,7 @@ internal sealed class TunnelRunner(
             .ToArray();
 
         // Every bucket is resolved per destination, whatever its size: nothing is materialized at bring-up.
-        var listDirect = geo?.DirectRoutes ?? activeList?.DirectRoutes ?? [];
+        var listDirect = (geo?.DirectRoutes ?? activeList?.DirectRoutes ?? []).Concat(aroundLocal.Kept).ToList();
 
         // Route IPv6 only when the config opts in (ConfigTransport.UseIpv6); otherwise the tunnel stays v4-only:
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
@@ -237,13 +257,20 @@ internal sealed class TunnelRunner(
         // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
         var configDns = ConfigResolvers(config);
         var tunnelResolver = TunnelResolvers(configDns);
+        // Resolvers take this tunnel only while it looks names up itself.
+        var routedResolvers = RoutedResolvers(tunnelResolver, duties.HoldsResolver, trackDomains, useWebSocket);
+        if (routedResolvers.Count < tunnelResolver.Count)
+        {
+            logger.LogInformation("{Name}: another tunnel looks this machine's names up, so {Resolvers} are left to it and take no route here", name, string.Join(", ", tunnelResolver));
+        }
+
         // Resolver /32s are infrastructure: routed through the tunnel so the tunnel DNS stays reachable. Collect
         // them so they can be excluded from the reconcilable list set below - a list range that happens to equal a
         // resolver IP must never be torn down by the live reconcile, or DNS through the tunnel dies.
         var resolverRoutes = new HashSet<string>(StringComparer.Ordinal);
         if (geoSplit)
         {
-            foreach (var server in tunnelResolver)
+            foreach (var server in routedResolvers)
             {
                 if (!IPAddress.TryParse(server, out _))
                 {
@@ -276,12 +303,13 @@ internal sealed class TunnelRunner(
             }
         }
 
-        IReadOnlyList<string> inboundReturn = inboundRoutes.Count > 0
-            ? (geo?.Routes ?? []).Where(PrivateNetworks.IsNetwork).ToList()
-            : [];
+        // The private networks the configuration itself reaches, less the ones this machine stands in.
+        var ownNetworks = geoSplit ? PrivateNetworks.ForTunnel(config, routes.LocalSubnets()) : [];
+        // The ranges the list keeps on the adapter beside the infrastructure.
+        var standing = StandingRanges.Of(carriedRoutes, activeList?.Rules ?? geo?.Rules ?? [], geoSplit, inboundRoutes.Count > 0, ownNetworks, resolverRoutes);
+        var inboundReturn = standing.Return;
         foreach (var route in inboundReturn)
         {
-            resolverRoutes.Add(route);
             if (!geoRoutes.Contains(route))
             {
                 geoRoutes.Add(route);
@@ -300,32 +328,21 @@ internal sealed class TunnelRunner(
 
         // Reconcilable list ranges = the list's own ranges MINUS resolver infrastructure, so a range that
         // coincides with a tunnel-DNS resolver /32 stays advertised (in _staticRoutes) but is never in _listRoutes.
-        var listRoutes = (geo?.Routes ?? []).Where(r => !resolverRoutes.Contains(r)).ToList();
+        var listRoutes = carriedRoutes.Where(r => !resolverRoutes.Contains(r)).ToList();
 
         // A range a rule names outright stands from the start: it is one line, not a database, and a destination
         // inside it is otherwise reached only by contact the tracker sees, which an echo request never makes.
         // The list names the ranges, the projection says which of them this tunnel carries: one addressed to
         // another server of the set stands on that server's adapter, not on this one.
-        var namedRanges = geoSplit
-            ? GeoMaterializer.NamedRanges(activeList?.Rules ?? geo?.Rules ?? [], RouteRole.Proxy, geo?.Routes ?? [])
-                .Where(route => !resolverRoutes.Contains(route))
-                .ToList()
-            : new List<string>();
+        var namedRanges = standing.Named;
 
         if (namedRanges.Count > 0)
         {
             logger.LogInformation("{Name}: {Ranges} take the tunnel from the start", name, string.Join(", ", namedRanges));
         }
 
-        // The ranges every bucket of the list names, so a network a rule speaks about is left to that rule.
-        var listNamed = GeoMaterializer.NamedRanges(activeList?.Rules ?? geo?.Rules ?? []);
-
-        // The private networks the configuration itself reaches, less the ones this machine stands in.
-        var configNetworks = geoSplit
-            ? PrivateNetworks.ForTunnel(config, routes.LocalSubnets())
-                .Where(network => !resolverRoutes.Contains(network) && !PrivateNetworks.Overlaps(network, listNamed))
-                .ToList()
-            : new List<string>();
+        // The networks of the configuration that no rule of the list speaks about.
+        var configNetworks = standing.Networks;
 
         if (configNetworks.Count > 0)
         {
@@ -334,12 +351,12 @@ internal sealed class TunnelRunner(
 
         // Verdicts take them as well, or a destination inside one is decided by the list alone.
         IReadOnlyList<string> proxyRanges = configNetworks.Count > 0
-            ? [.. geo?.Routes ?? [], .. configNetworks]
-            : geo?.Routes ?? [];
+            ? [.. carriedRoutes, .. configNetworks]
+            : carriedRoutes;
 
         // Split starts with those and the resolver infrastructure, and a database destination earns its /32 on
         // contact. Materializing a geo database up front is what put thousands of routes on the adapter.
-        var startupRoutes = geoSplit ? resolverRoutes.Concat(namedRanges).Concat(configNetworks).ToList() : geoRoutes;
+        var startupRoutes = geoSplit ? resolverRoutes.Concat(standing.All).ToList() : geoRoutes;
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), startupRoutes);
         if (stripV6)
         {
@@ -508,13 +525,15 @@ internal sealed class TunnelRunner(
         session.Clear();
         // The inbound ranges join the resolvers outside the cache: a Direct rule covering the tunnel network would
         // otherwise pull the answers onto the physical path.
-        var pinnedRoutes = new List<string>(tunnelResolver);
+        var pinnedRoutes = new List<string>(routedResolvers);
         pinnedRoutes.AddRange(inboundRoutes);
+        _standingBasis = new StandingBasis(geoSplit, ownNetworks, new HashSet<string>(resolverRoutes, StringComparer.Ordinal), [.. pinnedRoutes], inboundRoutes, inboundAddresses);
+        _standing = standing;
         pinnedRoutes.AddRange(inboundReturn);
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, proxyRanges, listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
         // What the previous session used most is taken back from the store: the verdicts an address settled are
         // taken again under the list in force now, and each takes its path with the connection.
-        routing.SetMemory(new StoredRouteMemory(store, name));
+        routing.SetMemory(new StoredRouteMemory(store, name, apps, domains, directDomains, blockDomains));
         session.SetCache(routing);
         session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
             WgConfigEditor.GetAllowedIps(config));
@@ -539,8 +558,8 @@ internal sealed class TunnelRunner(
                 // resolver infrastructure and the ranges the rules name, and a database category is decided per
                 // destination by the cache.
                 var trackerStatic = geoSplit ? startupRoutes : geoRoutes;
-                var trackerList = geoSplit ? new List<string>() : listRoutes;
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, trackerStatic, trackerList, appSettings.RouteTtlSeconds, stripV6, geoSplit, routing, synReset);
+                var trackerList = geoSplit ? standing.All.ToList() : listRoutes;
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, trackerStatic, trackerList, appSettings.RouteTtlSeconds, stripV6, routing, synReset);
                 session.SetTracker(tracker);
                 routing.SetAdoptionCheck(tracker.Holds);
             }
@@ -589,7 +608,7 @@ internal sealed class TunnelRunner(
                 TunnelDevice.NameOf(name),
                 apps,
                 matcher.Owned,
-                GeoIpRanges.Build(geo?.Routes ?? []),
+                GeoIpRanges.Build(carriedRoutes),
                 GeoIpRanges.Build(listDirect),
                 GeoIpRanges.Build(blockRoutes),
                 keptOut,
@@ -637,7 +656,11 @@ internal sealed class TunnelRunner(
             _ = Task.Run(() => appMemory.RunAsync(sessionCts.Token));
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver);
+        // The adapter this tunnel's own lookups leave by.
+        var adapterIndex = default(uint?);
+        uint? TunnelInterface() => adapterIndex ??= routes.FindTunnelIndex(name);
+
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface);
         session.SetProxy(proxy);
 
         // This machine looks addresses up through one tunnel, so a name matched by a rule riding another one
@@ -872,6 +895,7 @@ internal sealed class TunnelRunner(
         finally
         {
             logger.LogInformation("{Name}: the session ended after {Elapsed} ms; removing its routes, firewall rules and DNS changes", name, connectSw.ElapsedMilliseconds);
+            proxy?.MarkEnding();
             // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
             session.Clear();
@@ -944,7 +968,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -955,7 +979,7 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface);
         if (!listen)
         {
             // It answers the holder of the machine's lookups over the pipe, so it serves no socket of its own.
@@ -1346,6 +1370,9 @@ internal sealed class TunnelRunner(
 
     private FleetLentNames? _lent;
     private AppGateway? _appGateway;
+    // The bring-up facts the standing ranges of an edited list are worked out from.
+    private StandingBasis? _standingBasis;
+    private StandingRanges _standing = StandingRanges.None;
     private ProcessImages? _processImages;
 
     private const int FirewallArmAttempts = 4;
@@ -1513,7 +1540,10 @@ internal sealed class TunnelRunner(
 
             // Read before the rebuild: these are the destinations a rule by name has to be applied to.
             var held = routing.Snapshot();
-            routing.Rebuild(current.Routes, current.DirectRoutes, current.BlockRoutes);
+            var aroundLocal = PrivateNetworks.AroundLocal(current.Routes, routes.LocalSubnets());
+            var standing = await RestandAsync(routing, tunnelName, current.ListId, aroundLocal.Carried, ct).ConfigureAwait(false);
+            IReadOnlyList<string> tunneled = standing is { Networks.Count: > 0 } ? [.. aroundLocal.Carried, .. standing.Networks] : aroundLocal.Carried;
+            routing.Rebuild(tunneled, [.. current.DirectRoutes, .. aroundLocal.Kept], current.BlockRoutes);
 
             // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
             // while these two buckets decide in both.
@@ -1524,12 +1554,47 @@ internal sealed class TunnelRunner(
 
             ApplyNameRules(routing, held);
 
-            session.Tracker?.ApplyList(current, ct);
+            session.Tracker?.ApplyList(current with { Routes = aroundLocal.Carried }, Squared(aroundLocal.Carried, standing), ct);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "{Tunnel}: the edited rules could not be applied to the running tunnel; it keeps working by the previous ones until reconnect", tunnelName);
         }
+    }
+
+    // The bring-up facts the standing ranges are worked out from: the mode, the configuration's own networks, the
+    // infrastructure, what the cache holds outside it and the inbound access.
+    private sealed record StandingBasis(bool Split, IReadOnlyList<string> OwnNetworks, IReadOnlySet<string> Infrastructure, IReadOnlyList<string> Pinned, IReadOnlyList<string> InboundRoutes, IReadOnlyList<string> InboundAddresses);
+
+    // Works out the ranges the edited list keeps standing and hands the answers to inbound access to the cache and the firewall.
+    private async Task<StandingRanges?> RestandAsync(RoutingCache routing, string tunnelName, long listId, IReadOnlyList<string> carried, CancellationToken ct)
+    {
+        if (_standingBasis is not { } basis)
+        {
+            return null;
+        }
+
+        var list = await store.GetRoutingListAsync(listId, ct).ConfigureAwait(false);
+        var standing = StandingRanges.Of(carried, list?.Rules ?? [], basis.Split, basis.InboundRoutes.Count > 0, basis.OwnNetworks, basis.Infrastructure);
+        routing.Pin([.. basis.Pinned, .. standing.Return]);
+        if (basis.InboundRoutes.Count > 0 && !new HashSet<string>(_standing.Return, StringComparer.Ordinal).SetEquals(standing.Return))
+        {
+            InboundFirewall.Allow(tunnelName, basis.InboundAddresses, [.. basis.InboundRoutes.Concat(standing.Return).Distinct(StringComparer.OrdinalIgnoreCase)], logger);
+        }
+
+        _standing = standing;
+        return standing;
+    }
+
+    // The ranges the tracker squares the adapter with: in split what the list keeps standing, in a full tunnel every carried range outside the infrastructure.
+    private IReadOnlyList<string>? Squared(IReadOnlyList<string> carried, StandingRanges? standing)
+    {
+        if (_standingBasis is not { } basis || standing is null)
+        {
+            return null;
+        }
+
+        return basis.Split ? standing.All : [.. carried.Where(range => !basis.Infrastructure.Contains(range))];
     }
 
     // Applies the buckets by name to the destinations already in use. A rule by name reaches an address only

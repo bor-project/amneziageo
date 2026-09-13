@@ -2536,11 +2536,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : $"{summary} (applies on reconnect)");
     }
 
-    // The private networks the stored configurations name, each behind the name of the one naming it and a
-    // tab, without the ones the device stands in itself.
+    // The private networks and hosts the stored configurations reach, each behind the name of the one reaching it
+    // and a tab.
     private async Task<IReadOnlyList<string>> ConfigSubnetsAsync()
     {
-        var own = GeoVpnService.LocalSubnets().ToArray();
         var lines = new List<string>();
         foreach (var name in await _store.ListConfigNamesAsync().ConfigureAwait(false))
         {
@@ -2549,12 +2548,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 continue;
             }
 
-            foreach (var network in PrivateNetworks.FromConfig(text))
+            foreach (var network in PrivateNetworks.Reachable(text))
             {
-                if (!PrivateNetworks.Overlaps(network, own))
-                {
-                    lines.Add($"{name}\t{network}");
-                }
+                lines.Add($"{name}\t{network}");
             }
         }
 

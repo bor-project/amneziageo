@@ -23,8 +23,6 @@ internal sealed class GatewayProxyOutbound(
     ILogger logger) : IProxyOutbound, IDatagramOutbound
 {
     private const int ConnectTimeoutMs = 8000;
-    // IP_UNICAST_IF; the option takes the index in network order.
-    private const SocketOptionName UnicastInterface = (SocketOptionName)31;
 
     /// <inheritdoc/>
     public Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, CancellationToken ct) =>
@@ -88,7 +86,7 @@ internal sealed class GatewayProxyOutbound(
         {
             if (index > 0)
             {
-                socket.SetSocketOption(SocketOptionLevel.IP, UnicastInterface, (int)Network(index));
+                UnicastInterface.Pin(socket, index);
             }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -124,7 +122,7 @@ internal sealed class GatewayProxyOutbound(
             var index = Carried(numeric, source) ? tunnelInterface() : physicalInterface();
             if (index > 0)
             {
-                socket.SetSocketOption(SocketOptionLevel.IP, UnicastInterface, (int)Network(index));
+                UnicastInterface.Pin(socket, index);
             }
 
             return socket;
@@ -187,10 +185,6 @@ internal sealed class GatewayProxyOutbound(
             return [];
         }
     }
-
-    // The order the option takes the index in.
-    private static uint Network(uint index) =>
-        ((index & 0xFF) << 24) | (((index >> 8) & 0xFF) << 16) | (((index >> 16) & 0xFF) << 8) | ((index >> 24) & 0xFF);
 
     private static uint Numeric(IPAddress address)
     {

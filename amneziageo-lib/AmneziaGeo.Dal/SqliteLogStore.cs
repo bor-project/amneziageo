@@ -68,15 +68,24 @@ public sealed class SqliteLogStore : IDisposable
     // Severity id of WRN in the log_levels dictionary seeded below.
     private const int WarningLevelId = 4;
 
+    // SQLite result codes: the database is held by another connection, or its file is damaged.
+    private const int SqliteBusy = 5;
+    private const int SqliteLocked = 6;
+    private const int SqliteCorrupt = 11;
+
+    // Checks the file's structure on every open.
+    private readonly bool _verify;
+
     // Suffix of the note left next to the database while it cannot be opened at all.
     private const string FailureSuffix = ".failure.txt";
 
     /// <summary>
     /// ctor
     /// </summary>
-    public SqliteLogStore(string databasePath)
+    public SqliteLogStore(string databasePath, bool verify = false)
     {
         _databasePath = databasePath;
+        _verify = verify;
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
@@ -157,9 +166,14 @@ public sealed class SqliteLogStore : IDisposable
             await InitializeCoreAsync(ct).ConfigureAwait(false);
             return true;
         }
-        catch (SqliteException)
+        catch (SqliteException ex) when (IsHeld(ex))
         {
-            await QuarantineAsync(CorruptQuarantine.MoveAsideSidecars, ct).ConfigureAwait(false);
+            RecordFailure(ex);
+            return false;
+        }
+        catch (SqliteException ex)
+        {
+            await SetAsideAsync(CorruptQuarantine.MoveAsideSidecars, _databasePath + "-wal", $"the log database could not be opened ({ex.Message}); its transaction files were set aside next to it, so the latest events they held are only there", ct).ConfigureAwait(false);
         }
 
         try
@@ -167,9 +181,14 @@ public sealed class SqliteLogStore : IDisposable
             await InitializeCoreAsync(ct).ConfigureAwait(false);
             return true;
         }
-        catch (SqliteException)
+        catch (SqliteException ex) when (IsHeld(ex))
         {
-            await QuarantineAsync(CorruptQuarantine.MoveAside, ct).ConfigureAwait(false);
+            RecordFailure(ex);
+            return false;
+        }
+        catch (SqliteException ex)
+        {
+            await SetAsideAsync(CorruptQuarantine.MoveAside, _databasePath, $"the log database was damaged ({ex.Message}) and was set aside next to it; a new one was started, so the earlier events are only in the set-aside copy", ct).ConfigureAwait(false);
         }
 
         try
@@ -184,6 +203,38 @@ public sealed class SqliteLogStore : IDisposable
         }
     }
 
+    // A database another connection holds is busy, not damaged.
+    private static bool IsHeld(SqliteException ex)
+    {
+        return ex.SqliteErrorCode is SqliteBusy or SqliteLocked;
+    }
+
+    // Moves files aside with the store suspended and leaves a line about it in the log when the probed one held anything.
+    private async Task SetAsideAsync(Action<string> moveAside, string probe, string notice, CancellationToken ct)
+    {
+        var present = new FileInfo(probe) is { Exists: true, Length: > 0 };
+        await QuarantineAsync(moveAside, ct).ConfigureAwait(false);
+        if (present)
+        {
+            AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), WarningLevelId, null, notice);
+        }
+    }
+
+    // Fails the open as damaged when the file's structure does not hold together.
+    private static async Task VerifyAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var check = connection.CreateCommand();
+        await using (check.ConfigureAwait(false))
+        {
+            check.CommandText = "PRAGMA quick_check(1);";
+            var verdict = await check.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            if (!string.Equals(verdict, "ok", StringComparison.Ordinal))
+            {
+                throw new SqliteException($"the file's structure is damaged: {verdict?.ReplaceLineEndings(" ")}", SqliteCorrupt);
+            }
+        }
+    }
+
     private async Task InitializeCoreAsync(CancellationToken ct)
     {
         var lease = await LeaseAsync(ct).ConfigureAwait(false);
@@ -195,6 +246,11 @@ public sealed class SqliteLogStore : IDisposable
             {
                 wal.CommandText = "PRAGMA journal_mode=WAL;";
                 await wal.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            if (_verify)
+            {
+                await VerifyAsync(connection, ct).ConfigureAwait(false);
             }
 
             await EnableIncrementalVacuumAsync(connection, ct).ConfigureAwait(false);

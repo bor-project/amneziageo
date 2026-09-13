@@ -102,8 +102,8 @@ public sealed class RoutingCache
     // Addresses the cache neither installs nor reclaims: the tunnel resolver, routed as infrastructure at bring-up.
     // Its route must outlive every idle window - the agent's own queries to it are not attributed to any process,
     // so nothing here would ever refresh it and a sweep would take the tunnel's DNS down with it.
-    private readonly GeoIpRanges _pinned;
-    private readonly IReadOnlyList<string> _pinnedRoutes;
+    private GeoIpRanges _pinned;
+    private IReadOnlyList<string> _pinnedRoutes;
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
     private readonly bool _split;
@@ -184,7 +184,45 @@ public sealed class RoutingCache
     /// <summary>
     /// Ranges held outside the cache for the connection itself: resolver, tunnel network, inbound access.
     /// </summary>
-    public IReadOnlyList<string> PinnedRoutes => _pinnedRoutes;
+    public IReadOnlyList<string> PinnedRoutes => Volatile.Read(ref _pinnedRoutes);
+
+    /// <summary>
+    /// Replaces the ranges held outside the cache and releases what it holds inside the new ones.
+    /// </summary>
+    public void Pin(IReadOnlyCollection<string> pinned)
+    {
+        if (new HashSet<string>(Volatile.Read(ref _pinnedRoutes), StringComparer.Ordinal).SetEquals(pinned))
+        {
+            return;
+        }
+
+        var ranges = GeoIpRanges.Build([.. pinned]);
+        Volatile.Write(ref _pinnedRoutes, [.. pinned]);
+        Volatile.Write(ref _pinned, ranges);
+        var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
+        var generation = _applier.Generation;
+        var released = 0;
+        foreach (var address in _entries.Keys)
+        {
+            if (!ranges.Contains(address) || !_entries.TryRemove(address, out var entry))
+            {
+                continue;
+            }
+
+            Interlocked.Decrement(ref _size);
+            lock (entry)
+            {
+                Release(entry, generation, filters, withdrawn);
+            }
+
+            released++;
+        }
+
+        _applier.RemoveTunnel(withdrawn);
+        _applier.DeleteFilters(filters, generation);
+        _logger.LogInformation("{Count} address range(s) are now held outside the cache; {Released} destination(s) inside them were released from it", ranges.Count, released);
+    }
 
     /// <summary>
     /// A held destination: its verdict, what that verdict installed, whether a name settled it, and the idle time
@@ -278,7 +316,7 @@ public sealed class RoutingCache
     /// </summary>
     public void Note(uint address, bool app)
     {
-        if (_pinned.Contains(address))
+        if (Volatile.Read(ref _pinned).Contains(address))
         {
             return;
         }
@@ -311,7 +349,7 @@ public sealed class RoutingCache
     /// </summary>
     public void Note(uint address, RouteVerdict verdict)
     {
-        if (_pinned.Contains(address))
+        if (Volatile.Read(ref _pinned).Contains(address))
         {
             return;
         }
@@ -580,7 +618,7 @@ public sealed class RoutingCache
 
             if (!IPAddress.TryParse(route.Address, out var address)
                 || !GeoIpRanges.TryToNumeric(address, out var value)
-                || _pinned.Contains(value)
+                || Volatile.Read(ref _pinned).Contains(value)
                 || _entries.ContainsKey(value))
             {
                 continue;
@@ -958,7 +996,7 @@ public sealed class RoutingCache
         var now = Environment.TickCount64;
         foreach (var address in addresses)
         {
-            if (!GeoIpRanges.TryToNumeric(address, out var value) || _pinned.Contains(value))
+            if (!GeoIpRanges.TryToNumeric(address, out var value) || Volatile.Read(ref _pinned).Contains(value))
             {
                 continue;
             }

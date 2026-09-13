@@ -1,3 +1,4 @@
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc.Fleet;
 
 namespace AmneziaGeo.Windows.App.Fleet;
@@ -13,22 +14,37 @@ internal sealed class FleetStore(ActiveTunnelScope scope)
     /// <summary>
     /// Reads what the mode last stood on.
     /// </summary>
-    public async Task<FleetState> LoadAsync(CancellationToken ct = default)
+    public Task<FleetState> LoadAsync(CancellationToken ct = default)
     {
-        var store = scope.Store;
-        var order = await store.GetSettingAsync(FleetKeys.Order, ct) ?? string.Empty;
-        var roles = await store.GetSettingAsync(FleetKeys.Roles, ct) ?? string.Empty;
-        var primary = (await store.GetSettingAsync(FleetKeys.Primary, ct) ?? string.Empty).Trim();
-        var desired = await store.GetSettingAsync(FleetKeys.Desired, ct) ?? string.Empty;
-        var targets = await store.GetSettingAsync(FleetKeys.Targets, ct) ?? string.Empty;
-        var resume = await store.GetSettingAsync(FleetKeys.Resume, ct) ?? string.Empty;
+        return ReadAsync(scope.Store, _written, ct);
+    }
 
-        _written[FleetKeys.Order] = order;
-        _written[FleetKeys.Roles] = roles;
-        _written[FleetKeys.Primary] = primary;
-        _written[FleetKeys.Desired] = desired;
-        _written[FleetKeys.Targets] = targets;
-        _written[FleetKeys.Resume] = resume;
+    /// <summary>
+    /// Writes what the mode stands on.
+    /// </summary>
+    public Task SaveAsync(FleetState state, CancellationToken ct = default)
+    {
+        return WriteAsync(scope.Store, state, _written, ct);
+    }
+
+    /// <summary>
+    /// Reads what the mode last stood on in a library and notes every key as it was read.
+    /// </summary>
+    public static async Task<FleetState> ReadAsync(IStateStore store, IDictionary<string, string> written, CancellationToken ct = default)
+    {
+        var order = await store.GetSettingAsync(FleetKeys.Order, ct).ConfigureAwait(false) ?? string.Empty;
+        var roles = await store.GetSettingAsync(FleetKeys.Roles, ct).ConfigureAwait(false) ?? string.Empty;
+        var primary = (await store.GetSettingAsync(FleetKeys.Primary, ct).ConfigureAwait(false) ?? string.Empty).Trim();
+        var desired = await store.GetSettingAsync(FleetKeys.Desired, ct).ConfigureAwait(false) ?? string.Empty;
+        var targets = await store.GetSettingAsync(FleetKeys.Targets, ct).ConfigureAwait(false) ?? string.Empty;
+        var resume = await store.GetSettingAsync(FleetKeys.Resume, ct).ConfigureAwait(false) ?? string.Empty;
+
+        written[FleetKeys.Order] = order;
+        written[FleetKeys.Roles] = roles;
+        written[FleetKeys.Primary] = primary;
+        written[FleetKeys.Desired] = desired;
+        written[FleetKeys.Targets] = targets;
+        written[FleetKeys.Resume] = resume;
 
         return new FleetState(
             FleetState.ParseNames(order),
@@ -40,27 +56,27 @@ internal sealed class FleetStore(ActiveTunnelScope scope)
     }
 
     /// <summary>
-    /// Writes what the mode stands on.
+    /// Writes what the mode stands on in a library, past the keys that read as noted.
     /// </summary>
-    public async Task SaveAsync(FleetState state, CancellationToken ct = default)
+    public static async Task WriteAsync(IStateStore store, FleetState state, IDictionary<string, string> written, CancellationToken ct = default)
     {
-        await WriteAsync(FleetKeys.Order, FleetState.FormatNames(state.Order), ct);
-        await WriteAsync(FleetKeys.Roles, FleetState.FormatRoles(state.Roles), ct);
-        await WriteAsync(FleetKeys.Primary, state.Primary, ct);
-        await WriteAsync(FleetKeys.Desired, FleetState.FormatNames(state.Desired), ct);
-        await WriteAsync(FleetKeys.Targets, FleetTargets.Format(state.Targets), ct);
-        await WriteAsync(FleetKeys.Resume, FleetState.FormatNames(state.Resume ?? []), ct);
+        await WriteKeyAsync(store, written, FleetKeys.Order, FleetState.FormatNames(state.Order), ct).ConfigureAwait(false);
+        await WriteKeyAsync(store, written, FleetKeys.Roles, FleetState.FormatRoles(state.Roles), ct).ConfigureAwait(false);
+        await WriteKeyAsync(store, written, FleetKeys.Primary, state.Primary, ct).ConfigureAwait(false);
+        await WriteKeyAsync(store, written, FleetKeys.Desired, FleetState.FormatNames(state.Desired), ct).ConfigureAwait(false);
+        await WriteKeyAsync(store, written, FleetKeys.Targets, FleetTargets.Format(state.Targets), ct).ConfigureAwait(false);
+        await WriteKeyAsync(store, written, FleetKeys.Resume, FleetState.FormatNames(state.Resume ?? []), ct).ConfigureAwait(false);
     }
 
     // Writes only what moved: the set is saved on every request, and most requests move one key of the six.
-    private async Task WriteAsync(string key, string value, CancellationToken ct)
+    private static async Task WriteKeyAsync(IStateStore store, IDictionary<string, string> written, string key, string value, CancellationToken ct)
     {
-        if (_written.TryGetValue(key, out var last) && string.Equals(last, value, StringComparison.Ordinal))
+        if (written.TryGetValue(key, out var last) && string.Equals(last, value, StringComparison.Ordinal))
         {
             return;
         }
 
-        await scope.Store.SetSettingAsync(key, value, ct);
-        _written[key] = value;
+        await store.SetSettingAsync(key, value, ct).ConfigureAwait(false);
+        written[key] = value;
     }
 }

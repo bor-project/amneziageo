@@ -58,7 +58,7 @@ public static class Program
 
         using var log = new AgentLog(AgentPaths.LogDb);
         await log.InitializeAsync().ConfigureAwait(false);
-        log.Info("agent", $"starting: pid {Environment.ProcessId}, version {AgentBuild.Version}, interface {options.Interface}, engine {options.EnginePath} (present: {File.Exists(options.EnginePath)})");
+        log.Info("agent", $"starting: pid {Environment.ProcessId}, version {AgentBuild.Version}, interface {options.Interface}, engine {options.EnginePath} (present: {File.Exists(options.EnginePath)}){(ContainerHost.Detected ? ", in a container" : string.Empty)}");
 
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>

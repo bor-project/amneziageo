@@ -267,7 +267,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             struck |= _resume.Remove(name);
             struck |= _order.Remove(name);
             struck |= _roles.Remove(name);
-            struck |= ForgetAddressesLocked(name);
+            struck |= FleetTargets.ForgetServer(_targets, name);
             if (!struck)
             {
                 return false;
@@ -305,7 +305,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
             held |= Swap(_wanted, oldName, newName);
             held |= Swap(_resume, oldName, newName);
             held |= RenameRoleLocked(oldName, newName);
-            held |= RenameAddressesLocked(oldName, newName);
+            held |= FleetTargets.RenameServer(_targets, oldName, newName);
             if (!held)
             {
                 return false;
@@ -542,6 +542,26 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
+    /// Drops the addresses of the rules a list no longer sends into a tunnel; answers whether any went.
+    /// </summary>
+    public bool KeepRules(long listId, IReadOnlySet<string> tokens)
+    {
+        lock (_gate)
+        {
+            if (!FleetTargets.KeepRules(_targets, listId, tokens))
+            {
+                return false;
+            }
+
+            _stamp++;
+            _moved = true;
+        }
+
+        Signal();
+        return true;
+    }
+
+    /// <summary>
     /// What a tunnel carries of the addressed rules: it moves only while its own share does.
     /// </summary>
     public long StampOf(string name)
@@ -644,7 +664,15 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <inheritdoc/>
-    public override IReadOnlyList<GeoRule> Share(string name, long listId, IReadOnlyList<GeoRule> rules)
+    public override Task<IReadOnlyList<GeoRule>> ShareAsync(IStateStore store, string name, long listId, IReadOnlyList<GeoRule> rules, CancellationToken ct)
+    {
+        return Task.FromResult(Share(name, listId, rules));
+    }
+
+    /// <summary>
+    /// The rules of a list the named tunnel of the set carries.
+    /// </summary>
+    public IReadOnlyList<GeoRule> Share(string name, long listId, IReadOnlyList<GeoRule> rules)
     {
         var roundTrips = live.RoundTrips();
         var fallen = Standing(live.Fallen(), name);
@@ -808,57 +836,6 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         return _targets.Values.Any(route => route.Target.Mode == RuleTarget.Best || route.Fallback.Mode == RuleTarget.Best);
     }
 
-    // Both ends of every rule: one naming a server that is gone is left to the machine again.
-    private bool ForgetAddressesLocked(string name)
-    {
-        var struck = false;
-        foreach (var key in _targets.Keys.ToArray())
-        {
-            var route = _targets[key];
-            var moved = new RuleRoute(
-                Names(route.Target, name) ? RuleTarget.Default : route.Target,
-                Names(route.Fallback, name) ? RuleTarget.Default : route.Fallback);
-            if (moved == route)
-            {
-                continue;
-            }
-
-            struck = true;
-            if (moved.IsDefault)
-            {
-                _targets.Remove(key);
-            }
-            else
-            {
-                _targets[key] = moved;
-            }
-        }
-
-        return struck;
-    }
-
-    // Both ends of every rule: one naming a renamed server names it as it is called now.
-    private bool RenameAddressesLocked(string oldName, string newName)
-    {
-        var moved = false;
-        foreach (var key in _targets.Keys.ToArray())
-        {
-            var route = _targets[key];
-            var renamed = new RuleRoute(
-                Names(route.Target, oldName) ? new RuleTarget(RuleTarget.Server, newName) : route.Target,
-                Names(route.Fallback, oldName) ? new RuleTarget(RuleTarget.Server, newName) : route.Fallback);
-            if (renamed == route)
-            {
-                continue;
-            }
-
-            _targets[key] = renamed;
-            moved = true;
-        }
-
-        return moved;
-    }
-
     // Carries the role of a renamed server over.
     private bool RenameRoleLocked(string oldName, string newName)
     {
@@ -869,11 +846,6 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
 
         _roles[newName] = role;
         return true;
-    }
-
-    private static bool Names(RuleTarget end, string name)
-    {
-        return end.Mode == RuleTarget.Server && string.Equals(end.Name, name, StringComparison.Ordinal);
     }
 
     // How one rule reads on a tunnel: its own, kept off the tunnel, dropped, or somebody else's.

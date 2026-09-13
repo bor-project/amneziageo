@@ -39,6 +39,8 @@ internal sealed class TunnelController : IDisposable
     private DnsRouter? _dns;
     private RoutingCache? _cache;
     private IReadOnlyList<string> _configNetworks = [];
+    private StandingBasis? _standingBasis;
+    private StandingRanges _standing = StandingRanges.None;
     private IReadOnlyList<string> _appRules = [];
     private IRouteMemory? _memory;
     private AppTunnel? _apps;
@@ -48,6 +50,7 @@ internal sealed class TunnelController : IDisposable
     private bool _split;
     private bool _resolverApplied;
     private bool _inboundBlocked;
+    private bool _returnRouted;
     private bool _disposed;
 
     /// <summary>
@@ -58,7 +61,7 @@ internal sealed class TunnelController : IDisposable
         _enginePath = enginePath;
         _iface = interfaceName;
         _log = log;
-        ResolvConf.Restore(log);
+        ResolvConf.RestoreAsync(interfaceName, log).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -141,31 +144,10 @@ internal sealed class TunnelController : IDisposable
         }
 
         var split = routing.Split && routing.HasRules;
+        var hasRules = routing.HasRules;
+        routing = AroundLocal(routing);
         var tunnelResolvers = TunnelResolvers(resolved);
         var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
-        // A range a rule names outright stands from the start: it is otherwise reached only by contact the
-        // tracker sees, which an echo request never makes.
-        var namedRanges = split ? GeoMaterializer.NamedRanges(routing.Rules, RouteRole.Proxy) : [];
-        foreach (var named in namedRanges)
-        {
-            if (!startupRoutes.Contains(named))
-            {
-                startupRoutes.Add(named);
-            }
-        }
-        // The private networks the configuration itself reaches, less the ones this machine stands in and the
-        // ones a rule of the list already names.
-        var listNamed = GeoMaterializer.NamedRanges(routing.Rules);
-        _configNetworks = split
-            ? [.. PrivateNetworks.ForTunnel(resolved, PrivateNetworks.Local()).Where(network => !PrivateNetworks.Overlaps(network, listNamed))]
-            : [];
-        foreach (var network in _configNetworks)
-        {
-            if (!startupRoutes.Contains(network))
-            {
-                startupRoutes.Add(network);
-            }
-        }
 
         // Inbound access: what the tunnel may reach this machine from. Off by default.
         var inboundRoutes = options.Transport?.AllowInbound == true
@@ -179,17 +161,21 @@ internal sealed class TunnelController : IDisposable
             }
         }
 
-        // Access from the tunnel needs the way back, so the private networks the list names stand from the start.
-        List<string> inboundReturn = inboundRoutes.Count > 0
-            ? [.. routing.ProxyRoutes.Where(PrivateNetworks.IsNetwork)]
-            : [];
-        foreach (var route in inboundReturn)
+        // The ranges the list keeps on the interface beside the resolvers and the inbound access: the way back for
+        // access from the tunnel, the ranges its rules name outright and the networks the configuration reaches.
+        var infrastructure = new HashSet<string>(startupRoutes, StringComparer.Ordinal);
+        var ownNetworks = split ? PrivateNetworks.ForTunnel(resolved, PrivateNetworks.Local(_iface)) : [];
+        var standing = StandingRanges.Of(routing.ProxyRoutes, routing.Rules, split, inboundRoutes.Count > 0, ownNetworks, infrastructure);
+        _configNetworks = standing.Networks;
+        foreach (var range in standing.All)
         {
-            if (!startupRoutes.Contains(route))
+            if (!startupRoutes.Contains(range))
             {
-                startupRoutes.Add(route);
+                startupRoutes.Add(range);
             }
         }
+
+        var inboundReturn = standing.Return;
 
         var allowedIps = AllowedIpsResolver.Build(split, WgConfigEditor.GetAllowedIps(resolved), startupRoutes);
         // Split advertises almost nothing at first, so without a keepalive the peer would only be greeted once
@@ -247,13 +233,19 @@ internal sealed class TunnelController : IDisposable
         _inboundBlocked = options.Transport?.AllowInbound != true
             && await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
 
+        // In a container the connections that come in beside the tunnel are answered the way they came.
+        _returnRouted = ContainerHost.Detected && hop is ({ } via, { } dev)
+            && await ReturnPath.ApplyAsync(_iface, via, dev, _log, ct).ConfigureAwait(false);
+
         Advertised = allowedIps;
         _sessionConfig = configText;
-        Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
-        RoutingMode = Token(split, routing.HasRules);
+        Mode = split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
+        RoutingMode = Token(split, hasRules);
         ListName = routing.ListName;
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
+        _standingBasis = new StandingBasis(ownNetworks, infrastructure, [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes], inboundRoutes.Count > 0, applier);
+        _standing = standing;
         _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
             [.. routing.DirectRoutes, .. routing.BlockRoutes], _log, ct).ConfigureAwait(false);
         _appRules = routing.TunnelApps;
@@ -374,13 +366,64 @@ internal sealed class TunnelController : IDisposable
             return false;
         }
 
+        var hasRules = routing.HasRules;
+        routing = AroundLocal(routing);
+        Restand(cache, routing);
+
         // Names take the edit first: the rebuild decides each held address by the name it came with.
         _dns?.ApplyRules(routing);
         cache.Rebuild(Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, address => _dns?.VerdictOf(address) ?? RouteVerdict.None);
-        Mode = _split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
-        RoutingMode = Token(_split, routing.HasRules);
+        Mode = _split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
+        RoutingMode = Token(_split, hasRules);
         ListName = routing.ListName;
         return true;
+    }
+
+    // The list with its tunnel ranges cut around the networks this machine stands in.
+    private TunnelRouting AroundLocal(TunnelRouting routing)
+    {
+        var cut = PrivateNetworks.AroundLocal(routing.ProxyRoutes, PrivateNetworks.Local(_iface));
+        if (cut.Left.Count > 0)
+        {
+            _log.Info("routing", $"{string.Join(", ", cut.Left)} lie inside a network this machine stands in, so they stay on its own interface and off the tunnel");
+        }
+
+        if (cut.Kept.Count > 0)
+        {
+            _log.Info("routing", $"{string.Join(", ", cut.Kept)} are networks this machine stands in, so they stay outside the tunnel although a wider range of the list takes it");
+        }
+
+        return cut.Left.Count == 0 && cut.Kept.Count == 0
+            ? routing
+            : routing with { ProxyRoutes = cut.Carried, DirectRoutes = [.. routing.DirectRoutes, .. cut.Kept] };
+    }
+
+    // The bring-up facts the standing ranges are worked out from: the configuration's own networks, the resolvers
+    // and inbound access, what the cache holds outside it and the applier the ranges stand through.
+    private sealed record StandingBasis(IReadOnlyList<string> OwnNetworks, IReadOnlySet<string> Infrastructure, IReadOnlyList<string> Pinned, bool Inbound, LinuxRouteApplier Applier);
+
+    // Squares the ranges standing on the interface with the edited list and holds the way back outside the cache.
+    private void Restand(RoutingCache cache, TunnelRouting routing)
+    {
+        if (_standingBasis is not { } basis)
+        {
+            return;
+        }
+
+        var standing = StandingRanges.Of(routing.ProxyRoutes, routing.Rules, _split, basis.Inbound, basis.OwnNetworks, basis.Infrastructure);
+        cache.Pin([.. basis.Pinned, .. standing.Return]);
+        if (_split)
+        {
+            var (added, removed) = StandingRanges.Diff(_standing.All, standing.All);
+            if (added.Count > 0 || removed.Count > 0)
+            {
+                Advertised = basis.Applier.Restand(added, removed);
+                _log.Info("routing", $"ranges standing on {_iface} squared with the edited list: {added.Count} added, {removed.Count} removed");
+            }
+        }
+
+        _configNetworks = standing.Networks;
+        _standing = standing;
     }
 
     // The ranges that ride the tunnel: what the list names and the networks the configuration reaches.
@@ -404,7 +447,7 @@ internal sealed class TunnelController : IDisposable
         if (_resolverApplied)
         {
             _resolverApplied = false;
-            ResolvConf.Restore(_log);
+            await ResolvConf.RestoreAsync(_iface, _log).ConfigureAwait(false);
         }
 
         if (_cache is { } cache)
@@ -426,6 +469,12 @@ internal sealed class TunnelController : IDisposable
         {
             _inboundBlocked = false;
             await InboundFirewall.RemoveAsync(ct).ConfigureAwait(false);
+        }
+
+        if (_returnRouted)
+        {
+            _returnRouted = false;
+            await ReturnPath.RemoveAsync(ct).ConfigureAwait(false);
         }
 
         if (_pinnedEndpoint is { } pinned)
@@ -505,7 +554,7 @@ internal sealed class TunnelController : IDisposable
             {
                 if (await HandshakeSeenAsync(ct).ConfigureAwait(false))
                 {
-                    _resolverApplied = ResolvConf.Apply(DnsRouter.Listen, _log);
+                    _resolverApplied = await ResolvConf.ApplyAsync(DnsRouter.Listen, _iface, _log).ConfigureAwait(false);
                     _log.Info("dns", $"lookups now go to {DnsRouter.Listen}");
                     return;
                 }

@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Geo;
 
@@ -73,7 +74,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 
     // Bumped whenever a rule token starts covering something else, so stored lists are rebuilt against the new
     // expansion instead of keeping what an older version wrote.
-    private const string MaterializerVersion = "2";
+    private const string MaterializerVersion = "3";
 
     private const string MaterializerVersionKey = "geo-materializer";
 
@@ -126,8 +127,10 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         var proxy = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Proxy).ToList(), index);
         var direct = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Direct).ToList(), index);
         var block = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Block).ToList(), index);
+
+        // Tunnel ranges inside a wider direct range are cut out of it.
         return new RoutingList(id, name, rules, proxy.Routes, proxy.Domains, proxy.Apps,
-            direct.Routes, direct.Domains, direct.Apps, block.Routes, block.Domains);
+            RangeClaims.CarveDirect(direct.Routes, proxy.Routes), direct.Domains, direct.Apps, block.Routes, block.Domains);
     }
 
     /// <summary>

@@ -2,3 +2,5 @@
 *.sh text eol=lf
 # Debian control files must stay LF or dpkg-deb rejects the package.
 amneziageo-linux/packaging/** text eol=lf
+# The container files are read by the image's shell and must stay LF.
+amneziageo-linux/docker/** text eol=lf

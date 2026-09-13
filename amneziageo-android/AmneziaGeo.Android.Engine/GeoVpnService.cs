@@ -191,6 +191,7 @@ public sealed class GeoVpnService : VpnService
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
     private string? _reason;
+    private long _since;
 
     /// <inheritdoc/>
     public override void OnCreate()
@@ -982,12 +983,21 @@ public sealed class GeoVpnService : VpnService
     // Reports a stage to the head and keeps it as the answer to a later query.
     private void Publish(VpnStage stage, string? detail, string? reason = null)
     {
+        if (stage != VpnStage.Connected)
+        {
+            _since = 0;
+        }
+        else if (_stage != VpnStage.Connected)
+        {
+            _since = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+
         _stage = stage;
         _detail = detail;
         _reason = reason;
         // Only a running tunnel can be asked whether the system holds it as the always-on one.
         var alwaysOn = Build.VERSION.SdkInt >= BuildVersionCodes.Q && IsAlwaysOn;
-        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled);
+        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled, _since);
     }
 
     private static void Report(string text)

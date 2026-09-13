@@ -120,6 +120,11 @@ public static class VpnBridge
     public const string ExtraLockdown = "lockdown";
 
     /// <summary>
+    /// Since extra: unix milliseconds the connected tunnel came up at.
+    /// </summary>
+    public const string ExtraSince = "since";
+
+    /// <summary>
     /// Broadcast that makes a running tunnel take the local proxy settings again.
     /// </summary>
     public const string ActionProxy = "org.amneziageo.android.VPN_PROXY";
@@ -156,12 +161,16 @@ public static class VpnBridge
     /// Reports a stage to the head.
     /// </summary>
     public static void Publish(Context context, VpnStage stage, string? detail, string? reason = null,
-        bool alwaysOn = false, bool lockdown = false)
+        bool alwaysOn = false, bool lockdown = false, long since = 0)
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraStage, (int)stage);
         intent.PutExtra(ExtraAlwaysOn, alwaysOn);
         intent.PutExtra(ExtraLockdown, lockdown);
+        if (since > 0)
+        {
+            intent.PutExtra(ExtraSince, since);
+        }
         if (detail is not null)
         {
             intent.PutExtra(ExtraDetail, detail);

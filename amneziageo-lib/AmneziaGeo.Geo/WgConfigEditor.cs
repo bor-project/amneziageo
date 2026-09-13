@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Net;
+
 namespace AmneziaGeo.Geo;
 
 /// <summary>
@@ -9,6 +12,11 @@ public static class WgConfigEditor
     /// MTU a tunnel comes up with when neither the settings nor the config name one.
     /// </summary>
     public const int DefaultMtu = 1420;
+
+    /// <summary>
+    /// The comment a server of ours names its API inside the tunnel under.
+    /// </summary>
+    public const string ApiLine = "AmneziaGeo Api";
 
     /// <summary>
     /// Returns the AllowedIPs entries declared in the config.
@@ -169,6 +177,41 @@ public static class WgConfigEditor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns the addresses and ports inside the tunnel the line "# AmneziaGeo Api" names for the server.
+    /// </summary>
+    public static IReadOnlyList<(string Host, int Port)> GetApiPoints(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var comment = trimmed[1..].TrimStart();
+            var equals = comment.IndexOf('=');
+            if (equals <= 0 || !string.Equals(comment[..equals].Trim(), ApiLine, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var points = new List<(string Host, int Port)>();
+            foreach (var entry in comment[(equals + 1)..].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (ApiPoint(entry) is { } point && !points.Contains(point))
+                {
+                    points.Add(point);
+                }
+            }
+
+            return points;
+        }
+
+        return [];
     }
 
     /// <summary>
@@ -349,5 +392,25 @@ public static class WgConfigEditor
 
         removed = taken;
         return taken.Count == 0 ? config : string.Join('\n', kept);
+    }
+
+    // Reads one address and port, the address of the sixth version in brackets.
+    private static (string Host, int Port)? ApiPoint(string entry)
+    {
+        var colon = entry.LastIndexOf(':');
+        if (colon <= 0
+            || !int.TryParse(entry[(colon + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var port)
+            || port is < 1 or > 65535)
+        {
+            return null;
+        }
+
+        var host = entry[..colon].Trim();
+        if (host.StartsWith('[') && host.EndsWith(']'))
+        {
+            host = host[1..^1];
+        }
+
+        return IPAddress.TryParse(host, out var address) ? (address.ToString(), port) : null;
     }
 }

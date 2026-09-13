@@ -54,6 +54,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly AndroidGeoFileStore _geoFiles;
     private readonly GeoUpdateChecker _geoChecker;
     private readonly AndroidAgentLog _log;
+    private readonly ServerOffers _offers;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
     private readonly AndroidUpdater _updater;
@@ -77,6 +78,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string? _selectedTarget;
     private long? _selectedRoutingList;
     private string? _boundTarget;
+    private string _boundSession = string.Empty;
     private string _boundStatus = ConnectionStatus.Disconnected;
     private long _handshakeUnix;
     private LinkReading _link = LinkReading.Empty;
@@ -152,6 +154,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
+        _offers = new ServerOffers(file: System.IO.Path.Combine(dir, "offers.json"));
         _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
         Current = this;
     }
@@ -281,7 +284,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             // One head, one process: presence needs no announcing here.
             case IpcContract.OpAttachUi:
                 // The window will ask what the servers offer; the servers are asked now so it has the answer.
-                ServerOffers.Shared.Warm(Targets());
+                _offers.Warm(Targets());
                 return Ok();
 
             case IpcContract.OpAddConfig:
@@ -698,11 +701,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _alwaysOn = intent.GetBooleanExtra(VpnBridge.ExtraAlwaysOn, false);
             _alwaysOnLockdown = intent.GetBooleanExtra(VpnBridge.ExtraLockdown, false);
             OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail),
-                intent.GetStringExtra(VpnBridge.ExtraReason));
+                intent.GetStringExtra(VpnBridge.ExtraReason), intent.GetLongExtra(VpnBridge.ExtraSince, 0));
         }
     }
 
-    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null)
+    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null, long since = 0)
     {
         // The session name comes back from the tunnel, so a head that started after it still names what runs.
         var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
@@ -718,32 +721,40 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _active = true;
                 _boundStatus = ConnectionStatus.Connected;
                 _boundTarget = session;
+                _boundSession = since > 0 ? since.ToString(CultureInfo.InvariantCulture) : string.Empty;
                 ClearConnectFailure();
-                if (session is { Length: > 0 } && ServerOffers.Shared.Observe(session, true))
+                if (session is { Length: > 0 } && _offers.Observe(session, true, _boundSession))
                 {
-                    ServerOffers.Shared.Warm(Targets());
+                    _offers.Warm(Targets());
                 }
 
                 break;
             case VpnStage.Disconnected:
                 if (_boundTarget is { Length: > 0 } dropped)
                 {
-                    ServerOffers.Shared.Observe(dropped, false);
+                    _offers.Observe(dropped, false);
                 }
 
                 _active = false;
                 _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
+                _boundSession = string.Empty;
                 _handshakeUnix = 0;
                 ResetLink();
                 ResetAlwaysOn();
                 break;
             case VpnStage.Failed:
+                if (_boundTarget is { Length: > 0 } failed)
+                {
+                    _offers.Observe(failed, false);
+                }
+
                 _active = false;
                 _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
+                _boundSession = string.Empty;
                 _handshakeUnix = 0;
                 ResetLink();
                 ResetAlwaysOn();
@@ -985,6 +996,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             InboundNetwork: transport?.InboundNetwork ?? false,
             Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
             ApiPort: transport?.ApiPort ?? 0,
+            DefaultApiPort: ServerOffers.DefaultPort(config),
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -1694,7 +1706,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.UseIpv6,
                         transport.MtuMode,
                         transport.UseRouter,
-                        ApiPort: transport.ApiPort),
+                        transport.AllowInbound,
+                        transport.InboundNetwork,
+                        transport.ApiPort),
                 null));
         }
 
@@ -2921,12 +2935,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Returns what the server of the selected config offers and asks the servers that changed behind it.
     private Task<IpcAck> ServerOfferAsync()
     {
-        ServerOffers.Shared.Warm(Targets());
+        _offers.Warm(Targets());
 
-        return Task.FromResult(new IpcAck(true, ServerOffers.Shared.Offer(_selectedTarget ?? string.Empty).ToPayload()));
+        return Task.FromResult(new IpcAck(true, _offers.Offer(_selectedTarget ?? string.Empty).ToPayload()));
     }
 
-    // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
+    // Where the send leg uploads to, and whether that is the server of the config.
     private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
     {
         if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
@@ -2934,19 +2948,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return (chosen, false);
         }
 
-        var target = new OfferTarget(config, _configs.GetValueOrDefault(config, string.Empty), VpnBridge.IsRunning(Application.Context), _transports.GetValueOrDefault(config)?.ApiPort ?? 0);
-        var offer = await ServerOffers.Shared.SpeedAsync(target, ct).ConfigureAwait(false);
+        var offer = await _offers.SpeedAsync(Target(config, _configs.GetValueOrDefault(config, string.Empty)), ct).ConfigureAwait(false);
 
         return ServerOffers.Upload(chosen, offer, path);
     }
 
     // Every config whose server can be asked whether it measures; their texts live in this agent's own JSON.
-    private IReadOnlyList<OfferTarget> Targets()
-    {
-        var running = VpnBridge.IsRunning(Application.Context);
+    private IReadOnlyList<OfferTarget> Targets() => [.. _configs.Select(entry => Target(entry.Key, entry.Value))];
 
-        return [.. _configs.Select(entry =>
-            new OfferTarget(entry.Key, entry.Value, running && string.Equals(entry.Key, _selectedTarget, StringComparison.Ordinal), _transports.GetValueOrDefault(entry.Key)?.ApiPort ?? 0))];
+    // A config to ask about, up only while its tunnel is connected, with the session the tunnel names.
+    private OfferTarget Target(string name, string text)
+    {
+        var up = _boundStatus == ConnectionStatus.Connected && string.Equals(name, _boundTarget, StringComparison.Ordinal);
+
+        return new OfferTarget(name, text, up, _transports.GetValueOrDefault(name)?.ApiPort ?? 0, up ? _boundSession : string.Empty);
     }
 
     // Where the rules in force send a destination, said the way the desktops say it, and whether that is the

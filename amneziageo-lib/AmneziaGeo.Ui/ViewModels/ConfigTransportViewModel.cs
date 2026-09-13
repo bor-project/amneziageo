@@ -17,6 +17,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     private readonly IAgentConnection _connection;
     private string _endpoint;
+    private readonly int _defaultApiPort;
     private CancellationTokenSource? _probeCts;
 
     // Baseline captured on load / commit / import; the transport is dirty when a field differs from it (#143).
@@ -82,7 +83,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// The port the API of the server is asked at while the field is empty.
     /// </summary>
-    public string ApiPortDefault => EndpointPort(_endpoint);
+    public string ApiPortDefault => _defaultApiPort > 0 ? _defaultApiPort.ToString(CultureInfo.InvariantCulture) : EndpointPort(_endpoint);
 
     /// <summary>
     /// The address this machine answers at inside the tunnel.
@@ -130,7 +131,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", int apiPort = 0)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", int apiPort = 0, int defaultApiPort = 0)
     {
         _connection = connection;
         ConfigName = name;
@@ -140,6 +141,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useRouter = useRouter;
         _allowInbound = allowInbound;
         _apiPort = apiPort > 0 ? apiPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        _defaultApiPort = defaultApiPort;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 

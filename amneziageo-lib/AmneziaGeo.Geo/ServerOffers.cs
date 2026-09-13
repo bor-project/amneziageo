@@ -1,15 +1,16 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// One configuration to ask about: its name, the text it dials with, whether its tunnel is up, and the API port of
-/// its settings, zero for the port of the Endpoint.
+/// One configuration to ask about: its name, the text it dials with, whether its tunnel is up, the API port of its
+/// settings, zero for the port the text names, and the session the tunnel names, empty when the agent counts them.
 /// </summary>
-public sealed record OfferTarget(string Config, string Text, bool Connected, int ApiPort = 0);
+public sealed record OfferTarget(string Config, string Text, bool Connected, int ApiPort = 0, string Session = "");
 
 /// <summary>
 /// Keeps what the servers of the configurations offer and asks again only after a tunnel comes up or a text changes.
@@ -21,19 +22,29 @@ public sealed class ServerOffers
     /// </summary>
     public static ServerOffers Shared { get; } = new();
 
+    /// <summary>
+    /// How long a pass must still stand for a run to take it again.
+    /// </summary>
+    public static readonly TimeSpan PassMargin = TimeSpan.FromMinutes(1);
+
     private readonly Dictionary<string, Known> _known = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _sessions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _sessions = new(StringComparer.Ordinal);
     private readonly HashSet<string> _up = new(StringComparer.Ordinal);
     private readonly HashSet<string> _asking = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private readonly TimeSpan _retry;
+    private readonly string _file;
+    private readonly TimeProvider _time;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public ServerOffers(TimeSpan? retry = null)
+    public ServerOffers(TimeSpan? retry = null, string file = "", TimeProvider? time = null)
     {
         _retry = retry ?? TimeSpan.FromSeconds(5);
+        _file = file;
+        _time = time ?? TimeProvider.System;
+        Load();
     }
 
     /// <summary>
@@ -48,13 +59,13 @@ public sealed class ServerOffers
     }
 
     /// <summary>
-    /// Notes whether the tunnel of a configuration is up and tells whether it has just come up.
+    /// Notes whether the tunnel of a configuration is up and tells whether a new session of it has begun.
     /// </summary>
-    public bool Observe(string config, bool connected)
+    public bool Observe(string config, bool connected, string session = "")
     {
         lock (_lock)
         {
-            return Note(config, connected);
+            return Note(config, connected, session);
         }
     }
 
@@ -81,7 +92,7 @@ public sealed class ServerOffers
     }
 
     /// <summary>
-    /// Returns a fresh offer with a pass for one speed run, or null when the server does not measure.
+    /// Returns an offer with a pass that stands for one speed run, or null when the server does not measure.
     /// </summary>
     public async Task<ServerOffer?> SpeedAsync(OfferTarget target, CancellationToken ct)
     {
@@ -90,7 +101,7 @@ public sealed class ServerOffers
         var kept = default(Known);
         lock (_lock)
         {
-            Note(target.Config, target.Connected);
+            Note(target.Config, target.Connected, target.Session);
             kept = _known.GetValueOrDefault(target.Config);
             if (kept is not null && Stale(kept, target))
             {
@@ -105,9 +116,14 @@ public sealed class ServerOffers
             return SpeedArgs.Of(asked) is null ? null : asked;
         }
 
-        if (SpeedArgs.Of(kept.Offer) is null || Keys(target.Text) is not { } keys)
+        if (SpeedArgs.Of(kept.Offer) is not { } speed || Keys(target.Text) is not { } keys)
         {
             return null;
+        }
+
+        if (speed.Expires - _time.GetUtcNow() > PassMargin)
+        {
+            return kept.Offer;
         }
 
         var reply = await ServerHello.AskAsync(kept.Offer!.Origin, keys.Private, keys.Server, kept.Offer.Inside, ct)
@@ -123,6 +139,7 @@ public sealed class ServerOffers
             if (ReferenceEquals(_known.GetValueOrDefault(target.Config), kept))
             {
                 _known[target.Config] = kept with { Offer = fresh };
+                Save();
             }
         }
 
@@ -136,7 +153,10 @@ public sealed class ServerOffers
     {
         lock (_lock)
         {
-            _known.Remove(config);
+            if (_known.Remove(config))
+            {
+                Save();
+            }
         }
     }
 
@@ -157,6 +177,17 @@ public sealed class ServerOffers
             : (speed.Up, true);
     }
 
+    /// <summary>
+    /// Returns the port the server is asked at when the settings name none: the one the text names for the API,
+    /// else the port of the Endpoint, else zero.
+    /// </summary>
+    public static int DefaultPort(string text)
+    {
+        var points = WgConfigEditor.GetApiPoints(text ?? string.Empty);
+
+        return points.Count > 0 ? points[0].Port : EndpointPort(text ?? string.Empty);
+    }
+
     // Selects the targets to ask and marks them as being asked.
     private List<OfferTarget> Wanted(IEnumerable<OfferTarget> targets)
     {
@@ -165,7 +196,7 @@ public sealed class ServerOffers
         {
             foreach (var target in targets ?? [])
             {
-                Note(target.Config, target.Connected);
+                Note(target.Config, target.Connected, target.Session);
                 var kept = _known.GetValueOrDefault(target.Config);
                 if (kept is not null && !Stale(kept, target))
                 {
@@ -182,39 +213,54 @@ public sealed class ServerOffers
         return wanted;
     }
 
-    // Records the state of a tunnel and counts a session when it comes up.
-    private bool Note(string config, bool connected)
+    // Records the state of a tunnel and starts a session when it comes up or names a session of its own.
+    private bool Note(string config, bool connected, string session)
     {
-        if (connected && _up.Add(config))
+        if (!connected)
         {
-            _sessions[config] = _sessions.GetValueOrDefault(config) + 1;
+            _up.Remove(config);
+
+            return false;
+        }
+
+        var came = _up.Add(config);
+        if (session.Length > 0)
+        {
+            if (string.Equals(_sessions.GetValueOrDefault(config), session, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _sessions[config] = session;
 
             return true;
         }
 
-        if (!connected)
+        if (!came)
         {
-            _up.Remove(config);
+            return false;
         }
 
-        return false;
+        _sessions[config] = Guid.NewGuid().ToString("N");
+
+        return true;
     }
 
     // Tells whether a kept answer predates the text or the session of a target.
     private bool Stale(Known kept, OfferTarget target) =>
         !string.Equals(kept.Text, Hash(target), StringComparison.Ordinal)
-        || (target.Connected && kept.Session != _sessions.GetValueOrDefault(target.Config));
+        || (target.Connected && !string.Equals(kept.Session, _sessions.GetValueOrDefault(target.Config), StringComparison.Ordinal));
 
     // Asks one server, once more after a pause when an up tunnel heard nothing, and keeps the answer.
     private async Task<ServerOffer?> AskAsync(OfferTarget target, CancellationToken ct)
     {
-        var session = -1;
+        var session = string.Empty;
         lock (_lock)
         {
             _asking.Add(target.Config);
             if (target.Connected)
             {
-                session = _sessions.GetValueOrDefault(target.Config);
+                session = _sessions.GetValueOrDefault(target.Config) ?? string.Empty;
             }
         }
 
@@ -231,6 +277,7 @@ public sealed class ServerOffers
             lock (_lock)
             {
                 _known[target.Config] = new Known(session, Hash(target), offer);
+                Save();
             }
 
             return offer;
@@ -253,9 +300,9 @@ public sealed class ServerOffers
         }
 
         var heard = false;
-        foreach (var (origin, inside) in Origins(target))
+        foreach (var origin in Origins(target))
         {
-            var reply = await ServerHello.AskAsync(origin, keys.Private, keys.Server, inside, ct).ConfigureAwait(false);
+            var reply = await ServerHello.AskAsync(origin, keys.Private, keys.Server, true, ct).ConfigureAwait(false);
             if (reply.Offer is not null)
             {
                 return reply;
@@ -276,34 +323,56 @@ public sealed class ServerOffers
         return privateKey.Length > 0 && serverKey.Length > 0 ? (privateKey, serverKey) : null;
     }
 
-    // Lists the far ends of an up tunnel at the API port.
-    private static IReadOnlyList<(string Origin, bool Inside)> Origins(OfferTarget target)
+    // Lists the addresses of the server inside an up tunnel: the ones the text names, else the first host of its subnet.
+    private static IReadOnlyList<string> Origins(OfferTarget target)
     {
-        var port = Port(target);
-        if (!target.Connected || port == 0)
+        if (!target.Connected)
         {
             return [];
         }
 
-        var wanted = new List<(string Origin, bool Inside)>();
+        var chosen = target.ApiPort is >= 1 and <= 65535 ? target.ApiPort : 0;
+        var wanted = new List<string>();
+        var named = WgConfigEditor.GetApiPoints(target.Text);
+        if (named.Count > 0)
+        {
+            foreach (var point in named)
+            {
+                Add(wanted, point.Host, chosen > 0 ? chosen : point.Port);
+            }
+
+            return wanted;
+        }
+
+        var port = chosen > 0 ? chosen : EndpointPort(target.Text);
+        if (port == 0)
+        {
+            return [];
+        }
+
         foreach (var peer in LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(target.Text)))
         {
-            var host = peer.Contains(':', StringComparison.Ordinal) ? $"[{peer}]" : peer;
-            wanted.Add((string.Create(CultureInfo.InvariantCulture, $"http://{host}:{port}"), true));
+            Add(wanted, peer, port);
         }
 
         return wanted;
     }
 
-    // Returns the API port of the settings, else the port of the Endpoint, else zero.
-    private static int Port(OfferTarget target)
+    // Adds the origin of an address and a port once.
+    private static void Add(List<string> origins, string host, int port)
     {
-        if (target.ApiPort is >= 1 and <= 65535)
+        var bracketed = host.Contains(':', StringComparison.Ordinal) ? $"[{host}]" : host;
+        var origin = string.Create(CultureInfo.InvariantCulture, $"http://{bracketed}:{port}");
+        if (!origins.Contains(origin, StringComparer.Ordinal))
         {
-            return target.ApiPort;
+            origins.Add(origin);
         }
+    }
 
-        var endpoint = WgConfigEditor.GetEndpoint(target.Text) ?? string.Empty;
+    // Returns the port of the Endpoint, else zero.
+    private static int EndpointPort(string text)
+    {
+        var endpoint = WgConfigEditor.GetEndpoint(text) ?? string.Empty;
         var colon = endpoint.LastIndexOf(':');
 
         return colon > 0 && int.TryParse(endpoint[(colon + 1)..].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var port)
@@ -313,8 +382,63 @@ public sealed class ServerOffers
     }
 
     private static string Hash(OfferTarget target) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Port(target).ToString(CultureInfo.InvariantCulture) + "\n" + target.Text)));
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(target.ApiPort.ToString(CultureInfo.InvariantCulture) + "\n" + target.Text)));
+
+    // Reads the kept answers back from the file.
+    private void Load()
+    {
+        if (_file.Length == 0 || !File.Exists(_file))
+        {
+            return;
+        }
+
+        try
+        {
+            var stored = JsonSerializer.Deserialize<Dictionary<string, Stored>>(File.ReadAllText(_file));
+            foreach (var (config, kept) in stored ?? [])
+            {
+                var offer = kept.Offer is { Length: > 0 } payload ? ServerOffer.Parse(payload) : null;
+                _known[config] = new Known(kept.Session ?? string.Empty, kept.Text ?? string.Empty, offer is { Ours: true } ? offer : null);
+                if (kept.Session is { Length: > 0 } session)
+                {
+                    _sessions[config] = session;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            _known.Clear();
+            _sessions.Clear();
+        }
+    }
+
+    // Writes the kept answers to the file.
+    private void Save()
+    {
+        if (_file.Length == 0)
+        {
+            return;
+        }
+
+        var stored = _known.ToDictionary(
+            pair => pair.Key,
+            pair => new Stored(pair.Value.Session, pair.Value.Text, pair.Value.Offer?.ToPayload()),
+            StringComparer.Ordinal);
+        try
+        {
+            var temporary = _file + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(stored));
+            File.Move(temporary, _file, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+    }
 
     // What a server answered, the session it was asked in and the text it was asked with.
-    private sealed record Known(int Session, string Text, ServerOffer? Offer);
+    private sealed record Known(string Session, string Text, ServerOffer? Offer);
+
+    // A kept answer as the file holds it.
+    private sealed record Stored(string? Session, string? Text, string? Offer);
 }

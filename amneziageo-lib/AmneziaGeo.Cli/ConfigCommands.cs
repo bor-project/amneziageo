@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|inbound|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|inbound|api-port|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -44,6 +44,7 @@ internal static class ConfigCommands
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
             "inbound" => await InboundAsync(agent, rest).ConfigureAwait(false),
+            "api-port" => await ApiPortAsync(agent, rest).ConfigureAwait(false),
             "geo" => await GeoAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown config command '{args[0]}'"),
         };
@@ -292,6 +293,35 @@ internal static class ConfigCommands
             stored.UseRouter ? "on" : "off",
             scope.Allow ? "on" : "off",
             scope.Network ? "on" : "off").ConfigureAwait(false));
+    }
+
+    // The API port travels with the rest of the transport, so the stored fields are resent untouched beside it.
+    private static async Task<int> ApiPortAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count is < 1 or > 2 || (args.Count == 2 && ConfigTransport.ApiPortOf(args[1]) <= 0))
+        {
+            return Reply.Usage("usage: amneziageo config api-port <name> [<1-65535>]");
+        }
+
+        var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == args[0]);
+        if (stored is null)
+        {
+            return Reply.Usage($"unknown config: {args[0]}");
+        }
+
+        return Reply.Report(await agent.SendAsync(
+            IpcContract.OpSetWebSocket,
+            args[0],
+            stored.WebSocket ? "on" : "off",
+            stored.WebSocketPort.ToString(CultureInfo.InvariantCulture),
+            stored.WebSocketHost,
+            stored.Mtu > 0 ? stored.Mtu.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            stored.UseIpv6 ? "on" : "off",
+            MtuModes.Text(stored.MtuMode),
+            stored.UseRouter ? "on" : "off",
+            stored.AllowInbound ? "on" : "off",
+            stored.InboundNetwork ? "on" : "off",
+            args.Count == 2 ? args[1].Trim() : string.Empty).ConfigureAwait(false));
     }
 
     // What the word stands for: no access, the server alone, or every device of the tunnel network.

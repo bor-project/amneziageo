@@ -49,8 +49,10 @@ public sealed record ConfigEntry(
     bool InboundNetwork = false,
     // Interface addresses the config declares, joined by commas.
     string Address = "",
-    // API port of the server; zero takes the port of the Endpoint.
-    int ApiPort = 0);
+    // API port of the server; zero takes the default below.
+    int ApiPort = 0,
+    // Port the text names for the API of the server, else the port of the Endpoint; zero when it names neither.
+    int DefaultApiPort = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

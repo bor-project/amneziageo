@@ -2329,7 +2329,7 @@ internal sealed class LinuxAgent : IDisposable
         && _boundStatus == ConnectionStatus.Connected
         && string.Equals(config, _selectedTarget, StringComparison.Ordinal);
 
-    // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
+    // Where the send leg uploads to, and whether that is the server of the config.
     private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
     {
         if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
@@ -2586,7 +2586,8 @@ internal sealed class LinuxAgent : IDisposable
             transport?.AllowInbound ?? false,
             transport?.InboundNetwork ?? false,
             string.Join(", ", WgConfigEditor.GetAddresses(text)),
-            transport?.ApiPort ?? 0);
+            transport?.ApiPort ?? 0,
+            ServerOffers.DefaultPort(text));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

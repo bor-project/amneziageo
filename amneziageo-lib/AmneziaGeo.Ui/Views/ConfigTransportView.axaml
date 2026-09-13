@@ -134,6 +134,7 @@
                Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
                Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}"
                Classes="field" Width="90" HorizontalAlignment="Left" VerticalAlignment="Center"
+               controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="65535" controls:NumericInput.AllowEmpty="True"
                Text="{Binding ApiPort}" Watermark="{Binding ApiPortDefault}" />
     </Grid>
 

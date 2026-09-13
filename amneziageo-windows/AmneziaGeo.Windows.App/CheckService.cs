@@ -194,7 +194,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         }
     }
 
-    // Where the send leg uploads to, and whether that is the server of the config. A pass is taken per run.
+    // Where the send leg uploads to, and whether that is the server of the config.
     private async Task<(string Url, bool Own)> UploadAsync(
         IStateStore store, string config, string path, string chosen, CancellationToken ct)
     {

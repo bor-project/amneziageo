@@ -110,6 +110,7 @@ public static class CliRunner
               config exclusions <name> (--file <path> | --stdin | --list a,b,c | --clear)
               config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off]
               config mtu <name> auto|config|<number>   packet size: picked, from the text, or set here
+              config api-port <name> [<port>]   port of the API of the server; omit to clear
               config geo <name> on|off [rule...]
 
             routing lists

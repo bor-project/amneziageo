@@ -26,10 +26,17 @@ internal static class NumericInput
     public static readonly AttachedProperty<int> MaximumProperty =
         AvaloniaProperty.RegisterAttached<TextBox, int>("Maximum", typeof(NumericInput), int.MaxValue);
 
+    /// <summary>
+    /// Оставляет пустое поле пустым.
+    /// </summary>
+    public static readonly AttachedProperty<bool> AllowEmptyProperty =
+        AvaloniaProperty.RegisterAttached<TextBox, bool>("AllowEmpty", typeof(NumericInput));
+
     static NumericInput()
     {
         MinimumProperty.Changed.AddClassHandler<TextBox>(OnBoundChanged);
         MaximumProperty.Changed.AddClassHandler<TextBox>(OnBoundChanged);
+        AllowEmptyProperty.Changed.AddClassHandler<TextBox>(OnBoundChanged);
         TextBox.TextProperty.Changed.AddClassHandler<TextBox>(OnTextChanged);
     }
 
@@ -52,6 +59,16 @@ internal static class NumericInput
     /// Читает верхнюю границу.
     /// </summary>
     public static int GetMaximum(TextBox target) => target.GetValue(MaximumProperty);
+
+    /// <summary>
+    /// Задаёт, остаётся ли пустое поле пустым.
+    /// </summary>
+    public static void SetAllowEmpty(TextBox target, bool value) => target.SetValue(AllowEmptyProperty, value);
+
+    /// <summary>
+    /// Читает, остаётся ли пустое поле пустым.
+    /// </summary>
+    public static bool GetAllowEmpty(TextBox target) => target.GetValue(AllowEmptyProperty);
 
     private static void OnBoundChanged(TextBox target, AvaloniaPropertyChangedEventArgs e)
     {
@@ -88,6 +105,11 @@ internal static class NumericInput
         }
 
         var text = target.Text ?? string.Empty;
+        if (text.Length == 0 && GetAllowEmpty(target))
+        {
+            return;
+        }
+
         var value = Bound(text, GetMinimum(target), GetMaximum(target)).ToString(CultureInfo.InvariantCulture);
         if (!string.Equals(text, value, StringComparison.Ordinal))
         {

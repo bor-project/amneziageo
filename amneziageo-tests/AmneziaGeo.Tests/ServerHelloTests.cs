@@ -253,7 +253,7 @@ public sealed class ServerHelloTests
     }
 
     [Fact]
-    public async Task EveryRun_TakesAPassOfItsOwn()
+    public async Task ARun_TakesTheKeptPassWhileItStands()
     {
         var client = Keys();
         var server = Keys();
@@ -262,12 +262,100 @@ public sealed class ServerHelloTests
         var target = Target(client.Private, server.Public, panel.Port);
 
         await offers.WarmAsync([target], CancellationToken.None);
+        var asked = panel.Asked;
         var first = SpeedArgs.Of(await offers.SpeedAsync(target, CancellationToken.None));
         var second = SpeedArgs.Of(await offers.SpeedAsync(target, CancellationToken.None));
 
         Assert.NotNull(first);
         Assert.NotNull(second);
-        Assert.NotEqual(first.Up, second.Up);
+        Assert.Equal(first.Up, second.Up);
+        Assert.Equal(asked, panel.Asked);
+    }
+
+    [Fact]
+    public async Task ARun_TakesAFreshPassOnceTheKeptOneIsAboutToRunOut()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public) { PassLife = TimeSpan.FromSeconds(30) };
+        var offers = new ServerOffers(TimeSpan.Zero);
+        var target = Target(client.Private, server.Public, panel.Port);
+
+        await offers.WarmAsync([target], CancellationToken.None);
+        var kept = SpeedArgs.Of(offers.Offer("stand"));
+        var run = SpeedArgs.Of(await offers.SpeedAsync(target, CancellationToken.None));
+
+        Assert.NotNull(kept);
+        Assert.NotNull(run);
+        Assert.NotEqual(kept.Up, run.Up);
+    }
+
+    [Fact]
+    public async Task TheServer_IsAskedWhereTheTextNamesIt()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+
+        await offers.WarmAsync([Named(client.Private, server.Public, "127.0.0.1:" + panel.Port.ToString(CultureInfo.InvariantCulture))], CancellationToken.None);
+
+        Assert.True(offers.Offer("stand").Ours);
+        Assert.Equal("127.0.0.1:" + panel.Port.ToString(CultureInfo.InvariantCulture), offers.Offer("stand").Authority());
+    }
+
+    [Fact]
+    public async Task TheApiPortOfTheSettings_OutranksThePortTheTextNames()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+
+        await offers.WarmAsync([Named(client.Private, server.Public, "127.0.0.1:9") with { ApiPort = panel.Port }], CancellationToken.None);
+
+        Assert.True(offers.Offer("stand").Ours);
+    }
+
+    [Fact]
+    public async Task ASessionTheTunnelNames_OutlivesTheProcessThatAsked()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var file = Path.Combine(Path.GetTempPath(), "offers-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var target = Target(client.Private, server.Public, panel.Port) with { Session = "1757750000000" };
+            await new ServerOffers(TimeSpan.Zero, file).WarmAsync([target], CancellationToken.None);
+            var asked = panel.Asked;
+
+            var again = new ServerOffers(TimeSpan.Zero, file);
+            Assert.True(again.Offer("stand").Ours);
+            Assert.False(again.Observe("stand", true, target.Session));
+            await again.WarmAsync([target], CancellationToken.None);
+            Assert.Equal(asked, panel.Asked);
+
+            Assert.True(again.Observe("stand", true, "1757750099000"));
+            await again.WarmAsync([target with { Session = "1757750099000" }], CancellationToken.None);
+            Assert.True(panel.Asked > asked);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void TheApiPoints_AreReadOutOfTheCommentOfTheText()
+    {
+        var text = "[Interface]\n# AmneziaGeo Api = 10.9.0.1:51820, [fd00::1]:9443, host:1, 10.9.0.2:70000\nAddress = 10.9.0.5/32\n\n[Peer]\nEndpoint = 192.0.2.1:51821\n";
+
+        Assert.Equal([("10.9.0.1", 51820), ("fd00::1", 9443)], WgConfigEditor.GetApiPoints(text));
+        Assert.Empty(WgConfigEditor.GetApiPoints("[Peer]\nEndpoint = 192.0.2.1:51821\n"));
+        Assert.Equal(51820, ServerOffers.DefaultPort(text));
+        Assert.Equal(51821, ServerOffers.DefaultPort("[Peer]\nEndpoint = 192.0.2.1:51821\n"));
+        Assert.Equal(0, ServerOffers.DefaultPort(string.Empty));
     }
 
     [Fact]
@@ -358,6 +446,12 @@ public sealed class ServerHelloTests
         $"[Interface]\nPrivateKey = {privateKey}\nAddress = 127.0.0.5/24\n\n[Peer]\nPublicKey = {serverKey}\nEndpoint = 192.0.2.1:{endpointPort.ToString(CultureInfo.InvariantCulture)}\n",
         true);
 
+    // A configuration whose text names the API of the server away from the first host of its subnet.
+    private static OfferTarget Named(string privateKey, string serverKey, string point) => new(
+        "stand",
+        $"[Interface]\nPrivateKey = {privateKey}\nAddress = 10.99.0.5/24\n# AmneziaGeo Api = {point}\n\n[Peer]\nPublicKey = {serverKey}\nEndpoint = 192.0.2.1:9\n",
+        true);
+
     private static ServerOffer Offer(bool inside)
     {
         using var json = JsonDocument.Parse(
@@ -440,6 +534,11 @@ public sealed class ServerHelloTests
         /// Whether the body changes after it is countersigned.
         /// </summary>
         public bool Tamper { get; init; }
+
+        /// <summary>
+        /// How long a pass it hands out stands.
+        /// </summary>
+        public TimeSpan PassLife { get; init; } = TimeSpan.FromMinutes(5);
 
         /// <summary>
         /// The public key of the peer whose answer held, empty while none has.
@@ -529,7 +628,7 @@ public sealed class ServerHelloTests
                             down = Origin + "/api/speed/down?bytes=25000000&ticket=" + pass,
                             up = Origin + "/api/speed/up?ticket=" + pass,
                             limit = 104857600,
-                            expires = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+                            expires = DateTimeOffset.UtcNow.Add(PassLife).ToString("O"),
                         },
                     ["subscription"] = new { url = "https://localhost:2096/sub/one", updateHours = 12 },
                     ["future"] = new { anything = true },

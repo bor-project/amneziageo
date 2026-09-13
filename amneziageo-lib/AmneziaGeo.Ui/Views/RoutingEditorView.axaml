@@ -131,7 +131,7 @@
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding RouteTrims}" />
 
           <!-- Заполняет показанную корзину: туннельную - сетями подключений, остальные - сетями машины. -->
-          <Button Classes="linkbtn"
+          <Button Classes="linkbtn" IsVisible="{Binding CanAddSubnets}"
                   HorizontalAlignment="Left" Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}">
             <TextBlock Text="{Binding AddSubnetsText}" TextWrapping="Wrap" />
           </Button>

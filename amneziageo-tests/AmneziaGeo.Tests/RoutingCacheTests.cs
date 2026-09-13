@@ -785,6 +785,28 @@ public sealed class RoutingCacheTests
         Assert.Equal(0, cache.Size);
     }
 
+    // A list edit changes the way back for access from the tunnel, so the pinned set follows it on the running cache.
+    [Fact]
+    public void Pin_ReleasesWhatTheNewRangesCoverAndDecidesWhatLeftThem()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["10.80.0.0/16"], pinned: ["1.1.1.1"]);
+        cache.Note(IPAddress.Parse("10.80.1.1"));
+
+        cache.Pin(["1.1.1.1", "10.80.0.0/16"]);
+        cache.Note(IPAddress.Parse("10.80.1.2"));
+
+        Assert.Equal(new[] { "10.80.1.1" }, applier.Untunneled);
+        Assert.Equal(0, cache.Size);
+        Assert.Equal(new[] { "1.1.1.1", "10.80.0.0/16" }, cache.PinnedRoutes);
+
+        cache.Pin(["1.1.1.1"]);
+        cache.Note(IPAddress.Parse("10.80.1.2"));
+
+        Assert.Equal(new[] { "10.80.1.1", "10.80.1.2" }, applier.Tunneled);
+        Assert.Equal(1, cache.Size);
+    }
+
     [Fact]
     public void UnpinnedResolver_IsStillDecidedByTheRanges()
     {

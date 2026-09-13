@@ -27,7 +27,6 @@ internal sealed class DomainTracker(
     IReadOnlyList<string> listRoutes,
     int routeTtlSeconds,
     bool stripV6,
-    bool lazyRanges,
     RoutingCache? routing = null,
     SynSentReset? synReset = null)
 {
@@ -792,21 +791,20 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Applies a routing list the agent just persisted: retags persisted rows and rebuilds the domain matcher.
-    /// Newly listed domains are not pre-resolved - they resolve when first queried.
+    /// Applies a routing list the agent just persisted: squares the standing ranges with <paramref name="standing"/>,
+    /// retags persisted rows and rebuilds the domain matcher. Newly listed domains are not pre-resolved - they
+    /// resolve when first queried.
     /// </summary>
-    public void ApplyList(AmneziaGeo.Decl.ActiveRoutingListMaterialization current, CancellationToken ct)
+    public void ApplyList(AmneziaGeo.Decl.ActiveRoutingListMaterialization current, IReadOnlyList<string>? standing, CancellationToken ct)
     {
         if (current.Generation == _knownGeneration && current.Share == _knownShare)
         {
             return;
         }
 
-        // With lazy ranges nothing is materialized up front, so there is no static set to reconcile - the routing
-        // cache re-decides each destination against the new rules.
-        if (!lazyRanges)
+        if (standing is not null)
         {
-            ReconcileStaticRoutes(current.Routes);
+            ReconcileStaticRoutes(standing);
         }
 
         // Retag before the matcher rebuild: a domain newly matched under the new list must persist with the

@@ -1339,6 +1339,18 @@
   <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
     <value>No active local subnets found.</value>
   </data>
+  <data name="RoutingSettings_AllTunnelSubnetsPresent" xml:space="preserve">
+    <value>All VPN connection networks are already in the list.</value>
+  </data>
+  <data name="RoutingSettings_NoTunnelSubnets" xml:space="preserve">
+    <value>VPN connections name no local networks.</value>
+  </data>
+  <data name="RoutingSettings_TunnelSubnetsAdded" xml:space="preserve">
+    <value>VPN connection networks added: {0}. Review the list and press «Save».</value>
+  </data>
+  <data name="RoutingSettings_TunnelSubnetsAddressed" xml:space="preserve">
+    <value>Networks sent to their VPN connection: {0}. Review the list and press «Save».</value>
+  </data>
   <data name="RoutingSummary_Detail" xml:space="preserve">
     <value>{0} rules · {1} routes · {2} domains</value>
   </data>

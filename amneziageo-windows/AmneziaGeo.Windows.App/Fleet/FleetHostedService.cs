@@ -107,9 +107,9 @@ internal sealed class FleetHostedService(
     // mode off leaves the machine to stand back up on the tunnel it was on.
     private async Task RestoreAsync(CancellationToken ct)
     {
-        var stored = await fleetStore.LoadAsync(ct);
         var library = await configRepo.ListAsync(ct);
         var known = new HashSet<string>(library, StringComparer.Ordinal);
+        var stored = await ForgetGoneAsync(await fleetStore.LoadAsync(ct), known, ct);
 
         // A server deleted while the mode was off leaves nothing behind; the first time in, the servers are
         // listed as the library lists them.
@@ -144,6 +144,29 @@ internal sealed class FleetHostedService(
         }
 
         Mirror();
+    }
+
+    // Strikes from the stored state every server the library no longer holds and writes the state back.
+    private async Task<FleetState> ForgetGoneAsync(FleetState stored, IReadOnlySet<string> known, CancellationToken ct)
+    {
+        var gone = stored.Servers().Where(name => !known.Contains(name)).ToArray();
+        if (gone.Length == 0)
+        {
+            return stored;
+        }
+
+        var kept = stored.Within(known);
+        try
+        {
+            await fleetStore.SaveAsync(kept, ct);
+            logger.LogInformation("the set named {Names}, which the library no longer holds, so they were struck from its order, roles and addressed rules", string.Join(", ", gone));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "the set named {Names}, which the library no longer holds; they are left out, but the stored state could not be written", string.Join(", ", gone));
+        }
+
+        return kept;
     }
 
     /// <summary>
@@ -223,13 +246,24 @@ internal sealed class FleetHostedService(
 
         // A tunnel reads its duties at bring-up, so one that has gained or lost the default route - the tunnel
         // ahead of it left the set - is dialled again; readdressed rules it takes up while it runs.
+        // Every such tunnel is down before any comes back, so the one taking the lookups over finds them let go.
+        var redialled = Ordered([.. _members.Values.Where(member => fleet.For(member.Name) != member.Duties).Select(member => member.Name)]);
+        foreach (var name in Enumerable.Reverse(redialled))
+        {
+            logger.LogInformation("{Name}: what it carries changed, so it is connected again to take it up", name);
+            await StopAsync(name);
+        }
+
+        foreach (var name in redialled)
+        {
+            Start(name, ct);
+            await SettleAsync(name, change);
+        }
+
         foreach (var member in _members.Values.ToArray())
         {
-            if (fleet.For(member.Name) != member.Duties)
+            if (redialled.Contains(member.Name, StringComparer.Ordinal))
             {
-                logger.LogInformation("{Name}: what it carries changed, so it is connected again to take it up", member.Name);
-                await StopAsync(member.Name);
-                Start(member.Name, ct);
                 continue;
             }
 

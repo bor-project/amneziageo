@@ -63,6 +63,7 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
         _targets = targets;
         RouteChoices = Choices(servers, false);
         FallbackChoices = Choices(servers, true);
+        OnPropertyChanged(nameof(CanAddSubnets));
         DropSettled();
         RebuildRuleItems();
     }
@@ -102,6 +103,13 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
 
         foreach (var pair in _held.ToList())
         {
+            // Адрес правила, ушедшего из туннельной корзины, не отдаётся.
+            if (!ProxyRules.Contains(pair.Key))
+            {
+                _held.Remove(pair.Key);
+                continue;
+            }
+
             if (!await AddressAsync(pair.Key, pair.Value.Target.Format(), pair.Value.Fallback.Format()))
             {
                 return false;
@@ -141,13 +149,20 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
     }
 
     /// <inheritdoc/>
-    protected override void Address(string token, string config)
+    protected override bool AddressesRules => RouteChoices.Count > 0;
+
+    /// <inheritdoc/>
+    protected override bool Address(string token, string config, bool present)
     {
         // Сеть подключения едет на него, а пока он не поднят - напрямую: машина в своей сети сидит и без туннеля.
-        if (RouteChoices.Any(choice => string.Equals(choice.Word, config, StringComparison.Ordinal)))
+        if (!RouteChoices.Any(choice => string.Equals(choice.Word, config, StringComparison.Ordinal))
+            || (present && !RouteOf(token).IsDefault))
         {
-            Hold(token, new RuleRoute(new RuleTarget(RuleTarget.Server, config), new RuleTarget(RuleTarget.Direct)));
+            return false;
         }
+
+        Hold(token, new RuleRoute(new RuleTarget(RuleTarget.Server, config), new RuleTarget(RuleTarget.Direct)));
+        return true;
     }
 
     /// <inheritdoc/>

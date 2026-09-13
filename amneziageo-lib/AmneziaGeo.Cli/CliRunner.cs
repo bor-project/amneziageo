@@ -173,7 +173,7 @@ public static class CliRunner
               runtime                           the configuration the next connect would use
               sessions [--filter <text>]        every address the tunnel decides for, and why
               subnets                           local subnets, ready to paste into exclusions
-              tunnel-subnets                    private networks the configurations carry
+              tunnel-subnets                    private networks and hosts the configurations reach
               apps [--filter <text>]            what per-app rules can address here
               doctor                            check the things a headless install gets wrong
               check                             measure the channel leg by leg and name the culprit

@@ -497,8 +497,8 @@ internal sealed class ConfigRunner(
             {
                 var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
                 // Per-poll handshake detail for Debug/Trace.
-                logger.LogDebug("{Member}: waiting for the server - last handshake {Hs}s ago, sent {Tx} B, received {Rx} B, {Sec}s into this attempt",
-                    member, status.HandshakeSec, status.TxBytes, status.RxBytes, elapsed);
+                logger.LogDebug("{Member}: waiting for the server - last handshake {Handshake}, sent {Tx} B, received {Rx} B, {Sec}s into this attempt",
+                    member, LastHandshake(status.HandshakeSec), status.TxBytes, status.RxBytes, elapsed);
                 if (status.HandshakeSec > 0)
                 {
                     logger.LogInformation("{Member}: the server answered after {Sec}s, the tunnel is up", member, elapsed);
@@ -604,6 +604,12 @@ internal sealed class ConfigRunner(
         }
 
         return new ConnectOutcome(false, ConnectFailureReason.ServiceLaunchFailed, started == 0 ? string.Empty : ScError(started));
+    }
+
+    // How long ago the handshake at this unix time was.
+    private static string LastHandshake(long handshakeSec)
+    {
+        return handshakeSec > 0 ? $"{Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - handshakeSec)}s ago" : "none yet";
     }
 
     // Keep the surfaced detail short; the message never carries secrets but may be long.

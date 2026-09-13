@@ -93,4 +93,121 @@ public static class FleetTargets
 
         return targets;
     }
+
+    /// <summary>
+    /// Drops the addresses of the rules a list no longer sends into a tunnel; answers whether any went.
+    /// </summary>
+    public static bool KeepRules(IDictionary<string, RuleRoute> targets, long listId, IReadOnlySet<string> tokens)
+    {
+        var dropped = false;
+        foreach (var key in targets.Keys.ToArray())
+        {
+            if (TrySplit(key, out var id, out var token) && id == listId && !tokens.Contains(token))
+            {
+                targets.Remove(key);
+                dropped = true;
+            }
+        }
+
+        return dropped;
+    }
+
+    /// <summary>
+    /// Leaves both ends naming a server that is gone to the machine; answers whether any moved.
+    /// </summary>
+    public static bool ForgetServer(IDictionary<string, RuleRoute> targets, string name)
+    {
+        return Strike(targets, server => string.Equals(server, name, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Leaves both ends naming a server outside <paramref name="known"/> to the machine; answers whether any moved.
+    /// </summary>
+    public static bool KeepServers(IDictionary<string, RuleRoute> targets, IReadOnlySet<string> known)
+    {
+        return Strike(targets, server => !known.Contains(server));
+    }
+
+    /// <summary>
+    /// The servers named at either end of an addressed rule.
+    /// </summary>
+    public static IReadOnlySet<string> Servers(IReadOnlyDictionary<string, RuleRoute> targets)
+    {
+        var servers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var route in targets.Values)
+        {
+            foreach (var end in new[] { route.Target, route.Fallback })
+            {
+                if (end.Mode == RuleTarget.Server && !string.IsNullOrEmpty(end.Name))
+                {
+                    servers.Add(end.Name);
+                }
+            }
+        }
+
+        return servers;
+    }
+
+    // Leaves both ends naming a struck server to the machine; answers whether any moved.
+    private static bool Strike(IDictionary<string, RuleRoute> targets, Func<string, bool> struck)
+    {
+        var moved = false;
+        foreach (var key in targets.Keys.ToArray())
+        {
+            var route = targets[key];
+            var kept = new RuleRoute(
+                Struck(route.Target, struck) ? RuleTarget.Default : route.Target,
+                Struck(route.Fallback, struck) ? RuleTarget.Default : route.Fallback);
+            if (kept == route)
+            {
+                continue;
+            }
+
+            moved = true;
+            if (kept.IsDefault)
+            {
+                targets.Remove(key);
+            }
+            else
+            {
+                targets[key] = kept;
+            }
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Names a renamed server as it is called now at both ends; answers whether any moved.
+    /// </summary>
+    public static bool RenameServer(IDictionary<string, RuleRoute> targets, string oldName, string newName)
+    {
+        var moved = false;
+        foreach (var key in targets.Keys.ToArray())
+        {
+            var route = targets[key];
+            var renamed = new RuleRoute(
+                Names(route.Target, oldName) ? new RuleTarget(RuleTarget.Server, newName) : route.Target,
+                Names(route.Fallback, oldName) ? new RuleTarget(RuleTarget.Server, newName) : route.Fallback);
+            if (renamed == route)
+            {
+                continue;
+            }
+
+            targets[key] = renamed;
+            moved = true;
+        }
+
+        return moved;
+    }
+
+    private static bool Names(RuleTarget end, string name)
+    {
+        return end.Mode == RuleTarget.Server && string.Equals(end.Name, name, StringComparison.Ordinal);
+    }
+
+    private static bool Struck(RuleTarget end, Func<string, bool> struck)
+    {
+        return end.Mode == RuleTarget.Server && struck(end.Name);
+    }
 }

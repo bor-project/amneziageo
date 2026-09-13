@@ -27,7 +27,7 @@ internal static class AppHost
         // Structured log store (ageo + routes tables in logs\log.db), shared by the agent and per-tunnel
         // processes over WAL. Registered by factory so the container owns and flushes it on shutdown; AppEntry
         // initializes it and binds the static routing-log writer to it.
-        builder.Services.AddSingleton(_ => new SqliteLogStore(TunnelPaths.LogDbFile()));
+        builder.Services.AddSingleton(_ => new SqliteLogStore(TunnelPaths.LogDbFile(), verify: agentTarget is not null));
 
         // Live verbosity switch: shared by both processes, kept in sync with the "log-level" setting.
         var logLevel = new LogLevelController();

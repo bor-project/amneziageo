@@ -72,6 +72,23 @@ Import also takes `--link` with a `vpn://` URL or `--stdin`.
 
 A packaged build carries the release manifest it checks against, so the app updates itself: the window offers the new version, the agent downloads exactly the packages this machine has installed for its own architecture, verifies them against the published SHA-256 and lets apt install them from a transient unit that outlives the agent restart. `amneziageo update check` reports the same from the console. Restart the window afterwards to run the new interface too.
 
+### Docker
+
+The agent and the console client also run in a container. `amneziageo-linux/docker/Dockerfile` builds the image from the repository root for amd64 and arm64; the container needs `NET_ADMIN` and `/dev/net/tun`.
+
+```bash
+cd amneziageo-linux/docker
+mkdir -p configs && cp ~/work.conf configs/
+AMNEZIAGEO_CONNECT=work docker compose up -d --build
+docker compose exec amneziageo amneziageo geo download
+docker compose exec amneziageo amneziageo tui
+```
+
+Every `configs/<name>.conf` is imported at start under its file name, and `AMNEZIAGEO_CONNECT` connects on one of them and keeps the tunnel up across restarts. The library lives in a volume, the agent log goes to `docker compose logs`.
+
+- `compose.yaml` - the container keeps a network of its own. Other services join it with `network_mode: service:amneziageo` and reach the world the way the routing list says; such a service loses the network whenever the agent's container restarts and comes back with `docker compose up -d --force-recreate <service>`. The local proxy is published on 10808 (SOCKS5) and 10809 (HTTP): `docker compose exec amneziageo amneziageo proxy on --auth user:password`. Connections that come in through published ports are answered past the tunnel.
+- `compose.host.yaml` - `network_mode: host`: the tunnel, the routes and the resolver belong to the host itself. The host's `/etc` is mounted so that the agent points the host's `resolv.conf` at itself (`AMNEZIAGEO_RESOLV_CONF`), and the system bus with AppArmor and SELinux confinement lifted, so that systemd-resolved asks the agent alone while the tunnel is up. It does not run beside an installed agent: both take the same interface and resolver address.
+
 ## Android
 
 Android 7.0 or newer.

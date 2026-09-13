@@ -105,6 +105,8 @@ internal sealed class DnsProxy
     private volatile bool _hasDirectDomains;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress? _tunnelUpstreamSecondary;
+    // The index of the adapter a query to the tunnel's resolver leaves by; null while it is not known.
+    private readonly Func<uint?>? _tunnelInterface;
     private readonly IPAddress _localUpstream;
     private readonly IPAddress? _lanUpstream;
     // All LAN resolvers; a multi-provider box races them and takes the first answer with records so a
@@ -125,6 +127,9 @@ internal sealed class DnsProxy
     // Queries the tunnel resolver failed to answer and the local one took over, since it last answered. Kept so
     // the takeover and the recovery are each said once instead of per query.
     private int _rescued;
+
+    // Set once the session is ending.
+    private volatile bool _ending;
     // Names the clients of the access point were given a stand-in address for; empty while no point stands.
     private HotspotNames? _clientNames;
     // Socket on the address the access point hands its clients. A query arriving there is a client's.
@@ -133,8 +138,9 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null)
     {
+        _tunnelInterface = tunnelInterface;
         _appDns = appDns;
         _routing = routing;
         _domains = domains;
@@ -173,6 +179,15 @@ internal sealed class DnsProxy
                 BoundV4 = candidate;
                 break;
             }
+        }
+
+        if (BoundV4 is null)
+        {
+            _logger.LogWarning("DNS could not be taken over on port 53 of {Addresses}; names are resolved by the system instead, so rules by domain will not apply", string.Join(", ", V4Candidates.Select(candidate => candidate.ToString())));
+        }
+        else if (!BoundV4.Equals(V4Candidates[0]))
+        {
+            _logger.LogInformation("{Taken}:53 is taken, so DNS is handled on {Address}:53", V4Candidates[0], BoundV4);
         }
 
         if (Bind(IPAddress.IPv6Loopback))
@@ -268,6 +283,14 @@ internal sealed class DnsProxy
             _clientNames = null;
             return false;
         }
+    }
+
+    /// <summary>
+    /// Marks the session as ending; a lookup the tunnel's resolver leaves unanswered from then on is not reported.
+    /// </summary>
+    public void MarkEnding()
+    {
+        _ending = true;
     }
 
     /// <summary>
@@ -596,7 +619,7 @@ internal sealed class DnsProxy
         }
         catch (SocketException ex)
         {
-            _logger.LogWarning(ex, "DNS on {Address}:53 could not be taken over - another program holds it; names are resolved by the system instead, so rules by domain will not apply", address);
+            _logger.LogDebug(ex, "{Address}:53 could not be bound", address);
             return false;
         }
     }
@@ -798,7 +821,7 @@ internal sealed class DnsProxy
                 var lanRace = _lanPool.Count > 1 && (isLocal || (!matched && _localIsLan));
                 var result = lanRace
                     ? await ForwardCoalescedRacedAsync(name, type, query)
-                    : await ForwardCoalescedAsync(name, type, query, upstream, secondary);
+                    : await ForwardCoalescedAsync(name, type, query, upstream, secondary, isLocal ? null : Via(upstream));
                 leader = result.Leader;
                 // The tunnel resolver went silent: ask the local one rather than leave the client without an
                 // answer. The addresses still take the tunnel below.
@@ -1009,7 +1032,7 @@ internal sealed class DnsProxy
             byte[] response;
             try
             {
-                response = await ForwardAsync(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary).ConfigureAwait(false);
+                response = await ForwardAsync(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary, via: _tunnelInterface?.Invoke()).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1245,7 +1268,7 @@ internal sealed class DnsProxy
         return type.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + name.TrimEnd('.').ToLowerInvariant();
     }
 
-    private static async Task<byte[]> ForwardAsync(byte[] query, IPAddress upstream, IPAddress? secondary = null, CancellationToken ct = default)
+    private static async Task<byte[]> ForwardAsync(byte[] query, IPAddress upstream, IPAddress? secondary = null, CancellationToken ct = default, uint? via = null)
     {
         var upstreams = secondary is null || secondary.Equals(upstream)
             ? new[] { upstream }
@@ -1272,6 +1295,11 @@ internal sealed class DnsProxy
             try
             {
                 using var client = new UdpClient();
+                if (via is { } index)
+                {
+                    UnicastInterface.Pin(client.Client, index);
+                }
+
                 client.Connect(new IPEndPoint(upstreams[idx], 53));
                 client.Send(query, query.Length);
                 if (firstAttempt)
@@ -1362,9 +1390,15 @@ internal sealed class DnsProxy
     }
 
     // Runs the upstream query once per in-flight (name,type); only the leader writes the routing-log line.
-    private Task<CoalescedResult> ForwardCoalescedAsync(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null)
+    private Task<CoalescedResult> ForwardCoalescedAsync(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null, uint? via = null)
     {
-        return CoalesceAsync(name, type, () => ForwardAsync(query, upstream, secondary));
+        return CoalesceAsync(name, type, () => ForwardAsync(query, upstream, secondary, via: via));
+    }
+
+    // The adapter a query to this resolver leaves by: the tunnel's own for its resolver, the routing table's for any other.
+    private uint? Via(IPAddress upstream)
+    {
+        return upstream.Equals(_tunnelUpstream) || upstream.Equals(_tunnelUpstreamSecondary) ? _tunnelInterface?.Invoke() : null;
     }
 
     // Coalesced LAN-pool race: one racing forward per in-flight (name,type).
@@ -1389,7 +1423,7 @@ internal sealed class DnsProxy
             return null;
         }
 
-        if (Interlocked.Increment(ref _rescued) == 1)
+        if (!_ending && Interlocked.Increment(ref _rescued) == 1)
         {
             _logger.LogWarning("the resolver in the tunnel stopped answering; names are looked up on your own network's resolver until it responds again, so browsing keeps working");
         }
@@ -1673,7 +1707,7 @@ internal sealed class DnsProxy
 
     private async Task CollectAddressesAsync(string host, int type, List<IPAddress> ips)
     {
-        var response = await ForwardAsync(DnsMessage.BuildQuery(host, type), _tunnelUpstream, _tunnelUpstreamSecondary).ConfigureAwait(false);
+        var response = await ForwardAsync(DnsMessage.BuildQuery(host, type), _tunnelUpstream, _tunnelUpstreamSecondary, via: _tunnelInterface?.Invoke()).ConfigureAwait(false);
         foreach (var ip in DnsMessage.Addresses(response))
         {
             ips.Add(ip);

@@ -217,7 +217,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var ack = await ExecuteCommandAsync(envelope.Command, ct);
         var ackLine = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: ack), IpcJson.Options);
         await connection.SendAsync(ackLine, ct);
-        if (ack.Ok)
+        if (ack.Ok && envelope.Command.Op != IpcContract.OpLogClient)
         {
             await BroadcastIfChangedAsync(ct);
         }
@@ -309,7 +309,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return Task.FromResult(new IpcAck(false, $"unknown command: {command.Op}"));
     }
 
-    // Records a UI-side diagnostic line in the agent log; the UI process keeps no log of its own.
+    // Records a line from the tray or the app window in the agent log.
     private IpcAck LogClient(IReadOnlyList<string> args)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -317,8 +317,25 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "log-client requires a message");
         }
 
+        if (ClientLogRow.TryRead(args, out var row))
+        {
+            WriteClientRow(row);
+            return new IpcAck(true, "logged");
+        }
+
         logger.LogWarning("reported by the app window: {Detail}", args[0]);
         return new IpcAck(true, "logged");
+    }
+
+    // Puts a client row into the agent log under its own source and time when the log takes its level.
+    private void WriteClientRow(ClientLogRow row)
+    {
+        if (!logLevel.Captures(row.LevelId))
+        {
+            return;
+        }
+
+        logStore.AppendAgent(Math.Min(row.UnixMs, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()), row.LevelId, row.Source, row.Message);
     }
 
     private async Task<IpcAck> AddConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -424,6 +441,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         foreach (var root in roots)
         {
             var scope = ScopeFor(root);
+            // Removing a config of this library acts on this library.
+            _connectionScope.Value = scope;
             var service = new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope));
             foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
             {
@@ -542,6 +561,34 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     protected virtual Task RetargetConfigAsync(string oldName, string newName, CancellationToken ct)
     {
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Takes the addresses off the rules a list no longer sends into a tunnel.
+    /// </summary>
+    protected virtual Task KeepAddressesAsync(long listId, IReadOnlySet<string> tokens, CancellationToken ct)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The rules a list sends into a tunnel, written as they are addressed.
+    /// </summary>
+    protected async Task<IReadOnlySet<string>> TunnelTokensAsync(long listId, CancellationToken ct)
+    {
+        var tokens = new HashSet<string>(StringComparer.Ordinal);
+        var list = await store.GetRoutingListAsync(listId, ct).ConfigureAwait(false);
+        if (list is null)
+        {
+            return tokens;
+        }
+
+        foreach (var rule in list.Rules.Where(rule => rule.Role == RouteRole.Proxy))
+        {
+            tokens.Add(GeoConfigurator.Format(rule));
+        }
+
+        return tokens;
     }
 
     // Clear target binding when the removed config was selected.
@@ -1181,11 +1228,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
     }
 
-    // Private networks named by the stored configurations, each behind the name of the one naming it and a
-    // tab, without the ones the machine stands in itself; newline-separated.
+    // Private networks and hosts the stored configurations reach, each behind the name of the one reaching it and
+    // a tab; newline-separated.
     private async Task<IpcAck> ListTunnelSubnetsAsync(CancellationToken ct)
     {
-        var own = routes.LocalSubnets();
         var lines = new List<string>();
         foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
@@ -1194,12 +1240,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 continue;
             }
 
-            foreach (var network in PrivateNetworks.FromConfig(text))
+            foreach (var network in PrivateNetworks.Reachable(text))
             {
-                if (!PrivateNetworks.Overlaps(network, own))
-                {
-                    lines.Add($"{name}\t{network}");
-                }
+                lines.Add($"{name}\t{network}");
             }
         }
 
@@ -1483,6 +1526,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             }
         }
 
+        await KeepAddressesAsync(resultId, await TunnelTokensAsync(resultId, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         await ReprojectAsync(resultId, ct);
         AnnounceRules();
         logger.LogInformation("saved routing list {Id} '{Name}' ({Rules} rules)", resultId, name, args.Count - 2);
@@ -1547,6 +1591,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         await store.RemoveRoutingListAsync(id, ct);
+        await KeepAddressesAsync(id, new HashSet<string>(StringComparer.Ordinal), ct).ConfigureAwait(false);
         logger.LogInformation("removed routing list {Id}", id);
         return new IpcAck(true, $"removed routing list {id}");
     }

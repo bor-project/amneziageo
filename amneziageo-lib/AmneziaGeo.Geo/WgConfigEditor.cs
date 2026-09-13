@@ -47,6 +47,42 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the AllowedIPs entries of every peer in the config.
+    /// </summary>
+    public static IReadOnlyList<string> GetEveryAllowedIp(string config)
+    {
+        return Every(config, "AllowedIPs");
+    }
+
+    /// <summary>
+    /// Returns the entries of every interface Address line in the config.
+    /// </summary>
+    public static IReadOnlyList<string> GetEveryAddress(string config)
+    {
+        return Every(config, "Address");
+    }
+
+    // Entries of every line setting the key, past its comment.
+    private static IReadOnlyList<string> Every(string config, string key)
+    {
+        var found = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            var hash = line.IndexOf('#');
+            var text = hash < 0 ? line : line[..hash];
+            var separator = text.IndexOf('=');
+            if (separator <= 0 || !string.Equals(text[..separator].Trim(), key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            found.AddRange(text[(separator + 1)..].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        return found;
+    }
+
+    /// <summary>
     /// Returns the config with IPv6 entries removed from the interface Address line, keeping IPv4 only, so the
     /// adapter never receives a dangling IPv6 address on a v4-only tunnel. If no IPv4 entry remains (a v6-only
     /// config, for which an IPv4-only tunnel is meaningless), the Address line is left unchanged.

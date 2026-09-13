@@ -13,15 +13,22 @@ internal static class MachineMigration
     private static readonly string[] StatePatterns = ["dns-state*.txt", "route-state*.txt", "lan-state*.txt"];
 
     /// <summary>
-    /// Copies geo bases, logs, and tunnel runtime state from the legacy per-user root into the machine root when
-    /// absent. File operations only; runs before any logging opens the shared log database.
+    /// Copies geo bases, logs, and diagnostics from the legacy per-user root into the machine root while it has none
+    /// of its own, and moves the legacy tunnel runtime state there once. File operations only; runs before any
+    /// logging opens the shared log database.
     /// </summary>
     public static void SeedMachineFolders()
     {
+        Seed(AppDataRoot.Base(), AppDataRoot.MachineBase());
+    }
+
+    /// <summary>
+    /// Seeds the machine root <paramref name="target"/> from the legacy root <paramref name="source"/>.
+    /// </summary>
+    internal static void Seed(string source, string target)
+    {
         try
         {
-            var source = AppDataRoot.Base();
-            var target = AppDataRoot.MachineBase();
             if (PathsEqual(source, target) || !Directory.Exists(source))
             {
                 return;
@@ -30,19 +37,19 @@ internal static class MachineMigration
             Directory.CreateDirectory(target);
             foreach (var folder in MachineFolders)
             {
-                CopyDirIfAbsent(Path.Combine(source, folder), Path.Combine(target, folder));
+                var machine = Path.Combine(target, folder);
+                // Only a folder the machine root does not have yet.
+                if (!Directory.Exists(machine))
+                {
+                    CopyDir(Path.Combine(source, folder), machine);
+                }
             }
 
             foreach (var pattern in StatePatterns)
             {
-                if (!Directory.Exists(source))
-                {
-                    continue;
-                }
-
                 foreach (var file in Directory.EnumerateFiles(source, pattern))
                 {
-                    CopyFileIfAbsent(file, Path.Combine(target, Path.GetFileName(file)));
+                    MoveOrDrop(file, Path.Combine(target, Path.GetFileName(file)));
                 }
             }
         }
@@ -93,7 +100,7 @@ internal static class MachineMigration
         }
     }
 
-    private static void CopyDirIfAbsent(string source, string target)
+    private static void CopyDir(string source, string target)
     {
         if (!Directory.Exists(source))
         {
@@ -103,21 +110,34 @@ internal static class MachineMigration
         Directory.CreateDirectory(target);
         foreach (var dir in Directory.EnumerateDirectories(source))
         {
-            CopyDirIfAbsent(dir, Path.Combine(target, Path.GetFileName(dir)));
+            CopyDir(dir, Path.Combine(target, Path.GetFileName(dir)));
         }
 
         foreach (var file in Directory.EnumerateFiles(source))
         {
-            CopyFileIfAbsent(file, Path.Combine(target, Path.GetFileName(file)));
+            if (!IsTransactionFile(file))
+            {
+                File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
+            }
         }
     }
 
-    private static void CopyFileIfAbsent(string source, string target)
+    // The write-ahead log and shared-memory index of a database.
+    private static bool IsTransactionFile(string file)
     {
-        if (!File.Exists(target))
+        return file.EndsWith("-wal", StringComparison.OrdinalIgnoreCase) || file.EndsWith("-shm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Moves a legacy record into the machine root, or drops it when the machine root holds one of that name.
+    private static void MoveOrDrop(string source, string target)
+    {
+        if (File.Exists(target))
         {
-            File.Copy(source, target);
+            File.Delete(source);
+            return;
         }
+
+        File.Move(source, target);
     }
 
     private static bool PathsEqual(string a, string b)

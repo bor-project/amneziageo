@@ -64,6 +64,62 @@ public class PrivateNetworksTests
     }
 
     [Fact]
+    public void EveryPeerOfAConfig_OffersItsNetworks()
+    {
+        var config = "[Interface]\nAddress = 10.8.2.16/32\n[Peer]\nAllowedIPs = 0.0.0.0/0 # everything\n[Peer]\nallowedips=192.168.50.0/24,10.20.0.0/16";
+        Assert.Equal(["192.168.50.0/24", "10.20.0.0/16", "10.8.2.0/24"], PrivateNetworks.Reachable(config));
+    }
+
+    [Fact]
+    public void APrivateHost_IsOfferedAndAPublicOneIsNot()
+    {
+        var config = "[Peer]\nAllowedIPs = 10.0.1.1/32, 192.168.1.10, 8.8.8.8/32, 172.32.0.0/16, ::/0, fd00::5/128";
+        Assert.Equal(["10.0.1.1/32", "192.168.1.10/32", "fd00::5/128"], PrivateNetworks.Reachable(config));
+    }
+
+    [Fact]
+    public void ANetworkWrittenWithHostBits_IsOfferedAsItsNetwork()
+    {
+        var config = "[Peer]\nAllowedIPs = 192.168.1.77/24, 192.168.1.0/24";
+        Assert.Equal(["192.168.1.0/24"], PrivateNetworks.Reachable(config));
+    }
+
+    [Fact]
+    public void TheNetworkOfTheAddress_IsOfferedOnce()
+    {
+        var config = "[Interface]\nAddress = 10.9.9.13/32, fd00:9::13/128\n[Peer]\nAllowedIPs = 10.9.9.0/24";
+        Assert.Equal(["10.9.9.0/24", "fd00:9::/120"], PrivateNetworks.Reachable(config));
+    }
+
+    [Fact]
+    public void ARangeInsideTheMachinesNetwork_StaysOffTheTunnel()
+    {
+        var cut = PrivateNetworks.AroundLocal(["192.168.1.0/24", "192.168.1.128/25", "10.9.9.0/24", "91.108.4.0/22"], ["192.168.1.0/24"]);
+        Assert.Equal(["10.9.9.0/24", "91.108.4.0/22"], cut.Carried);
+        Assert.Equal(["192.168.1.0/24", "192.168.1.128/25"], cut.Left);
+        Assert.Empty(cut.Kept);
+    }
+
+    [Fact]
+    public void AWiderRange_KeepsTheMachinesNetworkOutside()
+    {
+        var cut = PrivateNetworks.AroundLocal(["192.168.0.0/16", "10.0.0.0/8"], ["192.168.1.0/24", "172.20.16.0/20"]);
+        Assert.Equal(["192.168.0.0/16", "10.0.0.0/8"], cut.Carried);
+        Assert.Empty(cut.Left);
+        Assert.Equal(["192.168.1.0/24"], cut.Kept);
+    }
+
+    [Fact]
+    public void AMachineStandingNowhere_CarriesEveryRange()
+    {
+        IReadOnlyList<string> ranges = ["192.168.1.0/24", "fd00::/8"];
+        var cut = PrivateNetworks.AroundLocal(ranges, []);
+        Assert.Same(ranges, cut.Carried);
+        Assert.Empty(cut.Left);
+        Assert.Empty(cut.Kept);
+    }
+
+    [Fact]
     public void ANetworkBeyondTheMachine_IsNotFoundAmongItsOwn()
     {
         Assert.False(PrivateNetworks.Overlaps("10.9.9.0/24", ["10.0.110.0/24", "192.168.1.0/24"]));

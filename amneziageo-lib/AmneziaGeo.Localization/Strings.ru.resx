@@ -1339,6 +1339,18 @@
   <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
     <value>Активные локальные сети не обнаружены.</value>
   </data>
+  <data name="RoutingSettings_AllTunnelSubnetsPresent" xml:space="preserve">
+    <value>Все сети VPN-подключений уже в списке.</value>
+  </data>
+  <data name="RoutingSettings_NoTunnelSubnets" xml:space="preserve">
+    <value>В VPN-подключениях нет локальных сетей.</value>
+  </data>
+  <data name="RoutingSettings_TunnelSubnetsAdded" xml:space="preserve">
+    <value>Добавлено сетей VPN-подключений: {0}. Проверьте список и нажмите «Сохранить».</value>
+  </data>
+  <data name="RoutingSettings_TunnelSubnetsAddressed" xml:space="preserve">
+    <value>Сетей, направленных в своё VPN-подключение: {0}. Проверьте список и нажмите «Сохранить».</value>
+  </data>
   <data name="RoutingSummary_Detail" xml:space="preserve">
     <value>{0} правил · {1} маршрутов · {2} доменов</value>
   </data>

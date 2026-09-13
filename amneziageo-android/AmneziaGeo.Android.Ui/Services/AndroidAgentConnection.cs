@@ -369,7 +369,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpListTunnelSubnets:
                 await EnsureInitAsync().ConfigureAwait(false);
-                return new IpcAck(true, string.Join('\n', await ConfigSubnetsAsync().ConfigureAwait(false)));
+                return new IpcAck(true, string.Join('\n', ConfigSubnets()));
 
             // Гео-базы разбираются в пуле: разворачивание правил держит вызывающий поток, а он тут UI-шный.
             case IpcContract.OpListGeo:
@@ -2538,17 +2538,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // The private networks and hosts the stored configurations reach, each behind the name of the one reaching it
     // and a tab.
-    private async Task<IReadOnlyList<string>> ConfigSubnetsAsync()
+    private List<string> ConfigSubnets()
     {
         var lines = new List<string>();
-        foreach (var name in await _store.ListConfigNamesAsync().ConfigureAwait(false))
+        foreach (var name in OrderedNames())
         {
-            if (await _store.GetConfigTextAsync(name).ConfigureAwait(false) is not { Length: > 0 } text)
-            {
-                continue;
-            }
-
-            foreach (var network in PrivateNetworks.Reachable(text))
+            foreach (var network in PrivateNetworks.Reachable(_configs[name]))
             {
                 lines.Add($"{name}\t{network}");
             }

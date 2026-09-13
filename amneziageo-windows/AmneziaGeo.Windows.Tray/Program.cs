@@ -198,7 +198,7 @@ internal static unsafe class Program
         return 0;
     }
 
-    // Binds the tray to the shared log database, so every launch attempt and its outcome are on the record (#209).
+    // Binds the tray's rows to the agent log, with the per-user log database for the ones the agent does not take (#209).
     private static void OpenLog()
     {
         var path = Path.Combine(
@@ -206,7 +206,7 @@ internal static unsafe class Program
             "AmneziaGeo",
             "logs",
             "log.db");
-        ClientLog.Open(path, "Tray");
+        ClientLog.Open(path, ClientLog.TraySource);
     }
 
     // Process ids of the other trays in this session, for the activation handoff record.

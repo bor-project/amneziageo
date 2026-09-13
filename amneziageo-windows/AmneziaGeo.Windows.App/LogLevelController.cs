@@ -35,6 +35,14 @@ internal sealed class LogLevelController
     }
 
     /// <summary>
+    /// Whether the log takes a row of this dictionary level.
+    /// </summary>
+    public bool Captures(int levelId)
+    {
+        return Switch.MinimumLevel <= LogEventLevel.Fatal && levelId >= LogLevels.Id(Switch.MinimumLevel);
+    }
+
+    /// <summary>
     /// Maps a persisted token to a Serilog level.
     /// </summary>
     public static LogEventLevel Parse(string? token)

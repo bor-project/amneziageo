@@ -59,7 +59,7 @@ public static partial class Program
         ClientLog.Flush();
     }
 
-    // Binds the GUI to the shared log database, so a launch that never shows a window leaves a record (#209).
+    // Binds the GUI's rows to the agent log, with the per-user log database for the ones the agent does not take (#209).
     private static void OpenLog()
     {
         var path = Path.Combine(
@@ -67,7 +67,7 @@ public static partial class Program
             "AmneziaGeo",
             "logs",
             "log.db");
-        ClientLog.Open(path, "Ui");
+        ClientLog.Open(path, ClientLog.UiSource);
     }
 
     private static void SetAppUserModelId()

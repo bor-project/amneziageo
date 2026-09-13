@@ -10,6 +10,9 @@ internal static class DnsWire
 {
     private const int HeaderLength = 12;
     private const int TypeA = 1;
+    private const int TypeOpt = 41;
+    private const int OptLength = 11;
+    private const int OptPayloadSize = 1232;
     private const int NoError = 0;
     private const int NameError = 3;
 
@@ -94,7 +97,7 @@ internal static class DnsWire
     /// </summary>
     public static byte[]? BuildEmpty(byte[] query, int length) => BuildAnswerless(query, length, NoError);
 
-    // An answer that repeats the question and carries no records.
+    // An answer that repeats the question, carries no records and keeps the EDNS record of the query.
     private static byte[]? BuildAnswerless(byte[] query, int length, int code)
     {
         if (length < HeaderLength)
@@ -108,14 +111,43 @@ internal static class DnsWire
             return null;
         }
 
-        var answer = new byte[offset];
+        var edns = HasOpt(query, length, offset);
+        var answer = new byte[edns ? offset + OptLength : offset];
         Array.Copy(query, answer, offset);
         answer[2] = (byte)((query[2] & 0x01) | 0x80);
         answer[3] = (byte)(0x80 | code);
         WriteUInt16(answer, 6, 0);
         WriteUInt16(answer, 8, 0);
-        WriteUInt16(answer, 10, 0);
+        WriteUInt16(answer, 10, edns ? 1 : 0);
+        if (edns)
+        {
+            WriteUInt16(answer, offset + 1, TypeOpt);
+            WriteUInt16(answer, offset + 3, OptPayloadSize);
+        }
+
         return answer;
+    }
+
+    // Whether the records after the question include an EDNS record.
+    private static bool HasOpt(byte[] query, int length, int offset)
+    {
+        var records = ReadUInt16(query, 6) + ReadUInt16(query, 8) + ReadUInt16(query, 10);
+        for (var index = 0; index < records; index++)
+        {
+            if (!TryReadName(query, length, ref offset, out _) || offset + 10 > length)
+            {
+                return false;
+            }
+
+            if (ReadUInt16(query, offset) == TypeOpt)
+            {
+                return true;
+            }
+
+            offset += 10 + ReadUInt16(query, offset + 8);
+        }
+
+        return false;
     }
 
     // Walks past the question section.

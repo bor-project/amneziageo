@@ -911,7 +911,7 @@ internal sealed class LinuxAgent : IDisposable
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport);
-        _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName));
+        _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is { } refusal)
         {
@@ -2672,11 +2672,10 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     // The text of every stored configuration.
-    // The private networks the stored configurations name, each behind the name of the one naming it and a
-    // tab, without the ones the machine stands in itself.
+    // The private networks and hosts the stored configurations reach, each behind the name of the one reaching it
+    // and a tab.
     private async Task<IReadOnlyList<string>> ConfigSubnetsAsync(CancellationToken ct)
     {
-        var own = PrivateNetworks.Local();
         var lines = new List<string>();
         foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
@@ -2685,12 +2684,9 @@ internal sealed class LinuxAgent : IDisposable
                 continue;
             }
 
-            foreach (var network in PrivateNetworks.FromConfig(text))
+            foreach (var network in PrivateNetworks.Reachable(text))
             {
-                if (!PrivateNetworks.Overlaps(network, own))
-                {
-                    lines.Add($"{name}\t{network}");
-                }
+                lines.Add($"{name}\t{network}");
             }
         }
 

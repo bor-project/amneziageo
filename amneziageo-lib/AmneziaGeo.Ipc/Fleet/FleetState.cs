@@ -25,6 +25,41 @@ public sealed record FleetState(
         new([], new Dictionary<string, string>(StringComparer.Ordinal), string.Empty, [], FleetTargets.Empty);
 
     /// <summary>
+    /// The servers the state names anywhere: in the order, the roles, as the primary, wanted up, standing when the
+    /// set was taken down, or at an end of an addressed rule.
+    /// </summary>
+    public IReadOnlySet<string> Servers()
+    {
+        var servers = new HashSet<string>(Order, StringComparer.Ordinal);
+        servers.UnionWith(Roles.Keys);
+        servers.UnionWith(Desired);
+        servers.UnionWith(Resume ?? []);
+        servers.UnionWith(FleetTargets.Servers(Targets));
+        if (Primary.Length > 0)
+        {
+            servers.Add(Primary);
+        }
+
+        return servers;
+    }
+
+    /// <summary>
+    /// The state with every server outside <paramref name="known"/> struck from it.
+    /// </summary>
+    public FleetState Within(IReadOnlySet<string> known)
+    {
+        var targets = new Dictionary<string, RuleRoute>(Targets, StringComparer.Ordinal);
+        FleetTargets.KeepServers(targets, known);
+        return new FleetState(
+            [.. Order.Where(known.Contains)],
+            Roles.Where(pair => known.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+            known.Contains(Primary) ? Primary : string.Empty,
+            [.. Desired.Where(known.Contains)],
+            targets,
+            Resume is null ? null : [.. Resume.Where(known.Contains)]);
+    }
+
+    /// <summary>
     /// Writes names as they are stored, one per line.
     /// </summary>
     public static string FormatNames(IEnumerable<string> names)

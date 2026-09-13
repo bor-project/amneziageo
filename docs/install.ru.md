@@ -70,6 +70,23 @@ sudo amneziageo settings set periodic-reconnect-enabled on
 
 Пакет несёт в себе адрес манифеста релизов, поэтому приложение обновляет себя само: окно предлагает новую версию, агент качает ровно те пакеты, что стоят на машине, под её архитектуру, сверяет их с опубликованной SHA-256 и отдаёт apt из временного юнита, который переживает перезапуск самого агента. То же самое из консоли - `amneziageo update check`. После установки перезапустите окно, чтобы обновился и интерфейс.
 
+### Docker
+
+Агент и консольный клиент работают и в контейнере. `amneziageo-linux/docker/Dockerfile` собирает образ из корня репозитория под amd64 и arm64; контейнеру нужны `NET_ADMIN` и `/dev/net/tun`.
+
+```bash
+cd amneziageo-linux/docker
+mkdir -p configs && cp ~/work.conf configs/
+AMNEZIAGEO_CONNECT=work docker compose up -d --build
+docker compose exec amneziageo amneziageo geo download
+docker compose exec amneziageo amneziageo tui
+```
+
+Каждый `configs/<имя>.conf` при старте импортируется под именем файла, а `AMNEZIAGEO_CONNECT` подключается на одном из них и держит туннель после перезапусков. Библиотека лежит в томе, журнал агента выводит `docker compose logs`.
+
+- `compose.yaml` - у контейнера своя сеть. Другие сервисы входят в неё через `network_mode: service:amneziageo` и ходят туда, куда их отправляет список маршрутизации; при каждом перезапуске контейнера агента такой сервис теряет сеть и возвращается через `docker compose up -d --force-recreate <сервис>`. Локальный прокси опубликован на 10808 (SOCKS5) и 10809 (HTTP): `docker compose exec amneziageo amneziageo proxy on --auth user:password`. На соединения, пришедшие через опубликованные порты, ответ уходит мимо туннеля.
+- `compose.host.yaml` - `network_mode: host`: туннель, маршруты и резолвер принадлежат самому хосту. `/etc` хоста примонтирован, чтобы агент направил на себя `resolv.conf` хоста (`AMNEZIAGEO_RESOLV_CONF`), а системная шина со снятыми ограничениями AppArmor и SELinux - чтобы systemd-resolved, пока туннель поднят, спрашивал только агента. Рядом с установленным агентом не запускается: оба занимают один и тот же интерфейс и адрес резолвера.
+
 ## Android
 
 Нужен Android 7.0 или новее.

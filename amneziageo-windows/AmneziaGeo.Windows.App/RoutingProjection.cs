@@ -1,5 +1,6 @@
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -32,11 +33,14 @@ internal static class RoutingProjection
 
         // The share of the list this tunnel carries. A machine running one tunnel is given the list itself,
         // and the rules are the ones already expanded into it.
-        var share = roster.Share(config, list.Id, list.Rules);
+        var share = await roster.ShareAsync(store, config, list.Id, list.Rules, ct).ConfigureAwait(false);
         if (!ReferenceEquals(share, list.Rules))
         {
-            logger.LogInformation("{Config} carries {Kept} of the {Total} rule(s) of '{List}'; the rest ride other servers of the set", config, share.Count, list.Rules.Count, list.Name);
-            list = await geo.MaterializeDraftAsync([.. share.Select(GeoConfigurator.FormatWithRole)], ct) with { Id = list.Id, Name = list.Name };
+            logger.LogInformation("{Config} carries {Kept} of the {Total} rule(s) of '{List}'; the rest go where their address or its fallback sends them", config, share.Count, list.Rules.Count, list.Name);
+            var projected = await geo.MaterializeDraftAsync([.. share.Select(GeoConfigurator.FormatWithRole)], ct).ConfigureAwait(false);
+
+            // The tunnel ranges of the whole list stay cut out of the direct ones, whichever tunnel carries them.
+            list = projected with { Id = list.Id, Name = list.Name, DirectRoutes = RangeClaims.CarveDirect(projected.DirectRoutes, list.Routes) };
         }
 
         await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps,

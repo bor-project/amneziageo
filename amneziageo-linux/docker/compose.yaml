@@ -1,0 +1,43 @@
+# The agent in a network of its own: services that join it with network_mode go out through the tunnel, and the
+# local proxy is published to the local network.
+#
+#   cp work.conf configs/
+#   AMNEZIAGEO_CONNECT=work docker compose up -d --build
+#   docker compose exec amneziageo amneziageo proxy on --auth user:password
+#   docker compose exec amneziageo amneziageo tui
+
+name: amneziageo
+
+services:
+  amneziageo:
+    build:
+      context: ../..
+      dockerfile: amneziageo-linux/docker/Dockerfile
+    image: amneziageo:local
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AMNEZIAGEO_CONNECT: ${AMNEZIAGEO_CONNECT:-}
+    volumes:
+      - library:/var/lib/amneziageo
+      - ./configs:/etc/amneziageo/configs:ro
+    ports:
+      - "10808:10808"
+      - "10809:10809"
+    restart: unless-stopped
+
+  # A service that reaches the network only through the agent's; recreate it whenever the agent's container restarts.
+  example:
+    image: alpine:3
+    command: sleep infinity
+    network_mode: service:amneziageo
+    depends_on:
+      amneziageo:
+        condition: service_healthy
+    profiles:
+      - example
+
+volumes:
+  library:

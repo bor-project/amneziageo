@@ -356,9 +356,9 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     // What a restore pass leaves behind.
     private enum RestoreOutcome
     {
-        Done,    // every recorded adapter is present and off our redirect
+        Done,    // every recorded adapter is off our redirect
         Pending, // an adapter is still on our redirect
-        Absent,  // nothing to revert, but an adapter is not enumerable
+        Absent,  // an adapter recorded without a GUID is not enumerable
     }
 
     // Reverts one state file and reports what is left. Only an adapter that still carries our redirect is
@@ -395,7 +395,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         var adapter = FindAdapter(entry);
         if (adapter is null)
         {
-            return RestoreOutcome.Absent;
+            return entry.Guid is { } gone ? RestoreStored(entry, gone, targets) : RestoreOutcome.Absent;
         }
 
         using (adapter)
@@ -403,6 +403,11 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             if ((AdapterGuid(adapter) ?? entry.Guid) is not { } guid)
             {
                 return RestoreOutcome.Absent;
+            }
+
+            if (adapter["IPEnabled"] is not true)
+            {
+                return RestoreStored(entry, guid, targets);
             }
 
             var index = Convert.ToUInt32(adapter["InterfaceIndex"]);
@@ -418,6 +423,38 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             }
 
             return Probe(index, guid, targets);
+        }
+    }
+
+    // Puts the settings back where Windows stores them for an adapter that is down or gone.
+    private RestoreOutcome RestoreStored(DnsStateEntry entry, string guid, string[] targets)
+    {
+        var saved = Resolve(entry, guid);
+        if (IsStillOurs(StaticServers(V4InterfacesKey, guid), targets))
+        {
+            WriteServers(V4InterfacesKey, guid, saved.V4);
+        }
+
+        if (StaticServers(V6InterfacesKey, guid).Any(IsLoopback))
+        {
+            WriteServers(V6InterfacesKey, guid, saved.V6);
+        }
+
+        return IsStillOurs(StaticServers(V4InterfacesKey, guid), targets) ? RestoreOutcome.Pending : RestoreOutcome.Done;
+    }
+
+    // Writes an adapter's static server list; an empty list leaves it to DHCP.
+    private void WriteServers(string root, string guid, IReadOnlyList<string> servers)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"{root}\{guid}", writable: true);
+            key?.SetValue("NameServer", string.Join(",", servers), RegistryValueKind.String);
+            logger.LogDebug("adapter {Guid} is down or gone; its stored DNS settings are put back", guid);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "the stored DNS settings of adapter {Guid} could not be written", guid);
         }
     }
 

@@ -18,7 +18,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     private readonly AwgDaemon _daemon;
     private readonly string? _gateway;
     private readonly string? _device;
-    private readonly IReadOnlyList<string> _advertised;
+    private readonly List<string> _advertised;
     private readonly string? _endpoint;
     private readonly AgentLog _log;
     private readonly HashSet<string> _live = new(StringComparer.Ordinal);
@@ -36,7 +36,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         _daemon = daemon;
         _gateway = gateway;
         _device = device;
-        _advertised = advertised;
+        _advertised = [.. advertised];
         _endpoint = endpoint;
         _log = log;
     }
@@ -198,6 +198,56 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         }
 
         Withdraw(hosts);
+    }
+
+    /// <summary>
+    /// Squares the ranges the tunnel keeps standing with an edited list and returns what the peer carries from the
+    /// start: a gone range loses its route before its advertisement, a new one is advertised before its route.
+    /// </summary>
+    public IReadOnlyList<string> Restand(IReadOnlyList<string> added, IReadOnlyList<string> removed)
+    {
+        foreach (var cidr in removed)
+        {
+            Ip("route", "del", cidr, "dev", _iface);
+        }
+
+        var carried = Readvertise(added, removed);
+        foreach (var cidr in added)
+        {
+            Ip("route", "replace", cidr, "dev", _iface);
+        }
+
+        return carried;
+    }
+
+    // Rewrites the standing ranges and hands the peer the whole set; returns the standing ranges.
+    private IReadOnlyList<string> Readvertise(IReadOnlyList<string> added, IReadOnlyList<string> removed)
+    {
+        lock (_sync)
+        {
+            _advertised.RemoveAll(cidr => removed.Contains(cidr, StringComparer.Ordinal));
+            foreach (var cidr in added)
+            {
+                if (!_advertised.Contains(cidr, StringComparer.Ordinal))
+                {
+                    _advertised.Add(cidr);
+                }
+            }
+
+            if (_peerKey is not null)
+            {
+                try
+                {
+                    _daemon.ReplaceAllowedIpsAsync(_peerKey, [.. _advertised, .. _live]).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _log.Error("route", "handing the standing ranges to the engine failed", ex);
+                }
+            }
+
+            return [.. _advertised];
+        }
     }
 
     /// <summary>

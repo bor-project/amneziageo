@@ -76,7 +76,8 @@ public sealed partial class App : Application
             // Run a download from any surface under the process-alive pin, so closing the window mid-download neither
             // quits the app nor aborts the download (#21).
             viewModel.General.SetPinnedDownloadRunner(RunDownload);
-            desktop.ShutdownRequested += (_, _) => connection.Dispose();
+            // Closes the link to the agent with the process.
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => connection.Dispose();
 
             // The window closes to the resident tray: the process exits when it closes.
             desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;

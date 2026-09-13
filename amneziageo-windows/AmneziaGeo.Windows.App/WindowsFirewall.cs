@@ -116,13 +116,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
             try
             {
-                if (killSwitch || blockInbound)
-                {
-                    CreateSublayer(engine);
-                }
-
                 if (killSwitch)
                 {
+                    CreateSublayer(engine);
                     PermitApp(engine);
 
                     // Permit wstunnel.exe (carries the encrypted underlay in a child process).
@@ -167,7 +163,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     BlockAll(engine);
                 }
 
-                var inboundHeld = blockInbound && BlockInbound(engine, luid);
+                var inboundHeld = blockInbound && BlockInbound(engine, luid, killSwitch);
 
                 if (batched)
                 {
@@ -612,19 +608,22 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // Connections opened from the tunnel towards this machine. The ALE accept layer sees the first packet of an
     // inbound flow only, so what this machine opened itself keeps answering; ICMP stays blocked at echo alone, which
     // leaves discovery and the errors a live flow needs.
-    private bool BlockInbound(IntPtr engine, ulong luid)
+    private bool BlockInbound(IntPtr engine, ulong luid, bool shared)
     {
-        if (TryBlockInbound(engine, luid, SublayerKey, out var wrongSession))
+        if (shared)
         {
-            return true;
+            if (TryBlockInbound(engine, luid, SublayerKey, out var wrongSession))
+            {
+                return true;
+            }
+
+            if (!wrongSession)
+            {
+                return false;
+            }
         }
 
-        if (!wrongSession)
-        {
-            return false;
-        }
-
-        // The shared group belongs to the session of another tunnel, which admits no filters of ours; this one gets its own.
+        // A session without the shared group puts its block into a group of its own.
         var key = InboundSublayerKey(luid);
         if (!CreateSublayer(engine, key, "AmneziaGeo inbound block"))
         {

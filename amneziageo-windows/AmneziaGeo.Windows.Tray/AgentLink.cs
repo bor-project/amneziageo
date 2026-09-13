@@ -1,7 +1,10 @@
+using System.Buffers;
 using System.IO.Pipes;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+
+using AmneziaGeo.Dal;
 
 namespace AmneziaGeo.Windows.Tray;
 
@@ -23,10 +26,14 @@ internal static class AgentLink
     private const string CheckUpdateCommand = "{\"type\":\"command\",\"command\":{\"op\":\"check-update\",\"args\":[]}}";
     private const string CancelDownloadCommand = "{\"type\":\"command\",\"command\":{\"op\":\"cancel-download\",\"args\":[]}}";
 
+    // IpcContract.OpLogClient.
+    private const string LogOp = "log-client";
+
     // The ack key the agent returns when a connect is refused because another account owns the machine-wide tunnel.
     private const string OwnedByOtherKey = "Agent_TunnelOwnedByOther";
 
     private static readonly UTF8Encoding _utf8 = new(false);
+    private static readonly Lock _writeGate = new();
     private static volatile StreamWriter? _writer;
     private static Action<int, bool, bool, bool, bool>? _onState;
     private static Action<bool, string>? _onUpdate;
@@ -154,13 +161,7 @@ internal static class AgentLink
     /// </summary>
     public static void SendConnect()
     {
-        try
-        {
-            _writer?.WriteLine(ConnectCommand);
-        }
-        catch
-        {
-        }
+        Write(ConnectCommand);
     }
 
     /// <summary>
@@ -168,13 +169,7 @@ internal static class AgentLink
     /// </summary>
     public static void SendDisconnect()
     {
-        try
-        {
-            _writer?.WriteLine(DisconnectCommand);
-        }
-        catch
-        {
-        }
+        Write(DisconnectCommand);
     }
 
     /// <summary>
@@ -182,13 +177,7 @@ internal static class AgentLink
     /// </summary>
     public static void SendCheckUpdate()
     {
-        try
-        {
-            _writer?.WriteLine(CheckUpdateCommand);
-        }
-        catch
-        {
-        }
+        Write(CheckUpdateCommand);
     }
 
     /// <summary>
@@ -196,13 +185,61 @@ internal static class AgentLink
     /// </summary>
     public static void SendCancelDownload()
     {
+        Write(CancelDownloadCommand);
+    }
+
+    // Writes a command line to the agent; false while the link is down.
+    private static bool Write(string line)
+    {
+        var writer = _writer;
+        if (writer is null)
+        {
+            return false;
+        }
+
         try
         {
-            _writer?.WriteLine(CancelDownloadCommand);
+            lock (_writeGate)
+            {
+                writer.WriteLine(line);
+            }
+
+            return true;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
+            return false;
         }
+    }
+
+    // Hands a client log row to the agent.
+    private static Task<bool> SendLog(ClientLogRow row)
+    {
+        return Task.FromResult(Write(LogCommand(row)));
+    }
+
+    // The log-client command line carrying a row.
+    private static string LogCommand(ClientLogRow row)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var json = new Utf8JsonWriter(buffer))
+        {
+            json.WriteStartObject();
+            json.WriteString("type", "command");
+            json.WriteStartObject("command");
+            json.WriteString("op", LogOp);
+            json.WriteStartArray("args");
+            foreach (var arg in row.Args())
+            {
+                json.WriteStringValue(arg);
+            }
+
+            json.WriteEndArray();
+            json.WriteEndObject();
+            json.WriteEndObject();
+        }
+
+        return _utf8.GetString(buffer.WrittenSpan);
     }
 
     private static void Loop()
@@ -218,7 +255,8 @@ internal static class AgentLink
                 using var writer = new StreamWriter(pipe, _utf8) { AutoFlush = true };
                 using var reader = new StreamReader(pipe, _utf8);
                 _writer = writer;
-                writer.WriteLine(AttachCommand);
+                Write(AttachCommand);
+                ClientLog.Attach(SendLog);
 
                 var prevUpdateAvail = false;
                 var prevUpdateVer = string.Empty;
@@ -298,6 +336,7 @@ internal static class AgentLink
                 // fall through to reconnect
             }
 
+            ClientLog.Detach();
             _writer = null;
             HasActiveConfig = false;
             DnsUnreachable = false;

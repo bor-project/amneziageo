@@ -39,10 +39,78 @@ public sealed class CorruptDatabaseTests
         {
             using var store = new SqliteLogStore(path);
             await store.InitializeAsync();
+            await store.FlushAsync();
 
             var page = await store.QueryAsync(SqliteLogStore.AgentTable, null, 10, null, null);
-            Assert.Empty(page.Rows);
+            var notice = Assert.Single(page.Rows);
+            Assert.Equal("WRN", notice.Level);
+            Assert.Contains("set aside", notice.Message, StringComparison.Ordinal);
             Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task LogStore_DamagedPages_SetAsideWhenVerified()
+    {
+        // A readable header over pages that no longer hold together: every open took it as sound and rows went missing.
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-damaged-log-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var seed = new SqliteLogStore(path))
+            {
+                await seed.InitializeAsync();
+                for (var i = 0; i < 2000; i++)
+                {
+                    seed.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", $"row {i} {new string('x', 200)}");
+                }
+
+                await seed.FlushAsync();
+                seed.ClearPool();
+            }
+
+            Damage(path);
+
+            using var store = new SqliteLogStore(path, verify: true);
+            await store.InitializeAsync();
+            store.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", "after");
+            await store.FlushAsync();
+
+            var page = await store.QueryAsync(SqliteLogStore.AgentTable, null, 10, null, null);
+            Assert.Contains(page.Rows, r => r.Level == "WRN" && r.Message.Contains("damaged", StringComparison.Ordinal));
+            Assert.DoesNotContain(page.Rows, r => r.Message.Contains("transaction files", StringComparison.Ordinal));
+            Assert.Contains(page.Rows, r => r.Message == "after");
+            Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task LogStore_SoundDatabase_KeptWhenVerified()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-sound-log-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var seed = new SqliteLogStore(path))
+            {
+                await seed.InitializeAsync();
+                seed.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), 3, "test", "kept");
+                await seed.FlushAsync();
+                seed.ClearPool();
+            }
+
+            using var store = new SqliteLogStore(path, verify: true);
+            await store.InitializeAsync();
+
+            var page = await store.QueryAsync(SqliteLogStore.AgentTable, null, 10, null, null);
+            Assert.Equal("kept", Assert.Single(page.Rows).Message);
+            Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"));
         }
         finally
         {
@@ -168,6 +236,16 @@ public sealed class CorruptDatabaseTests
         {
             Cleanup(path);
         }
+    }
+
+    // Overwrites a page in the middle of the file with bytes that are no b-tree page.
+    private static void Damage(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        var pageSize = (bytes[16] << 8) | bytes[17];
+        var middle = bytes.Length / pageSize / 2;
+        new Random(7).NextBytes(bytes.AsSpan(middle * pageSize, pageSize));
+        File.WriteAllBytes(path, bytes);
     }
 
     // A syntactically plausible WAL header (magic + version) followed by garbage frames.

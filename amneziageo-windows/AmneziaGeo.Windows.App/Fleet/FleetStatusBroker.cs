@@ -36,6 +36,7 @@ internal sealed class FleetStatusBroker(
     ILogger<AgentStatusBroker> logger,
     AgentMode mode,
     FleetControl fleet,
+    TunnelDutyRoster sole,
     FleetLive live,
     ActiveTunnelScope owner,
     ILogger<FleetStatusBroker> log) : AgentStatusBroker(
@@ -59,7 +60,7 @@ internal sealed class FleetStatusBroker(
         proxy,
         hotspot,
         geoHttp,
-        fleet,
+        sole,
         logger)
 {
     /// <inheritdoc/>
@@ -156,35 +157,67 @@ internal sealed class FleetStatusBroker(
     }
 
     /// <inheritdoc/>
-    protected override Task ForgetConfigAsync(string name, CancellationToken ct)
+    protected override async Task ForgetConfigAsync(string name, CancellationToken ct)
     {
-        if (!mode.MultiServer)
+        if (!RunsSet())
         {
-            return base.ForgetConfigAsync(name, ct);
+            await EditStoredSetAsync(set => set.Forget(name), ct).ConfigureAwait(false);
+            return;
         }
 
         if (fleet.Forget(name))
         {
             log.LogInformation("'{Name}' was removed, so the set no longer lists it; the machine is asked for {Count} tunnel(s)", name, fleet.Wanted.Count);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    protected override Task RetargetConfigAsync(string oldName, string newName, CancellationToken ct)
+    protected override async Task RetargetConfigAsync(string oldName, string newName, CancellationToken ct)
     {
-        if (!mode.MultiServer)
+        if (!RunsSet())
         {
-            return base.RetargetConfigAsync(oldName, newName, ct);
+            await EditStoredSetAsync(set => set.Rename(oldName, newName), ct).ConfigureAwait(false);
+            return;
         }
 
         if (fleet.Rename(oldName, newName))
         {
             log.LogInformation("'{Old}' is called '{New}' from now on, and the set lists it under that name", oldName, newName);
         }
+    }
 
-        return Task.CompletedTask;
+    /// <inheritdoc/>
+    protected override async Task KeepAddressesAsync(long listId, IReadOnlySet<string> tokens, CancellationToken ct)
+    {
+        if (!RunsSet())
+        {
+            await EditStoredSetAsync(set => set.KeepRules(listId, tokens), ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (fleet.KeepRules(listId, tokens))
+        {
+            log.LogInformation("rules gone from the tunnel buckets of list {List} took their addresses with them", listId);
+        }
+    }
+
+    // Whether the running set stands on the caller's library.
+    private bool RunsSet()
+    {
+        return mode.MultiServer && owner.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid);
+    }
+
+    // Edits the mode's state as the caller's library stores it.
+    private async Task EditStoredSetAsync(Func<FleetControl, bool> edit, CancellationToken ct)
+    {
+        var store = CurrentScope.Store;
+        var written = new Dictionary<string, string>(StringComparer.Ordinal);
+        var stored = new FleetControl(new FleetLive());
+        stored.Restore(await FleetStore.ReadAsync(store, written, ct).ConfigureAwait(false));
+        if (edit(stored))
+        {
+            await FleetStore.WriteAsync(store, stored.Snapshot(), written, ct).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -379,6 +412,11 @@ internal sealed class FleetStatusBroker(
         if (!route.IsDefault && RuleAddressing.ByName(args[1]))
         {
             log.LogInformation("rule '{Rule}' of list {List} is matched by name: the tunnel holding this machine's lookups hands the name to {Server}, and its addresses go through that one", args[1], listId, route.Target.Name.Length > 0 ? route.Target.Name : route.Fallback.Name);
+        }
+
+        if (!route.IsDefault && !(await TunnelTokensAsync(listId, ct).ConfigureAwait(false)).Contains(args[1].Trim()))
+        {
+            return new IpcAck(false, $"'{args[1].Trim()}' is not a tunnel rule of list {listId}");
         }
 
         foreach (var end in new[] { route.Target, route.Fallback })

@@ -1,0 +1,13 @@
+.git
+.vs
+.idea
+.vscode
+**/bin
+**/obj
+dist
+amneziageo-windows
+amneziageo-tests
+amneziageo-android
+!amneziageo-android/amneziawg-go
+amneziageo-android/amneziawg-go/amneziawg-go
+amneziageo-linux/docker/configs

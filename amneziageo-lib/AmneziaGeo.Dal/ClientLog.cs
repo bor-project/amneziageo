@@ -1,43 +1,59 @@
 namespace AmneziaGeo.Dal;
 
 /// <summary>
-/// Agent-log writer for the client processes (tray, GUI), which have no Serilog pipeline of their own: rows
-/// land in the ageo table of the shared log database under the caller's source, so a failure outside the
-/// service shows up in the same journal (#209). Best effort - a logging fault never surfaces to the caller.
+/// Agent-log writer for the client processes (tray, GUI): rows go to the agent over the link the process holds, and
+/// the ones it never takes land in the per-user log database (#209). Best effort - a logging fault never surfaces to the caller.
 /// </summary>
 public static class ClientLog
 {
+    /// <summary>
+    /// The source of the tray's rows.
+    /// </summary>
+    public const string TraySource = "Tray";
+
+    /// <summary>
+    /// The source of the GUI's rows.
+    /// </summary>
+    public const string UiSource = "Ui";
+
     private const int LevelInfo = 3;
     private const int LevelWarning = 4;
     private const int LevelError = 5;
 
-    private static SqliteLogStore? _store;
+    private static ClientLogQueue? _queue;
     private static string _source = "client";
 
     /// <summary>
-    /// Opens the shared log database and binds the source written with every row.
+    /// Binds the source written with every row and the per-user log database for the rows the agent does not take.
     /// </summary>
     public static void Open(string databasePath, string source)
     {
-        try
-        {
-            var directory = Path.GetDirectoryName(databasePath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+        _source = source;
+        _queue = new ClientLogQueue(databasePath);
+    }
 
-            var store = new SqliteLogStore(databasePath);
-            _source = source;
-            _store = store;
+    /// <summary>
+    /// Whether rows under this source come from a client process.
+    /// </summary>
+    public static bool IsSource(string source)
+    {
+        return source is TraySource or UiSource;
+    }
 
-            // Rows written before the schema is ready wait in the store's queue; its writer loop drains them.
-            _ = InitializeAsync(store);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            _store = null;
-        }
+    /// <summary>
+    /// Hands the rows to the agent through a link.
+    /// </summary>
+    public static void Attach(Func<ClientLogRow, Task<bool>> relay)
+    {
+        _queue?.Attach(relay);
+    }
+
+    /// <summary>
+    /// Keeps the rows queued until the link is back.
+    /// </summary>
+    public static void Detach()
+    {
+        _queue?.Detach();
     }
 
     /// <summary>
@@ -65,44 +81,18 @@ public static class ClientLog
     }
 
     /// <summary>
-    /// Waits until the queued rows are on disk; called before a process exits.
+    /// Waits until the queued rows are with the agent or on disk; called before a process exits.
     /// </summary>
     public static void Flush(int timeoutMs = 2000)
     {
-        var store = _store;
-        if (store is null)
-        {
-            return;
-        }
-
-        try
-        {
-            using var timeout = new CancellationTokenSource(timeoutMs);
-            store.FlushAsync(timeout.Token).GetAwaiter().GetResult();
-        }
-        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
-        {
-        }
-    }
-
-    private static async Task InitializeAsync(SqliteLogStore store)
-    {
-        try
-        {
-            await store.InitializeAsync().ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // No writer loop, so drop the store instead of queueing rows nothing will drain.
-            _store = null;
-        }
+        _queue?.Flush(timeoutMs);
     }
 
     private static void Append(int levelId, string message)
     {
         try
         {
-            _store?.AppendAgent(DateTimeOffset.Now.ToUnixTimeMilliseconds(), levelId, _source, message);
+            _queue?.Append(new ClientLogRow(DateTimeOffset.Now.ToUnixTimeMilliseconds(), levelId, _source, message));
         }
         catch (Exception)
         {

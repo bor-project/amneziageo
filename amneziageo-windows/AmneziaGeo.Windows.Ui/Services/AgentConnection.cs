@@ -1,3 +1,4 @@
+using AmneziaGeo.Dal;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -38,6 +39,8 @@ internal sealed class AgentConnection : IAgentConnection
         _client.Connected += () => Connected?.Invoke();
         _client.Disconnected += () => Disconnected?.Invoke();
         _client.SnapshotReceived += snapshot => SnapshotReceived?.Invoke(snapshot);
+        _client.Connected += () => ClientLog.Attach(SendLogAsync);
+        _client.Disconnected += ClientLog.Detach;
         _loop = _client.RunAsync(_cts.Token);
     }
 
@@ -57,6 +60,13 @@ internal sealed class AgentConnection : IAgentConnection
     /// </summary>
     public Task<IpcAck> SendCommandRawAsync(IpcCommand command) => _client.SendCommandAsync(command, _cts.Token);
 
+    // Hands a client log row to the agent.
+    private async Task<bool> SendLogAsync(ClientLogRow row)
+    {
+        var ack = await _client.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, row.Args()), _cts.Token).ConfigureAwait(false);
+        return ack.Ok;
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -66,6 +76,7 @@ internal sealed class AgentConnection : IAgentConnection
         }
 
         _disposed = true;
+        ClientLog.Detach();
         _cts.Cancel();
         _cts.Dispose();
     }

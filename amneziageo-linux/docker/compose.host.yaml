@@ -1,0 +1,35 @@
+# The agent steering the host itself: the tunnel, the routes and the resolver land in the host's network, as with
+# the installed package. Not beside an installed agent, which holds the same interface and resolver address.
+#
+#   cp work.conf configs/
+#   AMNEZIAGEO_CONNECT=work docker compose -f compose.host.yaml up -d --build
+
+name: amneziageo-host
+
+services:
+  amneziageo:
+    build:
+      context: ../..
+      dockerfile: amneziageo-linux/docker/Dockerfile
+    image: amneziageo:local
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    # Lets the agent reach systemd-resolved over the host's system bus.
+    security_opt:
+      - apparmor=unconfined
+      - label=disable
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AMNEZIAGEO_CONNECT: ${AMNEZIAGEO_CONNECT:-}
+      AMNEZIAGEO_RESOLV_CONF: /host/etc/resolv.conf
+    volumes:
+      - library:/var/lib/amneziageo
+      - ./configs:/etc/amneziageo/configs:ro
+      - /etc:/host/etc
+      - /run/dbus:/run/dbus:ro
+    restart: unless-stopped
+
+volumes:
+  library:

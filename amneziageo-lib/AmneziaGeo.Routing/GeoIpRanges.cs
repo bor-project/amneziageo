@@ -49,7 +49,7 @@ public sealed class GeoIpRanges
         var ranges = new List<(uint Start, uint End)>(entries.Count);
         foreach (var entry in entries)
         {
-            if (TryParse(entry, out var start, out var end))
+            if (TryParse(entry, out var start, out var end, out _))
             {
                 ranges.Add((start, end));
             }
@@ -144,10 +144,14 @@ public sealed class GeoIpRanges
         return $"{(address >> 24) & 0xFF}.{(address >> 16) & 0xFF}.{(address >> 8) & 0xFF}.{address & 0xFF}";
     }
 
-    private static bool TryParse(string entry, out uint start, out uint end)
+    /// <summary>
+    /// Reads a CIDR or a bare address into its range and prefix length.
+    /// </summary>
+    internal static bool TryParse(string entry, out uint start, out uint end, out int bits)
     {
         start = 0;
         end = 0;
+        bits = 32;
         var text = entry.AsSpan();
         var slash = text.IndexOf('/');
         if (!TryQuad(slash < 0 ? text : text[..slash], out var network))
@@ -156,13 +160,14 @@ public sealed class GeoIpRanges
         }
 
         // A bare address is a single-host range.
-        var bits = (byte)32;
-        if (slash >= 0 && (!byte.TryParse(text[(slash + 1)..], out bits) || bits > 32))
+        var length = (byte)32;
+        if (slash >= 0 && (!byte.TryParse(text[(slash + 1)..], out length) || length > 32))
         {
             return false;
         }
 
-        var mask = bits == 0 ? 0u : uint.MaxValue << (32 - bits);
+        bits = length;
+        var mask = length == 0 ? 0u : uint.MaxValue << (32 - length);
         start = network & mask;
         end = start | ~mask;
         return true;

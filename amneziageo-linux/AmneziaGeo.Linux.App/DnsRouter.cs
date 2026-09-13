@@ -267,7 +267,7 @@ internal sealed class DnsRouter : IDisposable
         {
             RouteVerdict.Proxy => _tunnelResolvers,
             RouteVerdict.Direct => _lanResolvers,
-            _ => _split ? _lanResolvers : _tunnelResolvers,
+            _ => _split || IsLocalName(name) ? _lanResolvers : _tunnelResolvers,
         };
 
         var answer = await AskAsync(upstream, query, length, overTcp, ct).ConfigureAwait(false);
@@ -278,6 +278,9 @@ internal sealed class DnsRouter : IDisposable
 
         return ApplyAnswer(name, verdict, answer) ? DnsWire.BuildRefusal(query, length) : answer;
     }
+
+    // A name of a single label, which only the machine's own network answers.
+    private bool IsLocalName(string name) => _lanResolvers.Count > 0 && !name.TrimEnd('.').Contains('.', StringComparison.Ordinal);
 
     // Everything but a direct destination leaves the rules behind over IPv6 in a full tunnel; in a split only a
     // tunneled one does.

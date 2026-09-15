@@ -325,12 +325,12 @@ internal partial class ConnectionViewModel : ViewModelBase
     private bool _namesUnrouted;
 
     /// <summary>
-    /// Whether the running tunnel resolves no names here, so its rules by domain no longer apply.
+    /// Whether names on this machine are resolved past the running tunnel's name proxy.
     /// </summary>
     public bool ShowNamesUnrouted => ConnState == 2 && NamesUnrouted;
 
     /// <summary>
-    /// What a silent resolver costs, and what puts it back.
+    /// Warning that another program resolves site addresses.
     /// </summary>
     public string NamesUnroutedText => Loc.Instance.Get("Main_NamesUnrouted");
 

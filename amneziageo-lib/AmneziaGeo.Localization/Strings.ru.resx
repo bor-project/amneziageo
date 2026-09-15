@@ -2132,7 +2132,7 @@
     <value>потери в туннеле: пока нет данных</value>
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
-    <value>правила по доменам не работают: адреса сайтов на этом компьютере определяет другая программа (например, корпоративный VPN-клиент). Такие сайты идут мимо туннеля или не открываются</value>
+    <value>адреса сайтов определяет другая программа, сайты могут открываться дольше обычного</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Выбран</value>
@@ -2582,22 +2582,16 @@
     <value>Режим VPN для приложений</value>
   </data>
   <data name="Main_VpnModeSelected" xml:space="preserve">
-    <value>Выбранные</value>
-  </data>
-  <data name="Main_VpnModeSelectedHint" xml:space="preserve">
-    <value>Остальное напрямую</value>
+    <value>Только выбранное</value>
   </data>
   <data name="Main_VpnModeFull" xml:space="preserve">
-    <value>Полный туннель</value>
-  </data>
-  <data name="Main_VpnModeFullHint" xml:space="preserve">
-    <value>Кроме исключений</value>
+    <value>Всё, кроме выбранного</value>
   </data>
   <data name="Main_VpnModeHintSelected" xml:space="preserve">
-    <value>Через VPN идут только записи из группы «Через VPN».</value>
+    <value>Через VPN подключаются сайты и приложения из списка, остальные напрямую.</value>
   </data>
   <data name="Main_VpnModeHintFull" xml:space="preserve">
-    <value>В туннель уходит всё, кроме «Напрямую» и «Блок».</value>
+    <value>Через VPN подключается всё, кроме записей из «Напрямую» и «Блок».</value>
   </data>
   <data name="Main_BadgeGeoSite" xml:space="preserve">
     <value>GeoSite</value>
@@ -2664,6 +2658,12 @@
   </data>
   <data name="Main_AppProxyDirectHint" xml:space="preserve">
     <value>Приложения добавляются в «Через VPN» и «Напрямую».</value>
+  </data>
+  <data name="Main_AppOnlyDirectHint" xml:space="preserve">
+    <value>Приложения добавляются только в «Напрямую».</value>
+  </data>
+  <data name="Main_AppSelectedModeHint" xml:space="preserve">
+    <value>Приложения добавляются только в режиме «Только выбранное».</value>
   </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Дополнительно</value>

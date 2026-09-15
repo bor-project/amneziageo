@@ -66,4 +66,30 @@ public sealed class DnsProxyRulesTests
         };
         Assert.Equal(expected, proxy.Departed(["api.github.com", "ads.github.com", "www.youtube.com", "gone.example"]));
     }
+
+    [Fact]
+    public void ANetworkChange_TakesTheSuffixesOfTheNetworkThatLeft_AndKeepsTheDirectNames()
+    {
+        var lan = IPAddress.Parse("192.168.1.1");
+        var proxy = new DnsProxy([GitHub, YouTube], [], Resolver, Resolver, lan, [lan, IPAddress.Parse("10.0.10.4")], true, ["corp.example"], [GitHub], null, NullLogger<DnsProxy>.Instance, stripV6: false, listen: false);
+
+        Assert.Equal(DnsProxy.NamePath.Lan, proxy.PathOf("vpn.corp.example"));
+        Assert.True(proxy.UpdateLan(lan, [lan], true, ["branch.example"]));
+
+        Assert.Equal(DnsProxy.NamePath.Open, proxy.PathOf("vpn.corp.example"));
+        Assert.Equal(DnsProxy.NamePath.Lan, proxy.PathOf("nas.branch.example"));
+        Assert.Equal(DnsProxy.NamePath.Lan, proxy.PathOf("api.github.com"));
+        Assert.False(proxy.UpdateLan(lan, [lan], true, ["branch.example"]));
+    }
+
+    [Fact]
+    public void ANetworkWithoutResolvers_SendsItsNamesNowhereLocal()
+    {
+        var lan = IPAddress.Parse("192.168.1.1");
+        var proxy = new DnsProxy([GitHub, YouTube], [], Resolver, Resolver, lan, [lan], true, ["corp.example"], [], null, NullLogger<DnsProxy>.Instance, stripV6: false, listen: false);
+
+        Assert.True(proxy.UpdateLan(null, [], true, ["corp.example"]));
+
+        Assert.Equal(DnsProxy.NamePath.Open, proxy.PathOf("vpn.corp.example"));
+    }
 }

@@ -18,6 +18,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
     private const int AfInet = 2;
     private const int TcpTableOwnerPidAll = 5;
     private const int MibTcpStateSynSent = 3;
+    private const int MibTcpStateEstablished = 5;
     private const int MibTcpStateDeleteTcb = 12;
     // The adapter's own addresses are re-read on this cadence: the tunnel gets its address shortly after it appears.
     private const long LocalTtlMs = 30_000;
@@ -28,9 +29,10 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
     private long _localStamp;
 
     /// <summary>
-    /// Aborts every half-open connection to these addresses that is not already leaving through the tunnel.
+    /// Aborts every half-open connection to these addresses that is not already leaving through the tunnel, and with
+    /// <paramref name="established"/> every open one as well.
     /// </summary>
-    public void Abort(IReadOnlyCollection<IPAddress> addresses)
+    public void Abort(IReadOnlyCollection<IPAddress> addresses, bool established = false)
     {
         if (addresses.Count == 0)
         {
@@ -53,7 +55,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
 
         try
         {
-            Sweep(wanted);
+            Sweep(wanted, established);
         }
         catch (Exception ex)
         {
@@ -61,7 +63,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
         }
     }
 
-    private void Sweep(HashSet<uint> wanted)
+    private void Sweep(HashSet<uint> wanted, bool established)
     {
         var mine = TunnelAddresses();
         var size = 0;
@@ -86,7 +88,8 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
             {
                 // MIB_TCPROW_OWNER_PID: state, local addr, local port, remote addr, remote port, pid - each a DWORD.
                 var row = basePtr + (i * 24);
-                if (Marshal.ReadInt32(row, 0) != MibTcpStateSynSent)
+                var state = Marshal.ReadInt32(row, 0);
+                if (state != MibTcpStateSynSent && !(established && state == MibTcpStateEstablished))
                 {
                     continue;
                 }
@@ -120,7 +123,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
 
         if (reset > 0)
         {
-            logger.LogDebug("{Count} connection attempt(s) that had already left outside the tunnel were dropped, so the app opens them again through it", reset);
+            logger.LogDebug("{Count} connection(s) that had already left outside the tunnel were dropped, so the app opens them again through it", reset);
         }
     }
 

@@ -2132,7 +2132,7 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
     <value>tunnel packet loss: no data yet</value>
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
-    <value>domain rules are not working: another program on this computer resolves site addresses (a corporate VPN client, for example). Those sites bypass the tunnel or do not open at all</value>
+    <value>another program resolves site addresses, sites may take longer to open</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Selected</value>
@@ -2582,22 +2582,16 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
     <value>VPN mode for apps</value>
   </data>
   <data name="Main_VpnModeSelected" xml:space="preserve">
-    <value>Selected</value>
-  </data>
-  <data name="Main_VpnModeSelectedHint" xml:space="preserve">
-    <value>Rest go direct</value>
+    <value>Only selected</value>
   </data>
   <data name="Main_VpnModeFull" xml:space="preserve">
-    <value>Full tunnel</value>
-  </data>
-  <data name="Main_VpnModeFullHint" xml:space="preserve">
-    <value>Except exclusions</value>
+    <value>Everything except selected</value>
   </data>
   <data name="Main_VpnModeHintSelected" xml:space="preserve">
-    <value>The VPN carries only the entries put under «Through VPN».</value>
+    <value>Sites and apps from the list connect through the VPN, the rest connect directly.</value>
   </data>
   <data name="Main_VpnModeHintFull" xml:space="preserve">
-    <value>Everything rides the tunnel except «Direct» and «Block».</value>
+    <value>Everything connects through the VPN except entries in «Direct» and «Block».</value>
   </data>
   <data name="Main_BadgeGeoSite" xml:space="preserve">
     <value>GeoSite</value>
@@ -2664,6 +2658,12 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   </data>
   <data name="Main_AppProxyDirectHint" xml:space="preserve">
     <value>Apps are added under «Through VPN» and «Direct».</value>
+  </data>
+  <data name="Main_AppOnlyDirectHint" xml:space="preserve">
+    <value>Apps are added under «Direct» only.</value>
+  </data>
+  <data name="Main_AppSelectedModeHint" xml:space="preserve">
+    <value>Apps are added only in the «Only selected» mode.</value>
   </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Advanced</value>

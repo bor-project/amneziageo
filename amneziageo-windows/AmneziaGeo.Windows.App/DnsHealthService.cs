@@ -5,8 +5,7 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Watches whether this machine resolves names through the running tunnel's own proxy and hands the verdict to
-/// the snapshot. Its silence is invisible otherwise: rules by domain simply stop applying, so those sites either
-/// leave outside the tunnel or are cut off by the leak protection, while the connection looks healthy.
+/// the snapshot.
 /// </summary>
 internal sealed class DnsHealthService(
     AgentControl control,
@@ -78,7 +77,7 @@ internal sealed class DnsHealthService(
         {
             if (control.DnsUnreachable)
             {
-                logger.LogInformation("names are resolved through the tunnel again, so rules by domain apply once more");
+                logger.LogInformation("names are resolved through the tunnel again");
             }
 
             _misses = 0;
@@ -94,7 +93,7 @@ internal sealed class DnsHealthService(
 
         if (!control.DnsUnreachable)
         {
-            logger.LogWarning("names on this machine are not resolved through {Tunnel}: rules by domain no longer apply, so those sites either leave outside the tunnel or are cut off by the leak protection", holder.RunningTarget ?? holder.Target);
+            logger.LogWarning("names on this machine are resolved by another program, not through {Tunnel}: rules by domain follow the answers Windows reports, so sites may take longer to open", holder.RunningTarget ?? holder.Target);
         }
 
         await ReportAsync(true, ct).ConfigureAwait(false);

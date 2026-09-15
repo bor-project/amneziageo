@@ -105,7 +105,7 @@ public sealed record StatusSnapshot(
     IReadOnlyList<string>? ProxyAddresses = null,
     // Clients holding a connection to the local proxy right now.
     IReadOnlyList<ProxyClientEntry>? ProxyClients = null,
-    // Whether the resolver this machine sends its lookups to stopped answering, so rules by domain no longer apply.
+    // Whether names on this machine are resolved past the tunnel's name proxy.
     bool DnsUnreachable = false,
     // How the tunnel reaches other devices: lan, wifi, or both.
     string ShareMode = ShareModes.Default,

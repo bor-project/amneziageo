@@ -26,19 +26,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSelectedOnly))]
-    [NotifyPropertyChangedFor(nameof(VpnModeHint))]
     private bool _useGlobalProxy;
 
     /// <summary>
     /// True while the tunnel carries only the entries put under Proxy.
     /// </summary>
     public bool IsSelectedOnly => !UseGlobalProxy;
-
-    /// <summary>
-    /// Line under the mode cards, telling what the picked mode carries.
-    /// </summary>
-    public string VpnModeHint =>
-        Loc.Instance.Get(UseGlobalProxy ? "Main_VpnModeHintFull" : "Main_VpnModeHintSelected");
 
     // Picks the tunnel mode: "full" carries everything, anything else only the Proxy bucket.
     [RelayCommand]

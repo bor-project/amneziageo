@@ -413,6 +413,23 @@ public sealed class ServerHelloTests
     }
 
     [Fact]
+    public void ADownloadLeg_PullsFromTheServerThatMeasuresItself()
+    {
+        const string down = "https://10.9.0.1:8443/api/speed/down?bytes=25000000&ticket=pass";
+
+        Assert.Equal(down, ServerOffers.Download(Offer(true), false));
+        Assert.Equal(string.Empty, ServerOffers.Download(Offer(true), true));
+        Assert.Equal(down, ServerOffers.Download(Offer(false), true));
+    }
+
+    [Fact]
+    public void ADownloadLegWithNothingOffered_IsLeftToTheBuiltInService()
+    {
+        Assert.Equal(string.Empty, ServerOffers.Download(null, false));
+        Assert.Equal(string.Empty, ServerOffers.Download(ServerOffer.None, false));
+    }
+
+    [Fact]
     public void WhatTheWindowIsTold_SurvivesTheAckItTravelsIn()
     {
         var read = ServerOffer.Parse(Offer(true).ToPayload());

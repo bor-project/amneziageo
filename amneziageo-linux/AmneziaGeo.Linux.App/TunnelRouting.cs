@@ -16,7 +16,8 @@ internal sealed record TunnelRouting(
     IReadOnlyList<GeoDomain> DirectDomains,
     IReadOnlyList<string> BlockRoutes,
     IReadOnlyList<GeoDomain> BlockDomains,
-    IReadOnlyList<string> TunnelApps)
+    IReadOnlyList<string> TunnelApps,
+    bool AllUdp = false)
 {
     /// <summary>
     /// No list selected: a full tunnel by the config's own AllowedIPs.
@@ -61,6 +62,7 @@ internal sealed record TunnelRouting(
             list.DirectDomains,
             list.BlockRoutes,
             list.BlockDomains,
-            list.Apps);
+            list.Apps,
+            settings?.AllUdp ?? false);
     }
 }

@@ -8,6 +8,7 @@ namespace AmneziaGeo.Ipc;
 /// What the agent knows before the run: where to aim each probe and what the session counters say. The tunnel is
 /// measured from inside the process that owns it, so nothing here is discovered by guessing. A carrier port set
 /// means the tunnel rides a websocket, and the endpoint is that front: it is reached by a connect, not an echo.
+/// A server of the configuration that measures itself names where the throughput legs pull their bytes from.
 /// </summary>
 public sealed record ChannelProbeOptions(
     string Config,
@@ -26,7 +27,9 @@ public sealed record ChannelProbeOptions(
     string? SourceHost = null,
     Func<Socket, bool>? Bypass = null,
     int ConfiguredMtu = 0,
-    int CarrierPort = 0);
+    int CarrierPort = 0,
+    string TunnelSpeedUrl = "",
+    string DirectSpeedUrl = "");
 
 /// <summary>
 /// Runs the ladder: gateway, the server outside the tunnel, the session, the server inside the tunnel, the public
@@ -96,7 +99,7 @@ public static class ChannelProbe
                 ? await InsideAsync(CheckLegs.Beyond, options.BeyondTargets, "nothing past the exit answered an echo", ct).ConfigureAwait(false)
                 : new CheckLeg(CheckLegs.Beyond, LegState.Skipped, Note: "the routing list carries only what it names, so this echo says nothing about the path past the exit"));
             legs.Add(tunneled
-                ? (await ThroughputAsync(CheckLegs.Tunnel, options.SpeedUrl, null, ct).ConfigureAwait(false)).Leg
+                ? await RateAsync(CheckLegs.Tunnel, options.TunnelSpeedUrl, options.SpeedUrl, null, ct).ConfigureAwait(false)
                 : new CheckLeg(CheckLegs.Tunnel, LegState.Skipped, Note: "the routing list carries only what it names, so this download does not ride the tunnel"));
             legs.Add(await SourceAsync(options, tunneled, ct).ConfigureAwait(false));
         }
@@ -209,12 +212,30 @@ public static class ChannelProbe
     {
         if (!tunneled)
         {
-            return (await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, null, ct).ConfigureAwait(false)).Leg;
+            return await RateAsync(CheckLegs.Direct, options.DirectSpeedUrl, options.SpeedUrl, null, ct).ConfigureAwait(false);
         }
 
         return options.Bypass is null
             ? new CheckLeg(CheckLegs.Direct, LegState.Skipped, Note: "this system cannot send beside its own tunnel")
-            : (await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, options.Bypass, ct).ConfigureAwait(false)).Leg;
+            : await RateAsync(CheckLegs.Direct, options.DirectSpeedUrl, options.SpeedUrl, options.Bypass, ct).ConfigureAwait(false);
+    }
+
+    // A throughput leg with the destination it was measured against: the server of the configuration where it
+    // measures itself, else the neutral service.
+    private static async Task<CheckLeg> RateAsync(string name, string offered, string service, Func<Socket, bool>? bypass, CancellationToken ct)
+    {
+        var own = offered.Length > 0;
+        var url = own ? offered : service;
+        var (leg, _) = await ThroughputAsync(name, url, bypass, own, ct).ConfigureAwait(false);
+        var against = $"against {SpeedHost(url)}";
+
+        return leg with { Note = leg.Note.Length > 0 ? $"{leg.Note}, {against}" : against };
+    }
+
+    // The host a speed address names.
+    private static string SpeedHost(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Host.Length > 0 ? parsed.Host : url;
     }
 
     // The destination the user's traffic actually goes to, pulled over the same tunnel as the neutral download
@@ -232,7 +253,7 @@ public static class ChannelProbe
             return new CheckLeg(CheckLegs.Source, LegState.Skipped, Note: $"the routing list decides where {host} goes, so this download does not ride the tunnel");
         }
 
-        var (leg, bytes) = await ThroughputAsync(CheckLegs.Source, SourceUrl(host), null, ct).ConfigureAwait(false);
+        var (leg, bytes) = await ThroughputAsync(CheckLegs.Source, SourceUrl(host), null, false, ct).ConfigureAwait(false);
         if (bytes >= SourceFloorBytes)
         {
             return leg with { Note = host };
@@ -395,14 +416,20 @@ public static class ChannelProbe
 
     // Bits per second pulled over the budget, with what arrived; a bypass sends the same request beside the
     // tunnel. A source that ends before the budget is asked again, so what a small page delivers is timed over
-    // the same span as a long one and two runs of the same destination compare.
-    private static async Task<(CheckLeg Leg, long Bytes)> ThroughputAsync(string name, string url, Func<Socket, bool>? bypass, CancellationToken ct)
+    // the same span as a long one and two runs of the same destination compare. A leg pulled from the server of
+    // the configuration takes its certificate as it stands.
+    private static async Task<(CheckLeg Leg, long Bytes)> ThroughputAsync(string name, string url, Func<Socket, bool>? bypass, bool own, CancellationToken ct)
     {
         var handler = new SocketsHttpHandler
         {
             AutomaticDecompression = System.Net.DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(5),
         };
+
+        if (own)
+        {
+            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        }
 
         if (bypass is not null)
         {
@@ -493,11 +520,12 @@ public static class ChannelProbe
     }
 
     /// <summary>
-    /// Measures what a URL delivers over the path the bypass selects, with the bytes it handed over.
+    /// Measures what a URL delivers over the path the bypass selects, with the bytes it handed over. A leg pulled
+    /// from the server of the configuration takes its certificate as it stands.
     /// </summary>
-    public static Task<(CheckLeg Leg, long Bytes)> DownloadAsync(string name, string url, Func<Socket, bool>? bypass, CancellationToken ct)
+    public static Task<(CheckLeg Leg, long Bytes)> DownloadAsync(string name, string url, Func<Socket, bool>? bypass, bool own, CancellationToken ct)
     {
-        return ThroughputAsync(name, url, bypass, ct);
+        return ThroughputAsync(name, url, bypass, own, ct);
     }
 
     /// <summary>

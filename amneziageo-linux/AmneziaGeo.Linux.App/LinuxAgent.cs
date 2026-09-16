@@ -1920,6 +1920,8 @@ internal sealed class LinuxAgent : IDisposable
         {
             report.Append("  geoip routes   : ").Append(selectedList.Routes.Count).Append('\n');
             report.Append("  geosite domains: ").Append(selectedList.Domains.Count).Append('\n');
+            var listSettings = await _store.GetRoutingSettingsAsync(selectedList.Id, ct).ConfigureAwait(false);
+            report.Append("  all udp        : ").Append(listSettings is { AllUdp: true, UseGlobalProxy: false } ? "on" : "off").Append('\n');
         }
 
         report.Append("mode         : ").Append(_tunnel.Mode).Append('\n');
@@ -2185,6 +2187,9 @@ internal sealed class LinuxAgent : IDisposable
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
+        var offer = await ServerOffers.Shared
+            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0), ct)
+            .ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             _tunnel.Running,
@@ -2198,7 +2203,9 @@ internal sealed class LinuxAgent : IDisposable
             _tunnel.Running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 ? args[0] : null,
             ConfiguredMtu: WgConfigEditor.GetMtu(text),
-            CarrierPort: carrier.Port);
+            CarrierPort: carrier.Port,
+            TunnelSpeedUrl: ServerOffers.Download(offer, false),
+            DirectSpeedUrl: ServerOffers.Download(offer, true));
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);

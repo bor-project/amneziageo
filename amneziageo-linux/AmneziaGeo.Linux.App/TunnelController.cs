@@ -44,6 +44,7 @@ internal sealed class TunnelController : IDisposable
     private IReadOnlyList<string> _appRules = [];
     private IRouteMemory? _memory;
     private AppTunnel? _apps;
+    private bool _allUdp;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
     private string _sessionConfig = string.Empty;
@@ -246,9 +247,12 @@ internal sealed class TunnelController : IDisposable
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
         _standingBasis = new StandingBasis(ownNetworks, infrastructure, [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes], inboundRoutes.Count > 0, applier);
         _standing = standing;
+        // All UDP belongs to a split: a full tunnel already carries every datagram.
+        var allUdp = split && routing.AllUdp;
         _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
-            [.. routing.DirectRoutes, .. routing.BlockRoutes], _log, ct).ConfigureAwait(false);
+            [.. routing.DirectRoutes, .. routing.BlockRoutes], allUdp, endpointIp, _log, ct).ConfigureAwait(false);
         _appRules = routing.TunnelApps;
+        _allUdp = allUdp && _apps is not null;
         applier.Attach(_apps);
         if (_apps is not null && !applier.CarryEverything())
         {
@@ -366,6 +370,12 @@ internal sealed class TunnelController : IDisposable
             return false;
         }
 
+        // The mark is armed with the tunnel, so all UDP waits for the next one as well.
+        if ((_split && routing.AllUdp) != _allUdp)
+        {
+            return false;
+        }
+
         var hasRules = routing.HasRules;
         routing = AroundLocal(routing);
         Restand(cache, routing);
@@ -461,6 +471,7 @@ internal sealed class TunnelController : IDisposable
         {
             _apps = null;
             _appRules = [];
+            _allUdp = false;
             await apps.StopAsync().ConfigureAwait(false);
             apps.Dispose();
         }

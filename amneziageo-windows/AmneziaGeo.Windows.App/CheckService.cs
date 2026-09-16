@@ -35,6 +35,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var (_, split) = await ActiveListAsync(store, config, ct).ConfigureAwait(false);
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
+        var offer = await ServerOffers.Shared
+            .SpeedAsync(new OfferTarget(config, text, connected, transport?.ApiPort ?? 0), ct)
+            .ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             connected,
@@ -48,7 +51,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             connected ? control.Link.HandshakesPerMinute : -1,
             SourceHost: source,
             ConfiguredMtu: MtuPlan.ResolveForLink(transport, text),
-            CarrierPort: carrier.Port);
+            CarrierPort: carrier.Port,
+            TunnelSpeedUrl: ServerOffers.Download(offer, false),
+            DirectSpeedUrl: ServerOffers.Download(offer, true));
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         await RecordAsync(report.Render(), report.Culprit.Length > 0, report.Advice, ct).ConfigureAwait(false);

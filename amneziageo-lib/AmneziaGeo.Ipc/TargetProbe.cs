@@ -50,7 +50,7 @@ public static class TargetProbe
                 ProbeVerdicts.Unreachable, [options.Target]);
         }
 
-        var (receive, bytes) = await ChannelProbe.DownloadAsync(ProbeLegs.Receive, PageUrl(options.Target), bypass, ct)
+        var (receive, bytes) = await ChannelProbe.DownloadAsync(ProbeLegs.Receive, PageUrl(options.Target), bypass, false, ct)
             .ConfigureAwait(false);
         var thin = bytes < ChannelProbe.SourceFloorBytes;
         legs.Add(thin

@@ -178,6 +178,17 @@ public sealed class ServerOffers
     }
 
     /// <summary>
+    /// Returns the address a throughput leg pulls bytes from, empty where the server of the configuration measures
+    /// nothing or answers inside a tunnel the leg leaves beside.
+    /// </summary>
+    public static string Download(ServerOffer? offer, bool beside)
+    {
+        var speed = SpeedArgs.Of(offer);
+
+        return offer is null || speed is null || (offer.Inside && beside) ? string.Empty : speed.Down;
+    }
+
+    /// <summary>
     /// Returns the port the server is asked at when the settings name none: the one the text names for the API,
     /// else the port of the Endpoint, else zero.
     /// </summary>

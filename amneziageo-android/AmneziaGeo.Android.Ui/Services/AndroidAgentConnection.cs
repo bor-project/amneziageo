@@ -2707,6 +2707,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var running = VpnBridge.IsRunning(Application.Context);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
+        var offer = await _offers.SpeedAsync(Target(config, text), ct).ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             running,
@@ -2720,7 +2721,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
             ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
-            CarrierPort: carrier.Port);
+            CarrierPort: carrier.Port,
+            TunnelSpeedUrl: ServerOffers.Download(offer, false),
+            DirectSpeedUrl: ServerOffers.Download(offer, true));
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);

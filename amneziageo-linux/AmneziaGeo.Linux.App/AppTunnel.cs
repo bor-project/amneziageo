@@ -7,11 +7,12 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
-/// Carries the named applications through the tunnel and nothing else of theirs past it. The kernel does the
-/// steering: the processes live in a cgroup, a netfilter rule marks what leaves it, and the mark selects a routing
-/// table whose default is the tunnel. A destination the rules decided keeps its own route in that table, so an
-/// address rule outranks an application rule. What stays outside the cgroup is untouched, which is what tells this
-/// apart from routing an application's addresses for the whole machine.
+/// Carries the named applications through the tunnel and nothing else of theirs past it, and every outbound
+/// datagram of the machine where all UDP is asked for. The kernel does the steering: the processes live in a
+/// cgroup, a netfilter rule marks what leaves it, and the mark selects a routing table whose default is the
+/// tunnel. A destination the rules decided keeps its own route in that table, so an address rule outranks an
+/// application rule. What stays outside the cgroup is untouched, which is what tells this apart from routing an
+/// application's addresses for the whole machine.
 /// </summary>
 internal sealed class AppTunnel : IDisposable
 {
@@ -26,6 +27,8 @@ internal sealed class AppTunnel : IDisposable
     private readonly string _iface;
     private readonly AppImages _images;
     private readonly GeoIpRanges _named;
+    private readonly bool _allUdp;
+    private readonly string? _endpoint;
     private readonly AgentLog _log;
     private readonly CancellationTokenSource _cts = new();
     private readonly HashSet<int> _placed = [];
@@ -37,11 +40,13 @@ internal sealed class AppTunnel : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    private AppTunnel(string interfaceName, AppImages images, GeoIpRanges named, AgentLog log)
+    private AppTunnel(string interfaceName, AppImages images, GeoIpRanges named, bool allUdp, string? endpoint, AgentLog log)
     {
         _iface = interfaceName;
         _images = images;
         _named = named;
+        _allUdp = allUdp;
+        _endpoint = endpoint;
         _log = log;
     }
 
@@ -51,24 +56,24 @@ internal sealed class AppTunnel : IDisposable
     public static string CgroupPath => $"{CgroupRoot}/{CgroupName}";
 
     /// <summary>
-    /// Raises the per-application path for the given rules; null when the rules name no application, the kernel
-    /// offers no unified cgroups, or netfilter refuses the mark.
+    /// Raises the per-application path for the given rules and the datagram path where all UDP is asked for; null
+    /// when neither is asked for, the kernel offers no unified cgroups, or netfilter refuses the mark.
     /// </summary>
-    public static async Task<AppTunnel?> TryStartAsync(string interfaceName, IReadOnlyList<string> apps, IReadOnlyList<string> named, AgentLog log, CancellationToken ct)
+    public static async Task<AppTunnel?> TryStartAsync(string interfaceName, IReadOnlyList<string> apps, IReadOnlyList<string> named, bool allUdp, string? endpoint, AgentLog log, CancellationToken ct)
     {
         var images = AppImages.Parse(apps);
-        if (images.Empty)
+        if (images.Empty && !allUdp)
         {
             return null;
         }
 
-        if (!File.Exists($"{CgroupRoot}/cgroup.controllers"))
+        if (!images.Empty && !File.Exists($"{CgroupRoot}/cgroup.controllers"))
         {
             log.Warn("apps", "the kernel offers no unified cgroups here, so the applications keep the path of the machine");
             return null;
         }
 
-        var tunnel = new AppTunnel(interfaceName, images, GeoIpRanges.Build(named), log);
+        var tunnel = new AppTunnel(interfaceName, images, GeoIpRanges.Build(named), allUdp, endpoint, log);
         if (!await tunnel.RaiseAsync(ct).ConfigureAwait(false))
         {
             await tunnel.StopAsync().ConfigureAwait(false);
@@ -76,9 +81,18 @@ internal sealed class AppTunnel : IDisposable
         }
 
         tunnel._up = true;
-        tunnel._syncing = Task.Run(() => tunnel.SyncingAsync(tunnel._cts.Token), CancellationToken.None);
-        tunnel._events = ProcEvents.TryListen(tunnel.Carry, log);
-        log.Info("apps", $"{images.Count} application(s) ride {interfaceName} by cgroup, and their traffic alone");
+        if (!images.Empty)
+        {
+            tunnel._syncing = Task.Run(() => tunnel.SyncingAsync(tunnel._cts.Token), CancellationToken.None);
+            tunnel._events = ProcEvents.TryListen(tunnel.Carry, log);
+            log.Info("apps", $"{images.Count} application(s) ride {interfaceName} by cgroup, and their traffic alone");
+        }
+
+        if (allUdp)
+        {
+            log.Info("apps", $"every outbound datagram rides {interfaceName}, apart from the local networks and the server itself");
+        }
+
         return tunnel;
     }
 
@@ -188,14 +202,17 @@ internal sealed class AppTunnel : IDisposable
     // Builds the cgroup, the mark and the table the mark selects.
     private async Task<bool> RaiseAsync(CancellationToken ct)
     {
-        try
+        if (!_images.Empty)
         {
-            Directory.CreateDirectory(CgroupPath);
-        }
-        catch (Exception ex)
-        {
-            _log.Warn("apps", $"the cgroup could not be made: {ex.Message}");
-            return false;
+            try
+            {
+                Directory.CreateDirectory(CgroupPath);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("apps", $"the cgroup could not be made: {ex.Message}");
+                return false;
+            }
         }
 
         // What a killed run left behind would send the mark at a table that routes nowhere.
@@ -259,23 +276,34 @@ internal sealed class AppTunnel : IDisposable
             : "the tunnel carries no sixth family, so it is refused to the carried applications instead of leaking");
     }
 
-    // Marks what leaves the cgroup and rewrites its source on the way out: the address the socket took belongs to
+    // Marks what the path carries and rewrites its source on the way out: the address the socket took belongs to
     // the physical link, and the peer answers only the address the tunnel carries.
     private async Task<bool> MarkAsync(CancellationToken ct)
     {
         var path = Path.Combine(Path.GetTempPath(), "amneziageo-apps.nft");
-        var text = string.Join('\n',
+        var carried = new List<string>();
+        if (!_images.Empty)
+        {
+            carried.Add("    socket cgroupv2 level 1 \"" + CgroupName + "\" meta mark set " + Mark);
+        }
+
+        if (_allUdp)
+        {
+            carried.AddRange(Datagrams());
+        }
+
+        var text = string.Join('\n', [
             "table inet " + NftTable + " {",
             "  chain apps {",
             "    type route hook output priority mangle; policy accept;",
-            "    socket cgroupv2 level 1 \"" + CgroupName + "\" meta mark set " + Mark,
+            .. carried,
             "  }",
             "  chain source {",
             "    type nat hook postrouting priority srcnat; policy accept;",
             "    meta mark " + Mark + " oifname \"" + _iface + "\" masquerade",
             "  }",
             "}",
-            string.Empty);
+            string.Empty]);
         try
         {
             await File.WriteAllTextAsync(path, text, ct).ConfigureAwait(false);
@@ -303,6 +331,25 @@ internal sealed class AppTunnel : IDisposable
             {
             }
         }
+    }
+
+    // Puts every outbound datagram on the mark, except what already rides the tunnel, the loopback, the broadcasts
+    // and the server itself.
+    private IEnumerable<string> Datagrams()
+    {
+        yield return "    oifname \"lo\" return";
+        yield return "    oifname \"" + _iface + "\" return";
+        yield return "    ip daddr 255.255.255.255 return";
+        yield return "    ip daddr 224.0.0.0/4 return";
+        yield return "    ip6 daddr ff00::/8 return";
+        if (_endpoint is { Length: > 0 } endpoint)
+        {
+            yield return endpoint.Contains(':', StringComparison.Ordinal)
+                ? "    ip6 daddr " + endpoint + " return"
+                : "    ip daddr " + endpoint + " return";
+        }
+
+        yield return "    meta l4proto udp meta mark set " + Mark;
     }
 
     // Copies what the machine reaches without a default into the application table, or the carried processes lose

@@ -15,12 +15,17 @@ internal sealed class AppMatcher
     private readonly ILogger _logger;
     private readonly ProcessImages? _images;
 
+    // The rules in force, parsed. Replaced whole on a reload, so a reader sees one set or the other.
+    private volatile RuleSet _set;
+
     // Parsed matchers.
-    private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _dirs = [];
-    private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _services = [];
-    private readonly HashSet<string> _packages = new(StringComparer.OrdinalIgnoreCase);
+    private sealed record RuleSet(
+        IReadOnlyList<string> Rules,
+        HashSet<string> Paths,
+        List<string> Dirs,
+        HashSet<string> Names,
+        List<string> Services,
+        HashSet<string> Packages);
 
     // Stop the ancestry walk at generic hosts so an app rule stays scoped to its own tree.
     private static readonly HashSet<string> _ancestryStops = new(StringComparer.OrdinalIgnoreCase)
@@ -36,7 +41,35 @@ internal sealed class AppMatcher
     {
         _logger = logger;
         _images = images;
+        _set = Parse(matchers, logger);
+    }
 
+    /// <summary>
+    /// Puts an edited rule set in force without reconnecting the tunnel. Returns true when the rules changed.
+    /// </summary>
+    public bool Reload(IReadOnlyList<string> rules)
+    {
+        if (_set.Rules.SequenceEqual(rules, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        _set = Parse(rules, _logger);
+        _logger.LogInformation("app rules reloaded without reconnecting: {Count} rule(s) now in effect", rules.Count);
+        ReportRuleProblems();
+        return true;
+    }
+
+    // Reads the rule texts into the matchers they stand for.
+    private static RuleSet Parse(IReadOnlyList<string> matchers, ILogger logger)
+    {
+        var set = new RuleSet(
+            matchers,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            [],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            [],
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         foreach (var raw in matchers)
         {
             var token = raw.Trim();
@@ -44,7 +77,7 @@ internal sealed class AppMatcher
             if (eq <= 0)
             {
                 // Bare value: treat as a full path.
-                AddPathMatcher(token);
+                AddPathMatcher(set, token);
                 continue;
             }
 
@@ -58,54 +91,90 @@ internal sealed class AppMatcher
             switch (kind)
             {
                 case "path":
-                    AddPathMatcher(value);
+                    AddPathMatcher(set, value);
                     break;
                 case "dir":
-                    AddDirMatcher(value);
+                    AddDirMatcher(set, value);
                     break;
                 case "name":
-                    _names.Add(value);
+                    set.Names.Add(value);
                     break;
                 case "svc":
-                    _services.Add(value);
+                    set.Services.Add(value);
                     break;
                 case "pkg":
-                    _packages.Add(value);
+                    set.Packages.Add(value);
                     break;
                 default:
-                    _logger.LogInformation("app rules of type '{Kind}' are not supported yet and are ignored; the programs they name will not be routed through the tunnel", kind);
+                    logger.LogInformation("app rules of type '{Kind}' are not supported yet and are ignored; the programs they name will not be routed through the tunnel", kind);
                     break;
+            }
+        }
+
+        return set;
+    }
+
+    /// <summary>
+    /// Writes a warning for every app rule that catches nothing here: no such program installed, or its program
+    /// also installed under another package no rule names.
+    /// </summary>
+    public void ReportRuleProblems(IReadOnlyList<PackageEntry>? packages = null)
+    {
+        var rules = _set.Rules;
+        var installed = packages ?? InstalledPackages.Snapshot(AppRuleAudit.Publishers(rules), _logger);
+        foreach (var note in AppRuleAudit.Check(rules, installed, DirectoryExists, FileExists, ServiceExists))
+        {
+            if (note.Twin is null)
+            {
+                _logger.LogWarning("the app rule \"{Rule}\" names no program installed on this machine, so nothing rides the tunnel for it", note.Rule);
+            }
+            else
+            {
+                _logger.LogWarning("the app rule \"{Rule}\" and the installed package {Twin} run the same program, so if you use that one its traffic stays outside the tunnel until a rule names it too", note.Rule, note.Twin);
             }
         }
     }
 
+    // Rule targets on disk. A rule under a per-user folder is looked for in every user profile: the agent runs
+    // as LocalSystem, whose own profile holds none of them.
+    private static bool DirectoryExists(string path) => AmneziaGeo.Ipc.AppPathToken.Expand(path).Any(Directory.Exists);
+
+    private static bool FileExists(string path) => AmneziaGeo.Ipc.AppPathToken.Expand(path).Any(File.Exists);
+
+    // Whether a service of that name is registered.
+    private static bool ServiceExists(string name)
+    {
+        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + name);
+        return key is not null;
+    }
+
     // A Store/MSIX exe path becomes a package match so the rule survives auto-updates into a new version folder.
-    private void AddPathMatcher(string value)
+    private static void AddPathMatcher(RuleSet set, string value)
     {
         var canon = AmneziaGeo.Ipc.AppPathToken.Tokenize(value);
         var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromPath(canon);
         if (family is not null)
         {
-            _packages.Add(family);
+            set.Packages.Add(family);
         }
         else
         {
-            _paths.Add(canon);
+            set.Paths.Add(canon);
         }
     }
 
     // A Store/MSIX package folder becomes a package match; a Squirrel app-<ver> leaf is hoisted (#204).
-    private void AddDirMatcher(string value)
+    private static void AddDirMatcher(RuleSet set, string value)
     {
         var canon = AmneziaGeo.Ipc.AppPathToken.Tokenize(value.TrimEnd('\\', '/'));
         var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromPath(canon);
         if (family is not null)
         {
-            _packages.Add(family);
+            set.Packages.Add(family);
         }
         else
         {
-            _dirs.Add(AmneziaGeo.Ipc.AppPathToken.StripVersionedLeaf(canon));
+            set.Dirs.Add(AmneziaGeo.Ipc.AppPathToken.StripVersionedLeaf(canon));
         }
     }
 
@@ -166,7 +235,14 @@ internal sealed class AppMatcher
     /// <summary>
     /// Has any matcher.
     /// </summary>
-    public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0 || _packages.Count > 0;
+    public bool HasMatchers
+    {
+        get
+        {
+            var set = _set;
+            return set.Paths.Count > 0 || set.Dirs.Count > 0 || set.Names.Count > 0 || set.Services.Count > 0 || set.Packages.Count > 0;
+        }
+    }
 
     // Match the owning image, or any ancestor's. WebView2/Electron/UWP apps run their networking in a
     // shared child process whose own image sits outside the app; the rule matches up the parent chain.
@@ -289,23 +365,25 @@ internal sealed class AppMatcher
             return false;
         }
 
+        var set = _set;
+
         // Canonicalize to the same %ENV% space the rules were stored in (portable across users/machines).
         var canon = AmneziaGeo.Ipc.AppPathToken.Tokenize(path);
-        if (_paths.Contains(canon))
+        if (set.Paths.Contains(canon))
         {
             return true;
         }
 
-        if (_names.Count > 0)
+        if (set.Names.Count > 0)
         {
             var name = System.IO.Path.GetFileName(path);
-            if (_names.Contains(name))
+            if (set.Names.Contains(name))
             {
                 return true;
             }
         }
 
-        foreach (var dir in _dirs)
+        foreach (var dir in set.Dirs)
         {
             // Matches dir prefix, catches versioned subfolders.
             if (canon.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
@@ -314,11 +392,11 @@ internal sealed class AppMatcher
             }
         }
 
-        if (_packages.Count > 0)
+        if (set.Packages.Count > 0)
         {
             // A Store/MSIX image matches by package family, so the version folder in its path is ignored.
             var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromPath(path);
-            if (family is not null && _packages.Contains(family))
+            if (family is not null && set.Packages.Contains(family))
             {
                 return true;
             }
@@ -349,7 +427,7 @@ internal sealed class AppMatcher
     private HashSet<uint> ResolveServicePids()
     {
         var pids = new HashSet<uint>();
-        foreach (var service in _services)
+        foreach (var service in _set.Services)
         {
             var pid = QueryServiceProcessId(service);
             if (pid is > 0)

@@ -144,7 +144,7 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
     private TargetFindings Application(string token, List<CheckFact> facts, TargetFindings findings, TargetProbes probes)
     {
         var value = Host(token);
-        var rule = AppRule(value);
+        var rule = AppRule(token);
         facts.Add(new CheckFact("app", value, rule.Length > 0 ? "listed" : "unlisted",
             rule.Length > 0 ? $"covered by \"{rule}\"" : "no app rule names it"));
 
@@ -293,11 +293,11 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
     }
 
     // The app rule that names a package or an image, "" when none does.
-    private string AppRule(string value)
+    private string AppRule(string token)
     {
         foreach (var rule in list?.Rules ?? [])
         {
-            if (rule.Kind == GeoRuleKind.App && rule.Value.Contains(value, StringComparison.OrdinalIgnoreCase))
+            if (rule.Kind == GeoRuleKind.App && AppRuleCover.Covers(rule.Value, token))
             {
                 return GeoConfigurator.Format(rule);
             }

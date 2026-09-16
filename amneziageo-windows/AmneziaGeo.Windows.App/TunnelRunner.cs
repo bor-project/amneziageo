@@ -582,6 +582,8 @@ internal sealed class TunnelRunner(
             if (candidate.HasMatchers)
             {
                 matcher = candidate;
+                _appMatcher = candidate;
+                candidate.ReportRuleProblems();
                 appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>());
                 // A matched app's destination is dropped before anything observes it, so the drop itself is where
                 // the app rule has to be applied: its remotes take the tunnel instead of a permit.
@@ -928,6 +930,7 @@ internal sealed class TunnelRunner(
             session.Clear();
             _appGateway?.Dispose();
             _appGateway = null;
+            _appMatcher = null;
             _processImages = null;
             if (routing is not null)
             {
@@ -1572,6 +1575,8 @@ internal sealed class TunnelRunner(
 
     private FleetLentNames? _lent;
     private AppGateway? _appGateway;
+    // The matcher the running session routes applications by, so an edited rule reaches it without a reconnect.
+    private AppMatcher? _appMatcher;
     // The bring-up facts the standing ranges of an edited list are worked out from.
     private StandingBasis? _standingBasis;
     private StandingRanges _standing = StandingRanges.None;
@@ -1743,7 +1748,9 @@ internal sealed class TunnelRunner(
             // Read before the rebuild: these are the destinations a rule by name has to be applied to.
             var held = routing.Snapshot();
             var aroundLocal = PrivateNetworks.AroundLocal(current.Routes, routes.LocalSubnets());
-            var standing = await RestandAsync(routing, tunnelName, current.ListId, aroundLocal.Carried, ct).ConfigureAwait(false);
+            var edited = await store.GetRoutingListAsync(current.ListId, ct).ConfigureAwait(false);
+            ApplyAppRules(edited, tunnelName);
+            var standing = Restand(routing, tunnelName, edited, aroundLocal.Carried);
             IReadOnlyList<string> tunneled = standing is { Networks.Count: > 0 } ? [.. aroundLocal.Carried, .. standing.Networks] : aroundLocal.Carried;
             routing.Rebuild(tunneled, [.. current.DirectRoutes, .. aroundLocal.Kept], current.BlockRoutes);
 
@@ -1764,19 +1771,43 @@ internal sealed class TunnelRunner(
         }
     }
 
+    // Puts the edited rules by application in force on the running tunnel. The trackers they drive are raised at
+    // bring-up only, so rules added to a tunnel that connected without any wait for a reconnect and are named here.
+    private void ApplyAppRules(RoutingList? list, string tunnelName)
+    {
+        var apps = list?.Rules.Where(rule => rule.Kind == GeoRuleKind.App).Select(rule => rule.Value).ToList() ?? [];
+        if (_appMatcher is not { } matcher)
+        {
+            if (apps.Count > 0)
+            {
+                logger.LogWarning("{Tunnel}: rules by application were added to a tunnel that connected without any, so they start working only after it is reconnected", tunnelName);
+            }
+
+            return;
+        }
+
+        if (!matcher.Reload(apps))
+        {
+            return;
+        }
+
+        // A name the applications asked for before the edit may be answered from a cache that the rules no longer agree with.
+        dns.FlushCache();
+        logger.LogInformation("{Tunnel}: {Count} rule(s) by application are in force without reconnecting", tunnelName, apps.Count);
+    }
+
     // The bring-up facts the standing ranges are worked out from: the mode, the configuration's own networks, the
     // infrastructure, what the cache holds outside it and the inbound access.
     private sealed record StandingBasis(bool Split, IReadOnlyList<string> OwnNetworks, IReadOnlySet<string> Infrastructure, IReadOnlyList<string> Pinned, IReadOnlyList<string> InboundRoutes, IReadOnlyList<string> InboundAddresses);
 
     // Works out the ranges the edited list keeps standing and hands the answers to inbound access to the cache and the firewall.
-    private async Task<StandingRanges?> RestandAsync(RoutingCache routing, string tunnelName, long listId, IReadOnlyList<string> carried, CancellationToken ct)
+    private StandingRanges? Restand(RoutingCache routing, string tunnelName, RoutingList? list, IReadOnlyList<string> carried)
     {
         if (_standingBasis is not { } basis)
         {
             return null;
         }
 
-        var list = await store.GetRoutingListAsync(listId, ct).ConfigureAwait(false);
         var standing = StandingRanges.Of(carried, list?.Rules ?? [], basis.Split, basis.InboundRoutes.Count > 0, basis.OwnNetworks, basis.Infrastructure);
         routing.Pin([.. basis.Pinned, .. standing.Return]);
         if (basis.InboundRoutes.Count > 0 && !new HashSet<string>(_standing.Return, StringComparer.Ordinal).SetEquals(standing.Return))

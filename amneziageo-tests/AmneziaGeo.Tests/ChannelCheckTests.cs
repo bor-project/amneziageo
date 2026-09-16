@@ -376,6 +376,18 @@ public sealed class TargetCheckTests
     }
 
     [Fact]
+    public async Task AnAppNamedByItsPackageFolder_IsToldTheRuleThatCoversIt()
+    {
+        var folder = @"dir=%PROGRAMFILES%\WindowsApps\5319275A.WhatsAppDesktop_2.2628.101.0_x64__cv1g1gvanyjgm";
+        var list = List(rules: [new GeoRule(GeoRuleKind.App, folder)], apps: [folder]);
+
+        var report = await new TargetInspector(list, split: true, AppScope.Exclusive)
+            .InspectAsync("app:pkg=5319275A.WhatsAppDesktop_cv1g1gvanyjgm", "srv", new TargetProbes(), CancellationToken.None);
+
+        Assert.Contains(report.Facts, fact => fact.Kind == "app" && fact.State == "listed");
+    }
+
+    [Fact]
     public async Task AnAppOutsideAnExclusiveSplit_IsToldNoRuleReachesIt()
     {
         var list = List(rules: [new GeoRule(GeoRuleKind.App, "pkg=org.telegram.messenger")], apps: ["pkg=org.telegram.messenger"]);

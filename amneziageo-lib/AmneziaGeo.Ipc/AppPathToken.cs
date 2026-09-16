@@ -62,6 +62,54 @@ public static class AppPathToken
     }
 
     /// <summary>
+    /// Every path a tokenized rule stands for on this machine: a machine folder expanded as it is, a per-user
+    /// folder once per user profile, since the service runs as LocalSystem where its own profile is the wrong one.
+    /// </summary>
+    public static IReadOnlyList<string> Expand(string token)
+    {
+        var path = token.Trim().Trim('"');
+        foreach (var (variable, tail) in _userFolders)
+        {
+            if (!path.StartsWith(variable, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var rest = path[variable.Length..].TrimStart('\\', '/');
+            return [.. Profiles().Select(profile => System.IO.Path.Combine(profile, tail, rest))];
+        }
+
+        return [Environment.ExpandEnvironmentVariables(path)];
+    }
+
+    // Tokens standing for a folder of one user, and where that folder sits inside a profile.
+    private static readonly (string Variable, string Tail)[] _userFolders =
+    [
+        ("%LOCALAPPDATA%", LocalAppData),
+        ("%APPDATA%", RoamingAppData),
+        ("%USERPROFILE%", ""),
+    ];
+
+    // The user profiles on this machine.
+    private static IReadOnlyList<string> Profiles()
+    {
+        var root = UsersRoot();
+        if (root.Length == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            return System.IO.Directory.GetDirectories(root);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
     /// Returns the parent of a versioned leaf folder (Squirrel app-x.y.z and similar), so an app:dir= rule
     /// survives the app auto-updating into a new version folder. A non-versioned leaf passes through unchanged.
     /// </summary>
@@ -192,8 +240,11 @@ public static class AppPathToken
         return PackageFamilyFromFullName(fullName);
     }
 
-    // Package full name "Name_Version_Architecture_ResourceId_PublisherId" -> family "Name_PublisherId".
-    private static string? PackageFamilyFromFullName(string fullName)
+    /// <summary>
+    /// Returns the package family "Name_PublisherId" for a package full name
+    /// "Name_Version_Architecture_ResourceId_PublisherId", or null when the name is not one.
+    /// </summary>
+    public static string? PackageFamilyFromFullName(string fullName)
     {
         var parts = fullName.Split('_');
         if (parts.Length < 5)

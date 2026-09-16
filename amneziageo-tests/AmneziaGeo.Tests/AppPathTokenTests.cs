@@ -63,4 +63,22 @@ public sealed class AppPathTokenTests
     {
         Assert.Equal(token, AppPathToken.NormalizeAppRule(token));
     }
+
+    [Fact]
+    public void Expand_PerUserRuleReachesEveryUserProfile()
+    {
+        var expanded = AppPathToken.Expand(@"%LOCALAPPDATA%\Discord");
+
+        Assert.NotEmpty(expanded);
+        Assert.All(expanded, one => Assert.EndsWith(@"AppData\Local\Discord", one, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(expanded, one => one.Contains(@"config\systemprofile", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Expand_MachineRuleStandsAsItIs()
+    {
+        var expanded = AppPathToken.Expand(@"%PROGRAMFILES%\AmneziaGeo");
+
+        Assert.Equal([Environment.ExpandEnvironmentVariables(@"%PROGRAMFILES%\AmneziaGeo")], expanded);
+    }
 }

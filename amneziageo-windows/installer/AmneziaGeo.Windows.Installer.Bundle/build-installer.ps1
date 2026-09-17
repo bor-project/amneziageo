@@ -18,6 +18,8 @@
     -a,   -Arch x64,arm64     build only these arches, or all
     -p,   -Payload fdd,scd    build only these payload kinds, or all
     -pre, -Prerelease         bake allowPrerelease=1 (beta channel) regardless of the config value
+    -u,   -UpdateUrl <url>    bake this update manifest regardless of the config value
+    -nu,  -NoUpdates          bake no update manifest, so the build never offers an update
     -l,   -ListOnly           print the resolved matrix and exit (build nothing)
   With no flags and no config, the default is a single x64 fdd build (the prior behaviour).
 
@@ -56,6 +58,10 @@ param(
     [string[]]$Payload,
     [Alias('pre', 'AllowPrerelease')]
     [switch]$Prerelease,
+    [Alias('u')]
+    [string]$UpdateUrl,
+    [Alias('nu')]
+    [switch]$NoUpdates,
     [Alias('s', 'SigningCert')]
     [string]$Sign,
     [Alias('sp')]
@@ -80,6 +86,8 @@ if ($Help) {
         '  -a,   -Arch x64,arm64     arches to build, or all',
         '  -p,   -Payload fdd,scd    fdd = framework-dependent, scd = self-contained, or all',
         '  -pre, -Prerelease         bake the beta update channel',
+        '  -u,   -UpdateUrl <url>    update manifest the build checks against',
+        '  -nu,  -NoUpdates          build without updates',
         '  -s,   -Sign <path>        sign with this certificate file (.pfx); omitted = unsigned',
         '  -sp,  -SignPassword       password for the -Sign certificate',
         '  -r,   -Rebuild            clean before building',
@@ -142,7 +150,17 @@ $Configuration = if ($Configuration) { $Configuration } else { $cfgConfig }
 $rebuild = [bool]$Rebuild -or $cfgRebuild
 if ($Configuration -notin @('Debug', 'Release')) { throw "Invalid Configuration '$Configuration' (expected Debug or Release)." }
 
-$updateUrl = if ($cfg -and $cfg.updateUrl) { [string]$cfg.updateUrl } else { '' }
+# Update feed: -NoUpdates wins over -UpdateUrl, which wins over the config. No URL leaves the build without
+# updates and hides their UI.
+$updateUrl = if ($NoUpdates) {
+    ''
+} elseif ($UpdateUrl) {
+    $UpdateUrl
+} elseif ($cfg -and $cfg.updateUrl) {
+    [string]$cfg.updateUrl
+} else {
+    ''
+}
 
 # Hidden channel toggle (not shown in the UI): installer.config.json -> allowPrerelease (0/1 or true/false),
 # overridable by -Prerelease (CI forces it on for prerelease tags so a beta build stays on the beta

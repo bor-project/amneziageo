@@ -116,6 +116,11 @@ public sealed class GeoVpnService : VpnService
     public const string ExtraDirectTcp = "direct-tcp";
 
     /// <summary>
+    /// Whether the network the device sits on stays inside the tun and leaves it on a protected socket.
+    /// </summary>
+    public const string ExtraLocalInTunnel = "local-in-tunnel";
+
+    /// <summary>
     /// Whether the hot direct addresses are left outside the tun by name; API 33 and above.
     /// </summary>
     public const string ExtraExcludeRoutes = "exclude-routes";
@@ -181,6 +186,9 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _stops;
     private ConnectivityManager.NetworkCallback? _underlay;
     private List<string> _carved = [];
+
+    // Set when the engine refused to decide on the packet, so the next raise carves the local network out again.
+    private bool _localCarveForced;
     private int _reraising;
 
     // The ladder a link that has stopped carrying is repaired by. This platform hands the engine a tun and a
@@ -259,7 +267,7 @@ public sealed class GeoVpnService : VpnService
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
             request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog,
-            request.DirectTcp, request.ExcludeRoutes, request.BypassApps));
+            request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel));
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -423,7 +431,7 @@ public sealed class GeoVpnService : VpnService
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
                     request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog, request.DirectTcp,
-                    request.ExcludeRoutes, request.BypassApps).ConfigureAwait(false);
+                    request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel).ConfigureAwait(false);
             }
             finally
             {
@@ -454,7 +462,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel)
     {
         try
         {
@@ -486,7 +494,9 @@ public sealed class GeoVpnService : VpnService
             // Live tun replacement from Android 13.
             _liveTun = excludeRoutes && Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu;
             var hot = excludeRoutes ? HotDirect() : [];
-            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, _liveTun ? [] : hot).ConfigureAwait(false);
+            // The network the device sits on stays inside the tun only where the engine sends it out itself.
+            var carveLocal = !localInTunnel || _localCarveForced || !(directTcp || _proxyPort > 0);
+            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, _liveTun ? [] : hot, carveLocal).ConfigureAwait(false);
             _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
@@ -537,7 +547,8 @@ public sealed class GeoVpnService : VpnService
             // straight back into the tun.
             AwgEngine.SetProtector(handle, Protect);
             _verdicts = rules.Verdicts;
-            if (rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts))
+            var decided = rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts);
+            if (decided)
             {
                 Report($"{plan.BlockRoutes.Count} blocked and {plan.DirectRoutes.Count} direct range(s) handed to "
                     + "the engine, which decides them on the packet");
@@ -552,10 +563,22 @@ public sealed class GeoVpnService : VpnService
                 Report($"{preloaded} address(es) used before this session are decided from the start");
             }
 
-            if ((directTcp || _proxyPort > 0) && AwgEngine.SetTcpDirect(handle, true))
+            var streams = (directTcp || _proxyPort > 0) && AwgEngine.SetTcpDirect(handle, true);
+            if (streams)
             {
                 Report("a stream to a direct range leaves on a protected socket as well, so the relay is no longer "
                     + "the only way past the tunnel");
+            }
+
+            // A local network inside the tun rides the tunnel unless the engine sends it out itself.
+            if (!carveLocal && !(decided && streams))
+            {
+                Report("the engine decides no destination on the packet here, so the network the device sits on "
+                    + "leaves the tun again");
+                _localCarveForced = true;
+                await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort,
+                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel).ConfigureAwait(false);
+                return;
             }
 
             if (_proxyPort > 0 && AwgEngine.SetRelay(handle, _proxyPort, !plan.FullTunnel, Owner))
@@ -798,10 +821,10 @@ public sealed class GeoVpnService : VpnService
     // named belongs. A route table holds addresses and not protocols, so the tun there carries every datagram
     // except the direct ranges it leaves out. Without the relay a name has to become an address here and stay that
     // way for the session: a route table cannot be edited once the tun is established.
-    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot)
+    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool carveLocal)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
-        var direct = relayed ? [] : new List<string>(plan.DirectRoutes);
+        var direct = relayed || !carveLocal ? new List<string>() : new List<string>(plan.DirectRoutes);
         var block = new List<string>(plan.BlockRoutes);
 
         // The resolver rides the tunnel, so a query is answered where the traffic goes and not where the device sits.
@@ -810,8 +833,7 @@ public sealed class GeoVpnService : VpnService
             proxy.Add(server + "/32");
         }
 
-        // The segment the box sits on never enters the tun, or a tunnel that carries everything cuts the device off
-        // its own network.
+        // The segment the box sits on, as the interfaces report it.
         var local = new List<string>(LocalSubnets());
         if (local.Count == 0)
         {
@@ -827,11 +849,24 @@ public sealed class GeoVpnService : VpnService
             }
         }
 
-        direct.AddRange(local);
-
         // Ranges the tun leaves out whatever the budget holds: the network the device sits on, and the addresses a
         // direct name resolved to.
-        var kept = new List<string>(local);
+        var kept = new List<string>();
+
+        // Ranges the tun carries while the engine sends them out itself.
+        var onPacket = new List<string>();
+        if (carveLocal)
+        {
+            direct.AddRange(local);
+            kept.AddRange(local);
+        }
+        else
+        {
+            onPacket.AddRange(local);
+            onPacket.AddRange(plan.DirectRoutes);
+            Report($"{local.Count + plan.DirectRoutes.Count} local and direct range(s) stay inside the tun and "
+                + "leave it on a protected socket, so an application reaches the network the device sits on");
+        }
 
         if (relayed)
         {
@@ -870,8 +905,15 @@ public sealed class GeoVpnService : VpnService
             var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
             var named = await resolver.ResolveAsync(plan.DirectDomains, budget.Token).ConfigureAwait(false);
             proxy.AddRange(await resolver.ResolveAsync(plan.ProxyDomains, budget.Token).ConfigureAwait(false));
-            direct.AddRange(named);
-            kept.AddRange(named);
+            if (carveLocal)
+            {
+                direct.AddRange(named);
+                kept.AddRange(named);
+            }
+            else
+            {
+                onPacket.AddRange(named);
+            }
             block.AddRange(await resolver.ResolveAsync(plan.BlockDomains, budget.Token).ConfigureAwait(false));
             Report($"{names} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms"
                 + (budget.IsCancellationRequested ? ", the rest ran out of their time" : string.Empty)
@@ -879,7 +921,7 @@ public sealed class GeoVpnService : VpnService
         }
 
         // Excludes the last session's direct addresses at connect.
-        var taken = hot.Count > 0
+        var taken = hot.Count > 0 && carveLocal
             ? SystemRoutes.Fit(plan.FullTunnel || relayed, proxy, direct, block, hot, RouteBudget.Max)
             : 0;
         if (taken > 0)
@@ -890,7 +932,7 @@ public sealed class GeoVpnService : VpnService
                 + "kernel carries them instead of the shim");
         }
 
-        var tunneled = SystemRoutes.Tunneled(plan.FullTunnel || relayed, proxy, direct, block);
+        var tunneled = SystemRoutes.Tunneled(plan.FullTunnel || relayed || !carveLocal, proxy, direct, block);
         if (!relayed && tunneled.Count > RouteBudget.Max)
         {
             // establish() takes the table in one transaction, so the direct ranges leave it altogether and the
@@ -912,7 +954,10 @@ public sealed class GeoVpnService : VpnService
         var allowed = plan.FullTunnel || relayed || block.Count > 0 ? SystemRoutes.Allowed(block) : [];
         Report($"{Mode(plan)}: {tunneled.Count} route(s) into the tunnel, {block.Count} range(s) blocked, "
             + $"peer carries {(allowed.Count == 0 ? "what the config says" : allowed.Count + " range(s)")}");
-        return new Materialized(tunneled, allowed, local, Verdicts(plan.ProxyRoutes, plan.DirectRoutes, block));
+        var decided = new List<string>(plan.DirectRoutes);
+        decided.AddRange(onPacket);
+
+        return new Materialized(tunneled, allowed, local, Verdicts(plan.ProxyRoutes, decided, block));
     }
 
     // What the shim decides on the packet: block wins over direct, direct over proxy. The ranges stay inside the
@@ -2001,7 +2046,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetIntExtra(ExtraMtuMode, 0),
             intent.GetBooleanExtra(ExtraDirectTcp, true),
             intent.GetBooleanExtra(ExtraExcludeRoutes, false),
-            intent.GetStringArrayExtra(ExtraBypassApps));
+            intent.GetStringArrayExtra(ExtraBypassApps),
+            intent.GetBooleanExtra(ExtraLocalInTunnel, false));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

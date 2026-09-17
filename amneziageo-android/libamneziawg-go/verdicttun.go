@@ -362,6 +362,7 @@ type verdictTun struct {
 	seen    atomic.Uint64
 	aside6  atomic.Uint64
 	kept6   atomic.Uint64
+	unsent  atomic.Uint64
 }
 
 func newVerdictTun(inner tun.Device, ttl time.Duration) *verdictTun {
@@ -627,6 +628,11 @@ func (d *verdictTun) setTcpDirect(on bool) error {
 	return nil
 }
 
+// Умеет ли слой увести протокол мимо туннеля.
+func carriable(packet []byte) bool {
+	return len(packet) >= 20 && (packet[9] == syscall.IPPROTO_TCP || packet[9] == syscall.IPPROTO_UDP)
+}
+
 // Уводит пакет мимо туннеля своим сокетом; отказ оставляет его туннелю.
 func (d *verdictTun) aside(packet []byte) bool {
 	if len(packet) >= 20 && packet[9] == syscall.IPPROTO_TCP {
@@ -648,9 +654,9 @@ func (d *verdictTun) stats() string {
 	}
 
 	return fmt.Sprintf(
-		"named %d, blocked %d, direct %d, sent %d, answered %d, dropped %d, refused %d, %d flow(s), %d live; "+
-			"datagram(s) %d off the tunnel by owner, %d kept on it; %s",
-		d.seen.Load(), d.blocked.Load(), d.passed.Load(),
+		"named %d, blocked %d, direct %d, not carried %d, sent %d, answered %d, dropped %d, refused %d, "+
+			"%d flow(s), %d live; datagram(s) %d off the tunnel by owner, %d kept on it; %s",
+		d.seen.Load(), d.blocked.Load(), d.passed.Load(), d.unsent.Load(),
 		d.fwd.sent.Load(), d.fwd.back.Load(), d.fwd.dropped.Load(), d.fwd.refused.Load(),
 		d.fwd.count(), d.live.size(), d.aside6.Load(), d.kept6.Load(), streams)
 }
@@ -703,10 +709,16 @@ func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 				continue
 			case verdictDirect:
 				// Поток решается в релее, если тот поднят; иначе датаграмма и поток уходят со своих
-				// защищённых сокетов, а остальное едет туннелем.
+				// защищённых сокетов.
 				packet := bufs[i][offset : offset+sizes[i]]
 				if d.stream(packet) || d.aside(packet) {
 					d.passed.Add(1)
+					continue
+				}
+
+				// Протокол, которым увести нечем, туннелем вместо прямого пути не едет.
+				if !carriable(packet) {
+					d.unsent.Add(1)
 					continue
 				}
 			default:

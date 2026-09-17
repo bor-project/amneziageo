@@ -107,7 +107,8 @@ internal static class SettingsCommands
                 return true;
 
             case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.SubscriptionAutoRefresh
-                or SettingKeys.MultiServer or SettingKeys.DirectTcp or SettingKeys.ExcludeRoutes:
+                or SettingKeys.MultiServer or SettingKeys.DirectTcp or SettingKeys.ExcludeRoutes
+                or SettingKeys.LocalInTunnel:
                 if (!Toggle.TryParse(raw, out var on))
                 {
                     error = $"{key} takes on or off";

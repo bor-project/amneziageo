@@ -29,6 +29,11 @@ public static class SettingKeys
     public const string ExcludeRoutes = "exclude-routes";
 
     /// <summary>
+    /// Whether the network the device sits on stays inside the tun and leaves it on a protected socket.
+    /// </summary>
+    public const string LocalInTunnel = "local-in-tunnel";
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public const string ProxyEnabled = "proxy-enabled";

@@ -25,7 +25,8 @@ public sealed record VpnRequest(
     int MtuMode = 0,
     bool DirectTcp = true,
     bool ExcludeRoutes = false,
-    string[]? BypassApps = null);
+    string[]? BypassApps = null,
+    bool LocalInTunnel = false);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that

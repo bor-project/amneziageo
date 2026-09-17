@@ -457,6 +457,36 @@
   <data name="Main_RouteTtlHint" xml:space="preserve">
     <value>Сколько адрес хранится в кеше</value>
   </data>
+  <data name="Main_DnsTransportTitle" xml:space="preserve">
+    <value>DNS-запросы агента</value>
+  </data>
+  <data name="Main_DnsTransportHint" xml:space="preserve">
+    <value>Как агент спрашивает резолвер за туннелем</value>
+  </data>
+  <data name="Main_DnsTransportAuto" xml:space="preserve">
+    <value>Автоматически</value>
+  </data>
+  <data name="Main_DnsTransportPlain" xml:space="preserve">
+    <value>Обычный</value>
+  </data>
+  <data name="Main_DnsTransportDoh" xml:space="preserve">
+    <value>DoH</value>
+  </data>
+  <data name="Main_LocalDohTitle" xml:space="preserve">
+    <value>DNS-запросы системы</value>
+  </data>
+  <data name="Main_LocalDohHint" xml:space="preserve">
+    <value>Как система обращается к резолверу агента</value>
+  </data>
+  <data name="Main_LocalDohAuto" xml:space="preserve">
+    <value>Автоматически</value>
+  </data>
+  <data name="Main_LocalDohOff" xml:space="preserve">
+    <value>Выключено</value>
+  </data>
+  <data name="Main_LocalDohOn" xml:space="preserve">
+    <value>Включено</value>
+  </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Использовать IPv6</value>
   </data>

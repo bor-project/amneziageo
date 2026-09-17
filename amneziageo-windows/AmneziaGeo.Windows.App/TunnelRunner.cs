@@ -255,6 +255,8 @@ internal sealed class TunnelRunner(
         // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
 
+        var appSettings = await settings.LoadAsync();
+
         // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
         var configDns = ConfigResolvers(config);
         var tunnelResolver = TunnelResolvers(configDns);
@@ -263,6 +265,12 @@ internal sealed class TunnelRunner(
         if (routedResolvers.Count < tunnelResolver.Count)
         {
             logger.LogInformation("{Name}: another tunnel looks this machine's names up, so {Resolvers} are left to it and take no route here", name, string.Join(", ", tunnelResolver));
+        }
+
+        // The resolver asked over HTTPS rides the tunnel as well, or its answers are no safer than the plain ones.
+        if (routedResolvers.Count > 0 && AmneziaGeo.Ipc.DnsTransports.Of(appSettings.DnsTransport) != AmneziaGeo.Ipc.DnsTransports.Plain)
+        {
+            routedResolvers = [.. routedResolvers, DohResolver.DefaultAddress.ToString()];
         }
 
         // Resolver /32s are infrastructure: routed through the tunnel so the tunnel DNS stays reachable. Collect
@@ -387,8 +395,6 @@ internal sealed class TunnelRunner(
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
         logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried in a websocket: {Ws} [{Elapsed} ms in]",
             name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
-
-        var appSettings = await settings.LoadAsync();
 
         // All-UDP catch-all (split-only); from the routing list or the global setting.
         var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);
@@ -666,7 +672,7 @@ internal sealed class TunnelRunner(
         var adapterIndex = default(uint?);
         uint? TunnelInterface() => adapterIndex ??= routes.FindTunnelIndex(name);
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport);
         session.SetProxy(proxy);
 
         // The names kept on the own network with these suffixes.
@@ -817,7 +823,7 @@ internal sealed class TunnelRunner(
         {
             applied = true;
             var learner = proxy is null ? null : new DnsAnswerLearner(proxy, ForeignTo(name, underlayProbe), loggerFactory.CreateLogger<DnsAnswerLearner>());
-            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, proxy?.BoundV4, learner, sessionCts.Token));
+            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, proxy, learner, appSettings.LocalDoh, sessionCts.Token));
         }
         else if (!duties.HoldsResolver)
         {
@@ -998,13 +1004,13 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
         var (lanIp, lanPool) = LanResolvers(lanUpstream);
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport);
         if (!listen)
         {
             // It answers the holder of the machine's lookups over the pipe, so it serves no socket of its own.
@@ -1366,10 +1372,12 @@ internal sealed class TunnelRunner(
     // Applies the host DNS redirect once the peer first answers, then flushes so pre-redirect answers are
     // re-queried through the proxy. Before the handshake the OS keeps its own resolvers, so a dial that never
     // completes cannot strand the machine's DNS; the teardown reverts whatever this applied.
-    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, IPAddress? proxyAddress, DnsAnswerLearner? learner, CancellationToken ct)
+    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, DnsProxy? proxy, DnsAnswerLearner? learner, string localDoh, CancellationToken ct)
     {
         // Reads the answers the system gets past the proxy while the adapters keep their own resolvers.
         var learning = default(CancellationTokenSource);
+        var proxyAddress = proxy?.BoundV4;
+        using var doh = new LocalDohGuard(localDoh, proxyAddress ?? IPAddress.Loopback, loggerFactory.CreateLogger<LocalDohGuard>());
         try
         {
             await WaitForHandshakeAsync(name, ct);
@@ -1387,9 +1395,20 @@ internal sealed class TunnelRunner(
             var redirected = false;
             var released = false;
             var misses = 0;
+            var encrypted = false;
+            if (proxy is not null && doh.Eager)
+            {
+                encrypted = await TakeNamesOverHttpsAsync(doh, proxy, name, redirectServers, redirected, ct).ConfigureAwait(false);
+                redirected = encrypted;
+            }
+
             while (true)
             {
-                if (await DnsHealthProbe.ServiceAnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
+                // Once the system asks over HTTPS, a plain query of our own proves nothing about its path.
+                var answered = encrypted
+                    ? await DnsHealthProbe.SystemAnswersAsync(ct).ConfigureAwait(false)
+                    : await DnsHealthProbe.ServiceAnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false);
+                if (answered)
                 {
                     misses = 0;
                     if (!redirected)
@@ -1408,7 +1427,17 @@ internal sealed class TunnelRunner(
                 else
                 {
                     misses++;
-                    if (redirected && misses >= DnsWatchStrikes)
+                    // Plain 53 may have been taken before this tunnel even came up, so the takeover is tried
+                    // whether or not the adapters ever pointed here.
+                    if (misses >= DnsWatchStrikes && proxy is not null && !encrypted
+                        && await TakeNamesOverHttpsAsync(doh, proxy, name, redirectServers, redirected, ct).ConfigureAwait(false))
+                    {
+                        encrypted = true;
+                        redirected = true;
+                        released = false;
+                        misses = 0;
+                    }
+                    else if (redirected && misses >= DnsWatchStrikes)
                     {
                         using (logger.Step("restore DNS + flush cache"))
                         {
@@ -1457,6 +1486,42 @@ internal sealed class TunnelRunner(
             learning?.Cancel();
             learning?.Dispose();
         }
+    }
+
+    // Puts the name proxy on HTTPS, points the adapters at it and keeps that only if the system's lookups
+    // come back answered.
+    private async Task<bool> TakeNamesOverHttpsAsync(LocalDohGuard doh, DnsProxy proxy, string name, IReadOnlyList<string> redirectServers, bool redirected, CancellationToken ct)
+    {
+        if (!doh.Serve(proxy.AnswerAsync))
+        {
+            return false;
+        }
+
+        if (redirected)
+        {
+            dns.FlushCache();
+        }
+        else
+        {
+            RedirectDns(name, redirectServers);
+        }
+
+        if (await doh.ConfirmAsync(DnsHealthProbe.SystemAnswersAsync, ct).ConfigureAwait(false))
+        {
+            session.SetSystemNames(doh.State);
+            return true;
+        }
+
+        if (!redirected)
+        {
+            using (logger.Step("restore DNS + flush cache"))
+            {
+                dns.Restore(name);
+                dns.FlushCache();
+            }
+        }
+
+        return false;
     }
 
     // Starts reading the answers the system gets past the name proxy; null without a learner.

@@ -343,6 +343,19 @@ public sealed class TargetCheckTests
     }
 
     [Fact]
+    public async Task AnAddressTheTunnelHoldsBesideItself_IsNotCalledCarried()
+    {
+        var probes = new TargetProbes(_ => new HeldRoute(RoleToken.Direct, "direct, 0 B, idle 3 s"));
+
+        var report = await new TargetInspector(List(proxy: ["149.154.160.0/20"]), split: true)
+            .InspectAsync("149.154.167.51", "srv", probes, CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.ProxyOffPath, report.VerdictKey);
+        Assert.Equal("149.154.160.0-149.154.175.255", report.VerdictArgs[0]);
+        Assert.Equal("1", report.VerdictArgs[1]);
+    }
+
+    [Fact]
     public async Task AnAppTalkingToBareAddresses_IsToldToAddAGeoRule()
     {
         var list = List(rules: [new GeoRule(GeoRuleKind.App, "pkg=org.telegram.messenger")]);

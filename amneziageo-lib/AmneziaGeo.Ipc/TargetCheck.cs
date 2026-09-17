@@ -90,6 +90,12 @@ public static class TargetVerdicts
     public const string Unreachable = "Check_TargetUnreachable";
 
     /// <summary>
+    /// In the tunnel by rule, and the live tunnel holds its addresses beside it. Args: the rule, how many such
+    /// addresses.
+    /// </summary>
+    public const string ProxyOffPath = "Check_TargetProxyOffPath";
+
+    /// <summary>
     /// The application is in no list, so its traffic follows the default. Args: the application.
     /// </summary>
     public const string AppUnlisted = "Check_TargetAppUnlisted";
@@ -154,6 +160,7 @@ public sealed record TargetFindings(
     RoleToken Role = RoleToken.None,
     int Addresses = 0,
     int Unlisted = 0,
+    int OffPath = 0,
     bool Resolved = true,
     bool Reachable = true,
     string AppRule = "",
@@ -296,6 +303,12 @@ public static class TargetVerdict
 
         if (found.Role == RoleToken.Proxy)
         {
+            if (found.OffPath > 0)
+            {
+                return (TargetVerdicts.ProxyOffPath,
+                    [found.MatchedRule, found.OffPath.ToString(CultureInfo.InvariantCulture)]);
+            }
+
             if (!found.Reachable)
             {
                 return (TargetVerdicts.Unreachable, [target]);
@@ -354,6 +367,7 @@ public static class TargetPhrase
             TargetVerdicts.Direct => $"kept out of the tunnel by the direct rule \"{Arg(args, 0)}\"",
             TargetVerdicts.Proxy => $"carried by the tunnel under the rule \"{Arg(args, 0)}\"",
             TargetVerdicts.Unreachable => $"in the tunnel by rule and still nothing answers at {Arg(args, 0)}: the fault is past the tunnel",
+            TargetVerdicts.ProxyOffPath => $"in the tunnel by the rule \"{Arg(args, 0)}\" and still {Arg(args, 1)} of its address(es) leave beside it: the resolver answered with addresses no rule carries",
             TargetVerdicts.AppUnlisted => $"\"{Arg(args, 0)}\" is in no list, so its traffic follows the default route",
             TargetVerdicts.AppOutside => $"\"{Arg(args, 0)}\" is named by no app rule, and the tunnel carries only the {Arg(args, 1)} application(s) that are: it leaves beside the tunnel, past every rule in the list",
             TargetVerdicts.ProxyAppsOnly => $"carried by the tunnel under the rule \"{Arg(args, 0)}\", but only for the {Arg(args, 1)} named application(s): every other application leaves beside the tunnel",

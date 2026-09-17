@@ -9,7 +9,7 @@ namespace AmneziaGeo.Linux.App;
 /// own network are looked up through, the idle window a destination keeps the route it earned, and the transport
 /// the tunnel is carried over.
 /// </summary>
-internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, int RouteTtlSeconds, ConfigTransport? Transport = null)
+internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, int RouteTtlSeconds, ConfigTransport? Transport = null, string DnsTransport = AmneziaGeo.Ipc.DnsTransports.Auto)
 {
     /// <summary>
     /// Idle window a route survives while the library names none.
@@ -24,7 +24,7 @@ internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, in
     /// <summary>
     /// Reads the resolver list stored for a configuration.
     /// </summary>
-    public static TunnelOptions Read(string? resolvers, int routeTtlSeconds, ConfigTransport? transport = null)
+    public static TunnelOptions Read(string? resolvers, int routeTtlSeconds, ConfigTransport? transport = null, string? dnsTransport = null)
     {
         var servers = new List<IPAddress>();
         foreach (var entry in (resolvers ?? string.Empty).Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -35,6 +35,6 @@ internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, in
             }
         }
 
-        return new TunnelOptions(servers, routeTtlSeconds, transport);
+        return new TunnelOptions(servers, routeTtlSeconds, transport, AmneziaGeo.Ipc.DnsTransports.Of(dnsTransport));
     }
 }

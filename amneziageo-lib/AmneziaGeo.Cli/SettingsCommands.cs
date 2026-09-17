@@ -37,7 +37,7 @@ internal static class SettingsCommands
     private static int Show(IAgentLink agent)
     {
         var snapshot = agent.Snapshot;
-        var values = new (string Key, string Value)[]
+        var values = new List<(string Key, string Value)>
         {
             (_logLevelKey, snapshot.LogLevel),
             (_routeLogKey, snapshot.RouteLog ? "on" : "off"),
@@ -49,6 +49,17 @@ internal static class SettingsCommands
             (SettingKeys.SubscriptionAutoRefresh, snapshot.SubscriptionAutoRefresh ? "on" : "off"),
             (SettingKeys.SubscriptionRefreshInterval, snapshot.SubscriptionRefreshIntervalHours.ToString(CultureInfo.InvariantCulture)),
         };
+
+        // Kept out on a platform that takes no such choice, where the snapshot leaves them empty.
+        if (snapshot.DnsTransport.Length > 0)
+        {
+            values.Add((SettingKeys.DnsTransport, snapshot.DnsTransport));
+        }
+
+        if (snapshot.LocalDoh.Length > 0)
+        {
+            values.Add((SettingKeys.LocalDoh, snapshot.LocalDoh));
+        }
 
         if (Output.Json)
         {
@@ -136,6 +147,26 @@ internal static class SettingsCommands
                 }
 
                 value = hours.ToString(CultureInfo.InvariantCulture);
+                return true;
+
+            case SettingKeys.DnsTransport:
+                value = raw.Trim().ToLowerInvariant();
+                if (!DnsTransports.IsKnown(value))
+                {
+                    error = $"{key} takes one of {DnsTransports.Auto}, {DnsTransports.Plain}, {DnsTransports.Doh}";
+                    return false;
+                }
+
+                return true;
+
+            case SettingKeys.LocalDoh:
+                value = raw.Trim().ToLowerInvariant();
+                if (!LocalDohModes.IsKnown(value))
+                {
+                    error = $"{key} takes one of {LocalDohModes.Auto}, {LocalDohModes.Off}, {LocalDohModes.On}";
+                    return false;
+                }
+
                 return true;
 
             case SettingKeys.RouteTtl:

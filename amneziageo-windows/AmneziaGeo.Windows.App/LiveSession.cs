@@ -14,6 +14,7 @@ internal sealed class LiveSession
     private volatile DomainTracker? _tracker;
     private volatile DnsProxy? _proxy;
     private volatile string _mode = string.Empty;
+    private volatile string _systemNames = string.Empty;
     private volatile string _listName = string.Empty;
     private volatile IReadOnlyList<string> _configRoutes = [];
 
@@ -36,6 +37,11 @@ internal sealed class LiveSession
     /// How the session routes: by the list, everything through the tunnel, or by the configuration alone.
     /// </summary>
     public string Mode => _mode;
+
+    /// <summary>
+    /// What the system reaches the name proxy by, empty while it reaches it on plain 53.
+    /// </summary>
+    public string SystemNames => _systemNames;
 
     /// <summary>
     /// Routing list in force, empty when none is assigned.
@@ -82,6 +88,14 @@ internal sealed class LiveSession
     }
 
     /// <summary>
+    /// Publishes what the system reaches the name proxy by.
+    /// </summary>
+    public void SetSystemNames(string names)
+    {
+        _systemNames = names;
+    }
+
+    /// <summary>
     /// Drops every slot at teardown.
     /// </summary>
     public void Clear()
@@ -90,6 +104,7 @@ internal sealed class LiveSession
         _tracker = null;
         _proxy = null;
         _mode = string.Empty;
+        _systemNames = string.Empty;
         _listName = string.Empty;
         _configRoutes = [];
     }

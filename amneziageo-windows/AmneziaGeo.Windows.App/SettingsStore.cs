@@ -19,6 +19,8 @@ internal sealed class SettingsStore(IStateStore store)
             RouteTtlSeconds = ReadInt(values, AppSettings.RouteTtlKey, defaults.RouteTtlSeconds),
             ConnectTimeoutSeconds = ReadInt(values, "connect-timeout-seconds", defaults.ConnectTimeoutSeconds),
             DeadThresholdSeconds = ReadInt(values, "dead-threshold-seconds", defaults.DeadThresholdSeconds),
+            DnsTransport = AmneziaGeo.Ipc.DnsTransports.Of(ReadText(values, AmneziaGeo.Ipc.SettingKeys.DnsTransport, defaults.DnsTransport)),
+            LocalDoh = AmneziaGeo.Ipc.LocalDohModes.Of(ReadText(values, AmneziaGeo.Ipc.SettingKeys.LocalDoh, defaults.LocalDoh)),
             // Update URL is baked into the build; a stale persisted row must not shadow it.
             UpdateUrl = defaults.UpdateUrl,
             GeoAutoCheck = ReadBool(values, "geo-auto-check", defaults.GeoAutoCheck),
@@ -175,6 +177,21 @@ internal sealed class SettingsStore(IStateStore store)
             return true;
         }
 
+        if (TokenKeys.Contains(key))
+        {
+            var token = value.Trim().ToLowerInvariant();
+            var known = key == AmneziaGeo.Ipc.SettingKeys.DnsTransport
+                ? AmneziaGeo.Ipc.DnsTransports.IsKnown(token)
+                : AmneziaGeo.Ipc.LocalDohModes.IsKnown(token);
+            if (!known)
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, token, ct);
+            return true;
+        }
+
         if (StringKeys.Contains(key))
         {
             var trimmed = value.Trim();
@@ -204,7 +221,7 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. ShareKeys, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval];
+        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. TokenKeys, .. ShareKeys, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval];
     }
 
     private static readonly string[] IntKeys =
@@ -225,6 +242,9 @@ internal sealed class SettingsStore(IStateStore store)
 
     // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials];
+
+    // Settings that take one token out of a fixed set.
+    private static readonly string[] TokenKeys = [AmneziaGeo.Ipc.SettingKeys.DnsTransport, AmneziaGeo.Ipc.SettingKeys.LocalDoh];
 
     private static int ReadInt(IReadOnlyDictionary<string, string> values, string key, int fallback)
         => values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;

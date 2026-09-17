@@ -151,7 +151,9 @@ public static class CliRunner
               settings set <key> <value>
               Known keys: log-level (error|warning|info|debug|trace), route-log (on|off),
               survive-reboot (on|off, connect at agent start), periodic-reconnect-enabled (on|off),
-              periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds.
+              periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds,
+              dns-transport (auto|plain|doh, how the resolver behind the tunnel is asked),
+              local-doh (auto|off|on, how the system is made to reach the name proxy).
 
             local proxy
               proxy show                        where it listens and what it asks for

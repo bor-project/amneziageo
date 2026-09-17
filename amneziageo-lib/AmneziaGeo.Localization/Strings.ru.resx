@@ -461,7 +461,7 @@
     <value>DNS-запросы агента</value>
   </data>
   <data name="Main_DnsTransportHint" xml:space="preserve">
-    <value>Как агент спрашивает резолвер за туннелем</value>
+    <value>Поиск адресов сайтов через туннель</value>
   </data>
   <data name="Main_DnsTransportAuto" xml:space="preserve">
     <value>Автоматически</value>
@@ -476,7 +476,7 @@
     <value>DNS-запросы системы</value>
   </data>
   <data name="Main_LocalDohHint" xml:space="preserve">
-    <value>Как система обращается к резолверу агента</value>
+    <value>Приём запросов адресов от системы</value>
   </data>
   <data name="Main_LocalDohAuto" xml:space="preserve">
     <value>Автоматически</value>

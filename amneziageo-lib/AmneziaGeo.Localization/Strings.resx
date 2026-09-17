@@ -461,7 +461,7 @@
     <value>Agent DNS requests</value>
   </data>
   <data name="Main_DnsTransportHint" xml:space="preserve">
-    <value>How the agent asks the resolver in the tunnel</value>
+    <value>Finding site addresses through the tunnel</value>
   </data>
   <data name="Main_DnsTransportAuto" xml:space="preserve">
     <value>Automatic</value>
@@ -476,7 +476,7 @@
     <value>System DNS requests</value>
   </data>
   <data name="Main_LocalDohHint" xml:space="preserve">
-    <value>How the system reaches the agent's resolver</value>
+    <value>Taking address lookups from the system</value>
   </data>
   <data name="Main_LocalDohAuto" xml:space="preserve">
     <value>Automatic</value>

@@ -57,7 +57,8 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             _ => await NameAsync(token, facts, findings, probes, ct).ConfigureAwait(false),
         };
 
-        if (kind is CheckTargetKind.Domain or CheckTargetKind.Address && findings.Role == RoleToken.Proxy && findings.Addresses > 0)
+        if (kind is CheckTargetKind.Domain or CheckTargetKind.Address && findings.Role == RoleToken.Proxy
+            && findings.Addresses > 0 && findings.OffPath == 0)
         {
             var reached = await ReachableAsync(token, facts, ct).ConfigureAwait(false);
             findings = findings with { Reachable = reached };
@@ -144,7 +145,7 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
     private TargetFindings Application(string token, List<CheckFact> facts, TargetFindings findings, TargetProbes probes)
     {
         var value = Host(token);
-        var rule = AppRule(value);
+        var rule = AppRule(token);
         facts.Add(new CheckFact("app", value, rule.Length > 0 ? "listed" : "unlisted",
             rule.Length > 0 ? $"covered by \"{rule}\"" : "no app rule names it"));
 
@@ -163,7 +164,7 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
                 unlisted++;
             }
 
-            facts.Add(Address(parsed, claim, probes));
+            facts.Add(Address(parsed, claim, probes.Held?.Invoke(parsed)));
         }
 
         if (live.Count > 0)
@@ -226,10 +227,19 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
         var role = findings.Role;
         var rule = findings.MatchedRule;
         var unlisted = 0;
+
+        // Addresses the running tunnel carries somewhere other than the tunnel.
+        var offPath = 0;
         foreach (var address in addresses.Take(MaxAddresses))
         {
             var claim = ForAddress(address);
-            facts.Add(Address(address, claim, probes));
+            var held = probes.Held?.Invoke(address);
+            facts.Add(Address(address, claim, held));
+            if (held is not null && held.Role != RoleToken.Proxy)
+            {
+                offPath++;
+            }
+
             if (claim.Role == RoleToken.None)
             {
                 unlisted++;
@@ -244,14 +254,20 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             }
         }
 
-        return findings with { Role = role, MatchedRule = rule, Addresses = addresses.Count, Unlisted = unlisted };
+        return findings with
+        {
+            Role = role,
+            MatchedRule = rule,
+            Addresses = addresses.Count,
+            Unlisted = unlisted,
+            OffPath = offPath,
+        };
     }
 
     // One address row. What the running tunnel holds for it is the state, because a name can settle an address
     // the ranges would claim; the range it falls into is then the reason, not the answer.
-    private static CheckFact Address(IPAddress address, Claim claim, TargetProbes probes)
+    private static CheckFact Address(IPAddress address, Claim claim, HeldRoute? held)
     {
-        var held = probes.Held?.Invoke(address);
         var reason = claim.Rule.Length > 0 ? $"in {claim.Rule}" : "no range covers it";
         var state = (held?.Role ?? claim.Role).ToString().ToLowerInvariant();
         return new CheckFact("address", address.ToString(), state,
@@ -293,11 +309,11 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
     }
 
     // The app rule that names a package or an image, "" when none does.
-    private string AppRule(string value)
+    private string AppRule(string token)
     {
         foreach (var rule in list?.Rules ?? [])
         {
-            if (rule.Kind == GeoRuleKind.App && rule.Value.Contains(value, StringComparison.OrdinalIgnoreCase))
+            if (rule.Kind == GeoRuleKind.App && AppRuleCover.Covers(rule.Value, token))
             {
                 return GeoConfigurator.Format(rule);
             }

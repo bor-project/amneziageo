@@ -224,6 +224,14 @@ internal static class DnsMessage
     }
 
     /// <summary>
+    /// Whether a response settles its question, NOERROR or NXDOMAIN, rather than refusing or failing it.
+    /// </summary>
+    public static bool Settles(byte[] message)
+    {
+        return message.Length >= 12 && (message[2] & 0x80) != 0 && (message[3] & 0x0F) is 0 or 3;
+    }
+
+    /// <summary>
     /// Returns the smallest record TTL in the answer section, or 0 when there are none.
     /// </summary>
     public static int MinTtl(byte[] message)

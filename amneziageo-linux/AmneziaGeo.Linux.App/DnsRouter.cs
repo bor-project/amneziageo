@@ -31,6 +31,10 @@ internal sealed class DnsRouter : IDisposable
     private readonly IReadOnlyList<IPAddress> _lanResolvers;
     private readonly RoutingCache _routes;
     private readonly ConcurrentDictionary<string, string> _names = new(StringComparer.Ordinal);
+
+    // How the resolvers behind the tunnel are asked, and the transport that answered last.
+    private readonly NameUpstream _tunnelAsk;
+    private readonly DohResolver? _doh;
     private readonly AgentLog _log;
     private readonly CancellationTokenSource _cts = new();
     private Socket? _udp;
@@ -40,7 +44,7 @@ internal sealed class DnsRouter : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsRouter(TunnelRouting routing, bool stripV6, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, RoutingCache routes, AgentLog log)
+    public DnsRouter(TunnelRouting routing, bool stripV6, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, RoutingCache routes, AgentLog log, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Auto)
     {
         _split = routing.Split;
         _stripV6 = stripV6;
@@ -51,6 +55,15 @@ internal sealed class DnsRouter : IDisposable
         _lanResolvers = lanResolvers;
         _routes = routes;
         _log = log;
+        _doh = AmneziaGeo.Ipc.DnsTransports.Of(dnsTransport) == AmneziaGeo.Ipc.DnsTransports.Plain
+            ? null
+            : new DohResolver(DohResolver.DefaultUrl, DohResolver.DefaultAddress, TimeSpan.FromMilliseconds(UpstreamTimeoutMs * 2));
+        _tunnelAsk = new NameUpstream(
+            dnsTransport,
+            (query, ct) => DemandAsync(query, overTcp: false, ct),
+            (query, ct) => DemandAsync(query, overTcp: true, ct),
+            _doh is null ? null : (query, ct) => _doh.AskAsync(query, ct),
+            line => _log.Info("dns", line));
     }
 
     /// <summary>
@@ -270,7 +283,9 @@ internal sealed class DnsRouter : IDisposable
             _ => _split || IsLocalName(name) ? _lanResolvers : _tunnelResolvers,
         };
 
-        var answer = await AskAsync(upstream, query, length, overTcp, ct).ConfigureAwait(false);
+        var answer = ReferenceEquals(upstream, _tunnelResolvers)
+            ? await AskThroughTunnelAsync(query, length, ct).ConfigureAwait(false)
+            : await AskAsync(upstream, query, length, overTcp, ct).ConfigureAwait(false);
         if (answer is null)
         {
             return null;
@@ -347,6 +362,34 @@ internal sealed class DnsRouter : IDisposable
         }
 
         return _proxyDomains.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
+    }
+
+    /// <summary>
+    /// The transport the resolvers behind the tunnel are reached over, and why that one.
+    /// </summary>
+    public string NameTransport => _tunnelAsk.State;
+
+    // The resolvers behind the tunnel, asked over the transport the setting allows.
+    private async Task<byte[]?> AskThroughTunnelAsync(byte[] query, int length, CancellationToken ct)
+    {
+        try
+        {
+            return await _tunnelAsk.AskAsync(length == query.Length ? query : query[..length], ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            _log.Warn("dns", $"no resolver behind the tunnel answered: {ex.Message}");
+            return null;
+        }
+    }
+
+    // One query to the resolvers behind the tunnel; silence is raised, so the ladder steps on to the next transport.
+    private async Task<byte[]> DemandAsync(byte[] query, bool overTcp, CancellationToken ct)
+    {
+        var answer = await AskAsync(_tunnelResolvers, query, query.Length, overTcp, ct).ConfigureAwait(false);
+        return answer ?? throw new IOException(overTcp
+            ? "no resolver behind the tunnel answered over tcp"
+            : "no resolver behind the tunnel answered over udp");
     }
 
     // Asks each resolver in turn and returns the first answer.

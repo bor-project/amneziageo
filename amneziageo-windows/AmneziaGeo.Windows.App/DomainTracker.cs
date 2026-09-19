@@ -201,8 +201,9 @@ internal sealed class DomainTracker(
     /// multiple live IPs): unions them with the cache and routes only the new ones. A previously routed IP is
     /// never dropped here, so a partial or transient answer cannot blackhole a working address. Eviction of a
     /// stale IP happens only via <see cref="Replace"/> (re-resolve) or <see cref="Remove"/> (left the lists).
+    /// With <paramref name="late"/> the connections that left before the new routes are reset.
     /// </summary>
-    public void Add(string domain, IReadOnlyList<string> ips, bool persist = true)
+    public void Add(string domain, IReadOnlyList<string> ips, bool persist = true, bool late = false)
     {
         var addedCidrs = new List<string>();
         lock (_lock)
@@ -279,6 +280,10 @@ internal sealed class DomainTracker(
         // Route-before-answer still holds - the caller waits here before serving, just not while holding _lock.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
         Adopt(addedCidrs);
+        if (late)
+        {
+            Reset(addedCidrs, established: true);
+        }
     }
 
     // Hands the routed addresses to the cache as its own, so the two never install or reclaim the same address.
@@ -317,11 +322,11 @@ internal sealed class DomainTracker(
 
     // Aborts the half-open connections that left before these routes existed: their source address was chosen
     // without the route and cannot be changed, so the app has to open them again.
-    private void Reset(IReadOnlyList<string> cidrs)
+    private void Reset(IReadOnlyList<string> cidrs, bool established = false)
     {
         if (synReset is not null && Hosts(cidrs) is { Count: > 0 } addresses)
         {
-            synReset.Abort(addresses);
+            synReset.Abort(addresses, established);
         }
     }
 

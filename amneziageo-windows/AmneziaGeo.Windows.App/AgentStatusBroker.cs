@@ -2934,6 +2934,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             ProxyAddresses: proxy.Addresses,
             ProxyClients: ProxyClientNames.Describe(proxy.Peers()),
             DnsUnreachable: owned && control.Running && control.DnsUnreachable,
+            NameTransport: owned && control.Running ? inspector.NameTransport : string.Empty,
+            SystemNames: owned && control.Running ? inspector.SystemNames : string.Empty,
             ShareMode: settings.ShareMode,
             ShareEthernet: settings.ShareEthernet,
             HotspotSupported: hotspot.Supported,
@@ -2948,7 +2950,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             HotspotMaxClients: hotspot.MaxClients,
             SubscriptionAutoRefresh: settings.SubscriptionAutoRefresh,
             SubscriptionRefreshIntervalHours: settings.SubscriptionRefreshIntervalHours,
-            MultiServer: settings.MultiServer), scope, states);
+            MultiServer: settings.MultiServer,
+            DnsTransport: settings.DnsTransport,
+            LocalDoh: settings.LocalDoh), scope, states);
     }
 
     /// <summary>

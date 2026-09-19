@@ -62,6 +62,7 @@ internal static class StatusCommands
             ("bound to", snapshot.BoundTarget ?? "-"),
             ("selected", snapshot.SelectedTarget ?? "-"),
             ("routing", RoutingLabel(snapshot)),
+            ("names", NameLine(snapshot)),
             ("survive reboot", snapshot.SurviveReboot ? "on" : "off"),
             ("auto reconnect", reconnect),
             ("log level", snapshot.LogLevel),
@@ -86,6 +87,12 @@ internal static class StatusCommands
 
         Output.Line();
         Output.Table([" ", "CONFIG", "ENDPOINT", "STATE"], rows, "no configurations yet");
+    }
+
+    private static string NameLine(StatusSnapshot snapshot)
+    {
+        var upstream = snapshot.NameTransport.Length > 0 ? snapshot.NameTransport : "-";
+        return snapshot.SystemNames.Length > 0 ? $"{upstream}, system asks by {snapshot.SystemNames}" : upstream;
     }
 
     private static string RoutingLabel(StatusSnapshot snapshot)

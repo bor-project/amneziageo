@@ -47,8 +47,7 @@ internal static class Native
     // tray offers the takeover prompt.
     public const uint WM_OWNEDBYOTHER = 0x0400 + 11;
 
-    // The resolver this machine sends its lookups to stopped answering while the tunnel is up, so rules by domain
-    // no longer apply.
+    // Names on this machine are resolved past the tunnel's name proxy.
     public const uint WM_NAMESUNROUTED = 0x0400 + 12;
 
     // Menu command ids.

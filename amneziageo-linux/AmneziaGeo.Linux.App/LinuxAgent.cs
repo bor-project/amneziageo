@@ -87,6 +87,7 @@ internal sealed class LinuxAgent : IDisposable
     private bool _periodicReconnect;
     private int _reconnectIntervalSeconds = 30;
     private int _routeTtlSeconds = TunnelOptions.DefaultRouteTtlSeconds;
+    private string _dnsTransport = DnsTransports.Default;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
     private bool _subscriptionAutoRefresh = true;
@@ -160,6 +161,7 @@ internal sealed class LinuxAgent : IDisposable
         _periodicReconnect = settings.TryGetValue(PeriodicReconnectKey, out var periodic) && IsOn(periodic);
         _reconnectIntervalSeconds = ReconnectInterval(settings.TryGetValue(ReconnectIntervalKey, out var interval) ? interval : null);
         _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
+        _dnsTransport = DnsTransports.Of(settings.TryGetValue(SettingKeys.DnsTransport, out var names) ? names : null);
         _geoAutoCheck = !settings.TryGetValue(GeoAutoCheckKey, out var geoAuto) || IsOn(geoAuto);
         _geoCheckIntervalHours = GeoInterval(settings.TryGetValue(GeoIntervalKey, out var geoInterval) ? geoInterval : null);
         _subscriptionAutoRefresh = !settings.TryGetValue(SubscriptionAutoRefreshKey, out var subAuto) || IsOn(subAuto);
@@ -355,7 +357,9 @@ internal sealed class LinuxAgent : IDisposable
             HotspotBand: _hotspotOptions.Band,
             HotspotBandActual: _hotspot.BandActual,
             HotspotClients: _hotspot.Clients,
-            HotspotMaxClients: LinuxHotspot.MaxClients);
+            HotspotMaxClients: LinuxHotspot.MaxClients,
+            NameTransport: _tunnel.Running ? _tunnel.NameTransport : string.Empty,
+            DnsTransport: _dnsTransport);
     }
 
     // One proxy setting on top of the ones in force.
@@ -913,7 +917,7 @@ internal sealed class LinuxAgent : IDisposable
         var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
-        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport);
+        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport);
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is { } refusal)

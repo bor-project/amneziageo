@@ -23,6 +23,9 @@ internal sealed class DnsProxy
     // because the tunnel resolver rides a lossy underlay: a dropped datagram should recover in well under a
     // human-perceptible pause, not a near-half-second window.
     private const int UpstreamRetransmitMs = 250;
+    // How long the race across the LAN resolvers still waits for an answer with addresses once one has settled
+    // the name without any.
+    private const int SettledGraceMs = 300;
     private const int SioUdpConnReset = unchecked((int)0x9800000C);
     private const int TypeA = 1;
     private const int TypeAaaa = 28;
@@ -107,16 +110,18 @@ internal sealed class DnsProxy
     private readonly IPAddress? _tunnelUpstreamSecondary;
     // The index of the adapter a query to the tunnel's resolver leaves by; null while it is not known.
     private readonly Func<uint?>? _tunnelInterface;
-    private readonly IPAddress _localUpstream;
-    private readonly IPAddress? _lanUpstream;
+    private volatile IPAddress _localUpstream;
+    private volatile IPAddress? _lanUpstream;
     // All LAN resolvers; a multi-provider box races them and takes the first answer with records so a
     // censoring provider's NXDOMAIN is passed over.
-    private readonly IReadOnlyList<IPAddress> _lanPool;
+    private volatile IReadOnlyList<IPAddress> _lanPool;
     // Non-geo names resolve on the LAN (raceable) in split mode; offshore through the tunnel in full mode.
     private readonly bool _localIsLan;
-    // Suffixes the session was built with, kept apart from the Direct bucket so a list edit rebuilds only it.
-    private readonly IReadOnlyList<string> _staticLocalDomains;
+    // Suffixes of the own network and of the session, apart from the Direct bucket.
+    private volatile IReadOnlyList<string> _staticLocalDomains;
     private volatile IReadOnlyList<string> _localDomains;
+    // Serializes the writers of the local suffixes.
+    private readonly Lock _localGate = new();
     private readonly DomainTracker? _tracker;
     private readonly ILogger<DnsProxy> _logger;
     private readonly bool _stripV6;
@@ -135,10 +140,14 @@ internal sealed class DnsProxy
     // Socket on the address the access point hands its clients. A query arriving there is a client's.
     private UdpClient? _clientServer;
 
+    // How the resolver behind the tunnel is asked, and the transport that answered last.
+    private readonly NameUpstream _tunnelAsk;
+    private readonly DohResolver? _doh;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Default)
     {
         _tunnelInterface = tunnelInterface;
         _appDns = appDns;
@@ -162,6 +171,15 @@ internal sealed class DnsProxy
         _tracker = tracker;
         _logger = logger;
         _stripV6 = stripV6;
+        _doh = AmneziaGeo.Ipc.DnsTransports.Of(dnsTransport) == AmneziaGeo.Ipc.DnsTransports.Plain
+            ? null
+            : new DohResolver(DohResolver.DefaultUrl, DohResolver.DefaultAddress, TimeSpan.FromMilliseconds(UpstreamTimeoutMs * 2), PinToTunnel);
+        _tunnelAsk = new NameUpstream(
+            dnsTransport,
+            (query, token) => ForwardAsync(query, _tunnelUpstream, _tunnelUpstreamSecondary, token, _tunnelInterface?.Invoke()),
+            (query, token) => StreamDns.AskAsync(query, _tunnelUpstream, TimeSpan.FromMilliseconds(UpstreamTimeoutMs), PinToTunnel, token),
+            _doh is null ? null : (query, token) => _doh.AskAsync(query, token),
+            line => _logger.LogInformation("{Line}", line));
 
         if (!listen)
         {
@@ -198,6 +216,11 @@ internal sealed class DnsProxy
         _logger.LogInformation("DNS is now handled here: {Domains} domain rule(s); tunnel resolver {TunnelUp} (backup {TunnelUp2}), direct resolver {LocalUp}, LAN resolver {LanUp} (pool {LanPool}), {LocalDomains} local suffix(es); listening on {V4} and {V6}, IPv6 answers suppressed: {StripV6}",
             _domains.Count, _tunnelUpstream, _tunnelUpstreamSecondary is null ? "(none)" : _tunnelUpstreamSecondary, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, string.Join(",", _lanPool), _localDomains.Count, BoundV4, BoundV6, _stripV6);
     }
+
+    /// <summary>
+    /// The transport the resolver behind the tunnel is reached over, and why that one.
+    /// </summary>
+    public string NameTransport => _tunnelAsk.State;
 
     /// <summary>
     /// The IPv4 loopback address the proxy bound, or null.
@@ -394,29 +417,65 @@ internal sealed class DnsProxy
     /// </summary>
     public bool UpdateBuckets(IReadOnlyList<GeoDomain> blockDomains, IReadOnlyList<GeoDomain> directDomains)
     {
-        var locals = WithDirect(_staticLocalDomains, directDomains);
-        if (_blockDomains.SequenceEqual(blockDomains) && _localDomains.SequenceEqual(locals, StringComparer.Ordinal))
+        lock (_localGate)
         {
-            return false;
+            var locals = WithDirect(_staticLocalDomains, directDomains);
+            if (_blockDomains.SequenceEqual(blockDomains) && _localDomains.SequenceEqual(locals, StringComparer.Ordinal))
+            {
+                return false;
+            }
+
+            _blockDomains = blockDomains;
+            _blockMatcher = new DomainMatcher(blockDomains);
+            _hasBlockDomains = blockDomains.Count > 0;
+            _directDomains = directDomains;
+            _directMatcher = new DomainMatcher(directDomains);
+            _hasDirectDomains = directDomains.Count > 0;
+            _localDomains = locals;
+
+            // Drop cached answers and the negative cache: a name refused or kept local now may hold a verdict from
+            // before the edit.
+            _cache.Clear();
+            _bypass.Clear();
+
+            _logger.LogInformation("direct and blocked names reloaded without reconnecting: {Local} local suffix(es), {Block} blocked rule(s) now in effect", locals.Count, blockDomains.Count);
         }
-
-        _blockDomains = blockDomains;
-        _blockMatcher = new DomainMatcher(blockDomains);
-        _hasBlockDomains = blockDomains.Count > 0;
-        _directDomains = directDomains;
-        _directMatcher = new DomainMatcher(directDomains);
-        _hasDirectDomains = directDomains.Count > 0;
-        _localDomains = locals;
-
-        // Drop cached answers and the negative cache: a name refused or kept local now may hold a verdict from
-        // before the edit.
-        _cache.Clear();
-        _bypass.Clear();
-
-        _logger.LogInformation("direct and blocked names reloaded without reconnecting: {Local} local suffix(es), {Block} blocked rule(s) now in effect", locals.Count, blockDomains.Count);
 
         // A tracked name a Direct or Block rule now claims leaves the tunnel at once.
         PruneDepartedDomains();
+        return true;
+    }
+
+    /// <summary>
+    /// Takes the own network's resolvers and suffixes, and with <paramref name="localFollows"/> the direct resolver;
+    /// true when they moved.
+    /// </summary>
+    public bool UpdateLan(IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localFollows, IReadOnlyList<string> localDomains)
+    {
+        var statics = Normalize(localDomains);
+        lock (_localGate)
+        {
+            var local = localFollows ? lanUpstream ?? _tunnelUpstream : _localUpstream;
+            if (Equals(_lanUpstream, lanUpstream) && _localUpstream.Equals(local) && _lanPool.SequenceEqual(lanPool)
+                && _staticLocalDomains.SequenceEqual(statics, StringComparer.Ordinal))
+            {
+                return false;
+            }
+
+            _lanUpstream = lanUpstream;
+            _lanPool = lanPool;
+            _localUpstream = local;
+
+            // The machine moved to another network, so plain DNS gets another chance before the rest.
+            _tunnelAsk.Reset();
+            _staticLocalDomains = statics;
+            _localDomains = WithDirect(statics, _directDomains);
+
+            // Drops the answers taken under the resolvers and suffixes of before.
+            _cache.Clear();
+            _bypass.Clear();
+        }
+
         return true;
     }
 
@@ -437,6 +496,63 @@ internal sealed class DnsProxy
         }
 
         return _matcher.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
+    }
+
+    /// <summary>
+    /// Applies the name rules and the ranges to an answer the system got past this proxy, as to an answer passing here,
+    /// and returns what the names settle; an address <paramref name="foreign"/> names stays off the tunnel.
+    /// </summary>
+    public RouteVerdict Learn(string name, IReadOnlyList<IPAddress> addresses, Func<IPAddress, bool> foreign)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        if (key.Length == 0 || addresses.Count == 0)
+        {
+            return RouteVerdict.None;
+        }
+
+        var verdict = NameVerdict(key);
+        if (verdict is RouteVerdict.Direct or RouteVerdict.Block)
+        {
+            foreach (var address in addresses)
+            {
+                _routing?.Note(address, verdict);
+            }
+
+            return verdict;
+        }
+
+        // Names of the own network and names another tunnel of the set carries stay where the system sends them.
+        var open = PathOf(key) == NamePath.Open && _lentOwner?.Invoke(key) is null;
+        var app = open && verdict == RouteVerdict.None && _appDns is not null && _appDns.IsTunneled(key);
+        var tunneled = open && (verdict == RouteVerdict.Proxy || app);
+        if (tunneled)
+        {
+            var carried = new List<string>();
+            foreach (var address in addresses)
+            {
+                if (foreign(address))
+                {
+                    _logger.LogDebug("{Name}: {Address} is reached through another adapter, a corporate VPN for example, so it stays off the tunnel", key, address);
+                }
+                else
+                {
+                    carried.Add(address.ToString());
+                }
+            }
+
+            if (carried.Count > 0)
+            {
+                _tracker?.Add(key, carried, late: true);
+            }
+        }
+
+        // Decides every address by the ranges, as an answer passing here is.
+        foreach (var address in addresses)
+        {
+            _routing?.Note(address);
+        }
+
+        return tunneled ? RouteVerdict.Proxy : RouteVerdict.None;
     }
 
     /// <summary>
@@ -645,7 +761,13 @@ internal sealed class DnsProxy
                     }
 
                     var client = remote;
-                    _ = HandleAsync(server, query, client, clients);
+                    _ = HandleAsync(answer =>
+                    {
+                        lock (server)
+                        {
+                            server.Send(answer, answer.Length, client);
+                        }
+                    }, query, clients);
                 }
             }
         }
@@ -661,7 +783,17 @@ internal sealed class DnsProxy
         }
     }
 
-    private async Task HandleAsync(UdpClient server, byte[] query, IPEndPoint client, bool isClient)
+    /// <summary>
+    /// Answers one query the way the sockets do, for a caller that carries the message itself.
+    /// </summary>
+    public async Task<byte[]?> AnswerAsync(byte[] query, CancellationToken ct)
+    {
+        var answer = default(byte[]);
+        await HandleAsync(reply => answer = reply, query, isClient: false).WaitAsync(ct).ConfigureAwait(false);
+        return answer;
+    }
+
+    private async Task HandleAsync(Action<byte[]> respond, byte[] query, bool isClient)
     {
         try
         {
@@ -674,10 +806,7 @@ internal sealed class DnsProxy
             if (name is not null && string.Equals(name.TrimEnd('.'), HealthName, StringComparison.OrdinalIgnoreCase))
             {
                 var alive = type == TypeA ? DnsMessage.BuildAAnswer(query, [HealthAddress], 0) : DnsMessage.BuildNoData(query);
-                lock (server)
-                {
-                    server.Send(alive, alive.Length, client);
-                }
+                respond(alive);
 
                 return;
             }
@@ -687,10 +816,7 @@ internal sealed class DnsProxy
             if (_hasBlockDomains && name is not null && _blockMatcher.IsTunneled(name))
             {
                 var blocked = DnsMessage.BuildNxDomain(query);
-                lock (server)
-                {
-                    server.Send(blocked, blocked.Length, client);
-                }
+                respond(blocked);
 
                 _logger.LogDebug("{Name} {Type}: matches a block rule; the client is told this name does not exist", name, TypeLabel(type));
                 if (RouteLog.Enabled)
@@ -706,10 +832,7 @@ internal sealed class DnsProxy
             if (isClient && (type == TypeAaaa || type == TypeHttps))
             {
                 var withheld = DnsMessage.BuildNoData(query);
-                lock (server)
-                {
-                    server.Send(withheld, withheld.Length, client);
-                }
+                respond(withheld);
 
                 return;
             }
@@ -815,12 +938,13 @@ internal sealed class DnsProxy
             }
             else
             {
-                var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
+                var upstream = isLocal ? _lanUpstream ?? _localUpstream : (matched ? _tunnelUpstream : _localUpstream);
                 var secondary = matched ? _tunnelUpstreamSecondary : null;
                 // LAN-bound names (local, or non-geo in split) race the whole provider pool.
-                var lanRace = _lanPool.Count > 1 && (isLocal || (!matched && _localIsLan));
+                var lanPool = _lanPool;
+                var lanRace = lanPool.Count > 1 && (isLocal || (!matched && _localIsLan));
                 var result = lanRace
-                    ? await ForwardCoalescedRacedAsync(name, type, query)
+                    ? await ForwardCoalescedRacedAsync(name, type, query, lanPool)
                     : await ForwardCoalescedAsync(name, type, query, upstream, secondary, isLocal ? null : Via(upstream));
                 leader = result.Leader;
                 // The tunnel resolver went silent: ask the local one rather than leave the client without an
@@ -846,10 +970,7 @@ internal sealed class DnsProxy
                     // Answer SERVFAIL instead of dropping the query, so the client fails fast and
                     // retries at once rather than waiting out its own multi-second resolver timeout.
                     var servfail = DnsMessage.BuildServFail(query);
-                    lock (server)
-                    {
-                        server.Send(servfail, servfail.Length, client);
-                    }
+                    respond(servfail);
 
                     return;
                 }
@@ -867,10 +988,7 @@ internal sealed class DnsProxy
                 {
                     InvalidateName(name);
                     var servfail = DnsMessage.BuildServFail(query);
-                    lock (server)
-                    {
-                        server.Send(servfail, servfail.Length, client);
-                    }
+                    respond(servfail);
 
                     return;
                 }
@@ -969,10 +1087,7 @@ internal sealed class DnsProxy
                 _logger.LogDebug("{Name}: a client of the access point is answered with {Stand}, so this machine carries what it opens", name, stand);
             }
 
-            lock (server)
-            {
-                server.Send(response, response.Length, client);
-            }
+            respond(response);
         }
         catch (Exception)
         {
@@ -1032,7 +1147,7 @@ internal sealed class DnsProxy
             byte[] response;
             try
             {
-                response = await ForwardAsync(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary, via: _tunnelInterface?.Invoke()).ConfigureAwait(false);
+                response = await _tunnelAsk.AskAsync(DnsMessage.BuildQuery(name, TypeA)).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1351,8 +1466,7 @@ internal sealed class DnsProxy
     }
 
     // Races the query across every LAN resolver and returns the first answer that carries address records, so
-    // a censoring provider's NXDOMAIN is passed over when another provider has the name. Falls back to the
-    // first record-less response (a genuine NXDOMAIN/NODATA still returns), or the last error if none answer.
+    // a censoring provider's NXDOMAIN is passed over when another provider has the name.
     private static async Task<byte[]> ForwardRacedAsync(byte[] query, IReadOnlyList<IPAddress> pool)
     {
         if (pool.Count <= 1)
@@ -1360,39 +1474,86 @@ internal sealed class DnsProxy
             return await ForwardAsync(query, pool[0]).ConfigureAwait(false);
         }
 
+        return await RaceAsync([.. pool.Select(Forward)], SettledGraceMs).ConfigureAwait(false);
+
+        Func<CancellationToken, Task<byte[]>> Forward(IPAddress ip) => ct => ForwardAsync(query, ip, secondary: null, ct: ct);
+    }
+
+    /// <summary>
+    /// Races the forwards for an answer carrying address records, waiting <paramref name="graceMs"/> past a settled one.
+    /// </summary>
+    internal static async Task<byte[]> RaceAsync(IReadOnlyList<Func<CancellationToken, Task<byte[]>>> forwards, int graceMs)
+    {
         using var cts = new CancellationTokenSource();
-        var pending = pool.Select(ip => ForwardAsync(query, ip, secondary: null, ct: cts.Token)).ToList();
-        byte[]? fallback = null;
-        Exception? lastError = null;
-        while (pending.Count > 0)
+        var pending = forwards.Select(forward => forward(cts.Token)).ToList();
+        var fallback = default(byte[]);
+        var lastError = default(Exception);
+        var grace = default(Task);
+        try
         {
-            var done = await Task.WhenAny(pending).ConfigureAwait(false);
-            pending.Remove(done);
-            if (done.Status == TaskStatus.RanToCompletion)
+            while (pending.Count > 0)
             {
-                var resp = done.Result;
-                if (DnsMessage.Addresses(resp).Count > 0)
+                var next = Task.WhenAny(pending);
+                if (grace is not null && await Task.WhenAny(next, grace).ConfigureAwait(false) == grace)
                 {
-                    cts.Cancel();
-                    return resp;
+                    break;
                 }
 
-                fallback ??= resp;
-            }
-            else if (done.Exception is not null)
-            {
-                lastError = done.Exception.InnerException ?? done.Exception;
+                var done = await next.ConfigureAwait(false);
+                pending.Remove(done);
+                if (done.Status == TaskStatus.RanToCompletion)
+                {
+                    var resp = done.Result;
+                    if (DnsMessage.Addresses(resp).Count > 0)
+                    {
+                        return resp;
+                    }
+
+                    if (grace is null && DnsMessage.Settles(resp))
+                    {
+                        fallback = resp;
+                        grace = Task.Delay(graceMs, cts.Token);
+                    }
+                    else
+                    {
+                        fallback ??= resp;
+                    }
+                }
+                else if (done.Exception is not null)
+                {
+                    lastError = done.Exception.InnerException ?? done.Exception;
+                }
             }
         }
+        finally
+        {
+            cts.Cancel();
+        }
 
-        cts.Cancel();
         return fallback ?? throw lastError ?? new SocketException((int)SocketError.TimedOut);
     }
 
     // Runs the upstream query once per in-flight (name,type); only the leader writes the routing-log line.
     private Task<CoalescedResult> ForwardCoalescedAsync(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null, uint? via = null)
     {
-        return CoalesceAsync(name, type, () => ForwardAsync(query, upstream, secondary, via: via));
+        return IsTunnel(upstream)
+            ? CoalesceAsync(name, type, () => _tunnelAsk.AskAsync(query))
+            : CoalesceAsync(name, type, () => ForwardAsync(query, upstream, secondary, via: via));
+    }
+
+    // Whether an address is the resolver reached through the tunnel.
+    private bool IsTunnel(IPAddress upstream)
+    {
+        return upstream.Equals(_tunnelUpstream) || (_tunnelUpstreamSecondary is not null && upstream.Equals(_tunnelUpstreamSecondary));
+    }
+
+    // Puts the tunnel's own adapter on a socket, so a query to its resolver leaves by the tunnel.
+    private void PinToTunnel(Socket socket)
+    {
+        if (_tunnelInterface?.Invoke() is { } index)
+        {
+            UnicastInterface.Pin(socket, index);
+        }
     }
 
     // The adapter a query to this resolver leaves by: the tunnel's own for its resolver, the routing table's for any other.
@@ -1402,9 +1563,9 @@ internal sealed class DnsProxy
     }
 
     // Coalesced LAN-pool race: one racing forward per in-flight (name,type).
-    private Task<CoalescedResult> ForwardCoalescedRacedAsync(string? name, int type, byte[] query)
+    private Task<CoalescedResult> ForwardCoalescedRacedAsync(string? name, int type, byte[] query, IReadOnlyList<IPAddress> pool)
     {
-        return CoalesceAsync(name, type, () => ForwardRacedAsync(query, _lanPool));
+        return CoalesceAsync(name, type, () => ForwardRacedAsync(query, pool));
     }
 
     // Resolves a tunneled name on the LAN resolver once the tunnel one has gone silent, so a resolver that died -
@@ -1413,9 +1574,9 @@ internal sealed class DnsProxy
     private async Task<byte[]?> RescueAsync(string? name, int type, byte[] query)
     {
         IReadOnlyList<IPAddress> pool = _lanPool;
-        if (pool.Count == 0 && _lanUpstream is not null)
+        if (pool.Count == 0 && _lanUpstream is { } lan)
         {
-            pool = [_lanUpstream];
+            pool = [lan];
         }
 
         if (pool.Count == 0)
@@ -1707,7 +1868,7 @@ internal sealed class DnsProxy
 
     private async Task CollectAddressesAsync(string host, int type, List<IPAddress> ips)
     {
-        var response = await ForwardAsync(DnsMessage.BuildQuery(host, type), _tunnelUpstream, _tunnelUpstreamSecondary, via: _tunnelInterface?.Invoke()).ConfigureAwait(false);
+        var response = await _tunnelAsk.AskAsync(DnsMessage.BuildQuery(host, type)).ConfigureAwait(false);
         foreach (var ip in DnsMessage.Addresses(response))
         {
             ips.Add(ip);

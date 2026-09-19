@@ -105,7 +105,7 @@ public sealed record StatusSnapshot(
     IReadOnlyList<string>? ProxyAddresses = null,
     // Clients holding a connection to the local proxy right now.
     IReadOnlyList<ProxyClientEntry>? ProxyClients = null,
-    // Whether the resolver this machine sends its lookups to stopped answering, so rules by domain no longer apply.
+    // Whether names on this machine are resolved past the tunnel's name proxy.
     bool DnsUnreachable = false,
     // How the tunnel reaches other devices: lan, wifi, or both.
     string ShareMode = ShareModes.Default,
@@ -139,4 +139,22 @@ public sealed record StatusSnapshot(
     bool MultiServer = false,
     // What the mode holds while several tunnels may be up: every server, its role and what it carries. Null on a
     // machine that keeps one tunnel.
-    FleetSnapshot? Fleet = null);
+    FleetSnapshot? Fleet = null,
+    // The transport the resolver behind the tunnel is reached over, and why that one; empty while no tunnel
+    // holds this machine's lookups.
+    string NameTransport = "",
+
+    /// <summary>
+    /// What the system reaches the name proxy by, empty while it reaches it on plain 53.
+    /// </summary>
+    string SystemNames = "",
+
+    /// <summary>
+    /// The transport chosen for the resolver behind the tunnel, empty where the platform takes no such choice.
+    /// </summary>
+    string DnsTransport = "",
+
+    /// <summary>
+    /// The local DoH mode chosen, empty where the platform takes no such choice.
+    /// </summary>
+    string LocalDoh = "");

@@ -343,6 +343,19 @@ public sealed class TargetCheckTests
     }
 
     [Fact]
+    public async Task AnAddressTheTunnelHoldsBesideItself_IsNotCalledCarried()
+    {
+        var probes = new TargetProbes(_ => new HeldRoute(RoleToken.Direct, "direct, 0 B, idle 3 s"));
+
+        var report = await new TargetInspector(List(proxy: ["149.154.160.0/20"]), split: true)
+            .InspectAsync("149.154.167.51", "srv", probes, CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.ProxyOffPath, report.VerdictKey);
+        Assert.Equal("149.154.160.0-149.154.175.255", report.VerdictArgs[0]);
+        Assert.Equal("1", report.VerdictArgs[1]);
+    }
+
+    [Fact]
     public async Task AnAppTalkingToBareAddresses_IsToldToAddAGeoRule()
     {
         var list = List(rules: [new GeoRule(GeoRuleKind.App, "pkg=org.telegram.messenger")]);
@@ -373,6 +386,18 @@ public sealed class TargetCheckTests
             .InspectAsync("8.8.8.8", "srv", new TargetProbes(), CancellationToken.None);
 
         Assert.Equal(TargetVerdicts.NoRules, report.VerdictKey);
+    }
+
+    [Fact]
+    public async Task AnAppNamedByItsPackageFolder_IsToldTheRuleThatCoversIt()
+    {
+        var folder = @"dir=%PROGRAMFILES%\WindowsApps\5319275A.WhatsAppDesktop_2.2628.101.0_x64__cv1g1gvanyjgm";
+        var list = List(rules: [new GeoRule(GeoRuleKind.App, folder)], apps: [folder]);
+
+        var report = await new TargetInspector(list, split: true, AppScope.Exclusive)
+            .InspectAsync("app:pkg=5319275A.WhatsAppDesktop_cv1g1gvanyjgm", "srv", new TargetProbes(), CancellationToken.None);
+
+        Assert.Contains(report.Facts, fact => fact.Kind == "app" && fact.State == "listed");
     }
 
     [Fact]

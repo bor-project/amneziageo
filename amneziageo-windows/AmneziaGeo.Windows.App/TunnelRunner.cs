@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -254,6 +255,8 @@ internal sealed class TunnelRunner(
         // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
 
+        var appSettings = await settings.LoadAsync();
+
         // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
         var configDns = ConfigResolvers(config);
         var tunnelResolver = TunnelResolvers(configDns);
@@ -262,6 +265,12 @@ internal sealed class TunnelRunner(
         if (routedResolvers.Count < tunnelResolver.Count)
         {
             logger.LogInformation("{Name}: another tunnel looks this machine's names up, so {Resolvers} are left to it and take no route here", name, string.Join(", ", tunnelResolver));
+        }
+
+        // The resolver asked over HTTPS rides the tunnel as well, or its answers are no safer than the plain ones.
+        if (routedResolvers.Count > 0 && AmneziaGeo.Ipc.DnsTransports.Of(appSettings.DnsTransport) != AmneziaGeo.Ipc.DnsTransports.Plain)
+        {
+            routedResolvers = [.. routedResolvers, DohResolver.DefaultAddress.ToString()];
         }
 
         // Resolver /32s are infrastructure: routed through the tunnel so the tunnel DNS stays reachable. Collect
@@ -387,8 +396,6 @@ internal sealed class TunnelRunner(
         logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried in a websocket: {Ws} [{Elapsed} ms in]",
             name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
 
-        var appSettings = await settings.LoadAsync();
-
         // All-UDP catch-all (split-only); from the routing list or the global setting.
         var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);
 
@@ -423,6 +430,9 @@ internal sealed class TunnelRunner(
                 exclusionDomains.Add(suffix);
             }
         }
+
+        // How many of them the adapters advertise.
+        var networkSuffixCount = exclusionDomains.Count - parsedExclusionDomains.Count;
 
         if (exclusionDomains.Count > parsedExclusionDomains.Count)
         {
@@ -578,6 +588,8 @@ internal sealed class TunnelRunner(
             if (candidate.HasMatchers)
             {
                 matcher = candidate;
+                _appMatcher = candidate;
+                candidate.ReportRuleProblems();
                 appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>());
                 // A matched app's destination is dropped before anything observes it, so the drop itself is where
                 // the app rule has to be applied: its remotes take the tunnel instead of a permit.
@@ -660,8 +672,30 @@ internal sealed class TunnelRunner(
         var adapterIndex = default(uint?);
         uint? TunnelInterface() => adapterIndex ??= routes.FindTunnelIndex(name);
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport);
         session.SetProxy(proxy);
+
+        // The names kept on the own network with these suffixes.
+        IReadOnlyList<string> LocalsWith(IReadOnlyList<string> suffixes)
+        {
+            var locals = new List<string>(parsedExclusionDomains);
+            foreach (var suffix in suffixes)
+            {
+                if (!locals.Contains(suffix))
+                {
+                    locals.Add(suffix);
+                }
+            }
+
+            locals.AddRange(exclusionDomains.Skip(parsedExclusionDomains.Count + networkSuffixCount));
+            return locals;
+        }
+
+        // Keeps the proxy on the resolvers and suffixes the adapters have now.
+        if (proxy is not null)
+        {
+            _ = Task.Run(() => FollowLanAsync(name, proxy, LocalsWith, geoSplit && preferredDns.Count == 0, sessionCts.Token));
+        }
 
         // This machine looks addresses up through one tunnel, so a name matched by a rule riding another one
         // never reaches that one. The holder learns who owns which names and hands each over; the owner looks
@@ -788,7 +822,8 @@ internal sealed class TunnelRunner(
         if (redirectServers.Count > 0 && duties.HoldsResolver)
         {
             applied = true;
-            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, proxy?.BoundV4, sessionCts.Token));
+            var learner = proxy is null ? null : new DnsAnswerLearner(proxy, ForeignTo(name, underlayProbe), loggerFactory.CreateLogger<DnsAnswerLearner>());
+            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, proxy, learner, appSettings.LocalDoh, sessionCts.Token));
         }
         else if (!duties.HoldsResolver)
         {
@@ -901,6 +936,7 @@ internal sealed class TunnelRunner(
             session.Clear();
             _appGateway?.Dispose();
             _appGateway = null;
+            _appMatcher = null;
             _processImages = null;
             if (routing is not null)
             {
@@ -968,18 +1004,13 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
-        IPAddress? lanIp = lanUpstream.Count > 0 && IPAddress.TryParse(lanUpstream[0], out var li) ? li : null;
-        var lanPool = lanUpstream
-            .Select(s => IPAddress.TryParse(s, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork ? ip : null)
-            .Where(ip => ip is not null)
-            .Select(ip => ip!)
-            .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface);
+        var (lanIp, lanPool) = LanResolvers(lanUpstream);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport);
         if (!listen)
         {
             // It answers the holder of the machine's lookups over the pipe, so it serves no socket of its own.
@@ -997,6 +1028,18 @@ internal sealed class TunnelRunner(
         };
         thread.Start();
         return proxy;
+    }
+
+    // The first of the own network's resolvers and the IPv4 ones the proxy races.
+    private static (IPAddress? First, List<IPAddress> Pool) LanResolvers(IReadOnlyList<string> servers)
+    {
+        var first = servers.Count > 0 && IPAddress.TryParse(servers[0], out var parsed) ? parsed : null;
+        var pool = servers
+            .Select(s => IPAddress.TryParse(s, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork ? ip : null)
+            .Where(ip => ip is not null)
+            .Select(ip => ip!)
+            .ToList();
+        return (first, pool);
     }
 
     private static IPAddress ParseFirst(IReadOnlyList<string> servers, IPAddress fallback)
@@ -1319,46 +1362,273 @@ internal sealed class TunnelRunner(
 
     // How long the proxy has to answer its own health query, and how often the answer is asked for again.
     private const int DnsProbeTimeoutMs = 2000;
+    private static readonly TimeSpan AddressSettleLimit = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan AddressSettleStep = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan DnsProbeRetryDelay = TimeSpan.FromSeconds(15);
+    // How often the proxy the adapters point at is asked, and how many silent answers in a row give them back.
+    private static readonly TimeSpan DnsWatchInterval = TimeSpan.FromSeconds(10);
+    private const int DnsWatchStrikes = 2;
 
     // Applies the host DNS redirect once the peer first answers, then flushes so pre-redirect answers are
     // re-queried through the proxy. Before the handshake the OS keeps its own resolvers, so a dial that never
     // completes cannot strand the machine's DNS; the teardown reverts whatever this applied.
-    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, IPAddress? proxyAddress, CancellationToken ct)
+    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, DnsProxy? proxy, DnsAnswerLearner? learner, string localDoh, CancellationToken ct)
     {
+        // Reads the answers the system gets past the proxy while the adapters keep their own resolvers.
+        var learning = default(CancellationTokenSource);
+        var proxyAddress = proxy?.BoundV4;
+        using var doh = new LocalDohGuard(localDoh, proxyAddress ?? IPAddress.Loopback, loggerFactory.CreateLogger<LocalDohGuard>());
         try
         {
             await WaitForHandshakeAsync(name, ct);
+            await WaitForTunnelAddressAsync(name, ct).ConfigureAwait(false);
+
+            if (proxyAddress is null)
+            {
+                RedirectDns(name, redirectServers);
+                return;
+            }
 
             // Ask the proxy before handing it every lookup on this machine: pointing the adapters at a resolver
             // that answers nothing leaves the machine with no DNS at all. Keep asking, so a proxy that starts
-            // answering later still gets the redirect.
-            var attempt = 0;
-            while (proxyAddress is not null && !await DnsHealthProbe.AnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
+            // answering later still gets the redirect, and one that falls silent gives the adapters back.
+            var redirected = false;
+            var released = false;
+            var misses = 0;
+            var encrypted = false;
+            if (proxy is not null && doh.Eager)
             {
-                attempt++;
-                if (attempt == 1)
+                encrypted = await TakeNamesOverHttpsAsync(doh, proxy, name, redirectServers, redirected, ct).ConfigureAwait(false);
+                redirected = encrypted;
+            }
+
+            while (true)
+            {
+                // Once the system asks over HTTPS, a plain query of our own proves nothing about its path.
+                var answered = encrypted
+                    ? await DnsHealthProbe.SystemAnswersAsync(ct).ConfigureAwait(false)
+                    : await DnsHealthProbe.ServiceAnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false);
+                if (answered)
                 {
-                    logger.LogWarning("{Name}: the name proxy on {Address} does not answer its own query, so the adapters keep their own resolvers; rules by domain do not apply, only rules by address", name, proxyAddress);
+                    misses = 0;
+                    if (!redirected)
+                    {
+                        learning?.Cancel();
+                        learning?.Dispose();
+                        learning = null;
+                        RedirectDns(name, redirectServers);
+                        redirected = true;
+                        if (released)
+                        {
+                            logger.LogInformation("{Name}: the name proxy on {Address} answers again, so name lookups go through it once more and rules by domain apply", name, proxyAddress);
+                        }
+                    }
                 }
                 else
                 {
-                    logger.LogDebug("{Name}: the name proxy on {Address} still answers nothing (attempt {Attempt})", name, proxyAddress, attempt);
+                    misses++;
+                    // Plain 53 may have been taken before this tunnel even came up, so the takeover is tried
+                    // whether or not the adapters ever pointed here.
+                    if (misses >= DnsWatchStrikes && proxy is not null && !encrypted
+                        && await TakeNamesOverHttpsAsync(doh, proxy, name, redirectServers, redirected, ct).ConfigureAwait(false))
+                    {
+                        encrypted = true;
+                        redirected = true;
+                        released = false;
+                        misses = 0;
+                    }
+                    else if (redirected && misses >= DnsWatchStrikes)
+                    {
+                        using (logger.Step("restore DNS + flush cache"))
+                        {
+                            dns.Restore(name);
+                            dns.FlushCache();
+                        }
+
+                        redirected = false;
+                        released = true;
+                        learning ??= StartLearning(name, learner, ct);
+                        if (await DnsHealthProbe.AnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
+                        {
+                            logger.LogWarning("{Name}: the system's lookups to the name proxy on {Address} stopped getting answers while it still answers this program, so another program filters them (a corporate VPN, for example); the adapters got their own resolvers back, and until the lookups get through again rules by domain follow the answers Windows reports", name, proxyAddress);
+                        }
+                        else
+                        {
+                            logger.LogWarning("{Name}: the system's lookups to the name proxy on {Address} stopped getting answers, so the adapters got their own resolvers back; until it answers again rules by domain follow the answers Windows reports", name, proxyAddress);
+                        }
+                    }
+                    else if (!redirected && !released && misses == 1)
+                    {
+                        learning ??= StartLearning(name, learner, ct);
+                        if (await DnsHealthProbe.AnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
+                        {
+                            logger.LogWarning("{Name}: the system's lookups to the name proxy on {Address} get no answer while it answers this program, so another program filters them (a corporate VPN, for example); the adapters keep their own resolvers and rules by domain follow the answers Windows reports", name, proxyAddress);
+                        }
+                        else
+                        {
+                            logger.LogWarning("{Name}: the name proxy on {Address} does not answer the system's lookups, so the adapters keep their own resolvers; rules by domain follow the answers Windows reports", name, proxyAddress);
+                        }
+                    }
+                    else
+                    {
+                        logger.LogDebug("{Name}: the name proxy on {Address} still answers nothing (attempt {Attempt})", name, proxyAddress, misses);
+                    }
                 }
 
-                await Task.Delay(DnsProbeRetryDelay, ct).ConfigureAwait(false);
+                await Task.Delay(redirected ? DnsWatchInterval : DnsProbeRetryDelay, ct).ConfigureAwait(false);
             }
-
-            using (logger.Step("apply DNS + flush cache"))
-            {
-                dns.Apply(name, redirectServers);
-                dns.FlushCache();
-            }
-
-            logger.LogDebug("{Name}: the server answered, so name lookups now go to {Servers} and the cached ones were cleared", name, string.Join(",", redirectServers));
         }
         catch (OperationCanceledException)
         {
+        }
+        finally
+        {
+            learning?.Cancel();
+            learning?.Dispose();
+        }
+    }
+
+    // Puts the name proxy on HTTPS, points the adapters at it and keeps that only if the system's lookups
+    // come back answered.
+    private async Task<bool> TakeNamesOverHttpsAsync(LocalDohGuard doh, DnsProxy proxy, string name, IReadOnlyList<string> redirectServers, bool redirected, CancellationToken ct)
+    {
+        if (!doh.Serve(proxy.AnswerAsync))
+        {
+            return false;
+        }
+
+        if (redirected)
+        {
+            dns.FlushCache();
+        }
+        else
+        {
+            RedirectDns(name, redirectServers);
+        }
+
+        if (await doh.ConfirmAsync(DnsHealthProbe.SystemAnswersAsync, ct).ConfigureAwait(false))
+        {
+            session.SetSystemNames(doh.State);
+            return true;
+        }
+
+        if (!redirected)
+        {
+            using (logger.Step("restore DNS + flush cache"))
+            {
+                dns.Restore(name);
+                dns.FlushCache();
+            }
+        }
+
+        return false;
+    }
+
+    // Starts reading the answers the system gets past the name proxy; null without a learner.
+    private CancellationTokenSource? StartLearning(string name, DnsAnswerLearner? learner, CancellationToken ct)
+    {
+        if (learner is null)
+        {
+            return null;
+        }
+
+        var learning = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _ = Task.Run(() => learner.RunAsync(learning.Token), CancellationToken.None);
+        logger.LogDebug("{Name}: reading the answers Windows reports for name lookups while they go past the name proxy", name);
+        return learning;
+    }
+
+    // Whether the system reaches an address through an adapter other than the carrier's and this tunnel's.
+    private Func<IPAddress, bool> ForeignTo(string name, IPAddress? carrier)
+    {
+        return address =>
+        {
+            var hop = RouteManager.UnderlayHop(address).InterfaceIndex;
+            var carrierHop = carrier is null ? hop : RouteManager.UnderlayHop(carrier).InterfaceIndex;
+            return hop != 0 && hop != carrierHop && hop != routes.FindTunnelIndex(name);
+        };
+    }
+
+    // Points the adapters at the proxy and clears the answers cached before.
+    private void RedirectDns(string name, IReadOnlyList<string> redirectServers)
+    {
+        using (logger.Step("apply DNS + flush cache"))
+        {
+            dns.Apply(name, redirectServers);
+            dns.FlushCache();
+        }
+
+        logger.LogDebug("{Name}: the server answered, so name lookups now go to {Servers} and the cached ones were cleared", name, string.Join(",", redirectServers));
+    }
+
+    // How long the adapters settle after a change before their resolvers are read, and when they are read once more.
+    private static readonly TimeSpan[] LanRereadDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(15)];
+
+    // Hands the proxy the own network's resolvers and suffixes after every change of the adapters.
+    private async Task FollowLanAsync(string name, DnsProxy proxy, Func<IReadOnlyList<string>, IReadOnlyList<string>> locals, bool localFollows, CancellationToken ct)
+    {
+        var changed = new SemaphoreSlim(0, 1);
+        void OnChanged(object? sender, EventArgs e)
+        {
+            try
+            {
+                changed.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+            }
+        }
+
+        NetworkChange.NetworkAddressChanged += OnChanged;
+        try
+        {
+            while (true)
+            {
+                await changed.WaitAsync(ct).ConfigureAwait(false);
+                var step = 0;
+                while (step < LanRereadDelays.Length)
+                {
+                    await Task.Delay(LanRereadDelays[step], ct).ConfigureAwait(false);
+                    if (changed.Wait(0))
+                    {
+                        step = 0;
+                        continue;
+                    }
+
+                    ReadLan(name, proxy, locals, localFollows);
+                    step++;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            NetworkChange.NetworkAddressChanged -= OnChanged;
+        }
+    }
+
+    // Reads the own network's resolvers and suffixes and hands them to the proxy when they moved.
+    private void ReadLan(string name, DnsProxy proxy, Func<IReadOnlyList<string>, IReadOnlyList<string>> locals, bool localFollows)
+    {
+        try
+        {
+            var resolvers = dns.CaptureUpstream();
+            var suffixes = dns.CaptureLocalDnsSuffixes();
+            var (first, pool) = LanResolvers(resolvers);
+            if (!proxy.UpdateLan(first, pool, localFollows, locals(suffixes)))
+            {
+                return;
+            }
+
+            dns.FlushCache();
+            logger.LogInformation("{Name}: the adapters changed, so your own network's names now go to {Resolvers} and its suffixes are {Suffixes}; the tunnel was not reconnected",
+                name, resolvers.Count > 0 ? string.Join(",", resolvers) : "(none)", suffixes.Count > 0 ? string.Join(", ", suffixes) : "(none)");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Name}: the resolvers of your own network could not be read after the adapters changed, so names keep going to the ones read before", name);
         }
     }
 
@@ -1370,6 +1640,8 @@ internal sealed class TunnelRunner(
 
     private FleetLentNames? _lent;
     private AppGateway? _appGateway;
+    // The matcher the running session routes applications by, so an edited rule reaches it without a reconnect.
+    private AppMatcher? _appMatcher;
     // The bring-up facts the standing ranges of an edited list are worked out from.
     private StandingBasis? _standingBasis;
     private StandingRanges _standing = StandingRanges.None;
@@ -1541,7 +1813,9 @@ internal sealed class TunnelRunner(
             // Read before the rebuild: these are the destinations a rule by name has to be applied to.
             var held = routing.Snapshot();
             var aroundLocal = PrivateNetworks.AroundLocal(current.Routes, routes.LocalSubnets());
-            var standing = await RestandAsync(routing, tunnelName, current.ListId, aroundLocal.Carried, ct).ConfigureAwait(false);
+            var edited = await store.GetRoutingListAsync(current.ListId, ct).ConfigureAwait(false);
+            ApplyAppRules(edited, tunnelName);
+            var standing = Restand(routing, tunnelName, edited, aroundLocal.Carried);
             IReadOnlyList<string> tunneled = standing is { Networks.Count: > 0 } ? [.. aroundLocal.Carried, .. standing.Networks] : aroundLocal.Carried;
             routing.Rebuild(tunneled, [.. current.DirectRoutes, .. aroundLocal.Kept], current.BlockRoutes);
 
@@ -1562,19 +1836,43 @@ internal sealed class TunnelRunner(
         }
     }
 
+    // Puts the edited rules by application in force on the running tunnel. The trackers they drive are raised at
+    // bring-up only, so rules added to a tunnel that connected without any wait for a reconnect and are named here.
+    private void ApplyAppRules(RoutingList? list, string tunnelName)
+    {
+        var apps = list?.Rules.Where(rule => rule.Kind == GeoRuleKind.App).Select(rule => rule.Value).ToList() ?? [];
+        if (_appMatcher is not { } matcher)
+        {
+            if (apps.Count > 0)
+            {
+                logger.LogWarning("{Tunnel}: rules by application were added to a tunnel that connected without any, so they start working only after it is reconnected", tunnelName);
+            }
+
+            return;
+        }
+
+        if (!matcher.Reload(apps))
+        {
+            return;
+        }
+
+        // A name the applications asked for before the edit may be answered from a cache that the rules no longer agree with.
+        dns.FlushCache();
+        logger.LogInformation("{Tunnel}: {Count} rule(s) by application are in force without reconnecting", tunnelName, apps.Count);
+    }
+
     // The bring-up facts the standing ranges are worked out from: the mode, the configuration's own networks, the
     // infrastructure, what the cache holds outside it and the inbound access.
     private sealed record StandingBasis(bool Split, IReadOnlyList<string> OwnNetworks, IReadOnlySet<string> Infrastructure, IReadOnlyList<string> Pinned, IReadOnlyList<string> InboundRoutes, IReadOnlyList<string> InboundAddresses);
 
     // Works out the ranges the edited list keeps standing and hands the answers to inbound access to the cache and the firewall.
-    private async Task<StandingRanges?> RestandAsync(RoutingCache routing, string tunnelName, long listId, IReadOnlyList<string> carried, CancellationToken ct)
+    private StandingRanges? Restand(RoutingCache routing, string tunnelName, RoutingList? list, IReadOnlyList<string> carried)
     {
         if (_standingBasis is not { } basis)
         {
             return null;
         }
 
-        var list = await store.GetRoutingListAsync(listId, ct).ConfigureAwait(false);
         var standing = StandingRanges.Of(carried, list?.Rules ?? [], basis.Split, basis.InboundRoutes.Count > 0, basis.OwnNetworks, basis.Infrastructure);
         routing.Pin([.. basis.Pinned, .. standing.Return]);
         if (basis.InboundRoutes.Count > 0 && !new HashSet<string>(_standing.Return, StringComparer.Ordinal).SetEquals(standing.Return))
@@ -1765,6 +2063,24 @@ internal sealed class TunnelRunner(
         }
 
         return null;
+    }
+
+    // Waits until the tunnel adapter's addresses leave duplicate address detection, for a few seconds at most.
+    private async Task WaitForTunnelAddressAsync(string name, CancellationToken ct)
+    {
+        var watch = Stopwatch.StartNew();
+        while (!routes.TunnelAddressesSettled(name))
+        {
+            if (watch.Elapsed >= AddressSettleLimit)
+            {
+                logger.LogWarning("{Name}: the tunnel's address is still being checked for duplicates after {Seconds} s, so name lookups are handed to the tunnel anyway", name, AddressSettleLimit.TotalSeconds);
+                return;
+            }
+
+            await Task.Delay(AddressSettleStep, ct).ConfigureAwait(false);
+        }
+
+        logger.LogDebug("{Name}: the tunnel's address is ready for name lookups [{Elapsed} ms]", name, watch.ElapsedMilliseconds);
     }
 
     // Waits for the peer to answer. No deadline: the session token ends the wait when the attempt is torn down.

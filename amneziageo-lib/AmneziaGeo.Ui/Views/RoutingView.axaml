@@ -212,6 +212,44 @@
                   </TextBox>
                 </Grid>
 
+                <Border Classes="hairline" IsVisible="{Binding ShowDnsTransport}" />
+
+                <!-- Общая настройка агента: чем агент спрашивает резолвер за туннелем. -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MinHeight="40"
+                      IsVisible="{Binding ShowDnsTransport}">
+                  <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{l:Tr Main_DnsTransportTitle}" FontWeight="SemiBold" FontSize="15"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{l:Tr Main_DnsTransportHint}" Classes="muted" FontSize="11.5"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <controls:AdaptiveComboBox Grid.Column="1" Classes="field" Width="150" VerticalAlignment="Center"
+                                             SelectedIndex="{Binding DnsTransportChoice, Mode=TwoWay}">
+                    <ComboBoxItem Content="{l:Tr Main_DnsTransportAuto}" />
+                    <ComboBoxItem Content="{l:Tr Main_DnsTransportPlain}" />
+                    <ComboBoxItem Content="{l:Tr Main_DnsTransportDoh}" />
+                  </controls:AdaptiveComboBox>
+                </Grid>
+
+                <Border Classes="hairline" IsVisible="{Binding ShowLocalDoh}" />
+
+                <!-- Общая настройка агента: чем система доходит до прокси имён. -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MinHeight="40"
+                      IsVisible="{Binding ShowLocalDoh}">
+                  <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{l:Tr Main_LocalDohTitle}" FontWeight="SemiBold" FontSize="15"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{l:Tr Main_LocalDohHint}" Classes="muted" FontSize="11.5"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <controls:AdaptiveComboBox Grid.Column="1" Classes="field" Width="150" VerticalAlignment="Center"
+                                             SelectedIndex="{Binding LocalDohChoice, Mode=TwoWay}">
+                    <ComboBoxItem Content="{l:Tr Main_LocalDohAuto}" />
+                    <ComboBoxItem Content="{l:Tr Main_LocalDohOff}" />
+                    <ComboBoxItem Content="{l:Tr Main_LocalDohOn}" />
+                  </controls:AdaptiveComboBox>
+                </Grid>
+
                 <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                            IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               </StackPanel>

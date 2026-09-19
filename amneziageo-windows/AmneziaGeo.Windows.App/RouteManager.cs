@@ -780,6 +780,34 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Returns whether the tunnel adapter has addresses and none of them is still in duplicate address detection.
+    /// </summary>
+    public bool TunnelAddressesSettled(string tunnelName)
+    {
+        var adapterName = TunnelDevice.NameOf(tunnelName);
+        foreach (var nic in NetworkAdapters.All())
+        {
+            if (nic.Name != adapterName)
+            {
+                continue;
+            }
+
+            var addresses = UnicastAddresses(nic);
+            foreach (var address in addresses)
+            {
+                if (address.DuplicateAddressDetectionState == DuplicateAddressDetectionState.Tentative)
+                {
+                    return false;
+                }
+            }
+
+            return addresses.Count > 0;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
     public uint? FindInterfaceIndex(string adapterName)

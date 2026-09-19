@@ -123,8 +123,8 @@ internal static class AgentLink
     public static volatile int GeoUpdatedTick;
 
     /// <summary>
-    /// Whether the resolver this machine sends its lookups to stopped answering while the tunnel is up, so rules
-    /// by domain no longer apply; its rising edge fires the tray warning balloon.
+    /// Whether names on this machine are resolved past the tunnel's name proxy; its rising edge fires the tray warning
+    /// balloon.
     /// </summary>
     public static volatile bool DnsUnreachable;
 

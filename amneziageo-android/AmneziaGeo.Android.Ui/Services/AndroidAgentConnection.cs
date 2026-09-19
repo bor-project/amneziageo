@@ -102,6 +102,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _routeLog;
     private bool _directTcp = true;
     private bool _excludeRoutes = true;
+    private bool _localInTunnel;
     private int _routeTtl = 300;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
@@ -372,7 +373,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpListTunnelSubnets:
                 await EnsureInitAsync().ConfigureAwait(false);
-                return new IpcAck(true, string.Join('\n', await ConfigSubnetsAsync().ConfigureAwait(false)));
+                return new IpcAck(true, string.Join('\n', ConfigSubnets()));
 
             // Гео-базы разбираются в пуле: разворачивание правил держит вызывающий поток, а он тут UI-шный.
             case IpcContract.OpListGeo:
@@ -566,7 +567,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel), _directTcp,
-            _excludeRoutes, session.Bypass);
+            _excludeRoutes, session.Bypass, _localInTunnel);
         return Ok();
     }
 
@@ -593,7 +594,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -622,6 +623,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         intent.PutExtra(GeoVpnService.ExtraEngineLog, engineLog);
         intent.PutExtra(GeoVpnService.ExtraDirectTcp, directTcp);
         intent.PutExtra(GeoVpnService.ExtraExcludeRoutes, excludeRoutes);
+        intent.PutExtra(GeoVpnService.ExtraLocalInTunnel, localInTunnel);
 
         if (transport is not null)
         {
@@ -2307,6 +2309,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _excludeRoutes = excludeRoutes.ValueKind == JsonValueKind.True;
             }
 
+            if (document.RootElement.TryGetProperty("LocalInTunnel", out var localInTunnel)
+                && localInTunnel.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _localInTunnel = localInTunnel.ValueKind == JsonValueKind.True;
+            }
+
             if (document.RootElement.TryGetProperty("AllowPrerelease", out var prerelease)
                 && prerelease.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
@@ -2446,6 +2454,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"DirectTcp\":").Append(_directTcp ? "true" : "false");
             builder.Append(",\"ExcludeRoutes\":").Append(_excludeRoutes ? "true" : "false");
+            builder.Append(",\"LocalInTunnel\":").Append(_localInTunnel ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
             builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
@@ -2570,17 +2579,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // The private networks and hosts the stored configurations reach, each behind the name of the one reaching it
     // and a tab.
-    private async Task<IReadOnlyList<string>> ConfigSubnetsAsync()
+    private List<string> ConfigSubnets()
     {
         var lines = new List<string>();
-        foreach (var name in await _store.ListConfigNamesAsync().ConfigureAwait(false))
+        foreach (var name in OrderedNames())
         {
-            if (await _store.GetConfigTextAsync(name).ConfigureAwait(false) is not { Length: > 0 } text)
-            {
-                continue;
-            }
-
-            foreach (var network in PrivateNetworks.Reachable(text))
+            foreach (var network in PrivateNetworks.Reachable(_configs[name]))
             {
                 lines.Add($"{name}\t{network}");
             }
@@ -3620,6 +3624,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 Save();
                 PushSnapshot();
                 return Ok();
+            case SettingKeys.LocalInTunnel:
+                _localInTunnel = IsOn(args[1]);
+                _restartRequired = true;
+                Save();
+                PushSnapshot();
+                return Ok();
             case SettingKeys.RouteTtl:
                 if (!SettingKeys.TryParseRouteTtl(args[1], out var ttl))
                 {
@@ -3769,6 +3779,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("log level    : ").Append(_logLevel).Append('\n');
         report.Append("direct tcp   : ").Append(_directTcp ? "on" : "off").Append('\n');
         report.Append("exclude routes: ").Append(_excludeRoutes ? "on" : "off").Append('\n');
+        report.Append("local in tun : ").Append(_localInTunnel ? "on" : "off").Append('\n');
         report.Append("route log    : ").Append(_routeLog ? "on" : "off").Append('\n');
         return new IpcAck(true, report.ToString());
     }

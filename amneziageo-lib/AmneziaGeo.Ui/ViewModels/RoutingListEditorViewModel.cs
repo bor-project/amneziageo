@@ -287,6 +287,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // Mirrors the list's global-proxy flag, kept in sync by RoutingViewModel.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanUseProxyBucket))]
+    [NotifyPropertyChangedFor(nameof(AppBucketsHint))]
     private bool _globalProxyActive;
 
     // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
@@ -633,11 +634,15 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public string AppTabText => IsAppMethodAvailable ? Loc.Instance.Get("Main_AddByAppTab") : string.Empty;
 
     /// <summary>
-    /// Names the buckets that take applications, shown in the ones that take none.
+    /// Names where applications are added in this mode, shown in the buckets that take none.
     /// </summary>
-    public string AppBucketsHint => OperatingSystem.IsAndroid()
-        ? Loc.Instance.Get("Main_AppProxyDirectHint")
-        : Loc.Instance.Get("Main_AppOnlyProxyHint");
+    public string AppBucketsHint => Loc.Instance.Get((OperatingSystem.IsAndroid(), GlobalProxyActive) switch
+    {
+        (true, true) => "Main_AppOnlyDirectHint",
+        (true, false) => "Main_AppProxyDirectHint",
+        (false, true) => "Main_AppSelectedModeHint",
+        _ => "Main_AppOnlyProxyHint",
+    });
 
     /// <summary>
     /// Whether the search field carries a magnifier beside the hint.

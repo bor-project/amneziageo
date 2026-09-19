@@ -150,8 +150,13 @@ internal sealed class TunnelController : IDisposable
         var hasRules = routing.HasRules;
         routing = AroundLocal(routing);
         var tunnelResolvers = TunnelResolvers(resolved);
-        var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
-        IReadOnlyList<string> resolverRoutes = [.. startupRoutes];
+
+        // The resolver asked over HTTPS rides the tunnel as well, or its answers are no safer than the plain ones.
+        IReadOnlyList<IPAddress> resolverRoutes = DnsTransports.Of(options.DnsTransport) == DnsTransports.Plain
+            ? tunnelResolvers
+            : [.. tunnelResolvers, DohResolver.DefaultAddress];
+        var startupRoutes = split ? resolverRoutes.Select(server => $"{server}/32").ToList() : [];
+        IReadOnlyList<string> resolverRanges = [.. startupRoutes];
 
         // Inbound access: what the tunnel may reach this machine from. Off by default.
         var inboundRoutes = TunnelInbound.Of(resolved, options.Transport);
@@ -246,7 +251,7 @@ internal sealed class TunnelController : IDisposable
         ListName = routing.ListName;
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
-        _standingBasis = new StandingBasis(ownNetworks, resolverRoutes, [.. tunnelResolvers.Select(server => server.ToString())], applier);
+        _standingBasis = new StandingBasis(ownNetworks, resolverRanges, [.. resolverRoutes.Select(server => server.ToString())], applier);
         _inboundRoutes = inboundRoutes;
         _standing = standing;
         _standingRoutes = [.. inboundRoutes, .. standing.All];
@@ -265,7 +270,7 @@ internal sealed class TunnelController : IDisposable
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
         // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
-        var cache = new RoutingCache(applier, new ProcNet(), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
+        var cache = new RoutingCache(applier, new ProcNet(), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
         _cache = cache;
         if (_memory is { } memory)
         {
@@ -274,7 +279,7 @@ internal sealed class TunnelController : IDisposable
 
         _sessionCts = new CancellationTokenSource();
         _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
-        StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers);
+        StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers, options.DnsTransport);
         var ranges = cache.RangeCounts;
         _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
         return null;
@@ -284,6 +289,11 @@ internal sealed class TunnelController : IDisposable
     /// Sets how long a destination keeps its route on the running connection.
     /// </summary>
     public void SetRouteTtl(int seconds) => _cache?.SetTtl(seconds);
+
+    /// <summary>
+    /// The transport the resolvers behind the tunnel are reached over, and why that one; empty while no router runs.
+    /// </summary>
+    public string NameTransport => _dns?.NameTransport ?? string.Empty;
 
     /// <summary>
     /// Hands over the store the cache keeps its hottest destinations in between sessions.
@@ -597,10 +607,10 @@ internal sealed class TunnelController : IDisposable
 
     // Binds the name router and points the machine at it once the peer answers, so a dial that never completes
     // cannot leave the machine without a resolver.
-    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<string> allowedIps, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers)
+    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<string> allowedIps, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, string dnsTransport)
     {
         var stripV6 = !allowedIps.Any(range => range.Contains(':', StringComparison.Ordinal));
-        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _cache!, _log);
+        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _cache!, _log, dnsTransport);
         if (!router.Start())
         {
             router.Dispose();

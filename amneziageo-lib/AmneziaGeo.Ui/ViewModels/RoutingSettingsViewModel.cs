@@ -20,25 +20,20 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     private bool _baseAllUdp;
     private bool _baseUseGlobalProxy;
     private string _baseRouteTtl = "300";
+    private int _baseDnsTransportChoice;
+    private int _baseLocalDohChoice;
 
     [ObservableProperty]
     private bool _allUdp;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSelectedOnly))]
-    [NotifyPropertyChangedFor(nameof(VpnModeHint))]
     private bool _useGlobalProxy;
 
     /// <summary>
     /// True while the tunnel carries only the entries put under Proxy.
     /// </summary>
     public bool IsSelectedOnly => !UseGlobalProxy;
-
-    /// <summary>
-    /// Line under the mode cards, telling what the picked mode carries.
-    /// </summary>
-    public string VpnModeHint =>
-        Loc.Instance.Get(UseGlobalProxy ? "Main_VpnModeHintFull" : "Main_VpnModeHintSelected");
 
     // Picks the tunnel mode: "full" carries everything, anything else only the Proxy bucket.
     [RelayCommand]
@@ -57,6 +52,26 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// Whether the entered lifetime is not a whole number of seconds in range.
     /// </summary>
     public bool RouteTtlInvalid => !TryParseTtl(RouteTtl, out _);
+
+    // Agent-wide: index into DnsTransports.All.
+    [ObservableProperty]
+    private int _dnsTransportChoice;
+
+    // Agent-wide: index into LocalDohModes.All.
+    [ObservableProperty]
+    private int _localDohChoice;
+
+    /// <summary>
+    /// Whether the agent takes a transport for the resolver behind the tunnel.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showDnsTransport;
+
+    /// <summary>
+    /// Whether the agent takes a local DoH mode.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showLocalDoh;
 
     private static bool TryParseTtl(string text, out int seconds)
     {
@@ -129,6 +144,18 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnDnsTransportChoiceChanged(int value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
+
+    partial void OnLocalDohChoiceChanged(int value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
+
     /// <summary>
     /// Seeds the lifetime from the agent snapshot without pushing it back, leaving an uncommitted edit alone.
     /// </summary>
@@ -157,6 +184,84 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         }
     }
 
+    /// <summary>
+    /// Seeds the transport from the agent snapshot without pushing it back, leaving an uncommitted edit alone.
+    /// </summary>
+    public void ApplyDnsTransport(string token)
+    {
+        ShowDnsTransport = token.Length > 0;
+        if (!ShowDnsTransport || DnsTransportChoice != _baseDnsTransportChoice)
+        {
+            return;
+        }
+
+        var index = IndexOf(DnsTransports.All, token);
+        _baseDnsTransportChoice = index;
+        if (DnsTransportChoice == index)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            DnsTransportChoice = index;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>
+    /// Seeds the local DoH mode from the agent snapshot without pushing it back, leaving an uncommitted edit alone.
+    /// </summary>
+    public void ApplyLocalDoh(string token)
+    {
+        ShowLocalDoh = token.Length > 0;
+        if (!ShowLocalDoh || LocalDohChoice != _baseLocalDohChoice)
+        {
+            return;
+        }
+
+        var index = IndexOf(LocalDohModes.All, token);
+        _baseLocalDohChoice = index;
+        if (LocalDohChoice == index)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            LocalDohChoice = index;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Where a token stands in its set, first place for a token the set does not hold.
+    private static int IndexOf(IReadOnlyList<string> tokens, string token)
+    {
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (string.Equals(tokens[i], token.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
+    // The token a picked place names, the first one for a place outside the set.
+    private static string TokenAt(IReadOnlyList<string> tokens, int index)
+    {
+        return index >= 0 && index < tokens.Count ? tokens[index] : tokens[0];
+    }
+
     private void OnEdited() => RecomputeDirty();
 
     private void RecomputeDirty()
@@ -171,7 +276,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
         var dirty = AllUdp != _baseAllUdp
             || UseGlobalProxy != _baseUseGlobalProxy
-            || RouteTtl != _baseRouteTtl;
+            || RouteTtl != _baseRouteTtl
+            || DnsTransportChoice != _baseDnsTransportChoice
+            || LocalDohChoice != _baseLocalDohChoice;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -188,6 +295,8 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         _baseAllUdp = AllUdp;
         _baseUseGlobalProxy = UseGlobalProxy;
         _baseRouteTtl = RouteTtl;
+        _baseDnsTransportChoice = DnsTransportChoice;
+        _baseLocalDohChoice = LocalDohChoice;
         if (IsDirty)
         {
             IsDirty = false;
@@ -204,6 +313,8 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             AllUdp = _baseAllUdp;
             UseGlobalProxy = _baseUseGlobalProxy;
             RouteTtl = _baseRouteTtl;
+            DnsTransportChoice = _baseDnsTransportChoice;
+            LocalDohChoice = _baseLocalDohChoice;
             StatusMessage = string.Empty;
         }
         finally
@@ -285,20 +396,38 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             }
 
             // Agent-wide, and live: the running tunnel adopts it without a reconnect.
-            if (RouteTtl == _baseRouteTtl)
+            if (RouteTtl != _baseRouteTtl
+                && !await PushSettingAsync(SettingKeys.RouteTtl, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture)))
             {
-                return true;
+                return false;
             }
 
-            var ttlAck = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
-                [SettingKeys.RouteTtl, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
-            StatusMessage = ttlAck.Ok ? string.Empty : ttlAck.Message;
-            return ttlAck.Ok;
+            if (ShowDnsTransport && DnsTransportChoice != _baseDnsTransportChoice
+                && !await PushSettingAsync(SettingKeys.DnsTransport, TokenAt(DnsTransports.All, DnsTransportChoice)))
+            {
+                return false;
+            }
+
+            if (ShowLocalDoh && LocalDohChoice != _baseLocalDohChoice
+                && !await PushSettingAsync(SettingKeys.LocalDoh, TokenAt(LocalDohModes.All, LocalDohChoice)))
+            {
+                return false;
+            }
+
+            return true;
         }
         finally
         {
             IsBusy = false;
         }
+    }
+
+    // Sends one agent-wide setting, keeping a refusal on the status line.
+    private async Task<bool> PushSettingAsync(string key, string value)
+    {
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value]));
+        StatusMessage = ack.Ok ? string.Empty : ack.Message;
+        return ack.Ok;
     }
 
     // Fire-and-forget autosave for a toggle change (skipped while loading).

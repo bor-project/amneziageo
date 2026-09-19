@@ -68,6 +68,16 @@ internal sealed record AppSettings
     public int ConnectTimeoutSeconds { get; init; } = 20;
 
     /// <summary>
+    /// How the resolver behind the tunnel is asked: auto, plain or doh.
+    /// </summary>
+    public string DnsTransport { get; init; } = AmneziaGeo.Ipc.DnsTransports.Default;
+
+    /// <summary>
+    /// How the system is made to reach the name proxy: auto, off or on.
+    /// </summary>
+    public string LocalDoh { get; init; } = AmneziaGeo.Ipc.LocalDohModes.Default;
+
+    /// <summary>
     /// Handshake age beyond which a connected tunnel is treated as dead (triggering a re-dial), in seconds.
     /// </summary>
     public int DeadThresholdSeconds { get; init; } = 180;

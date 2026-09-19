@@ -29,6 +29,21 @@ public static class SettingKeys
     public const string ExcludeRoutes = "exclude-routes";
 
     /// <summary>
+    /// Whether the network the device sits on stays inside the tun and leaves it on a protected socket.
+    /// </summary>
+    public const string LocalInTunnel = "local-in-tunnel";
+
+    /// <summary>
+    /// How the resolver behind the tunnel is asked: auto, plain or doh.
+    /// </summary>
+    public const string DnsTransport = "dns-transport";
+
+    /// <summary>
+    /// How the system is made to reach the name proxy: auto, off or on.
+    /// </summary>
+    public const string LocalDoh = "local-doh";
+
+    /// <summary>
     /// Whether the local proxy listens.
     /// </summary>
     public const string ProxyEnabled = "proxy-enabled";

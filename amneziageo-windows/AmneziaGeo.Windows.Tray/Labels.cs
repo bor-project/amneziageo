@@ -71,11 +71,11 @@ internal static class Labels
     public static string ConnectionLostInfo { get; private set; } = "Connection lost";
 
     /// <summary>
-    /// «Адреса сайтов определяет другая программа» / "Another program resolves site addresses": warning balloon body when the
-    /// machine stops resolving through the app, so rules by domain no longer apply.
+    /// «Адреса сайтов определяет другая программа» / "Another program resolves site addresses": warning balloon body when
+    /// names on this machine are resolved past the tunnel's name proxy.
     /// </summary>
     public static string NamesUnroutedInfo { get; private set; } =
-        "Domain rules are not working: another program on this computer resolves site addresses";
+        "Another program resolves site addresses, sites may take longer to open";
 
     /// <summary>
     /// «Отключение…» / "Disconnecting…": balloon body when the tunnel starts coming down (#12).
@@ -211,7 +211,7 @@ internal static class Labels
             ConnectedInfo = "Подключение установлено";
             ConnectFailedInfo = "Не удалось установить подключение";
             ConnectionLostInfo = "Соединение разорвано";
-            NamesUnroutedInfo = "Правила по доменам не работают: адреса сайтов на этом компьютере определяет другая программа";
+            NamesUnroutedInfo = "Адреса сайтов определяет другая программа, сайты могут открываться дольше обычного";
             DisconnectingInfo = "Отключение…";
             DisconnectedInfo = "Отключено";
             DisconnectFailedInfo = "Не удалось завершить отключение";

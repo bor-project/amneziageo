@@ -77,7 +77,7 @@
             <StackPanel Spacing="2">
               <TextBlock Text="{l:Tr Main_VpnModeSelected}" FontWeight="SemiBold" FontSize="13.5"
                          TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr Main_VpnModeSelectedHint}" Classes="muted" FontSize="11"
+              <TextBlock Text="{l:Tr Main_VpnModeHintSelected}" Classes="muted" FontSize="11"
                          TextWrapping="Wrap" />
             </StackPanel>
           </Button>
@@ -87,11 +87,11 @@
             <StackPanel Spacing="2">
               <TextBlock Text="{l:Tr Main_VpnModeFull}" FontWeight="SemiBold" FontSize="13.5"
                          TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr Main_VpnModeFullHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+              <TextBlock Text="{l:Tr Main_VpnModeHintFull}" Classes="muted" FontSize="11"
+                         TextWrapping="Wrap" />
             </StackPanel>
           </Button>
         </Grid>
-        <TextBlock Text="{Binding VpnModeHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
       </StackPanel>
     </Border>
 

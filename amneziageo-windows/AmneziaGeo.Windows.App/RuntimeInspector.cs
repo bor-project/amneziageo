@@ -28,6 +28,17 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     private const int KeyWidth = 18;
 
     /// <summary>
+    /// The transport the resolver behind the tunnel is reached over, and why that one; empty while no tunnel
+    /// holds this machine's lookups.
+    /// </summary>
+    public string NameTransport => session.Proxy?.NameTransport ?? string.Empty;
+
+    /// <summary>
+    /// What the system reaches the name proxy by, empty while it reaches it on plain 53.
+    /// </summary>
+    public string SystemNames => session.SystemNames;
+
+    /// <summary>
     /// Renders the effective configuration report. Applied reads the live device, otherwise the report covers
     /// what the next connect would use.
     /// </summary>

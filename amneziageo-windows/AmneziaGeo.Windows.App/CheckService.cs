@@ -36,7 +36,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
         var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, connected, transport?.ApiPort ?? 0), ct)
+            .SpeedAsync(new OfferTarget(config, text, connected, transport?.ApiPort ?? 0, Session(config)), ct)
             .ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
@@ -179,7 +179,23 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     /// </summary>
     public async Task WarmOffersAsync(IStateStore store, CancellationToken ct)
     {
-        ServerOffers.Shared.Warm(await TargetsAsync(store, ct).ConfigureAwait(false));
+        ServerOffers.Shared.Warm(await TargetsAsync(store, ct).ConfigureAwait(false), offer => FollowAsync(store, offer));
+    }
+
+    // Takes the websocket front the server of a config offers as the websocket settings of the config.
+    private async Task FollowAsync(IStateStore store, ServerOffer offer)
+    {
+        try
+        {
+            if (await WebSocketDefaults.FollowAsync(store, offer, CancellationToken.None).ConfigureAwait(false) is { } taken)
+            {
+                logger.LogInformation("{Name}: the server offers its websocket front at {Front}, and the websocket settings of the configuration take it", offer.Config, WsEndpoint.Display(taken.WebSocketHost, taken.WebSocketPort));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Name}: the websocket front the server offers could not be written into the configuration", offer.Config);
+        }
     }
 
     /// <summary>
@@ -190,7 +206,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var rose = false;
         foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
-            rose |= ServerOffers.Shared.Observe(name, Connected(name));
+            rose |= ServerOffers.Shared.Observe(name, Connected(name), Session(name));
         }
 
         if (rose)
@@ -211,7 +227,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, Connected(config), transport?.ApiPort ?? 0), ct)
+            .SpeedAsync(new OfferTarget(config, text, Connected(config), transport?.ApiPort ?? 0, Session(config)), ct)
             .ConfigureAwait(false);
 
         return ServerOffers.Upload(chosen, offer, path);
@@ -225,7 +241,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         {
             var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            targets.Add(new OfferTarget(name, text, Connected(name), transport?.ApiPort ?? 0));
+            targets.Add(new OfferTarget(name, text, Connected(name), transport?.ApiPort ?? 0, Session(name)));
         }
 
         return targets;
@@ -284,6 +300,10 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             ? member.Running
             : control.Running && string.Equals(control.RunningTarget ?? control.Target, config, StringComparison.Ordinal);
     }
+
+    // Names the session of the tunnel of a config, empty while it is down.
+    private string Session(string config) =>
+        Connected(config) ? (live.Of(config) ?? control).Session : string.Empty;
 
     // The list the tunnel decides by: the one the running tunnel materialized, else the one the next connect uses.
     private static async Task<(RoutingList? List, bool Split)> ActiveListAsync(IStateStore store, string config, CancellationToken ct)

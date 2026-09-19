@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|inbound|api-port|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|mtu|inbound|api-port|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -65,15 +65,26 @@ internal static class ConfigCommands
                 config.Name,
                 config.Endpoint.Length > 0 ? config.Endpoint : "-",
                 config.GeoSplit ? $"on ({config.Rules.Count.ToString(CultureInfo.InvariantCulture)})" : "off",
-                config.WebSocket ? $"{config.WebSocketHost}:{config.WebSocketPort.ToString(CultureInfo.InvariantCulture)}" : "-",
+                config.WebSocket ? Front(config) : "-",
                 config.Dns.Length > 0 ? config.Dns : "-",
+                Inbound(config),
                 config.Status,
             ])
             .ToList();
 
-        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "STATE"], rows, "no configurations yet");
+        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "STATE"], rows, "no configurations yet");
         return Exit.Ok;
     }
+
+    // Names the websocket front without its path and its account.
+    private static string Front(ConfigEntry config) =>
+        config.WebSocketHost.Length > 0
+            ? WsEndpoint.Display(config.WebSocketHost, config.WebSocketPort)
+            : $":{config.WebSocketPort.ToString(CultureInfo.InvariantCulture)}";
+
+    // Names the inbound scope in the words the command takes.
+    private static string Inbound(ConfigEntry config) =>
+        !config.AllowInbound ? "off" : config.InboundNetwork ? "network" : "host";
 
     private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {

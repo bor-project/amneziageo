@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Geo;
 
@@ -38,6 +39,15 @@ public static class TunnelInbound
     /// </summary>
     public static IReadOnlyList<string> Ranges(IReadOnlyList<string> addresses, IReadOnlyList<string> allowedIps, bool wholeNetwork) =>
         Ranges([.. addresses.Select(entry => Covered(entry, allowedIps))], wholeNetwork);
+
+    /// <summary>
+    /// Returns the ranges the configuration takes traffic from under the given transport; none when inbound
+    /// access is off.
+    /// </summary>
+    public static IReadOnlyList<string> Of(string configText, ConfigTransport? transport) =>
+        transport?.AllowInbound == true
+            ? Ranges(WgConfigEditor.GetAddresses(configText), WgConfigEditor.GetAllowedIps(configText), transport.InboundNetwork)
+            : [];
 
     // Restates the address with the prefix of the narrowest network of the list that holds it.
     private static string Covered(string entry, IReadOnlyList<string> allowedIps)

@@ -35,7 +35,7 @@ public sealed class AppDataRootTests
         Assert.False(AppDataRoot.IsMachineRoot("   "));
     }
 
-    [Fact]
+    [WindowsFact("the profile of the current user is read through WindowsPrincipal")]
     public void BaseSitsUnderTheCurrentUserProfile()
     {
         var expected = AppDataRoot.UserBase(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));

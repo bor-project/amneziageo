@@ -77,6 +77,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _allowInbound;
 
+    // The reach of the access the agent holds: the whole tunnel network or the server alone.
+    private bool _inboundNetwork;
+
     [ObservableProperty]
     private string _apiPort = string.Empty;
 
@@ -140,6 +143,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useIpv6 = useIpv6;
         _useRouter = useRouter;
         _allowInbound = allowInbound;
+        _inboundNetwork = inboundNetwork;
         _apiPort = apiPort > 0 ? apiPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
         _defaultApiPort = defaultApiPort;
         TunnelAddress = FormatAddresses(address);
@@ -454,8 +458,14 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             // Fold the host + auth mode / inputs into the stored address string. Collapse a bare host equal to the Endpoint host to empty; a URL form is sent verbatim.
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
+            var network = WholeNetwork();
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", AllowInbound ? "on" : "off", ApiPort.Trim()]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", network ? "on" : "off", ApiPort.Trim()]));
+            if (ack.Ok)
+            {
+                _inboundNetwork = network;
+            }
+
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
@@ -465,6 +475,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             IsBusy = false;
         }
     }
+
+    // The reach of the access to send: the one the agent holds while the switch stays on, the whole network once it is turned on here.
+    private bool WholeNetwork() => AllowInbound && (!_baseAllowInbound || _inboundNetwork);
 
     // Toggle / combo autosave: fire-and-forget the serialized commit.
     private void FireAutoSave()

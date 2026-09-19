@@ -119,6 +119,64 @@ public sealed record SpeedArgs(string Down, string Up, long Limit, DateTimeOffse
 }
 
 /// <summary>
+/// Arguments of the websocket feature: the front a server of ours carries the tunnel through.
+/// </summary>
+/// <param name="Host">The name the front answers under, empty for the host of the Endpoint.</param>
+/// <param name="Port">The TCP port of the front.</param>
+/// <param name="Path">The secret path the front serves the tunnel under.</param>
+/// <param name="Target">The UDP port the front hands the tunnel to, zero when the server names none.</param>
+public sealed record WebSocketArgs(string Host, int Port, string Path, int Target)
+{
+    /// <summary>
+    /// The key of the feature in the dictionary.
+    /// </summary>
+    public const string Name = "websocket";
+
+    /// <summary>
+    /// The longest path taken.
+    /// </summary>
+    public const int MaxPath = 64;
+
+    /// <summary>
+    /// Returns the arguments of the feature in an offer heard inside the tunnel, or null when they are absent or broken.
+    /// </summary>
+    public static WebSocketArgs? Of(ServerOffer? offer)
+    {
+        if (offer is not { Inside: true } || offer.Arguments(Name) is not { } arguments)
+        {
+            return null;
+        }
+
+        var host = ServerHello.Text(arguments, "host").Trim();
+        var path = ServerHello.Text(arguments, "path").Trim('/');
+        var port = Number(arguments, "port");
+        var target = Number(arguments, "target");
+        if (port is < 1 or > 65535 || target is < 0 or > 65535 || !IsPath(path) || !IsHost(host))
+        {
+            return null;
+        }
+
+        return new WebSocketArgs(host, port, path, target);
+    }
+
+    // Reads a whole number, zero when it is absent or not a number.
+    private static int Number(JsonElement arguments, string name) =>
+        arguments.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : 0;
+
+    // Tells whether a path goes into an address and a command line as it stands.
+    private static bool IsPath(string path) =>
+        path.Length is > 0 and <= MaxPath
+        && !path.Contains("..", StringComparison.Ordinal)
+        && path.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '_' or '/');
+
+    // Tells whether a host is empty, a name or an address.
+    private static bool IsHost(string host) =>
+        host.Length == 0 || Uri.CheckHostName(host) is UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6;
+}
+
+/// <summary>
 /// What one address answered to the hello.
 /// </summary>
 /// <param name="Offer">The offer of a server of ours, null when none answered.</param>

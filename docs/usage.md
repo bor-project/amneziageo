@@ -39,6 +39,8 @@ Calls and games usually learn their server addresses without DNS, so a domain ru
 
 AmneziaWG runs over UDP, and on some networks - corporate and guest Wi-Fi, some mobile carriers - it does not get through. The whole tunnel can then run over a WebSocket on TCP: from the outside it looks like ordinary HTTPS traffic. Any port, set in the settings. If the server requires authentication, provide a login and password or a token.
 
+An AmneziaGeo server with a websocket proxy turned on names its front itself: once the tunnel is up, its address, port and secret path go into the WebSocket settings of the configuration, as long as those stand at their defaults or name a front the server has given before. The front is dialled under TLS with its certificate checked. Turning WebSocket on stays with you.
+
 ## Access to a remote network
 
 Subnets behind the server are reachable in two ways:
@@ -49,6 +51,29 @@ Subnets behind the server are reachable in two ways:
 The DNS from the configuration is applied, so internal names resolve.
 
 If the subnet on the other side matches your local one - both `192.168.1.0/24` - no route to it can be built; only re-addressing one of the ends helps.
+
+## Access from the tunnel
+
+By default the client answers nothing that arrives from the tunnel: what it opened itself keeps working, and the rest is dropped. Access is granted per configuration and has three states:
+
+| State | Who may reach this machine |
+|---|---|
+| off | nobody, and that is the default |
+| the server | the gateway of the tunnel alone, the first address of the tunnel network |
+| the whole tunnel network | every address of the tunnel network |
+
+In the console it is one command, and `config list` prints the state in the INBOUND column:
+
+```bash
+amneziageo config inbound <name> off|host|network
+amneziageo config list
+```
+
+`host` stands for the server, not for this machine: the word names the gateway the configuration dials. In the app the switch sits on the transport tab of the configuration.
+
+The server has to allow it too: a server of AmneziaGeo keeps its own switch per client, and until both sides agree nothing gets through. A port forwarded on the server also needs the client to take what arrives.
+
+On Linux the change reaches a running tunnel at once. On Windows the access is collected when the tunnel comes up, so the app raises the reconnect mark and the new state stands from the next connect.
 
 ## Proxy for the local network
 

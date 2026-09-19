@@ -70,24 +70,31 @@ public sealed class ServerOffers
     }
 
     /// <summary>
-    /// Asks the servers of the configurations that changed since they were last asked, in the background.
+    /// Asks the servers of the configurations that changed since they were last asked, in the background, and hands
+    /// every answer of a server of ours to the caller.
     /// </summary>
-    public void Warm(IEnumerable<OfferTarget> targets)
+    public void Warm(IEnumerable<OfferTarget> targets, Func<ServerOffer, Task>? heard = null)
     {
         foreach (var target in Wanted(targets))
         {
-            _ = Task.Run(() => AskAsync(target, CancellationToken.None));
+            _ = Task.Run(() => AskAsync(target, heard, CancellationToken.None));
         }
     }
 
     /// <summary>
     /// Asks the servers of the configurations that changed since they were last asked and waits for the answers.
     /// </summary>
-    public async Task WarmAsync(IEnumerable<OfferTarget> targets, CancellationToken ct)
+    public Task WarmAsync(IEnumerable<OfferTarget> targets, CancellationToken ct) => WarmAsync(targets, null, ct);
+
+    /// <summary>
+    /// Asks the servers of the configurations that changed since they were last asked, waits for the answers and
+    /// hands every answer of a server of ours to the caller.
+    /// </summary>
+    public async Task WarmAsync(IEnumerable<OfferTarget> targets, Func<ServerOffer, Task>? heard, CancellationToken ct)
     {
         foreach (var target in Wanted(targets))
         {
-            await AskAsync(target, ct).ConfigureAwait(false);
+            await AskAsync(target, heard, ct).ConfigureAwait(false);
         }
     }
 
@@ -111,7 +118,7 @@ public sealed class ServerOffers
 
         if (kept is null || (kept.Offer is { Inside: true } && !target.Connected))
         {
-            var asked = await AskAsync(target, ct).ConfigureAwait(false);
+            var asked = await AskAsync(target, null, ct).ConfigureAwait(false);
 
             return SpeedArgs.Of(asked) is null ? null : asked;
         }
@@ -263,7 +270,7 @@ public sealed class ServerOffers
         || (target.Connected && !string.Equals(kept.Session, _sessions.GetValueOrDefault(target.Config), StringComparison.Ordinal));
 
     // Asks one server, once more after a pause when an up tunnel heard nothing, and keeps the answer.
-    private async Task<ServerOffer?> AskAsync(OfferTarget target, CancellationToken ct)
+    private async Task<ServerOffer?> AskAsync(OfferTarget target, Func<ServerOffer, Task>? heard, CancellationToken ct)
     {
         var session = string.Empty;
         lock (_lock)
@@ -289,6 +296,11 @@ public sealed class ServerOffers
             {
                 _known[target.Config] = new Known(session, Hash(target), offer);
                 Save();
+            }
+
+            if (offer is not null && heard is not null)
+            {
+                await heard(offer).ConfigureAwait(false);
             }
 
             return offer;

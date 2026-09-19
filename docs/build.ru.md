@@ -103,3 +103,16 @@ amneziageo-android/tools/build-apk.sh --abi android-arm64
 Подпись берёт отладочный ключ SDK, если не задан `ANDROID_KEYSTORE`; вместе с ним нужны `ANDROID_KEY_ALIAS`, `ANDROID_STORE_PASS` и `ANDROID_KEY_PASS`.
 
 На Windows те же скрипты есть в варианте PowerShell: `build-engine-android.ps1` и `build-apk.ps1`.
+
+## Тесты
+
+Тесты собраны в один проект и покрывают общие библиотеки, консоль и приложение Windows:
+
+```bash
+dotnet test amneziageo-tests/AmneziaGeo.Tests/AmneziaGeo.Tests.csproj
+```
+
+Проект собирается под Windows, поэтому прогон на Linux или macOS требует `-p:EnableWindowsTargeting=true` и при
+сборке, и при запуске. Те несколько тестов, которые читают то, за что отвечает только Windows - профиль
+текущего пользователя, службу туннеля, сокет ретранслятора точки доступа, - там пропускаются с указанием
+причины, остальное проходит так же, как на Windows.

@@ -51,6 +51,8 @@ internal sealed class TunnelController : IDisposable
     private bool _split;
     private bool _resolverApplied;
     private bool _inboundBlocked;
+    private IReadOnlyList<string> _inboundRoutes = [];
+    private IReadOnlyList<string> _standingRoutes = [];
     private bool _returnRouted;
     private bool _disposed;
 
@@ -149,11 +151,10 @@ internal sealed class TunnelController : IDisposable
         routing = AroundLocal(routing);
         var tunnelResolvers = TunnelResolvers(resolved);
         var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
+        IReadOnlyList<string> resolverRoutes = [.. startupRoutes];
 
         // Inbound access: what the tunnel may reach this machine from. Off by default.
-        var inboundRoutes = options.Transport?.AllowInbound == true
-            ? TunnelInbound.Ranges(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetAllowedIps(resolved), options.Transport.InboundNetwork)
-            : [];
+        var inboundRoutes = TunnelInbound.Of(resolved, options.Transport);
         foreach (var inbound in inboundRoutes)
         {
             if (!startupRoutes.Contains(inbound))
@@ -245,8 +246,10 @@ internal sealed class TunnelController : IDisposable
         ListName = routing.ListName;
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
-        _standingBasis = new StandingBasis(ownNetworks, infrastructure, [.. tunnelResolvers.Select(server => server.ToString()), .. inboundRoutes], inboundRoutes.Count > 0, applier);
+        _standingBasis = new StandingBasis(ownNetworks, resolverRoutes, [.. tunnelResolvers.Select(server => server.ToString())], applier);
+        _inboundRoutes = inboundRoutes;
         _standing = standing;
+        _standingRoutes = [.. inboundRoutes, .. standing.All];
         // All UDP belongs to a split: a full tunnel already carries every datagram.
         var allUdp = split && routing.AllUdp;
         _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
@@ -389,6 +392,53 @@ internal sealed class TunnelController : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Applies inbound access to the running tunnel: the ranges the tunnel reaches this machine at and the table
+    /// that holds it off; false when no session stands to take the change.
+    /// </summary>
+    public async Task<bool> ApplyInboundAsync(ConfigTransport? transport, TunnelRouting routing, CancellationToken ct)
+    {
+        if (_cache is not { } cache || _standingBasis is null)
+        {
+            return false;
+        }
+
+        var wanted = TunnelInbound.Of(_sessionConfig, transport);
+        var block = transport?.AllowInbound != true;
+        if (block)
+        {
+            await BlockInboundAsync(true, ct).ConfigureAwait(false);
+        }
+
+        _inboundRoutes = wanted;
+        Restand(cache, AroundLocal(routing));
+        if (!block)
+        {
+            await BlockInboundAsync(false, ct).ConfigureAwait(false);
+        }
+
+        _log.Info("tunnel", $"{_iface} takes what arrives from the tunnel at: {(wanted.Count == 0 ? "nothing" : string.Join(", ", wanted))}");
+        return true;
+    }
+
+    // Raises or drops the table holding the tunnel off this machine.
+    private async Task BlockInboundAsync(bool block, CancellationToken ct)
+    {
+        if (block == _inboundBlocked)
+        {
+            return;
+        }
+
+        if (block)
+        {
+            _inboundBlocked = await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
+            return;
+        }
+
+        _inboundBlocked = false;
+        await InboundFirewall.RemoveAsync(ct).ConfigureAwait(false);
+    }
+
     // The list with its tunnel ranges cut around the networks this machine stands in.
     private TunnelRouting AroundLocal(TunnelRouting routing)
     {
@@ -408,9 +458,9 @@ internal sealed class TunnelController : IDisposable
             : routing with { ProxyRoutes = cut.Carried, DirectRoutes = [.. routing.DirectRoutes, .. cut.Kept] };
     }
 
-    // The bring-up facts the standing ranges are worked out from: the configuration's own networks, the resolvers
-    // and inbound access, what the cache holds outside it and the applier the ranges stand through.
-    private sealed record StandingBasis(IReadOnlyList<string> OwnNetworks, IReadOnlySet<string> Infrastructure, IReadOnlyList<string> Pinned, bool Inbound, LinuxRouteApplier Applier);
+    // The bring-up facts the standing ranges are worked out from: the configuration's own networks, the resolver
+    // ranges the cache holds outside itself and the applier the ranges stand through.
+    private sealed record StandingBasis(IReadOnlyList<string> OwnNetworks, IReadOnlyList<string> ResolverRoutes, IReadOnlyList<string> Resolvers, LinuxRouteApplier Applier);
 
     // Squares the ranges standing on the interface with the edited list and holds the way back outside the cache.
     private void Restand(RoutingCache cache, TunnelRouting routing)
@@ -420,18 +470,21 @@ internal sealed class TunnelController : IDisposable
             return;
         }
 
-        var standing = StandingRanges.Of(routing.ProxyRoutes, routing.Rules, _split, basis.Inbound, basis.OwnNetworks, basis.Infrastructure);
-        cache.Pin([.. basis.Pinned, .. standing.Return]);
+        var infrastructure = new HashSet<string>([.. basis.ResolverRoutes, .. _inboundRoutes], StringComparer.Ordinal);
+        var standing = StandingRanges.Of(routing.ProxyRoutes, routing.Rules, _split, _inboundRoutes.Count > 0, basis.OwnNetworks, infrastructure);
+        cache.Pin([.. basis.Resolvers, .. _inboundRoutes, .. standing.Return]);
+        IReadOnlyList<string> fresh = [.. _inboundRoutes, .. standing.All];
         if (_split)
         {
-            var (added, removed) = StandingRanges.Diff(_standing.All, standing.All);
+            var (added, removed) = StandingRanges.Diff(_standingRoutes, fresh);
             if (added.Count > 0 || removed.Count > 0)
             {
                 Advertised = basis.Applier.Restand(added, removed);
-                _log.Info("routing", $"ranges standing on {_iface} squared with the edited list: {added.Count} added, {removed.Count} removed");
+                _log.Info("routing", $"ranges standing on {_iface} squared: {added.Count} added, {removed.Count} removed");
             }
         }
 
+        _standingRoutes = fresh;
         _configNetworks = standing.Networks;
         _standing = standing;
     }
@@ -512,6 +565,8 @@ internal sealed class TunnelController : IDisposable
         ListName = string.Empty;
         Advertised = [];
         _split = false;
+        _inboundRoutes = [];
+        _standingRoutes = [];
     }
 
     // The addresses holding a host route: into the tunnel in a split, out the physical hop in a full tunnel.

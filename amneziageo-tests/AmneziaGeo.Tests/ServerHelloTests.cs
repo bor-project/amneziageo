@@ -103,6 +103,66 @@ public sealed class ServerHelloTests
     }
 
     [Fact]
+    public async Task TheWebSocketFront_IsTakenOnlyFromAServerHeardInsideTheTunnel()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public)
+        {
+            WebSocket = new { host = "vpn.example", port = 443, path = "s3cret_Path-1", target = 51820 },
+        };
+
+        var inside = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, true, CancellationToken.None);
+        var outside = await ServerHello.AskAsync(panel.Origin, client.Private, server.Public, false, CancellationToken.None);
+
+        Assert.Equal(new WebSocketArgs("vpn.example", 443, "s3cret_Path-1", 51820), WebSocketArgs.Of(inside.Offer));
+        Assert.Null(WebSocketArgs.Of(outside.Offer));
+    }
+
+    [Fact]
+    public void AWebSocketFrontWithoutAHost_LeavesTheHostToTheEndpoint()
+    {
+        Assert.Equal(new WebSocketArgs(string.Empty, 8443, "a/b", 0), WebSocketArgs.Of(Offered("{\"port\":8443,\"path\":\"/a/b/\"}")));
+    }
+
+    [Theory]
+    [InlineData("{\"port\":443}")]
+    [InlineData("{\"port\":443,\"path\":\"\"}")]
+    [InlineData("{\"port\":443,\"path\":\"p\\\" -L x\"}")]
+    [InlineData("{\"port\":443,\"path\":\"../up\"}")]
+    [InlineData("{\"port\":0,\"path\":\"p\"}")]
+    [InlineData("{\"port\":\"443\",\"path\":\"p\"}")]
+    [InlineData("{\"port\":443,\"path\":\"p\",\"host\":\"a b\"}")]
+    [InlineData("{\"port\":443,\"path\":\"p\",\"host\":\"user@vpn.example\"}")]
+    [InlineData("{\"port\":443,\"path\":\"p\",\"target\":70000}")]
+    public void AWebSocketFrontThatCannotBeDialledAsItStands_IsNotTaken(string arguments)
+    {
+        Assert.Null(WebSocketArgs.Of(Offered(arguments)));
+    }
+
+    [Fact]
+    public async Task EveryAnswerOfAServerOfOurs_IsHandedToTheOneWhoAsked()
+    {
+        var client = Keys();
+        var server = Keys();
+        using var panel = new Panel(server.Private, client.Public);
+        var offers = new ServerOffers(TimeSpan.Zero);
+        var heard = new List<ServerOffer>();
+        Task Hear(ServerOffer offer)
+        {
+            heard.Add(offer);
+
+            return Task.CompletedTask;
+        }
+
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], Hear, CancellationToken.None);
+        await offers.WarmAsync([Target(client.Private, server.Public, panel.Port)], Hear, CancellationToken.None);
+
+        var one = Assert.Single(heard);
+        Assert.Equal("stand", one.Config);
+    }
+
+    [Fact]
     public async Task AnAnswerTheServerKeyDidNotCountersign_IsTakenAsNoServerOfOurs()
     {
         var client = Keys();
@@ -469,6 +529,20 @@ public sealed class ServerHelloTests
         $"[Interface]\nPrivateKey = {privateKey}\nAddress = 10.99.0.5/24\n# AmneziaGeo Api = {point}\n\n[Peer]\nPublicKey = {serverKey}\nEndpoint = 192.0.2.1:9\n",
         true);
 
+    // An offer heard inside the tunnel with the websocket arguments given.
+    private static ServerOffer Offered(string arguments)
+    {
+        using var json = JsonDocument.Parse(arguments);
+
+        return new ServerOffer(
+            "stand",
+            "http://10.9.0.1:51820",
+            true,
+            "1.0.3.0",
+            "milena",
+            new Dictionary<string, JsonElement> { [WebSocketArgs.Name] = json.RootElement.Clone() });
+    }
+
     private static ServerOffer Offer(bool inside)
     {
         using var json = JsonDocument.Parse(
@@ -558,6 +632,11 @@ public sealed class ServerHelloTests
         public TimeSpan PassLife { get; init; } = TimeSpan.FromMinutes(5);
 
         /// <summary>
+        /// The arguments of the websocket front it offers, none when null.
+        /// </summary>
+        public object? WebSocket { get; init; }
+
+        /// <summary>
         /// The public key of the peer whose answer held, empty while none has.
         /// </summary>
         public string Proven { get; private set; } = string.Empty;
@@ -631,25 +710,31 @@ public sealed class ServerHelloTests
 
             Proven = key;
             var pass = "pass-" + Interlocked.Increment(ref _passes).ToString(CultureInfo.InvariantCulture);
+            var features = new Dictionary<string, object>
+            {
+                ["speed"] = Broken
+                    ? (object)new { down = Origin + "/api/speed/down?ticket=" + pass }
+                    : new
+                    {
+                        down = Origin + "/api/speed/down?bytes=25000000&ticket=" + pass,
+                        up = Origin + "/api/speed/up?ticket=" + pass,
+                        limit = 104857600,
+                        expires = DateTimeOffset.UtcNow.Add(PassLife).ToString("O"),
+                    },
+                ["subscription"] = new { url = "https://localhost:2096/sub/one", updateHours = 12 },
+                ["future"] = new { anything = true },
+            };
+            if (WebSocket is not null)
+            {
+                features[WebSocketArgs.Name] = WebSocket;
+            }
+
             var answer = JsonSerializer.SerializeToUtf8Bytes(new
             {
                 server = Name,
                 version = "1.0.3.0",
                 client = "milena",
-                features = new Dictionary<string, object>
-                {
-                    ["speed"] = Broken
-                        ? (object)new { down = Origin + "/api/speed/down?ticket=" + pass }
-                        : new
-                        {
-                            down = Origin + "/api/speed/down?bytes=25000000&ticket=" + pass,
-                            up = Origin + "/api/speed/up?ticket=" + pass,
-                            limit = 104857600,
-                            expires = DateTimeOffset.UtcNow.Add(PassLife).ToString("O"),
-                        },
-                    ["subscription"] = new { url = "https://localhost:2096/sub/one", updateHours = 12 },
-                    ["future"] = new { anything = true },
-                },
+                features,
             });
             response.Headers[ServerHello.ProofHeader] = PeerProof.Countersign(Signer, key, nonce, answer);
 

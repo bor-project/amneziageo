@@ -33,7 +33,7 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    [Fact]
+    [WindowsFact("the tunnel service is asked about through sc.exe")]
     public async Task Remove_DropsTheConfig()
     {
         await _store.SaveConfigAsync("srv", "conf");

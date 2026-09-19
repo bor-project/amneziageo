@@ -101,15 +101,18 @@ public static class CliRunner
               config list
               config show <name>                print the stored wg-quick text
               config link <name>                print the config as a vpn:// share link
-              config import <name> (--file <path> | --link <url> | --text <s> | --stdin)
+              config import [<name>] (--file <path> | --link <url> | --text <s> | --stdin)
               config edit <name> (--file <path> | --text <s> | --stdin)
               config rename <name> <new-name>
               config copy <name> <new-name>
               config remove <name>
+              config order <name> [<name>...]   the order they are listed in
               config dns <name> [<servers>]     preferred resolvers; omit to clear
               config exclusions <name> (--file <path> | --stdin | --list a,b,c | --clear)
-              config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off]
+              config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>]
+                                             [--ipv6 on|off] [--router on|off]
               config mtu <name> auto|config|<number>   packet size: picked, from the text, or set here
+              config inbound <name> off|host|network    nobody, the server, or the whole tunnel network
               config api-port <name> [<port>]   port of the API of the server; omit to clear
               config geo <name> on|off [rule...]
 
@@ -122,6 +125,7 @@ public static class CliRunner
               routing add <id|name> <rule...>       append rules; a listed token takes the new role
               routing delete-rule <id|name> <rule...>
               routing remove <id|name>
+              routing order <name> [<name>...]      the order they are listed in
               routing settings <id|name>
               routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>]
                                           [--all-udp on|off] [--global-proxy on|off]

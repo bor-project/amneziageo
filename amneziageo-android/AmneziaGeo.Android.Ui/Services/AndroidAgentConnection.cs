@@ -284,7 +284,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             // One head, one process: presence needs no announcing here.
             case IpcContract.OpAttachUi:
                 // The window will ask what the servers offer; the servers are asked now so it has the answer.
-                _offers.Warm(Targets());
+                _offers.Warm(Targets(), FollowAsync);
                 return Ok();
 
             case IpcContract.OpAddConfig:
@@ -725,7 +725,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 ClearConnectFailure();
                 if (session is { Length: > 0 } && _offers.Observe(session, true, _boundSession))
                 {
-                    _offers.Warm(Targets());
+                    _offers.Warm(Targets(), FollowAsync);
                 }
 
                 break;
@@ -2934,9 +2934,28 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Returns what the server of the selected config offers and asks the servers that changed behind it.
     private Task<IpcAck> ServerOfferAsync()
     {
-        _offers.Warm(Targets());
+        _offers.Warm(Targets(), FollowAsync);
 
         return Task.FromResult(new IpcAck(true, _offers.Offer(_selectedTarget ?? string.Empty).ToPayload()));
+    }
+
+    // Takes the websocket front the server of a config offers as the websocket settings of the config.
+    private async Task FollowAsync(ServerOffer offer)
+    {
+        try
+        {
+            await EnsureInitAsync().ConfigureAwait(false);
+            if (await WebSocketDefaults.FollowAsync(_store, offer, CancellationToken.None).ConfigureAwait(false) is { } taken)
+            {
+                _log.Info("agent", $"{offer.Config}: the server offers its websocket front at {WsEndpoint.Display(taken.WebSocketHost, taken.WebSocketPort)}, and the websocket settings of the configuration take it");
+                await RefreshTransportsAsync().ConfigureAwait(false);
+                PushSnapshot();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", $"{offer.Config}: the websocket front the server offers could not be written into the configuration", ex);
+        }
     }
 
     // Where the send leg uploads to, and whether that is the server of the config.

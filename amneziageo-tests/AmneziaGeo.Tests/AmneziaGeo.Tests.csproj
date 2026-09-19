@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Cli\AmneziaGeo.Cli.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ui\AmneziaGeo.Ui.csproj" />
     <ProjectReference Include="..\..\amneziageo-windows\AmneziaGeo.Windows.App\AmneziaGeo.Windows.App.csproj" />
   </ItemGroup>
 

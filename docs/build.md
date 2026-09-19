@@ -103,3 +103,16 @@ The engine is built with the Android NDK toolchain into `AmneziaGeo.Android.Engi
 Signing takes the SDK debug key unless `ANDROID_KEYSTORE` names a keystore, in which case `ANDROID_KEY_ALIAS`, `ANDROID_STORE_PASS` and `ANDROID_KEY_PASS` have to be set as well.
 
 The same scripts exist for PowerShell on Windows: `build-engine-android.ps1` and `build-apk.ps1`.
+
+## Tests
+
+The tests live in one project and cover the shared libraries, the console and the Windows app:
+
+```bash
+dotnet test amneziageo-tests/AmneziaGeo.Tests/AmneziaGeo.Tests.csproj
+```
+
+The project targets Windows, so a run on Linux or macOS takes `-p:EnableWindowsTargeting=true` both when building
+and when running. The few tests that read what only Windows answers for - the profile of the current user, the
+tunnel service, the relay socket of the access point - are skipped there with the reason, and the rest of the
+suite runs as it does on Windows.

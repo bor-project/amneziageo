@@ -109,7 +109,7 @@ public sealed class HotspotProxyTests : IDisposable
         Assert.Equal(7, (await ReadAsync(client, 10))[1]);
     }
 
-    [Fact]
+    [WindowsFact("the relay socket is set up with SIO_UDP_CONNRESET")]
     public async Task ADatagramToAStandIn_ComesBackFromTheAddressItWasSentTo()
     {
         var proxy = Listen();
@@ -133,7 +133,7 @@ public sealed class HotspotProxyTests : IDisposable
         Assert.Equal("hello", Encoding.ASCII.GetString(answer.Buffer[^5..]));
     }
 
-    [Fact]
+    [WindowsFact("the relay socket is set up with SIO_UDP_CONNRESET")]
     public async Task DatagramsToTwoDestinations_LeaveFromOnePort()
     {
         var proxy = Listen();
@@ -159,7 +159,7 @@ public sealed class HotspotProxyTests : IDisposable
         Assert.Equal(_datagrams.Seen, second.Seen);
     }
 
-    [Fact]
+    [WindowsFact("the relay socket is set up with SIO_UDP_CONNRESET")]
     public async Task WhenTheConnectionThatAskedForTheRelayGoes_TheRelayGoesWithIt()
     {
         var proxy = Listen();

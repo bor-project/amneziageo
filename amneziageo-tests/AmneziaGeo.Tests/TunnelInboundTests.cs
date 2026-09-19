@@ -1,3 +1,4 @@
+using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using Xunit;
 
@@ -9,6 +10,18 @@ namespace AmneziaGeo.Tests;
 /// </summary>
 public sealed class TunnelInboundTests
 {
+    private const string Config = """
+        [Interface]
+        Address = 10.9.1.12/32
+
+        [Peer]
+        AllowedIPs = 10.9.1.0/24
+        Endpoint = 10.99.1.1:51821
+        """;
+
+    private static ConfigTransport Transport(bool allow = false, bool network = false) =>
+        new("lab", false, string.Empty, 443, AllowInbound: allow, InboundNetwork: network);
+
     [Fact]
     public void HostAddress_YieldsTheServerAlone()
     {
@@ -100,5 +113,44 @@ public sealed class TunnelInboundTests
     public void Ipv6PrefixComesFromTheCoveringAllowedIp()
     {
         Assert.Equal(["fd42:6d79:7671::/64"], TunnelInbound.Ranges(["fd42:6d79:7671::9/128"], ["fd42:6d79:7671::/64"], wholeNetwork: true));
+    }
+
+    [Fact]
+    public void AccessOff_TakesNoRangeAtAll()
+    {
+        Assert.Empty(TunnelInbound.Of(Config, Transport()));
+        Assert.Empty(TunnelInbound.Of(Config, null));
+    }
+
+    [Fact]
+    public void AccessOn_TakesTheServerOfTheTunnelNetwork()
+    {
+        Assert.Equal(["10.9.1.1/32"], TunnelInbound.Of(Config, Transport(allow: true)));
+    }
+
+    [Fact]
+    public void AccessOnTheWholeNetwork_TakesTheTunnelNetwork()
+    {
+        Assert.Equal(["10.9.1.0/24"], TunnelInbound.Of(Config, Transport(allow: true, network: true)));
+    }
+
+    [Fact]
+    public void WideningALiveTunnelToTheWholeNetwork_SwapsOneRangeForTheOther()
+    {
+        var (added, removed) = StandingRanges.Diff(
+            TunnelInbound.Of(Config, Transport(allow: true)),
+            TunnelInbound.Of(Config, Transport(allow: true, network: true)));
+
+        Assert.Equal(["10.9.1.0/24"], added);
+        Assert.Equal(["10.9.1.1/32"], removed);
+    }
+
+    [Fact]
+    public void ShuttingALiveTunnel_TakesEveryRangeBack()
+    {
+        var (added, removed) = StandingRanges.Diff(TunnelInbound.Of(Config, Transport(allow: true)), TunnelInbound.Of(Config, Transport()));
+
+        Assert.Empty(added);
+        Assert.Equal(["10.9.1.1/32"], removed);
     }
 }

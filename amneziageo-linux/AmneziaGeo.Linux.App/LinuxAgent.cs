@@ -78,6 +78,9 @@ internal sealed class LinuxAgent : IDisposable
     private string? _selectedTarget;
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
+
+    // Names the session of the running tunnel, new on every raise.
+    private string _tunnelSession = string.Empty;
     private string _logLevel = "error";
     private bool _routeLog;
     private bool _surviveReboot;
@@ -656,7 +659,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             case IpcContract.OpAttachUi:
                 // The window will ask what the servers offer; the servers are asked now so it has the answer.
-                ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+                ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false), FollowAsync);
                 return Ok();
 
             case IpcContract.OpLogClient:
@@ -924,6 +927,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, refusal.Detail);
         }
 
+        _tunnelSession = Guid.NewGuid().ToString("N");
         StartLossProbe(config);
         if (await FirstHandshakeAsync(ct).ConfigureAwait(false))
         {
@@ -1419,9 +1423,51 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, "invalid API port (1-65535)");
         }
 
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, apiPort), ct).ConfigureAwait(false);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, apiPort);
+        await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
+        if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
+        {
+            await ApplyInboundAsync(args[0], transport, ct).ConfigureAwait(false);
+        }
+
+        FlagTransportRestart(args[0], stored, transport);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    // Raises the reconnect banner for a running configuration; access from the tunnel is left out, it applies
+    // on the spot.
+    private void FlagTransportRestart(string name, ConfigTransport? stored, ConfigTransport transport)
+    {
+        if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var carried = transport with { AllowInbound = stored?.AllowInbound ?? false, InboundNetwork = stored?.InboundNetwork ?? false };
+        if (carried == stored)
+        {
+            return;
+        }
+
+        _restartRequired = true;
+        _log.Info("agent", "the edited transport applies on the next connect");
+    }
+
+    // Hands inbound access to the running tunnel; what a live session cannot take raises the reconnect banner.
+    private async Task ApplyInboundAsync(string name, ConfigTransport transport, CancellationToken ct)
+    {
+        if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
+        if (!await _tunnel.ApplyInboundAsync(transport, routing, ct).ConfigureAwait(false))
+        {
+            _restartRequired = true;
+            _log.Info("agent", "access from the tunnel applies on the next connect");
+        }
     }
 
     private async Task<IpcAck> SetConfigDnsAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2188,7 +2234,7 @@ internal sealed class LinuxAgent : IDisposable
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
         var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0), ct)
+            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0, Session(config)), ct)
             .ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
@@ -2316,7 +2362,7 @@ internal sealed class LinuxAgent : IDisposable
     // Returns what the server of the selected config offers and asks the servers that changed behind it.
     private async Task<IpcAck> ServerOfferAsync(CancellationToken ct)
     {
-        ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+        ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false), FollowAsync);
 
         return new IpcAck(true, ServerOffers.Shared.Offer(_selectedTarget ?? string.Empty).ToPayload());
     }
@@ -2324,9 +2370,26 @@ internal sealed class LinuxAgent : IDisposable
     // Asks the servers again when the tunnel of the selected config has come up.
     private async Task ObserveOffersAsync(CancellationToken ct)
     {
-        if (_selectedTarget is { Length: > 0 } selected && ServerOffers.Shared.Observe(selected, Up(selected)))
+        if (_selectedTarget is { Length: > 0 } selected && ServerOffers.Shared.Observe(selected, Up(selected), Session(selected)))
         {
-            ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false));
+            ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false), FollowAsync);
+        }
+    }
+
+    // Takes the websocket front the server of a config offers as the websocket settings of the config.
+    private async Task FollowAsync(ServerOffer offer)
+    {
+        try
+        {
+            if (await WebSocketDefaults.FollowAsync(_store, offer, CancellationToken.None).ConfigureAwait(false) is { } taken)
+            {
+                _log.Info("agent", $"{offer.Config}: the server offers its websocket front at {WsEndpoint.Display(taken.WebSocketHost, taken.WebSocketPort)}, and the websocket settings of the configuration take it");
+                await PushAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", $"{offer.Config}: the websocket front the server offers could not be written into the configuration", ex);
         }
     }
 
@@ -2335,6 +2398,9 @@ internal sealed class LinuxAgent : IDisposable
         _tunnel.Running
         && _boundStatus == ConnectionStatus.Connected
         && string.Equals(config, _selectedTarget, StringComparison.Ordinal);
+
+    // Names the session of the tunnel of a config, empty while it is down.
+    private string Session(string config) => Up(config) ? _tunnelSession : string.Empty;
 
     // Where the send leg uploads to, and whether that is the server of the config.
     private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
@@ -2347,7 +2413,7 @@ internal sealed class LinuxAgent : IDisposable
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0), ct)
+            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0, Session(config)), ct)
             .ConfigureAwait(false);
 
         return ServerOffers.Upload(chosen, offer, path);
@@ -2361,7 +2427,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            targets.Add(new OfferTarget(name, text, Up(name), transport?.ApiPort ?? 0));
+            targets.Add(new OfferTarget(name, text, Up(name), transport?.ApiPort ?? 0, Session(name)));
         }
 
         return targets;

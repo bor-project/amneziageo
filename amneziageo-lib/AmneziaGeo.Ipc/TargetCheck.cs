@@ -270,14 +270,15 @@ public static class TargetVerdict
             return (TargetVerdicts.NoRules, []);
         }
 
-        if (!found.Resolved)
-        {
-            return (TargetVerdicts.Unresolved, [target]);
-        }
-
+        // A block rule answers before a missing address.
         if (found.Role == RoleToken.Block)
         {
             return (TargetVerdicts.Blocked, [found.MatchedRule]);
+        }
+
+        if (!found.Resolved)
+        {
+            return (TargetVerdicts.Unresolved, [target]);
         }
 
         var named = found.AppCount.ToString(CultureInfo.InvariantCulture);

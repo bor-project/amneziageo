@@ -213,7 +213,9 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
         var resolved = await ResolveAsync(host, ct).ConfigureAwait(false);
         if (resolved.Count == 0)
         {
-            facts.Add(new CheckFact("resolve", host, "failed", "the resolver returned no address"));
+            facts.Add(claim.Role == RoleToken.Block
+                ? new CheckFact("resolve", host, "blocked", "the block rule leaves the name without an address")
+                : new CheckFact("resolve", host, "failed", "the resolver returned no address"));
             return findings with { Resolved = false, Role = claim.Role, MatchedRule = claim.Rule };
         }
 

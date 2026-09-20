@@ -50,6 +50,11 @@ public interface ISubscriptionLibrary
     Task EditAsync(string name, string confText, CancellationToken ct);
 
     /// <summary>
+    /// Снимает конфигурацию, оставляя настройки, заданные пользователем рядом с ней.
+    /// </summary>
+    Task DropAsync(string name, CancellationToken ct);
+
+    /// <summary>
     /// Сносит конфигурацию со всем, что платформа держит рядом с ней.
     /// </summary>
     Task RemoveAsync(string name, CancellationToken ct);
@@ -57,7 +62,7 @@ public interface ISubscriptionLibrary
 
 /// <summary>
 /// Читает подписку и приводит к ней библиотеку: новые узлы заводит, изменившиеся переписывает, пропавшие
-/// сносит. Текст конфигурации меняется, имя и все настройки пользователя остаются на месте.
+/// снимает. Текст конфигурации меняется, имя и все настройки пользователя остаются на месте.
 /// </summary>
 public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library)
 {
@@ -146,14 +151,16 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                         ct).ConfigureAwait(false);
                     break;
                 default:
-                    // Узла в подписке больше нет - конфигурация уходит вместе с ним.
+                    // Узла в подписке больше нет - конфигурация уходит, её настройки ждут возврата узла.
                     if (names.Contains(change.ConfigName, StringComparer.Ordinal))
                     {
-                        await library.RemoveAsync(change.ConfigName, ct).ConfigureAwait(false);
+                        await library.DropAsync(change.ConfigName, ct).ConfigureAwait(false);
                         gone++;
                     }
 
-                    await store.RemoveSubscriptionMemberAsync(subscription.Name, change.Remark, ct).ConfigureAwait(false);
+                    await store.SaveSubscriptionMemberAsync(
+                        new SubscriptionMember(subscription.Name, change.Remark, change.ConfigName, false),
+                        ct).ConfigureAwait(false);
                     break;
             }
         }

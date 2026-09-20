@@ -119,6 +119,19 @@ public sealed class SubscriptionMergeTests
     }
 
     [Fact]
+    public void NodeBackAfterItsConfigWasDropped_ReturnsToThatName()
+    {
+        var first = SubscriptionMerge.Plan([Node("phone")], [], []);
+        var members = new[] { Member(first[0], "мой телефон") with { Present = false } };
+
+        var plan = SubscriptionMerge.Plan([Node("phone")], members, []);
+
+        var change = Assert.Single(plan);
+        Assert.Equal(SubscriptionChangeKind.Add, change.Kind);
+        Assert.Equal("мой телефон", change.ConfigName);
+    }
+
+    [Fact]
     public void NodeGoneFromTheFeed_IsMarked()
     {
         var first = SubscriptionMerge.Plan([Node("phone"), Node("laptop")], [], []);

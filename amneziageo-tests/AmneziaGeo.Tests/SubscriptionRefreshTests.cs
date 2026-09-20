@@ -152,9 +152,31 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
 
         Assert.Equal(1, result.Gone);
         Assert.Equal(["AmneziaWG-3.1-phone"], _library.Names);
+        Assert.Equal(["AmneziaWG-2-laptop"], _library.Dropped);
         var members = await _store.ListSubscriptionMembersAsync("myvpn");
-        Assert.Single(members);
-        Assert.Equal("AmneziaWG-3.1-phone", members[0].ConfigName);
+        Assert.Equal(2, members.Count);
+        Assert.Equal("AmneziaWG-2-laptop", Assert.Single(members, member => !member.Present).ConfigName);
+    }
+
+    [Fact]
+    public async Task NodeGoneAndBack_KeepsTheSettingsSetOnIt()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"), Config("AmneziaWG 2 -laptop"));
+        await _refresher.RefreshAsync(Fresh(), default);
+        await _store.SetConfigTransportAsync(new ConfigTransport("AmneziaWG-2-laptop", true, "front.example", 8443));
+        await _store.SetConfigDnsAsync(new ConfigDns("AmneziaWG-2-laptop", "1.1.1.1"));
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
+        await _refresher.RefreshAsync(await Stored(), default);
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"), Config("AmneziaWG 2 -laptop"));
+
+        var result = await _refresher.RefreshAsync(await Stored(), default);
+
+        Assert.Equal(1, result.Added);
+        Assert.Contains("AmneziaWG-2-laptop", _library.Names);
+        Assert.Empty(_library.Removed);
+        Assert.True((await _store.GetConfigTransportAsync("AmneziaWG-2-laptop"))?.UseWebSocket);
+        Assert.Equal("1.1.1.1", (await _store.GetConfigDnsAsync("AmneziaWG-2-laptop"))?.Servers);
+        Assert.All(await _store.ListSubscriptionMembersAsync("myvpn"), member => Assert.True(member.Present));
     }
 
     [Fact]
@@ -246,6 +268,10 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
 
         public IReadOnlyList<string> Names => [.. _configs.Keys];
 
+        public List<string> Dropped { get; } = [];
+
+        public List<string> Removed { get; } = [];
+
         public string Text(string name) => _configs[name];
 
         public Task<IReadOnlyCollection<string>> NamesAsync(CancellationToken ct)
@@ -270,9 +296,17 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
+        public Task DropAsync(string name, CancellationToken ct)
+        {
+            _configs.Remove(name);
+            Dropped.Add(name);
+            return Task.CompletedTask;
+        }
+
         public Task RemoveAsync(string name, CancellationToken ct)
         {
             _configs.Remove(name);
+            Removed.Add(name);
             return Task.CompletedTask;
         }
     }

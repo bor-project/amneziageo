@@ -1102,17 +1102,22 @@ internal sealed class LinuxAgent : IDisposable
             await agent._store.SaveConfigAsync(name, confText, ct).ConfigureAwait(false);
         }
 
-        public async Task RemoveAsync(string name, CancellationToken ct)
+        public async Task DropAsync(string name, CancellationToken ct)
         {
             await agent._store.RemoveConfigAsync(name, ct).ConfigureAwait(false);
-            await agent._store.RemoveTunnelGeoAsync(name, ct).ConfigureAwait(false);
-            await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
-            await agent._store.RemoveConfigDnsAsync(name, ct).ConfigureAwait(false);
-            await agent._store.RemoveConfigExclusionsAsync(name, ct).ConfigureAwait(false);
             if (string.Equals(name, agent._selectedTarget, StringComparison.Ordinal))
             {
                 await agent.StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);
             }
+        }
+
+        public async Task RemoveAsync(string name, CancellationToken ct)
+        {
+            await DropAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveTunnelGeoAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveConfigDnsAsync(name, ct).ConfigureAwait(false);
+            await agent._store.RemoveConfigExclusionsAsync(name, ct).ConfigureAwait(false);
         }
     }
 
@@ -1183,7 +1188,9 @@ internal sealed class LinuxAgent : IDisposable
             return rejected;
         }
 
+        var stored = await _store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false);
         await _store.SaveConfigAsync(args[0], args[1], ct).ConfigureAwait(false);
+        FlagEditRestart(args[0], stored, args[1], "the edited configuration applies on the next connect");
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1397,6 +1404,11 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
         var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false);
         var port = int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPort) ? parsedPort : 0;
         var host = args.Count > 3 ? args[3] : string.Empty;
@@ -1443,6 +1455,23 @@ internal sealed class LinuxAgent : IDisposable
         _log.Info("agent", "the edited transport applies on the next connect");
     }
 
+    // Raises the reconnect banner for a running configuration whose stored value the tunnel reads on connect.
+    private void FlagEditRestart(string name, string? stored, string value, string note)
+    {
+        if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (string.Equals((stored ?? string.Empty).Trim(), value.Trim(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _restartRequired = true;
+        _log.Info("agent", note);
+    }
+
     // Hands inbound access to the running tunnel; what a live session cannot take raises the reconnect banner.
     private async Task ApplyInboundAsync(string name, ConfigTransport transport, CancellationToken ct)
     {
@@ -1466,7 +1495,13 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
         var servers = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var stored = await _store.GetConfigDnsAsync(args[0], ct).ConfigureAwait(false);
         if (servers.Length == 0)
         {
             await _store.RemoveConfigDnsAsync(args[0], ct).ConfigureAwait(false);
@@ -1476,6 +1511,7 @@ internal sealed class LinuxAgent : IDisposable
             await _store.SetConfigDnsAsync(new ConfigDns(args[0], servers), ct).ConfigureAwait(false);
         }
 
+        FlagEditRestart(args[0], stored?.Servers, servers, "the edited resolvers apply on the next connect");
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1487,7 +1523,13 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
         var exclusions = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var stored = await _store.GetConfigExclusionsAsync(args[0], ct).ConfigureAwait(false);
         if (exclusions.Length == 0)
         {
             await _store.RemoveConfigExclusionsAsync(args[0], ct).ConfigureAwait(false);
@@ -1497,6 +1539,7 @@ internal sealed class LinuxAgent : IDisposable
             await _store.SetConfigExclusionsAsync(new ConfigExclusions(args[0], exclusions), ct).ConfigureAwait(false);
         }
 
+        FlagEditRestart(args[0], stored?.Exclusions, exclusions, "the edited exclusions apply on the next connect");
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -2061,6 +2104,12 @@ internal sealed class LinuxAgent : IDisposable
         {
             rows.Add(new LiveSession(range, "proxy", Path: LiveSession.PathTunnel,
                 Reason: LiveSession.ReasonService));
+        }
+
+        foreach (var refused in _tunnel.RefusedNames())
+        {
+            rows.Add(new LiveSession(refused.Name, "block", Path: LiveSession.PathBlock,
+                Reason: LiveSession.ReasonName, IdleSeconds: refused.IdleSeconds));
         }
 
         var tunnel = rows.Count(row => row.Route == LiveSession.PathTunnel);

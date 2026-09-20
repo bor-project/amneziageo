@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using AmneziaGeo.Dal;
+using AmneziaGeo.Decl;
 using Xunit;
 
 namespace AmneziaGeo.Tests;
@@ -130,6 +131,25 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
 
         Assert.DoesNotContain("topSecretKey", text, StringComparison.Ordinal);
         Assert.Contains("[REDACTED]", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheWebSocketFrontInTheSummary_CarriesNoPathAndNoCredentials()
+    {
+        await _store.SaveConfigAsync("srv", "[Peer]\nEndpoint = 10.0.0.1:51820\n");
+        await _store.SetConfigTransportAsync(
+            new ConfigTransport("srv", true, "wss://bob:hunter2@front.example:8443/s3cr3t", 8443));
+
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(Path.Combine(_root, "out"), "header\n", row => row.Message);
+
+        using var zip = ZipFile.OpenRead(path);
+        using var reader = new StreamReader(zip.GetEntry("summary.txt")!.Open());
+        var summary = await reader.ReadToEndAsync();
+
+        Assert.Contains("websocket:  on -> front.example:8443", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("s3cr3t", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("hunter2", summary, StringComparison.Ordinal);
     }
 
     [Fact]

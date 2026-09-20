@@ -32,6 +32,9 @@ internal sealed class DnsRouter : IDisposable
     private readonly RoutingCache _routes;
     private readonly ConcurrentDictionary<string, string> _names = new(StringComparer.Ordinal);
 
+    // Names a block rule refused, which no address of theirs is ever held for.
+    private readonly RefusedNames _refused = new();
+
     // How the resolvers behind the tunnel are asked, and the transport that answered last.
     private readonly NameUpstream _tunnelAsk;
     private readonly DohResolver? _doh;
@@ -77,6 +80,14 @@ internal sealed class DnsRouter : IDisposable
     public string NameOf(string address)
     {
         return _names.GetValueOrDefault(address, string.Empty);
+    }
+
+    /// <summary>
+    /// The names a block rule refused no longer ago than the window, each with the seconds since its refusal.
+    /// </summary>
+    public IReadOnlyList<(string Name, int IdleSeconds)> Refused(int ttlSeconds)
+    {
+        return _refused.Fresh(ttlSeconds);
     }
 
     /// <summary>
@@ -266,6 +277,8 @@ internal sealed class DnsRouter : IDisposable
         var verdict = Decide(name);
         if (verdict == RouteVerdict.Block)
         {
+            _refused.Note(name);
+
             return DnsWire.BuildRefusal(query, length);
         }
 

@@ -157,9 +157,9 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// Deletes a configuration, its service, geo settings, and resolutions.
+    /// Deletes a configuration and its service, keeping the settings kept beside it.
     /// </summary>
-    public async Task RemoveAsync(string name, CancellationToken ct = default)
+    public async Task DropAsync(string name, CancellationToken ct = default)
     {
         if (serviceManager.Exists(name))
         {
@@ -167,6 +167,15 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
 
         await store.RemoveConfigAsync(name, ct);
+        RemoveLegacyConfigFile(name);
+    }
+
+    /// <summary>
+    /// Deletes a configuration, its service, geo settings, and resolutions.
+    /// </summary>
+    public async Task RemoveAsync(string name, CancellationToken ct = default)
+    {
+        await DropAsync(name, ct);
         await store.RemoveTunnelGeoAsync(name, ct);
         await store.RemoveConfigTransportAsync(name, ct);
         await store.RemoveConfigDnsAsync(name, ct);
@@ -182,8 +191,6 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
                 await store.RemoveSubscriptionMemberAsync(member.Subscription, member.Remark, ct);
             }
         }
-
-        RemoveLegacyConfigFile(name);
     }
 
     // Removes the config file from disk; migration would otherwise resurrect a deleted config on the next start.

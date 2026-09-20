@@ -486,6 +486,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return scope.ConfigRepo.EditFromTextAsync(name, confText, ct);
         }
 
+        public async Task DropAsync(string name, CancellationToken ct)
+        {
+            await owner.ForgetConfigAsync(name, ct);
+            await scope.ConfigRepo.DropAsync(name, ct);
+            await scope.Store.RemoveTunnelStateAsync(name, ct);
+            await owner.ClearBindingIfTargetAsync(name, ct);
+        }
+
         public async Task RemoveAsync(string name, CancellationToken ct)
         {
             await owner.ForgetConfigAsync(name, ct);

@@ -126,7 +126,7 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         var entry = Assert.Single(JsonSerializer.Deserialize<List<SubscriptionEntry>>(ack.Message, IpcJson.Options)!);
         Assert.Equal("example.net", entry.Name);
         Assert.Equal(1, entry.Configs);
-        Assert.Equal(0, entry.Gone);
+        Assert.Equal(1, entry.Gone);
         Assert.Equal(12, entry.IntervalHours);
         Assert.NotEqual(0, entry.CheckedAt);
     }
@@ -164,6 +164,21 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         Assert.True(ack.Ok);
         Assert.Empty(await _store.ListSubscriptionsAsync());
         Assert.Single(_library.Names);
+    }
+
+    [Fact]
+    public async Task Remove_TakesTheSettingsOfANodeTheFeedAlreadyDropped()
+    {
+        _feed.Body = Body(Config("phone"), Config("laptop"));
+        await _service.AddAsync([Url], default);
+        _feed.Body = Body(Config("phone"));
+        await _service.RefreshAsync([], default);
+
+        var ack = await _service.RemoveAsync(["example.net"], [], default);
+
+        Assert.True(ack.Ok);
+        Assert.Equal(["laptop"], _library.Removed);
+        Assert.Equal(["phone"], _library.Names);
     }
 
     [Fact]
@@ -293,6 +308,10 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
 
         public IReadOnlyList<string> Names => [.. _configs.Keys];
 
+        public List<string> Dropped { get; } = [];
+
+        public List<string> Removed { get; } = [];
+
         public Task<IReadOnlyCollection<string>> NamesAsync(CancellationToken ct)
         {
             return Task.FromResult<IReadOnlyCollection<string>>(_configs.Keys.ToList());
@@ -315,9 +334,17 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
+        public Task DropAsync(string name, CancellationToken ct)
+        {
+            _configs.Remove(name);
+            Dropped.Add(name);
+            return Task.CompletedTask;
+        }
+
         public Task RemoveAsync(string name, CancellationToken ct)
         {
             _configs.Remove(name);
+            Removed.Add(name);
             return Task.CompletedTask;
         }
     }

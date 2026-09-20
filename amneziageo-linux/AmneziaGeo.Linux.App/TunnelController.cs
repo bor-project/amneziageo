@@ -96,6 +96,14 @@ internal sealed class TunnelController : IDisposable
     }
 
     /// <summary>
+    /// The names a block rule refused, each with the seconds since its refusal.
+    /// </summary>
+    public IReadOnlyList<(string Name, int IdleSeconds)> RefusedNames()
+    {
+        return _dns?.Refused(Cache?.TtlSeconds ?? 0) ?? [];
+    }
+
+    /// <summary>
     /// Address ranges advertised to the engine when the tunnel came up.
     /// </summary>
     public IReadOnlyList<string> Advertised { get; private set; } = [];

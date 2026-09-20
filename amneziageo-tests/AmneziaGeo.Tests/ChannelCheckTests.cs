@@ -445,4 +445,16 @@ public sealed class TargetCheckTests
         Assert.Equal(TargetVerdicts.Blocked, report.VerdictKey);
         Assert.Contains("10.0.0.0-10.255.255.255", report.VerdictArgs[0], StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ABlockedNameWithoutAnAddress_NamesTheRuleInsteadOfTheResolver()
+    {
+        var found = new TargetFindings(CheckTargetKind.Domain, Split: true, RoutingActive: true,
+            MatchedRule: "doubleclick.net", Role: RoleToken.Block, Resolved: false);
+
+        var (key, args) = TargetVerdict.Decide(found, "doubleclick.net");
+
+        Assert.Equal(TargetVerdicts.Blocked, key);
+        Assert.Equal("doubleclick.net", args[0]);
+    }
 }

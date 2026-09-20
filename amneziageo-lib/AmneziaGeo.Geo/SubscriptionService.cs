@@ -160,15 +160,13 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         }
 
         await store.RemoveSubscriptionAsync(name, ct).ConfigureAwait(false);
-        if (withConfigs)
+        var names = await library.NamesAsync(ct).ConfigureAwait(false);
+        foreach (var member in members)
         {
-            var names = await library.NamesAsync(ct).ConfigureAwait(false);
-            foreach (var member in members)
+            // Настройки узла, которого подписка уже убрала, держать больше не для чего.
+            if (withConfigs || !names.Contains(member.ConfigName, StringComparer.Ordinal))
             {
-                if (names.Contains(member.ConfigName, StringComparer.Ordinal))
-                {
-                    await library.RemoveAsync(member.ConfigName, ct).ConfigureAwait(false);
-                }
+                await library.RemoveAsync(member.ConfigName, ct).ConfigureAwait(false);
             }
         }
 

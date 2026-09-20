@@ -71,7 +71,7 @@ public static class SubscriptionMerge
                 continue;
             }
 
-            var name = Unique(NodeName(imported, fetched), taken);
+            var name = Returned(remark, known, taken, kept) ?? Unique(NodeName(imported, fetched), taken);
             taken.Add(name);
             plan.Add(new SubscriptionChange(remark, name, imported.ConfText, SubscriptionChangeKind.Add));
         }
@@ -85,6 +85,21 @@ public static class SubscriptionMerge
         }
 
         return plan;
+    }
+
+    // Имя конфигурации, снятой уходом узла из подписки: вернувшийся узел садится на него вместе с настройками.
+    private static string? Returned(
+        string remark,
+        Dictionary<string, SubscriptionMember> known,
+        HashSet<string> taken,
+        HashSet<string> kept)
+    {
+        return known.TryGetValue(remark, out var member)
+            && !member.Present
+            && !taken.Contains(member.ConfigName)
+            && !kept.Contains(member.ConfigName)
+            ? member.ConfigName
+            : null;
     }
 
     // Узел ищется по имени, а переименованный - по ключу клиента: его подписка не меняет ни от порта, ни от

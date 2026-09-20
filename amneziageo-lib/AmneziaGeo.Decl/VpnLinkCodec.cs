@@ -379,10 +379,11 @@ public static class VpnLinkCodec
     // Tells whether a comment is a line of AmneziaGeo rather than a name.
     private static bool Extra(string line)
     {
+        const string mark = "AmneziaGeo";
         var comment = line[1..].TrimStart();
-        var equals = comment.IndexOf('=');
 
-        return equals > 0 && comment[..equals].TrimEnd().StartsWith("AmneziaGeo ", StringComparison.OrdinalIgnoreCase);
+        return comment.StartsWith(mark, StringComparison.OrdinalIgnoreCase)
+            && (comment.Length == mark.Length || char.IsWhiteSpace(comment[mark.Length]));
     }
 
     // A config name goes on to name the tunnel adapter, which takes neither spaces nor brackets.

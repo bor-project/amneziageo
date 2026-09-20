@@ -3335,7 +3335,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Task.CompletedTask;
         }
 
-        public async Task RemoveAsync(string name, CancellationToken ct)
+        public Task DropAsync(string name, CancellationToken ct)
         {
             agent._configs.Remove(name);
             if (string.Equals(name, agent._selectedTarget, StringComparison.Ordinal))
@@ -3349,6 +3349,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 VpnBridge.ClearRequest();
             }
 
+            return Task.CompletedTask;
+        }
+
+        public async Task RemoveAsync(string name, CancellationToken ct)
+        {
+            await DropAsync(name, ct).ConfigureAwait(false);
             await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
         }
     }

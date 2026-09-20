@@ -183,6 +183,29 @@ public sealed class XuiInteropTests
     }
 
     [Fact]
+    public void ALineOfAmneziaGeoWithoutAValue_IsStillNotTheName()
+    {
+        var config = XuiConfig()
+            .Replace($"# {Remark}\n", string.Empty, StringComparison.Ordinal)
+            .Replace("[Peer]", "# AmneziaGeo Api\n[Peer]", StringComparison.Ordinal);
+
+        var imported = VpnLinkCodec.TryDecode(config);
+
+        Assert.NotNull(imported);
+        Assert.Null(imported!.Name);
+    }
+
+    [Fact]
+    public void ANameThatOnlyStartsLikeAmneziaGeo_IsStillTheName()
+    {
+        var config = XuiConfig().Replace($"# {Remark}\n", "# AmneziaGeoPhone\n", StringComparison.Ordinal);
+
+        var imported = VpnLinkCodec.TryDecode(config);
+
+        Assert.Equal("AmneziaGeoPhone", imported!.Name);
+    }
+
+    [Fact]
     public void CommentInsideThePeer_IsNotTheName()
     {
         var config = XuiConfig().Replace($"# {Remark}\n", string.Empty) + "\n# not a name";

@@ -16,7 +16,6 @@ internal sealed class AgentControl
     private readonly Lock _gate = new();
     private volatile bool _running;
     private volatile bool _connected;
-    private volatile string _session = string.Empty;
     private volatile bool _restartRequired;
     private volatile string? _target;
     private volatile string? _runningTarget;
@@ -50,18 +49,8 @@ internal sealed class AgentControl
     /// </summary>
     public void SetConnected(bool value)
     {
-        if (value && !_connected)
-        {
-            _session = Guid.NewGuid().ToString("N");
-        }
-
         _connected = value;
     }
-
-    /// <summary>
-    /// Names the session the server last answered the running tunnel in, empty before its first answer.
-    /// </summary>
-    public string Session => _session;
 
     /// <summary>
     /// How long ago the running tunnel's peer last answered, in reporting steps; -1 before it ever has.

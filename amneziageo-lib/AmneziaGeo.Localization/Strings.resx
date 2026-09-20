@@ -976,9 +976,6 @@
   <data name="Main_ServerHostLabel" xml:space="preserve">
     <value>HOST</value>
   </data>
-  <data name="Main_ServerHostWatermark" xml:space="preserve">
-    <value>proxy.example.com</value>
-  </data>
   <data name="Main_ServerPortLabel" xml:space="preserve">
     <value>PORT</value>
   </data>
@@ -1008,9 +1005,6 @@
   </data>
   <data name="Main_SourcesSection" xml:space="preserve">
     <value>Geo sources</value>
-  </data>
-  <data name="Main_ApiPortLabel" xml:space="preserve">
-    <value>API port</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
     <value>MTU</value>
@@ -1431,9 +1425,6 @@
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU must be 576 to 1500; leave it empty for 1280.</value>
-  </data>
-  <data name="Transport_InvalidApiPort" xml:space="preserve">
-    <value>Enter an API port from 1 to 65535.</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Enter a valid WebSocket port (1-65535).</value>
@@ -2604,9 +2595,6 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   </data>
   <data name="Probe_UploadServiceHint" xml:space="preserve">
     <value>The address the speed is checked against. Default: https://speed.cloudflare.com/__up.</value>
-  </data>
-  <data name="Probe_UploadServiceHintOwn" xml:space="preserve">
-    <value>The address the speed is checked against. Default: the server {0}.</value>
   </data>
   <data name="Main_BucketAddPrompt" xml:space="preserve">
     <value>What to add</value>

@@ -35,9 +35,6 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var (_, split) = await ActiveListAsync(store, config, ct).ConfigureAwait(false);
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
-        var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, connected, transport?.ApiPort ?? 0, Session(config)), ct)
-            .ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             connected,
@@ -51,9 +48,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             connected ? control.Link.HandshakesPerMinute : -1,
             SourceHost: source,
             ConfiguredMtu: MtuPlan.ResolveForLink(transport, text),
-            CarrierPort: carrier.Port,
-            TunnelSpeedUrl: ServerOffers.Download(offer, false),
-            DirectSpeedUrl: ServerOffers.Download(offer, true));
+            CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         await RecordAsync(report.Render(), report.Culprit.Length > 0, report.Advice, ct).ConfigureAwait(false);
@@ -153,106 +148,21 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             return new IpcAck(true, refused.ToPayload());
         }
 
-        var (upload, own) = await UploadAsync(store, config, path, uploadUrl, ct).ConfigureAwait(false);
-
         // The cache that decides where an address goes belongs to the process running the tunnel; when that is
         // the tunnel's own service, the run is handed over to it whole.
         var report = Connected(config) && !inspector.HasLiveSession
-            ? await HandOverAsync(config, target, path, upload, own, ct).ConfigureAwait(false)
-            : await ProbeRoute.RunAsync(session.Cache, target, path, upload, own, ct).ConfigureAwait(false);
+            ? await HandOverAsync(config, target, path, uploadUrl, ct).ConfigureAwait(false)
+            : await ProbeRoute.RunAsync(session.Cache, target, path, uploadUrl, ct).ConfigureAwait(false);
         await RecordProbeAsync(report, ct).ConfigureAwait(false);
         return new IpcAck(true, report.ToPayload());
     }
 
-    /// <summary>
-    /// Returns what the server of a config offers, from memory, and asks the servers that changed in the background.
-    /// </summary>
-    public async Task<IpcAck> OfferAsync(IStateStore store, string config, CancellationToken ct)
-    {
-        await WarmOffersAsync(store, ct).ConfigureAwait(false);
-
-        return new IpcAck(true, ServerOffers.Shared.Offer(config).ToPayload());
-    }
-
-    /// <summary>
-    /// Asks the servers of the configs that changed since they were last asked, in the background.
-    /// </summary>
-    public async Task WarmOffersAsync(IStateStore store, CancellationToken ct)
-    {
-        ServerOffers.Shared.Warm(await TargetsAsync(store, ct).ConfigureAwait(false), offer => FollowAsync(store, offer));
-    }
-
-    // Takes the websocket front the server of a config offers as the websocket settings of the config.
-    private async Task FollowAsync(IStateStore store, ServerOffer offer)
-    {
-        try
-        {
-            if (await WebSocketDefaults.FollowAsync(store, offer, CancellationToken.None).ConfigureAwait(false) is { } taken)
-            {
-                logger.LogInformation("{Name}: the server offers its websocket front at {Front}, and the websocket settings of the configuration take it", offer.Config, WsEndpoint.Display(taken.WebSocketHost, taken.WebSocketPort));
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "{Name}: the websocket front the server offers could not be written into the configuration", offer.Config);
-        }
-    }
-
-    /// <summary>
-    /// Asks the servers again when a tunnel has come up.
-    /// </summary>
-    public async Task ObserveOffersAsync(IStateStore store, CancellationToken ct)
-    {
-        var rose = false;
-        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
-        {
-            rose |= ServerOffers.Shared.Observe(name, Connected(name), Session(name));
-        }
-
-        if (rose)
-        {
-            await WarmOffersAsync(store, ct).ConfigureAwait(false);
-        }
-    }
-
-    // Where the send leg uploads to, and whether that is the server of the config.
-    private async Task<(string Url, bool Own)> UploadAsync(
-        IStateStore store, string config, string path, string chosen, CancellationToken ct)
-    {
-        if (chosen.Length > 0 || string.IsNullOrEmpty(config))
-        {
-            return (chosen, false);
-        }
-
-        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
-        var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, Connected(config), transport?.ApiPort ?? 0, Session(config)), ct)
-            .ConfigureAwait(false);
-
-        return ServerOffers.Upload(chosen, offer, path);
-    }
-
-    // Every config whose server can be asked whether it measures.
-    private async Task<IReadOnlyList<OfferTarget>> TargetsAsync(IStateStore store, CancellationToken ct)
-    {
-        var targets = new List<OfferTarget>();
-        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
-        {
-            var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
-            var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            targets.Add(new OfferTarget(name, text, Connected(name), transport?.ApiPort ?? 0, Session(name)));
-        }
-
-        return targets;
-    }
-
     // Hands the run to the tunnel's service process and reads its report back.
     private async Task<ProbeReport> HandOverAsync(
-        string config, string target, string path, string uploadUrl, bool own, CancellationToken ct)
+        string config, string target, string path, string uploadUrl, CancellationToken ct)
     {
         var served = await Task.Run(
-            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl, own), logger),
+            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl), logger),
             ct).ConfigureAwait(false);
         return served is { Length: > 0 }
             ? ProbeReport.Parse(served, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
@@ -301,10 +211,6 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             : control.Running && string.Equals(control.RunningTarget ?? control.Target, config, StringComparison.Ordinal);
     }
 
-    // Names the session of the tunnel of a config, empty while it is down.
-    private string Session(string config) =>
-        Connected(config) ? (live.Of(config) ?? control).Session : string.Empty;
-
     // The list the tunnel decides by: the one the running tunnel materialized, else the one the next connect uses.
     private static async Task<(RoutingList? List, bool Split)> ActiveListAsync(IStateStore store, string config, CancellationToken ct)
     {
@@ -329,7 +235,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             return (host, 0);
         }
 
-        var ws = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, host);
+        var ws = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(text));
         return (ws.Host, ws.Port);
     }
 

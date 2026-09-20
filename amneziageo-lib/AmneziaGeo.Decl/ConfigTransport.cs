@@ -3,7 +3,7 @@ using System.Globalization;
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// Per-config transport: WebSocket (wstunnel) host/port to carry UDP over TCP, tunnel MTU (default 1420, valid 576-1500) with the mode that picks it, the IPv6 opt-in (off keeps the tunnel v4-only; on only when the server has an IPv6 address), the router (on decides every connection on its own; off leaves every verdict to the route table), and inbound access (off refuses everything arriving from the tunnel; on accepts it from the server alone, or from the whole tunnel network), and the API port of the server (zero takes the port of the Endpoint).
+/// Per-config transport: WebSocket (wstunnel) host/port to carry UDP over TCP (empty and zero take the front the config names, else the host and the port of the Endpoint), tunnel MTU (default 1420, valid 576-1500) with the mode that picks it, the IPv6 opt-in (off keeps the tunnel v4-only; on only when the server has an IPv6 address), the router (on decides every connection on its own; off leaves every verdict to the route table), and inbound access (off refuses everything arriving from the tunnel; on accepts it from the server alone, or from the whole tunnel network).
 /// </summary>
 public sealed record ConfigTransport(
     string Name,
@@ -15,13 +15,12 @@ public sealed record ConfigTransport(
     MtuMode MtuMode = MtuMode.Auto,
     bool UseRouter = true,
     bool AllowInbound = false,
-    bool InboundNetwork = false,
-    int ApiPort = 0)
+    bool InboundNetwork = false)
 {
     /// <summary>
-    /// Returns the API port a text names: zero for an empty text, minus one for a text that is not a port.
+    /// Returns the port a text names: zero for an empty text, minus one for a text that is not a port.
     /// </summary>
-    public static int ApiPortOf(string? text)
+    public static int PortOf(string? text)
     {
         var value = text?.Trim() ?? string.Empty;
         if (value.Length == 0)

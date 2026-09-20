@@ -24,6 +24,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     // Marks the one-time rewrite of the former MTU default to "unset".
     private const string LegacyMtuCleared = "schema-legacy-mtu-cleared";
 
+    // Marks the one-time rewrite of the former websocket port default to the port of the Endpoint.
+    private const string LegacyWebSocketPortCleared = "schema-legacy-ws-port-cleared";
+
     /// <inheritdoc/>
     /// <remarks>
     /// Corruption self-heal, escalating: first quarantine only the -wal/-shm sidecars (a stale pair from a
@@ -127,13 +130,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         name       TEXT NOT NULL UNIQUE,
                         use_ws     INTEGER NOT NULL DEFAULT 0,
                         ws_host    TEXT NOT NULL DEFAULT '',
-                        ws_port    INTEGER NOT NULL DEFAULT 443,
+                        ws_port    INTEGER NOT NULL DEFAULT 0,
                         mtu        INTEGER NOT NULL DEFAULT 0,
                         use_ipv6   INTEGER NOT NULL DEFAULT 0,
                         use_router INTEGER NOT NULL DEFAULT 1,
                         allow_inbound INTEGER NOT NULL DEFAULT 0,
                         inbound_network INTEGER NOT NULL DEFAULT 0,
-                        api_port   INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
 
@@ -295,7 +297,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Tunnel MTU, valid 576-1500; 0 is unset and follows the agent's default at connect time.
             await AddColumnAsync(connection, schema, "config_transport", "mtu", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
-            await ClearLegacyMtuAsync(connection, ct).ConfigureAwait(false);
+            await RewriteOnceAsync(connection, LegacyMtuCleared, "UPDATE config_transport SET mtu = 0 WHERE mtu = 1280;", ct).ConfigureAwait(false);
+
+            // A websocket port nobody chose follows the port of the Endpoint: the transport stands off at its defaults.
+            await RewriteOnceAsync(
+                connection,
+                LegacyWebSocketPortCleared,
+                "UPDATE config_transport SET ws_port = 0 WHERE ws_port = 443 AND use_ws = 0 AND ws_host = '';",
+                ct).ConfigureAwait(false);
 
             // Per-config IPv6 opt-in; off keeps the tunnel v4-only. Moved off the routing list (was per-list #149).
             await AddColumnAsync(connection, schema, "config_transport", "use_ipv6", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
@@ -312,9 +321,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // Inbound access from the tunnel, off by default: the server alone, or the whole tunnel network.
             await AddColumnAsync(connection, schema, "config_transport", "allow_inbound", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
             await AddColumnAsync(connection, schema, "config_transport", "inbound_network", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
-
-            // API port of the server, zero for the port of the Endpoint.
-            await AddColumnAsync(connection, schema, "config_transport", "api_port", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Generation counter, bumped when the materialized set changes.
             await AddColumnAsync(connection, schema, "routing_lists", "generation", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
@@ -455,17 +461,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <remarks>
-    /// One-time move off the former MTU default. The column shipped with 1280, and the agent rewrote exactly that
+    /// One-time move off a former default. The MTU column shipped with 1280, and the agent rewrote exactly that
     /// value to the current default at connect - which left no way to ask for 1280. Those rows become "unset" and
     /// keep the same effective MTU, while an explicit 1280 now reaches the tunnel. The marker is the guard.
     /// </remarks>
-    private static async Task ClearLegacyMtuAsync(SqliteConnection connection, CancellationToken ct)
+    private static async Task RewriteOnceAsync(SqliteConnection connection, string key, string statement, CancellationToken ct)
     {
         var marker = connection.CreateCommand();
         await using (marker.ConfigureAwait(false))
         {
             marker.CommandText = "SELECT 1 FROM settings WHERE key = $key;";
-            marker.Parameters.AddWithValue("$key", LegacyMtuCleared);
+            marker.Parameters.AddWithValue("$key", key);
             if (await marker.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null)
             {
                 return;
@@ -475,7 +481,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var clear = connection.CreateCommand();
         await using (clear.ConfigureAwait(false))
         {
-            clear.CommandText = "UPDATE config_transport SET mtu = 0 WHERE mtu = 1280;";
+            clear.CommandText = statement;
             await clear.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
 
@@ -490,7 +496,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     value      = excluded.value,
                     updated_at = excluded.updated_at;
                 """;
-            mark.Parameters.AddWithValue("$key", LegacyMtuCleared);
+            mark.Parameters.AddWithValue("$key", key);
             mark.Parameters.AddWithValue("$updated", Timestamp());
             await mark.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
@@ -894,7 +900,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, api_port FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -905,7 +911,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4) != 0, MtuModes.From(reader.GetInt32(5)), reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetInt32(8) != 0, reader.GetInt32(9));
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4) != 0, MtuModes.From(reader.GetInt32(5)), reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetInt32(8) != 0);
                 }
             }
         }
@@ -924,8 +930,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, api_port, updated_at)
-                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $api, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
                         ws_host    = excluded.ws_host,
@@ -936,7 +942,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         use_router = excluded.use_router,
                         allow_inbound = excluded.allow_inbound,
                         inbound_network = excluded.inbound_network,
-                        api_port   = excluded.api_port,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
@@ -949,7 +954,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$router", transport.UseRouter ? 1 : 0);
                 command.Parameters.AddWithValue("$inbound", transport.AllowInbound ? 1 : 0);
                 command.Parameters.AddWithValue("$network", transport.InboundNetwork ? 1 : 0);
-                command.Parameters.AddWithValue("$api", transport.ApiPort);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

@@ -68,11 +68,12 @@ internal static class EndpointProbe
         bool webSocket,
         string webSocketHost,
         int webSocketPort,
+        string front,
         CancellationToken ct)
     {
         // The field may hold a bare host, a whole wss:// URL, or nothing at all, in which case the carrier
-        // stands at the endpoint's own host on the port beside it.
-        var carrier = WsEndpoint.Parse(webSocketHost, webSocketPort, HostOf(endpoint));
+        // stands at the front the config names, else at the endpoint's own host on the port beside it.
+        var carrier = WsEndpoint.Of(webSocketHost, webSocketPort, endpoint, front);
         var overWebSocket = webSocket && carrier.Host.Length > 0;
         var address = await ResolveAsync(overWebSocket ? carrier.Host : HostOf(endpoint), ct).ConfigureAwait(false);
         if (address is null)
@@ -107,9 +108,10 @@ internal static class EndpointProbe
         string endpoint,
         string webSocketHost,
         int webSocketPort,
+        string named,
         CancellationToken ct)
     {
-        var front = WsEndpoint.Parse(webSocketHost, webSocketPort, HostOf(endpoint));
+        var front = WsEndpoint.Of(webSocketHost, webSocketPort, endpoint, named);
         var address = await ResolveAsync(front.Host, ct).ConfigureAwait(false);
         if (address is null)
         {

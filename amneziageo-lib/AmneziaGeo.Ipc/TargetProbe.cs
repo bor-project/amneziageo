@@ -6,15 +6,14 @@ namespace AmneziaGeo.Ipc;
 /// <summary>
 /// What one probe measures: the destination, the path it is held on for the run, what the routing made of it,
 /// and where the send leg uploads to. The bypass is supplied by the platform that owns the tunnel; without one
-/// no socket can be excused from it. An upload aimed at the server of the configuration is marked as its own.
+/// no socket can be excused from it.
 /// </summary>
 public sealed record TargetProbeOptions(
     string Target,
     string Path,
     string Taken = "",
     string UploadUrl = "",
-    Func<Socket, bool>? Bypass = null,
-    bool OwnUpload = false);
+    Func<Socket, bool>? Bypass = null);
 
 /// <summary>
 /// Measures one destination: whether it answers, what it delivers, and what the same path accepts. The path is
@@ -50,7 +49,7 @@ public static class TargetProbe
                 ProbeVerdicts.Unreachable, [options.Target]);
         }
 
-        var (receive, bytes) = await ChannelProbe.DownloadAsync(ProbeLegs.Receive, PageUrl(options.Target), bypass, false, ct)
+        var (receive, bytes) = await ChannelProbe.DownloadAsync(ProbeLegs.Receive, PageUrl(options.Target), bypass, ct)
             .ConfigureAwait(false);
         var thin = bytes < ChannelProbe.SourceFloorBytes;
         legs.Add(thin
@@ -59,7 +58,7 @@ public static class TargetProbe
 
         var upload = options.UploadUrl.Length > 0 ? options.UploadUrl : ChannelProbe.DefaultUploadUrl;
         var against = UploadHost(upload);
-        var send = await ChannelProbe.UploadAsync(ProbeLegs.Send, upload, bypass, options.OwnUpload, ct).ConfigureAwait(false);
+        var send = await ChannelProbe.UploadAsync(ProbeLegs.Send, upload, bypass, ct).ConfigureAwait(false);
         legs.Add(send with { Note = send.Note.Length > 0 ? $"{send.Note}, against {against}" : $"against {against}" });
 
         return thin

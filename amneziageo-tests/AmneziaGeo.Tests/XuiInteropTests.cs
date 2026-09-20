@@ -171,6 +171,18 @@ public sealed class XuiInteropTests
     }
 
     [Fact]
+    public void LinesOfAmneziaGeo_AreNotTheName()
+    {
+        var lines = "# AmneziaGeo WebSocket = wss://front.example:8443/secret\n# AmneziaGeo Inbound = server\n[Peer]";
+
+        var named = VpnLinkCodec.TryDecode(XuiConfig().Replace("[Peer]", lines, StringComparison.Ordinal));
+        var bare = VpnLinkCodec.TryDecode(XuiConfig().Replace($"# {Remark}\n", string.Empty, StringComparison.Ordinal).Replace("[Peer]", lines, StringComparison.Ordinal));
+
+        Assert.Equal(Name, named!.Name);
+        Assert.Null(bare!.Name);
+    }
+
+    [Fact]
     public void CommentInsideThePeer_IsNotTheName()
     {
         var config = XuiConfig().Replace($"# {Remark}\n", string.Empty) + "\n# not a name";

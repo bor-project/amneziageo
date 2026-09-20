@@ -32,7 +32,7 @@ public sealed record VpnRequest(
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that
 /// owns it, so the run happens there and its payload comes back through a file.
 /// </summary>
-public sealed record ProbeRequest(string Target, string Path, string Taken, string UploadUrl, bool OwnUpload = false);
+public sealed record ProbeRequest(string Target, string Path, string Taken, string UploadUrl);
 
 /// <summary>
 /// Серверы карточек, которые тоннельный процесс меряет вместо головы: только он умеет увести сокет мимо туннеля.
@@ -121,11 +121,6 @@ public static class VpnBridge
     public const string ExtraLockdown = "lockdown";
 
     /// <summary>
-    /// Since extra: unix milliseconds the connected tunnel came up at.
-    /// </summary>
-    public const string ExtraSince = "since";
-
-    /// <summary>
     /// Broadcast that makes a running tunnel take the local proxy settings again.
     /// </summary>
     public const string ActionProxy = "org.amneziageo.android.VPN_PROXY";
@@ -162,16 +157,12 @@ public static class VpnBridge
     /// Reports a stage to the head.
     /// </summary>
     public static void Publish(Context context, VpnStage stage, string? detail, string? reason = null,
-        bool alwaysOn = false, bool lockdown = false, long since = 0)
+        bool alwaysOn = false, bool lockdown = false)
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraStage, (int)stage);
         intent.PutExtra(ExtraAlwaysOn, alwaysOn);
         intent.PutExtra(ExtraLockdown, lockdown);
-        if (since > 0)
-        {
-            intent.PutExtra(ExtraSince, since);
-        }
         if (detail is not null)
         {
             intent.PutExtra(ExtraDetail, detail);

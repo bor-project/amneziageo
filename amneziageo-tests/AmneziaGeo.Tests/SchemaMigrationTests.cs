@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 
 using AmneziaGeo.Dal;
+using AmneziaGeo.Decl;
 
 using Microsoft.Data.Sqlite;
 
@@ -68,6 +69,55 @@ public sealed class SchemaMigrationTests
         {
             Cleanup(path);
         }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_TurnsAWebSocketPortNobodyChoseToThePortOfTheEndpointOnce()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-ws-{Guid.NewGuid():N}.db");
+        try
+        {
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+            await store.SetConfigTransportAsync(new ConfigTransport("untouched", false, string.Empty, 443));
+            await store.SetConfigTransportAsync(new ConfigTransport("on", true, string.Empty, 443));
+            await store.SetConfigTransportAsync(new ConfigTransport("named", false, "front.example", 443));
+            await ForgetAsync(path, "schema-legacy-ws-port-cleared");
+
+            var again = new SqliteStateStore(path);
+            await again.InitializeAsync();
+            await again.SetConfigTransportAsync(new ConfigTransport("chosen", false, string.Empty, 443));
+            await new SqliteStateStore(path).InitializeAsync();
+
+            Assert.Equal(0, (await again.GetConfigTransportAsync("untouched"))?.WebSocketPort);
+            Assert.Equal(443, (await again.GetConfigTransportAsync("on"))?.WebSocketPort);
+            Assert.Equal(443, (await again.GetConfigTransportAsync("named"))?.WebSocketPort);
+            Assert.Equal(443, (await again.GetConfigTransportAsync("chosen"))?.WebSocketPort);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    // Drops a one-time marker, as a file written before the rewrite carries none.
+    private static async Task ForgetAsync(string path, string key)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM settings WHERE key = $key;";
+                command.Parameters.AddWithValue("$key", key);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        ClearPool(path);
     }
 
     // A config_transport from before the transport columns, under the current schema version so the store

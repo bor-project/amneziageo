@@ -367,13 +367,22 @@ public static class VpnLinkCodec
                 break;
             }
 
-            if (line.StartsWith('#'))
+            if (line.StartsWith('#') && !Extra(line))
             {
                 remark = line[1..].Trim();
             }
         }
 
         return string.IsNullOrWhiteSpace(remark) ? null : SafeName(remark!);
+    }
+
+    // Tells whether a comment is a line of AmneziaGeo rather than a name.
+    private static bool Extra(string line)
+    {
+        var comment = line[1..].TrimStart();
+        var equals = comment.IndexOf('=');
+
+        return equals > 0 && comment[..equals].TrimEnd().StartsWith("AmneziaGeo ", StringComparison.OrdinalIgnoreCase);
     }
 
     // A config name goes on to name the tunnel adapter, which takes neither spaces nor brackets.

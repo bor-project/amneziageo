@@ -791,7 +791,7 @@ internal sealed class TunnelController : IDisposable
             return (null, null, Refused("this configuration asks to be carried inside a websocket, but its Endpoint names no port"));
         }
 
-        var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, endpoint[..colon].Trim('[', ']'));
+        var front = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(configText));
         var address = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
         if (address is null || front.Port <= 0)
         {

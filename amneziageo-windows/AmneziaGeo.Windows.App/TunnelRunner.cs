@@ -162,10 +162,10 @@ internal sealed class TunnelRunner(
             }
             else
             {
-                var (endpointHost, endpointPort) = parsed.Value;
+                var (_, endpointPort) = parsed.Value;
                 wsTargetPort = endpointPort;
                 // WebSocketHost may be a full wss:// URL; resolve its host for the exclusion route.
-                var ws = WsEndpoint.Parse(transport!.WebSocketHost, transport.WebSocketPort, endpointHost);
+                var ws = WsEndpoint.Of(transport!.WebSocketHost, transport.WebSocketPort, WgConfigEditor.GetEndpoint(config), WsEndpoint.FrontOf(config));
                 wsHost = ws.Host;
                 wsPort = ws.Port;
                 wsPathPrefix = ws.PathPrefix;
@@ -1708,7 +1708,6 @@ internal sealed class TunnelRunner(
                 asked.Length > 1 ? asked[1] : string.Empty,
                 asked.Length > 2 && asked[2].Length > 0 ? asked[2] : ProbePaths.Auto,
                 asked.Length > 3 ? asked[3] : string.Empty,
-                asked.Length > 4 && asked[4] == RuntimeSnapshotPipe.OwnUpload,
                 ct);
             logger.LogInformation("probe: {Header}", report.Render().Split('\n')[0].Trim());
             return report.ToPayload();

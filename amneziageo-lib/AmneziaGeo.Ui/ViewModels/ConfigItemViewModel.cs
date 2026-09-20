@@ -50,7 +50,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CardAddress))]
-    private int _webSocketPort = 443;
+    private int _webSocketPort;
 
     [ObservableProperty]
     private string _dns = string.Empty;
@@ -92,10 +92,8 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private string _address = string.Empty;
 
     [ObservableProperty]
-    private int _apiPort;
-
-    [ObservableProperty]
-    private int _defaultApiPort;
+    [NotifyPropertyChangedFor(nameof(CardAddress))]
+    private string _webSocketFront = string.Empty;
 
     // Отбила ли проверка прокси, каким его знает карточка.
     [ObservableProperty]
@@ -164,8 +162,8 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// <summary>
     /// Адрес, на который встаёт туннель: у прокси - его собственный, у остальных - объявленный конфигурацией.
     /// </summary>
-    public string CardAddress => UseWebSocket && WebSocketHost.Length > 0
-        ? WsEndpoint.Display(WebSocketHost, WebSocketPort)
+    public string CardAddress => UseWebSocket
+        ? WsEndpoint.Of(WebSocketHost, WebSocketPort, Endpoint, WebSocketFront).Display()
         : Endpoint;
 
     /// <summary>
@@ -249,7 +247,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
         ProxyChecking = true;
         try
         {
-            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(Endpoint, WebSocketHost, WebSocketPort, CancellationToken.None);
+            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(Endpoint, WebSocketHost, WebSocketPort, WebSocketFront, CancellationToken.None);
             ProxyBroken = outcome != WsFrontOutcome.Ok;
             ProxyFault = ProxyBroken ? EndpointProbe.Describe(outcome, detail) : null;
         }

@@ -54,7 +54,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly AndroidGeoFileStore _geoFiles;
     private readonly GeoUpdateChecker _geoChecker;
     private readonly AndroidAgentLog _log;
-    private readonly ServerOffers _offers;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
     private readonly AndroidUpdater _updater;
@@ -78,7 +77,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string? _selectedTarget;
     private long? _selectedRoutingList;
     private string? _boundTarget;
-    private string _boundSession = string.Empty;
     private string _boundStatus = ConnectionStatus.Disconnected;
     private long _handshakeUnix;
     private LinkReading _link = LinkReading.Empty;
@@ -155,7 +153,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
-        _offers = new ServerOffers(file: System.IO.Path.Combine(dir, "offers.json"));
         _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
         Current = this;
     }
@@ -284,8 +281,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             // One head, one process: presence needs no announcing here.
             case IpcContract.OpAttachUi:
-                // The window will ask what the servers offer; the servers are asked now so it has the answer.
-                _offers.Warm(Targets(), FollowAsync);
                 return Ok();
 
             case IpcContract.OpAddConfig:
@@ -479,9 +474,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
-
-            case IpcContract.OpServerOffer:
-                return await ServerOfferAsync().ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -703,11 +695,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _alwaysOn = intent.GetBooleanExtra(VpnBridge.ExtraAlwaysOn, false);
             _alwaysOnLockdown = intent.GetBooleanExtra(VpnBridge.ExtraLockdown, false);
             OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail),
-                intent.GetStringExtra(VpnBridge.ExtraReason), intent.GetLongExtra(VpnBridge.ExtraSince, 0));
+                intent.GetStringExtra(VpnBridge.ExtraReason));
         }
     }
 
-    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null, long since = 0)
+    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null)
     {
         // The session name comes back from the tunnel, so a head that started after it still names what runs.
         var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
@@ -723,40 +715,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _active = true;
                 _boundStatus = ConnectionStatus.Connected;
                 _boundTarget = session;
-                _boundSession = since > 0 ? since.ToString(CultureInfo.InvariantCulture) : string.Empty;
                 ClearConnectFailure();
-                if (session is { Length: > 0 } && _offers.Observe(session, true, _boundSession))
-                {
-                    _offers.Warm(Targets(), FollowAsync);
-                }
-
                 break;
             case VpnStage.Disconnected:
-                if (_boundTarget is { Length: > 0 } dropped)
-                {
-                    _offers.Observe(dropped, false);
-                }
-
                 _active = false;
                 _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
-                _boundSession = string.Empty;
                 _handshakeUnix = 0;
                 ResetLink();
                 ResetAlwaysOn();
                 break;
             case VpnStage.Failed:
-                if (_boundTarget is { Length: > 0 } failed)
-                {
-                    _offers.Observe(failed, false);
-                }
-
                 _active = false;
                 _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
-                _boundSession = string.Empty;
                 _handshakeUnix = 0;
                 ResetLink();
                 ResetAlwaysOn();
@@ -990,15 +964,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
             WebSocketHost: transport?.WebSocketHost ?? string.Empty,
-            WebSocketPort: transport?.WebSocketPort ?? 443,
+            WebSocketPort: transport?.WebSocketPort ?? 0,
             Mtu: transport?.Mtu ?? 0,
             UseIpv6: transport?.UseIpv6 ?? false,
             UseRouter: transport?.UseRouter ?? true,
             AllowInbound: transport?.AllowInbound ?? false,
             InboundNetwork: transport?.InboundNetwork ?? false,
             Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
-            ApiPort: transport?.ApiPort ?? 0,
-            DefaultApiPort: ServerOffers.DefaultPort(config),
+            WebSocketFront: WsEndpoint.FrontOf(config),
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -1709,8 +1682,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.MtuMode,
                         transport.UseRouter,
                         transport.AllowInbound,
-                        transport.InboundNetwork,
-                        transport.ApiPort),
+                        transport.InboundNetwork),
                 null));
         }
 
@@ -1951,7 +1923,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.ApiPort)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1974,7 +1946,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Fail();
         }
 
-        if (ParseRange(args[2], 1, 65535) is not { } port)
+        if (ParseRange(args[2], 0, 65535) is not { } port)
         {
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidPort"));
         }
@@ -1998,13 +1970,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var useRouter = args.Count > 7 ? IsOn(args[7]) : previous?.UseRouter ?? true;
         var allowInbound = args.Count > 8 ? IsOn(args[8]) : previous?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : previous?.InboundNetwork ?? false;
-        var apiPort = args.Count > 10 ? ConfigTransport.ApiPortOf(args[10]) : previous?.ApiPort ?? 0;
-        if (apiPort < 0)
-        {
-            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidApiPort"));
-        }
-
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, apiPort)).ConfigureAwait(false);
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
@@ -2711,7 +2677,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var running = VpnBridge.IsRunning(Application.Context);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
-        var offer = await _offers.SpeedAsync(Target(config, text), ct).ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             running,
@@ -2725,9 +2690,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
             ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
-            CarrierPort: carrier.Port,
-            TunnelSpeedUrl: ServerOffers.Download(offer, false),
-            DirectSpeedUrl: ServerOffers.Download(offer, true));
+            CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -2925,65 +2888,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var taken = path == ProbePaths.Auto ? routed.Taken : path;
-        var (url, own) = await UploadAsync(path, upload, ct).ConfigureAwait(false);
         if (running && path == ProbePaths.Bypass)
         {
-            return ProbeAck(await HandOverAsync(target, path, taken, url, own, ct).ConfigureAwait(false));
+            return ProbeAck(await HandOverAsync(target, path, taken, upload, ct).ConfigureAwait(false));
         }
 
-        var options = new TargetProbeOptions(target, path, taken, url, OwnUpload: own);
+        var options = new TargetProbeOptions(target, path, taken, upload);
         return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
-    }
-
-    // Returns what the server of the selected config offers and asks the servers that changed behind it.
-    private Task<IpcAck> ServerOfferAsync()
-    {
-        _offers.Warm(Targets(), FollowAsync);
-
-        return Task.FromResult(new IpcAck(true, _offers.Offer(_selectedTarget ?? string.Empty).ToPayload()));
-    }
-
-    // Takes the websocket front the server of a config offers as the websocket settings of the config.
-    private async Task FollowAsync(ServerOffer offer)
-    {
-        try
-        {
-            await EnsureInitAsync().ConfigureAwait(false);
-            if (await WebSocketDefaults.FollowAsync(_store, offer, CancellationToken.None).ConfigureAwait(false) is { } taken)
-            {
-                _log.Info("agent", $"{offer.Config}: the server offers its websocket front at {WsEndpoint.Display(taken.WebSocketHost, taken.WebSocketPort)}, and the websocket settings of the configuration take it");
-                await RefreshTransportsAsync().ConfigureAwait(false);
-                PushSnapshot();
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error("agent", $"{offer.Config}: the websocket front the server offers could not be written into the configuration", ex);
-        }
-    }
-
-    // Where the send leg uploads to, and whether that is the server of the config.
-    private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
-    {
-        if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
-        {
-            return (chosen, false);
-        }
-
-        var offer = await _offers.SpeedAsync(Target(config, _configs.GetValueOrDefault(config, string.Empty)), ct).ConfigureAwait(false);
-
-        return ServerOffers.Upload(chosen, offer, path);
-    }
-
-    // Every config whose server can be asked whether it measures; their texts live in this agent's own JSON.
-    private IReadOnlyList<OfferTarget> Targets() => [.. _configs.Select(entry => Target(entry.Key, entry.Value))];
-
-    // A config to ask about, up only while its tunnel is connected, with the session the tunnel names.
-    private OfferTarget Target(string name, string text)
-    {
-        var up = _boundStatus == ConnectionStatus.Connected && string.Equals(name, _boundTarget, StringComparison.Ordinal);
-
-        return new OfferTarget(name, text, up, _transports.GetValueOrDefault(name)?.ApiPort ?? 0, up ? _boundSession : string.Empty);
     }
 
     // Where the rules in force send a destination, said the way the desktops say it, and whether that is the
@@ -3006,10 +2917,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Hands the run to the tunnel and waits for what it measured; a tunnel that never answers leaves the path
     // unmeasured rather than the caller waiting on it.
-    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, bool own, CancellationToken ct)
+    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, CancellationToken ct)
     {
         VpnBridge.ClearProbeResult();
-        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload, own));
+        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload));
         VpnBridge.RequestProbe(Application.Context);
         for (var waited = 0; waited < ProbeWaitMs; waited += ProbePollMs)
         {
@@ -3070,7 +2981,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return (host, 0);
         }
 
-        var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, host);
+        var front = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(text));
         return (front.Host, front.Port);
     }
 

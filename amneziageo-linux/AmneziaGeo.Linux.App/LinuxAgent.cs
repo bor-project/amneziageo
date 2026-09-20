@@ -79,8 +79,6 @@ internal sealed class LinuxAgent : IDisposable
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
 
-    // Names the session of the running tunnel, new on every raise.
-    private string _tunnelSession = string.Empty;
     private string _logLevel = "error";
     private bool _routeLog;
     private bool _surviveReboot;
@@ -454,7 +452,6 @@ internal sealed class LinuxAgent : IDisposable
     private async Task SuperviseAsync(CancellationToken ct)
     {
         await SuperviseHotspotAsync(ct).ConfigureAwait(false);
-        await ObserveOffersAsync(ct).ConfigureAwait(false);
         var counters = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
         var age = -1;
         var reading = LinkReading.Empty;
@@ -662,8 +659,6 @@ internal sealed class LinuxAgent : IDisposable
         switch (command.Op)
         {
             case IpcContract.OpAttachUi:
-                // The window will ask what the servers offer; the servers are asked now so it has the answer.
-                ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false), FollowAsync);
                 return Ok();
 
             case IpcContract.OpLogClient:
@@ -832,9 +827,6 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, ct).ConfigureAwait(false);
 
-            case IpcContract.OpServerOffer:
-                return await ServerOfferAsync(ct).ConfigureAwait(false);
-
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
 
@@ -931,7 +923,6 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, refusal.Detail);
         }
 
-        _tunnelSession = Guid.NewGuid().ToString("N");
         StartLossProbe(config);
         if (await FirstHandshakeAsync(ct).ConfigureAwait(false))
         {
@@ -1407,7 +1398,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false);
-        var port = int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPort) ? parsedPort : 443;
+        var port = int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPort) ? parsedPort : 0;
         var host = args.Count > 3 ? args[3] : string.Empty;
         var mtu = args.Count > 4
             ? int.TryParse(args[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMtu) ? parsedMtu : 0
@@ -1421,13 +1412,7 @@ internal sealed class LinuxAgent : IDisposable
         var useRouter = args.Count > 7 ? IsOn(args[7]) : stored?.UseRouter ?? true;
         var allowInbound = args.Count > 8 ? IsOn(args[8]) : stored?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : stored?.InboundNetwork ?? false;
-        var apiPort = args.Count > 10 ? ConfigTransport.ApiPortOf(args[10]) : stored?.ApiPort ?? 0;
-        if (apiPort < 0)
-        {
-            return new IpcAck(false, "invalid API port (1-65535)");
-        }
-
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, apiPort);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
@@ -2237,9 +2222,6 @@ internal sealed class LinuxAgent : IDisposable
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
-        var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0, Session(config)), ct)
-            .ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             _tunnel.Running,
@@ -2253,9 +2235,7 @@ internal sealed class LinuxAgent : IDisposable
             _tunnel.Running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 ? args[0] : null,
             ConfiguredMtu: WgConfigEditor.GetMtu(text),
-            CarrierPort: carrier.Port,
-            TunnelSpeedUrl: ServerOffers.Download(offer, false),
-            DirectSpeedUrl: ServerOffers.Download(offer, true));
+            CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -2346,13 +2326,13 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(true, refused.ToPayload());
         }
 
-        var (upload, own) = await UploadAsync(path, args.Count > 2 ? args[2] : string.Empty, ct).ConfigureAwait(false);
+        var upload = args.Count > 2 ? args[2] : string.Empty;
         var cache = _tunnel.Cache;
         var address = await ProbeAddressAsync(target, ct).ConfigureAwait(false);
         var held = HoldProbe(cache, address, path);
         try
         {
-            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), upload, OwnUpload: own);
+            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), upload);
             var report = await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
             RecordProbe(report);
             return new IpcAck(true, report.ToPayload());
@@ -2361,80 +2341,6 @@ internal sealed class LinuxAgent : IDisposable
         {
             ReleaseProbe(cache, address, held);
         }
-    }
-
-    // Returns what the server of the selected config offers and asks the servers that changed behind it.
-    private async Task<IpcAck> ServerOfferAsync(CancellationToken ct)
-    {
-        ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false), FollowAsync);
-
-        return new IpcAck(true, ServerOffers.Shared.Offer(_selectedTarget ?? string.Empty).ToPayload());
-    }
-
-    // Asks the servers again when the tunnel of the selected config has come up.
-    private async Task ObserveOffersAsync(CancellationToken ct)
-    {
-        if (_selectedTarget is { Length: > 0 } selected && ServerOffers.Shared.Observe(selected, Up(selected), Session(selected)))
-        {
-            ServerOffers.Shared.Warm(await TargetsAsync(ct).ConfigureAwait(false), FollowAsync);
-        }
-    }
-
-    // Takes the websocket front the server of a config offers as the websocket settings of the config.
-    private async Task FollowAsync(ServerOffer offer)
-    {
-        try
-        {
-            if (await WebSocketDefaults.FollowAsync(_store, offer, CancellationToken.None).ConfigureAwait(false) is { } taken)
-            {
-                _log.Info("agent", $"{offer.Config}: the server offers its websocket front at {WsEndpoint.Display(taken.WebSocketHost, taken.WebSocketPort)}, and the websocket settings of the configuration take it");
-                await PushAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error("agent", $"{offer.Config}: the websocket front the server offers could not be written into the configuration", ex);
-        }
-    }
-
-    // Tells whether the tunnel of a config is up.
-    private bool Up(string config) =>
-        _tunnel.Running
-        && _boundStatus == ConnectionStatus.Connected
-        && string.Equals(config, _selectedTarget, StringComparison.Ordinal);
-
-    // Names the session of the tunnel of a config, empty while it is down.
-    private string Session(string config) => Up(config) ? _tunnelSession : string.Empty;
-
-    // Where the send leg uploads to, and whether that is the server of the config.
-    private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
-    {
-        if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
-        {
-            return (chosen, false);
-        }
-
-        var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
-        var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var offer = await ServerOffers.Shared
-            .SpeedAsync(new OfferTarget(config, text, Up(config), transport?.ApiPort ?? 0, Session(config)), ct)
-            .ConfigureAwait(false);
-
-        return ServerOffers.Upload(chosen, offer, path);
-    }
-
-    // Every config whose server can be asked whether it measures.
-    private async Task<IReadOnlyList<OfferTarget>> TargetsAsync(CancellationToken ct)
-    {
-        var targets = new List<OfferTarget>();
-        foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
-        {
-            var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
-            var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            targets.Add(new OfferTarget(name, text, Up(name), transport?.ApiPort ?? 0, Session(name)));
-        }
-
-        return targets;
     }
 
     // Holds the address on the path asked for; auto holds nothing.
@@ -2546,7 +2452,7 @@ internal sealed class LinuxAgent : IDisposable
             return (host, 0);
         }
 
-        var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, host);
+        var front = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(text));
         return (front.Host, front.Port);
     }
 
@@ -2643,7 +2549,7 @@ internal sealed class LinuxAgent : IDisposable
             geo is null ? [] : [.. geo.Rules.Select(GeoConfigurator.Format)],
             transport?.UseWebSocket ?? false,
             transport?.WebSocketHost ?? string.Empty,
-            transport?.WebSocketPort ?? 443,
+            transport?.WebSocketPort ?? 0,
             dns?.Servers ?? string.Empty,
             exclusions?.Exclusions ?? string.Empty,
             transport?.Mtu ?? 0,
@@ -2663,8 +2569,7 @@ internal sealed class LinuxAgent : IDisposable
             transport?.AllowInbound ?? false,
             transport?.InboundNetwork ?? false,
             string.Join(", ", WgConfigEditor.GetAddresses(text)),
-            transport?.ApiPort ?? 0,
-            ServerOffers.DefaultPort(text));
+            WsEndpoint.FrontOf(text));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

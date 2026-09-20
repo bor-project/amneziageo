@@ -750,8 +750,7 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.AllowInbound = entry.AllowInbound;
             existing.InboundNetwork = entry.InboundNetwork;
             existing.Address = entry.Address;
-            existing.ApiPort = entry.ApiPort;
-            existing.DefaultApiPort = entry.DefaultApiPort;
+            existing.WebSocketFront = entry.WebSocketFront;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
@@ -1041,8 +1040,8 @@ internal partial class ConfigViewModel : ViewModelBase
             ? item.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : string.Empty;
 
-        // Порт хранится только у прокси; у остальных строк его нет, а команда без него не проходит.
-        var port = item.WebSocketPort is > 0 and <= 65535 ? item.WebSocketPort : 443;
+        // Порт хранится только у прокси; ноль берёт порт Endpoint.
+        var port = item.WebSocketPort is > 0 and <= 65535 ? item.WebSocketPort : 0;
         var ack = await Ask(new IpcCommand(IpcContract.OpSetWebSocket,
         [
             item.Name,
@@ -1055,7 +1054,6 @@ internal partial class ConfigViewModel : ViewModelBase
             item.UseRouter ? "on" : "off",
             item.AllowInbound ? "on" : "off",
             item.InboundNetwork ? "on" : "off",
-            item.ApiPort > 0 ? item.ApiPort.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
         ]));
         if (ack is not { Ok: true })
         {
@@ -1107,7 +1105,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.ApiPort ?? 0, item?.DefaultApiPort ?? 0);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketFront ?? string.Empty);
         RefreshEditBar();
     }
 
@@ -1185,7 +1183,7 @@ internal partial class ConfigViewModel : ViewModelBase
         if (VpnLinkCodec.TryDecode(value) is { } imported)
         {
             SeedSectionNameFromConfig(imported);
-            SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty);
+            SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty, WsEndpoint.FrontOf(imported.ConfText));
             return;
         }
 
@@ -1456,7 +1454,7 @@ internal partial class ConfigViewModel : ViewModelBase
 
     // Transport editor of a config that does not exist yet: defaults, no endpoint until the text is read.
     private ConfigTransportViewModel NewSectionTransport() =>
-        new(_connection, string.Empty, string.Empty, false, string.Empty, 443, 0, false);
+        new(_connection, string.Empty, string.Empty, false, string.Empty, 0, 0, false);
 
     // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()

@@ -199,7 +199,6 @@ public sealed class GeoVpnService : VpnService
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
     private string? _reason;
-    private long _since;
 
     /// <inheritdoc/>
     public override void OnCreate()
@@ -702,7 +701,7 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 var options = new TargetProbeOptions(request.Target, request.Path, request.Taken, request.UploadUrl,
-                    socket => Protect(socket.Handle.ToInt32()), request.OwnUpload);
+                    socket => Protect(socket.Handle.ToInt32()));
                 var report = await TargetProbe.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
                 VpnBridge.WriteProbeResult(report.ToPayload());
             }
@@ -1028,21 +1027,12 @@ public sealed class GeoVpnService : VpnService
     // Reports a stage to the head and keeps it as the answer to a later query.
     private void Publish(VpnStage stage, string? detail, string? reason = null)
     {
-        if (stage != VpnStage.Connected)
-        {
-            _since = 0;
-        }
-        else if (_stage != VpnStage.Connected)
-        {
-            _since = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        }
-
         _stage = stage;
         _detail = detail;
         _reason = reason;
         // Only a running tunnel can be asked whether the system holds it as the always-on one.
         var alwaysOn = Build.VERSION.SdkInt >= BuildVersionCodes.Q && IsAlwaysOn;
-        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled, _since);
+        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled);
     }
 
     private static void Report(string text)
@@ -1927,7 +1917,7 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
 
-        var front = WsEndpoint.Parse(host, port, endpoint[..colon].Trim('[', ']'));
+        var front = WsEndpoint.Of(host, port, endpoint, WsEndpoint.FrontOf(config));
         var address = ResolveHostV4(front.Host);
         if (front.Port <= 0 || address is null || !System.Net.IPAddress.TryParse(address, out var parsed))
         {

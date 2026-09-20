@@ -37,9 +37,9 @@ Calls and games usually learn their server addresses without DNS, so a domain ru
 
 ## WebSocket transport
 
-AmneziaWG runs over UDP, and on some networks - corporate and guest Wi-Fi, some mobile carriers - it does not get through. The whole tunnel can then run over a WebSocket on TCP: from the outside it looks like ordinary HTTPS traffic. Any port, set in the settings. If the server requires authentication, provide a login and password or a token.
+AmneziaWG runs over UDP, and on some networks - corporate and guest Wi-Fi, some mobile carriers - it does not get through. The whole tunnel can then run over a WebSocket on TCP: from the outside it looks like ordinary HTTPS traffic. Any port, set in the settings. An empty address and port take the front the configuration names, else the host and the port of the Endpoint; an address or a port that does not hold counts as empty. If the server requires authentication, provide a login and password or a token.
 
-An AmneziaGeo server with a websocket proxy turned on names its front itself: once the tunnel is up, its address, port and secret path go into the WebSocket settings of the configuration, as long as those stand at their defaults or name a front the server has given before. The front is dialled under TLS with its certificate checked. Turning WebSocket on stays with you.
+An AmneziaGeo server with a websocket proxy turned on names its front in the configuration it hands out, in the line `# AmneziaGeo WebSocket = wss://<host>:<port>/<path>`. The front is dialled under TLS with its certificate checked. Turning WebSocket on stays with you.
 
 ## Access to a remote network
 
@@ -91,9 +91,6 @@ Traffic reaches the tunnel only while the tunnel is up.
 The probe answers the question of where a connection actually went. Give it a domain or an address and a path: **auto** - as the rules decide, **tunnel** or **bypass** - forced.
 
 The report shows the path the traffic took and the rule behind it (tunnel by rule, bypass by default, blocked by rule), latency, jitter, loss, the size of packets that get through, and download and upload speed. Speed is measured against a speed service, by default `https://speed.cloudflare.com/__up`; the address is set in the probe settings.
-
-A server of AmneziaGeo can measure the speed itself. Where it does, the probe and the channel check measure against
-that server instead, and the probe settings say so under the field: the application asks the server about it with the keys of the configuration, and nothing of yours goes to a service on the internet. An address typed into the field outranks that, and a server that does not offer it leaves the built-in service to decide.
 
 ## Example: Discord where UDP is blocked
 

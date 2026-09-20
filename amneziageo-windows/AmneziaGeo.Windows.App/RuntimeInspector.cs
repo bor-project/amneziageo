@@ -369,8 +369,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
             return "udp";
         }
 
-        var host = WgConfigEditor.GetEndpoint(configText)?.Split(':')[0] ?? string.Empty;
-        var ws = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, host);
+        var ws = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, WgConfigEditor.GetEndpoint(configText), WsEndpoint.FrontOf(configText));
         var token = string.IsNullOrEmpty(ws.PathPrefix) ? string.Empty : $", path {Masked}";
         var auth = string.IsNullOrEmpty(ws.Credentials) ? string.Empty : $", auth {Masked}";
         return $"websocket {ws.Host}:{ws.Port}{token}{auth}";

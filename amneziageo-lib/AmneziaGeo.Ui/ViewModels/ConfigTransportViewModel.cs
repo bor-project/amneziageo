@@ -17,7 +17,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     private readonly IAgentConnection _connection;
     private string _endpoint;
-    private readonly int _defaultApiPort;
+    private string _front;
     private CancellationTokenSource? _probeCts;
 
     // Baseline captured on load / commit / import; the transport is dirty when a field differs from it (#143).
@@ -33,7 +33,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseIpv6;
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
-    private string _baseApiPort = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
@@ -43,7 +42,17 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private string _webSocketHost = string.Empty;
 
     [ObservableProperty]
-    private string _webSocketPort = "443";
+    private string _webSocketPort = string.Empty;
+
+    /// <summary>
+    /// The host the websocket front is dialled at while the field is empty.
+    /// </summary>
+    public string WebSocketHostDefault => DefaultHost;
+
+    /// <summary>
+    /// The port the websocket front is dialled at while the field is empty.
+    /// </summary>
+    public string WebSocketPortDefault => Default.Port.ToString(CultureInfo.InvariantCulture);
 
     // Authorization mode: 0 = none, 1 = basic, 2 = path token.
     [ObservableProperty]
@@ -79,14 +88,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     // The reach of the access the agent holds: the whole tunnel network or the server alone.
     private bool _inboundNetwork;
-
-    [ObservableProperty]
-    private string _apiPort = string.Empty;
-
-    /// <summary>
-    /// The port the API of the server is asked at while the field is empty.
-    /// </summary>
-    public string ApiPortDefault => _defaultApiPort > 0 ? _defaultApiPort.ToString(CultureInfo.InvariantCulture) : EndpointPort(_endpoint);
 
     /// <summary>
     /// The address this machine answers at inside the tunnel.
@@ -134,7 +135,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", int apiPort = 0, int defaultApiPort = 0)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", string front = "")
     {
         _connection = connection;
         ConfigName = name;
@@ -144,8 +145,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useRouter = useRouter;
         _allowInbound = allowInbound;
         _inboundNetwork = inboundNetwork;
-        _apiPort = apiPort > 0 ? apiPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
-        _defaultApiPort = defaultApiPort;
+        _front = front;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
@@ -153,14 +153,15 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         var shown = mtuMode == AmneziaGeo.Decl.MtuMode.Custom ? mtu : resolvedMtu > 0 ? resolvedMtu : mtu;
         _mtu = shown > 0 ? shown.ToString(CultureInfo.InvariantCulture) : "1420";
 
-        // Parse the stored address; default the host to the config's Endpoint host.
+        // Parse the stored address; an empty host stands for the default front.
         var (host, port, user, password, token, mode) = ParseStored(webSocketHost);
-        _webSocketHost = string.IsNullOrWhiteSpace(host) ? EndpointHost(endpoint) : host;
+        _webSocketHost = host;
         _authMode = mode;
         _webSocketUser = user;
         _webSocketPassword = password;
         _webSocketToken = token;
-        _webSocketPort = (port > 0 ? port : webSocketPort).ToString(CultureInfo.InvariantCulture);
+        var shownPort = port > 0 ? port : webSocketPort;
+        _webSocketPort = shownPort > 0 ? shownPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
 
         // Seeded (backing fields set, no OnChanged fired): this state is the clean baseline (#143).
         CaptureBaseline();
@@ -255,8 +256,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
-    partial void OnApiPortChanged(string value) => MarkDirty();
-
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -284,8 +283,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || MtuMode != _baseMtuMode
             || UseIpv6 != _baseUseIpv6
             || UseRouter != _baseUseRouter
-            || AllowInbound != _baseAllowInbound
-            || !string.Equals(ApiPort, _baseApiPort, StringComparison.Ordinal);
+            || AllowInbound != _baseAllowInbound;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -308,7 +306,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseUseIpv6 = UseIpv6;
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
-        _baseApiPort = ApiPort ?? string.Empty;
         if (IsDirty)
         {
             IsDirty = false;
@@ -334,7 +331,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             UseIpv6 = _baseUseIpv6;
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
-            ApiPort = _baseApiPort;
             StatusMessage = string.Empty;
         }
         finally
@@ -358,29 +354,15 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     public void Retarget(string name) => ConfigName = name;
 
     /// <summary>
-    /// Наводит черновые настройки на эндпоинт из распознанного текста конфигурации; нетронутое поле прокси
-    /// заполняется тем же хостом. Используется формой добавления, где конфигурации ещё нет.
+    /// Наводит черновые настройки на эндпоинт и фронт из распознанного текста конфигурации. Используется формой
+    /// добавления, где конфигурации ещё нет.
     /// </summary>
-    public void SeedEndpoint(string endpoint)
+    public void SeedEndpoint(string endpoint, string front = "")
     {
         _endpoint = endpoint;
-        OnPropertyChanged(nameof(ApiPortDefault));
-        if (!string.IsNullOrWhiteSpace(WebSocketHost))
-        {
-            return;
-        }
-
-        _applying = true;
-        try
-        {
-            WebSocketHost = EndpointHost(endpoint);
-        }
-        finally
-        {
-            _applying = false;
-        }
-
-        _baseWebSocketHost = WebSocketHost;
+        _front = front;
+        OnPropertyChanged(nameof(WebSocketHostDefault));
+        OnPropertyChanged(nameof(WebSocketPortDefault));
     }
 
     /// <summary>
@@ -411,7 +393,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public bool CanCommit()
     {
-        if (UseWebSocket && (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535))
+        if (UseWebSocket && ConfigTransport.PortOf(WebSocketPort) < 0)
         {
             StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
             return false;
@@ -423,12 +405,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < MtuModes.MinMtu or > MtuModes.MaxMtu))
         {
             StatusMessage = Loc.Instance.Get("Transport_InvalidMtu");
-            return false;
-        }
-
-        if (ConfigTransport.ApiPortOf(ApiPort) < 0)
-        {
-            StatusMessage = Loc.Instance.Get("Transport_InvalidApiPort");
             return false;
         }
 
@@ -450,17 +426,16 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         IsBusy = true;
         try
         {
-            var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
+            var wsPort = Math.Max(ConfigTransport.PortOf(WebSocketPort), 0);
 
             // A size travels only with the mode that takes one; the others keep whatever was stored.
             var mtuVal = IsMtuReadOnly ? string.Empty : Mtu.Trim();
 
-            // Fold the host + auth mode / inputs into the stored address string. Collapse a bare host equal to the Endpoint host to empty; a URL form is sent verbatim.
-            var composed = ComposeAddress(wsPort);
-            var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
+            // Fold the host + auth mode / inputs into the stored address string.
+            var host = Stored(wsPort);
             var network = WholeNetwork();
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", network ? "on" : "off", ApiPort.Trim()]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", network ? "on" : "off"]));
             if (ack.Ok)
             {
                 _inboundNetwork = network;
@@ -567,14 +542,15 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         try
         {
             await Task.Delay(ProbeDelayMs, cts.Token);
-            if (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
+            var port = ConfigTransport.PortOf(WebSocketPort);
+            if (port < 0)
             {
                 return;
             }
 
             IsProbing = true;
             ProbeMessage = Loc.Instance.Get("Transport_ProbeRunning");
-            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(_endpoint, ComposeAddress(port), port, cts.Token);
+            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(_endpoint, Stored(port), port, _front, cts.Token);
             if (cts.IsCancellationRequested)
             {
                 return;
@@ -607,7 +583,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         var host = ExtractHost(WebSocketHost);
         if (host.Length == 0)
         {
-            host = EndpointHost(_endpoint);
+            host = DefaultHost;
         }
 
         if (AuthMode == 1)
@@ -697,15 +673,19 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         return string.Join(", ", parts);
     }
 
-    private static string EndpointPort(string endpoint)
-    {
-        var colon = endpoint.LastIndexOf(':');
-        return colon > 0 ? endpoint[(colon + 1)..].Trim() : string.Empty;
-    }
+    // The front that stands while the fields are empty: the one the config names, else the Endpoint.
+    private WsEndpoint Default => WsEndpoint.Default(_endpoint, _front);
 
-    private static string EndpointHost(string endpoint)
+    // The host of that front as an address takes it.
+    private string DefaultHost => Default.Host.Contains(':', StringComparison.Ordinal) && !Default.Host.StartsWith('[')
+        ? $"[{Default.Host}]"
+        : Default.Host;
+
+    // The address as it is stored: empty while it names the default host with no account and no path.
+    private string Stored(int port)
     {
-        var colon = endpoint.LastIndexOf(':');
-        return colon > 0 ? endpoint[..colon].Trim() : endpoint.Trim();
+        var composed = ComposeAddress(port > 0 ? port : Default.Port);
+
+        return string.Equals(composed, DefaultHost, StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
     }
 }

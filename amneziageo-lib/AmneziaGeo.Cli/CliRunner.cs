@@ -113,7 +113,6 @@ public static class CliRunner
                                              [--ipv6 on|off] [--router on|off]
               config mtu <name> auto|config|<number>   packet size: picked, from the text, or set here
               config inbound <name> off|host|network    nobody, the server, or the whole tunnel network
-              config api-port <name> [<port>]   port of the API of the server; omit to clear
               config geo <name> on|off [rule...]
 
             routing lists

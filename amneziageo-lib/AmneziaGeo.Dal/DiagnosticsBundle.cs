@@ -148,8 +148,8 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
             sb.AppendLine($"    mtu:        {mtu}");
             if (transport?.UseWebSocket == true)
             {
-                var host = string.IsNullOrWhiteSpace(transport.WebSocketHost) ? "(endpoint host)" : transport.WebSocketHost;
-                sb.AppendLine($"    websocket:  on -> {host}:{transport.WebSocketPort}");
+                var front = WsEndpoint.For(transport.WebSocketHost, transport.WebSocketPort, await store.GetConfigTextAsync(config, ct).ConfigureAwait(false));
+                sb.AppendLine($"    websocket:  on -> {front.Display()}");
             }
             else
             {
@@ -158,7 +158,6 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
 
             sb.AppendLine($"    ipv6:       {(transport?.UseIpv6 == true ? "on" : "off")}");
             sb.AppendLine($"    router:     {(transport?.UseRouter != false ? "on" : "off")}");
-            sb.AppendLine($"    api port:   {(transport is { ApiPort: > 0 } ? transport.ApiPort.ToString(CultureInfo.InvariantCulture) : "endpoint")}");
             sb.AppendLine($"    inbound:    {(transport?.AllowInbound != true ? "off" : transport.InboundNetwork ? "tunnel network" : "server only")}");
 
             var geo = await store.GetTunnelGeoAsync(config, ct).ConfigureAwait(false);

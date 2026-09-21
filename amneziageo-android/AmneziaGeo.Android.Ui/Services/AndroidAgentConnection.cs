@@ -179,7 +179,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _ = RefreshSubscriptionsAsync(_geoChecks.Token);
     }
 
-    public Task<IpcAck> SendCommandAsync(IpcCommand command) => DispatchAsync(command);
+    /// <summary>
+    /// Sends a command and localizes the reply.
+    /// </summary>
+    public async Task<IpcAck> SendCommandAsync(IpcCommand command)
+    {
+        var ack = await DispatchAsync(command).ConfigureAwait(false);
+        return IpcMessage.TryParse(ack.Message, out var key, out var args)
+            ? ack with { Message = Loc.Instance.Get(key, args) }
+            : ack;
+    }
 
     // Reads the version the package manager reports for this build.
     private static string ReadAppVersion()

@@ -27,7 +27,7 @@ internal sealed class AndroidAgentLink : IAgentLink
 
     /// <inheritdoc/>
     public Task<IpcAck> SendAsync(string op, params string[] args) =>
-        _agent.SendCommandAsync(new IpcCommand(op, args));
+        _agent.SendCommandRawAsync(new IpcCommand(op, args));
 
     /// <summary>
     /// Stops forwarding snapshots; the agent itself outlives the command.

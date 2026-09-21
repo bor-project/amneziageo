@@ -121,10 +121,8 @@ internal sealed class Cli(
                 return await RoutingListAddAsync(listName, listRules);
             case ["assign-routing", var list]:
                 return await AssignRoutingAsync(list);
-            case ["set-websocket", var name, var toggle, var port]:
-                return await SetWebSocketAsync(name, toggle, port, string.Empty);
-            case ["set-websocket", var name, var toggle, var port, var host]:
-                return await SetWebSocketAsync(name, toggle, port, host);
+            case ["set-websocket", var name, var toggle]:
+                return await SetWebSocketAsync(name, toggle);
             case ["connect"]:
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["connect"]);
             case ["disconnect"]:
@@ -631,7 +629,7 @@ internal sealed class Cli(
     }
 
     // Offline counterpart of the agent's set-websocket IPC op: writes transport straight to the store.
-    private async Task<int> SetWebSocketAsync(string name, string toggle, string portText, string host)
+    private async Task<int> SetWebSocketAsync(string name, string toggle)
     {
         if (!await configRepo.ExistsAsync(name))
         {
@@ -639,23 +637,10 @@ internal sealed class Cli(
             return 1;
         }
 
-        var port = ConfigTransport.PortSent(portText);
-        if (port < 0)
-        {
-            Console.WriteLine("invalid websocket port (1-65535)");
-            return 1;
-        }
-
-        if (!WsEndpoint.Dials(host))
-        {
-            Console.WriteLine("invalid websocket host");
-            return 1;
-        }
-
         var on = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
         var current = await store.GetConfigTransportAsync(name);
-        await store.SetConfigTransportAsync(new ConfigTransport(name, on, host.Trim(), port, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto, current?.UseRouter ?? true, current?.AllowInbound ?? false, current?.InboundNetwork ?? false));
-        Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}, port={port}, host={(host.Length == 0 ? "(default)" : host)}");
+        await store.SetConfigTransportAsync(new ConfigTransport(name, on, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto, current?.UseRouter ?? true, current?.AllowInbound ?? false, current?.InboundNetwork ?? false, current?.UseRouting ?? true));
+        Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}");
         return 0;
     }
 

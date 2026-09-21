@@ -15,6 +15,12 @@ internal static class RoutingProjection
     /// </summary>
     public static async Task ProjectAsync(IStateStore store, GeoConfigurator geo, TunnelDutyRoster roster, string config, ILogger logger, CancellationToken ct)
     {
+        if (!await ConfigRouting.AllowedAsync(store, config, ct).ConfigureAwait(false))
+        {
+            await ProjectFullTunnelAsync(store, config, logger, ct);
+            return;
+        }
+
         var listId = await store.GetSelectedRoutingListAsync(ct);
         if (listId is null)
         {

@@ -109,10 +109,10 @@ public static class CliRunner
               config order <name> [<name>...]   the order they are listed in
               config dns <name> [<servers>]     preferred resolvers; omit to clear
               config exclusions <name> (--file <path> | --stdin | --list a,b,c | --clear)
-              config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>]
-                                             [--ipv6 on|off] [--router on|off]
+              config websocket <name> on|off [--mtu <n>] [--ipv6 on|off] [--router on|off]
               config mtu <name> auto|config|<number>   packet size: picked, from the text, or set here
               config inbound <name> off|host|network    nobody, the server, or the whole tunnel network
+              config routing <name> on|off              take the routing list or keep off it
               config geo <name> on|off [rule...]
 
             routing lists

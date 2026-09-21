@@ -42,8 +42,9 @@ public static class IpcContract
 
     /// <summary>
     /// Command to set a config's WebSocket transport, tunnel MTU override, and IPv6 opt-in. Args: name, on/off,
-    /// port, optional host, optional mtu, optional ipv6 (on/off; absent keeps the stored value), optional mtu mode,
-    /// router, inbound and inbound network. Applies on the next connect.
+    /// optional mtu, optional ipv6 (on/off; absent keeps the stored value), optional mtu mode, router, inbound,
+    /// inbound network and routing. The front is the one the server of the config offers. Applies on the next
+    /// connect.
     /// </summary>
     public const string OpSetWebSocket = "set-websocket";
 
@@ -369,6 +370,13 @@ public static class IpcContract
     /// is stored in the probe journal, which travels in the diagnostics archive on its own.
     /// </summary>
     public const string OpProbeTarget = "probe-target";
+
+    /// <summary>
+    /// Command to read what the server of the selected config offers. Takes no args. The ack message holds a JSON
+    /// object { config, offer }, the offer being { server, version, client, features: { name: arguments } }, or
+    /// null when no server of ours answered.
+    /// </summary>
+    public const string OpServerOffer = "server-offer";
 
     /// <summary>
     /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");

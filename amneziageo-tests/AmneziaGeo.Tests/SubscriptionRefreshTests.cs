@@ -163,7 +163,7 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
     {
         _feed.Body = Body(Config("AmneziaWG 3.1 -phone"), Config("AmneziaWG 2 -laptop"));
         await _refresher.RefreshAsync(Fresh(), default);
-        await _store.SetConfigTransportAsync(new ConfigTransport("AmneziaWG-2-laptop", true, "front.example", 8443));
+        await _store.SetConfigTransportAsync(new ConfigTransport("AmneziaWG-2-laptop", true));
         await _store.SetConfigDnsAsync(new ConfigDns("AmneziaWG-2-laptop", "1.1.1.1"));
         _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
         await _refresher.RefreshAsync(await Stored(), default);

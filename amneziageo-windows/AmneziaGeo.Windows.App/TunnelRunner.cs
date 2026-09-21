@@ -141,16 +141,21 @@ internal sealed class TunnelRunner(
         var duties = TunnelDuties.Parse(await store.GetSettingAsync(TunnelPaths.DutiesKey(name)));
         _duties = duties;
 
-        // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it.
+        // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it. The front is
+        // the one the server offered when the agent asked it before this connect.
         var transport = await store.GetConfigTransportAsync(name);
-        var useWebSocket = transport?.UseWebSocket == true;
+        var offer = await ServerOfferStore.ReadAsync(store, name, config, CancellationToken.None).ConfigureAwait(false);
+        var front = transport?.UseWebSocket == true ? WsEndpoint.Of(config, offer) : null;
+        var useWebSocket = front is not null;
+        if (transport?.UseWebSocket == true && front is null)
+        {
+            logger.LogWarning("{Name} asks for the websocket carrier but its server offers no front; connecting over plain UDP instead, which a filtering provider may block", name);
+        }
 
         var effectiveMtu = MtuPlan.ResolveForLink(transport, config);
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;
-        var wsPathPrefix = string.Empty;
-        var wsCredentials = string.Empty;
         IPAddress? wsServerIp = null;
         if (useWebSocket)
         {
@@ -164,21 +169,16 @@ internal sealed class TunnelRunner(
             {
                 var (_, endpointPort) = parsed.Value;
                 wsTargetPort = endpointPort;
-                // WebSocketHost may be a full wss:// URL; resolve its host for the exclusion route.
-                var ws = WsEndpoint.Of(transport!.WebSocketHost, transport.WebSocketPort, WgConfigEditor.GetEndpoint(config), WsEndpoint.FrontOf(config));
-                wsHost = ws.Host;
-                wsPort = ws.Port;
-                wsPathPrefix = ws.PathPrefix;
-                wsCredentials = ws.Credentials;
+                wsHost = front!.Value.Host;
+                wsPort = front.Value.Port;
                 wsServerIp = ResolveHostV4(wsHost);
             }
         }
 
         if (useWebSocket)
         {
-            // Log only that a path token is set, never its value - path/credentials are secrets.
-            logger.LogDebug("{Name}: the tunnel will be carried inside a websocket to {Host}:{Port} (path token set: {HasPath}) and handed to port {Target} on the server",
-                name, wsHost, wsPort, !string.IsNullOrEmpty(wsPathPrefix), wsTargetPort);
+            logger.LogDebug("{Name}: the tunnel will be carried inside a websocket to {Host}:{Port} and handed to port {Target} on the server",
+                name, wsHost, wsPort, wsTargetPort);
         }
 
         WsTunnelTransport? wsTransport = null;
@@ -881,7 +881,7 @@ internal sealed class TunnelRunner(
         // Start wstunnel last so a failure can't orphan it.
         if (useWebSocket)
         {
-            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials,
+            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, ServiceToken.HeaderOf(config), TunnelPaths.WsHeadersFile(name),
                 line => RecordRejection(name, line), loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
             if (wsTransport is null)
             {
@@ -1708,6 +1708,7 @@ internal sealed class TunnelRunner(
                 asked.Length > 1 ? asked[1] : string.Empty,
                 asked.Length > 2 && asked[2].Length > 0 ? asked[2] : ProbePaths.Auto,
                 asked.Length > 3 ? asked[3] : string.Empty,
+                asked.Length > 4 && asked[4] == RuntimeSnapshotPipe.OwnUpload,
                 ct);
             logger.LogInformation("probe: {Header}", report.Render().Split('\n')[0].Trim());
             return report.ToPayload();

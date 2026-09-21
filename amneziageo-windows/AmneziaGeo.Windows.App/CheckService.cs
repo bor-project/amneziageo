@@ -34,7 +34,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var connected = Connected(config);
         var (_, split) = await ActiveListAsync(store, config, ct).ConfigureAwait(false);
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var carrier = Carrier(text, transport);
+        var offers = new ServerOffers(store);
+        var carrier = Carrier(text, transport, await offers.OfferAsync(config, text, ct).ConfigureAwait(false));
+        var speed = await offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             connected,
@@ -48,7 +50,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             connected ? control.Link.HandshakesPerMinute : -1,
             SourceHost: source,
             ConfiguredMtu: MtuPlan.ResolveForLink(transport, text),
-            CarrierPort: carrier.Port);
+            CarrierPort: carrier.Port,
+            TunnelSpeedUrl: ServerOffers.Download(speed, true),
+            DirectSpeedUrl: ServerOffers.Download(speed, false));
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         await RecordAsync(report.Render(), report.Culprit.Length > 0, report.Advice, ct).ConfigureAwait(false);
@@ -65,7 +69,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         {
             var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport);
+            var carrier = Carrier(text, transport, await ServerOfferStore.ReadAsync(store, name, text, ct).ConfigureAwait(false));
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -94,7 +98,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         {
             var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport);
+            var carrier = Carrier(text, transport, await ServerOfferStore.ReadAsync(store, name, text, ct).ConfigureAwait(false));
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -148,21 +152,37 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             return new IpcAck(true, refused.ToPayload());
         }
 
+        var (upload, own) = await UploadAsync(store, config, path, uploadUrl, ct).ConfigureAwait(false);
+
         // The cache that decides where an address goes belongs to the process running the tunnel; when that is
         // the tunnel's own service, the run is handed over to it whole.
         var report = Connected(config) && !inspector.HasLiveSession
-            ? await HandOverAsync(config, target, path, uploadUrl, ct).ConfigureAwait(false)
-            : await ProbeRoute.RunAsync(session.Cache, target, path, uploadUrl, ct).ConfigureAwait(false);
+            ? await HandOverAsync(config, target, path, upload, own, ct).ConfigureAwait(false)
+            : await ProbeRoute.RunAsync(session.Cache, target, path, upload, own, ct).ConfigureAwait(false);
         await RecordProbeAsync(report, ct).ConfigureAwait(false);
         return new IpcAck(true, report.ToPayload());
     }
 
+    // Where the send leg uploads to, and whether that is the server of the config.
+    private static async Task<(string Url, bool Own)> UploadAsync(
+        IStateStore store, string config, string path, string chosen, CancellationToken ct)
+    {
+        if (chosen.Length > 0 || string.IsNullOrEmpty(config))
+        {
+            return (chosen, false);
+        }
+
+        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false);
+
+        return ServerOffers.Upload(chosen, await new ServerOffers(store).SpeedAsync(config, text, ct).ConfigureAwait(false), path);
+    }
+
     // Hands the run to the tunnel's service process and reads its report back.
     private async Task<ProbeReport> HandOverAsync(
-        string config, string target, string path, string uploadUrl, CancellationToken ct)
+        string config, string target, string path, string uploadUrl, bool own, CancellationToken ct)
     {
         var served = await Task.Run(
-            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl), logger),
+            () => RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.Probe(target, path, uploadUrl, own), logger),
             ct).ConfigureAwait(false);
         return served is { Length: > 0 }
             ? ProbeReport.Parse(served, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
@@ -215,29 +235,22 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     private static async Task<(RoutingList? List, bool Split)> ActiveListAsync(IStateStore store, string config, CancellationToken ct)
     {
         var listId = await store.GetActiveRoutingListIdAsync(config, ct).ConfigureAwait(false)
-            ?? await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+            ?? (await ConfigRouting.AllowedAsync(store, config, ct).ConfigureAwait(false)
+                ? await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false)
+                : null);
         var list = listId is long id ? await store.GetRoutingListAsync(id, ct).ConfigureAwait(false) : null;
         var routing = listId is long settings ? await store.GetRoutingSettingsAsync(settings, ct).ConfigureAwait(false) : null;
         var geo = await store.GetActiveTunnelGeoAsync(config, ct).ConfigureAwait(false);
         return (list, list is not null ? !(routing?.UseGlobalProxy ?? false) : geo?.GeoSplit ?? false);
     }
 
-    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its own address, and
-    // the endpoint in the config is only what the server hands the tunnel to behind it. Without a carrier the
-    // port stays zero - AmneziaWG answers a real handshake and nothing else.
-    private static (string Host, int Port) Carrier(string text, ConfigTransport? transport)
-    {
-        var endpoint = WgConfigEditor.GetEndpoint(text) ?? string.Empty;
-        var colon = endpoint.LastIndexOf(':');
-        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
-        if (transport?.UseWebSocket != true)
-        {
-            return (host, 0);
-        }
-
-        var ws = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(text));
-        return (ws.Host, ws.Port);
-    }
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at the front the server
+    // offers, and the endpoint in the config is only what the server hands the tunnel to behind it. Without a
+    // carrier the port stays zero - AmneziaWG answers a real handshake and nothing else.
+    private static (string Host, int Port) Carrier(string text, ConfigTransport? transport, ServerOffer offer) =>
+        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer) is { } front
+            ? (front.Host, front.Port)
+            : (ConfigServices.Host(text), 0);
 
     // One address for a host, as the tunnel resolves it.
     private static async Task<string?> ResolveAsync(string host, CancellationToken ct)

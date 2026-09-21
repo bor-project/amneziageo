@@ -701,7 +701,7 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 var options = new TargetProbeOptions(request.Target, request.Path, request.Taken, request.UploadUrl,
-                    socket => Protect(socket.Handle.ToInt32()));
+                    socket => Protect(socket.Handle.ToInt32()), request.OwnUpload);
                 var report = await TargetProbe.RunAsync(options, CancellationToken.None).ConfigureAwait(false);
                 VpnBridge.WriteProbeResult(report.ToPayload());
             }
@@ -1899,12 +1899,12 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // The websocket the tunnel is carried inside when the configuration asks for one. The front is resolved
-    // here, while the machine still answers lookups of its own, and the carrier's socket is excused from the
-    // tunnel, or it would be asked to carry itself.
+    // The websocket the tunnel is carried inside when the configuration asks for one, at the front its server
+    // offers. The front is resolved here, while the machine still answers lookups of its own, and the carrier's
+    // socket is excused from the tunnel, or it would be asked to carry itself.
     private WsCarrier? StartCarrier(string config, string? host, int port)
     {
-        if (host is null && port <= 0)
+        if (string.IsNullOrEmpty(host) || port <= 0)
         {
             return null;
         }
@@ -1917,17 +1917,17 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
 
-        var front = WsEndpoint.Of(host, port, endpoint, WsEndpoint.FrontOf(config));
+        var front = new WsEndpoint(host, port);
         var address = ResolveHostV4(front.Host);
-        if (front.Port <= 0 || address is null || !System.Net.IPAddress.TryParse(address, out var parsed))
+        if (address is null || !System.Net.IPAddress.TryParse(address, out var parsed))
         {
-            Report($"the websocket front {front.Host}:{front.Port} has no address to dial");
+            Report($"the websocket front {front.Display()} has no address to dial");
             return null;
         }
 
-        var carrier = WsCarrier.Start(front, parsed, targetPort, socket => Protect(socket.Handle.ToInt32()),
+        var carrier = WsCarrier.Start(front, parsed, targetPort, ServiceToken.HeaderOf(config), socket => Protect(socket.Handle.ToInt32()),
             (message, ex) => Report(ex is null ? message : $"{message}: {ex.Message}"));
-        Report($"the tunnel is carried inside a websocket to {front.Host}:{front.Port}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
+        Report($"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
         return carrier;
     }
 

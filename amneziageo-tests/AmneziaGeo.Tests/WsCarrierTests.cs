@@ -13,32 +13,32 @@ namespace AmneziaGeo.Tests;
 public sealed class WsCarrierTests
 {
     [Fact]
-    public void TheUpgrade_AsksForThePathThePrefixNames()
+    public void TheUpgrade_AsksForThePathOfTheFront()
     {
-        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 8443, "secret", string.Empty), 51820, "dGhlIHNhbXBsZSBub25jZQ==");
+        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 8443), 51820, "dGhlIHNhbXBsZSBub25jZQ==", null);
 
-        Assert.StartsWith("GET /secret/events HTTP/1.1\r\n", request, StringComparison.Ordinal);
+        Assert.StartsWith("GET /v1/events HTTP/1.1\r\n", request, StringComparison.Ordinal);
         Assert.Contains("Host: front.example.com:8443\r\n", request, StringComparison.Ordinal);
         Assert.Contains("Upgrade: websocket\r\n", request, StringComparison.Ordinal);
         Assert.Contains("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n", request, StringComparison.Ordinal);
         Assert.Contains("Sec-WebSocket-Version: 13\r\n", request, StringComparison.Ordinal);
-        Assert.DoesNotContain("Authorization: Basic", request, StringComparison.Ordinal);
+        Assert.DoesNotContain("Authorization", request, StringComparison.Ordinal);
         Assert.EndsWith("\r\n\r\n", request, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AFrontWithoutAPrefix_TakesTheDefaultPathAndCarriesItsCredentials()
+    public void TheUpgrade_ProvesTheKeysOfTheConfigInItsAuthorization()
     {
-        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 443, string.Empty, "bob:hunter2"), 51820, "key");
+        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 443), 51820, "key", "AmneziaGeo token");
 
         Assert.StartsWith("GET /v1/events HTTP/1.1\r\n", request, StringComparison.Ordinal);
-        Assert.Contains($"Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("bob:hunter2"))}\r\n", request, StringComparison.Ordinal);
+        Assert.Contains("Authorization: AmneziaGeo token\r\n", request, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TheToken_SaysWhichUdpPortTheServerHandsTheTunnelTo()
     {
-        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 443, string.Empty, string.Empty), 51820, "key");
+        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 443), 51820, "key", null);
 
         var token = request.Split("authorization.bearer.")[1].Split("\r\n")[0];
         var parts = token.Split('.');

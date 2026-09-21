@@ -134,11 +134,19 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheWebSocketFrontInTheSummary_CarriesNoPathAndNoCredentials()
+    public async Task TheSummary_NamesTheFrontAndTheFeaturesTheServerOffers()
     {
-        await _store.SaveConfigAsync("srv", "[Peer]\nEndpoint = 10.0.0.1:51820\n");
-        await _store.SetConfigTransportAsync(
-            new ConfigTransport("srv", true, "wss://bob:hunter2@front.example:8443/s3cr3t", 8443));
+        const string text = "[Interface]\nPrivateKey = topSecretKey\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.1:51820\n";
+        await _store.SaveConfigAsync("srv", text);
+        await _store.SaveConfigAsync("plain", "[Interface]\nPrivateKey = another\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.2:51820\n");
+        await _store.SetConfigTransportAsync(new ConfigTransport("srv", true));
+        await _store.SetConfigTransportAsync(new ConfigTransport("plain", true));
+        await ServerOfferStore.WriteAsync(
+            _store,
+            "srv",
+            ConfigServices.Target(text)!,
+            ServerOffer.Parse("""{"server":"amneziageo","version":"0.0.1.0","client":"c","features":{"websocket":{"port":8446},"routing":{"allowed":true}}}"""),
+            DateTimeOffset.UtcNow);
 
         var bundle = new DiagnosticsBundle(_store, _logs);
         var path = await bundle.WriteAsync(Path.Combine(_root, "out"), "header\n", row => row.Message);
@@ -147,9 +155,10 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
         using var reader = new StreamReader(zip.GetEntry("summary.txt")!.Open());
         var summary = await reader.ReadToEndAsync();
 
-        Assert.Contains("websocket:  on -> front.example:8443", summary, StringComparison.Ordinal);
-        Assert.DoesNotContain("s3cr3t", summary, StringComparison.Ordinal);
-        Assert.DoesNotContain("hunter2", summary, StringComparison.Ordinal);
+        Assert.Contains("websocket:  on -> 10.0.0.1:8446", summary, StringComparison.Ordinal);
+        Assert.Contains("server:     ours 0.0.1.0, offers websocket, routing", summary, StringComparison.Ordinal);
+        Assert.Contains("websocket:  on, the server offers no front", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("topSecretKey", summary, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -42,7 +42,7 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     public async Task Transport_KeepsTheRouterOff()
     {
         await _store.SetConfigTransportAsync(
-            new ConfigTransport("routes-only", false, string.Empty, 443, 1420, false, MtuMode.Custom, UseRouter: false));
+            new ConfigTransport("routes-only", false, 1420, false, MtuMode.Custom, UseRouter: false));
 
         var stored = await _store.GetConfigTransportAsync("routes-only");
 
@@ -54,7 +54,7 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     [Fact]
     public async Task Transport_LeavesTheRouterOnByDefault()
     {
-        await _store.SetConfigTransportAsync(new ConfigTransport("plain", false, string.Empty, 443));
+        await _store.SetConfigTransportAsync(new ConfigTransport("plain", false));
 
         var stored = await _store.GetConfigTransportAsync("plain");
 
@@ -66,9 +66,9 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     public async Task Transport_RewritesTheRouterWithTheRest()
     {
         await _store.SetConfigTransportAsync(
-            new ConfigTransport("rewritten", false, string.Empty, 443, 0, false, MtuMode.Auto, UseRouter: false));
+            new ConfigTransport("rewritten", false, 0, false, MtuMode.Auto, UseRouter: false));
         await _store.SetConfigTransportAsync(
-            new ConfigTransport("rewritten", true, "gate.example.net", 8443, 1380, true, MtuMode.Custom));
+            new ConfigTransport("rewritten", true, 1380, true, MtuMode.Custom));
 
         var stored = await _store.GetConfigTransportAsync("rewritten");
 
@@ -82,7 +82,7 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     public async Task Transport_KeepsAccessFromTheTunnel()
     {
         await _store.SetConfigTransportAsync(
-            new ConfigTransport("reachable", false, string.Empty, 443, 0, false, MtuMode.Auto, true, AllowInbound: true, InboundNetwork: true));
+            new ConfigTransport("reachable", false, 0, false, MtuMode.Auto, true, AllowInbound: true, InboundNetwork: true));
 
         var stored = await _store.GetConfigTransportAsync("reachable");
 
@@ -94,7 +94,7 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     [Fact]
     public async Task Transport_RefusesAccessFromTheTunnelByDefault()
     {
-        await _store.SetConfigTransportAsync(new ConfigTransport("quiet", false, string.Empty, 443));
+        await _store.SetConfigTransportAsync(new ConfigTransport("quiet", false));
 
         var stored = await _store.GetConfigTransportAsync("quiet");
 
@@ -107,10 +107,20 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     public async Task Transport_HoldsTheRouterPerConfiguration()
     {
         await _store.SetConfigTransportAsync(
-            new ConfigTransport("one", false, string.Empty, 443, 0, false, MtuMode.Auto, UseRouter: false));
-        await _store.SetConfigTransportAsync(new ConfigTransport("two", false, string.Empty, 443));
+            new ConfigTransport("one", false, 0, false, MtuMode.Auto, UseRouter: false));
+        await _store.SetConfigTransportAsync(new ConfigTransport("two", false));
 
         Assert.False((await _store.GetConfigTransportAsync("one"))!.UseRouter);
         Assert.True((await _store.GetConfigTransportAsync("two"))!.UseRouter);
+    }
+
+    [Fact]
+    public async Task Transport_HoldsTheRoutingPerConfiguration()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("kept", false, UseRouting: false));
+        await _store.SetConfigTransportAsync(new ConfigTransport("taken", false));
+
+        Assert.False((await _store.GetConfigTransportAsync("kept"))!.UseRouting);
+        Assert.True((await _store.GetConfigTransportAsync("taken"))!.UseRouting);
     }
 }

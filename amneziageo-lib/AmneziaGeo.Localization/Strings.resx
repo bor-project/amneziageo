@@ -385,12 +385,6 @@
   <data name="ConfigEditor_SaveButton" xml:space="preserve">
     <value>Save</value>
   </data>
-  <data name="Main_AccessTokenLabel" xml:space="preserve">
-    <value>TOKEN</value>
-  </data>
-  <data name="Main_AccessTokenWatermark" xml:space="preserve">
-    <value>access token</value>
-  </data>
   <data name="Main_ActionsTooltip" xml:space="preserve">
     <value>Actions</value>
   </data>
@@ -508,6 +502,12 @@
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
   </data>
+  <data name="Main_UseRoutingTitle" xml:space="preserve">
+    <value>Routing</value>
+  </data>
+  <data name="Main_UseRoutingHint" xml:space="preserve">
+    <value>Use routing where it is available</value>
+  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Amnezia engine version</value>
   </data>
@@ -516,18 +516,6 @@
   </data>
   <data name="Main_AppSourceFolder" xml:space="preserve">
     <value>Folder…</value>
-  </data>
-  <data name="Main_AuthBasic" xml:space="preserve">
-    <value>Login and password</value>
-  </data>
-  <data name="Main_AuthLabel" xml:space="preserve">
-    <value>AUTHORIZATION</value>
-  </data>
-  <data name="Main_AuthNone" xml:space="preserve">
-    <value>No authorization</value>
-  </data>
-  <data name="Main_AuthToken" xml:space="preserve">
-    <value>Token</value>
   </data>
   <data name="Main_AutoCheckHint" xml:space="preserve">
     <value>Periodically update databases and notify.</value>
@@ -799,12 +787,6 @@
   <data name="Main_WayAll" xml:space="preserve">
     <value>all</value>
   </data>
-  <data name="Main_LoginLabel" xml:space="preserve">
-    <value>LOGIN</value>
-  </data>
-  <data name="Main_LoginWatermark" xml:space="preserve">
-    <value>login</value>
-  </data>
   <data name="Main_MtuHint" xml:space="preserve">
     <value>Packet size</value>
   </data>
@@ -843,12 +825,6 @@
   </data>
   <data name="Main_RoutingNoneHint" xml:space="preserve">
     <value>Uses the addresses from the original configuration.</value>
-  </data>
-  <data name="Main_PasswordLabel" xml:space="preserve">
-    <value>PASSWORD</value>
-  </data>
-  <data name="Main_PasswordWatermark" xml:space="preserve">
-    <value>password</value>
   </data>
   <data name="Main_PasteButton" xml:space="preserve">
     <value>Paste</value>
@@ -972,12 +948,6 @@
   </data>
   <data name="Main_SaveToFileButton" xml:space="preserve">
     <value>Save to file…</value>
-  </data>
-  <data name="Main_ServerHostLabel" xml:space="preserve">
-    <value>HOST</value>
-  </data>
-  <data name="Main_ServerPortLabel" xml:space="preserve">
-    <value>PORT</value>
   </data>
   <data name="Main_SettingsTooltip" xml:space="preserve">
     <value>Settings</value>
@@ -1426,30 +1396,6 @@
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU must be 576 to 1500; leave it empty for 1280.</value>
   </data>
-  <data name="Transport_InvalidHost" xml:space="preserve">
-    <value>Enter a valid WebSocket address (host, host:port or a wss address).</value>
-  </data>
-  <data name="Transport_InvalidPort" xml:space="preserve">
-    <value>Enter a valid WebSocket port (1-65535).</value>
-  </data>
-  <data name="Transport_ProbeRunning" xml:space="preserve">
-    <value>Checking the WebSocket server...</value>
-  </data>
-  <data name="Transport_ProbeNoAddress" xml:space="preserve">
-    <value>The WebSocket server address does not resolve: check the host name.</value>
-  </data>
-  <data name="Transport_ProbeNoAnswer" xml:space="preserve">
-    <value>The WebSocket server does not answer: check the port and that the server is reachable.</value>
-  </data>
-  <data name="Transport_ProbeTls" xml:space="preserve">
-    <value>Could not set up TLS with the WebSocket server: no HTTPS on this port, or the certificate doesn't match.</value>
-  </data>
-  <data name="Transport_ProbeRefused" xml:space="preserve">
-    <value>The WebSocket server turned the connection down: {0}</value>
-  </data>
-  <data name="Transport_ProbeDenied" xml:space="preserve">
-    <value>The WebSocket server denied access: wrong token, or wrong login and password.</value>
-  </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Version {0} available</value>
   </data>
@@ -1633,7 +1579,7 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>WebSocket disabled (applies on reconnect)</value>
   </data>
   <data name="Agent_WebSocketEnabled" xml:space="preserve">
-    <value>WebSocket enabled, port {0} (applies on reconnect)</value>
+    <value>WebSocket enabled (applies on reconnect)</value>
   </data>
   <data name="Installer_NotDirectRun" xml:space="preserve">
     <value>This is an internal component of the AmneziaGeo installer and does not run on its own.
@@ -2598,6 +2544,9 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   </data>
   <data name="Probe_UploadServiceTitle" xml:space="preserve">
     <value>Data transfer speed test service</value>
+  </data>
+  <data name="Probe_UploadServiceHintOwn" xml:space="preserve">
+    <value>The address the speed is checked against. Default: the server {0}.</value>
   </data>
   <data name="Probe_UploadServiceHint" xml:space="preserve">
     <value>The address the speed is checked against. Default: https://speed.cloudflare.com/__up.</value>

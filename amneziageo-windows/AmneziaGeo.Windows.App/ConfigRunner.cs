@@ -379,9 +379,25 @@ internal sealed class ConfigRunner(
         return current;
     }
 
-    private Task ProjectRoutingAsync(string config, CancellationToken ct)
+    // The server is asked before the list is cut, so a ban it sets holds from this connect on.
+    private async Task ProjectRoutingAsync(string config, CancellationToken ct)
     {
-        return RoutingProjection.ProjectAsync(store, geo, roster, config, logger, ct);
+        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false);
+        await new ServerOffers(store, OfferNote).BeforeConnectAsync(config, text, null, ct).ConfigureAwait(false);
+        await RoutingProjection.ProjectAsync(store, geo, roster, config, logger, ct).ConfigureAwait(false);
+    }
+
+    // What asking the server has to say, at the level its news deserves.
+    private void OfferNote(string message, Exception? ex)
+    {
+        if (ex is null)
+        {
+            logger.LogInformation("{Message}", message);
+        }
+        else
+        {
+            logger.LogWarning(ex, "{Message}", message);
+        }
     }
 
     private async Task SetStateAsync(string status)

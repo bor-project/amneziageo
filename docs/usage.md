@@ -37,9 +37,13 @@ Calls and games usually learn their server addresses without DNS, so a domain ru
 
 ## WebSocket transport
 
-AmneziaWG runs over UDP, and on some networks - corporate and guest Wi-Fi, some mobile carriers - it does not get through. The whole tunnel can then run over a WebSocket on TCP: from the outside it looks like ordinary HTTPS traffic. Any port, set in the settings. An empty address and port take the front the configuration names, else the host and the port of the Endpoint; an address or a port that does not hold counts as empty. If the server requires authentication, provide a login and password or a token.
+AmneziaWG runs over UDP, and on some networks - corporate and guest Wi-Fi, some mobile carriers - it does not get through. The whole tunnel can then run over a WebSocket on TCP: from the outside it looks like ordinary HTTPS traffic.
 
-An AmneziaGeo server with a websocket proxy turned on names its front in the configuration it hands out, in the line `# AmneziaGeo WebSocket = wss://<host>:<port>/<path>`. The front is dialled under TLS with its certificate checked. Turning WebSocket on stays with you.
+The front is offered by an AmneziaGeo server: the host of the Endpoint of the configuration at the port of its services. By default that is the port of the Endpoint, or the one in the line `# AmneziaGeo Services = <port>` when the server moved its services. The WebSocket switch is open while the server offers a front, and turning it on stays with you. The front is dialled under TLS, and the server knows the configuration by a token counted from its keys, so the certificate is not checked. From the console: `amneziageo config websocket <name> on|off`.
+
+## What the server offers
+
+The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front, whether routing on the client is allowed (a ban of the server turns the Routing on the client switch off) and where the speed is measured. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
 
 ## Access to a remote network
 
@@ -92,12 +96,14 @@ The probe answers the question of where a connection actually went. Give it a do
 
 The report shows the path the traffic took and the rule behind it (tunnel by rule, bypass by default, blocked by rule), latency, jitter, loss, the size of packets that get through, and download and upload speed. Speed is measured against a speed service, by default `https://speed.cloudflare.com/__up`; the address is set in the probe settings.
 
+An AmneziaGeo server measures the speed itself. Where it offers that, the probe and the channel check measure against it, inside the tunnel or beside it, and the probe settings say so under the field. An address typed into the field comes first.
+
 ## Example: Discord where UDP is blocked
 
 1. Create a list and name it `discord`.
 2. In the application rules, pick the running Discord and add it.
 3. Turn on all UDP into the tunnel: the voice servers of Discord arrive without DNS.
-4. Since the network blocks UDP, enable WebSocket in the transport settings and set your server address, port and authentication if the server requires it.
+4. Since the network blocks UDP, enable WebSocket in the transport settings: the switch is open when your AmneziaGeo server offers a front.
 5. Select the `discord` list and connect.
 
 Discord text and voice go through the tunnel, everything else goes direct.

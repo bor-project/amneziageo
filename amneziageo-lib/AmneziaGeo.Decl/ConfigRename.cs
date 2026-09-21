@@ -25,6 +25,8 @@ public static class ConfigRename
             await store.RemoveConfigTransportAsync(oldName, ct).ConfigureAwait(false);
         }
 
+        await ServerOfferStore.MoveAsync(store, oldName, newName, ct).ConfigureAwait(false);
+
         var dns = await store.GetConfigDnsAsync(oldName, ct).ConfigureAwait(false);
         if (dns is not null)
         {

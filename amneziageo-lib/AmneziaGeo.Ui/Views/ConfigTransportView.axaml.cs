@@ -1,5 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -27,11 +26,5 @@ internal sealed partial class ConfigTransportView : UserControl
         {
             vm.IsCompact = width < UiLayout.FieldRowWidth;
         }
-    }
-
-    // Toggle masking of the access-token field.
-    private void OnToggleTokenReveal(object? sender, RoutedEventArgs e)
-    {
-        TokenBox.RevealPassword = !TokenBox.RevealPassword;
     }
 }

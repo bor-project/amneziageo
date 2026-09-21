@@ -57,9 +57,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
     private readonly AndroidUpdater _updater;
+    private readonly ServerOffers _offers;
+    private readonly object _loadGate = new();
     // Null until the store has been read: the snapshot says "not loaded yet", not "no lists".
     private IReadOnlyList<RoutingListEntry>? _routingSummaries;
     private IReadOnlyDictionary<string, ConfigTransport> _transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, ServerOffer> _offered = new Dictionary<string, ServerOffer>(StringComparer.Ordinal);
 
     // Which subscription brought which configuration; empty until the store has been read.
     private IReadOnlyDictionary<string, SubscriptionMember> _members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
@@ -95,6 +98,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _connectFailReason = string.Empty;
     private string _connectFailDetail = string.Empty;
     private bool _started;
+    private bool _loaded;
     private bool _disposed;
     private string _logLevel = "error";
     private bool _routeLog;
@@ -154,6 +158,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
         _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
+        _offers = new ServerOffers(_store, OfferNote);
         Current = this;
     }
 
@@ -165,7 +170,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _started = true;
-        Load();
+        EnsureLoaded();
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
         _events = new VpnBridge.Listener { Handler = OnVpnEvent };
@@ -286,14 +291,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
                 Save();
                 PushSnapshot();
+                _offers.Warm([(args[0], _configs.GetValueOrDefault(args[0]))], OfferChangedAsync);
                 return Ok();
 
-            // One head, one process: presence needs no announcing here.
+            // One head, one process: presence needs no announcing here; the servers are asked what they offer.
             case IpcContract.OpAttachUi:
+                _offers.Warm(OfferTargets(), OfferChangedAsync);
                 return Ok();
 
             case IpcContract.OpAddConfig:
-                return await AddConfigAsync(args).ConfigureAwait(false);
+                return AskServers(await AddConfigAsync(args).ConfigureAwait(false));
 
             case IpcContract.OpCopyConfig:
                 return await CopyConfigAsync(args).ConfigureAwait(false);
@@ -476,6 +483,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpProbeTarget:
                 return await ProbeTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
 
+            case IpcContract.OpServerOffer:
+                return await ServerOfferAsync().ConfigureAwait(false);
+
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
 
@@ -549,6 +559,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _boundStatus = ConnectionStatus.Connecting;
         _boundTarget = _selectedTarget;
         PushSnapshot();
+
+        // The server is asked what it offers before the plan and the tunnel take its word.
+        await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
+        await RefreshOffersAsync().ConfigureAwait(false);
         var useRouter = RouterEnabled();
 
         // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
@@ -559,7 +573,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
-            _transports.GetValueOrDefault(configName), foreground: true, EngineLogLevel(_logLevel), _directTcp,
+            _transports.GetValueOrDefault(configName), Front(configName, configText), foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel);
         return Ok();
     }
@@ -587,7 +601,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -625,10 +639,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
         }
 
-        if (transport is { UseWebSocket: true })
+        if (front is { } carried)
         {
-            intent.PutExtra(GeoVpnService.ExtraWsHost, transport.WebSocketHost);
-            intent.PutExtra(GeoVpnService.ExtraWsPort, transport.WebSocketPort);
+            intent.PutExtra(GeoVpnService.ExtraWsHost, carried.Host);
+            intent.PutExtra(GeoVpnService.ExtraWsPort, carried.Port);
         }
 
         if (foreground && Build.VERSION.SdkInt >= BuildVersionCodes.O)
@@ -841,7 +855,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // A live tun keeps the routes establish() was given, so an edited list only reaches the tunnel on a reconnect.
     private void MarkRoutingChanged(long listId)
     {
-        if (_active && _selectedRoutingList == listId)
+        if (_active && RoutedList == listId)
         {
             _restartRequired = true;
             _log.Info("agent", "the edited routing list applies on the next connect");
@@ -962,17 +976,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : -1;
         var reading = bound ? _link : LinkReading.Empty;
         var member = _members.GetValueOrDefault(name);
+        var offer = _offered.GetValueOrDefault(name);
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
-            WebSocketHost: transport?.WebSocketHost ?? string.Empty,
-            WebSocketPort: transport?.WebSocketPort ?? 0,
             Mtu: transport?.Mtu ?? 0,
             UseIpv6: transport?.UseIpv6 ?? false,
             UseRouter: transport?.UseRouter ?? true,
             AllowInbound: transport?.AllowInbound ?? false,
             InboundNetwork: transport?.InboundNetwork ?? false,
             Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
-            WebSocketFront: WsEndpoint.FrontOf(config),
+            WebSocketFront: WsEndpoint.Of(config, offer)?.Display() ?? string.Empty,
+            UseRouting: transport?.UseRouting ?? true,
+            RoutingLocked: offer?.RoutingLocked ?? false,
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -998,6 +1013,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private async Task InitAsync()
     {
+        EnsureLoaded();
         await _log.InitializeAsync().ConfigureAwait(false);
         _log.Info("agent", "android agent started");
         await _store.InitializeAsync().ConfigureAwait(false);
@@ -1676,14 +1692,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     ? null
                     : new PortableBundle.TransportBlock(
                         transport.UseWebSocket,
-                        transport.WebSocketHost,
-                        transport.WebSocketPort,
+                        string.Empty,
+                        0,
                         transport.Mtu,
                         transport.UseIpv6,
                         transport.MtuMode,
                         transport.UseRouter,
                         transport.AllowInbound,
-                        transport.InboundNetwork),
+                        transport.InboundNetwork,
+                        transport.UseRouting),
                 null));
         }
 
@@ -1924,7 +1941,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1938,23 +1955,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             new RoutingSettings(listId, settings.Exclusions, settings.AllUdp, "split")).ConfigureAwait(false);
     }
 
-    // Stores a config's websocket front, tunnel MTU and IPv6 opt-in; all reach the tunnel builder on the
-    // next connect.
+    // Stores a config's websocket switch, tunnel MTU and IPv6 opt-in; all reach the tunnel builder on the next
+    // connect.
     private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args)
     {
-        if (args.Count < 3 || !_configs.ContainsKey(args[0]))
+        if (args.Count < 2 || !_configs.ContainsKey(args[0]))
         {
             return Fail();
         }
 
-        var port = ConfigTransport.PortSent(args[2]);
-        if (port < 0)
-        {
-            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidPort"));
-        }
-
         // Empty leaves the config in charge: a zero here means nothing was chosen.
-        var mtuText = args.Count > 4 ? args[4].Trim() : string.Empty;
+        var mtuText = args.Count > 2 ? args[2].Trim() : string.Empty;
         if ((mtuText.Length == 0 ? 0 : ParseRange(mtuText, 576, 1500)) is not { } mtu)
         {
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidMtu"));
@@ -1962,22 +1973,23 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false);
-        var useIpv6 = args.Count > 5 ? IsOn(args[5]) : previous?.UseIpv6 ?? false;
-        var host = args.Count > 3 ? args[3].Trim() : string.Empty;
-        if (!WsEndpoint.Dials(host))
+        var useIpv6 = args.Count > 3 ? IsOn(args[3]) : previous?.UseIpv6 ?? false;
+
+        // A size sent without a mode stands for a choice of its own.
+        var mode = args.Count > 4
+            ? MtuModes.Parse(args[4], previous?.MtuMode ?? MtuMode.Auto)
+            : mtu > 0 ? MtuMode.Custom : previous?.MtuMode ?? MtuMode.Auto;
+        var useRouter = args.Count > 5 ? IsOn(args[5]) : previous?.UseRouter ?? true;
+        var allowInbound = args.Count > 6 ? IsOn(args[6]) : previous?.AllowInbound ?? false;
+        var inboundNetwork = args.Count > 7 ? IsOn(args[7]) : previous?.InboundNetwork ?? false;
+        var useRouting = args.Count > 8 ? IsOn(args[8]) : previous?.UseRouting ?? true;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting)).ConfigureAwait(false);
+        if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
         {
-            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
+            _restartRequired = true;
+            _log.Info("agent", "the routing switch applies on the next connect");
         }
 
-
-        // An older client sends no mode, and a size it sent stands for a choice of its own.
-        var mode = args.Count > 6
-            ? MtuModes.Parse(args[6], previous?.MtuMode ?? MtuMode.Auto)
-            : mtu > 0 ? MtuMode.Custom : previous?.MtuMode ?? MtuMode.Auto;
-        var useRouter = args.Count > 7 ? IsOn(args[7]) : previous?.UseRouter ?? true;
-        var allowInbound = args.Count > 8 ? IsOn(args[8]) : previous?.AllowInbound ?? false;
-        var inboundNetwork = args.Count > 9 ? IsOn(args[9]) : previous?.InboundNetwork ?? false;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), host, port, mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
@@ -2001,7 +2013,96 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _transports = transports;
+        await RefreshOffersAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+    }
+
+    // Reads what the servers of the configurations offer, as last kept.
+    private async Task RefreshOffersAsync()
+    {
+        var offered = new Dictionary<string, ServerOffer>(StringComparer.Ordinal);
+        foreach (var (name, text) in _configs.ToList())
+        {
+            offered[name] = await _offers.OfferAsync(name, text, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        _offered = offered;
+    }
+
+    // Every configuration with its text, for their servers to be asked what they offer.
+    private IReadOnlyList<(string Config, string? Text)> OfferTargets() =>
+        [.. _configs.ToList().Select(entry => (entry.Key, (string?)entry.Value))];
+
+    // Asks the servers again behind a configuration that was stored.
+    private IpcAck AskServers(IpcAck ack)
+    {
+        if (ack.Ok)
+        {
+            _offers.Warm(OfferTargets(), OfferChangedAsync);
+        }
+
+        return ack;
+    }
+
+    // A server that offers the tunnel something else now shows it in the next snapshot.
+    private async Task OfferChangedAsync(string config)
+    {
+        await RefreshOffersAsync().ConfigureAwait(false);
+        PushSnapshot();
+    }
+
+    // What asking the servers has to say, at the level its news deserves.
+    private void OfferNote(string message, Exception? ex)
+    {
+        if (ex is null)
+        {
+            _log.Info("agent", message);
+        }
+        else
+        {
+            _log.Error("agent", message, ex);
+        }
+    }
+
+    // The websocket front the tunnel of a configuration is carried to: the one its server offers, while it is asked for.
+    private WsEndpoint? Front(string name, string text) =>
+        _transports.GetValueOrDefault(name) is { UseWebSocket: true } ? WsEndpoint.Of(text, _offered.GetValueOrDefault(name)) : null;
+
+    // What the server of the selected configuration offers; it is asked again behind the answer.
+    private async Task<IpcAck> ServerOfferAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var config = _selectedTarget ?? string.Empty;
+        var text = _configs.GetValueOrDefault(config);
+        _offers.Warm([(config, text)], OfferChangedAsync);
+
+        return new IpcAck(true, OfferReply.Render(config, await _offers.OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false)));
+    }
+
+    // Where the send leg uploads to, and whether that is the server of the selected configuration.
+    private async Task<(string Url, bool Own)> UploadAsync(string path, string chosen, CancellationToken ct)
+    {
+        if (chosen.Length > 0 || _selectedTarget is not { Length: > 0 } config)
+        {
+            return (chosen, false);
+        }
+
+        return ServerOffers.Upload(chosen, await _offers.SpeedAsync(config, _configs.GetValueOrDefault(config), ct).ConfigureAwait(false), path);
+    }
+
+    // Reads the configurations from this agent's own JSON once, whichever comes first: the window or a command.
+    private void EnsureLoaded()
+    {
+        lock (_loadGate)
+        {
+            if (_loaded)
+            {
+                return;
+            }
+
+            _loaded = true;
+            Load();
+        }
     }
 
     private async Task RefreshSubscriptionMembersAsync()
@@ -2063,13 +2164,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return (split.Mode, split.Packages, split.Bypass, true);
     }
 
+    // Выбранный список, если выбранная конфигурация его берёт.
+    private long? RoutedList =>
+        _selectedTarget is { Length: > 0 } name
+        && !ConfigRouting.Allowed(_transports.GetValueOrDefault(name), _offered.GetValueOrDefault(name))
+            ? null
+            : _selectedRoutingList;
+
     // Поколение и правила выбранного списка, без развёрнутых корзин.
     private async Task<RoutingListStamp?> ReadListStampAsync() =>
-        _selectedRoutingList is { } listId ? await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false) : null;
+        RoutedList is { } listId ? await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false) : null;
 
     // Настройки движения выбранного списка.
     private async Task<RoutingSettings?> ReadListSettingsAsync() =>
-        _selectedRoutingList is { } listId ? await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false) : null;
+        RoutedList is { } listId ? await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false) : null;
 
     // Соединение приписывается своему владельцу начиная с Android 10.
     private static bool PerAppSupported => Build.VERSION.SdkInt >= BuildVersionCodes.Q;
@@ -2100,7 +2208,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // address keeps its verdict, which a set of host routes fixed at connect never could.
     private async Task<GeoRoutingPlan> BuildPlanAsync(bool useRouter)
     {
-        if (_selectedRoutingList is not { } listId)
+        if (RoutedList is not { } listId)
         {
             return GeoRoutingPlan.Full with { UseRouter = useRouter };
         }
@@ -2683,7 +2791,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var text = _configs.GetValueOrDefault(config, string.Empty);
         var running = VpnBridge.IsRunning(Application.Context);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var carrier = Carrier(text, transport);
+        var carrier = Carrier(text, transport, _offered.GetValueOrDefault(config));
+        var speed = await _offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
             running,
@@ -2697,7 +2806,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
             ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
-            CarrierPort: carrier.Port);
+            CarrierPort: carrier.Port,
+            TunnelSpeedUrl: ServerOffers.Download(speed, true),
+            DirectSpeedUrl: ServerOffers.Download(speed, false));
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -2750,7 +2861,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var list = _selectedRoutingList is { } listId
+        var list = RoutedList is { } listId
             && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } assigned
                 ? assigned.Name
                 : string.Empty;
@@ -2767,7 +2878,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             var text = _configs.GetValueOrDefault(name, string.Empty);
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport);
+            var carrier = Carrier(text, transport, _offered.GetValueOrDefault(name));
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -2812,7 +2923,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             var text = _configs.GetValueOrDefault(name, string.Empty);
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport);
+            var carrier = Carrier(text, transport, _offered.GetValueOrDefault(name));
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -2851,15 +2962,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // that the tunnel is built as an allow list of them instead - the answer follows the mode in force.
     private async Task<(TargetInspector Inspector, bool Whole)> RulesAsync(CancellationToken ct)
     {
-        var list = _selectedRoutingList is { } listId
+        var routed = RoutedList;
+        var list = routed is { } listId
             ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
             : null;
-        var settings = _selectedRoutingList is { } id
+        var settings = routed is { } id
             ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
             : null;
         var full = settings?.UseGlobalProxy ?? false;
         // Without a list the tun carries everything, so nothing is left outside it to be put back in.
-        return (new TargetInspector(list, !full, AppMode(list, settings, RouterEnabled())), _selectedRoutingList is null || full);
+        return (new TargetInspector(list, !full, AppMode(list, settings, RouterEnabled())), routed is null || full);
     }
 
     // Measures one destination over the path asked for. The tun fixes its routes at establish, so the tunnel
@@ -2874,7 +2986,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         var target = args[0];
         var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
-        var upload = args.Count > 2 ? args[2] : string.Empty;
         var running = VpnBridge.IsRunning(Application.Context);
         if (!running && path != ProbePaths.Bypass)
         {
@@ -2895,12 +3006,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var taken = path == ProbePaths.Auto ? routed.Taken : path;
+        var (upload, own) = await UploadAsync(path, args.Count > 2 ? args[2] : string.Empty, ct).ConfigureAwait(false);
         if (running && path == ProbePaths.Bypass)
         {
-            return ProbeAck(await HandOverAsync(target, path, taken, upload, ct).ConfigureAwait(false));
+            return ProbeAck(await HandOverAsync(target, path, taken, upload, own, ct).ConfigureAwait(false));
         }
 
-        var options = new TargetProbeOptions(target, path, taken, upload);
+        var options = new TargetProbeOptions(target, path, taken, upload, OwnUpload: own);
         return ProbeAck(await TargetProbe.RunAsync(options, ct).ConfigureAwait(false));
     }
 
@@ -2924,10 +3036,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Hands the run to the tunnel and waits for what it measured; a tunnel that never answers leaves the path
     // unmeasured rather than the caller waiting on it.
-    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, CancellationToken ct)
+    private static async Task<ProbeReport> HandOverAsync(string target, string path, string taken, string upload, bool own, CancellationToken ct)
     {
         VpnBridge.ClearProbeResult();
-        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload));
+        VpnBridge.WriteProbe(new ProbeRequest(target, path, taken, upload, own));
         VpnBridge.RequestProbe(Application.Context);
         for (var waited = 0; waited < ProbeWaitMs; waited += ProbePollMs)
         {
@@ -2975,22 +3087,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("check", closing);
     }
 
-    // The server's address as the tunnel dials it.
-    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its own address, and
-    // the endpoint in the config is only what the server hands the tunnel to behind it.
-    private static (string Host, int Port) Carrier(string text, ConfigTransport? transport)
-    {
-        var endpoint = WgConfigEditor.GetEndpoint(text) ?? string.Empty;
-        var colon = endpoint.LastIndexOf(':');
-        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
-        if (transport?.UseWebSocket != true)
-        {
-            return (host, 0);
-        }
-
-        var front = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(text));
-        return (front.Host, front.Port);
-    }
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at the front the server
+    // offers, and the endpoint in the config is only what the server hands the tunnel to behind it.
+    private static (string Host, int Port) Carrier(string text, ConfigTransport? transport, ServerOffer? offer) =>
+        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer) is { } front
+            ? (front.Host, front.Port)
+            : (ConfigServices.Host(text), 0);
 
     // One address for a host, as the tunnel resolves it.
     private static async Task<string?> ResolveAsync(string host, CancellationToken ct)
@@ -3437,7 +3539,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // alone whatever the mode; ("off", [], []) when none.
     private async Task<(string Mode, string[] Packages, string[] Bypass)> ResolveAppSplitFromRoutingAsync(bool useRouter)
     {
-        if (_selectedRoutingList is not { } listId || !useRouter)
+        if (RoutedList is not { } listId || !useRouter)
         {
             return ("off", [], []);
         }
@@ -3748,7 +3850,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Appends the selected routing list and its rule counts to the runtime report.
     private void AppendRoutingReport(System.Text.StringBuilder report)
     {
-        if (_selectedRoutingList is not { } listId)
+        if (RoutedList is not { } listId)
         {
             report.Append("routing list : (off)\n");
             return;

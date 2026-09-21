@@ -142,6 +142,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the headers a tunnel's websocket carrier proves the keys of its configuration with.
+    /// </summary>
+    public static string WsHeadersFile(string name)
+    {
+        return Path.Combine(MachineRoot(), $"ws-headers-{Sanitize(name)}.txt");
+    }
+
+    /// <summary>
     /// Path to a tunnel's persisted endpoint-exclusion routes.
     /// </summary>
     public static string RouteStateFile(string name)

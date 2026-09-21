@@ -124,7 +124,8 @@ internal sealed class TunnelController : IDisposable
     /// </summary>
     public async Task<TunnelFailure?> UpAsync(string configText, TunnelRouting routing, TunnelOptions options, CancellationToken ct)
     {
-        var blocker = Preflight(options.Transport);
+        var carried = options.Transport?.UseWebSocket == true && WsEndpoint.Of(configText, options.Offer) is not null;
+        var blocker = Preflight(carried);
         if (blocker is { } refused)
         {
             _log.Warn("tunnel", $"connect refused: {refused.Detail}");
@@ -132,7 +133,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         var (resolved, endpointIp) = await ResolveEndpointAsync(configText, _log, ct).ConfigureAwait(false);
-        var carrier = await CarrierAsync(options.Transport, configText, ct).ConfigureAwait(false);
+        var carrier = await CarrierAsync(carried ? WsEndpoint.Of(configText, options.Offer) : null, configText, ct).ConfigureAwait(false);
         if (carrier.Refusal is { } refusal)
         {
             _log.Warn("tunnel", $"connect refused: {refusal.Detail}");
@@ -723,7 +724,7 @@ internal sealed class TunnelController : IDisposable
     }
 
     // Refuses the connect with an actionable reason when the host cannot carry a tunnel.
-    private TunnelFailure? Preflight(ConfigTransport? transport)
+    private TunnelFailure? Preflight(bool carried)
     {
         if (!File.Exists(_enginePath))
         {
@@ -742,7 +743,7 @@ internal sealed class TunnelController : IDisposable
 
         // The engine hands the carrier every packet on the loopback, so a firewall that drops UDP there leaves
         // the tunnel silent with nothing to show for it.
-        if (transport?.UseWebSocket == true && !WsCarrier.LoopbackCarries())
+        if (carried && !WsCarrier.LoopbackCarries())
         {
             return new TunnelFailure(
                 ConnectFailureReason.LoopbackBlocked,
@@ -782,12 +783,13 @@ internal sealed class TunnelController : IDisposable
     // Carries a refusal the agent has no cause of its own for.
     private static TunnelFailure Refused(string detail) => new(ConnectFailureReason.ServiceStartFailed, detail);
 
-    // The websocket carrier a configuration asks for: the engine dials it on the loopback and it wraps the
-    // tunnel in web traffic the network lets through. The front is resolved here, before the tunnel takes over
-    // the machine's routes, because a lookup made afterwards would travel inside the tunnel it is meant to open.
-    private async Task<(WsCarrier? Started, string? Address, TunnelFailure? Refusal)> CarrierAsync(ConfigTransport? transport, string configText, CancellationToken ct)
+    // The websocket carrier a configuration asks for at the front its server offers: the engine dials it on the
+    // loopback and it wraps the tunnel in web traffic the network lets through. The front is resolved here, before
+    // the tunnel takes over the machine's routes, because a lookup made afterwards would travel inside the tunnel it
+    // is meant to open.
+    private async Task<(WsCarrier? Started, string? Address, TunnelFailure? Refusal)> CarrierAsync(WsEndpoint? offered, string configText, CancellationToken ct)
     {
-        if (transport?.UseWebSocket != true)
+        if (offered is not { } front)
         {
             return (null, null, null);
         }
@@ -799,15 +801,14 @@ internal sealed class TunnelController : IDisposable
             return (null, null, Refused("this configuration asks to be carried inside a websocket, but its Endpoint names no port"));
         }
 
-        var front = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, endpoint, WsEndpoint.FrontOf(configText));
         var address = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
-        if (address is null || front.Port <= 0)
+        if (address is null)
         {
-            return (null, null, Refused($"the websocket front {front.Host}:{front.Port} has no address to dial"));
+            return (null, null, Refused($"the websocket front {front.Display()} has no address to dial"));
         }
 
-        var carrier = WsCarrier.Start(front, address, targetPort, null, Note);
-        _log.Info("tunnel", $"the tunnel is carried inside a websocket to {front.Host}:{front.Port}; the engine dials it on {Loopback}:{carrier.LocalPort}");
+        var carrier = WsCarrier.Start(front, address, targetPort, ServiceToken.HeaderOf(configText), null, Note);
+        _log.Info("tunnel", $"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {Loopback}:{carrier.LocalPort}");
         return (carrier, address.ToString(), null);
     }
 

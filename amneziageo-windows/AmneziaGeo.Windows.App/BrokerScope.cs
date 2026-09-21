@@ -4,10 +4,15 @@ using AmneziaGeo.Geo;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// A connecting user's data scope: their store, config repository, and geo configurator.
+/// A connecting user's data scope: their store, config repository, geo configurator and what their servers offer.
 /// </summary>
-internal sealed class BrokerScope(string userRoot, IStateStore store, ConfigRepository configRepo, GeoConfigurator geo)
+internal sealed class BrokerScope(string userRoot, IStateStore store, ConfigRepository configRepo, GeoConfigurator geo, ServerOffers offers)
 {
+    /// <summary>
+    /// What the servers of the user's configurations offer.
+    /// </summary>
+    public ServerOffers Offers => offers;
+
     /// <summary>
     /// The user's data root.
     /// </summary>

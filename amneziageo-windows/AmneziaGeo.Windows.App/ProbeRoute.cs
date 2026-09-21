@@ -16,13 +16,13 @@ internal static class ProbeRoute
     /// Holds the target on the path asked for, measures it, and puts it back under the rules that own it.
     /// </summary>
     public static async Task<ProbeReport> RunAsync(
-        RoutingCache? cache, string target, string path, string uploadUrl, CancellationToken ct)
+        RoutingCache? cache, string target, string path, string uploadUrl, bool own, CancellationToken ct)
     {
         var address = await AddressAsync(target, ct).ConfigureAwait(false);
         var held = Hold(cache, address, path);
         try
         {
-            var options = new TargetProbeOptions(target, path, Taken(cache, address, path), uploadUrl);
+            var options = new TargetProbeOptions(target, path, Taken(cache, address, path), uploadUrl, OwnUpload: own);
             return await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
         }
         finally

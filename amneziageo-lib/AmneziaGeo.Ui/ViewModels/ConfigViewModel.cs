@@ -360,19 +360,12 @@ internal partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool CanSave => IsCreatingSectionConfig ? CanSaveSectionConfig : IsEditDirty;
 
-    /// <summary>
-    /// Whether Save carries a websocket address the front did not accept: it still saves, dimmed to say what is
-    /// being saved has not answered.
-    /// </summary>
-    public bool SaveUnverified => (ConfigTransport?.ProbeFailed ?? false) || (SectionTransport?.ProbeFailed ?? false);
-
     private void RefreshEditBar()
     {
         OnPropertyChanged(nameof(IsEditDirty));
         OnPropertyChanged(nameof(ShowSaveBar));
         OnPropertyChanged(nameof(ShowSaveButton));
         OnPropertyChanged(nameof(CanSave));
-        OnPropertyChanged(nameof(SaveUnverified));
     }
 
     private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
@@ -737,8 +730,6 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.GeoSplit = entry.GeoSplit;
             existing.Rules = entry.Rules;
             existing.UseWebSocket = entry.WebSocket;
-            existing.WebSocketHost = entry.WebSocketHost;
-            existing.WebSocketPort = entry.WebSocketPort;
             existing.Dns = entry.Dns;
             existing.Exclusions = entry.Exclusions;
             existing.Mtu = entry.Mtu;
@@ -747,6 +738,8 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.ResolvedMtu = entry.ResolvedMtu;
             existing.UseIpv6 = entry.UseIpv6;
             existing.UseRouter = entry.UseRouter;
+            existing.UseRouting = entry.UseRouting;
+            existing.RoutingLocked = entry.RoutingLocked;
             existing.AllowInbound = entry.AllowInbound;
             existing.InboundNetwork = entry.InboundNetwork;
             existing.Address = entry.Address;
@@ -1040,20 +1033,17 @@ internal partial class ConfigViewModel : ViewModelBase
             ? item.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : string.Empty;
 
-        // Порт хранится только у прокси; ноль берёт порт Endpoint.
-        var port = item.WebSocketPort is > 0 and <= 65535 ? item.WebSocketPort : 0;
         var ack = await Ask(new IpcCommand(IpcContract.OpSetWebSocket,
         [
             item.Name,
             item.UseWebSocket ? "on" : "off",
-            port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            item.WebSocketHost,
             mtu,
             item.UseIpv6 ? "on" : "off",
             MtuModes.Text(item.MtuMode),
             item.UseRouter ? "on" : "off",
             item.AllowInbound ? "on" : "off",
             item.InboundNetwork ? "on" : "off",
+            item.UseRouting ? "on" : "off",
         ]));
         if (ack is not { Ok: true })
         {
@@ -1105,7 +1095,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketFront ?? string.Empty);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.RoutingLocked ?? false);
         RefreshEditBar();
     }
 
@@ -1130,14 +1120,11 @@ internal partial class ConfigViewModel : ViewModelBase
         if (oldValue is not null)
         {
             oldValue.DirtyChanged -= OnEditScopeDirty;
-            oldValue.ProbeChanged -= OnEditScopeDirty;
-            oldValue.CancelProbe();
         }
 
         if (newValue is not null)
         {
             newValue.DirtyChanged += OnEditScopeDirty;
-            newValue.ProbeChanged += OnEditScopeDirty;
         }
 
         RefreshEditBar();
@@ -1145,17 +1132,6 @@ internal partial class ConfigViewModel : ViewModelBase
 
     partial void OnSectionTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
     {
-        if (oldValue is not null)
-        {
-            oldValue.ProbeChanged -= OnEditScopeDirty;
-            oldValue.CancelProbe();
-        }
-
-        if (newValue is not null)
-        {
-            newValue.ProbeChanged += OnEditScopeDirty;
-        }
-
         RefreshEditBar();
     }
 
@@ -1183,7 +1159,6 @@ internal partial class ConfigViewModel : ViewModelBase
         if (VpnLinkCodec.TryDecode(value) is { } imported)
         {
             SeedSectionNameFromConfig(imported);
-            SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty, WsEndpoint.FrontOf(imported.ConfText));
             return;
         }
 
@@ -1452,9 +1427,9 @@ internal partial class ConfigViewModel : ViewModelBase
         IsCreatingSectionConfig = true;
     }
 
-    // Transport editor of a config that does not exist yet: defaults, no endpoint until the text is read.
+    // Transport editor of a config that does not exist yet: defaults, and no front until its server is asked.
     private ConfigTransportViewModel NewSectionTransport() =>
-        new(_connection, string.Empty, string.Empty, false, string.Empty, 0, 0, false);
+        new(_connection, string.Empty, false, 0, false);
 
     // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()

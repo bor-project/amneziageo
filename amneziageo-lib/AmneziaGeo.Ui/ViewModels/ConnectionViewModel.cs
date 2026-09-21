@@ -1193,7 +1193,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     private static async Task ProbeRowAsync(ConfigItemViewModel row, CancellationToken ct)
     {
         var result = await EndpointProbe
-            .MeasureAsync(row.Endpoint, row.UseWebSocket, row.WebSocketHost, row.WebSocketPort, row.WebSocketFront, ct)
+            .MeasureAsync(row.Endpoint, row.UseWebSocket ? row.WebSocketFront : string.Empty, ct)
             .ConfigureAwait(false);
         if (ct.IsCancellationRequested)
         {

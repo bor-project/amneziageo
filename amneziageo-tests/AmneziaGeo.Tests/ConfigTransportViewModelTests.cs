@@ -6,8 +6,8 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The window keeps the reach of the access from the tunnel the agent holds, and opens the whole tunnel network
-/// only when the switch is turned on in it.
+/// The window keeps the reach of the access from the tunnel the agent holds, opens the whole tunnel network only
+/// when the switch is turned on in it, and leaves the websocket and the routing to what the server offers.
 /// </summary>
 public sealed class ConfigTransportViewModelTests
 {
@@ -60,52 +60,66 @@ public sealed class ConfigTransportViewModelTests
     }
 
     [Fact]
-    public void TheFieldsLeftEmpty_ShowTheFrontTheConfigNames()
-    {
-        var transport = new ConfigTransportViewModel(new Recorder(), "e2e", "10.99.1.1:51821", true, string.Empty, 0, 1420, false, front: "wss://front.example:8443/secret");
-
-        Assert.Equal(string.Empty, transport.WebSocketHost);
-        Assert.Equal(string.Empty, transport.WebSocketPort);
-        Assert.Equal("front.example", transport.WebSocketHostDefault);
-        Assert.Equal("8443", transport.WebSocketPortDefault);
-    }
-
-    [Fact]
-    public void TheFieldsLeftEmpty_ShowTheEndpointWithoutAFront()
-    {
-        var transport = new ConfigTransportViewModel(new Recorder(), "e2e", "10.99.1.1:51821", true, string.Empty, 0, 1420, false);
-
-        Assert.Equal("10.99.1.1", transport.WebSocketHostDefault);
-        Assert.Equal("51821", transport.WebSocketPortDefault);
-    }
-
-    [Fact]
-    public async Task TheFieldsLeftEmpty_AreSavedEmpty()
+    public async Task TheWebSocket_IsTurnedOnWhereTheServerOffersAFront()
     {
         var agent = new Recorder();
-        var transport = new ConfigTransportViewModel(agent, "e2e", "10.99.1.1:51821", false, string.Empty, 0, 1420, false, front: "wss://front.example:8443/secret");
+        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, webSocketOffered: true);
 
-        transport.UseWebSocket = true;
+        transport.WebSocketOn = true;
         await transport.CommitAsync();
 
-        Assert.Equal(["e2e", "on", "0", string.Empty], agent.Args.Take(4));
+        Assert.True(transport.WebSocketOpen);
+        Assert.True(transport.UseWebSocket);
+        Assert.Equal(["e2e", "on", string.Empty, "off"], agent.Args.Take(4));
     }
 
     [Fact]
-    public async Task AHostOfItsOwn_IsSavedAsTyped()
+    public async Task AWebSocketTheServerDoesNotOffer_ShowsOffAndKeepsTheStoredSwitch()
     {
         var agent = new Recorder();
-        var transport = new ConfigTransportViewModel(agent, "e2e", "10.99.1.1:51821", true, string.Empty, 0, 1420, false, front: "wss://front.example:8443/secret");
+        var transport = new ConfigTransportViewModel(agent, "e2e", true, 1420, false, webSocketOffered: false);
 
-        transport.WebSocketHost = "own.example";
-        transport.WebSocketPort = "9443";
+        transport.WebSocketOn = false;
+        transport.UseIpv6 = true;
         await transport.CommitAsync();
 
-        Assert.Equal(["e2e", "on", "9443", "own.example"], agent.Args.Take(4));
+        Assert.False(transport.WebSocketOpen);
+        Assert.False(transport.WebSocketOn);
+        Assert.True(transport.UseWebSocket);
+        Assert.Equal("on", agent.Args[1]);
+    }
+
+    [Fact]
+    public async Task TheRoutingSwitch_IsSavedWithTheTransport()
+    {
+        var agent = new Recorder();
+        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false);
+
+        transport.RoutingOn = false;
+        await transport.CommitAsync();
+
+        Assert.True(transport.RoutingOpen);
+        Assert.False(transport.UseRouting);
+        Assert.Equal("off", agent.Args[8]);
+    }
+
+    [Fact]
+    public async Task ARoutingBannedByTheServer_ShowsOffAndKeepsTheStoredSwitch()
+    {
+        var agent = new Recorder();
+        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, useRouting: true, routingLocked: true);
+
+        transport.RoutingOn = false;
+        await transport.CommitAsync();
+
+        Assert.False(transport.RoutingOpen);
+        Assert.False(transport.RoutingOn);
+        Assert.True(transport.UseRouting);
+        Assert.Equal("on", agent.Args[8]);
     }
 
     private static ConfigTransportViewModel Transport(IAgentConnection agent, bool allow, bool network) =>
-        new(agent, "e2e", "10.99.1.1:51821", false, string.Empty, 443, 1420, false, allowInbound: allow, inboundNetwork: network);
+        new(agent, "e2e", false, 1420, false, allowInbound: allow, inboundNetwork: network);
 
     // Keeps what the window sends for the access instead of an agent.
     private sealed class Recorder : IAgentConnection
@@ -139,7 +153,7 @@ public sealed class ConfigTransportViewModelTests
         public Task<IpcAck> SendCommandAsync(IpcCommand command)
         {
             Args = command.Args;
-            Inbound = [command.Args[8], command.Args[9]];
+            Inbound = [command.Args[6], command.Args[7]];
 
             return Task.FromResult(new IpcAck(true, string.Empty));
         }

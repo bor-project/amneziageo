@@ -44,6 +44,7 @@ internal static class ConfigCommands
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
             "inbound" => await InboundAsync(agent, rest).ConfigureAwait(false),
+            "routing" => await RoutingAsync(agent, rest).ConfigureAwait(false),
             "geo" => await GeoAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown config command '{args[0]}'"),
         };
@@ -67,21 +68,26 @@ internal static class ConfigCommands
                 config.WebSocket ? Front(config) : "-",
                 config.Dns.Length > 0 ? config.Dns : "-",
                 Inbound(config),
+                Routing(config),
                 config.Status,
             ])
             .ToList();
 
-        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "STATE"], rows, "no configurations yet");
+        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "STATE"], rows, "no configurations yet");
         return Exit.Ok;
     }
 
-    // Names the websocket front without its path and its account.
+    // Names the websocket front the server offers, or says that it offers none.
     private static string Front(ConfigEntry config) =>
-        WsEndpoint.Of(config.WebSocketHost, config.WebSocketPort, config.Endpoint, config.WebSocketFront).Display();
+        config.WebSocketFront.Length > 0 ? config.WebSocketFront : "no front";
 
     // Names the inbound scope in the words the command takes.
     private static string Inbound(ConfigEntry config) =>
         !config.AllowInbound ? "off" : config.InboundNetwork ? "network" : "host";
+
+    // Names the routing switch, or the ban of the server that overrides it.
+    private static string Routing(ConfigEntry config) =>
+        config.RoutingLocked ? "locked" : config.UseRouting ? "on" : "off";
 
     private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
@@ -206,29 +212,17 @@ internal static class ConfigCommands
     private static async Task<int> WebSocketAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
-        if (!flags.Allowed("host", "port", "mtu", "ipv6", "router"))
+        if (!flags.Allowed("mtu", "ipv6", "router"))
         {
             return Reply.Usage(flags.Error!);
         }
 
         if (flags.Positional.Count != 2 || !Toggle.TryParse(flags.Positional[1], out var on))
         {
-            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off] [--router on|off]");
-        }
-
-        if (flags.Value("port") is { } named && ConfigTransport.PortSent(named) < 0)
-        {
-            return Reply.Usage("--port takes a port from 1 to 65535");
-        }
-
-        if (flags.Value("host") is { } address && !WsEndpoint.Dials(address))
-        {
-            return Reply.Usage("--host takes a host, a host with its port, or a ws or wss address");
+            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--mtu <n>] [--ipv6 on|off] [--router on|off]");
         }
 
         var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == flags.Positional[0]);
-        var port = flags.Value("port") ?? (stored?.WebSocketPort ?? 0).ToString(CultureInfo.InvariantCulture);
-        var host = flags.Value("host") ?? stored?.WebSocketHost ?? string.Empty;
 
         // An unset MTU goes over empty; the agents read that as the default.
         var storedMtu = stored?.Mtu ?? 0;
@@ -249,8 +243,6 @@ internal static class ConfigCommands
             IpcContract.OpSetWebSocket,
             flags.Positional[0],
             Toggle.Text(on),
-            port,
-            host,
             mtu,
             Toggle.Text(useIpv6),
             MtuModes.Text(stored?.MtuMode ?? MtuMode.Auto),
@@ -277,8 +269,6 @@ internal static class ConfigCommands
             IpcContract.OpSetWebSocket,
             args[0],
             stored.WebSocket ? "on" : "off",
-            stored.WebSocketPort.ToString(CultureInfo.InvariantCulture),
-            stored.WebSocketHost,
             size > 0 ? size.ToString(CultureInfo.InvariantCulture) : string.Empty,
             stored.UseIpv6 ? "on" : "off",
             MtuModes.Text(mode),
@@ -303,14 +293,39 @@ internal static class ConfigCommands
             IpcContract.OpSetWebSocket,
             args[0],
             stored.WebSocket ? "on" : "off",
-            stored.WebSocketPort.ToString(CultureInfo.InvariantCulture),
-            stored.WebSocketHost,
             stored.Mtu > 0 ? stored.Mtu.ToString(CultureInfo.InvariantCulture) : string.Empty,
             stored.UseIpv6 ? "on" : "off",
             MtuModes.Text(stored.MtuMode),
             stored.UseRouter ? "on" : "off",
             scope.Allow ? "on" : "off",
             scope.Network ? "on" : "off").ConfigureAwait(false));
+    }
+
+    // The routing switch travels with the rest of the transport, so the stored fields are resent untouched beside it.
+    private static async Task<int> RoutingAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 2 || !Toggle.TryParse(args[1], out var on))
+        {
+            return Reply.Usage("usage: amneziageo config routing <name> on|off");
+        }
+
+        var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == args[0]);
+        if (stored is null)
+        {
+            return Reply.Usage($"unknown config: {args[0]}");
+        }
+
+        return Reply.Report(await agent.SendAsync(
+            IpcContract.OpSetWebSocket,
+            args[0],
+            stored.WebSocket ? "on" : "off",
+            stored.Mtu > 0 ? stored.Mtu.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            stored.UseIpv6 ? "on" : "off",
+            MtuModes.Text(stored.MtuMode),
+            stored.UseRouter ? "on" : "off",
+            stored.AllowInbound ? "on" : "off",
+            stored.InboundNetwork ? "on" : "off",
+            Toggle.Text(on)).ConfigureAwait(false));
     }
 
     // What the word stands for: no access, the server alone, or every device of the tunnel network.

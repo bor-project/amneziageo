@@ -31,24 +31,28 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     private readonly string _serverHost;
     private readonly int _wsPort;
+    // How often the headers are written anew, well inside the window the server takes a token in.
+    private static readonly TimeSpan HeadersRefresh = TimeSpan.FromSeconds(30);
+
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
-    private readonly string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
-    private readonly string _credentials; // optional basic-auth "user[:pass]"
+    private readonly Func<string>? _header; // the token header the front of a server of ours asks for
+    private readonly string _headersFile; // the file wstunnel reads the headers from on every connection
     private readonly Action<string>? _onRejected;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private Process? _process;
     private Task? _supervisor;
+    private Task? _refresher;
     private int _rejectionReported;
     private int _redials;
 
-    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, int localPort, Action<string>? onRejected, ILogger logger)
+    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, Func<string>? header, string headersFile, int localPort, Action<string>? onRejected, ILogger logger)
     {
         _serverHost = serverHost;
         _wsPort = wsPort;
         _targetPort = targetPort;
-        _pathPrefix = pathPrefix;
-        _credentials = credentials;
+        _header = header;
+        _headersFile = headersFile;
         LocalPort = localPort;
         _onRejected = onRejected;
         _logger = logger;
@@ -228,7 +232,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     /// Starts a wstunnel client and waits until its local UDP listener is bound; null on missing binary or timeout.
     /// The callback fires once when the carrier reports a permanent rejection (TLS certificate).
     /// </summary>
-    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Action<string>? onRejected, ILogger logger, CancellationToken ct)
+    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, Func<string>? header, string headersFile, Action<string>? onRejected, ILogger logger, CancellationToken ct)
     {
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
@@ -237,9 +241,11 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, FreeUdpPort(), onRejected, logger);
+        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, header, headersFile, FreeUdpPort(), onRejected, logger);
+        transport.WriteHeaders();
         transport.Spawn();
         transport._supervisor = Task.Run(() => transport.SuperviseAsync(transport._cts.Token));
+        transport._refresher = Task.Run(() => transport.RefreshAsync(transport._cts.Token));
 
         if (await transport.WaitUntilListeningAsync(TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
         {
@@ -253,21 +259,13 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     private void Spawn()
     {
-        // -L udp://<localPort>:127.0.0.1:<targetPort> forwards to the AmneziaWG container on the server;
-        // timeout_sec=0 keeps the UDP association alive. --tls-verify-certificate is required (wstunnel
-        // disables verification by default). Optional -P path token and basic-auth credentials.
-        var auth = string.Empty;
-        if (_pathPrefix.Length > 0)
-        {
-            auth += $" -P \"{_pathPrefix}\"";
-        }
-
-        if (_credentials.Length > 0)
-        {
-            auth += $" --http-upgrade-credentials \"{_credentials}\"";
-        }
-
-        var args = $"client --tls-verify-certificate{auth} -L \"udp://{LocalPort}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
+        // -L udp://<localPort>:127.0.0.1:<targetPort> forwards to the AmneziaWG interface on the server;
+        // timeout_sec=0 keeps the UDP association alive. The token in the headers file proves the keys of the
+        // configuration, so the certificate is taken as it stands; without a token it is verified.
+        var auth = _header is null
+            ? " --tls-verify-certificate"
+            : $" --http-headers-file \"{_headersFile}\"";
+        var args = $"client{auth} -L \"udp://{LocalPort}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
         var info = new ProcessStartInfo(TunnelPaths.WsTunnelExe(), args)
         {
             UseShellExecute = false,
@@ -419,6 +417,42 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
     }
 
+    // Writes a fresh token header for the next connection wstunnel opens.
+    private void WriteHeaders()
+    {
+        if (_header is null)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(_headersFile, $"Authorization: {_header()}\n");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "the headers of the websocket carrier could not be written to {File}; a new websocket is refused once the token they hold has aged", _headersFile);
+        }
+    }
+
+    // Keeps the token in the headers file inside the window the server takes it in.
+    private async Task RefreshAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(HeadersRefresh, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            WriteHeaders();
+        }
+    }
+
     private async Task<bool> WaitUntilListeningAsync(TimeSpan timeout, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
@@ -475,6 +509,11 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             }
         }
 
+        if (_refresher is not null)
+        {
+            await _refresher.ConfigureAwait(false);
+        }
+
         var process = _process;
         if (process is not null)
         {
@@ -494,6 +533,18 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
 
         _cts.Dispose();
+        if (_header is not null)
+        {
+            try
+            {
+                File.Delete(_headersFile);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "the headers of the websocket carrier stay in {File}", _headersFile);
+            }
+        }
+
         _logger.LogInformation("the websocket carrier is stopped");
     }
 

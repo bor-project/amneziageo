@@ -385,12 +385,6 @@
   <data name="ConfigEditor_SaveButton" xml:space="preserve">
     <value>Сохранить</value>
   </data>
-  <data name="Main_AccessTokenLabel" xml:space="preserve">
-    <value>ТОКЕН</value>
-  </data>
-  <data name="Main_AccessTokenWatermark" xml:space="preserve">
-    <value>токен доступа</value>
-  </data>
   <data name="Main_ActionsTooltip" xml:space="preserve">
     <value>Действия</value>
   </data>
@@ -508,6 +502,12 @@
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
   </data>
+  <data name="Main_UseRoutingTitle" xml:space="preserve">
+    <value>Маршрутизация</value>
+  </data>
+  <data name="Main_UseRoutingHint" xml:space="preserve">
+    <value>Использовать маршрутизацию, если она доступна</value>
+  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Версия движка Amnezia</value>
   </data>
@@ -516,18 +516,6 @@
   </data>
   <data name="Main_AppSourceFolder" xml:space="preserve">
     <value>Папка…</value>
-  </data>
-  <data name="Main_AuthBasic" xml:space="preserve">
-    <value>Логин и пароль</value>
-  </data>
-  <data name="Main_AuthLabel" xml:space="preserve">
-    <value>АВТОРИЗАЦИЯ</value>
-  </data>
-  <data name="Main_AuthNone" xml:space="preserve">
-    <value>Без авторизации</value>
-  </data>
-  <data name="Main_AuthToken" xml:space="preserve">
-    <value>Токен</value>
   </data>
   <data name="Main_AutoCheckHint" xml:space="preserve">
     <value>Периодически обновлять базы и оповещать об обновлении.</value>
@@ -799,12 +787,6 @@
   <data name="Main_WayAll" xml:space="preserve">
     <value>все</value>
   </data>
-  <data name="Main_LoginLabel" xml:space="preserve">
-    <value>ЛОГИН</value>
-  </data>
-  <data name="Main_LoginWatermark" xml:space="preserve">
-    <value>логин</value>
-  </data>
   <data name="Main_MtuHint" xml:space="preserve">
     <value>Размер пакета</value>
   </data>
@@ -843,12 +825,6 @@
   </data>
   <data name="Main_RoutingNoneHint" xml:space="preserve">
     <value>Используются адреса из исходной конфигурации.</value>
-  </data>
-  <data name="Main_PasswordLabel" xml:space="preserve">
-    <value>ПАРОЛЬ</value>
-  </data>
-  <data name="Main_PasswordWatermark" xml:space="preserve">
-    <value>пароль</value>
   </data>
   <data name="Main_PasteButton" xml:space="preserve">
     <value>Вставить</value>
@@ -972,12 +948,6 @@
   </data>
   <data name="Main_SaveToFileButton" xml:space="preserve">
     <value>Сохранить в файл…</value>
-  </data>
-  <data name="Main_ServerHostLabel" xml:space="preserve">
-    <value>ХОСТ</value>
-  </data>
-  <data name="Main_ServerPortLabel" xml:space="preserve">
-    <value>ПОРТ</value>
   </data>
   <data name="Main_SettingsTooltip" xml:space="preserve">
     <value>Настройки</value>
@@ -1426,30 +1396,6 @@
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU должен быть от 576 до 1500. Если оставить поле пустым, будет 1280.</value>
   </data>
-  <data name="Transport_InvalidHost" xml:space="preserve">
-    <value>Укажите корректный адрес WebSocket (хост, хост:порт или адрес wss).</value>
-  </data>
-  <data name="Transport_InvalidPort" xml:space="preserve">
-    <value>Укажите корректный порт WebSocket (1-65535).</value>
-  </data>
-  <data name="Transport_ProbeRunning" xml:space="preserve">
-    <value>Проверяю сервер WebSocket…</value>
-  </data>
-  <data name="Transport_ProbeNoAddress" xml:space="preserve">
-    <value>Не удаётся найти адрес сервера WebSocket: проверьте имя хоста.</value>
-  </data>
-  <data name="Transport_ProbeNoAnswer" xml:space="preserve">
-    <value>Сервер WebSocket не отвечает: проверьте порт и доступность сервера.</value>
-  </data>
-  <data name="Transport_ProbeTls" xml:space="preserve">
-    <value>Не удалось установить TLS-соединение с сервером WebSocket: на этом порту нет HTTPS или сертификат не подходит.</value>
-  </data>
-  <data name="Transport_ProbeRefused" xml:space="preserve">
-    <value>Сервер WebSocket отклонил подключение: {0}</value>
-  </data>
-  <data name="Transport_ProbeDenied" xml:space="preserve">
-    <value>Сервер WebSocket отказал в доступе: неверный токен или логин и пароль.</value>
-  </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Доступна версия {0}</value>
   </data>
@@ -1633,7 +1579,7 @@
     <value>WebSocket выключен (применится при переподключении)</value>
   </data>
   <data name="Agent_WebSocketEnabled" xml:space="preserve">
-    <value>WebSocket включён, порт {0} (применится при переподключении)</value>
+    <value>WebSocket включён (применится при переподключении)</value>
   </data>
   <data name="Installer_NotDirectRun" xml:space="preserve">
     <value>Это внутренний компонент установщика AmneziaGeo и не запускается напрямую.
@@ -2598,6 +2544,9 @@
   </data>
   <data name="Probe_UploadServiceTitle" xml:space="preserve">
     <value>Сервис для проверки скорости передачи данных</value>
+  </data>
+  <data name="Probe_UploadServiceHintOwn" xml:space="preserve">
+    <value>Адрес для проверки скорости. По умолчанию: сервер {0}.</value>
   </data>
   <data name="Probe_UploadServiceHint" xml:space="preserve">
     <value>Адрес для проверки скорости. По умолчанию: https://speed.cloudflare.com/__up.</value>

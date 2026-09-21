@@ -44,6 +44,11 @@ internal static class RuntimeSnapshotPipe
     public const string OpProbe = "probe";
 
     /// <summary>
+    /// The mark a probe request carries when its send leg uploads to the server of the config.
+    /// </summary>
+    public const string OwnUpload = "own";
+
+    /// <summary>
     /// Announces that a tunnel standing alongside carries names of its own, so who owns what is read again.
     /// </summary>
     public const string OpLent = "lent";
@@ -68,11 +73,12 @@ internal static class RuntimeSnapshotPipe
     }
 
     /// <summary>
-    /// Composes a probe request: the op, the target, the path and the speed service.
+    /// Composes a probe request: the op, the target, the path, the speed service and whether that service is
+    /// the server of the config.
     /// </summary>
-    public static string Probe(string target, string path, string uploadUrl)
+    public static string Probe(string target, string path, string uploadUrl, bool own)
     {
-        return string.Join('\t', OpProbe, target, path, uploadUrl);
+        return string.Join('\t', OpProbe, target, path, uploadUrl, own ? OwnUpload : string.Empty);
     }
 
     /// <summary>

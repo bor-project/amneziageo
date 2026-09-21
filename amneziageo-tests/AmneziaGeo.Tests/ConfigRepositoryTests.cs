@@ -62,7 +62,7 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
     public async Task Rename_CarriesTransportAndDnsToNewName()
     {
         await _store.SaveConfigAsync("old", "conf");
-        await _store.SetConfigTransportAsync(new ConfigTransport("old", true, "ws.example", 8443));
+        await _store.SetConfigTransportAsync(new ConfigTransport("old", true));
         await _store.SetConfigDnsAsync(new ConfigDns("old", "1.1.1.1"));
 
         await _repo.RenameAsync("old", "new");
@@ -70,7 +70,6 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
         var transport = await _store.GetConfigTransportAsync("new");
         Assert.NotNull(transport);
         Assert.True(transport!.UseWebSocket);
-        Assert.Equal(8443, transport.WebSocketPort);
         Assert.Null(await _store.GetConfigTransportAsync("old"));
 
         var dns = await _store.GetConfigDnsAsync("new");

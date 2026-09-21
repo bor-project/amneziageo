@@ -34,10 +34,15 @@ internal sealed record TunnelRouting(
         || TunnelApps.Count > 0;
 
     /// <summary>
-    /// Reads the globally selected list and the mode it runs in.
+    /// Reads the globally selected list and the mode it runs in; none for a config kept off routing.
     /// </summary>
-    public static async Task<TunnelRouting> LoadAsync(IStateStore store, CancellationToken ct)
+    public static async Task<TunnelRouting> LoadAsync(IStateStore store, string? name, CancellationToken ct)
     {
+        if (name is not null && !await ConfigRouting.AllowedAsync(store, name, ct).ConfigureAwait(false))
+        {
+            return None;
+        }
+
         var listId = await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
         if (listId is null)
         {

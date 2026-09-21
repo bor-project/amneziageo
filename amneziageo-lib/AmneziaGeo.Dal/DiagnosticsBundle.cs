@@ -144,12 +144,16 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
         {
             sb.AppendLine($"  {config}:");
             var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+            var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false);
+            var offer = await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false);
             var mtu = transport is { Mtu: > 0 } ? transport.Mtu.ToString(CultureInfo.InvariantCulture) : "default";
             sb.AppendLine($"    mtu:        {mtu}");
+            sb.AppendLine($"    server:     {(offer.Ours ? $"ours {offer.Version}, offers {string.Join(", ", offer.Features.Keys)}" : "not ours or not asked")}");
             if (transport?.UseWebSocket == true)
             {
-                var front = WsEndpoint.For(transport.WebSocketHost, transport.WebSocketPort, await store.GetConfigTextAsync(config, ct).ConfigureAwait(false));
-                sb.AppendLine($"    websocket:  on -> {front.Display()}");
+                sb.AppendLine(WsEndpoint.Of(text, offer) is { } front
+                    ? $"    websocket:  on -> {front.Display()}"
+                    : "    websocket:  on, the server offers no front");
             }
             else
             {
@@ -158,6 +162,8 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
 
             sb.AppendLine($"    ipv6:       {(transport?.UseIpv6 == true ? "on" : "off")}");
             sb.AppendLine($"    router:     {(transport?.UseRouter != false ? "on" : "off")}");
+            var locked = offer.RoutingLocked;
+            sb.AppendLine($"    routing:    {(locked ? "off (server)" : transport?.UseRouting != false ? "on" : "off")}");
             sb.AppendLine($"    inbound:    {(transport?.AllowInbound != true ? "off" : transport.InboundNetwork ? "tunnel network" : "server only")}");
 
             var geo = await store.GetTunnelGeoAsync(config, ct).ConfigureAwait(false);

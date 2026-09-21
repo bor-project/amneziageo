@@ -300,7 +300,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     {
         if (WgConfigEditor.GetAddresses(text).Any(a => a.Contains(':')))
         {
-            await store.SetConfigTransportAsync(new ConfigTransport(name, false, string.Empty, 0, UseIpv6: true), ct);
+            await store.SetConfigTransportAsync(new ConfigTransport(name, false, UseIpv6: true), ct);
         }
     }
 }

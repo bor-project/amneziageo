@@ -53,29 +53,17 @@ internal static class EndpointProbe
 {
     private const int TimeoutMs = 1500;
 
-    // Port the front is asked to hand the tunnel to when the endpoint names none; the upgrade is accepted or
-    // refused before it matters.
-    private const int DefaultTunnelPort = 51820;
-
     // Probes per measurement: enough for a loss reading, few enough to keep a sweep of every server short.
     private const int Probes = 5;
 
     /// <summary>
-    /// Measures one configuration's server.
+    /// Measures one configuration's server: through the websocket front it is carried to, as host and port, else by
+    /// its endpoint.
     /// </summary>
-    public static async Task<ProbeResult> MeasureAsync(
-        string endpoint,
-        bool webSocket,
-        string webSocketHost,
-        int webSocketPort,
-        string front,
-        CancellationToken ct)
+    public static async Task<ProbeResult> MeasureAsync(string endpoint, string front, CancellationToken ct)
     {
-        // The field may hold a bare host, a whole wss:// URL, or nothing at all, in which case the carrier
-        // stands at the front the config names, else at the endpoint's own host on the port beside it.
-        var carrier = WsEndpoint.Of(webSocketHost, webSocketPort, endpoint, front);
-        var overWebSocket = webSocket && carrier.Host.Length > 0;
-        var address = await ResolveAsync(overWebSocket ? carrier.Host : HostOf(endpoint), ct).ConfigureAwait(false);
+        var overWebSocket = front.Length > 0;
+        var address = await ResolveAsync(HostOf(overWebSocket ? front : endpoint), ct).ConfigureAwait(false);
         if (address is null)
         {
             return new ProbeResult(ProbeOutcome.NoAddress, 0, 100);
@@ -86,7 +74,7 @@ internal static class EndpointProbe
         for (var i = 0; i < Probes && !ct.IsCancellationRequested; i++)
         {
             var one = overWebSocket
-                ? await ConnectAsync(address, carrier.Port, ct).ConfigureAwait(false)
+                ? await ConnectAsync(address, PortOf(front), ct).ConfigureAwait(false)
                 : await EchoAsync(address, ct).ConfigureAwait(false);
             if (one.Outcome == ProbeOutcome.Alive)
             {
@@ -100,58 +88,14 @@ internal static class EndpointProbe
             : new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
     }
 
-    /// <summary>
-    /// Checks the websocket front a config would dial: resolves its name, then asks it for the same upgrade the
-    /// carrier asks for. Says whether an address holds before a tunnel is built on it.
-    /// </summary>
-    public static async Task<(WsFrontOutcome Outcome, string Detail)> CheckFrontAsync(
-        string endpoint,
-        string webSocketHost,
-        int webSocketPort,
-        string named,
-        CancellationToken ct)
+    // The port of a "host:port" front.
+    private static int PortOf(string front)
     {
-        var front = WsEndpoint.Of(webSocketHost, webSocketPort, endpoint, named);
-        var address = await ResolveAsync(front.Host, ct).ConfigureAwait(false);
-        if (address is null)
-        {
-            return (WsFrontOutcome.NoAddress, string.Empty);
-        }
-
-        return await WsCarrier.ProbeAsync(front, address, PortOf(endpoint), null, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Says what a front refused in; empty when it took the upgrade.
-    /// </summary>
-    public static string Describe(WsFrontOutcome outcome, string detail) => outcome switch
-    {
-        WsFrontOutcome.Ok => string.Empty,
-        WsFrontOutcome.NoAddress => Loc.Instance.Get("Transport_ProbeNoAddress"),
-        WsFrontOutcome.Tls => Loc.Instance.Get("Transport_ProbeTls"),
-        WsFrontOutcome.Refused => Denied(detail)
-            ? Loc.Instance.Get("Transport_ProbeDenied")
-            : Loc.Instance.Get("Transport_ProbeRefused", detail),
-        _ => Loc.Instance.Get("Transport_ProbeNoAnswer"),
-    };
-
-    // Codes a front answers with when the token or the login and password did not fit.
-    private static bool Denied(string detail)
-    {
-        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length > 1
-            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code)
-            && code is 400 or 401 or 403 or 404;
-    }
-
-    // The port of a "host:port" endpoint; the tunnel's usual port stands in when the endpoint carries none.
-    private static int PortOf(string endpoint)
-    {
-        var value = endpoint.Trim();
+        var value = front.Trim();
         var colon = value.LastIndexOf(':');
-        return colon > 0 && int.TryParse(value[(colon + 1)..], out var port) && port is > 0 and <= 65535
+        return colon > 0 && int.TryParse(value[(colon + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var port) && port is > 0 and <= 65535
             ? port
-            : DefaultTunnelPort;
+            : 0;
     }
 
     // The host of a "host:port" endpoint, brackets around an IPv6 literal included; a bare IPv6 literal is

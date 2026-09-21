@@ -76,7 +76,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         Row(text, "exclusions", Oneline(exclusions));
 
         Section(text, "transport");
-        Row(text, "carrier", Carrier(configText, transport));
+        Row(text, "carrier", Carrier(configText, transport, await ServerOfferStore.ReadAsync(store, config, configText, ct)));
         Row(text, "mtu", MtuPlan.ResolveForLink(transport, configText).ToString(CultureInfo.InvariantCulture)
             + " (" + MtuModes.Text(transport?.MtuMode ?? MtuMode.Auto) + ")");
         Row(text, "ipv6", (transport?.UseIpv6 ?? false) ? "on" : "off");
@@ -361,19 +361,11 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         }
     }
 
-    // Underlay the tunnel rides: plain UDP, or wstunnel with its own target. Path and credentials stay masked.
-    private static string Carrier(string configText, ConfigTransport? transport)
-    {
-        if (transport?.UseWebSocket != true)
-        {
-            return "udp";
-        }
-
-        var ws = WsEndpoint.Of(transport.WebSocketHost, transport.WebSocketPort, WgConfigEditor.GetEndpoint(configText), WsEndpoint.FrontOf(configText));
-        var token = string.IsNullOrEmpty(ws.PathPrefix) ? string.Empty : $", path {Masked}";
-        var auth = string.IsNullOrEmpty(ws.Credentials) ? string.Empty : $", auth {Masked}";
-        return $"websocket {ws.Host}:{ws.Port}{token}{auth}";
-    }
+    // Underlay the tunnel rides: plain UDP, or wstunnel to the front the server offers.
+    private static string Carrier(string configText, ConfigTransport? transport, ServerOffer offer) =>
+        transport?.UseWebSocket == true && WsEndpoint.Of(configText, offer) is { } front
+            ? $"websocket {front.Display()}"
+            : "udp";
 
     // The config text the engine is handed at connect: the stored file with the v6 strip, the resolved AllowedIPs,
     // the effective MTU and the injected keepalive applied. A live device supplies what the connect decides at

@@ -20,6 +20,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private AsyncRelayCommand? _toggleWebSocket;
     private AsyncRelayCommand? _toggleIpv6;
     private AsyncRelayCommand? _toggleRouter;
+    private AsyncRelayCommand? _toggleRouting;
 
     private AsyncRelayCommand? _toggleMtu;
 
@@ -42,15 +43,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CardAddress))]
     [NotifyPropertyChangedFor(nameof(HasAddress))]
     private bool _useWebSocket;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CardAddress))]
-    [NotifyPropertyChangedFor(nameof(HasAddress))]
-    private string _webSocketHost = string.Empty;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CardAddress))]
-    private int _webSocketPort;
 
     [ObservableProperty]
     private string _dns = string.Empty;
@@ -83,6 +75,15 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private bool _useRouter = true;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _useRouting = true;
+
+    // Запрещает ли сервер конфигурации маршрутизацию на устройстве.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _routingLocked;
+
+    [ObservableProperty]
     private bool _allowInbound;
 
     [ObservableProperty]
@@ -91,24 +92,18 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private string _address = string.Empty;
 
+    // Вход WebSocket, который предлагает сервер конфигурации; пустой, когда не предлагает.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CardAddress))]
+    [NotifyPropertyChangedFor(nameof(HasAddress))]
+    [NotifyPropertyChangedFor(nameof(WebSocketOffered))]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private string _webSocketFront = string.Empty;
 
-    // Отбила ли проверка прокси, каким его знает карточка.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Tags))]
-    private bool _proxyBroken;
-
-    // Чем отбила; уходит в подсказку плашки.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Tags))]
-    private string? _proxyFault;
-
-    // Идёт ли проверка.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Tags))]
-    private bool _proxyChecking;
+    /// <summary>
+    /// Предлагает ли сервер конфигурации вход WebSocket.
+    /// </summary>
+    public bool WebSocketOffered => WebSocketFront.Length > 0;
 
     /// <summary>
     /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.
@@ -160,11 +155,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
         Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
 
     /// <summary>
-    /// Адрес, на который встаёт туннель: у прокси - его собственный, у остальных - объявленный конфигурацией.
+    /// Адрес, на который встаёт туннель: вход WebSocket, когда туннель идёт через него, иначе объявленный конфигурацией.
     /// </summary>
-    public string CardAddress => UseWebSocket
-        ? WsEndpoint.Of(WebSocketHost, WebSocketPort, Endpoint, WebSocketFront).Display()
-        : Endpoint;
+    public string CardAddress => UseWebSocket && WebSocketOffered ? WebSocketFront : Endpoint;
 
     /// <summary>
     /// Есть ли что показать под именем.
@@ -180,7 +173,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// Переключает прокси с плашки карточки.
     /// </summary>
     public IAsyncRelayCommand ToggleWebSocketCommand =>
-        _toggleWebSocket ??= new AsyncRelayCommand(ToggleWebSocketAsync);
+        _toggleWebSocket ??= new AsyncRelayCommand(() => ToggleAsync(() => UseWebSocket = !UseWebSocket));
 
     /// <summary>
     /// Переключает IPv6 с плашки карточки.
@@ -195,13 +188,19 @@ internal partial class ConfigItemViewModel : ViewModelBase
         _toggleRouter ??= new AsyncRelayCommand(() => ToggleAsync(() => UseRouter = !UseRouter));
 
     /// <summary>
+    /// Переключает маршрутизацию с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand ToggleRoutingCommand =>
+        _toggleRouting ??= new AsyncRelayCommand(() => ToggleAsync(() => UseRouting = !UseRouting));
+
+    /// <summary>
     /// Переключает MTU с плашки карточки: подбор против зафиксированного размера.
     /// </summary>
     public IAsyncRelayCommand ToggleMtuCommand =>
         _toggleMtu ??= new AsyncRelayCommand(() => ToggleAsync(() => MtuMode = NextMtuMode()));
 
     /// <summary>
-    /// Метки настроек карточки: прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край первым, когда
+    /// Метки настроек карточки: прокси, IPv6, маршрутизация и MTU. Идут в этом порядке, MTU уходит за край первым, когда
     /// ширины не хватает.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
@@ -217,10 +216,11 @@ internal partial class ConfigItemViewModel : ViewModelBase
     // свой размер либо объявленный конфигурацией.
     private List<CardTag> Built()
     {
-        var built = new List<CardTag>(4)
+        var built = new List<CardTag>(5)
         {
-            new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket, ToggleWebSocketCommand, ProxyBroken, ProxyChecking, ProxyFault),
+            new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket && WebSocketOffered, WebSocketOffered ? ToggleWebSocketCommand : null),
             new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
+            new(Loc.Instance.Get("Main_UseRoutingTitle"), UseRouting && !RoutingLocked, RoutingLocked ? null : ToggleRoutingCommand),
         };
 
         if (ConfigTransportViewModel.RouterVisible && OperatingSystem.IsAndroid())
@@ -234,48 +234,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
             Mtu > 0 || ConfigMtu > 0 ? ToggleMtuCommand : null));
         return built;
     }
-
-    // Прокси встаёт только на фронт, который отвечает: отказ оставляет настройку как была и красит плашку.
-    private async Task ToggleWebSocketAsync()
-    {
-        if (UseWebSocket)
-        {
-            await ToggleAsync(() => UseWebSocket = false);
-            return;
-        }
-
-        ProxyChecking = true;
-        try
-        {
-            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(Endpoint, WebSocketHost, WebSocketPort, WebSocketFront, CancellationToken.None);
-            ProxyBroken = outcome != WsFrontOutcome.Ok;
-            ProxyFault = ProxyBroken ? EndpointProbe.Describe(outcome, detail) : null;
-        }
-        finally
-        {
-            ProxyChecking = false;
-        }
-
-        if (!ProxyBroken)
-        {
-            await ToggleAsync(() => UseWebSocket = true);
-        }
-    }
-
-    // Настройки поменялись - прежний отказ больше ни о чём не говорит.
-    private void ClearProxyFault()
-    {
-        ProxyBroken = false;
-        ProxyFault = null;
-    }
-
-    partial void OnEndpointChanged(string value) => ClearProxyFault();
-
-    partial void OnUseWebSocketChanged(bool value) => ClearProxyFault();
-
-    partial void OnWebSocketHostChanged(string value) => ClearProxyFault();
-
-    partial void OnWebSocketPortChanged(int value) => ClearProxyFault();
 
     // Переворачивает режим и отправляет строку; отказ агента возвращает плашку на место.
     private async Task ToggleAsync(Action flip)

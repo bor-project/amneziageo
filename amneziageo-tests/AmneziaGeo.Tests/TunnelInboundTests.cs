@@ -20,7 +20,7 @@ public sealed class TunnelInboundTests
         """;
 
     private static ConfigTransport Transport(bool allow = false, bool network = false) =>
-        new("lab", false, string.Empty, 443, AllowInbound: allow, InboundNetwork: network);
+        new("lab", false, AllowInbound: allow, InboundNetwork: network);
 
     [Fact]
     public void HostAddress_YieldsTheServerAlone()

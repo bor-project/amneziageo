@@ -12,8 +12,6 @@ public sealed record ConfigEntry(
     string Status,
     IReadOnlyList<string> Rules,
     bool WebSocket = false,
-    string WebSocketHost = "",
-    int WebSocketPort = 0,
     string Dns = "",
     string Exclusions = "",
     int Mtu = 0,
@@ -49,8 +47,11 @@ public sealed record ConfigEntry(
     bool InboundNetwork = false,
     // Interface addresses the config declares, joined by commas.
     string Address = "",
-    // Websocket front the config text names; empty when it names none.
-    string WebSocketFront = "");
+    // Websocket front the server of the config offers, as host and port; empty when it offers none.
+    string WebSocketFront = "",
+    // Whether the config takes the routing list, and whether its server bans routing on the device.
+    bool UseRouting = true,
+    bool RoutingLocked = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

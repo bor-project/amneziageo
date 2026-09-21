@@ -8,66 +8,44 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// The WebSocket (UDP-over-TCP / wstunnel) transport settings for a config: a toggle, the server address, the TLS port, an authorization mode (none / basic login+password / path token) with its inputs, and a server-setup hint. The mode + inputs are folded into one stored address string on save and parsed back on load. Saving sends set-websocket.
+/// The transport settings of a config: the WebSocket switch, open while the server of the config offers a front, the MTU with its mode, IPv6, the router, inbound access and routing. Saving sends set-websocket.
 /// </summary>
 internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditScope
 {
-    // Wait before an edited address is tried, so typing does not dial on every keystroke.
-    private const int ProbeDelayMs = 2000;
-
     private readonly IAgentConnection _connection;
-    private string _endpoint;
-    private string _front;
-    private CancellationTokenSource? _probeCts;
 
     // Baseline captured on load / commit / import; the transport is dirty when a field differs from it (#143).
     private bool _baseUseWebSocket;
-    private string _baseWebSocketHost = string.Empty;
-    private string _baseWebSocketPort = string.Empty;
-    private int _baseAuthMode;
-    private string _baseWebSocketUser = string.Empty;
-    private string _baseWebSocketPassword = string.Empty;
-    private string _baseWebSocketToken = string.Empty;
     private string _baseMtu = string.Empty;
     private int _baseMtuMode;
     private bool _baseUseIpv6;
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
+    private bool _baseUseRouting;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
+    [NotifyPropertyChangedFor(nameof(WebSocketOn))]
     private bool _useWebSocket;
 
-    [ObservableProperty]
-    private string _webSocketHost = string.Empty;
-
-    [ObservableProperty]
-    private string _webSocketPort = string.Empty;
+    /// <summary>
+    /// Whether the server of the configuration offers a websocket front.
+    /// </summary>
+    public bool WebSocketOpen { get; }
 
     /// <summary>
-    /// The host the websocket front is dialled at while the field is empty.
+    /// Whether the tunnel is carried inside a websocket; off wherever the server offers no front.
     /// </summary>
-    public string WebSocketHostDefault => DefaultHost;
-
-    /// <summary>
-    /// The port the websocket front is dialled at while the field is empty.
-    /// </summary>
-    public string WebSocketPortDefault => Default.Port.ToString(CultureInfo.InvariantCulture);
-
-    // Authorization mode: 0 = none, 1 = basic, 2 = path token.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsBasicAuth))]
-    [NotifyPropertyChangedFor(nameof(IsTokenAuth))]
-    private int _authMode;
-
-    [ObservableProperty]
-    private string _webSocketUser = string.Empty;
-
-    [ObservableProperty]
-    private string _webSocketPassword = string.Empty;
-
-    [ObservableProperty]
-    private string _webSocketToken = string.Empty;
+    public bool WebSocketOn
+    {
+        get => UseWebSocket && WebSocketOpen;
+        set
+        {
+            if (WebSocketOpen)
+            {
+                UseWebSocket = value;
+            }
+        }
+    }
 
     [ObservableProperty]
     private string _mtu = string.Empty;
@@ -85,6 +63,30 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     [ObservableProperty]
     private bool _allowInbound;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RoutingOn))]
+    private bool _useRouting = true;
+
+    /// <summary>
+    /// Whether the server of the configuration leaves routing to this device.
+    /// </summary>
+    public bool RoutingOpen { get; }
+
+    /// <summary>
+    /// Whether the configuration takes the routing list; off wherever its server bans routing.
+    /// </summary>
+    public bool RoutingOn
+    {
+        get => UseRouting && RoutingOpen;
+        set
+        {
+            if (RoutingOpen)
+            {
+                UseRouting = value;
+            }
+        }
+    }
 
     // The reach of the access the agent holds: the whole tunnel network or the server alone.
     private bool _inboundNetwork;
@@ -122,46 +124,27 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _isCompact;
 
-    // What the front answered the last time the edited address was tried.
-    [ObservableProperty]
-    private string _probeMessage = string.Empty;
-
-    [ObservableProperty]
-    private bool _probeFailed;
-
-    [ObservableProperty]
-    private bool _isProbing;
-
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", string front = "")
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOffered = false, bool useRouting = true, bool routingLocked = false)
     {
         _connection = connection;
         ConfigName = name;
-        _endpoint = endpoint;
         _useWebSocket = useWebSocket;
+        WebSocketOpen = webSocketOffered;
         _useIpv6 = useIpv6;
         _useRouter = useRouter;
         _allowInbound = allowInbound;
         _inboundNetwork = inboundNetwork;
-        _front = front;
+        _useRouting = useRouting;
+        RoutingOpen = !routingLocked;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
         // Only the custom mode shows a size of its own; the other two show what the agent settled on.
         var shown = mtuMode == AmneziaGeo.Decl.MtuMode.Custom ? mtu : resolvedMtu > 0 ? resolvedMtu : mtu;
         _mtu = shown > 0 ? shown.ToString(CultureInfo.InvariantCulture) : "1420";
-
-        // Parse the stored address; an empty host stands for the default front.
-        var (host, port, user, password, token, mode) = ParseStored(webSocketHost);
-        _webSocketHost = host;
-        _authMode = mode;
-        _webSocketUser = user;
-        _webSocketPassword = password;
-        _webSocketToken = token;
-        var shownPort = port > 0 ? port : webSocketPort;
-        _webSocketPort = shownPort > 0 ? shownPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
 
         // Seeded (backing fields set, no OnChanged fired): this state is the clean baseline (#143).
         CaptureBaseline();
@@ -182,48 +165,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     partial void OnUseWebSocketChanged(bool value)
     {
         MarkDirty();
-        ScheduleProbe();
         FireAutoSave();
     }
-
-    partial void OnWebSocketHostChanged(string value)
-    {
-        MarkDirty();
-        ScheduleProbe();
-    }
-
-    partial void OnWebSocketPortChanged(string value)
-    {
-        MarkDirty();
-        ScheduleProbe();
-    }
-
-    partial void OnAuthModeChanged(int value)
-    {
-        MarkDirty();
-        ScheduleProbe();
-        FireAutoSave();
-    }
-
-    partial void OnWebSocketUserChanged(string value)
-    {
-        MarkDirty();
-        ScheduleProbe();
-    }
-
-    partial void OnWebSocketPasswordChanged(string value)
-    {
-        MarkDirty();
-        ScheduleProbe();
-    }
-
-    partial void OnWebSocketTokenChanged(string value)
-    {
-        MarkDirty();
-        ScheduleProbe();
-    }
-
-    partial void OnProbeFailedChanged(bool value) => ProbeChanged?.Invoke(this, EventArgs.Empty);
 
     partial void OnMtuChanged(string value) => MarkDirty();
 
@@ -256,6 +199,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnUseRoutingChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -273,17 +222,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         StatusMessage = string.Empty;
 
         var dirty = UseWebSocket != _baseUseWebSocket
-            || !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
-            || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
-            || AuthMode != _baseAuthMode
-            || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
-            || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
-            || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal)
             || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal)
             || MtuMode != _baseMtuMode
             || UseIpv6 != _baseUseIpv6
             || UseRouter != _baseUseRouter
-            || AllowInbound != _baseAllowInbound;
+            || AllowInbound != _baseAllowInbound
+            || UseRouting != _baseUseRouting;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -295,17 +239,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     public void CaptureBaseline()
     {
         _baseUseWebSocket = UseWebSocket;
-        _baseWebSocketHost = WebSocketHost ?? string.Empty;
-        _baseWebSocketPort = WebSocketPort ?? string.Empty;
-        _baseAuthMode = AuthMode;
-        _baseWebSocketUser = WebSocketUser ?? string.Empty;
-        _baseWebSocketPassword = WebSocketPassword ?? string.Empty;
-        _baseWebSocketToken = WebSocketToken ?? string.Empty;
         _baseMtu = Mtu ?? string.Empty;
         _baseMtuMode = MtuMode;
         _baseUseIpv6 = UseIpv6;
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
+        _baseUseRouting = UseRouting;
         if (IsDirty)
         {
             IsDirty = false;
@@ -320,17 +259,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         try
         {
             UseWebSocket = _baseUseWebSocket;
-            WebSocketHost = _baseWebSocketHost;
-            WebSocketPort = _baseWebSocketPort;
-            AuthMode = _baseAuthMode;
-            WebSocketUser = _baseWebSocketUser;
-            WebSocketPassword = _baseWebSocketPassword;
-            WebSocketToken = _baseWebSocketToken;
             Mtu = _baseMtu;
             MtuMode = _baseMtuMode;
             UseIpv6 = _baseUseIpv6;
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
+            UseRouting = _baseUseRouting;
             StatusMessage = string.Empty;
         }
         finally
@@ -354,18 +288,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     public void Retarget(string name) => ConfigName = name;
 
     /// <summary>
-    /// Наводит черновые настройки на эндпоинт и фронт из распознанного текста конфигурации. Используется формой
-    /// добавления, где конфигурации ещё нет.
-    /// </summary>
-    public void SeedEndpoint(string endpoint, string front = "")
-    {
-        _endpoint = endpoint;
-        _front = front;
-        OnPropertyChanged(nameof(WebSocketHostDefault));
-        OnPropertyChanged(nameof(WebSocketPortDefault));
-    }
-
-    /// <summary>
     /// Whether this platform carries the tunnel over a WebSocket proxy.
     /// </summary>
     public bool SupportsWebSocket => UiPlatform.SupportsWebSocket;
@@ -375,30 +297,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// </summary>
     public bool WebSocketUnavailable => !UiPlatform.SupportsWebSocket;
 
-    /// <summary>
-    /// Whether the WebSocket address fields are shown.
-    /// </summary>
-    public bool ShowWebSocketFields => UseWebSocket && UiPlatform.SupportsWebSocket;
-
-    /// <summary>
-    /// True when the login+password auth mode is selected (mode 1).
-    /// </summary>
-    public bool IsBasicAuth => AuthMode == 1;
-
-    /// <summary>
-    /// True when the path-token auth mode is selected (mode 2).
-    /// </summary>
-    public bool IsTokenAuth => AuthMode == 2;
-
     /// <inheritdoc />
     public bool CanCommit()
     {
-        if (UseWebSocket && ConfigTransport.PortOf(WebSocketPort) < 0)
-        {
-            StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
-            return false;
-        }
-
         // MTU: empty = default; validate 576-1500. The other modes pick the size themselves, so the field is theirs.
         var mtuVal = Mtu.Trim();
         if (!IsMtuReadOnly && mtuVal.Length > 0
@@ -413,8 +314,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     /// <summary>
     /// Persists the transport settings through the agent (#143 header Save); returns whether it succeeded. An
-    /// invalid port / MTU fails without a write and surfaces its reason, keeping the item dirty. Applies on
-    /// reconnect.
+    /// invalid MTU fails without a write and surfaces its reason, keeping the item dirty. Applies on reconnect.
     /// </summary>
     public async Task<bool> CommitAsync()
     {
@@ -426,16 +326,11 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         IsBusy = true;
         try
         {
-            var wsPort = Math.Max(ConfigTransport.PortOf(WebSocketPort), 0);
-
             // A size travels only with the mode that takes one; the others keep whatever was stored.
             var mtuVal = IsMtuReadOnly ? string.Empty : Mtu.Trim();
-
-            // Fold the host + auth mode / inputs into the stored address string.
-            var host = Stored(wsPort);
             var network = WholeNetwork();
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", network ? "on" : "off"]));
+                [ConfigName, UseWebSocket ? "on" : "off", mtuVal, UseIpv6 ? "on" : "off", MtuModes.Text(MtuModes.From(MtuMode)), UseRouter ? "on" : "off", AllowInbound ? "on" : "off", network ? "on" : "off", UseRouting ? "on" : "off"]));
             if (ack.Ok)
             {
                 _inboundNetwork = network;
@@ -503,166 +398,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         }
     }
 
-    /// <summary>
-    /// Raised when the front check changed its verdict.
-    /// </summary>
-    public event EventHandler? ProbeChanged;
-
-    /// <summary>
-    /// Drops a pending front check; the editor is being closed. The check itself releases its source once it
-    /// has stopped using the token.
-    /// </summary>
-    public void CancelProbe()
-    {
-        _probeCts?.Cancel();
-        _probeCts = null;
-    }
-
-    // Every edit restarts the wait, so typing dials nothing; the front is asked once the address stands still.
-    private void ScheduleProbe()
-    {
-        CancelProbe();
-        IsProbing = false;
-        ProbeMessage = string.Empty;
-        ProbeFailed = false;
-        if (_applying || !UseWebSocket || !UiPlatform.SupportsWebSocket)
-        {
-            return;
-        }
-
-        var cts = new CancellationTokenSource();
-        _probeCts = cts;
-        _ = ProbeAsync(cts);
-    }
-
-    // Asks the front for the upgrade the carrier would ask for. A refusal does not hold the save back: it says
-    // what will not work, and the setting is kept as typed.
-    private async Task ProbeAsync(CancellationTokenSource cts)
-    {
-        try
-        {
-            await Task.Delay(ProbeDelayMs, cts.Token);
-            var port = ConfigTransport.PortOf(WebSocketPort);
-            if (port < 0)
-            {
-                return;
-            }
-
-            IsProbing = true;
-            ProbeMessage = Loc.Instance.Get("Transport_ProbeRunning");
-            var (outcome, detail) = await EndpointProbe.CheckFrontAsync(_endpoint, Stored(port), port, _front, cts.Token);
-            if (cts.IsCancellationRequested)
-            {
-                return;
-            }
-
-            IsProbing = false;
-            ProbeMessage = EndpointProbe.Describe(outcome, detail);
-            ProbeFailed = outcome != WsFrontOutcome.Ok;
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            if (ReferenceEquals(_probeCts, cts))
-            {
-                _probeCts = null;
-            }
-
-            cts.Dispose();
-        }
-    }
-
-    // The front's answer as the editor states it.
-    /// <summary>
-    /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth, a wss://user:pass@host:port URL for login+password (user/pass percent-escaped), or a wss://host:port/token URL for a token. The port is baked into any URL form so it is not lost to the wss default (443).
-    /// </summary>
-    private string ComposeAddress(int port)
-    {
-        var host = ExtractHost(WebSocketHost);
-        if (host.Length == 0)
-        {
-            host = DefaultHost;
-        }
-
-        if (AuthMode == 1)
-        {
-            var user = WebSocketUser.Trim();
-            if (user.Length > 0)
-            {
-                var userInfo = Uri.EscapeDataString(user);
-                if (WebSocketPassword.Length > 0)
-                {
-                    userInfo += ":" + Uri.EscapeDataString(WebSocketPassword);
-                }
-
-                return $"wss://{userInfo}@{host}:{port}";
-            }
-        }
-        else if (AuthMode == 2)
-        {
-            var token = WebSocketToken.Trim().Trim('/');
-            if (token.Length > 0)
-            {
-                return $"wss://{host}:{port}/{token}";
-            }
-        }
-
-        return host;
-    }
-
-    /// <summary>
-    /// Splits a stored address into (host, port, user, password, token, mode). Accepts an empty value, a
-    /// bare host, or a ws(s):// URL carrying optional basic-auth user info and/or a path token.
-    /// </summary>
-    private static (string Host, int Port, string User, string Password, string Token, int Mode) ParseStored(string? stored)
-    {
-        var value = stored?.Trim() ?? string.Empty;
-        if (value.Length == 0)
-        {
-            return (string.Empty, 0, string.Empty, string.Empty, string.Empty, 0);
-        }
-
-        if (value.Contains("://", StringComparison.Ordinal)
-            && Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            && !string.IsNullOrEmpty(uri.Host))
-        {
-            var token = uri.AbsolutePath.Trim('/');
-            var userInfo = uri.UserInfo ?? string.Empty;
-            if (userInfo.Length > 0)
-            {
-                var colon = userInfo.IndexOf(':');
-                var user = colon >= 0 ? userInfo[..colon] : userInfo;
-                var pass = colon >= 0 ? userInfo[(colon + 1)..] : string.Empty;
-                return (uri.Host, uri.Port, Uri.UnescapeDataString(user), Uri.UnescapeDataString(pass), token, 1);
-            }
-
-            if (token.Length > 0)
-            {
-                return (uri.Host, uri.Port, string.Empty, string.Empty, token, 2);
-            }
-
-            return (uri.Host, uri.Port, string.Empty, string.Empty, string.Empty, 0);
-        }
-
-        return (value, 0, string.Empty, string.Empty, string.Empty, 0);
-    }
-
-    // Reduce a pasted ws(s):// URL to its host; a bare host passes through.
-    private static string ExtractHost(string field)
-    {
-        var value = field?.Trim() ?? string.Empty;
-        if (value.Contains("://", StringComparison.Ordinal)
-            && Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            && !string.IsNullOrEmpty(uri.Host))
-        {
-            return uri.Host;
-        }
-
-        return value;
-    }
-
     // Drops a single-host prefix, which says nothing next to the address itself.
     private static string FormatAddresses(string addresses)
     {
@@ -671,21 +406,5 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
                 ? part[..part.LastIndexOf('/')]
                 : part);
         return string.Join(", ", parts);
-    }
-
-    // The front that stands while the fields are empty: the one the config names, else the Endpoint.
-    private WsEndpoint Default => WsEndpoint.Default(_endpoint, _front);
-
-    // The host of that front as an address takes it.
-    private string DefaultHost => Default.Host.Contains(':', StringComparison.Ordinal) && !Default.Host.StartsWith('[')
-        ? $"[{Default.Host}]"
-        : Default.Host;
-
-    // The address as it is stored: empty while it names the default host with no account and no path.
-    private string Stored(int port)
-    {
-        var composed = ComposeAddress(port > 0 ? port : Default.Port);
-
-        return string.Equals(composed, DefaultHost, StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
     }
 }

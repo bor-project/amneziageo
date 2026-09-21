@@ -43,8 +43,9 @@ public static class IpcContract
     /// <summary>
     /// Command to set a config's WebSocket transport, tunnel MTU override, and IPv6 opt-in. Args: name, on/off,
     /// optional mtu, optional ipv6 (on/off; absent keeps the stored value), optional mtu mode, router, inbound,
-    /// inbound network and routing. The front is the one the server of the config offers. Applies on the next
-    /// connect.
+    /// inbound network, routing, and the port and the host of the websocket front of the settings (absent keeps the
+    /// stored ones). The front the server offers, else the one the config names, stands before the settings.
+    /// Applies on the next connect.
     /// </summary>
     public const string OpSetWebSocket = "set-websocket";
 

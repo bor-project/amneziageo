@@ -98,23 +98,27 @@ public sealed class ConfigCommandsTests : IDisposable
     }
 
     [Fact]
-    public async Task ConfigWebsocket_TakesNoAddressOfItsOwn()
+    public async Task ConfigWebsocket_SendsTheFrontOfTheSettings()
     {
         var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
 
-        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--port", "8443"]));
-        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "front.example"]));
-        Assert.Empty(link.Sent);
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "front.example", "--port", "8443"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--port", "70000"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "https://front.example"]));
+
+        Assert.Equal([IpcContract.OpSetWebSocket], link.Sent);
+        Assert.Equal(["8443", "front.example"], link.Args[0].Skip(9));
     }
 
     [Fact]
     public async Task ConfigWebsocket_SendsTheSwitchWithTheStoredTransport()
     {
-        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [], UseIpv6: true, Mtu: 1300)]);
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [], UseIpv6: true, Mtu: 1300, WebSocketHost: "wss://own.example:9443/t", WebSocketPort: 9443)]);
 
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["websocket", "office", "on"]));
         Assert.Equal([IpcContract.OpSetWebSocket], link.Sent);
         Assert.Equal(["office", "on", "1300", "on"], link.Args[0].Take(4));
+        Assert.Equal(["9443", "wss://own.example:9443/t"], link.Args[0].Skip(9));
     }
 
     [Fact]

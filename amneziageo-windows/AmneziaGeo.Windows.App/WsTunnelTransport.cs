@@ -35,6 +35,8 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private static readonly TimeSpan HeadersRefresh = TimeSpan.FromSeconds(30);
 
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
+    private readonly string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
+    private readonly string _credentials; // optional basic-auth "user[:pass]"
     private readonly Func<string>? _header; // the token header the front of a server of ours asks for
     private readonly string _headersFile; // the file wstunnel reads the headers from on every connection
     private readonly Action<string>? _onRejected;
@@ -46,11 +48,13 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private int _rejectionReported;
     private int _redials;
 
-    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, Func<string>? header, string headersFile, int localPort, Action<string>? onRejected, ILogger logger)
+    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, int localPort, Action<string>? onRejected, ILogger logger)
     {
         _serverHost = serverHost;
         _wsPort = wsPort;
         _targetPort = targetPort;
+        _pathPrefix = pathPrefix;
+        _credentials = credentials;
         _header = header;
         _headersFile = headersFile;
         LocalPort = localPort;
@@ -232,7 +236,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     /// Starts a wstunnel client and waits until its local UDP listener is bound; null on missing binary or timeout.
     /// The callback fires once when the carrier reports a permanent rejection (TLS certificate).
     /// </summary>
-    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, Func<string>? header, string headersFile, Action<string>? onRejected, ILogger logger, CancellationToken ct)
+    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, Action<string>? onRejected, ILogger logger, CancellationToken ct)
     {
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
@@ -241,7 +245,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, header, headersFile, FreeUdpPort(), onRejected, logger);
+        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, FreeUdpPort(), onRejected, logger);
         transport.WriteHeaders();
         transport.Spawn();
         transport._supervisor = Task.Run(() => transport.SuperviseAsync(transport._cts.Token));
@@ -261,10 +265,21 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     {
         // -L udp://<localPort>:127.0.0.1:<targetPort> forwards to the AmneziaWG interface on the server;
         // timeout_sec=0 keeps the UDP association alive. The token in the headers file proves the keys of the
-        // configuration, so the certificate is taken as it stands; without a token it is verified.
+        // configuration, so the certificate is taken as it stands; without a token it is verified. Optional -P path
+        // token and basic-auth credentials.
         var auth = _header is null
             ? " --tls-verify-certificate"
             : $" --http-headers-file \"{_headersFile}\"";
+        if (_pathPrefix.Length > 0)
+        {
+            auth += $" -P \"{_pathPrefix}\"";
+        }
+
+        if (_credentials.Length > 0)
+        {
+            auth += $" --http-upgrade-credentials \"{_credentials}\"";
+        }
+
         var args = $"client{auth} -L \"udp://{LocalPort}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
         var info = new ProcessStartInfo(TunnelPaths.WsTunnelExe(), args)
         {

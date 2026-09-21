@@ -53,8 +53,8 @@ public sealed class WsCarrier : IDisposable
     // the one the config named before the carrier took its place.
     private const string TargetHost = "127.0.0.1";
 
-    // Path the front serves the upgrade on.
-    private const string Prefix = "v1";
+    // Path the front serves the upgrade on, under the prefix a config may set as a shared secret.
+    private const string DefaultPrefix = "v1";
     private const string UpgradePath = "events";
     private const string ProtocolToken = "v1";
     private const string BearerPrefix = "authorization.bearer.";
@@ -160,12 +160,13 @@ public sealed class WsCarrier : IDisposable
 
     /// <summary>
     /// The upgrade request the front expects: what to open travels as a token in the protocol header, and the
-    /// keys of the config are proven in the authorization header.
+    /// keys of the config are proven in the authorization header, else the account of the front.
     /// </summary>
     internal static string Handshake(WsEndpoint front, int targetPort, string key, string? authorization)
     {
+        var prefix = front.PathPrefix.Length > 0 ? front.PathPrefix : DefaultPrefix;
         var request = new StringBuilder();
-        request.Append($"GET /{Prefix}/{UpgradePath} HTTP/1.1\r\n");
+        request.Append($"GET /{prefix}/{UpgradePath} HTTP/1.1\r\n");
         request.Append($"Host: {front.Host}:{front.Port}\r\n");
         request.Append("Upgrade: websocket\r\n");
         request.Append("Connection: Upgrade\r\n");
@@ -175,6 +176,10 @@ public sealed class WsCarrier : IDisposable
         if (authorization is not null)
         {
             request.Append($"Authorization: {authorization}\r\n");
+        }
+        else if (front.Credentials.Length > 0)
+        {
+            request.Append($"Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes(front.Credentials))}\r\n");
         }
 
         request.Append("\r\n");

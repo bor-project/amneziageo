@@ -39,7 +39,11 @@ Calls and games usually learn their server addresses without DNS, so a domain ru
 
 AmneziaWG runs over UDP, and on some networks - corporate and guest Wi-Fi, some mobile carriers - it does not get through. The whole tunnel can then run over a WebSocket on TCP: from the outside it looks like ordinary HTTPS traffic.
 
-The front is offered by an AmneziaGeo server: the host of the Endpoint of the configuration at the port of its services. By default that is the port of the Endpoint, or the one in the line `# AmneziaGeo Services = <port>` when the server moved its services. The WebSocket switch is open while the server offers a front, and turning it on stays with you. The front is dialled under TLS, and the server knows the configuration by a token counted from its keys, so the certificate is not checked. From the console: `amneziageo config websocket <name> on|off`.
+An AmneziaGeo server that answered offers its front itself: the host of the Endpoint of the configuration at the port of its services. By default that is the port of the Endpoint, or the one in the line `# AmneziaGeo Services = <port>` when the server moved its services. The front is dialled under TLS, and the server knows the configuration by a token counted from its keys, so the certificate is not checked. A server of ours that offers no front keeps the WebSocket switch closed.
+
+An older AmneziaGeo server names its front in the configuration it hands out, in the line `# AmneziaGeo WebSocket = wss://<host>:<port>/<path>`, and that front is taken as it stands.
+
+For any other server the front is set in the settings: an address and a port, and a login and password or a token if the server requires authentication. An empty address and port take the host and the port of the Endpoint; an address or a port that does not hold counts as empty. Such a front is dialled under TLS with its certificate checked. Turning WebSocket on stays with you. From the console: `amneziageo config websocket <name> on|off [--host <address>] [--port <port>]`.
 
 ## What the server offers
 
@@ -103,7 +107,7 @@ An AmneziaGeo server measures the speed itself. Where it offers that, the probe 
 1. Create a list and name it `discord`.
 2. In the application rules, pick the running Discord and add it.
 3. Turn on all UDP into the tunnel: the voice servers of Discord arrive without DNS.
-4. Since the network blocks UDP, enable WebSocket in the transport settings: the switch is open when your AmneziaGeo server offers a front.
+4. Since the network blocks UDP, enable WebSocket in the transport settings: an AmneziaGeo server offers its front itself, for another server set its address, port and authentication if the server requires it.
 5. Select the `discord` list and connect.
 
 Discord text and voice go through the tunnel, everything else goes direct.

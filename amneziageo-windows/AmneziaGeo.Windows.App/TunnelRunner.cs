@@ -142,10 +142,11 @@ internal sealed class TunnelRunner(
         _duties = duties;
 
         // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it. The front is
-        // the one the server offered when the agent asked it before this connect.
+        // the one the server offered when the agent asked it before this connect, else the one the config names,
+        // else the one of the settings.
         var transport = await store.GetConfigTransportAsync(name);
         var offer = await ServerOfferStore.ReadAsync(store, name, config, CancellationToken.None).ConfigureAwait(false);
-        var front = transport?.UseWebSocket == true ? WsEndpoint.Of(config, offer) : null;
+        var front = transport?.UseWebSocket == true ? WsEndpoint.Of(config, offer, transport) : null;
         var useWebSocket = front is not null;
         if (transport?.UseWebSocket == true && front is null)
         {
@@ -156,6 +157,9 @@ internal sealed class TunnelRunner(
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;
+        var wsPathPrefix = string.Empty;
+        var wsCredentials = string.Empty;
+        var wsOffered = false;
         IPAddress? wsServerIp = null;
         if (useWebSocket)
         {
@@ -171,14 +175,18 @@ internal sealed class TunnelRunner(
                 wsTargetPort = endpointPort;
                 wsHost = front!.Value.Host;
                 wsPort = front.Value.Port;
+                wsPathPrefix = front.Value.PathPrefix;
+                wsCredentials = front.Value.Credentials;
+                wsOffered = front.Value.Offered;
                 wsServerIp = ResolveHostV4(wsHost);
             }
         }
 
         if (useWebSocket)
         {
-            logger.LogDebug("{Name}: the tunnel will be carried inside a websocket to {Host}:{Port} and handed to port {Target} on the server",
-                name, wsHost, wsPort, wsTargetPort);
+            // Log only that a path token is set, never its value - path/credentials are secrets.
+            logger.LogDebug("{Name}: the tunnel will be carried inside a websocket to {Host}:{Port} (path token set: {HasPath}) and handed to port {Target} on the server",
+                name, wsHost, wsPort, wsPathPrefix.Length > 0, wsTargetPort);
         }
 
         WsTunnelTransport? wsTransport = null;
@@ -881,7 +889,8 @@ internal sealed class TunnelRunner(
         // Start wstunnel last so a failure can't orphan it.
         if (useWebSocket)
         {
-            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, ServiceToken.HeaderOf(config), TunnelPaths.WsHeadersFile(name),
+            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials,
+                wsOffered ? ServiceToken.HeaderOf(config) : null, TunnelPaths.WsHeadersFile(name),
                 line => RecordRejection(name, line), loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
             if (wsTransport is null)
             {

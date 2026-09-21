@@ -92,7 +92,8 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private string _address = string.Empty;
 
-    // Вход WebSocket, который предлагает сервер конфигурации; пустой, когда не предлагает.
+    // Вход WebSocket, куда идёт туннель: предложенный сервером, названный конфигурацией или из настроек; пустой,
+    // когда наш сервер его не предлагает.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CardAddress))]
     [NotifyPropertyChangedFor(nameof(HasAddress))]
@@ -101,9 +102,20 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private string _webSocketFront = string.Empty;
 
     /// <summary>
-    /// Предлагает ли сервер конфигурации вход WebSocket.
+    /// Есть ли у туннеля вход WebSocket.
     /// </summary>
     public bool WebSocketOffered => WebSocketFront.Length > 0;
+
+    // Вход WebSocket из настроек: адрес (хост или ws(s)://) и порт.
+    [ObservableProperty]
+    private string _webSocketHost = string.Empty;
+
+    [ObservableProperty]
+    private int _webSocketPort;
+
+    // Берёт ли туннель вход из настроек: ни сервер, ни конфигурация его не называют.
+    [ObservableProperty]
+    private bool _webSocketManual;
 
     /// <summary>
     /// Подписка, которой конфигурация пришла; пустая строка у пришедшей откуда угодно ещё.

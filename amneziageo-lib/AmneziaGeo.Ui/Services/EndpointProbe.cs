@@ -53,6 +53,10 @@ internal static class EndpointProbe
 {
     private const int TimeoutMs = 1500;
 
+    // Port the front is asked to hand the tunnel to when the endpoint names none; the upgrade is accepted or
+    // refused before it matters.
+    private const int DefaultTunnelPort = 51820;
+
     // Probes per measurement: enough for a loss reading, few enough to keep a sweep of every server short.
     private const int Probes = 5;
 
@@ -86,6 +90,56 @@ internal static class EndpointProbe
         return answered > 0
             ? new ProbeResult(ProbeOutcome.Alive, (int)(elapsed / answered), (Probes - answered) * 100 / Probes)
             : new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
+    }
+
+    /// <summary>
+    /// Checks the websocket front of the settings a config would dial: resolves its name, then asks it for the same
+    /// upgrade the carrier asks for. Says whether an address holds before a tunnel is built on it.
+    /// </summary>
+    public static async Task<(WsFrontOutcome Outcome, string Detail)> CheckFrontAsync(
+        string endpoint,
+        string webSocketHost,
+        int webSocketPort,
+        CancellationToken ct)
+    {
+        var front = WsEndpoint.Of(webSocketHost, webSocketPort, endpoint, string.Empty);
+        var address = await ResolveAsync(front.Host.Trim('[', ']'), ct).ConfigureAwait(false);
+        if (address is null)
+        {
+            return (WsFrontOutcome.NoAddress, string.Empty);
+        }
+
+        return await WsCarrier.ProbeAsync(front, address, TunnelPortOf(endpoint), null, null, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Says what a front refused in; empty when it took the upgrade.
+    /// </summary>
+    public static string Describe(WsFrontOutcome outcome, string detail) => outcome switch
+    {
+        WsFrontOutcome.Ok => string.Empty,
+        WsFrontOutcome.NoAddress => Loc.Instance.Get("Transport_ProbeNoAddress"),
+        WsFrontOutcome.Tls => Loc.Instance.Get("Transport_ProbeTls"),
+        WsFrontOutcome.Refused => Denied(detail)
+            ? Loc.Instance.Get("Transport_ProbeDenied")
+            : Loc.Instance.Get("Transport_ProbeRefused", detail),
+        _ => Loc.Instance.Get("Transport_ProbeNoAnswer"),
+    };
+
+    // Codes a front answers with when the token or the login and password did not fit.
+    private static bool Denied(string detail)
+    {
+        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1
+            && int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var code)
+            && code is 400 or 401 or 403 or 404;
+    }
+
+    // The port of a "host:port" endpoint; the tunnel's usual port stands in when the endpoint carries none.
+    private static int TunnelPortOf(string endpoint)
+    {
+        var port = PortOf(endpoint);
+        return port > 0 ? port : DefaultTunnelPort;
     }
 
     // The port of a "host:port" front.

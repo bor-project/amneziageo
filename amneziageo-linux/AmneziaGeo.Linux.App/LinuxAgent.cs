@@ -1444,7 +1444,19 @@ internal sealed class LinuxAgent : IDisposable
         var allowInbound = args.Count > 6 ? IsOn(args[6]) : stored?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 7 ? IsOn(args[7]) : stored?.InboundNetwork ?? false;
         var useRouting = args.Count > 8 ? IsOn(args[8]) : stored?.UseRouting ?? true;
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting);
+        var port = args.Count > 9 ? ConfigTransport.PortSent(args[9]) : stored?.WebSocketPort ?? 0;
+        if (port < 0)
+        {
+            return new IpcAck(false, IpcMessage.Key("Transport_InvalidPort"));
+        }
+
+        var host = args.Count > 10 ? args[10].Trim() : stored?.WebSocketHost ?? string.Empty;
+        if (!WsEndpoint.Dials(host))
+        {
+            return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
+        }
+
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
@@ -2513,10 +2525,10 @@ internal sealed class LinuxAgent : IDisposable
         _log.Info("check", closing);
     }
 
-    // The host the tunnel dials and the port to knock on: a websocket carrier stands at the front the server
-    // offers, and the endpoint in the config is only what the server hands the tunnel to behind it.
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its front, and the
+    // endpoint in the config is only what the server hands the tunnel to behind it.
     private static (string Host, int Port) Carrier(string text, ConfigTransport? transport, ServerOffer offer) =>
-        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer) is { } front
+        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer, transport) is { } front
             ? (front.Host, front.Port)
             : (ConfigServices.Host(text), 0);
 
@@ -2694,9 +2706,12 @@ internal sealed class LinuxAgent : IDisposable
             transport?.AllowInbound ?? false,
             transport?.InboundNetwork ?? false,
             string.Join(", ", WgConfigEditor.GetAddresses(text)),
-            WsEndpoint.Of(text, offer)?.Display() ?? string.Empty,
+            WsEndpoint.Of(text, offer, transport)?.Display() ?? string.Empty,
             transport?.UseRouting ?? true,
-            offer.RoutingLocked);
+            offer.RoutingLocked,
+            transport?.WebSocketHost ?? string.Empty,
+            transport?.WebSocketPort ?? 0,
+            WsEndpoint.SourceOf(text, offer) == WsSource.Settings);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

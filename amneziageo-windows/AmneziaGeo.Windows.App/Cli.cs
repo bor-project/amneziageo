@@ -122,7 +122,11 @@ internal sealed class Cli(
             case ["assign-routing", var list]:
                 return await AssignRoutingAsync(list);
             case ["set-websocket", var name, var toggle]:
-                return await SetWebSocketAsync(name, toggle);
+                return await SetWebSocketAsync(name, toggle, null, null);
+            case ["set-websocket", var name, var toggle, var port]:
+                return await SetWebSocketAsync(name, toggle, port, null);
+            case ["set-websocket", var name, var toggle, var port, var host]:
+                return await SetWebSocketAsync(name, toggle, port, host);
             case ["connect"]:
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["connect"]);
             case ["disconnect"]:
@@ -628,8 +632,9 @@ internal sealed class Cli(
         return 0;
     }
 
-    // Offline counterpart of the agent's set-websocket IPC op: writes transport straight to the store.
-    private async Task<int> SetWebSocketAsync(string name, string toggle)
+    // Offline counterpart of the agent's set-websocket IPC op: writes transport straight to the store; an absent
+    // port or host keeps the stored one.
+    private async Task<int> SetWebSocketAsync(string name, string toggle, string? portText, string? hostText)
     {
         if (!await configRepo.ExistsAsync(name))
         {
@@ -637,10 +642,24 @@ internal sealed class Cli(
             return 1;
         }
 
-        var on = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
         var current = await store.GetConfigTransportAsync(name);
-        await store.SetConfigTransportAsync(new ConfigTransport(name, on, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto, current?.UseRouter ?? true, current?.AllowInbound ?? false, current?.InboundNetwork ?? false, current?.UseRouting ?? true));
-        Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}");
+        var port = portText is null ? current?.WebSocketPort ?? 0 : ConfigTransport.PortSent(portText);
+        if (port < 0)
+        {
+            Console.WriteLine("invalid websocket port (1-65535)");
+            return 1;
+        }
+
+        var host = hostText?.Trim() ?? current?.WebSocketHost ?? string.Empty;
+        if (!WsEndpoint.Dials(host))
+        {
+            Console.WriteLine("invalid websocket host");
+            return 1;
+        }
+
+        var on = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
+        await store.SetConfigTransportAsync(new ConfigTransport(name, on, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto, current?.UseRouter ?? true, current?.AllowInbound ?? false, current?.InboundNetwork ?? false, current?.UseRouting ?? true, host, port));
+        Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}, port={port}, host={(host.Length == 0 ? "(default)" : host)}");
         return 0;
     }
 

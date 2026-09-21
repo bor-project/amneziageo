@@ -77,7 +77,7 @@ internal static class ConfigCommands
         return Exit.Ok;
     }
 
-    // Names the websocket front the server offers, or says that it offers none.
+    // Names the websocket front the tunnel is carried to, or says that the server offers none.
     private static string Front(ConfigEntry config) =>
         config.WebSocketFront.Length > 0 ? config.WebSocketFront : "no front";
 
@@ -212,17 +212,29 @@ internal static class ConfigCommands
     private static async Task<int> WebSocketAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
-        if (!flags.Allowed("mtu", "ipv6", "router"))
+        if (!flags.Allowed("host", "port", "mtu", "ipv6", "router"))
         {
             return Reply.Usage(flags.Error!);
         }
 
         if (flags.Positional.Count != 2 || !Toggle.TryParse(flags.Positional[1], out var on))
         {
-            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--mtu <n>] [--ipv6 on|off] [--router on|off]");
+            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off] [--router on|off]");
+        }
+
+        if (flags.Value("port") is { } named && ConfigTransport.PortSent(named) < 0)
+        {
+            return Reply.Usage("--port takes a port from 1 to 65535");
+        }
+
+        if (flags.Value("host") is { } address && !WsEndpoint.Dials(address))
+        {
+            return Reply.Usage("--host takes a host, a host with its port, or a ws or wss address");
         }
 
         var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == flags.Positional[0]);
+        var port = flags.Value("port") ?? (stored?.WebSocketPort ?? 0).ToString(CultureInfo.InvariantCulture);
+        var host = flags.Value("host") ?? stored?.WebSocketHost ?? string.Empty;
 
         // An unset MTU goes over empty; the agents read that as the default.
         var storedMtu = stored?.Mtu ?? 0;
@@ -246,7 +258,12 @@ internal static class ConfigCommands
             mtu,
             Toggle.Text(useIpv6),
             MtuModes.Text(stored?.MtuMode ?? MtuMode.Auto),
-            Toggle.Text(useRouter)).ConfigureAwait(false));
+            Toggle.Text(useRouter),
+            Toggle.Text(stored?.AllowInbound ?? false),
+            Toggle.Text(stored?.InboundNetwork ?? false),
+            Toggle.Text(stored?.UseRouting ?? true),
+            port,
+            host).ConfigureAwait(false));
     }
 
     // The size travels with the rest of the transport, so the stored fields are resent untouched beside it.

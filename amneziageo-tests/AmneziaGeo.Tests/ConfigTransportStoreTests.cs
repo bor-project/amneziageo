@@ -79,6 +79,18 @@ public sealed class ConfigTransportStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Transport_KeepsTheFrontOfTheSettings()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("manual", true, WebSocketHost: "wss://user:pass@own.example:9443/t", WebSocketPort: 9443));
+
+        var stored = await _store.GetConfigTransportAsync("manual");
+
+        Assert.NotNull(stored);
+        Assert.Equal("wss://user:pass@own.example:9443/t", stored!.WebSocketHost);
+        Assert.Equal(9443, stored.WebSocketPort);
+    }
+
+    [Fact]
     public async Task Transport_KeepsAccessFromTheTunnel()
     {
         await _store.SetConfigTransportAsync(

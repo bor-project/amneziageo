@@ -244,11 +244,11 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         return (list, list is not null ? !(routing?.UseGlobalProxy ?? false) : geo?.GeoSplit ?? false);
     }
 
-    // The host the tunnel dials and the port to knock on: a websocket carrier stands at the front the server
-    // offers, and the endpoint in the config is only what the server hands the tunnel to behind it. Without a
-    // carrier the port stays zero - AmneziaWG answers a real handshake and nothing else.
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its front, and the
+    // endpoint in the config is only what the server hands the tunnel to behind it. Without a carrier the port
+    // stays zero - AmneziaWG answers a real handshake and nothing else.
     private static (string Host, int Port) Carrier(string text, ConfigTransport? transport, ServerOffer offer) =>
-        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer) is { } front
+        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer, transport) is { } front
             ? (front.Host, front.Port)
             : (ConfigServices.Host(text), 0);
 

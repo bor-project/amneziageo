@@ -7,7 +7,8 @@ namespace AmneziaGeo.Tests;
 
 /// <summary>
 /// The window keeps the reach of the access from the tunnel the agent holds, opens the whole tunnel network only
-/// when the switch is turned on in it, and leaves the websocket and the routing to what the server offers.
+/// when the switch is turned on in it, leaves the routing to what the server offers, and the websocket to the front the
+/// server offers, else the one the config names, else the fields of the settings.
 /// </summary>
 public sealed class ConfigTransportViewModelTests
 {
@@ -63,7 +64,7 @@ public sealed class ConfigTransportViewModelTests
     public async Task TheWebSocket_IsTurnedOnWhereTheServerOffersAFront()
     {
         var agent = new Recorder();
-        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, webSocketOffered: true);
+        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, webSocketOpen: true);
 
         transport.WebSocketOn = true;
         await transport.CommitAsync();
@@ -77,7 +78,7 @@ public sealed class ConfigTransportViewModelTests
     public async Task AWebSocketTheServerDoesNotOffer_ShowsOffAndKeepsTheStoredSwitch()
     {
         var agent = new Recorder();
-        var transport = new ConfigTransportViewModel(agent, "e2e", true, 1420, false, webSocketOffered: false);
+        var transport = new ConfigTransportViewModel(agent, "e2e", true, 1420, false, webSocketOpen: false);
 
         transport.WebSocketOn = false;
         transport.UseIpv6 = true;
@@ -117,6 +118,86 @@ public sealed class ConfigTransportViewModelTests
         Assert.True(transport.UseRouting);
         Assert.Equal("on", agent.Args[8]);
     }
+
+    [Fact]
+    public void TheFieldsOfTheSettings_ShowTheEndpointWhenNeitherTheServerNorTheConfigNamesAFront()
+    {
+        var transport = Manual(new Recorder(), string.Empty, 0);
+
+        Assert.True(transport.ShowWebSocketFields);
+        Assert.Equal(string.Empty, transport.WebSocketHost);
+        Assert.Equal(string.Empty, transport.WebSocketPort);
+        Assert.Equal("10.99.1.1", transport.WebSocketHostDefault);
+        Assert.Equal("51821", transport.WebSocketPortDefault);
+    }
+
+    [Fact]
+    public void AFrontTheServerOrTheConfigNames_HidesTheFields()
+    {
+        var transport = new ConfigTransportViewModel(new Recorder(), "e2e", true, 1420, false, webSocketOpen: true, endpoint: "10.99.1.1:51821");
+
+        Assert.True(transport.WebSocketOn);
+        Assert.False(transport.ShowWebSocketFields);
+    }
+
+    [Fact]
+    public async Task AHostOfItsOwn_IsSavedAsTyped()
+    {
+        var agent = new Recorder();
+        var transport = Manual(agent, string.Empty, 0);
+
+        transport.WebSocketHost = "own.example";
+        transport.WebSocketPort = "9443";
+        transport.CancelProbe();
+        await transport.CommitAsync();
+
+        Assert.Equal(["9443", "own.example"], agent.Args.Skip(9));
+    }
+
+    [Fact]
+    public async Task TheFieldsLeftEmpty_AreSavedEmpty()
+    {
+        var agent = new Recorder();
+        var transport = Manual(agent, string.Empty, 0);
+
+        transport.UseIpv6 = true;
+        await transport.CommitAsync();
+
+        Assert.Equal(["0", string.Empty], agent.Args.Skip(9));
+    }
+
+    [Fact]
+    public async Task AStoredAccount_IsReadIntoTheFieldsAndSavedBackAsItWas()
+    {
+        var agent = new Recorder();
+        var transport = Manual(agent, "wss://us%20er:p%40ss@own.example:9443", 9443);
+
+        Assert.Equal("own.example", transport.WebSocketHost);
+        Assert.Equal("9443", transport.WebSocketPort);
+        Assert.True(transport.IsBasicAuth);
+        Assert.Equal("us er", transport.WebSocketUser);
+        Assert.Equal("p@ss", transport.WebSocketPassword);
+
+        transport.UseIpv6 = true;
+        await transport.CommitAsync();
+
+        Assert.Equal(["9443", "wss://us%20er:p%40ss@own.example:9443"], agent.Args.Skip(9));
+    }
+
+    [Fact]
+    public async Task AFrontNotOfTheSettings_SendsNoAddress()
+    {
+        var agent = new Recorder();
+        var transport = new ConfigTransportViewModel(agent, "e2e", true, 1420, false, webSocketOpen: true, endpoint: "10.99.1.1:51821", webSocketHost: "own.example", webSocketPort: 9443);
+
+        transport.UseIpv6 = true;
+        await transport.CommitAsync();
+
+        Assert.Equal(9, agent.Args.Count);
+    }
+
+    private static ConfigTransportViewModel Manual(IAgentConnection agent, string host, int port) =>
+        new(agent, "e2e", true, 1420, false, webSocketOpen: true, webSocketManual: true, endpoint: "10.99.1.1:51821", webSocketHost: host, webSocketPort: port);
 
     private static ConfigTransportViewModel Transport(IAgentConnection agent, bool allow, bool network) =>
         new(agent, "e2e", false, 1420, false, allowInbound: allow, inboundNetwork: network);

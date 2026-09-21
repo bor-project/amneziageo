@@ -151,8 +151,8 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
             sb.AppendLine($"    server:     {(offer.Ours ? $"ours {offer.Version}, offers {string.Join(", ", offer.Features.Keys)}" : "not ours or not asked")}");
             if (transport?.UseWebSocket == true)
             {
-                sb.AppendLine(WsEndpoint.Of(text, offer) is { } front
-                    ? $"    websocket:  on -> {front.Display()}"
+                sb.AppendLine(WsEndpoint.Of(text, offer, transport) is { } front
+                    ? $"    websocket:  on -> {front.Display()} ({WsEndpoint.SourceOf(text, offer).ToString().ToLowerInvariant()})"
                     : "    websocket:  on, the server offers no front");
             }
             else

@@ -141,6 +141,15 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
         await _store.SaveConfigAsync("plain", "[Interface]\nPrivateKey = another\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.2:51820\n");
         await _store.SetConfigTransportAsync(new ConfigTransport("srv", true));
         await _store.SetConfigTransportAsync(new ConfigTransport("plain", true));
+        const string bare = "[Interface]\nPrivateKey = third\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.3:51820\n";
+        await _store.SaveConfigAsync("bare", bare);
+        await _store.SetConfigTransportAsync(new ConfigTransport("bare", true));
+        await ServerOfferStore.WriteAsync(
+            _store,
+            "bare",
+            ConfigServices.Target(bare)!,
+            ServerOffer.Parse("""{"server":"amneziageo","version":"0.0.1.0","client":"c","features":{"routing":{"allowed":true}}}"""),
+            DateTimeOffset.UtcNow);
         await ServerOfferStore.WriteAsync(
             _store,
             "srv",
@@ -155,7 +164,8 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
         using var reader = new StreamReader(zip.GetEntry("summary.txt")!.Open());
         var summary = await reader.ReadToEndAsync();
 
-        Assert.Contains("websocket:  on -> 10.0.0.1:8446", summary, StringComparison.Ordinal);
+        Assert.Contains("websocket:  on -> 10.0.0.1:8446 (server)", summary, StringComparison.Ordinal);
+        Assert.Contains("websocket:  on -> 10.0.0.2:51820 (settings)", summary, StringComparison.Ordinal);
         Assert.Contains("server:     ours 0.0.1.0, offers websocket, routing", summary, StringComparison.Ordinal);
         Assert.Contains("websocket:  on, the server offers no front", summary, StringComparison.Ordinal);
         Assert.DoesNotContain("topSecretKey", summary, StringComparison.Ordinal);

@@ -36,6 +36,15 @@ public sealed class WsCarrierTests
     }
 
     [Fact]
+    public void TheUpgrade_TakesThePathTokenAndTheAccountOfAFrontOfTheSettings()
+    {
+        var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 443, "secret", "user:pass"), 51820, "key", null);
+
+        Assert.StartsWith("GET /secret/events HTTP/1.1\r\n", request, StringComparison.Ordinal);
+        Assert.Contains($"Authorization: Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes("user:pass"))}\r\n", request, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheToken_SaysWhichUdpPortTheServerHandsTheTunnelTo()
     {
         var request = WsCarrier.Handshake(new WsEndpoint("front.example.com", 443), 51820, "key", null);

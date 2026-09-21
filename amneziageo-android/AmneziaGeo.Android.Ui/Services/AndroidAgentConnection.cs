@@ -641,8 +641,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         if (front is { } carried)
         {
-            intent.PutExtra(GeoVpnService.ExtraWsHost, carried.Host);
+            intent.PutExtra(GeoVpnService.ExtraWsHost, carried.Offered ? carried.Host : carried.Address());
             intent.PutExtra(GeoVpnService.ExtraWsPort, carried.Port);
+            intent.PutExtra(GeoVpnService.ExtraWsOffered, carried.Offered);
         }
 
         if (foreground && Build.VERSION.SdkInt >= BuildVersionCodes.O)
@@ -985,9 +986,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             AllowInbound: transport?.AllowInbound ?? false,
             InboundNetwork: transport?.InboundNetwork ?? false,
             Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
-            WebSocketFront: WsEndpoint.Of(config, offer)?.Display() ?? string.Empty,
+            WebSocketFront: WsEndpoint.Of(config, offer, transport)?.Display() ?? string.Empty,
             UseRouting: transport?.UseRouting ?? true,
             RoutingLocked: offer?.RoutingLocked ?? false,
+            WebSocketHost: transport?.WebSocketHost ?? string.Empty,
+            WebSocketPort: transport?.WebSocketPort ?? 0,
+            WebSocketManual: WsEndpoint.SourceOf(config, offer) == WsSource.Settings,
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
@@ -1692,8 +1696,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     ? null
                     : new PortableBundle.TransportBlock(
                         transport.UseWebSocket,
-                        string.Empty,
-                        0,
+                        transport.WebSocketHost,
+                        transport.WebSocketPort,
                         transport.Mtu,
                         transport.UseIpv6,
                         transport.MtuMode,
@@ -1941,7 +1945,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -1955,8 +1959,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             new RoutingSettings(listId, settings.Exclusions, settings.AllUdp, "split")).ConfigureAwait(false);
     }
 
-    // Stores a config's websocket switch, tunnel MTU and IPv6 opt-in; all reach the tunnel builder on the next
-    // connect.
+    // Stores a config's websocket switch and front, tunnel MTU and IPv6 opt-in; all reach the tunnel builder on the
+    // next connect.
     private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 2 || !_configs.ContainsKey(args[0]))
@@ -1983,7 +1987,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var allowInbound = args.Count > 6 ? IsOn(args[6]) : previous?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 7 ? IsOn(args[7]) : previous?.InboundNetwork ?? false;
         var useRouting = args.Count > 8 ? IsOn(args[8]) : previous?.UseRouting ?? true;
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting)).ConfigureAwait(false);
+        var port = args.Count > 9 ? ConfigTransport.PortSent(args[9]) : previous?.WebSocketPort ?? 0;
+        if (port < 0)
+        {
+            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidPort"));
+        }
+
+        var host = args.Count > 10 ? args[10].Trim() : previous?.WebSocketHost ?? string.Empty;
+        if (!WsEndpoint.Dials(host))
+        {
+            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
+        }
+
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port)).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
         {
             _restartRequired = true;
@@ -2064,9 +2080,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // The websocket front the tunnel of a configuration is carried to: the one its server offers, while it is asked for.
+    // The websocket front the tunnel of a configuration is carried to, while it is asked for.
     private WsEndpoint? Front(string name, string text) =>
-        _transports.GetValueOrDefault(name) is { UseWebSocket: true } ? WsEndpoint.Of(text, _offered.GetValueOrDefault(name)) : null;
+        _transports.GetValueOrDefault(name) is { UseWebSocket: true } transport ? WsEndpoint.Of(text, _offered.GetValueOrDefault(name), transport) : null;
 
     // What the server of the selected configuration offers; it is asked again behind the answer.
     private async Task<IpcAck> ServerOfferAsync()
@@ -3087,10 +3103,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("check", closing);
     }
 
-    // The host the tunnel dials and the port to knock on: a websocket carrier stands at the front the server
-    // offers, and the endpoint in the config is only what the server hands the tunnel to behind it.
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its front, and the
+    // endpoint in the config is only what the server hands the tunnel to behind it.
     private static (string Host, int Port) Carrier(string text, ConfigTransport? transport, ServerOffer? offer) =>
-        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer) is { } front
+        transport?.UseWebSocket == true && WsEndpoint.Of(text, offer, transport) is { } front
             ? (front.Host, front.Port)
             : (ConfigServices.Host(text), 0);
 

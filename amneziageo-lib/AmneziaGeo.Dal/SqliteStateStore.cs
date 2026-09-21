@@ -904,7 +904,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, ws_host, ws_port FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -915,7 +915,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0);
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9));
                 }
             }
         }
@@ -934,10 +934,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, updated_at)
-                    VALUES ($name, $use, $mtu, $v6, $mode, $router, $inbound, $network, $routing, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $routing, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
+                        ws_host    = excluded.ws_host,
+                        ws_port    = excluded.ws_port,
                         mtu        = excluded.mtu,
                         use_ipv6   = excluded.use_ipv6,
                         mtu_mode   = excluded.mtu_mode,
@@ -949,6 +951,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
                 command.Parameters.AddWithValue("$use", transport.UseWebSocket ? 1 : 0);
+                command.Parameters.AddWithValue("$host", transport.WebSocketHost);
+                command.Parameters.AddWithValue("$port", transport.WebSocketPort);
                 command.Parameters.AddWithValue("$mtu", transport.Mtu);
                 command.Parameters.AddWithValue("$v6", transport.UseIpv6 ? 1 : 0);
                 command.Parameters.AddWithValue("$mode", (int)transport.MtuMode);

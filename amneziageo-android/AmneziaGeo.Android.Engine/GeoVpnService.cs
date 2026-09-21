@@ -100,6 +100,11 @@ public sealed class GeoVpnService : VpnService
     public const string ExtraWsPort = "ws-port";
 
     /// <summary>
+    /// WebSocket front extra: the front is the one the server of the config offers, and the token proves its keys.
+    /// </summary>
+    public const string ExtraWsOffered = "ws-offered";
+
+    /// <summary>
     /// IPv6 opt-in extra. Off by default: a peer that hands out an address but routes no IPv6 turns every
     /// v6-capable name into a stall, and a family the tun does not carry is unreachable rather than leaked.
     /// </summary>
@@ -266,7 +271,7 @@ public sealed class GeoVpnService : VpnService
         _recovery.Reset();
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
-            request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog,
+            request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog,
             request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel));
         return StartCommandResult.RedeliverIntent;
     }
@@ -430,7 +435,7 @@ public sealed class GeoVpnService : VpnService
             try
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
-                    request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.EngineLog, request.DirectTcp,
+                    request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog, request.DirectTcp,
                     request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel).ConfigureAwait(false);
             }
             finally
@@ -462,7 +467,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel)
     {
         try
         {
@@ -473,7 +478,7 @@ public sealed class GeoVpnService : VpnService
             var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
             // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
             var underlay = resolved;
-            var carrier = StartCarrier(config, wsHost, wsPort);
+            var carrier = StartCarrier(config, wsHost, wsPort, wsOffered);
             if (carrier is not null)
             {
                 _carrier = carrier;
@@ -576,7 +581,7 @@ public sealed class GeoVpnService : VpnService
                 Report("the engine decides no destination on the packet here, so the network the device sits on "
                     + "leaves the tun again");
                 _localCarveForced = true;
-                await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort,
+                await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort, wsOffered,
                     engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel).ConfigureAwait(false);
                 return;
             }
@@ -1899,10 +1904,11 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // The websocket the tunnel is carried inside when the configuration asks for one, at the front its server
-    // offers. The front is resolved here, while the machine still answers lookups of its own, and the carrier's
-    // socket is excused from the tunnel, or it would be asked to carry itself.
-    private WsCarrier? StartCarrier(string config, string? host, int port)
+    // The websocket the tunnel is carried inside when the configuration asks for one: at the front its server
+    // offers, which takes the token of the config, else at the address the head passes. The front is resolved
+    // here, while the machine still answers lookups of its own, and the carrier's socket is excused from the
+    // tunnel, or it would be asked to carry itself.
+    private WsCarrier? StartCarrier(string config, string? host, int port, bool offered)
     {
         if (string.IsNullOrEmpty(host) || port <= 0)
         {
@@ -1917,7 +1923,7 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
 
-        var front = new WsEndpoint(host, port);
+        var front = offered ? new WsEndpoint(host, port, Offered: true) : WsEndpoint.Of(host, port, endpoint, string.Empty);
         var address = ResolveHostV4(front.Host);
         if (address is null || !System.Net.IPAddress.TryParse(address, out var parsed))
         {
@@ -1925,7 +1931,7 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
 
-        var carrier = WsCarrier.Start(front, parsed, targetPort, ServiceToken.HeaderOf(config), socket => Protect(socket.Handle.ToInt32()),
+        var carrier = WsCarrier.Start(front, parsed, targetPort, front.Offered ? ServiceToken.HeaderOf(config) : null, socket => Protect(socket.Handle.ToInt32()),
             (message, ex) => Report(ex is null ? message : $"{message}: {ex.Message}"));
         Report($"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
         return carrier;
@@ -2047,7 +2053,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetBooleanExtra(ExtraDirectTcp, true),
             intent.GetBooleanExtra(ExtraExcludeRoutes, false),
             intent.GetStringArrayExtra(ExtraBypassApps),
-            intent.GetBooleanExtra(ExtraLocalInTunnel, false));
+            intent.GetBooleanExtra(ExtraLocalInTunnel, false),
+            intent.GetBooleanExtra(ExtraWsOffered, false));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

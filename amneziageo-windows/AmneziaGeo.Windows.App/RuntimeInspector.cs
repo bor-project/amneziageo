@@ -361,11 +361,18 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         }
     }
 
-    // Underlay the tunnel rides: plain UDP, or wstunnel to the front the server offers.
-    private static string Carrier(string configText, ConfigTransport? transport, ServerOffer offer) =>
-        transport?.UseWebSocket == true && WsEndpoint.Of(configText, offer) is { } front
-            ? $"websocket {front.Display()}"
-            : "udp";
+    // Underlay the tunnel rides: plain UDP, or wstunnel to its front. Path and credentials stay masked.
+    private static string Carrier(string configText, ConfigTransport? transport, ServerOffer offer)
+    {
+        if (transport?.UseWebSocket != true || WsEndpoint.Of(configText, offer, transport) is not { } ws)
+        {
+            return "udp";
+        }
+
+        var token = ws.PathPrefix.Length == 0 ? string.Empty : $", path {Masked}";
+        var auth = ws.Credentials.Length == 0 ? string.Empty : $", auth {Masked}";
+        return $"websocket {ws.Display()}{token}{auth}";
+    }
 
     // The config text the engine is handed at connect: the stored file with the v6 strip, the resolved AllowedIPs,
     // the effective MTU and the injected keepalive applied. A live device supplies what the connect decides at

@@ -360,12 +360,19 @@ internal partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool CanSave => IsCreatingSectionConfig ? CanSaveSectionConfig : IsEditDirty;
 
+    /// <summary>
+    /// Whether Save carries a websocket address the front did not accept: it still saves, dimmed to say what is
+    /// being saved has not answered.
+    /// </summary>
+    public bool SaveUnverified => (ConfigTransport?.ProbeFailed ?? false) || (SectionTransport?.ProbeFailed ?? false);
+
     private void RefreshEditBar()
     {
         OnPropertyChanged(nameof(IsEditDirty));
         OnPropertyChanged(nameof(ShowSaveBar));
         OnPropertyChanged(nameof(ShowSaveButton));
         OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(SaveUnverified));
     }
 
     private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
@@ -744,6 +751,9 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.InboundNetwork = entry.InboundNetwork;
             existing.Address = entry.Address;
             existing.WebSocketFront = entry.WebSocketFront;
+            existing.WebSocketHost = entry.WebSocketHost;
+            existing.WebSocketPort = entry.WebSocketPort;
+            existing.WebSocketManual = entry.WebSocketManual;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
@@ -1095,7 +1105,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.RoutingLocked ?? false);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.RoutingLocked ?? false, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0);
         RefreshEditBar();
     }
 
@@ -1120,11 +1130,14 @@ internal partial class ConfigViewModel : ViewModelBase
         if (oldValue is not null)
         {
             oldValue.DirtyChanged -= OnEditScopeDirty;
+            oldValue.ProbeChanged -= OnEditScopeDirty;
+            oldValue.CancelProbe();
         }
 
         if (newValue is not null)
         {
             newValue.DirtyChanged += OnEditScopeDirty;
+            newValue.ProbeChanged += OnEditScopeDirty;
         }
 
         RefreshEditBar();
@@ -1132,6 +1145,17 @@ internal partial class ConfigViewModel : ViewModelBase
 
     partial void OnSectionTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
     {
+        if (oldValue is not null)
+        {
+            oldValue.ProbeChanged -= OnEditScopeDirty;
+            oldValue.CancelProbe();
+        }
+
+        if (newValue is not null)
+        {
+            newValue.ProbeChanged += OnEditScopeDirty;
+        }
+
         RefreshEditBar();
     }
 
@@ -1159,6 +1183,7 @@ internal partial class ConfigViewModel : ViewModelBase
         if (VpnLinkCodec.TryDecode(value) is { } imported)
         {
             SeedSectionNameFromConfig(imported);
+            SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty, WsEndpoint.FrontOf(imported.ConfText));
             return;
         }
 
@@ -1427,9 +1452,10 @@ internal partial class ConfigViewModel : ViewModelBase
         IsCreatingSectionConfig = true;
     }
 
-    // Transport editor of a config that does not exist yet: defaults, and no front until its server is asked.
+    // Transport editor of a config that does not exist yet: defaults, and the front of the settings until its
+    // server is asked.
     private ConfigTransportViewModel NewSectionTransport() =>
-        new(_connection, string.Empty, false, 0, false);
+        new(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true);
 
     // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()

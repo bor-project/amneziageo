@@ -38,6 +38,34 @@ public sealed class WsEndpointTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("front.example")]
+    [InlineData("front.example:8443")]
+    [InlineData("wss://front.example:8443/secret")]
+    [InlineData("wss://user:pass@front.example:8443/secret")]
+    [InlineData("ws://10.99.1.1:8080")]
+    public void AnAddressTheTunnelIsCarriedTo_IsTaken(string address) => Assert.True(WsEndpoint.Dials(address));
+
+    [Theory]
+    [InlineData("https://my.example/p")]
+    [InlineData("my.example:99999")]
+    [InlineData("wss://my.example/p?x=1")]
+    [InlineData("wss://my.example/p#f")]
+    [InlineData("wss://")]
+    public void AnAddressTheClientWillNotDial_IsTurnedDown(string address) => Assert.False(WsEndpoint.Dials(address));
+
+    [Fact]
+    public void ThePortACommandSends_IsZeroForNoneAndMinusOneForWhatIsNotAPort()
+    {
+        Assert.Equal(0, ConfigTransport.PortSent(string.Empty));
+        Assert.Equal(0, ConfigTransport.PortSent("0"));
+        Assert.Equal(8443, ConfigTransport.PortSent("8443"));
+        Assert.Equal(-1, ConfigTransport.PortSent("70000"));
+        Assert.Equal(-1, ConfigTransport.PortSent("-1"));
+        Assert.Equal(-1, ConfigTransport.PortSent("port"));
+    }
+
+    [Theory]
     [InlineData("not a host")]
     [InlineData("wss://")]
     [InlineData("wss://:51821")]

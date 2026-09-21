@@ -216,6 +216,16 @@ internal static class ConfigCommands
             return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off] [--router on|off]");
         }
 
+        if (flags.Value("port") is { } named && ConfigTransport.PortSent(named) < 0)
+        {
+            return Reply.Usage("--port takes a port from 1 to 65535");
+        }
+
+        if (flags.Value("host") is { } address && !WsEndpoint.Dials(address))
+        {
+            return Reply.Usage("--host takes a host, a host with its port, or a ws or wss address");
+        }
+
         var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == flags.Positional[0]);
         var port = flags.Value("port") ?? (stored?.WebSocketPort ?? 0).ToString(CultureInfo.InvariantCulture);
         var host = flags.Value("host") ?? stored?.WebSocketHost ?? string.Empty;

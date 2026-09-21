@@ -1261,6 +1261,14 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
+        foreach (var name in args)
+        {
+            if (!await _store.ConfigExistsAsync(name, ct).ConfigureAwait(false))
+            {
+                return NotFound(name);
+            }
+        }
+
         await _store.SetConfigOrderAsync(args, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
@@ -1271,6 +1279,11 @@ internal sealed class LinuxAgent : IDisposable
         if (args.Count < 2)
         {
             return Fail();
+        }
+
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
         }
 
         if (await _store.ConfigExistsAsync(args[1], ct).ConfigureAwait(false))
@@ -1409,9 +1422,19 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
-        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false);
-        var port = int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPort) ? parsedPort : 0;
+        var port = ConfigTransport.PortSent(args[2]);
+        if (port < 0)
+        {
+            return new IpcAck(false, IpcMessage.Key("Transport_InvalidPort"));
+        }
+
         var host = args.Count > 3 ? args[3] : string.Empty;
+        if (!WsEndpoint.Dials(host))
+        {
+            return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
+        }
+
+        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false);
         var mtu = args.Count > 4
             ? int.TryParse(args[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMtu) ? parsedMtu : 0
             : stored?.Mtu ?? 0;

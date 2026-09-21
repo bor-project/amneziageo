@@ -79,6 +79,12 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         Of(hostOrUrl, port, EndpointOf(text), FrontOf(text));
 
     /// <summary>
+    /// Tells whether an address is one the tunnel can be carried to; an empty one leaves the front to the config.
+    /// </summary>
+    public static bool Dials(string? hostOrUrl) =>
+        (hostOrUrl ?? string.Empty).Trim().Length == 0 || Read(hostOrUrl) is not null;
+
+    /// <summary>
     /// Host and port for display, without the path token and the basic-auth credentials.
     /// </summary>
     public string Display()

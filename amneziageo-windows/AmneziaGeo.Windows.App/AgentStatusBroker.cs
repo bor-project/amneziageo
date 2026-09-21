@@ -640,6 +640,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "reorder-configs requires the ordered names");
         }
 
+        foreach (var name in args)
+        {
+            if (!await configRepo.ExistsAsync(name, ct))
+            {
+                return new IpcAck(false, $"unknown config: {name}");
+            }
+        }
+
         await configRepo.ReorderAsync(args, ct);
         return new IpcAck(true, "reordered configs");
     }
@@ -1107,13 +1115,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
-        if (!int.TryParse(args[2], System.Globalization.CultureInfo.InvariantCulture, out var port) || port is < 0 or > 65535)
+        var port = ConfigTransport.PortSent(args[2]);
+        if (port < 0)
         {
-            return new IpcAck(false, "invalid websocket port (0-65535)");
+            return new IpcAck(false, "invalid websocket port (1-65535)");
         }
 
         // Optional 4th arg: wstunnel host; empty reuses the Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
+        if (!WsEndpoint.Dials(host))
+        {
+            return new IpcAck(false, "invalid websocket host");
+        }
 
         // Optional 5th arg: tunnel MTU (range 576-1500); empty leaves the config in charge.
         var mtu = 0;

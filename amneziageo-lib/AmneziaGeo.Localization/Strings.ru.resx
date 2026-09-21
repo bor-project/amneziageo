@@ -1426,6 +1426,9 @@
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU должен быть от 576 до 1500. Если оставить поле пустым, будет 1280.</value>
   </data>
+  <data name="Transport_InvalidHost" xml:space="preserve">
+    <value>Укажите корректный адрес WebSocket (хост, хост:порт или адрес wss).</value>
+  </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Укажите корректный порт WebSocket (1-65535).</value>
   </data>
@@ -1517,6 +1520,9 @@
   </data>
   <data name="Agent_ConfigRejected" xml:space="preserve">
     <value>конфигурация отклонена: {0}</value>
+  </data>
+  <data name="Agent_ConfigUnknown" xml:space="preserve">
+    <value>конфигурации «{0}» нет</value>
   </data>
   <data name="Agent_ConfigUnsupportedKey" xml:space="preserve">
     <value>для этой конфигурации нужна более новая версия AmneziaWG: неизвестный параметр «{0}»</value>

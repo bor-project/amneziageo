@@ -32,4 +32,9 @@ public sealed record ConfigTransport(
             ? port
             : -1;
     }
+
+    /// <summary>
+    /// Returns the port a command sends: zero where it names none, minus one for a text that is not a port.
+    /// </summary>
+    public static int PortSent(string? text) => (text ?? string.Empty).Trim() is "0" ? 0 : PortOf(text);
 }

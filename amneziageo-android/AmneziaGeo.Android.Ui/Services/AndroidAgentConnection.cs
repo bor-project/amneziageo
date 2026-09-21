@@ -322,15 +322,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await RenameConfigAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpReorderConfigs:
-                if (args.Count == 0)
-                {
-                    return Fail();
-                }
-
-                _order = [.. args];
-                Save();
-                PushSnapshot();
-                return Ok();
+                return ReorderConfigs(args);
 
             case IpcContract.OpAssignRouting:
                 return await AssignRoutingAsync(args).ConfigureAwait(false);
@@ -1946,7 +1938,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Fail();
         }
 
-        if (ParseRange(args[2], 0, 65535) is not { } port)
+        var port = ConfigTransport.PortSent(args[2]);
+        if (port < 0)
         {
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidPort"));
         }
@@ -1962,6 +1955,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false);
         var useIpv6 = args.Count > 5 ? IsOn(args[5]) : previous?.UseIpv6 ?? false;
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
+        if (!WsEndpoint.Dials(host))
+        {
+            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
+        }
+
 
         // An older client sends no mode, and a size it sent stands for a choice of its own.
         var mode = args.Count > 6
@@ -3060,6 +3058,27 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return sb.ToString();
     }
 
+    private IpcAck ReorderConfigs(IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return Fail();
+        }
+
+        foreach (var name in args)
+        {
+            if (!_configs.ContainsKey(name))
+            {
+                return new IpcAck(false, Loc.Instance.Get("Agent_ConfigUnknown", name));
+            }
+        }
+
+        _order = [.. args];
+        Save();
+        PushSnapshot();
+        return Ok();
+    }
+
     private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
@@ -3076,7 +3095,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         if (!_configs.TryGetValue(oldName, out var value))
         {
-            return Fail();
+            return new IpcAck(false, Loc.Instance.Get("Agent_ConfigUnknown", oldName));
         }
 
         if (_configs.ContainsKey(newName))

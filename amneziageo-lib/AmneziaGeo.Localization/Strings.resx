@@ -1426,6 +1426,9 @@
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU must be 576 to 1500; leave it empty for 1280.</value>
   </data>
+  <data name="Transport_InvalidHost" xml:space="preserve">
+    <value>Enter a valid WebSocket address (host, host:port or a wss address).</value>
+  </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Enter a valid WebSocket port (1-65535).</value>
   </data>
@@ -1517,6 +1520,9 @@ Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_ConfigRejected" xml:space="preserve">
     <value>configuration rejected: {0}</value>
+  </data>
+  <data name="Agent_ConfigUnknown" xml:space="preserve">
+    <value>no configuration named «{0}»</value>
   </data>
   <data name="Agent_ConfigUnsupportedKey" xml:space="preserve">
     <value>this configuration needs a newer AmneziaWG: unknown setting «{0}»</value>

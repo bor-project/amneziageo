@@ -55,13 +55,47 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal("network", Cells(lines[3])[5]);
     }
 
+    [Fact]
+    public async Task ConfigWebsocket_TurnsDownAPortTheClientCannotDial()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--port", "70000"]));
+        Assert.Empty(link.Sent);
+    }
+
+    [Fact]
+    public async Task ConfigWebsocket_TurnsDownAnAddressTheClientWillNotDial()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "https://my.example/p"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "my.example:99999"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "wss://my.example/p?x=1"]));
+        Assert.Empty(link.Sent);
+    }
+
+    [Fact]
+    public async Task ConfigWebsocket_TakesAFrontTheClientDials()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "wss://front.example:8443/secret", "--port", "8443"]));
+        Assert.Equal([IpcContract.OpSetWebSocket], link.Sent);
+    }
+
     // Splits one printed row into its cells, which stand at least two spaces apart.
     private static string[] Cells(string line) =>
         line.Split("  ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    // Answers the snapshot it was built with and accepts whatever is sent.
+    // Answers the snapshot it was built with, remembers what was sent and accepts it.
     private sealed class Link(IReadOnlyList<ConfigEntry> configs) : IAgentLink
     {
+        /// <summary>
+        /// The operations the command sent.
+        /// </summary>
+        public List<string> Sent { get; } = [];
+
         /// <inheritdoc/>
         public event Action<StatusSnapshot>? SnapshotReceived
         {
@@ -73,8 +107,12 @@ public sealed class ConfigCommandsTests : IDisposable
         public StatusSnapshot Snapshot { get; } = new("1.0.0", null, configs);
 
         /// <inheritdoc/>
-        public Task<IpcAck> SendAsync(string op, params string[] args) =>
-            Task.FromResult(new IpcAck(true, string.Empty));
+        public Task<IpcAck> SendAsync(string op, params string[] args)
+        {
+            Sent.Add(op);
+
+            return Task.FromResult(new IpcAck(true, string.Empty));
+        }
     }
 
     // The least a host has to answer for the help text.

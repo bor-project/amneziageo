@@ -639,9 +639,16 @@ internal sealed class Cli(
             return 1;
         }
 
-        if (!int.TryParse(portText, System.Globalization.CultureInfo.InvariantCulture, out var port) || port is < 0 or > 65535)
+        var port = ConfigTransport.PortSent(portText);
+        if (port < 0)
         {
-            Console.WriteLine("invalid websocket port (0-65535)");
+            Console.WriteLine("invalid websocket port (1-65535)");
+            return 1;
+        }
+
+        if (!WsEndpoint.Dials(host))
+        {
+            Console.WriteLine("invalid websocket host");
             return 1;
         }
 

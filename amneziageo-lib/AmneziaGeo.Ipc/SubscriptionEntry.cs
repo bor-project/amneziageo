@@ -16,4 +16,6 @@ public sealed record SubscriptionEntry(
     long CheckedAt,
     string LastError,
     int Configs,
-    int Gone);
+    int Gone,
+    // Whether the server holds another revision than the one read last.
+    bool Stale = false);

@@ -127,6 +127,21 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SameConfigWrittenAnotherWay_IsNotRewritten()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
+        await _refresher.RefreshAsync(Fresh(), default);
+        var imported = _library.Text("AmneziaWG-3.1-phone").Replace(" = ", "=").Replace("Endpoint", "endpoint").Replace("\n", "\r\n") + "\r\n\r\n";
+        await _library.EditAsync("AmneziaWG-3.1-phone", imported, default);
+
+        var result = await _refresher.RefreshAsync(await Stored(), default);
+
+        Assert.Equal(0, result.Updated);
+        Assert.Empty(result.Rewritten);
+        Assert.Equal(imported, _library.Text("AmneziaWG-3.1-phone"));
+    }
+
+    [Fact]
     public async Task ChangedNode_IsRewrittenUnderItsOwnName()
     {
         _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
@@ -151,6 +166,7 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
         var result = await _refresher.RefreshAsync(await Stored(), default);
 
         Assert.Equal(1, result.Gone);
+        Assert.Equal(["AmneziaWG-2-laptop"], result.Dropped);
         Assert.Equal(["AmneziaWG-3.1-phone"], _library.Names);
         Assert.Equal(["AmneziaWG-2-laptop"], _library.Dropped);
         var members = await _store.ListSubscriptionMembersAsync("myvpn");
@@ -221,6 +237,32 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
         Assert.DoesNotContain("text/html", _feed.Accept!, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ReadWithARevision_TakesItAsTheOneTheServerHolds()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
+        _feed.Tag = "r2";
+
+        await _refresher.RefreshAsync(Fresh() with { Revision = "r1", Offered = "r2" }, default);
+
+        var stored = await Stored();
+        Assert.Equal("r2", stored.Revision);
+        Assert.Equal("r2", stored.Offered);
+        Assert.False(stored.Stale);
+    }
+
+    [Fact]
+    public async Task ReadWithoutARevision_LeavesNothingToCompare()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
+
+        await _refresher.RefreshAsync(Fresh() with { Revision = "r1", Offered = "r2" }, default);
+
+        var stored = await Stored();
+        Assert.Equal(string.Empty, stored.Revision);
+        Assert.False(stored.Stale);
+    }
+
     private async Task<Subscription> Stored()
     {
         return (await _store.ListSubscriptionsAsync())[0];
@@ -246,6 +288,8 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
 
         public string? Accept { get; private set; }
 
+        public string? Tag { get; set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Accept = request.Headers.TryGetValues("Accept", out var values) ? string.Join(',', values) : null;
@@ -257,6 +301,11 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
             response.Headers.TryAddWithoutValidation("Profile-Update-Interval", "12");
             response.Headers.TryAddWithoutValidation("Subscription-Userinfo", "upload=3612439; download=94739918; total=0; expire=0");
             response.Headers.TryAddWithoutValidation("Profile-Title", "base64:" + Convert.ToBase64String(Encoding.UTF8.GetBytes("Мой профиль")));
+            if (Tag is not null)
+            {
+                response.Headers.TryAddWithoutValidation("ETag", "\"" + Tag + "\"");
+            }
+
             return Task.FromResult(response);
         }
     }

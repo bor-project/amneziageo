@@ -71,6 +71,7 @@ internal partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     [NotifyPropertyChangedFor(nameof(OpenConfigSubscription))]
     [NotifyPropertyChangedFor(nameof(HasOpenConfigSubscription))]
+    [NotifyPropertyChangedFor(nameof(OpenConfigSubscriptionStale))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -213,6 +214,12 @@ internal partial class ConfigViewModel : ViewModelBase
     /// Ведётся ли открытая конфигурация подпиской.
     /// </summary>
     public bool HasOpenConfigSubscription => OpenConfigSubscription is not null;
+
+    /// <summary>
+    /// Ждёт ли подписка открытой конфигурации обновления.
+    /// </summary>
+    public bool OpenConfigSubscriptionStale =>
+        Configs.FirstOrDefault(item => string.Equals(item.Name, OpenConfig, StringComparison.Ordinal)) is { SubscriptionStale: true };
 
     /// <summary>
     /// Идёт ли общее обновление подписок.
@@ -762,6 +769,7 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.LinkRttMs = entry.RttMs;
             existing.Subscription = entry.Subscription;
             existing.SubscriptionGone = entry.SubscriptionGone;
+            existing.SubscriptionStale = entry.SubscriptionStale;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
@@ -937,6 +945,7 @@ internal partial class ConfigViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(OpenConfigSubscription));
         OnPropertyChanged(nameof(HasOpenConfigSubscription));
+        OnPropertyChanged(nameof(OpenConfigSubscriptionStale));
     }
 
     private static IReadOnlyList<SubscriptionEntry> ParseSubscriptions(string json)

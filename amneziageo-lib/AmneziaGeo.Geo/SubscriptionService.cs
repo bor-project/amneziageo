@@ -11,6 +11,11 @@ namespace AmneziaGeo.Geo;
 public sealed record SubscriptionOutcome(IpcAck Ack, int Added, int Updated, int Gone, IReadOnlyList<string> Rewritten, string Name = "")
 {
     /// <summary>
+    /// Конфигурации, которые подписка сняла.
+    /// </summary>
+    public IReadOnlyList<string> Dropped { get; init; } = [];
+
+    /// <summary>
     /// Ответ без единого изменения.
     /// </summary>
     public static SubscriptionOutcome Of(IpcAck ack)
@@ -85,7 +90,8 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
             item.CheckedAt?.ToUnixTimeSeconds() ?? 0,
             item.LastError,
             members.Count(member => Belongs(member, item.Name) && member.Present),
-            members.Count(member => Belongs(member, item.Name) && !member.Present)));
+            members.Count(member => Belongs(member, item.Name) && !member.Present),
+            item.Stale));
 
         return new IpcAck(true, JsonSerializer.Serialize(entries, IpcJson.Options));
     }
@@ -111,6 +117,7 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         var gone = 0;
         var error = string.Empty;
         var rewritten = new List<string>();
+        var dropped = new List<string>();
         foreach (var subscription in wanted)
         {
             var result = await refresher.RefreshAsync(subscription, ct).ConfigureAwait(false);
@@ -118,6 +125,7 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
             updated += result.Updated;
             gone += result.Gone;
             rewritten.AddRange(result.Rewritten);
+            dropped.AddRange(result.Dropped);
             if (!result.Ok && error.Length == 0)
             {
                 error = result.Error;
@@ -128,7 +136,7 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
             ? new IpcAck(false, error)
             : new IpcAck(true, IpcMessage.Key("Agent_SubscriptionRefreshed", added, updated, gone));
 
-        return new SubscriptionOutcome(ack, added, updated, gone, rewritten);
+        return new SubscriptionOutcome(ack, added, updated, gone, rewritten) { Dropped = dropped };
     }
 
     /// <summary>

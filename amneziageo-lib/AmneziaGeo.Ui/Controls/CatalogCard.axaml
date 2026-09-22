@@ -91,6 +91,7 @@
             <!-- Ширина повторяет круг подключения, поэтому иконка встаёт ровно под ним. -->
             <Panel Grid.Column="1" Width="42" VerticalAlignment="Center">
               <Button x:Name="RefreshPart" Classes="cardtune" HorizontalAlignment="Center"
+                      Classes.stale="{Binding SubscriptionStale}"
                       IsVisible="{Binding FromSubscription}"
                       ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"
                       Command="{Binding $parent[controls:CatalogCard].RefreshSubscriptionCommand}"

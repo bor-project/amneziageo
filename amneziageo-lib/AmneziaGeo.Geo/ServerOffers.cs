@@ -45,31 +45,8 @@ public sealed class ServerOffers
     /// Asks the server of a config now and keeps what it said. Services that answered nothing leave the kept offer
     /// as it stands. Returns the offer that holds afterwards.
     /// </summary>
-    public async Task<ServerOffer> AskAsync(string config, string? text, CancellationToken ct)
-    {
-        if (ConfigServices.Target(text) is not { } point)
-        {
-            return ServerOffer.None;
-        }
-
-        var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
-        var reply = await _ask(point, ct).ConfigureAwait(false);
-        if (!reply.Heard && kept is not null)
-        {
-            return kept.Offer;
-        }
-
-        var offer = reply.Offer ?? ServerOffer.None;
-        await ServerOfferStore.WriteAsync(_store, config, point, offer, _time.GetUtcNow(), ct).ConfigureAwait(false);
-        if (offer.Ours != (kept?.Offer.Ours ?? false))
-        {
-            _note?.Invoke(offer.Ours
-                ? $"{config}: the server at {point} offers {string.Join(", ", offer.Features.Keys)}"
-                : $"{config}: no server of ours answers at {point}", null);
-        }
-
-        return offer;
-    }
+    public async Task<ServerOffer> AskAsync(string config, string? text, CancellationToken ct) =>
+        (await AskBindingAsync(config, text, ct).ConfigureAwait(false)).Offer;
 
     /// <summary>
     /// Asks the server of a config before its tunnel comes up: at once where it was ours or never asked, in the
@@ -148,14 +125,61 @@ public sealed class ServerOffers
     /// </summary>
     public static string Download(ServerOffer? offer, bool inside) => offer?.Speed(inside)?.Down ?? string.Empty;
 
-    // Asks one server and names the config when what it settles changed.
+    // Asks the server of a config, keeps what it said and binds the config to the subscription it names.
+    private async Task<(ServerOffer Offer, bool Bound)> AskBindingAsync(string config, string? text, CancellationToken ct)
+    {
+        if (ConfigServices.Target(text) is not { } point)
+        {
+            return (ServerOffer.None, false);
+        }
+
+        var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
+        var reply = await _ask(point, ct).ConfigureAwait(false);
+        if (!reply.Heard && kept is not null)
+        {
+            return (kept.Offer, false);
+        }
+
+        var offer = reply.Offer ?? ServerOffer.None;
+        await ServerOfferStore.WriteAsync(_store, config, point, offer, _time.GetUtcNow(), ct).ConfigureAwait(false);
+        if (offer.Ours != (kept?.Offer.Ours ?? false))
+        {
+            _note?.Invoke(offer.Ours
+                ? $"{config}: the server at {point} offers {string.Join(", ", offer.Features.Keys)}"
+                : $"{config}: no server of ours answers at {point}", null);
+        }
+
+        return (offer, await BindAsync(config, text, offer, ct).ConfigureAwait(false));
+    }
+
+    // Binds the config to the subscription its server names.
+    private async Task<bool> BindAsync(string config, string? text, ServerOffer offer, CancellationToken ct)
+    {
+        if (offer.Subscription() is not { } offered)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await SubscriptionBinding.BindAsync(_store, config, text, offered, _time.GetUtcNow(), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _note?.Invoke($"{config}: the subscription the server names was not kept", ex);
+
+            return false;
+        }
+    }
+
+    // Asks one server and names the config when what it settles or the subscription it names changed.
     private async Task WarmOneAsync(string config, string? text, Func<string, Task>? changed)
     {
         try
         {
             var before = await OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false);
-            var after = await AskAsync(config, text, CancellationToken.None).ConfigureAwait(false);
-            if (changed is not null && !before.Settles(after))
+            var (after, bound) = await AskBindingAsync(config, text, CancellationToken.None).ConfigureAwait(false);
+            if (changed is not null && (bound || !before.Settles(after)))
             {
                 await changed(config).ConfigureAwait(false);
             }

@@ -137,6 +137,94 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AnAddressTheServerNames_BindsTheConfigToASubscription()
+    {
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Named("r1"), true)));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        var subscription = Assert.Single(await _store.ListSubscriptionsAsync());
+        var member = Assert.Single(await _store.ListSubscriptionMembersAsync(null));
+        Assert.Equal("vpn.example", subscription.Name);
+        Assert.Equal("https://vpn.example:51820/sub/abc", subscription.Url);
+        Assert.True(subscription.FromHello);
+        Assert.Equal("ab12", subscription.Pin);
+        Assert.NotNull(subscription.CheckedAt);
+        Assert.False(subscription.Stale);
+        Assert.Equal(("vpn.example", "office"), (member.Subscription, member.ConfigName));
+        Assert.Equal(SubscriptionMerge.KeyRemark(Text), member.Remark);
+    }
+
+    [Fact]
+    public async Task AnotherRevisionOfTheServer_MarksTheSubscriptionStale()
+    {
+        var replies = new Queue<HelloReply>([new HelloReply(Named("r1"), true), new HelloReply(Named("r2"), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        Assert.True(Assert.Single(await _store.ListSubscriptionsAsync()).Stale);
+        Assert.Equal(["vpn.example"], await SubscriptionBinding.StaleAsync(_store, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ASubscriptionAtTheAddress_TakesTheConfigIn()
+    {
+        await _store.SaveSubscriptionAsync(new Subscription("mine", "https://vpn.example:51820/sub/abc", Revision: "r0"));
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Named("r1"), true)));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        var subscription = Assert.Single(await _store.ListSubscriptionsAsync());
+        Assert.Equal("mine", Assert.Single(await _store.ListSubscriptionMembersAsync(null)).Subscription);
+        Assert.False(subscription.FromHello);
+        Assert.True(subscription.Stale);
+    }
+
+    [Fact]
+    public async Task AConfigSubscribedElsewhere_KeepsItsSubscription()
+    {
+        await _store.SaveSubscriptionAsync(new Subscription("mine", "https://panel.example/sub/xyz"));
+        await _store.SaveSubscriptionMemberAsync(new SubscriptionMember("mine", SubscriptionMerge.KeyRemark(Text), "office"));
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Named("r1"), true)));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        var subscription = Assert.Single(await _store.ListSubscriptionsAsync());
+        Assert.Equal("https://panel.example/sub/xyz", subscription.Url);
+        Assert.Equal(string.Empty, subscription.Offered);
+    }
+
+    [Fact]
+    public async Task AnAddressThatMoved_IsFollowedByTheSubscriptionTheServerNamed()
+    {
+        var replies = new Queue<HelloReply>(
+            [new HelloReply(Named("r1"), true), new HelloReply(Named("r1", "http://vpn.example:2096/sub/abc"), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        Assert.Equal("http://vpn.example:2096/sub/abc", Assert.Single(await _store.ListSubscriptionsAsync()).Url);
+    }
+
+    [Fact]
+    public async Task ABindingInTheBackground_NamesTheConfig()
+    {
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Named("r1"), true)));
+
+        offers.Warm([("office", Text)], config =>
+        {
+            changed.TrySetResult(config);
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
     public void TheUpload_GoesToTheServerOfTheConfigUnlessAnotherIsChosen()
     {
         var offer = Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5));
@@ -147,6 +235,13 @@ public sealed class ServerOffersTests : IAsyncLifetime
         Assert.Equal((string.Empty, false), ServerOffers.Upload(string.Empty, ServerOffer.None, ProbePaths.Auto));
         Assert.Equal("https://10.9.1.1:8446/api/speed/down?ticket=t", ServerOffers.Download(offer, true));
         Assert.Equal(string.Empty, ServerOffers.Download(null, false));
+    }
+
+    private static ServerOffer Named(string revision, string url = "https://vpn.example:51820/sub/abc")
+    {
+        const string answer = """{"server":"amneziageo","version":"1","client":"c","features":{"subscription":{"url":"URL","revision":"REVISION","pin":"ab12"}}}""";
+
+        return ServerOffer.Parse(answer.Replace("URL", url, StringComparison.Ordinal).Replace("REVISION", revision, StringComparison.Ordinal));
     }
 
     private static ServerOffer Offer(int port, DateTimeOffset expires)

@@ -56,7 +56,9 @@ public sealed record ConfigEntry(
     // Websocket front of the settings, and whether the tunnel takes it: neither the server nor the config names one.
     string WebSocketHost = "",
     int WebSocketPort = 0,
-    bool WebSocketManual = false);
+    bool WebSocketManual = false,
+    // Whether the subscription the config belongs to holds another revision than the one read last.
+    bool SubscriptionStale = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

@@ -1018,6 +1018,9 @@
   <data name="Main_UpdateAllButton" xml:space="preserve">
     <value>Update all</value>
   </data>
+  <data name="Main_ConfigUpdateAvailable" xml:space="preserve">
+    <value>Configuration update available</value>
+  </data>
   <data name="Main_UpdateAvailableBadge" xml:space="preserve">
     <value>● Update available</value>
   </data>

@@ -44,7 +44,7 @@
         </Button>
         <Button Classes="methodpick" MinHeight="34" Padding="12,6" Margin="4,0,0,0"
                 HorizontalAlignment="Stretch" IsVisible="{Binding HasConfigs}"
-                Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
+                Command="{Binding Home.CheckAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
                 ToolTip.Tip="{l:Tr Main_ProbeTooltip}"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
@@ -186,6 +186,7 @@
                          VerticalAlignment="Center" />
               <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
               <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
+                      Classes.stale="{Binding OpenConfigSubscriptionStale}"
                       IsVisible="{Binding HasOpenConfigSubscription}"
                       IsEnabled="{Binding !OpenConfigSubscription.Busy}"
                       Command="{Binding OpenConfigSubscription.RefreshCommand}"

@@ -66,6 +66,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Which subscription brought which configuration; empty until the store has been read.
     private IReadOnlyDictionary<string, SubscriptionMember> _members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
+
+    // Subscriptions whose server holds another revision than the one read last.
+    private IReadOnlySet<string> _stale = new HashSet<string>(StringComparer.Ordinal);
     private IReadOnlyList<GeoSource> _geoSources = [];
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
@@ -485,6 +488,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpServerOffer:
                 return await ServerOfferAsync().ConfigureAwait(false);
+
+            case IpcContract.OpAskServers:
+                await EnsureInitAsync().ConfigureAwait(false);
+                return AskServers(new IpcAck(true, string.Empty));
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -1000,6 +1007,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RttMs: reading.RttMs,
             Subscription: member?.Subscription ?? string.Empty,
             SubscriptionGone: member is { Present: false },
+            SubscriptionStale: member is not null && _stale.Contains(member.Subscription),
             ConfigMtu: WgConfigEditor.GetMtu(config),
             MtuMode: transport?.MtuMode ?? MtuMode.Auto,
             ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config));
@@ -2064,6 +2072,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task OfferChangedAsync(string config)
     {
         await RefreshOffersAsync().ConfigureAwait(false);
+        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
         PushSnapshot();
     }
 
@@ -2130,6 +2139,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _members = members;
+        _stale = await SubscriptionBinding.StaleAsync(_store, CancellationToken.None).ConfigureAwait(false);
     }
 
     // Picks the routing list every config uses. Args: list id, or "none" to turn routing off.

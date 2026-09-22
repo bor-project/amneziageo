@@ -61,6 +61,20 @@ public sealed class ServerOfferTests : IAsyncLifetime
     }
 
     [Fact]
+    public void TheSubscriptionTheServerNames_IsReadWithItsMarks()
+    {
+        var offer = ServerOffer.Parse(
+            """{"server":"amneziageo","version":"1","client":"c","features":{"subscription":{"url":"https://vpn.example:51820/sub/abc","revision":"r1","pin":"ab12"}}}""");
+        var odd = ServerOffer.Parse(
+            """{"server":"amneziageo","version":"1","client":"c","features":{"subscription":{"url":"ftp://vpn.example/sub/abc","revision":"r1","pin":""}}}""");
+
+        Assert.Equal(new OfferedSubscription("https://vpn.example:51820/sub/abc", "r1", "ab12"), offer.Subscription());
+        Assert.Null(odd.Subscription());
+        Assert.Null(ServerOffer.Parse(Answer).Subscription());
+        Assert.Null(ServerOffer.None.Subscription());
+    }
+
+    [Fact]
     public void TheMarkOfTheServices_FollowsTheKeysAndThePortAlone()
     {
         var one = new ServiceTarget("vpn.example", 51820, "a", "b");

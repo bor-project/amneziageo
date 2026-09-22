@@ -11,7 +11,8 @@ public sealed record SubscriptionSnapshot(
     IReadOnlyList<VpnLinkCodec.Imported> Configs,
     string Title,
     int IntervalHours,
-    SubscriptionCodec.Usage? Usage);
+    SubscriptionCodec.Usage? Usage,
+    string Revision = "");
 
 /// <summary>
 /// Итог обновления одной подписки.
@@ -22,6 +23,11 @@ public sealed record SubscriptionResult(int Added, int Updated, int Gone, IReadO
     /// Прошло ли обновление без ошибки.
     /// </summary>
     public bool Ok => Error.Length == 0;
+
+    /// <summary>
+    /// Конфигурации, которые подписка сняла.
+    /// </summary>
+    public IReadOnlyList<string> Dropped { get; init; } = [];
 }
 
 /// <summary>
@@ -67,9 +73,9 @@ public interface ISubscriptionLibrary
 public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library)
 {
     /// <summary>
-    /// Читает подписку по адресу и разбирает и тело, и заголовки.
+    /// Читает подписку по адресу и разбирает и тело, и заголовки. Сертификат с названным отпечатком тоже принимается.
     /// </summary>
-    public async Task<SubscriptionSnapshot> FetchAsync(string url, CancellationToken ct)
+    public async Task<SubscriptionSnapshot> FetchAsync(string url, string pin, CancellationToken ct)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         using (request)
@@ -78,7 +84,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
             request.Headers.TryAddWithoutValidation("Accept", "text/plain, */*");
 
             // Подписка везёт приватные ключи: чужой сертификат отвергаем, а не обходим.
-            var response = await http.SendVerifiedAsync(request, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
+            var response = await http.SendPinnedAsync(request, pin, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
             using (response)
             {
                 response.EnsureSuccessStatusCode();
@@ -88,7 +94,8 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                     SubscriptionCodec.Parse(body),
                     SubscriptionCodec.ParseTitle(Header(response, "Profile-Title")) ?? string.Empty,
                     SubscriptionCodec.ParseUpdateInterval(Header(response, "Profile-Update-Interval")),
-                    SubscriptionCodec.ParseUsage(Header(response, "Subscription-Userinfo")));
+                    SubscriptionCodec.ParseUsage(Header(response, "Subscription-Userinfo")),
+                    response.Headers.ETag?.Tag.Trim('"') ?? string.Empty);
             }
         }
     }
@@ -101,7 +108,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
         var snapshot = default(SubscriptionSnapshot);
         try
         {
-            snapshot = await FetchAsync(subscription.Url, ct).ConfigureAwait(false);
+            snapshot = await FetchAsync(subscription.Url, subscription.Pin, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException)
         {
@@ -117,8 +124,8 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
         var plan = SubscriptionMerge.Plan(snapshot.Configs, members, names, texts);
 
         var added = 0;
-        var gone = 0;
         var rewritten = new List<string>();
+        var dropped = new List<string>();
         foreach (var change in plan)
         {
             switch (change.Kind)
@@ -133,7 +140,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                 case SubscriptionChangeKind.Update:
                     // Текст переписывается только когда он и правда другой: иначе перезапуск туннеля был бы зря.
                     var current = texts.GetValueOrDefault(change.ConfigName);
-                    if (!string.Equals(current, change.ConfText, StringComparison.Ordinal))
+                    if (!SubscriptionMerge.SameText(current, change.ConfText))
                     {
                         await library.EditAsync(change.ConfigName, change.ConfText, ct).ConfigureAwait(false);
                         rewritten.Add(change.ConfigName);
@@ -155,7 +162,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                     if (names.Contains(change.ConfigName, StringComparer.Ordinal))
                     {
                         await library.DropAsync(change.ConfigName, ct).ConfigureAwait(false);
-                        gone++;
+                        dropped.Add(change.ConfigName);
                     }
 
                     await store.SaveSubscriptionMemberAsync(
@@ -176,10 +183,12 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                 Expires = snapshot.Usage?.Expires ?? subscription.Expires,
                 CheckedAt = DateTimeOffset.UtcNow,
                 LastError = string.Empty,
+                Revision = snapshot.Revision,
+                Offered = snapshot.Revision.Length > 0 ? snapshot.Revision : subscription.Offered,
             },
             ct).ConfigureAwait(false);
 
-        return new SubscriptionResult(added, rewritten.Count, gone, rewritten);
+        return new SubscriptionResult(added, rewritten.Count, dropped.Count, rewritten) { Dropped = dropped };
     }
 
     // Тексты заведённых конфигураций подписки: по ним узнаётся узел, которому сменили имя.

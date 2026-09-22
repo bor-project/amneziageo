@@ -289,9 +289,10 @@ internal sealed class LinuxAgent : IDisposable
     {
         var configs = new List<ConfigEntry>();
         var members = await SubscriptionMembersAsync(ct).ConfigureAwait(false);
+        var stale = await SubscriptionBinding.StaleAsync(_store, ct).ConfigureAwait(false);
         foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
-            configs.Add(await BuildConfigEntryAsync(name, members.GetValueOrDefault(name), ct).ConfigureAwait(false));
+            configs.Add(await BuildConfigEntryAsync(name, members.GetValueOrDefault(name), stale, ct).ConfigureAwait(false));
         }
 
         var routingLists = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
@@ -833,6 +834,9 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpServerOffer:
                 return await ServerOfferAsync(ct).ConfigureAwait(false);
+
+            case IpcContract.OpAskServers:
+                return await AskServersAsync(new IpcAck(true, string.Empty), ct).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
@@ -2669,7 +2673,11 @@ internal sealed class LinuxAgent : IDisposable
         return sb.ToString();
     }
 
-    private async Task<ConfigEntry> BuildConfigEntryAsync(string name, SubscriptionMember? member, CancellationToken ct)
+    private async Task<ConfigEntry> BuildConfigEntryAsync(
+        string name,
+        SubscriptionMember? member,
+        IReadOnlySet<string> stale,
+        CancellationToken ct)
     {
         var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
         var geo = await _store.GetTunnelGeoAsync(name, ct).ConfigureAwait(false);
@@ -2711,7 +2719,8 @@ internal sealed class LinuxAgent : IDisposable
             offer.RoutingLocked,
             transport?.WebSocketHost ?? string.Empty,
             transport?.WebSocketPort ?? 0,
-            WsEndpoint.SourceOf(text, offer) == WsSource.Settings);
+            WsEndpoint.SourceOf(text, offer) == WsSource.Settings,
+            member is not null && stale.Contains(member.Subscription));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

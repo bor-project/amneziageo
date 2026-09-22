@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net.Http;
+using System.Net.Security;
 using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +20,7 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
 {
     private readonly Lazy<HttpClient> _unverified = new(CreateUnverified);
     private readonly ConcurrentDictionary<string, byte> _reported = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, HttpClient> _pinned = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Sends a request, repeating it unverified when the certificate is rejected.
@@ -43,6 +47,19 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
     }
 
     /// <summary>
+    /// Sends a request whose answer has to be proven, taking as well the certificate whose SHA-256 is pinned.
+    /// </summary>
+    public Task<HttpResponseMessage> SendPinnedAsync(HttpRequestMessage request, string pin, HttpCompletionOption completion, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(pin))
+        {
+            return SendVerifiedAsync(request, completion, ct);
+        }
+
+        return _pinned.GetOrAdd(pin, CreatePinned).SendAsync(request, completion, ct);
+    }
+
+    /// <summary>
     /// Downloads a small text file, repeating it unverified when the certificate is rejected.
     /// </summary>
     public async Task<string> GetStringAsync(string url, CancellationToken ct)
@@ -65,6 +82,11 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
         {
             _unverified.Value.Dispose();
         }
+
+        foreach (var client in _pinned.Values)
+        {
+            client.Dispose();
+        }
     }
 
     // Tells a rejected certificate apart from a dead host or a refused port: only the former is worth
@@ -82,6 +104,21 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
         };
 
         return new HttpClient(handler);
+    }
+
+    // Takes a certificate the machine proves, or the one whose SHA-256 the server of the config named.
+    private static HttpClient CreatePinned(string pin)
+    {
+        var handler = new SocketsHttpHandler { UseProxy = false };
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
+            errors == SslPolicyErrors.None || (certificate is not null && Pinned(certificate, pin));
+
+        return new HttpClient(handler);
+    }
+
+    private static bool Pinned(X509Certificate certificate, string pin)
+    {
+        return string.Equals(Convert.ToHexStringLower(SHA256.HashData(certificate.GetRawCertData())), pin, StringComparison.OrdinalIgnoreCase);
     }
 
     // A request that was already sent cannot be sent again; geo requests carry headers only, no body.

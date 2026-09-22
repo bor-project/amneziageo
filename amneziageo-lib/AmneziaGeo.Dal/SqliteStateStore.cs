@@ -357,6 +357,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // The place a routing list holds in the catalogue; existing rows share 0 and stay ordered by name.
             await AddColumnAsync(connection, schema, "routing_lists", "sort_order", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
+            // What the last reading of a subscription brought and what the server of a config names for it.
+            await AddColumnAsync(connection, schema, "subscriptions", "revision", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "subscriptions", "offered", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "subscriptions", "pin", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "subscriptions", "from_hello", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
@@ -1223,7 +1229,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error
+                    SELECT name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error,
+                           revision, offered, pin, from_hello
                     FROM subscriptions
                     ORDER BY name;
                     """;
@@ -1243,7 +1250,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                             reader.GetInt64(6),
                             ReadMoment(reader.GetString(7)),
                             ReadMoment(reader.GetString(8)),
-                            reader.GetString(9)));
+                            reader.GetString(9),
+                            reader.GetString(10),
+                            reader.GetString(11),
+                            reader.GetString(12),
+                            reader.GetInt64(13) != 0));
                     }
                 }
             }
@@ -1265,8 +1276,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO subscriptions (name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error, created_at, updated_at)
-                    VALUES ($name, $url, $title, $interval, $upload, $download, $total, $expires, $checked, $error, $updated, $updated)
+                    INSERT INTO subscriptions (name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error, revision, offered, pin, from_hello, created_at, updated_at)
+                    VALUES ($name, $url, $title, $interval, $upload, $download, $total, $expires, $checked, $error, $revision, $offered, $pin, $hello, $updated, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         url            = excluded.url,
                         title          = excluded.title,
@@ -1277,6 +1288,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         expires_at     = excluded.expires_at,
                         checked_at     = excluded.checked_at,
                         last_error     = excluded.last_error,
+                        revision       = excluded.revision,
+                        offered        = excluded.offered,
+                        pin            = excluded.pin,
+                        from_hello     = excluded.from_hello,
                         updated_at     = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", subscription.Name);
@@ -1289,6 +1304,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$expires", WriteMoment(subscription.Expires));
                 command.Parameters.AddWithValue("$checked", WriteMoment(subscription.CheckedAt));
                 command.Parameters.AddWithValue("$error", subscription.LastError);
+                command.Parameters.AddWithValue("$revision", subscription.Revision);
+                command.Parameters.AddWithValue("$offered", subscription.Offered);
+                command.Parameters.AddWithValue("$pin", subscription.Pin);
+                command.Parameters.AddWithValue("$hello", subscription.FromHello ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

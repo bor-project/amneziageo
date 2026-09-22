@@ -380,6 +380,12 @@ public static class IpcContract
     public const string OpServerOffer = "server-offer";
 
     /// <summary>
+    /// Command to ask the servers of every config what they offer now. Takes no args. The ack comes back at once;
+    /// the answers reach the window in the next snapshots.
+    /// </summary>
+    public const string OpAskServers = "ask-servers";
+
+    /// <summary>
     /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");
     /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
     /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less

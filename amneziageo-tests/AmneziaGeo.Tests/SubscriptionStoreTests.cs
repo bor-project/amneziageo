@@ -71,6 +71,20 @@ public sealed class SubscriptionStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Subscription_KeepsTheMarksOfItsServer()
+    {
+        await _store.SaveSubscriptionAsync(
+            new Subscription("vpn.example", "https://vpn.example:51820/sub/x", Revision: "r1", Offered: "r2", Pin: "ab12", FromHello: true));
+
+        var stored = Assert.Single(await _store.ListSubscriptionsAsync());
+        Assert.Equal("r1", stored.Revision);
+        Assert.Equal("r2", stored.Offered);
+        Assert.Equal("ab12", stored.Pin);
+        Assert.True(stored.FromHello);
+        Assert.True(stored.Stale);
+    }
+
+    [Fact]
     public async Task Subscription_SavedTwice_IsOneRow()
     {
         await _store.SaveSubscriptionAsync(new Subscription("myvpn", "https://host/sub/x"));

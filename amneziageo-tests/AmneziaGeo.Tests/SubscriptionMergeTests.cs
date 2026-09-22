@@ -265,4 +265,23 @@ public sealed class SubscriptionMergeTests
         Assert.Contains(second, change => change.Kind == SubscriptionChangeKind.Add);
         Assert.Contains(second, change => change.Kind == SubscriptionChangeKind.Gone);
     }
+
+    [Fact]
+    public void SameText_IgnoresBlankLinesSpacesAndTheCaseOfKeys()
+    {
+        var held = "[Interface]\r\nprivatekey=" + Key("phone") + "\r\nDNS=1.1.1.1,1.0.0.1\r\n\r\n# phone\r\n[peer]\r\nEndpoint = example.net:51821\r\n";
+        var fetched = "[Interface]\nPrivateKey = " + Key("phone") + "\nDNS = 1.1.1.1, 1.0.0.1\n\n# phone\n[Peer]\nEndpoint = example.net:51821";
+
+        Assert.True(SubscriptionMerge.SameText(held, fetched));
+    }
+
+    [Fact]
+    public void SameText_SeesAChangedValueOrComment()
+    {
+        var text = "[Interface]\nPrivateKey = " + Key("phone") + "\nMTU = 1420\n# phone\n[Peer]\nEndpoint = example.net:51821";
+
+        Assert.False(SubscriptionMerge.SameText(text, text.Replace("MTU = 1420", "MTU = 1380")));
+        Assert.False(SubscriptionMerge.SameText(text, text.Replace("# phone", "# laptop")));
+        Assert.False(SubscriptionMerge.SameText(null, text));
+    }
 }

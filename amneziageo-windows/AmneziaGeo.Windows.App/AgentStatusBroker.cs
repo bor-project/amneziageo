@@ -234,6 +234,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             {
                 IpcContract.OpAddConfig => await AskServersAsync(await AddConfigAsync(command.Args, ct), ct),
                 IpcContract.OpServerOffer => await ServerOfferAsync(ct),
+                IpcContract.OpAskServers => await AskServersAsync(new IpcAck(true, string.Empty), ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
@@ -413,6 +414,11 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         if (outcome.Ack.Ok)
         {
             logger.LogInformation("subscriptions refreshed: {Added} added, {Updated} rewritten, {Gone} gone", outcome.Added, outcome.Updated, outcome.Gone);
+        }
+        else
+        {
+            // The subscriptions read before the failed one are already written; the window gets them now.
+            await BroadcastIfChangedAsync(ct);
         }
 
         return outcome.Ack;
@@ -1320,7 +1326,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     /// </summary>
     protected virtual void TakeRefreshed(SubscriptionOutcome outcome)
     {
-        if (control.Running && (outcome.Rewritten.Any(IsRunningMember) || outcome.Gone > 0))
+        if (control.Running && (outcome.Rewritten.Any(IsRunningMember) || outcome.Dropped.Any(IsRunningMember)))
         {
             control.Invalidate();
         }
@@ -2876,6 +2882,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             members[member.ConfigName] = member;
         }
 
+        var stale = await SubscriptionBinding.StaleAsync(store, ct);
         foreach (var name in await configRepo.ListAsync(ct))
         {
             var configText = await configRepo.ReadTextAsync(name, ct);
@@ -2894,7 +2901,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var reading = bound ? link : LinkReading.Empty;
             var member = members.GetValueOrDefault(name);
             var offer = await scope.Offers.OfferAsync(name, configText, ct).ConfigureAwait(false);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, offer.RoutingLocked, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, offer.RoutingLocked, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription)));
         }
 
         var routingLists = new List<RoutingListEntry>();

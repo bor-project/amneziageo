@@ -1018,6 +1018,9 @@
   <data name="Main_UpdateAllButton" xml:space="preserve">
     <value>Обновить все</value>
   </data>
+  <data name="Main_ConfigUpdateAvailable" xml:space="preserve">
+    <value>Доступно обновление конфигурации</value>
+  </data>
   <data name="Main_UpdateAvailableBadge" xml:space="preserve">
     <value>● Доступно обновление</value>
   </data>

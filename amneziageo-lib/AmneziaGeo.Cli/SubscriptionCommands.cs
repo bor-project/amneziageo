@@ -66,7 +66,7 @@ internal static class SubscriptionCommands
                 Traffic(entry),
                 Moment(entry.ExpiresAt),
                 Moment(entry.CheckedAt),
-                entry.LastError.Length > 0 ? entry.LastError : "ok",
+                entry.LastError.Length > 0 ? entry.LastError : entry.Stale ? "update" : "ok",
                 entry.Url,
             ])
             .ToList();

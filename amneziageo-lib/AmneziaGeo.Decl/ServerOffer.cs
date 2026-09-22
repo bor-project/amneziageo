@@ -12,6 +12,14 @@ namespace AmneziaGeo.Decl;
 public sealed record SpeedLeg(string Down, string Up);
 
 /// <summary>
+/// The subscription a server of ours names for a config.
+/// </summary>
+/// <param name="Url">The address the subscription is read at.</param>
+/// <param name="Revision">The mark of what the subscription hands out now.</param>
+/// <param name="Pin">The SHA-256 of the certificate the address answers under, empty when it names none.</param>
+public sealed record OfferedSubscription(string Url, string Revision, string Pin);
+
+/// <summary>
 /// What a server of ours offers one config: its version, the name it holds the client under and the arguments of
 /// every feature by name.
 /// </summary>
@@ -36,6 +44,11 @@ public sealed class ServerOffer
     /// The feature that measures the speed of the way to the server.
     /// </summary>
     public const string SpeedFeature = "speed";
+
+    /// <summary>
+    /// The feature that names the subscription of the client.
+    /// </summary>
+    public const string SubscriptionFeature = "subscription";
 
     private readonly Dictionary<string, JsonElement> _features;
 
@@ -136,6 +149,26 @@ public sealed class ServerOffer
         var up = Text(leg, "up");
 
         return down.Length > 0 && up.Length > 0 ? new SpeedLeg(down, up) : null;
+    }
+
+    /// <summary>
+    /// Returns the subscription the server names for the config; null when it names none.
+    /// </summary>
+    public OfferedSubscription? Subscription()
+    {
+        if (Arguments(SubscriptionFeature) is not { } arguments)
+        {
+            return null;
+        }
+
+        var url = Text(arguments, "url");
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var address)
+            || (address.Scheme != Uri.UriSchemeHttps && address.Scheme != Uri.UriSchemeHttp))
+        {
+            return null;
+        }
+
+        return new OfferedSubscription(url, Text(arguments, "revision"), Text(arguments, "pin"));
     }
 
     /// <summary>

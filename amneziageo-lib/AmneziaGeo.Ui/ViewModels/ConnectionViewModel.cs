@@ -340,6 +340,21 @@ internal partial class ConnectionViewModel : ViewModelBase
     public IBrush NamesUnroutedBrush => _orange;
 
     /// <summary>
+    /// Whether the subscription of some config waits for an update.
+    /// </summary>
+    public bool ShowConfigUpdate => _host.Config.Configs.Any(row => row.SubscriptionStale);
+
+    /// <summary>
+    /// Warning that a configuration update is available.
+    /// </summary>
+    public string ConfigUpdateText => Loc.Instance.Get("Main_ConfigUpdateAvailable");
+
+    /// <summary>
+    /// Colour of the update warning.
+    /// </summary>
+    public IBrush ConfigUpdateBrush => _orange;
+
+    /// <summary>
     /// The share of the running tunnel's own probes that never came back, as on the card.
     /// </summary>
     public string CardLossText => BoundRow?.CardLossText ?? string.Empty;
@@ -544,6 +559,7 @@ internal partial class ConnectionViewModel : ViewModelBase
 
         // The keepalive age arrived with the rows, so re-colour the connect control from it.
         NotifyServerSilentChanged();
+        OnPropertyChanged(nameof(ShowConfigUpdate));
 
         ConnectFailed = snapshot.ConnectFailed;
         DisconnectFailed = snapshot.DisconnectFailed;
@@ -1032,6 +1048,30 @@ internal partial class ConnectionViewModel : ViewModelBase
         if (!ProbeRunning && _host.HasConfigs)
         {
             ProbeAllCommand.Execute(null);
+        }
+    }
+
+    // Measures every configuration and asks their servers again what they offer.
+    [RelayCommand]
+    private void CheckAll()
+    {
+        ProbeAll();
+        _ = AskServersAsync();
+    }
+
+    // Reads every subscription again when the update warning is pressed.
+    [RelayCommand]
+    private Task UpdateConfigs() => _host.Config.RefreshAllSubscriptionsCommand.ExecuteAsync(null);
+
+    // Asks the servers of every configuration again; a broken pipe leaves the list as it was.
+    private async Task AskServersAsync()
+    {
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAskServers, []));
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
         }
     }
 

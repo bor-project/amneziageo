@@ -132,6 +132,12 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private bool _subscriptionGone;
 
     /// <summary>
+    /// Держит ли сервер другую ревизию подписки, чем прочитанная последней.
+    /// </summary>
+    [ObservableProperty]
+    private bool _subscriptionStale;
+
+    /// <summary>
     /// Ведётся ли конфигурация подпиской.
     /// </summary>
     public bool FromSubscription => Subscription.Length > 0;

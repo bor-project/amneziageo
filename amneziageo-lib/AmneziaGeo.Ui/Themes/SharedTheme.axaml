@@ -409,6 +409,11 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
+    <!-- Подписка ждёт обновления: кнопка обновления цветом предупреждения. -->
+    <Style Selector="Button.linkbtn.stale">
+      <Setter Property="Foreground" Value="{DynamicResource AgWarnBrush}" />
+    </Style>
+
     <!-- Кнопка подключения на карточке: круг у имени сервера, цвета носит его содержимое. -->
     <Style Selector="Button.cardpower">
       <Setter Property="Width" Value="58" />
@@ -496,6 +501,10 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.cardtune.stale">
+      <Setter Property="Foreground" Value="{DynamicResource AgWarnBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgWarnBrush}" />
     </Style>
 
     <!-- Плашка применённого списка рядом с именем. -->

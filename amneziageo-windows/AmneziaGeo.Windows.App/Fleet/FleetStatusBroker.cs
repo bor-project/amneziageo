@@ -255,10 +255,10 @@ internal sealed class FleetStatusBroker(
             return;
         }
 
-        // Снесённую конфигурацию набор роняет сам, переписанный текст встаёт на следующем подъёме туннеля.
+        // Снесённую конфигурацию набор роняет сам, туннель переписанной поднимается заново.
         foreach (var name in outcome.Rewritten.Where(IsRunningMember))
         {
-            MarkRestartRequired(name);
+            live.Of(name)?.Invalidate();
         }
     }
 

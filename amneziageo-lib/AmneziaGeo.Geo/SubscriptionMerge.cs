@@ -207,13 +207,59 @@ public static class SubscriptionMerge
         return false;
     }
 
+    /// <summary>
+    /// Имя узла по ключу клиента из текста конфигурации; пустая строка, когда ключа в нём нет.
+    /// </summary>
+    public static string KeyRemark(string confText)
+    {
+        var key = ClientKey(confText);
+
+        return key.Length > 0 ? "key:" + Digest(key) : string.Empty;
+    }
+
+    /// <summary>
+    /// Сравнивает тексты конфигурации без учёта пустых строк, пробелов и регистра ключей.
+    /// </summary>
+    public static bool SameText(string? held, string fetched)
+    {
+        return held is not null && Lines(held).SequenceEqual(Lines(fetched), StringComparer.Ordinal);
+    }
+
+    // Строки текста в одном виде: без пустых, с ключом в нижнем регистре и списком через запятую с пробелом.
+    private static IEnumerable<string> Lines(string confText)
+    {
+        foreach (var rawLine in confText.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            var equals = line.IndexOf('=');
+            if (line.StartsWith('['))
+            {
+                yield return line.ToLowerInvariant();
+            }
+            else if (line.StartsWith('#') || equals <= 0)
+            {
+                yield return line;
+            }
+            else
+            {
+                var values = line[(equals + 1)..].Split(',').Select(part => part.Trim());
+                yield return line[..equals].Trim().ToLowerInvariant() + " = " + string.Join(", ", values);
+            }
+        }
+    }
+
     // Узел опознаётся по ключу клиента: панель и переименовывает узлы, и раздаёт нескольким одно имя. Без
     // ключа остаётся имя, а без имени - пир и хост.
     private static string Remark(VpnLinkCodec.Imported imported)
     {
-        if (ClientKey(imported.ConfText) is { Length: > 0 } key)
+        if (KeyRemark(imported.ConfText) is { Length: > 0 } keyed)
         {
-            return "key:" + Digest(key);
+            return keyed;
         }
 
         if (!string.IsNullOrWhiteSpace(imported.Name))

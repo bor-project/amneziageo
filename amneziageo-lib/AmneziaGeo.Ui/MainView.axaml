@@ -172,6 +172,12 @@
                     <TextBlock Text="{Binding Home.NamesUnroutedText}" FontSize="12" FontWeight="SemiBold"
                                TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.NamesUnroutedBrush}"
                                IsVisible="{Binding Home.ShowNamesUnrouted}" />
+                    <!-- The subscription of some config waits for an update. -->
+                    <Button Classes="linkbtn" HorizontalAlignment="Center" Command="{Binding Home.UpdateConfigsCommand}"
+                            IsVisible="{Binding Home.ShowConfigUpdate}">
+                      <TextBlock Text="{Binding Home.ConfigUpdateText}" FontSize="12" FontWeight="SemiBold"
+                                 TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConfigUpdateBrush}" />
+                    </Button>
                   </StackPanel>
 
                   <!-- Update offer on a television: a row in the column the remote already walks, instead of the

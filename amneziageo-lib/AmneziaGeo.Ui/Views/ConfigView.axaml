@@ -23,8 +23,21 @@
   <Grid RowDefinitions="Auto,Auto,*" Background="Transparent"
         controls:FileDropBehavior.Command="{Binding DropFilesCommand}">
 
-    <!-- Заголовок раздела: стоит и над каталогом, и над экранами открытой конфигурации. -->
-    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_ConfigSection}" />
+    <!-- Заголовок раздела над каталогом и над экранами конфигурации, у каталога справа обновление конфигураций из подписок. -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
+      <Panel Grid.Column="1" VerticalAlignment="Center" IsVisible="{Binding IsSectionCatalogue}">
+        <Button Classes="linkbtn" IsVisible="{Binding HasSubscriptions}"
+                Command="{Binding RefreshAllSubscriptionsCommand}" IsEnabled="{Binding !SubscriptionsRefreshing}"
+                ToolTip.Tip="{l:Tr General_SubscriptionRefreshAllHint}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Classes.spin="{Binding SubscriptionsRefreshing}" Data="{DynamicResource AgRefreshGeometry}"
+                      Width="14" Height="14" />
+            <TextBlock Text="{l:Tr General_SubscriptionRefreshAllButton}" />
+          </StackPanel>
+        </Button>
+      </Panel>
+    </Grid>
 
     <!-- Шапка каталога: добавление конфигурации и замер всех серверов разом. -->
     <StackPanel x:Name="CatalogueHeader" Grid.Row="1" Margin="0,14,0,0" Spacing="8"
@@ -52,20 +65,6 @@
             <PathIcon Classes.spin="{Binding Home.ProbeRunning}" Data="{DynamicResource AgRefreshGeometry}"
                       Width="14" Height="14" VerticalAlignment="Center" />
             <TextBlock Text="{l:Tr Main_ProbeButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-        <!-- Обновление всех подписок разом: появляется вместе с первой из них. -->
-        <Button Classes="methodpick" MinHeight="34" Padding="12,6" Margin="4,0,0,0"
-                HorizontalAlignment="Stretch" IsVisible="{Binding HasSubscriptions}"
-                Command="{Binding RefreshAllSubscriptionsCommand}" IsEnabled="{Binding !SubscriptionsRefreshing}"
-                ToolTip.Tip="{l:Tr General_SubscriptionRefreshAllHint}"
-                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
-          <StackPanel Orientation="Horizontal" Spacing="6"
-                      HorizontalAlignment="Center" VerticalAlignment="Center">
-            <PathIcon Classes.spin="{Binding SubscriptionsRefreshing}" Data="{DynamicResource AgRefreshGeometry}"
-                      Width="14" Height="14" VerticalAlignment="Center" />
-            <TextBlock Text="{l:Tr General_SubscriptionRefreshAllButton}" TextTrimming="CharacterEllipsis"
-                       VerticalAlignment="Center" />
           </StackPanel>
         </Button>
       </UniformGrid>
@@ -203,30 +202,14 @@
             <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
                        Text="{l:Tr Main_RequiredEmptyWarning}" />
 
-            <!-- Конфигурация из подписки: что подписка принесла, чем ответила в прошлый раз и как её снять. -->
+            <!-- Конфигурация из подписки: когда подписку читали и чем она ответила в прошлый раз. -->
             <StackPanel Spacing="6" Margin="0,6,0,0" IsVisible="{Binding HasOpenConfigSubscription}">
               <StackPanel Spacing="6" DataContext="{Binding OpenConfigSubscription}"
                           x:DataType="vm:SubscriptionItemViewModel">
-                <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Updated}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                           HorizontalAlignment="Right" />
                 <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
                            IsVisible="{Binding HasError}" />
-                <Button Classes="linkbtn" HorizontalAlignment="Left" IsVisible="{Binding !RemovePending}"
-                        Command="{Binding BeginRemoveCommand}" IsEnabled="{Binding !Busy}"
-                        Content="{l:Tr Main_SubscriptionRemove}" />
-
-                <!-- Снятие спрашивает про конфигурации: оставить их помеченными или снести вместе с подпиской. -->
-                <StackPanel Spacing="6" IsVisible="{Binding RemovePending}">
-                  <TextBlock Text="{l:Tr Main_SubscriptionRemovePrompt}" Classes="muted" FontSize="11.5"
-                             TextWrapping="Wrap" />
-                  <WrapPanel Orientation="Horizontal">
-                    <Button Classes="softbtn" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionKeepConfigs}"
-                            Command="{Binding RemoveKeepingConfigsCommand}" />
-                    <Button Classes="danger" Margin="0,0,8,4" Content="{l:Tr Main_SubscriptionDropConfigs}"
-                            Command="{Binding RemoveWithConfigsCommand}" />
-                    <Button Classes="softbtn" Margin="0,0,0,4" Content="{l:Tr Main_CancelButton}"
-                            Command="{Binding CancelRemoveCommand}" />
-                  </WrapPanel>
-                </StackPanel>
               </StackPanel>
             </StackPanel>
             <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"

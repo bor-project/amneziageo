@@ -296,4 +296,17 @@ public sealed class FleetControlTests
         Assert.True(token.IsCancellationRequested);
         Assert.False(fleet.ChangeToken.IsCancellationRequested);
     }
+
+    [Fact]
+    public void AServerTakenOutWhileTheSetIsDown_DoesNotComeBack()
+    {
+        var fleet = new FleetControl(new FleetLive());
+        fleet.Add("alpha");
+        fleet.Add("bravo");
+        fleet.TakeAllDown();
+
+        Assert.True(fleet.Remove("bravo"));
+        Assert.Equal(["alpha"], fleet.Resume);
+        Assert.Equal(["alpha"], fleet.BringBack(string.Empty));
+    }
 }

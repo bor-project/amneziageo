@@ -214,6 +214,23 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
     }
 
     /// <summary>
+    /// Конфигурации, чьи серверы спрашивают перед чтением подписок: принесённые названной подпиской, а без имени - все.
+    /// </summary>
+    public async Task<IReadOnlyList<(string Config, string? Text)>> HelloTargetsAsync(
+        IReadOnlyList<string> args,
+        IReadOnlyList<(string Config, string? Text)> every,
+        CancellationToken ct)
+    {
+        if (args.Count == 0 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return every;
+        }
+
+        var members = await MembersAsync(args[0].Trim(), ct).ConfigureAwait(false);
+        return [.. every.Where(target => members.Contains(target.Config, StringComparer.Ordinal))];
+    }
+
+    /// <summary>
     /// Подписки, которым по их интервалу пора обновиться.
     /// </summary>
     public async Task<IReadOnlyList<Subscription>> DueAsync(int fallbackHours, DateTimeOffset now, CancellationToken ct)

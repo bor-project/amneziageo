@@ -104,6 +104,36 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
     }
 
     /// <summary>
+    /// В режиме открытая конфигурация используется, пока её сервер стоит в наборе или набор поднимется на нём.
+    /// </summary>
+    protected override bool OpenConfigUsed => MultiServer
+        ? Row(OpenConfig ?? string.Empty) is { } card && InSet(card)
+        : base.OpenConfigUsed;
+
+    /// <summary>
+    /// В режиме тумблер ставит сервер открытой конфигурации в набор или снимает с него.
+    /// </summary>
+    protected override async Task UseOpenConfigAsync(bool used)
+    {
+        if (!MultiServer || _shell.HomeFleet is not { } home || Row(OpenConfig ?? string.Empty) is not { } card)
+        {
+            await base.UseOpenConfigAsync(used);
+            return;
+        }
+
+        await home.DialAsync(card, used);
+        NotifyActiveConfigChanged();
+    }
+
+    // Стоит ли сервер в наборе: ход команды виден сразу, остальное говорит снимок.
+    private bool InSet(FleetConfigItemViewModel card) => card.Status switch
+    {
+        ConnectionStatus.Connecting => true,
+        ConnectionStatus.Disconnecting => false,
+        _ => card.Wanted || Resume.Contains(card.Name, StringComparer.Ordinal),
+    };
+
+    /// <summary>
     /// Свободны ли места: замер держит машину, и до его конца их не двигают.
     /// </summary>
     internal bool RolesFree => _shell.HomeFleet?.RolesLocked != true;
@@ -164,6 +194,7 @@ internal sealed class FleetConfigViewModel : ConfigViewModel
         }
 
         SyncStanding();
+        NotifyActiveConfigChanged();
     }
 
     // Карточка режима по имени сервера.

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
@@ -222,6 +223,27 @@ public sealed class ServerOffersTests : IAsyncLifetime
         });
 
         Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task TheServersAskedTogether_AreAllWaitedForAndAFailureStaysWithItsConfig()
+    {
+        var offers = new ServerOffers(_store, ask: (point, _) => point.Host == "down.example"
+            ? throw new HttpRequestException("down")
+            : Task.FromResult(new HelloReply(Named("r1"), true)));
+        var named = new ConcurrentQueue<string>();
+
+        await offers.AskEachAsync(
+            [("office", Text), ("broken", Text.Replace("vpn.example", "down.example", StringComparison.Ordinal))],
+            config =>
+            {
+                named.Enqueue(config);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["office"], named.ToArray());
+        Assert.Equal("https://vpn.example:51820/sub/abc", Assert.Single(await _store.ListSubscriptionsAsync()).Url);
     }
 
     [Fact]

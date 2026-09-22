@@ -138,6 +138,12 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private bool _subscriptionStale;
 
     /// <summary>
+    /// Крутится ли значок обновления подписки на карточке.
+    /// </summary>
+    [ObservableProperty]
+    private bool _subscriptionRefreshing;
+
+    /// <summary>
     /// Ведётся ли конфигурация подпиской.
     /// </summary>
     public bool FromSubscription => Subscription.Length > 0;

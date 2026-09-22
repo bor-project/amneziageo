@@ -2209,38 +2209,11 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Subscriptions</value>
   </data>
-  <data name="Main_SubscriptionConfigs" xml:space="preserve">
-    <value>configurations: {0}</value>
-  </data>
-  <data name="Main_SubscriptionGone" xml:space="preserve">
-    <value>gone: {0}</value>
-  </data>
-  <data name="Main_SubscriptionTraffic" xml:space="preserve">
-    <value>{0} of {1}</value>
-  </data>
-  <data name="Main_SubscriptionExpires" xml:space="preserve">
-    <value>until {0}</value>
-  </data>
-  <data name="Main_SubscriptionChecked" xml:space="preserve">
-    <value>updated {0}</value>
-  </data>
-  <data name="Main_SubscriptionNever" xml:space="preserve">
-    <value>not updated yet</value>
+  <data name="Main_SubscriptionUpdated" xml:space="preserve">
+    <value>updated: {0}</value>
   </data>
   <data name="Main_SubscriptionRefresh" xml:space="preserve">
     <value>Refresh</value>
-  </data>
-  <data name="Main_SubscriptionRemove" xml:space="preserve">
-    <value>Remove</value>
-  </data>
-  <data name="Main_SubscriptionRemovePrompt" xml:space="preserve">
-    <value>Remove the subscription? You can keep its configurations.</value>
-  </data>
-  <data name="Main_SubscriptionKeepConfigs" xml:space="preserve">
-    <value>Keep the configurations</value>
-  </data>
-  <data name="Main_SubscriptionDropConfigs" xml:space="preserve">
-    <value>Remove them too</value>
   </data>
   <data name="Main_SubscriptionHint" xml:space="preserve">
     <value>Paste a subscription address here: the app recognises it and loads the configurations.</value>
@@ -2267,7 +2240,7 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
     <value>Refreshes every subscription now, without waiting for its interval.</value>
   </data>
   <data name="General_SubscriptionRefreshAllButton" xml:space="preserve">
-    <value>Refresh all</value>
+    <value>Refresh configs</value>
   </data>
   <data name="Main_ProbeShielded" xml:space="preserve">
     <value>hidden by the tunnel</value>

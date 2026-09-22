@@ -407,6 +407,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
+        var scope = CurrentScope;
+        var every = await OfferTargetsAsync(scope, ct).ConfigureAwait(false);
+        var targets = await Subscriptions().HelloTargetsAsync(args, every, ct).ConfigureAwait(false);
+        await scope.Offers.AskEachAsync(targets, OfferChangedAsync, ct).ConfigureAwait(false);
         var outcome = await Subscriptions().RefreshAsync(args, ct);
 
         TakeRefreshed(outcome);
@@ -1450,13 +1454,19 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     private async Task WarmOffersAsync(CancellationToken ct)
     {
         var scope = CurrentScope;
+        scope.Offers.Warm(await OfferTargetsAsync(scope, ct).ConfigureAwait(false), OfferChangedAsync);
+    }
+
+    // Every configuration of the scope with its text, for their servers to be asked what they offer.
+    private static async Task<IReadOnlyList<(string Config, string? Text)>> OfferTargetsAsync(BrokerScope scope, CancellationToken ct)
+    {
         var targets = new List<(string Config, string? Text)>();
         foreach (var name in await scope.Store.ListConfigNamesAsync(ct).ConfigureAwait(false))
         {
             targets.Add((name, await scope.Store.GetConfigTextAsync(name, ct).ConfigureAwait(false)));
         }
 
-        scope.Offers.Warm(targets, OfferChangedAsync);
+        return targets;
     }
 
     // Asks the servers again behind a configuration that was stored.

@@ -88,6 +88,17 @@ public sealed class ServerOffers
     }
 
     /// <summary>
+    /// Asks the servers of the configs at once and waits for every answer, naming every config whose offer settles
+    /// the tunnel otherwise now.
+    /// </summary>
+    public async Task AskEachAsync(IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+
+        await Task.WhenAll(targets.Select(target => AskOneAsync(target.Config, target.Text, changed, ct))).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Returns an offer whose pass for a speed run still stands, or null when the server does not measure.
     /// </summary>
     public async Task<ServerOffer?> SpeedAsync(string config, string? text, CancellationToken ct)
@@ -172,13 +183,29 @@ public sealed class ServerOffers
         }
     }
 
-    // Asks one server and names the config when what it settles or the subscription it names changed.
+    // Asks one server in the background and lets the next question to it through.
     private async Task WarmOneAsync(string config, string? text, Func<string, Task>? changed)
     {
         try
         {
-            var before = await OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false);
-            var (after, bound) = await AskBindingAsync(config, text, CancellationToken.None).ConfigureAwait(false);
+            await AskOneAsync(config, text, changed, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                _asking.Remove(config);
+            }
+        }
+    }
+
+    // Asks one server and names the config when what it settles or the subscription it names changed.
+    private async Task AskOneAsync(string config, string? text, Func<string, Task>? changed, CancellationToken ct)
+    {
+        try
+        {
+            var before = await OfferAsync(config, text, ct).ConfigureAwait(false);
+            var (after, bound) = await AskBindingAsync(config, text, ct).ConfigureAwait(false);
             if (changed is not null && (bound || !before.Settles(after)))
             {
                 await changed(config).ConfigureAwait(false);
@@ -187,13 +214,6 @@ public sealed class ServerOffers
         catch (Exception ex)
         {
             _note?.Invoke($"{config}: the server could not be asked what it offers", ex);
-        }
-        finally
-        {
-            lock (_lock)
-            {
-                _asking.Remove(config);
-            }
         }
     }
 }

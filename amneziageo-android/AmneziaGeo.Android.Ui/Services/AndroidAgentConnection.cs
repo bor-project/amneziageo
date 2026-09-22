@@ -3336,6 +3336,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args)
     {
         await EnsureInitAsync().ConfigureAwait(false);
+        var targets = await Subscriptions().HelloTargetsAsync(args, OfferTargets(), CancellationToken.None).ConfigureAwait(false);
+        await _offers.AskEachAsync(targets, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
         var outcome = await Subscriptions().RefreshAsync(args, CancellationToken.None).ConfigureAwait(false);
         DropRunningIfGone();
         FlagRewritten(outcome);

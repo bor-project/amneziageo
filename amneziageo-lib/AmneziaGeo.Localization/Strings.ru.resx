@@ -2209,38 +2209,11 @@
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Подписки</value>
   </data>
-  <data name="Main_SubscriptionConfigs" xml:space="preserve">
-    <value>конфигураций: {0}</value>
-  </data>
-  <data name="Main_SubscriptionGone" xml:space="preserve">
-    <value>пропало: {0}</value>
-  </data>
-  <data name="Main_SubscriptionTraffic" xml:space="preserve">
-    <value>{0} из {1}</value>
-  </data>
-  <data name="Main_SubscriptionExpires" xml:space="preserve">
-    <value>до {0}</value>
-  </data>
-  <data name="Main_SubscriptionChecked" xml:space="preserve">
-    <value>обновлена {0}</value>
-  </data>
-  <data name="Main_SubscriptionNever" xml:space="preserve">
-    <value>ещё не обновлялась</value>
+  <data name="Main_SubscriptionUpdated" xml:space="preserve">
+    <value>обновлено: {0}</value>
   </data>
   <data name="Main_SubscriptionRefresh" xml:space="preserve">
     <value>Обновить</value>
-  </data>
-  <data name="Main_SubscriptionRemove" xml:space="preserve">
-    <value>Удалить</value>
-  </data>
-  <data name="Main_SubscriptionRemovePrompt" xml:space="preserve">
-    <value>Удалить подписку? Её конфигурации можно оставить.</value>
-  </data>
-  <data name="Main_SubscriptionKeepConfigs" xml:space="preserve">
-    <value>Оставить конфигурации</value>
-  </data>
-  <data name="Main_SubscriptionDropConfigs" xml:space="preserve">
-    <value>Удалить вместе с ними</value>
   </data>
   <data name="Main_SubscriptionHint" xml:space="preserve">
     <value>Вставьте сюда адрес подписки: приложение распознает его и загрузит конфигурации.</value>
@@ -2267,7 +2240,7 @@
     <value>Обновляет все подписки сразу, не дожидаясь срока.</value>
   </data>
   <data name="General_SubscriptionRefreshAllButton" xml:space="preserve">
-    <value>Обновить все</value>
+    <value>Обновить конфиги</value>
   </data>
   <data name="Main_ProbeShielded" xml:space="preserve">
     <value>не видно из туннеля</value>

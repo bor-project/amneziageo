@@ -156,26 +156,31 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
     }
 
     // Поднимает или снимает один сервер, ведя на время команды и карточку, и шапку.
-    private async Task DialAsync(ConfigItemViewModel item)
+    private Task DialAsync(ConfigItemViewModel item) =>
+        DialAsync(item, item.Status is not (ConnectionStatus.Connected or ConnectionStatus.Connecting));
+
+    /// <summary>
+    /// Ставит сервер в набор или снимает с него, ведя на время команды и карточку, и шапку.
+    /// </summary>
+    internal async Task DialAsync(ConfigItemViewModel item, bool raise)
     {
-        var up = item.Status is ConnectionStatus.Connected or ConnectionStatus.Connecting;
-        var going = up ? ConnectionStatus.Disconnecting : ConnectionStatus.Connecting;
-        var back = up ? ConnectionStatus.Connected : ConnectionStatus.Disconnected;
+        var going = raise ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
+        var back = raise ? ConnectionStatus.Disconnected : ConnectionStatus.Connected;
         var card = item as FleetConfigItemViewModel;
         card?.Mark(going);
-        Head(item, !up, going);
+        Head(item, raise, going);
         ToggleInFlight = true;
         try
         {
-            var ack = await _link.SendCommandAsync(new IpcCommand(up ? FleetOps.Disconnect : FleetOps.Connect, [item.Name]));
+            var ack = await _link.SendCommandAsync(new IpcCommand(raise ? FleetOps.Connect : FleetOps.Disconnect, [item.Name]));
             if (ack.Ok)
             {
                 return;
             }
 
             card?.Settle(back);
-            Head(item, up, back);
-            if (!up && OwnedByOtherAck(ack))
+            Head(item, !raise, back);
+            if (raise && OwnedByOtherAck(ack))
             {
                 RequestTakeover();
                 return;

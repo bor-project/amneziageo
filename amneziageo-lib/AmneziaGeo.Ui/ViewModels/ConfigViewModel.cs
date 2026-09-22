@@ -151,6 +151,9 @@ internal partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigTransportViewModel? _sectionTransport;
 
+    // Сколько самое меньшее крутится значок обновления подписки.
+    private static readonly TimeSpan RefreshSpin = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -433,10 +436,10 @@ internal partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool UseOpenConfig
     {
-        get => IsOpenConfigActive;
+        get => OpenConfigUsed;
         set
         {
-            if (value == IsOpenConfigActive)
+            if (value == OpenConfigUsed)
             {
                 return;
             }
@@ -445,8 +448,15 @@ internal partial class ConfigViewModel : ViewModelBase
         }
     }
 
-    // Отправляет выбор и перечитывает тумблер из состояния, которое вышло.
-    private async Task UseOpenConfigAsync(bool used)
+    /// <summary>
+    /// Используется ли открытая конфигурация: у машины с одним туннелем это цель подключения.
+    /// </summary>
+    protected virtual bool OpenConfigUsed => IsOpenConfigActive;
+
+    /// <summary>
+    /// Отправляет выбор и перечитывает тумблер из состояния, которое вышло.
+    /// </summary>
+    protected virtual async Task UseOpenConfigAsync(bool used)
     {
         if (!used)
         {
@@ -919,18 +929,11 @@ internal partial class ConfigViewModel : ViewModelBase
             var existing = Subscriptions.FirstOrDefault(item => string.Equals(item.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new SubscriptionItemViewModel(RefreshSubscriptionAsync, RemoveSubscriptionAsync) { Name = entry.Name };
+                existing = new SubscriptionItemViewModel(RefreshSubscriptionAsync) { Name = entry.Name };
                 Subscriptions.Insert(Math.Min(i, Subscriptions.Count), existing);
             }
 
-            existing.Url = entry.Url;
             existing.Title = entry.Title;
-            existing.Configs = entry.Configs;
-            existing.Gone = entry.Gone;
-            existing.Upload = entry.Upload;
-            existing.Download = entry.Download;
-            existing.Total = entry.Total;
-            existing.ExpiresAt = entry.ExpiresAt;
             existing.CheckedAt = entry.CheckedAt;
             existing.LastError = entry.LastError;
         }
@@ -986,7 +989,7 @@ internal partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Перечитывает подписку, которой пришла конфигурация карточки.
     /// </summary>
-    // Кнопка не гаснет на время чтения: погасшую пульт роняет из фокуса. Повторный запуск отсекает Busy.
+    // Кнопка не гаснет на время чтения: погасшую пульт роняет из фокуса. Повторный запуск отсекает SubscriptionRefreshing.
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task RefreshConfigSubscription(ConfigItemViewModel? row)
     {
@@ -996,13 +999,23 @@ internal partial class ConfigViewModel : ViewModelBase
         }
 
         var item = Subscriptions.FirstOrDefault(sub => string.Equals(sub.Name, row.Subscription, StringComparison.Ordinal));
-        if (item is not null)
+        if (item is null || row.SubscriptionRefreshing)
         {
-            await RefreshSubscriptionAsync(item);
+            return;
+        }
+
+        row.SubscriptionRefreshing = true;
+        try
+        {
+            await Task.WhenAll(RefreshSubscriptionAsync(item), Task.Delay(RefreshSpin));
+        }
+        finally
+        {
+            row.SubscriptionRefreshing = false;
         }
     }
 
-    // Перечитывает одну подписку по кнопке строки.
+    // Перечитывает одну подписку по кнопке строки, держа значок не меньше двух секунд.
     private async Task RefreshSubscriptionAsync(SubscriptionItemViewModel item)
     {
         if (item.Busy)
@@ -1013,29 +1026,9 @@ internal partial class ConfigViewModel : ViewModelBase
         item.Busy = true;
         try
         {
-            var ack = await Ask(new IpcCommand(IpcContract.OpRefreshSubscription, [item.Name]));
-            item.LastError = ack is { Ok: false } ? ack.Message : string.Empty;
-            await LoadSubscriptionsAsync();
-        }
-        finally
-        {
-            item.Busy = false;
-        }
-    }
-
-    // Снимает подписку, по требованию вместе с приведёнными ею конфигурациями.
-    private async Task RemoveSubscriptionAsync(SubscriptionItemViewModel item, bool withConfigs)
-    {
-        if (item.Busy)
-        {
-            return;
-        }
-
-        item.Busy = true;
-        try
-        {
-            var args = withConfigs ? new[] { item.Name, "configs" } : [item.Name];
-            var ack = await Ask(new IpcCommand(IpcContract.OpRemoveSubscription, args));
+            var asked = Ask(new IpcCommand(IpcContract.OpRefreshSubscription, [item.Name]));
+            await Task.WhenAll(asked, Task.Delay(RefreshSpin));
+            var ack = await asked;
             item.LastError = ack is { Ok: false } ? ack.Message : string.Empty;
             await LoadSubscriptionsAsync();
         }

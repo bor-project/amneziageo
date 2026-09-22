@@ -154,6 +154,20 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task HelloTargets_AreTheConfigsOfTheNamedSubscriptionElseEvery()
+    {
+        _feed.Body = Body(Config("phone"));
+        await _service.AddAsync([Url], default);
+        (string Config, string? Text)[] every = [("phone", "one"), ("desk", "two")];
+
+        var named = await _service.HelloTargetsAsync(["example.net"], every, default);
+        var all = await _service.HelloTargetsAsync([], every, default);
+
+        Assert.Equal([("phone", "one")], named);
+        Assert.Equal(every, all);
+    }
+
+    [Fact]
     public async Task Remove_KeepsTheConfigsUnlessAskedOtherwise()
     {
         _feed.Body = Body(Config("phone"));

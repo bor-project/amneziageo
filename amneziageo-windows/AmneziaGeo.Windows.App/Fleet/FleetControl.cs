@@ -232,13 +232,15 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     }
 
     /// <summary>
-    /// Drops a tunnel from the set; answers whether it was in it.
+    /// Drops a tunnel from the set and from the set it comes back on; answers whether it was in either.
     /// </summary>
     public bool Remove(string name)
     {
         lock (_gate)
         {
-            if (!_wanted.Remove(name))
+            var dropped = _wanted.Remove(name);
+            dropped |= _resume.Remove(name);
+            if (!dropped)
             {
                 return false;
             }

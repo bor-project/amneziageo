@@ -992,6 +992,9 @@ internal sealed class LinuxAgent : IDisposable
 
     private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
+        var every = await OfferTargetsAsync(ct).ConfigureAwait(false);
+        var targets = await Subscriptions().HelloTargetsAsync(args, every, ct).ConfigureAwait(false);
+        await _offers.AskEachAsync(targets, OfferChangedAsync, ct).ConfigureAwait(false);
         var outcome = await Subscriptions().RefreshAsync(args, ct).ConfigureAwait(false);
         await FlagRewrittenAsync(outcome, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);

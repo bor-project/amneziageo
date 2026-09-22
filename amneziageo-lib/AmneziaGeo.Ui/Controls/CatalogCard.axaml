@@ -96,7 +96,8 @@
                       ToolTip.Tip="{l:Tr Main_SubscriptionRefresh}"
                       Command="{Binding $parent[controls:CatalogCard].RefreshSubscriptionCommand}"
                       CommandParameter="{Binding}">
-                <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
+                <PathIcon Classes.spin="{Binding SubscriptionRefreshing}" Data="{DynamicResource AgRefreshGeometry}"
+                          Width="14" Height="14" />
               </Button>
             </Panel>
           </Grid>

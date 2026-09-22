@@ -1341,6 +1341,12 @@ internal partial class ConfigViewModel : ViewModelBase
         }
 
         var ack = await RemoveConfigAsync(name);
+        if (ack.Ok)
+        {
+            // Подписка, оставшаяся без узлов, уходит вместе с конфигурацией.
+            await LoadSubscriptionsAsync();
+        }
+
         if (!ack.Ok || !carried || next is not { Length: > 0 } target)
         {
             return ack;

@@ -3544,6 +3544,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         Save();
         await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveConfigTransportAsync(args[0]).ConfigureAwait(false);
+        await ConfigForget.CarryAsync(_store, args[0]).ConfigureAwait(false);
+        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();

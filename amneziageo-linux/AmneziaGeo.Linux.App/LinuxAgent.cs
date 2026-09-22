@@ -1259,6 +1259,7 @@ internal sealed class LinuxAgent : IDisposable
         await _store.RemoveConfigTransportAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigDnsAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigExclusionsAsync(args[0], ct).ConfigureAwait(false);
+        await ConfigForget.CarryAsync(_store, args[0], ct).ConfigureAwait(false);
         if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
         {
             await StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);

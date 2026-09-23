@@ -983,7 +983,7 @@
     </Style>
 
     <!-- Opacity breathing busy indicator. -->
-    <Style Selector="Control.pulse">
+    <Style Selector=":is(Control).pulse">
       <Style.Animations>
         <Animation Duration="0:0:1" IterationCount="INFINITE">
           <KeyFrame Cue="0%">

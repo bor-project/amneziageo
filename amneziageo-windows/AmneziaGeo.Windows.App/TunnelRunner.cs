@@ -1835,9 +1835,10 @@ internal sealed class TunnelRunner(
                 dns.FlushCache();
             }
 
-            ApplyNameRules(routing, held);
-
             session.Tracker?.ApplyList(current with { Routes = aroundLocal.Carried }, Squared(aroundLocal.Carried, standing), ct);
+
+            // Applies the names after the tracker has taken the edited list.
+            ApplyNameRules(routing, held);
         }
         catch (Exception ex)
         {
@@ -1925,6 +1926,7 @@ internal sealed class TunnelRunner(
             }
 
             var verdict = RouteVerdict.None;
+            var tunneled = default(string);
             foreach (var domain in tracker.NamesOf(entry.Address.ToString()))
             {
                 var byName = proxy.NameVerdict(domain);
@@ -1938,15 +1940,26 @@ internal sealed class TunnelRunner(
                 {
                     verdict = byName;
                 }
+
+                if (byName == RouteVerdict.Proxy)
+                {
+                    tunneled ??= domain;
+                }
             }
 
-            if (verdict is not (RouteVerdict.Direct or RouteVerdict.Block))
+            if (verdict is RouteVerdict.Direct or RouteVerdict.Block)
             {
+                routing.Note(entry.Address, verdict);
+                applied++;
                 continue;
             }
 
-            routing.Note(entry.Address, verdict);
-            applied++;
+            // Hands the tracker the address of a name the edit sends into the tunnel and resets what left without it.
+            if (tunneled is not null && routing.Classify(entry.Address) != RouteVerdict.Proxy)
+            {
+                tracker.Add(tunneled, [entry.Address.ToString()], late: true);
+                applied++;
+            }
         }
 
         if (applied > 0)

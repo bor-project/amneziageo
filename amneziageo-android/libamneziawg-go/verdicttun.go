@@ -508,6 +508,9 @@ func (d *verdictTun) setProtector(fn func(int) bool) {
 // Столько ответов о владельце держим разом.
 const ownerCacheMax = 8192
 
+// Сколько ответ о владельце живёт: порт освобождается и достаётся другому приложению.
+const ownerHold = 3 * time.Second
+
 // Владелец, каким его называет хост.
 const (
 	ownerOther = 0
@@ -571,7 +574,13 @@ func (d *verdictTun) ours(packet []byte) bool {
 	return d.whose(packet, protoTcp) == ownerSelf
 }
 
-// Чьё это соединение, как его называет хост; ответ держится по протоколу и паре портов, пока оно живо.
+// Ответ хоста о владельце и срок, до которого он годен.
+type ownerHeld struct {
+	verdict int
+	until   int64
+}
+
+// Чьё это соединение, как его называет хост; ответ держится по протоколу и паре портов, пока не истечёт срок.
 func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	head := int(packet[0]&0x0f) * 4
 	if head < 20 || len(packet) < head+4 {
@@ -581,8 +590,13 @@ func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	srcPort := binary.BigEndian.Uint16(packet[head : head+2])
 	dstPort := binary.BigEndian.Uint16(packet[head+2 : head+4])
 	key := uint64(proto)<<32 | uint64(srcPort)<<16 | uint64(dstPort)
+	nanos := time.Now().UnixNano()
 	if kept, ok := d.owners.Load(key); ok {
-		return kept.(int)
+		if held, fits := kept.(ownerHeld); fits && held.until > nanos {
+			return held.verdict
+		}
+
+		d.owners.Delete(key)
 	}
 
 	fn := d.owner.Load()
@@ -596,7 +610,7 @@ func (d *verdictTun) whose(packet []byte, proto uint8) int {
 		d.owned.Store(1)
 	}
 
-	d.owners.Store(key, answer)
+	d.owners.Store(key, ownerHeld{answer, nanos + int64(ownerHold)})
 	return answer
 }
 

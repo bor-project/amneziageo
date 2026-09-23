@@ -20,7 +20,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private AsyncRelayCommand? _toggleWebSocket;
     private AsyncRelayCommand? _toggleIpv6;
     private AsyncRelayCommand? _toggleRouter;
-    private AsyncRelayCommand? _toggleRouting;
 
     private AsyncRelayCommand? _toggleMtu;
 
@@ -212,19 +211,13 @@ internal partial class ConfigItemViewModel : ViewModelBase
         _toggleRouter ??= new AsyncRelayCommand(() => ToggleAsync(() => UseRouter = !UseRouter));
 
     /// <summary>
-    /// Переключает маршрутизацию с плашки карточки.
-    /// </summary>
-    public IAsyncRelayCommand ToggleRoutingCommand =>
-        _toggleRouting ??= new AsyncRelayCommand(() => ToggleAsync(() => UseRouting = !UseRouting));
-
-    /// <summary>
     /// Переключает MTU с плашки карточки: подбор против зафиксированного размера.
     /// </summary>
     public IAsyncRelayCommand ToggleMtuCommand =>
         _toggleMtu ??= new AsyncRelayCommand(() => ToggleAsync(() => MtuMode = NextMtuMode()));
 
     /// <summary>
-    /// Метки настроек карточки: прокси, IPv6, маршрутизация и MTU. Идут в этом порядке, MTU уходит за край первым, когда
+    /// Метки настроек карточки: прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край первым, когда
     /// ширины не хватает.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
@@ -244,7 +237,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
         {
             new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket && WebSocketOffered, WebSocketOffered ? ToggleWebSocketCommand : null),
             new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
-            new(Loc.Instance.Get("Main_UseRoutingTitle"), UseRouting && !RoutingLocked, RoutingLocked ? null : ToggleRoutingCommand),
         };
 
         if (ConfigTransportViewModel.RouterVisible && OperatingSystem.IsAndroid())

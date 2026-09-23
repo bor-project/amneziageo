@@ -429,8 +429,12 @@ internal sealed partial class CatalogCard : UserControl
     {
         _entered = true;
         ApplyStopFocus();
-        Rows()[0][0].Focus(NavigationMethod.Directional);
+        Head().Focus(NavigationMethod.Directional);
     }
+
+    // Куда садится пульт, войдя в карточку.
+    private Control Head() =>
+        ConnectPart is { IsVisible: true, IsEnabled: true } ? ConnectPart : Rows()[0][0];
 
     private void Leave()
     {
@@ -461,28 +465,29 @@ internal sealed partial class CatalogCard : UserControl
         grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки строками: подключение сверху, обновление подписки под ним, настройки снизу;
-    // запертую кнопку туннеля и скрытое обновление пульт пропускает.
+    // Контролы карточки строками: обновление подписки с подключением сверху, подвал снизу;
+    // запертую кнопку туннеля и потухшее обновление пульт пропускает.
     private List<List<Control>> Rows()
     {
         var rows = new List<List<Control>>();
-        if (ConnectPart is { IsVisible: true, IsEnabled: true })
-        {
-            rows.Add([ConnectPart]);
-        }
-
+        var head = new List<Control>();
         if (RefreshPart is { IsVisible: true, IsEnabled: true })
         {
-            rows.Add([RefreshPart]);
+            head.Add(RefreshPart);
+        }
+
+        if (ConnectPart is { IsVisible: true, IsEnabled: true })
+        {
+            head.Add(ConnectPart);
+        }
+
+        if (head.Count > 0)
+        {
+            rows.Add(head);
         }
 
         var extras = ExtraStops().Where(stop => stop is { IsVisible: true, IsEnabled: true }).ToList();
-        if (extras.Count > 0)
-        {
-            rows.Add([.. extras]);
-        }
-
-        rows.Add([.. TagsPart.Presses(), SettingsPart]);
+        rows.Add([.. extras, .. TagsPart.Presses(), SettingsPart]);
         return rows;
     }
 
@@ -500,6 +505,6 @@ internal sealed partial class CatalogCard : UserControl
         }
     }
 
-    // Кнопки, добавленные оболочкой в строку состояния карточки.
+    // Кнопки, добавленные оболочкой в подвал карточки.
     private IEnumerable<Button> ExtraStops() => ExtrasPart.GetVisualDescendants().OfType<Button>();
 }

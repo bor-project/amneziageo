@@ -586,7 +586,8 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
-            if (_proxyPort > 0 && AwgEngine.SetRelay(handle, _proxyPort, !plan.FullTunnel, Owner))
+            // All UDP on the tunnel leaves no datagram to the owner check.
+            if (_proxyPort > 0 && AwgEngine.SetRelay(handle, _proxyPort, !plan.FullTunnel && !plan.AllUdp, Owner))
             {
                 Report("streams are taken off the tun and decided in the relay, so the applications are offered no "
                     + "proxy and see none");
@@ -796,6 +797,12 @@ public sealed class GeoVpnService : VpnService
             return true;
         }
 
+        if (plan.AllUdp)
+        {
+            Report("every datagram rides the tunnel, so the relay stands to take the streams off it");
+            return true;
+        }
+
         var routes = SystemRoutes.Tunneled(plan.FullTunnel, plan.ProxyRoutes, plan.DirectRoutes, plan.BlockRoutes).Count;
         var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
         if (RouteBudget.Fits(routes, names))
@@ -895,7 +902,12 @@ public sealed class GeoVpnService : VpnService
             Report($"{plan.DirectRoutes.Count} direct range(s) are decided on the packet, so a datagram to one of "
                 + "them leaves on a protected socket while the table stays short");
 
-            if (!plan.AllUdp)
+            if (plan.AllUdp)
+            {
+                Report("every datagram rides the tunnel, whoever sent it: only a direct range takes one off the "
+                    + "route table");
+            }
+            else
             {
                 Report("a socket that ignores the proxy still rides the tunnel: only datagrams take the direct "
                     + "path off the route table");

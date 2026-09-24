@@ -1368,7 +1368,7 @@ internal sealed class LinuxAgent : IDisposable
     // The name a routing list id stands for; null id is routing off.
     private async Task<string?> ListNameAsync(long? listId, CancellationToken ct)
     {
-        return listId is long id ? (await _store.GetRoutingListAsync(id, ct).ConfigureAwait(false))?.Name : null;
+        return listId is long id ? (await _store.GetRoutingListStampAsync(id, ct).ConfigureAwait(false))?.Name : null;
     }
 
     // Picks the routing list every config uses; a missing or unparsable id turns routing off.
@@ -1377,7 +1377,7 @@ internal sealed class LinuxAgent : IDisposable
         var listId = args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
             ? parsed
             : (long?)null;
-        if (listId is not null && await _store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false) is null)
+        if (listId is not null && await _store.GetRoutingListStampAsync(listId.Value, ct).ConfigureAwait(false) is null)
         {
             return NotFound(args[0]);
         }
@@ -1647,7 +1647,7 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
-        var list = await _store.GetRoutingListAsync(id, ct).ConfigureAwait(false);
+        var list = await _store.GetRoutingListStampAsync(id, ct).ConfigureAwait(false);
         return list is null
             ? Fail()
             : new IpcAck(true, string.Join('\n', list.Rules.Select(GeoConfigurator.FormatWithRole)));
@@ -2320,7 +2320,7 @@ internal sealed class LinuxAgent : IDisposable
             await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
             LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text)),
             LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
-            !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase),
+            _tunnel.RoutingMode != SessionReport.ModeSplit,
             true,
             _tunnel.Running ? _handshakeAge : -1,
             _tunnel.Running ? _link.HandshakesPerMinute : -1,
@@ -2351,7 +2351,7 @@ internal sealed class LinuxAgent : IDisposable
                 _tunnel.Running && string.Equals(name, _selectedTarget, StringComparison.Ordinal)));
         }
 
-        var full = _tunnel.Running && !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase);
+        var full = _tunnel.Running && _tunnel.RoutingMode != SessionReport.ModeSplit;
         var report = await ServerSweep
             .RunAsync(servers, new SweepOptions(LocalGateway.Find(), _tunnel.Running, full), ct)
             .ConfigureAwait(false);
@@ -2376,7 +2376,7 @@ internal sealed class LinuxAgent : IDisposable
                 _tunnel.Running && string.Equals(name, _selectedTarget, StringComparison.Ordinal)));
         }
 
-        var carriesDefault = _tunnel.Running && !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase);
+        var carriesDefault = _tunnel.Running && _tunnel.RoutingMode != SessionReport.ModeSplit;
         var bypass = PhysicalPath.Bypass(await _tunnel.PhysicalDeviceAsync(ct).ConfigureAwait(false));
         var payload = await CardProbe.RunAsync(servers, carriesDefault, bypass, ct).ConfigureAwait(false);
         return new IpcAck(true, payload);
@@ -2394,7 +2394,7 @@ internal sealed class LinuxAgent : IDisposable
             && await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
                 ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
                 : null;
-        var split = !string.Equals(_tunnel.Mode, "full", StringComparison.OrdinalIgnoreCase);
+        var split = _tunnel.RoutingMode is not (SessionReport.ModeFull or SessionReport.ModeOff);
         var report = await new TargetInspector(list, split)
             .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(Held), ct)
             .ConfigureAwait(false);

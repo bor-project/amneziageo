@@ -306,16 +306,14 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool ShowDeleteCard => IsSectionSettings && RoutingEditor is { IsNew: false } && !SectionLoading;
 
     /// <summary>
-    /// Whether the import draft rule + traffic editor is shown.
+    /// Whether the draft rule + traffic editor is shown: a list by hand, or a filled preset or import.
     /// </summary>
-    public bool ShowImportEditor => IsSectionImport && IsImportManual;
+    public bool ShowImportEditor => IsSectionImport && (IsImportManual || IsImportDraft);
 
     /// <summary>
     /// Whether the import live QR scanner is shown.
     /// </summary>
     public bool ShowImportCamera => IsSectionImport && IsImportCamera;
-
-    public bool IsImportPicker => ImportMethod == RoutingImportMethod.Picker;
 
     public bool IsImportManual => ImportMethod == RoutingImportMethod.Manual;
 
@@ -325,13 +323,51 @@ internal partial class RoutingViewModel : ViewModelBase
 
     public bool IsImportRegions => ImportMethod == RoutingImportMethod.Regions;
 
-    /// <summary>
-    /// Whether the add-method tiles are shown.
-    /// </summary>
-    public bool ShowImportPicker => IsSectionImport && IsImportPicker;
+    public bool IsImportExternal => ImportMethod == RoutingImportMethod.External;
+
+    public bool IsImportDraft => ImportMethod == RoutingImportMethod.Draft;
 
     /// <summary>
-    /// Whether the ready-made preset cards are shown.
+    /// Whether the add-method list stands over the form of the picked method.
+    /// </summary>
+    public bool ShowImportMethods => IsSectionImport && !ApplyingPreset
+        && (IsImportPresets || IsImportManual || IsImportExternal);
+
+    /// <summary>
+    /// Whether the new-list frame is shown: the method list with its form, or the draft editor.
+    /// </summary>
+    public bool ShowImportFrame => ShowImportMethods || ShowImportEditor;
+
+    /// <summary>
+    /// Row of the add method in its list: 0 a preset, 1 by hand, 2 an import.
+    /// </summary>
+    public int ImportMethodIndex
+    {
+        get => ImportMethod switch
+        {
+            RoutingImportMethod.Manual => 1,
+            RoutingImportMethod.External => 2,
+            _ => 0,
+        };
+        set
+        {
+            if (value == 0)
+            {
+                BeginPresetImport();
+            }
+            else if (value == 1)
+            {
+                BeginManualImport();
+            }
+            else if (value == 2)
+            {
+                BeginExternalImport();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the ready-made preset form is shown.
     /// </summary>
     public bool ShowImportPresets => IsSectionImport && IsImportPresets && !ApplyingPreset;
 
@@ -394,6 +430,12 @@ internal partial class RoutingViewModel : ViewModelBase
     public ObservableCollection<RoutingPresetItemViewModel> PresetCards { get; } = [];
 
     /// <summary>
+    /// Набор, выбранный в списке.
+    /// </summary>
+    [ObservableProperty]
+    private RoutingPresetItemViewModel? _selectedPresetCard;
+
+    /// <summary>
     /// Добавлять ли к набору блокировку рекламы.
     /// </summary>
     [ObservableProperty]
@@ -419,12 +461,12 @@ internal partial class RoutingViewModel : ViewModelBase
     /// section is the one on screen).
     /// </summary>
     public bool ShowSaveBar => IsActiveSection
-        && (IsCreatingSectionRouting ? IsImportManual || IsImportCamera : IsEditDirty);
+        && (IsCreatingSectionRouting ? IsImportManual || IsImportDraft || IsImportCamera : IsEditDirty);
 
     /// <summary>
-    /// Whether the footer Save button is shown: the import draft shows it once in manual entry; edits always.
+    /// Whether the footer Save button is shown: the import draft shows it with its editor; edits always.
     /// </summary>
-    public bool ShowSaveButton => !IsCreatingSectionRouting || IsImportManual;
+    public bool ShowSaveButton => !IsCreatingSectionRouting || IsImportManual || IsImportDraft;
 
     /// <summary>
     /// Whether the footer Save button is enabled. A list this device cannot carry is not saved at all.
@@ -470,12 +512,15 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowDeleteCard));
         OnPropertyChanged(nameof(ShowImportEditor));
         OnPropertyChanged(nameof(ShowImportCamera));
-        OnPropertyChanged(nameof(IsImportPicker));
         OnPropertyChanged(nameof(IsImportManual));
         OnPropertyChanged(nameof(IsImportCamera));
         OnPropertyChanged(nameof(IsImportPresets));
         OnPropertyChanged(nameof(IsImportRegions));
-        OnPropertyChanged(nameof(ShowImportPicker));
+        OnPropertyChanged(nameof(IsImportExternal));
+        OnPropertyChanged(nameof(IsImportDraft));
+        OnPropertyChanged(nameof(ShowImportMethods));
+        OnPropertyChanged(nameof(ShowImportFrame));
+        OnPropertyChanged(nameof(ImportMethodIndex));
         OnPropertyChanged(nameof(ShowImportPresets));
         OnPropertyChanged(nameof(ShowImportRegions));
         OnPropertyChanged(nameof(ShowPresetLoader));
@@ -941,12 +986,6 @@ internal partial class RoutingViewModel : ViewModelBase
             return true;
         }
 
-        if (IsSectionImport && IsImportPresets)
-        {
-            ImportMethod = RoutingImportMethod.Picker;
-            return true;
-        }
-
         if (IsSectionExport || IsSectionAdvanced)
         {
             SelectRoutingSection("settings");
@@ -1245,7 +1284,7 @@ internal partial class RoutingViewModel : ViewModelBase
         IsCreatingSectionRouting = true;
     }
 
-    // Открывает черновик, если он ещё не начат: способ выбирается в шторке «Добавить», а не вкладкой.
+    // Открывает черновик, если он ещё не начат.
     private void EnsureSectionRouting()
     {
         if (!IsCreatingSectionRouting)
@@ -1260,7 +1299,7 @@ internal partial class RoutingViewModel : ViewModelBase
     public void BeginImportDraft()
     {
         EnsureSectionRouting();
-        ImportMethod = RoutingImportMethod.Manual;
+        ImportMethod = RoutingImportMethod.Draft;
     }
 
     // Ссылка «Источники geo» над записями: гео-базы правятся оттуда, куда их подставляют.
@@ -1270,28 +1309,33 @@ internal partial class RoutingViewModel : ViewModelBase
         _host.ShowGeoSources();
     }
 
-    // Способ «Создать вручную».
-    [RelayCommand]
+    // Способ «Вручную».
     private void BeginManualImport()
     {
-        BeginImportDraft();
+        EnsureSectionRouting();
+        ImportMethod = RoutingImportMethod.Manual;
     }
 
-    // Кнопка «Добавить»: способ выбирается плитками.
+    // Кнопка «Добавить»: способ выбирается списком, первым стоит готовый набор.
     [RelayCommand]
     private void BeginAddList()
     {
-        EnsureSectionRouting();
-        ImportMethod = RoutingImportMethod.Picker;
+        BeginPresetImport();
     }
 
     // Способ «Готовый набор».
-    [RelayCommand]
     private void BeginPresetImport()
     {
         EnsureSectionRouting();
         RebuildPresetCards();
         ImportMethod = RoutingImportMethod.Presets;
+    }
+
+    // Способ «Импорт»: файл, буфер обмена или живой сканер QR.
+    private void BeginExternalImport()
+    {
+        EnsureSectionRouting();
+        ImportMethod = RoutingImportMethod.External;
     }
 
     /// <summary>
@@ -1325,6 +1369,12 @@ internal partial class RoutingViewModel : ViewModelBase
                 await Task.WhenAny(probe, Task.Delay(RegionWait));
             }
 
+            // Список, начатый или пришедший за время ожидания, посев не трогает.
+            if (HasRoutingLists || IsCreatingSectionRouting)
+            {
+                return;
+            }
+
             BeginPresetImport();
             if (PresetCards.FirstOrDefault() is { } card)
             {
@@ -1339,11 +1389,14 @@ internal partial class RoutingViewModel : ViewModelBase
 
     private void RebuildPresetCards()
     {
+        var picked = SelectedPresetCard?.Preset.Key;
         PresetCards.Clear();
         foreach (var preset in RoutingPresets.All)
         {
             PresetCards.Add(new RoutingPresetItemViewModel(preset));
         }
+
+        SelectedPresetCard = PresetCards.FirstOrDefault(card => card.Preset.Key == picked) ?? PresetCards.FirstOrDefault();
     }
 
     // Экран выбора региона: список geoip из гео-баз с поиском.
@@ -1486,7 +1539,7 @@ internal partial class RoutingViewModel : ViewModelBase
             _assignAfterSave = true;
             if (!commit)
             {
-                ImportMethod = RoutingImportMethod.Manual;
+                ImportMethod = RoutingImportMethod.Draft;
                 return;
             }
 
@@ -1548,7 +1601,7 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         SectionScan = null;
-        ImportMethod = RoutingImportMethod.Manual;
+        ImportMethod = RoutingImportMethod.Draft;
     }
 
     // The imported name may be taken by another list; the save would be refused, so land on a free one and say so.
@@ -1880,5 +1933,7 @@ internal enum RoutingImportMethod
     Presets,
     Regions,
     Manual,
+    External,
+    Draft,
     Camera,
 }

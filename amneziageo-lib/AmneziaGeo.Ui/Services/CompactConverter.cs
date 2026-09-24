@@ -26,6 +26,8 @@ internal sealed class CompactConverter : IValueConverter
         {
             "row" => compact ? 1 : 0,
             "row2" => compact ? 2 : 0,
+            "row21" => compact ? 2 : 1,
+            "row31" => compact ? 3 : 1,
             "col" => compact ? 0 : 1,
             "col2" => compact ? 0 : 2,
             "span2" => compact ? 2 : 1,
@@ -37,7 +39,9 @@ internal sealed class CompactConverter : IValueConverter
             "stretchC" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
             "w100" => compact ? double.NaN : 100d,
             "w110" => compact ? double.NaN : 110d,
+            "w120" => compact ? double.NaN : 120d,
             "w130" => compact ? double.NaN : 130d,
+            "w132" => compact ? double.NaN : 132d,
             "w160" => compact ? double.NaN : 160d,
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
@@ -58,6 +62,14 @@ internal sealed class CompactConverter : IValueConverter
             "shellBody" => compact ? new Thickness(6, 1, 6, 3) : new Thickness(12, 1, 12, 3),
             // Top gap under the tabs when the catalogue combo drops to its own row in compact.
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
+            "gapTop4" => compact ? new Thickness(0, 4, 0, 0) : new Thickness(0),
+            "gapTop8" => compact ? new Thickness(0, 8, 0, 0) : new Thickness(0),
+            // Gap of the second label pair: under its label when stacked, under the first pair otherwise.
+            "gapTop4Of12" => compact ? new Thickness(0, 4, 0, 0) : new Thickness(0, 12, 0, 0),
+            // Gap of a button row: under the field when stacked, before the buttons otherwise.
+            "gapTopOrLeft8" => compact ? new Thickness(0, 8, 0, 0) : new Thickness(8, 0, 0, 0),
+            // Link inset: flush with the heading it drops under, the link's own inset beside it.
+            "linkUnder" => compact ? new Thickness(0, 2, 7, 4) : new Thickness(7, 4),
             // Подпись отходит от своей строки только на большом экране: узкому окну эта высота дорога.
             "gap6" => compact ? 0d : 6d,
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),

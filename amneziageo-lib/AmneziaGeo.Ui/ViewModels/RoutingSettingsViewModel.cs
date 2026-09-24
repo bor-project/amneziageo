@@ -3,7 +3,6 @@ using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Ui.ViewModels;
 
@@ -28,6 +27,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSelectedOnly))]
+    [NotifyPropertyChangedFor(nameof(VpnModeIndex))]
     private bool _useGlobalProxy;
 
     /// <summary>
@@ -35,11 +35,19 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// </summary>
     public bool IsSelectedOnly => !UseGlobalProxy;
 
-    // Picks the tunnel mode: "full" carries everything, anything else only the Proxy bucket.
-    [RelayCommand]
-    private void SelectVpnMode(string mode)
+    /// <summary>
+    /// Row of the tunnel mode in its list: 0 carries only the Proxy bucket, 1 everything.
+    /// </summary>
+    public int VpnModeIndex
     {
-        UseGlobalProxy = mode == "full";
+        get => UseGlobalProxy ? 1 : 0;
+        set
+        {
+            if (value is 0 or 1)
+            {
+                UseGlobalProxy = value == 1;
+            }
+        }
     }
 
     // Agent-wide, not per-list: pushed straight through as a setting instead of the routing block. Seconds,

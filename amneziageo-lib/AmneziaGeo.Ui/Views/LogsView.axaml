@@ -80,8 +80,14 @@
        <!-- Header: source and level share a row under their headings, the routing switch takes the next one.
             ageo records up to a level; routes is on or off; the live source is read from the tunnel, not recorded. -->
        <StackPanel Grid.Row="0" Spacing="{Binding HeadSpacing}">
-         <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsProbeLog}">
-           <StackPanel Grid.Column="0" Spacing="4">
+         <Grid ColumnSpacing="10" IsVisible="{Binding !IsProbeLog}">
+           <!-- Узкому телефону журнал и уровень делят строку поровну. -->
+           <Grid.ColumnDefinitions>
+             <ColumnDefinition Width="*" />
+             <ColumnDefinition Width="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=colAutoStar}" />
+           </Grid.ColumnDefinitions>
+           <StackPanel Grid.Column="0" Spacing="4"
+                       Grid.ColumnSpan="{Binding !HasSideChoice, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
              <TextBlock Text="{l:Tr Main_LogTypeLabel}" FontWeight="SemiBold" FontSize="15"
                         IsVisible="{Binding !IsShort}" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -89,7 +95,8 @@
            </StackPanel>
            <!-- The level takes width off the source only while it is shown, so the source fills the row alone
                 on every other journal. -->
-           <StackPanel Grid.Column="1" Spacing="4" Width="132" Margin="10,0,0,0" IsVisible="{Binding IsAgentLog}">
+           <StackPanel Grid.Column="1" Spacing="4" IsVisible="{Binding IsAgentLog}"
+                       Width="{Binding IsSlim, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w132}">
              <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontWeight="SemiBold" FontSize="15"
                         IsVisible="{Binding !IsShort}" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -97,7 +104,8 @@
            </StackPanel>
            <!-- The destinations are narrowed by where they go. It takes the level's slot: only one of the two
                 is ever shown. -->
-           <StackPanel Grid.Column="1" Spacing="4" Width="132" Margin="10,0,0,0" IsVisible="{Binding IsLiveLog}">
+           <StackPanel Grid.Column="1" Spacing="4" IsVisible="{Binding IsLiveLog}"
+                       Width="{Binding IsSlim, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w132}">
              <TextBlock Text="{l:Tr Main_WayTitle}" FontWeight="SemiBold" FontSize="15"
                         IsVisible="{Binding !IsShort}" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -209,7 +217,7 @@
         <!-- Search fills the row; the log actions take its end. The live source has nothing stored to search,
              to clear or to page through, so it carries the export alone. The gap before an action is carried by
              the action, not by the grid: a hidden one leaves no gap behind and the field takes the width. -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto">
           <Grid.Resources>
             <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
             <GridLength x:Key="ToggleSwitchPostContentMargin">0</GridLength>
@@ -228,33 +236,39 @@
                          IsVisible="{Binding SearchSummaryInField, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </TextBox.InnerRightContent>
           </TextBox>
-          <Button Grid.Column="1" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Command="{Binding ClearLogCommand}"
-                  IsVisible="{Binding IsStoredLog}" ToolTip.Tip="{l:Tr Main_ClearLogButton}">
-            <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
-          </Button>
-          <!-- What is on screen goes to the clipboard whole; a selection inside it is made with Ctrl held. -->
-          <Button Grid.Column="2" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Click="OnCopyBody"
-                  ToolTip.Tip="{l:Tr Main_CopyShownButton}">
-            <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-          </Button>
-          <Button Grid.Column="3" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Click="OnExportLog"
-                  ToolTip.Tip="{l:Tr Main_ExportLogButton}">
-            <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
-          </Button>
-          <Button Grid.Column="4" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Click="OnSendLog"
-                  IsVisible="{Binding CanSendExport}" ToolTip.Tip="{l:Tr Main_SendToAppButton}">
-            <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
-          </Button>
+          <!-- Узкому телефону действия с журналом встают строкой под поиском. -->
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left"
+                      Grid.Row="{Binding IsSlim, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                      Grid.Column="{Binding IsSlim, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                      Margin="{Binding IsSlim, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTopOrLeft8}">
+            <Button Classes="methodpick" Padding="12,7" Command="{Binding ClearLogCommand}"
+                    IsVisible="{Binding IsStoredLog}" ToolTip.Tip="{l:Tr Main_ClearLogButton}">
+              <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
+            </Button>
+            <!-- What is on screen goes to the clipboard whole; a selection inside it is made with Ctrl held. -->
+            <Button Classes="methodpick" Padding="12,7" Click="OnCopyBody"
+                    ToolTip.Tip="{l:Tr Main_CopyShownButton}">
+              <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+            </Button>
+            <Button Classes="methodpick" Padding="12,7" Click="OnExportLog"
+                    ToolTip.Tip="{l:Tr Main_ExportLogButton}">
+              <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+            </Button>
+            <Button Classes="methodpick" Padding="12,7" Click="OnSendLog"
+                    IsVisible="{Binding CanSendExport}" ToolTip.Tip="{l:Tr Main_SendToAppButton}">
+              <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
+            </Button>
+          </StackPanel>
           <!-- A low pane carries paging and following here: a bar of their own would take a row off the body. -->
-          <Button Grid.Column="5" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Command="{Binding PageOlderCommand}"
+          <Button Grid.Column="2" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Command="{Binding PageOlderCommand}"
                   IsVisible="{Binding ShowShortNav}" ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
             <PathIcon Data="{StaticResource AgChevronLeftGeometry}" Width="14" Height="14" />
           </Button>
-          <Button Grid.Column="6" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Command="{Binding PageNewerCommand}"
+          <Button Grid.Column="3" Classes="methodpick" Padding="12,7" Margin="8,0,0,0" Command="{Binding PageNewerCommand}"
                   IsVisible="{Binding ShowShortNav}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
             <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="14" Height="14" />
           </Button>
-          <ToggleSwitch Grid.Column="7" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center"
+          <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center"
                         Margin="10,0,-12,0" IsVisible="{Binding ShowShortNav}"
                         ToolTip.Tip="{l:Tr Main_LogFollowLabel}" />
         </Grid>

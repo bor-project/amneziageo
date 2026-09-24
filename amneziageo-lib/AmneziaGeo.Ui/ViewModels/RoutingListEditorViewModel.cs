@@ -72,10 +72,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     [ObservableProperty]
     private bool _isLoading;
 
-    // Add-entry method segment: address or application.
+    // Add-entry method: address or application.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAddressMethod))]
     [NotifyPropertyChangedFor(nameof(IsAppMethod))]
+    [NotifyPropertyChangedFor(nameof(AddMethodIndex))]
     [NotifyPropertyChangedFor(nameof(ShowRuleInput))]
     [NotifyPropertyChangedFor(nameof(RuleWatermark))]
     private string _addMethod = "address";
@@ -106,6 +107,8 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // Any role bucket changed: refresh suggestions/transfer, mark dirty, autosave (suppressed mid-sort or while seeding).
     private void OnRulesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
+        ClearPending = false;
+
         // Массовая заливка и сортировка перестраивают проекцию один раз, после себя: иначе каждая запись
         // пересобирает весь список, и вставка сотни правил встаёт в квадрат.
         if (_reordering || _seeding)
@@ -272,12 +275,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// </summary>
     public ObservableCollection<string> BlockRules { get; } = [];
 
-    // The bucket currently shown/edited by the role segment.
+    // The bucket currently shown/edited by the role list.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Rules))]
     [NotifyPropertyChangedFor(nameof(IsProxyRole))]
     [NotifyPropertyChangedFor(nameof(IsDirectRole))]
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
+    [NotifyPropertyChangedFor(nameof(RoleIndex))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
     [NotifyPropertyChangedFor(nameof(AddSubnetsText))]
     [NotifyPropertyChangedFor(nameof(CanAddSubnets))]
@@ -491,22 +495,49 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool IsBlockRole => SelectedRole == "block";
 
     /// <summary>
+    /// Row of the shown bucket in its list: 0 Proxy, 1 Direct, 2 Block.
+    /// </summary>
+    public int RoleIndex
+    {
+        get => SelectedRole switch
+        {
+            "direct" => 1,
+            "block" => 2,
+            _ => 0,
+        };
+        set
+        {
+            var role = value switch
+            {
+                0 => "proxy",
+                1 => "direct",
+                2 => "block",
+                _ => string.Empty,
+            };
+            if (role.Length > 0)
+            {
+                SelectedRole = role;
+            }
+        }
+    }
+
+    /// <summary>
     /// True while the shown bucket holds entries.
     /// </summary>
     public bool HasRules => Rules.Count > 0;
 
     /// <summary>
-    /// Proxy tab caption.
+    /// Proxy bucket caption.
     /// </summary>
     public string ProxyTabText => Loc.Instance.Get("Main_RoleProxy");
 
     /// <summary>
-    /// Direct tab caption.
+    /// Direct bucket caption.
     /// </summary>
     public string DirectTabText => Loc.Instance.Get("Main_RoleDirect");
 
     /// <summary>
-    /// Block tab caption.
+    /// Block bucket caption.
     /// </summary>
     public string BlockTabText => Loc.Instance.Get("Main_RoleBlock");
 
@@ -554,6 +585,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // After the active bucket swaps, re-project it and refresh the suggestion filter for the newly shown bucket.
     partial void OnSelectedRoleChanged(string value)
     {
+        ClearPending = false;
         if (!CanAddApps && !IsAddressMethod)
         {
             AddMethod = "address";
@@ -603,14 +635,29 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private IReadOnlyList<string> _geoSuggestions = [];
 
     /// <summary>
-    /// True when the add-entry segment targets address entries (geo / domain / cidr).
+    /// True when the add-entry method targets address entries (geo / domain / cidr).
     /// </summary>
     public bool IsAddressMethod => AddMethod == "address";
 
     /// <summary>
-    /// True when the add-entry segment targets per-application entries.
+    /// True when the add-entry method targets per-application entries.
     /// </summary>
     public bool IsAppMethod => AddMethod == "app";
+
+    /// <summary>
+    /// Row of the add-entry method in its list: 0 address, 1 application.
+    /// </summary>
+    public int AddMethodIndex
+    {
+        get => IsAppMethod ? 1 : 0;
+        set
+        {
+            if (value is 0 or 1)
+            {
+                AddMethod = value == 1 ? "app" : "address";
+            }
+        }
+    }
 
     /// <summary>
     /// True while the typed add row stands: Android picks its packages through the system sheet instead.
@@ -629,7 +676,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool CanAddApps => IsProxyRole || (IsDirectRole && OperatingSystem.IsAndroid());
 
     /// <summary>
-    /// App tab caption, empty where the platform runs no app rules.
+    /// Application method caption, empty where the platform runs no app rules.
     /// </summary>
     public string AppTabText => IsAppMethodAvailable ? Loc.Instance.Get("Main_AddByAppTab") : string.Empty;
 
@@ -802,15 +849,14 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// Fetches geo category suggestions and the current rules for an existing list.
+    /// Fetches the current rules for an existing list and starts the geo category suggestions.
     /// </summary>
     public async Task LoadAsync()
     {
         IsLoading = true;
+        _ = RefreshSuggestionsAsync();
         try
         {
-            await RefreshSuggestionsAsync();
-
             if (_id != 0)
             {
                 var detail = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingList, [_id.ToString(CultureInfo.InvariantCulture)]));
@@ -1137,20 +1183,6 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         }
     }
 
-    // Switches the active role bucket shown/edited by the segment.
-    [RelayCommand]
-    private void SelectRole(string role)
-    {
-        SelectedRole = role;
-    }
-
-    // Switches the add-entry method segment between address and per-application entries.
-    [RelayCommand]
-    private void SelectAddMethod(string method)
-    {
-        AddMethod = method;
-    }
-
     // Both censuses cost more than a list open is worth, so they are taken when the application tab is first
     // opened. Android picks apps through its own sheet.
     partial void OnAddMethodChanged(string value)
@@ -1334,11 +1366,32 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// Clears all entries of this list at once.
+    /// True while the pair that clears the shown bucket waits for an answer.
+    /// </summary>
+    [ObservableProperty]
+    private bool _clearPending;
+
+    // Arms the pair that clears the shown bucket.
+    [RelayCommand]
+    private void RequestClearRules()
+    {
+        ClearPending = HasRules;
+    }
+
+    // Disarms the pair that clears the shown bucket.
+    [RelayCommand]
+    private void CancelClearRules()
+    {
+        ClearPending = false;
+    }
+
+    /// <summary>
+    /// Clears all entries of the shown bucket at once.
     /// </summary>
     [RelayCommand]
     private void ClearRules()
     {
+        ClearPending = false;
         foreach (var rule in Rules)
         {
             _expandedRules.Remove(rule);
@@ -1624,6 +1677,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(IsTransferText))]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     [NotifyPropertyChangedFor(nameof(TransferReady))]
+    [NotifyPropertyChangedFor(nameof(TransferIndex))]
     private bool _isTransferQr = true;
 
     public bool IsTransferText => !IsTransferQr;
@@ -1658,17 +1712,25 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// </summary>
     public bool CanSendExport => PlatformExportHost.CanSend;
 
-    [RelayCommand]
-    private void ShowTransferQr()
+    /// <summary>
+    /// Row of the export form in its list: 0 the QR, 1 the text.
+    /// </summary>
+    public int TransferIndex
     {
-        IsTransferQr = true;
-        _ = BuildQrAsync();
-    }
+        get => IsTransferQr ? 0 : 1;
+        set
+        {
+            if (value is not (0 or 1))
+            {
+                return;
+            }
 
-    [RelayCommand]
-    private void ShowTransferText()
-    {
-        IsTransferQr = false;
+            IsTransferQr = value == 0;
+            if (IsTransferQr)
+            {
+                _ = BuildQrAsync();
+            }
+        }
     }
 
     /// <summary>

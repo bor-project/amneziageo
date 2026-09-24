@@ -640,6 +640,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // the section being left, so a stale red error does not linger on return (#3/#4).
         Config.ConfigDeletePending = false;
         Routing.RoutingDeletePending = false;
+        if (Routing.RoutingEditor is { } editor)
+        {
+            editor.ClearPending = false;
+        }
+
         Config.ConfigDeleteStatus = string.Empty;
         Routing.RoutingDeleteStatus = string.Empty;
 
@@ -717,6 +722,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Connections.IsCompact = compact;
         Sources.IsCompact = compact;
         Diagnostics.IsCompact = compact;
+        Diagnostics.IsSlim = UiLayout.Instance.IsSlim;
         General.IsCompact = compact;
 
         // A width flip can reveal or hide the logs content (compact rail vs wide content), so re-evaluate.

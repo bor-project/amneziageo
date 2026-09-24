@@ -38,6 +38,20 @@
         </Grid>
       </Button>
     </DataTemplate>
+
+    <!-- Строки способа добавления: значок и подпись. -->
+    <DataTemplate x:Key="AddressMethodTemplate" x:DataType="sys:String">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <PathIcon Data="{StaticResource AgGlobeGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding}" VerticalAlignment="Center" />
+      </StackPanel>
+    </DataTemplate>
+    <DataTemplate x:Key="AppMethodTemplate" x:DataType="sys:String">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <PathIcon Data="{StaticResource AgAppGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding}" VerticalAlignment="Center" />
+      </StackPanel>
+    </DataTemplate>
   </UserControl.Resources>
 
   <!-- Общий редактор списка: имя, режим туннеля, корзины правил и трафик. Стоит и в разделе настроек, и в
@@ -63,41 +77,32 @@
       </StackPanel>
     </Border>
 
-    <!-- Узкий экран: линия несёт границу раздела вместо рамки. -->
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Classes="rowsep" />
 
     <!-- Направление туннеля: весь трафик или только отмеченное. -->
     <Border IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
-      <StackPanel Spacing="10" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+      <StackPanel Spacing="8" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
         <TextBlock Text="{l:Tr Main_VpnModeTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-        <Grid ColumnDefinitions="*,*" ColumnSpacing="10" MaxWidth="560" HorizontalAlignment="Stretch">
-          <Button Grid.Column="0" Classes="modecard" Classes.active="{Binding IsSelectedOnly}"
-                  HorizontalAlignment="Stretch"
-                  Command="{Binding SelectVpnModeCommand}" CommandParameter="selected">
-            <StackPanel Spacing="2">
-              <TextBlock Text="{l:Tr Main_VpnModeSelected}" FontWeight="SemiBold" FontSize="13.5"
-                         TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr Main_VpnModeHintSelected}" Classes="muted" FontSize="11"
-                         TextWrapping="Wrap" />
-            </StackPanel>
-          </Button>
-          <Button Grid.Column="1" Classes="modecard" Classes.active="{Binding UseGlobalProxy}"
-                  HorizontalAlignment="Stretch"
-                  Command="{Binding SelectVpnModeCommand}" CommandParameter="full">
-            <StackPanel Spacing="2">
-              <TextBlock Text="{l:Tr Main_VpnModeFull}" FontWeight="SemiBold" FontSize="13.5"
-                         TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr Main_VpnModeHintFull}" Classes="muted" FontSize="11"
-                         TextWrapping="Wrap" />
-            </StackPanel>
-          </Button>
-        </Grid>
+        <!-- Телефон открывает список шторкой снизу, десктоп выпадающим списком. -->
+        <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding VpnModeIndex, Mode=TwoWay}"
+            Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+            HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+          <ComboBoxItem Content="{l:Tr Main_VpnModeSelected}" />
+          <ComboBoxItem Content="{l:Tr Main_VpnModeFull}" />
+        </controls:AdaptiveComboBox>
+        <!-- Что делает выбранный режим. -->
+        <Panel Margin="0,-2,0,0">
+          <TextBlock Text="{l:Tr Main_VpnModeHintSelected}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                     IsVisible="{Binding IsSelectedOnly}" />
+          <TextBlock Text="{l:Tr Main_VpnModeHintFull}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                     IsVisible="{Binding UseGlobalProxy}" />
+        </Panel>
       </StackPanel>
     </Border>
 
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Classes="rowsep" IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
-    <!-- Правила: сегмент корзин, затем сама корзина. -->
+    <!-- Правила: список корзин, затем сама корзина. -->
     <Border>
       <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
 
@@ -105,27 +110,42 @@
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{l:Tr Main_RoleLabel}" FontWeight="SemiBold" FontSize="15"
                        TextWrapping="Wrap" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" IsVisible="{Binding HasRules}"
-                    Command="{Binding ClearRulesCommand}" ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
+            <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Top"
+                    Command="{Binding RequestClearRulesCommand}" ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
+              <Button.IsVisible>
+                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                  <Binding Path="HasRules" />
+                  <Binding Path="!ClearPending" />
+                </MultiBinding>
+              </Button.IsVisible>
               <TextBlock Text="{l:Tr Main_ClearButton}" />
             </Button>
           </Grid>
 
-          <controls:SegmentedSelector Dense="True" Command="{Binding SelectRoleCommand}"
-              IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
-              Item1Text="{Binding ProxyTabText}" Item1Param="proxy" Item1Active="{Binding IsProxyRole}"
-              Item1Enabled="{Binding CanUseProxyBucket}"
-              Item2Text="{Binding DirectTabText}" Item2Param="direct" Item2Active="{Binding IsDirectRole}"
-              Item3Text="{Binding BlockTabText}" Item3Param="block" Item3Active="{Binding IsBlockRole}" />
+          <!-- Очистка корзины ждёт подтверждения парой кнопок, как удаление списка. -->
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsVisible="{Binding ClearPending}"
+                Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+            <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                    Content="{l:Tr Main_ClearButton}" Command="{Binding ClearRulesCommand}" />
+            <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                    Content="{l:Tr Main_CancelButton}" Command="{Binding CancelClearRulesCommand}" />
+          </Grid>
+
+          <!-- Телефон открывает список шторкой снизу, десктоп выпадающим списком. -->
+          <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding RoleIndex, Mode=TwoWay}"
+              Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+              HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+            <ComboBoxItem Content="{Binding ProxyTabText}" IsEnabled="{Binding CanUseProxyBucket}" />
+            <ComboBoxItem Content="{Binding DirectTabText}" />
+            <ComboBoxItem Content="{Binding BlockTabText}" />
+          </controls:AdaptiveComboBox>
+          <!-- Что делает показанная корзина. -->
+          <TextBlock Text="{Binding RoleHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" Margin="0,-2,0,0" />
         </StackPanel>
 
-        <Border Height="1" Background="{DynamicResource AgBorderBrush}"
-                IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
-
-        <!-- Карточка показанной корзины: что она делает, что в неё добавить и что в ней уже есть. -->
+        <!-- Карточка показанной корзины: что в неё добавить и что в ней уже есть. -->
         <StackPanel Spacing="10">
-          <TextBlock Text="{Binding RoleHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-
           <!-- Список маршрутов не помещается в бюджет, часть направлений уходит мимо. -->
           <TextBlock Text="{Binding RouteTrimNotice}" FontSize="11.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding RouteTrims}" />
@@ -153,12 +173,16 @@
             </Button>
           </Grid>
 
-          <controls:SegmentedSelector Dense="True" Command="{Binding SelectAddMethodCommand}"
-              IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
-              Item1Text="{l:Tr Main_AddByAddressTab}" Item1Param="address" Item1Active="{Binding IsAddressMethod}"
-              Item1Icon="{StaticResource AgGlobeGeometry}"
-              Item2Text="{Binding AppTabText}" Item2Param="app" Item2Active="{Binding IsAppMethod}"
-              Item2Icon="{StaticResource AgAppGeometry}" Item2Enabled="{Binding CanAddApps}" />
+          <!-- Способ добавления: адрес или приложение. -->
+          <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding AddMethodIndex, Mode=TwoWay}"
+              IsVisible="{Binding IsAppMethodAvailable}"
+              SelectionBoxItemTemplate="{Binding $self.((ComboBoxItem)SelectedItem).ContentTemplate}"
+              Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+              HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+            <ComboBoxItem Content="{l:Tr Main_AddByAddressTab}" ContentTemplate="{StaticResource AddressMethodTemplate}" />
+            <ComboBoxItem Content="{Binding AppTabText}" ContentTemplate="{StaticResource AppMethodTemplate}"
+                          IsEnabled="{Binding CanAddApps}" />
+          </controls:AdaptiveComboBox>
 
           <!-- Корзины, которые принимают приложения, названы прямо в подсказке. -->
           <TextBlock Text="{Binding AppBucketsHint}" Classes="muted" FontSize="11" TextWrapping="Wrap"

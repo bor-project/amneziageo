@@ -8,42 +8,62 @@
              x:DataType="fleet:FleetConnectionsViewModel">
   <UserControl.Styles>
     <Style Selector="TextBox.count">
-      <Setter Property="Width" Value="92" />
-      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Width" Value="132" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
     <Style Selector="TextBlock.unit">
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
       <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Margin" Value="6,0,10,0" />
       <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="IsHitTestVisible" Value="False" />
     </Style>
   </UserControl.Styles>
 
-  <!-- Числа, по которым правило переезжает с сервера на сервер. Поля стоят в общей колонке. -->
-  <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="12">
-    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,10,0">
-      <TextBlock Text="{l:Tr General_BalanceInterval}" FontSize="13.5" TextWrapping="Wrap" />
-      <TextBlock Text="{l:Tr General_BalanceIntervalHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-    </StackPanel>
-    <TextBox Grid.Row="0" Grid.Column="1" Classes="field count"
-             controls:NumericInput.Minimum="5" controls:NumericInput.Maximum="3600"
-             Text="{Binding BalanceIntervalSeconds, Mode=TwoWay}" />
-    <TextBlock Grid.Row="0" Grid.Column="2" Classes="unit" Text="{l:Tr General_Seconds}" />
+  <!-- Числа, по которым правило переезжает с сервера на сервер. -->
+  <StackPanel Spacing="12">
+    <Border Classes="rowsep" />
 
-    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,10,0">
-      <TextBlock Text="{l:Tr General_BalanceStrikes}" FontSize="13.5" TextWrapping="Wrap" />
-      <TextBlock Text="{l:Tr General_BalanceStrikesHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+    <StackPanel Spacing="8">
+      <StackPanel Spacing="2">
+        <TextBlock Text="{l:Tr General_BalanceInterval}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+        <TextBlock Text="{l:Tr General_BalanceIntervalHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+      </StackPanel>
+      <TextBox Classes="field count"
+               controls:NumericInput.Minimum="5" controls:NumericInput.Maximum="3600"
+               Text="{Binding BalanceIntervalSeconds, Mode=TwoWay}">
+        <TextBox.InnerRightContent>
+          <TextBlock Classes="unit" Text="{l:Tr General_Seconds}" />
+        </TextBox.InnerRightContent>
+      </TextBox>
     </StackPanel>
-    <TextBox Grid.Row="1" Grid.Column="1" Classes="field count"
-             controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="10"
-             Text="{Binding BalanceStrikes, Mode=TwoWay}" />
 
-    <StackPanel Grid.Row="2" Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,10,0">
-      <TextBlock Text="{l:Tr General_BalanceMargin}" FontSize="13.5" TextWrapping="Wrap" />
-      <TextBlock Text="{l:Tr General_BalanceMarginHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+    <Border Classes="rowsep" />
+
+    <StackPanel Spacing="8">
+      <StackPanel Spacing="2">
+        <TextBlock Text="{l:Tr General_BalanceStrikes}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+        <TextBlock Text="{l:Tr General_BalanceStrikesHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+      </StackPanel>
+      <TextBox Classes="field count"
+               controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="10"
+               Text="{Binding BalanceStrikes, Mode=TwoWay}" />
     </StackPanel>
-    <TextBox Grid.Row="2" Grid.Column="1" Classes="field count"
-             controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="100"
-             Text="{Binding BalanceMarginPercent, Mode=TwoWay}" />
-    <TextBlock Grid.Row="2" Grid.Column="2" Classes="unit" Text="%" />
-  </Grid>
+
+    <Border Classes="rowsep" />
+
+    <StackPanel Spacing="8">
+      <StackPanel Spacing="2">
+        <TextBlock Text="{l:Tr General_BalanceMargin}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+        <TextBlock Text="{l:Tr General_BalanceMarginHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+      </StackPanel>
+      <TextBox Classes="field count"
+               controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="100"
+               Text="{Binding BalanceMarginPercent, Mode=TwoWay}">
+        <TextBox.InnerRightContent>
+          <TextBlock Classes="unit" Text="%" />
+        </TextBox.InnerRightContent>
+      </TextBox>
+    </StackPanel>
+  </StackPanel>
 </UserControl>

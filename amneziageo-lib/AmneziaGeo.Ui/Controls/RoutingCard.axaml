@@ -34,8 +34,8 @@
           </Grid>
 
           <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
-          <StackPanel Grid.Row="1" Classes="cardinfo" Orientation="Horizontal" Spacing="10" Margin="0,8,0,0"
-                      VerticalAlignment="Center">
+          <WrapPanel Grid.Row="1" Classes="cardinfo" ItemSpacing="10" LineSpacing="4" Margin="0,8,0,0"
+                     VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Ellipse Width="6" Height="6" VerticalAlignment="Center"
                        Fill="{DynamicResource AgAccentBrush}" />
@@ -54,7 +54,7 @@
               <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
                          VerticalAlignment="Center" />
             </StackPanel>
-          </StackPanel>
+          </WrapPanel>
         </Grid>
 
         <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->

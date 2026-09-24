@@ -91,7 +91,7 @@ args=(
 )
 
 if [ -n "$ABIS" ]; then
-  args+=("-p:AndroidRuntimeIdentifiers=$ABIS")
+  args+=("-p:AndroidRuntimeIdentifiers=\"$ABIS\"")
 fi
 
 # Release keystore from the environment; the passwords stay in variables, off the command line.

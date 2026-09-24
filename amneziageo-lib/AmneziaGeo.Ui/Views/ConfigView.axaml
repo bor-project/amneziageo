@@ -163,16 +163,20 @@
       <Border Classes="sect">
         <StackPanel Spacing="14">
           <!-- Используется ли конфигурация: тумблер делает её целью, ссылка рядом поднимает туннель. -->
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+          <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
             <TextBlock Grid.Column="0" Text="{l:Tr Main_InUseToggle}" FontWeight="SemiBold" FontSize="15"
                        TextWrapping="Wrap" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
+            <!-- Узкому телефону ссылка встаёт под заголовок. -->
+            <Button Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
+                    Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                    Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                    Padding="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=linkUnder}"
                     HorizontalAlignment="Left"
                     IsVisible="{Binding ShowConnectOpenConfig}"
                     Command="{Binding ConnectOpenConfigCommand}">
               <TextBlock Text="{l:Tr Main_ConnectNowLink}" />
             </Button>
-            <ToggleSwitch Grid.Column="2" MinWidth="0" VerticalAlignment="Center"
+            <ToggleSwitch Grid.Column="2" Grid.RowSpan="2" MinWidth="0" VerticalAlignment="Center"
                           IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
           </Grid>
 
@@ -223,9 +227,9 @@
           <StackPanel Spacing="2">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigTextLabel}" FontWeight="SemiBold" FontSize="15"
-                         VerticalAlignment="Center" />
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
               <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ToggleConfigTextCommand}"
-                      VerticalAlignment="Center" HorizontalAlignment="Right">
+                      VerticalAlignment="Top" HorizontalAlignment="Right">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14" />
                   <!-- Both captions share one cell so the link keeps its width across the toggle. -->
@@ -240,7 +244,7 @@
                     CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
                     IsVisible="{Binding ShowConfigText}"
                     IsEnabled="{Binding ConfigExport.IsReady}">
-              <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
+              <TextBox Classes="secondtap" Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
                        AcceptsReturn="True" TextWrapping="NoWrap"
                        VerticalContentAlignment="Top" Height="240"
                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -350,7 +354,7 @@
           <Border IsVisible="{Binding IsImportManual}"
                   BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
                   CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
-            <TextBox Text="{Binding SectionConfigText, Mode=TwoWay}"
+            <TextBox Classes="secondtap" Text="{Binding SectionConfigText, Mode=TwoWay}"
                      AcceptsReturn="True" TextWrapping="NoWrap"
                      VerticalContentAlignment="Top" MinHeight="200"
                      ScrollViewer.HorizontalScrollBarVisibility="Auto"

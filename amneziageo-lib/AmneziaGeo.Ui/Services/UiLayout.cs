@@ -24,6 +24,11 @@ internal sealed partial class UiLayout : ObservableObject
     public const double FieldRowWidth = 992;
 
     /// <summary>
+    /// Below it a phone shell stacks the pairs that stand side by side on a common phone.
+    /// </summary>
+    public const double SlimWidth = 300;
+
+    /// <summary>
     /// Instance the shared styles bind to.
     /// </summary>
     public static UiLayout Instance { get; } = new();
@@ -35,10 +40,17 @@ internal sealed partial class UiLayout : ObservableObject
     private bool _isCardless;
 
     /// <summary>
-    /// Gates the card frames by the shell width.
+    /// Whether the shell is narrower than a common phone.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSlim;
+
+    /// <summary>
+    /// Gates the card frames and the slim rows by the shell width.
     /// </summary>
     public void Apply(double width)
     {
         IsCardless = width < CardWidth;
+        IsSlim = width < SlimWidth;
     }
 }

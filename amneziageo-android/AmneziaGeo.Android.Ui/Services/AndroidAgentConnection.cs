@@ -1509,7 +1509,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var list = await _store.GetRoutingListAsync(id).ConfigureAwait(false);
+        var list = await _store.GetRoutingListStampAsync(id).ConfigureAwait(false);
         if (list is null)
         {
             return Fail();
@@ -1528,6 +1528,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
+        // A session behind the relay has no ceiling: what the route table will not hold, the relay decides.
+        if (RouteBudget.Relayable && RouterEnabled())
+        {
+            return new IpcAck(true, "{\"limit\":0,\"trims\":0}");
+        }
+
         try
         {
             await EnsureGeoFilesAsync().ConfigureAwait(false);
@@ -1542,11 +1548,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // A name carries no address until connect, where it resolves and cuts or adds about two routes.
         var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
-        // A session behind the relay has no ceiling: what the route table will not hold, the relay decides. Without
-        // one the tun keeps the direct ranges that do not fit and leaves out the widest, so a list over the budget
-        // still runs - shorter of reach, in either mode: every range left outside costs the routes around it.
-        var relayed = RouteBudget.Relayable && RouterEnabled();
-        var trims = !relayed && routes > RouteBudget.Max;
+        // The tun keeps the direct ranges that do not fit and leaves out the widest, so a list over the budget still
+        // runs - shorter of reach, in either mode: every range left outside costs the routes around it.
+        var trims = routes > RouteBudget.Max;
         var kept = trims
             ? SystemRoutes.Carve(draft.DirectRoutes, [], draft.BlockRoutes, RouteBudget.Max)
             : [];
@@ -1555,9 +1559,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             routes = SystemRoutes.Tunneled(full, draft.Routes, kept, draft.BlockRoutes).Count + (names * 2);
         }
 
-        var limit = relayed ? 0 : RouteBudget.Max;
         return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)}"
-            + $",\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}"
+            + $",\"limit\":{RouteBudget.Max.ToString(CultureInfo.InvariantCulture)}"
             + $",\"trims\":{(trims ? 1 : 0).ToString(CultureInfo.InvariantCulture)}"
             + $",\"kept\":{kept.Count.ToString(CultureInfo.InvariantCulture)}"
             + $",\"total\":{draft.DirectRoutes.Count.ToString(CultureInfo.InvariantCulture)}}}");
@@ -2888,7 +2891,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         var list = RoutedList is { } listId
-            && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } assigned
+            && await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false) is { } assigned
                 ? assigned.Name
                 : string.Empty;
         return new IpcAck(true, (report with { List = list }).ToPayload());
@@ -3299,7 +3302,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        return (await _store.GetRoutingListAsync(id).ConfigureAwait(false))?.Name;
+        return (await _store.GetRoutingListStampAsync(id).ConfigureAwait(false))?.Name;
     }
 
     // Refuses while the config is the running target; otherwise drops it with its stored settings and clears a selection pointing at it.

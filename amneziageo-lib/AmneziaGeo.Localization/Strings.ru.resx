@@ -770,16 +770,16 @@
     <value>Напрямую</value>
   </data>
   <data name="Main_RoleBlock" xml:space="preserve">
-    <value>Блок</value>
+    <value>Блокировка</value>
   </data>
   <data name="Main_RoleProxyHint" xml:space="preserve">
-    <value>Трафик идёт через туннель.</value>
+    <value>Трафик для адресов и приложений из этого списка будет идти через VPN.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Трафик идёт напрямую, мимо туннеля.</value>
+    <value>Трафик для адресов и приложений из этого списка будет идти напрямую, без VPN.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Трафик блокируется.</value>
+    <value>Трафик для адресов и приложений из этого списка будет заблокирован.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>
@@ -881,7 +881,7 @@
     <value>Тип записи</value>
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
-    <value>Правила в этом списке</value>
+    <value>Группа правил</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
     <value>Прокси</value>

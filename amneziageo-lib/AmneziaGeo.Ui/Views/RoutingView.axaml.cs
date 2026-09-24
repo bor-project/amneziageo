@@ -117,35 +117,6 @@ internal sealed partial class RoutingView : UserControl
         e.Handled = PaneFocus.FocusFirst(CatalogueHeader);
     }
 
-    // Способы добавления: файл, буфер обмена, живой сканер QR и пустой список.
-    private void OnImportOptions(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not RoutingViewModel vm)
-        {
-            return;
-        }
-
-        var options = new List<ActionOption>
-        {
-            new(Loc.Instance.Get("Main_FileButton"), Glyphs.File, ImportFromFile),
-            new(Loc.Instance.Get("Main_PasteButton"), Glyphs.Paste, ImportFromClipboard),
-        };
-        if (vm.CameraScanAvailable)
-        {
-            options.Add(new ActionOption(
-                Loc.Instance.Get("Main_CameraButton"),
-                Glyphs.Qr,
-                () => vm.BeginCameraImportCommand.Execute(null)));
-        }
-
-        ActionOptions.Present(
-            sender as Control,
-            vm.Sheet,
-            Loc.Instance.Get("Main_ImportListTitle"),
-            string.Empty,
-            options);
-    }
-
     // Способы экспорта: экран QR, текст списка в буфер и файл.
     private void OnExportOptions(object? sender, RoutedEventArgs e)
     {
@@ -280,7 +251,7 @@ internal sealed partial class RoutingView : UserControl
     private static string QrName(RoutingListEditorViewModel vm) => Path.ChangeExtension(vm.SuggestedFileName, "png");
 
     // Routing-list import: paste from the clipboard into a fresh draft.
-    private async void ImportFromClipboard()
+    private async void OnImportPaste(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not RoutingViewModel vm)
         {
@@ -310,7 +281,7 @@ internal sealed partial class RoutingView : UserControl
     }
 
     // Routing-list import: load from a file into a fresh draft. Отменённый выбор черновик не открывает.
-    private async void ImportFromFile()
+    private async void OnImportFile(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not RoutingViewModel vm)
         {

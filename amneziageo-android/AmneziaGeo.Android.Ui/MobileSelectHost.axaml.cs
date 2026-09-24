@@ -45,6 +45,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private Control? _disabledFocus;
     private Control? _focusAtPress;
     private bool _keyboardAtPress;
+    private Point _pressPoint;
     private int _transitionVersion;
 
     public MobileSelectHost(Control content)
@@ -66,6 +67,12 @@ internal sealed partial class MobileSelectHost : UserControl
                 Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
             });
         }
+
+        // A secondtap field opens the keyboard on the second tap.
+        Styles.Add(new Style(x => x.OfType<TextBox>().Class("secondtap"))
+        {
+            Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
+        });
 
         SizeChanged += OnHostSizeChanged;
     }
@@ -108,6 +115,8 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.AddHandler(GotFocusEvent, OnTopLevelGotFocus, RoutingStrategies.Bubble);
             _topLevel.AddHandler(LostFocusEvent, OnTopLevelLostFocus, RoutingStrategies.Bubble);
             _topLevel.AddHandler(PointerPressedEvent, OnTopLevelPointerPressed, RoutingStrategies.Tunnel);
+            _topLevel.AddHandler(PointerMovedEvent, OnTopLevelPointerMoved, RoutingStrategies.Tunnel);
+            _topLevel.AddHandler(Gestures.ScrollGestureEvent, OnTopLevelScrollGesture, RoutingStrategies.Bubble, handledEventsToo: true);
             _topLevel.AddHandler(PointerReleasedEvent, OnTopLevelPointerReleased, RoutingStrategies.Tunnel);
         }
 
@@ -132,6 +141,8 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.RemoveHandler(GotFocusEvent, OnTopLevelGotFocus);
             _topLevel.RemoveHandler(LostFocusEvent, OnTopLevelLostFocus);
             _topLevel.RemoveHandler(PointerPressedEvent, OnTopLevelPointerPressed);
+            _topLevel.RemoveHandler(PointerMovedEvent, OnTopLevelPointerMoved);
+            _topLevel.RemoveHandler(Gestures.ScrollGestureEvent, OnTopLevelScrollGesture);
             _topLevel.RemoveHandler(PointerReleasedEvent, OnTopLevelPointerReleased);
             _topLevel = null;
         }
@@ -359,6 +370,7 @@ internal sealed partial class MobileSelectHost : UserControl
     {
         _keyboardAtPress = IsKeyboardOpen();
         _focusAtPress = _topLevel?.FocusManager?.GetFocusedElement() as Control;
+        _pressPoint = e.GetPosition(_topLevel);
     }
 
     // Raises the keyboard on a tap into a focused field the input method was taken from: that is how the field
@@ -387,11 +399,45 @@ internal sealed partial class MobileSelectHost : UserControl
             return;
         }
 
-        if (box is not null && ReferenceEquals(tapped, box)
+        if (!IsDrag(e) && box is not null && ReferenceEquals(tapped, box)
             && ReferenceEquals(_focusAtPress, box) && !InputMethod.GetIsInputMethodEnabled(box))
         {
             OpenKeyboard(box);
         }
+    }
+
+    // Takes the focus back from a field a dragging finger reached.
+    private void OnTopLevelPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (e.Pointer.Type == PointerType.Touch && IsDrag(e))
+        {
+            DropPressFocus();
+        }
+    }
+
+    // Takes the focus back from a field a scrolling finger reached.
+    private void OnTopLevelScrollGesture(object? sender, ScrollGestureEventArgs e)
+    {
+        DropPressFocus();
+    }
+
+    // Takes back the focus the press gave a field that waits for the second tap.
+    private void DropPressFocus()
+    {
+        if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox box
+            && !ReferenceEquals(_focusAtPress, box)
+            && !InputMethod.GetIsInputMethodEnabled(box))
+        {
+            _topLevel.FocusManager.ClearFocus();
+        }
+    }
+
+    // Whether the finger went past the tap size since the press.
+    private bool IsDrag(PointerEventArgs e)
+    {
+        var tap = _topLevel?.PlatformSettings?.GetTapSize(e.Pointer.Type) ?? new Size(10, 10);
+        var shift = e.GetPosition(_topLevel) - _pressPoint;
+        return Math.Abs(shift.X) > tap.Width || Math.Abs(shift.Y) > tap.Height;
     }
 
     private void OnTopLevelGotFocus(object? sender, GotFocusEventArgs e)

@@ -49,6 +49,15 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Slim-shell layout flag, pushed by the shell.
+    /// </summary>
+    public bool IsSlim
+    {
+        get => Logs.IsSlim;
+        set => Logs.IsSlim = value;
+    }
+
+    /// <summary>
     /// Marks the section shown or not; off screen the viewer stops reading and drops what it holds.
     /// </summary>
     public void SetActive(bool active)

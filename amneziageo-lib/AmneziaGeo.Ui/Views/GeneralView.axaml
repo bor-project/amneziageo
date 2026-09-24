@@ -27,13 +27,21 @@
            <StackPanel Spacing="12">
              <TextBlock Text="{l:Tr Main_AppearanceTitle}" FontWeight="SemiBold" FontSize="15" />
 
-             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="12">
-               <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
-               <controls:AdaptiveComboBox Grid.Row="0" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+             <!-- Узкому телефону подпись встаёт над своим списком. -->
+             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10">
+               <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center"
+                          Grid.ColumnSpan="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+               <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                         Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}" Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                         Grid.ColumnSpan="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" Margin="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop4}"
                          ItemsSource="{Binding Themes}"
                          SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}" />
-               <TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
-               <controls:AdaptiveComboBox Grid.Row="1" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+               <TextBlock Grid.Column="0" Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center"
+                          Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row21}"
+                          Grid.ColumnSpan="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" Margin="0,12,0,0" />
+               <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                         Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row31}" Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                         Grid.ColumnSpan="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" Margin="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop4Of12}"
                          ItemsSource="{Binding Languages}"
                          SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
              </Grid>

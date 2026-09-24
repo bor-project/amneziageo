@@ -224,6 +224,30 @@ public sealed class ChannelCheckTests
     }
 
     [Fact]
+    public void UnderARoutingList_TheServersServiceInsideTheTunnel_IsTimed()
+    {
+        var options = new ChannelProbeOptions("office", Connected: true, TunnelIsDefault: false, TunnelSpeedUrl: "https://10.8.0.1:51820/api/speed/down?bytes=1");
+
+        Assert.True(ChannelProbe.TimesTunnel(options));
+    }
+
+    [Fact]
+    public void UnderARoutingList_ANeutralService_IsNotTimedAsTheTunnel()
+    {
+        var options = new ChannelProbeOptions("office", Connected: true, TunnelIsDefault: false);
+
+        Assert.False(ChannelProbe.TimesTunnel(options));
+    }
+
+    [Fact]
+    public void AFullTunnel_IsTimedAgainstTheNeutralService()
+    {
+        var options = new ChannelProbeOptions("office", Connected: true, TunnelIsDefault: true);
+
+        Assert.True(ChannelProbe.TimesTunnel(options));
+    }
+
+    [Fact]
     public void ThePayload_SurvivesTheTrip()
     {
         var report = new CheckReport(

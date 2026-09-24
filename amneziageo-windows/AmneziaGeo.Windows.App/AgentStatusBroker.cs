@@ -1706,7 +1706,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "get-routing-list requires a positive id");
         }
 
-        var list = await store.GetRoutingListAsync(id, ct);
+        var list = await store.GetRoutingListStampAsync(id, ct);
         if (list is null)
         {
             return new IpcAck(false, $"unknown routing list: {id}");
@@ -1723,7 +1723,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "set-routing-settings requires a positive routing list id");
         }
 
-        if (await store.GetRoutingListAsync(id, ct) is null)
+        if (await store.GetRoutingListStampAsync(id, ct) is null)
         {
             return new IpcAck(false, $"unknown routing list: {id}");
         }
@@ -1775,7 +1775,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "get-routing-settings requires a positive id");
         }
 
-        if (await store.GetRoutingListAsync(id, ct) is null)
+        if (await store.GetRoutingListStampAsync(id, ct) is null)
         {
             return new IpcAck(false, $"unknown routing list: {id}");
         }
@@ -1806,7 +1806,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 return new IpcAck(false, "invalid routing list id");
             }
 
-            if (await store.GetRoutingListAsync(id, ct) is null)
+            if (await store.GetRoutingListStampAsync(id, ct) is null)
             {
                 return new IpcAck(false, $"unknown routing list: {id}");
             }
@@ -1839,7 +1839,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // The name a routing list id stands for; null id is routing off.
     private async Task<string?> ListNameAsync(long? listId, CancellationToken ct)
     {
-        return listId is long id ? (await store.GetRoutingListAsync(id, ct))?.Name : null;
+        return listId is long id ? (await store.GetRoutingListStampAsync(id, ct))?.Name : null;
     }
 
     /// <summary>

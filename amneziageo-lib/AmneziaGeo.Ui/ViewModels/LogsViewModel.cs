@@ -115,6 +115,15 @@ internal partial class LogsViewModel : ViewModelBase
         NotifyShape();
     }
 
+    /// <summary>
+    /// Whether the shell is narrower than a common phone, pushed by the shell.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowControlBarRow))]
+    [NotifyPropertyChangedFor(nameof(ShowBarNav))]
+    [NotifyPropertyChangedFor(nameof(ShowShortNav))]
+    private bool _isSlim;
+
     // Width of the panel the viewer sits in, pushed by the view. The pane is narrower than the window around
     // it, and a table that does not fit the pane is unreadable however wide the window is.
     [ObservableProperty]
@@ -193,20 +202,26 @@ internal partial class LogsViewModel : ViewModelBase
     public Thickness BarMargin => IsShort ? new Thickness(0, 4, 0, 0) : new Thickness(0, 10, 0, 0);
 
     /// <summary>
-    /// Whether the control bar takes a row of its own: a low pane carries its controls in the search row and
-    /// keeps the row for the frozen hint alone.
+    /// Whether the control bar takes a row of its own: a low pane of a wider shell carries its controls in the
+    /// search row and keeps the row for the frozen hint alone.
     /// </summary>
-    public bool ShowControlBarRow => IsFrozen || (ShowControlBar && !IsShort);
+    public bool ShowControlBarRow => IsFrozen || (ShowControlBar && (!IsShort || IsSlim));
 
     /// <summary>
     /// Whether paging and following stand in the control bar.
     /// </summary>
-    public bool ShowBarNav => IsStoredLog && !IsShort;
+    public bool ShowBarNav => IsStoredLog && (!IsShort || IsSlim);
 
     /// <summary>
-    /// Whether paging and following stand in the search row, which is where a low pane carries them.
+    /// Whether paging and following stand in the search row, which is where a low pane of a wider shell
+    /// carries them.
     /// </summary>
-    public bool ShowShortNav => IsStoredLog && IsShort;
+    public bool ShowShortNav => IsStoredLog && IsShort && !IsSlim;
+
+    /// <summary>
+    /// Whether a second list stands beside the journal: the level of ageo or the way of the live journal.
+    /// </summary>
+    public bool HasSideChoice => IsAgentLog || IsLiveLog;
 
     private void NotifyShape()
     {
@@ -293,6 +308,7 @@ internal partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsRouteLog));
         OnPropertyChanged(nameof(IsProbeLog));
         OnPropertyChanged(nameof(IsLiveLog));
+        OnPropertyChanged(nameof(HasSideChoice));
         OnPropertyChanged(nameof(IsConfigLog));
         OnPropertyChanged(nameof(IsRuntimeLog));
         OnPropertyChanged(nameof(IsStoredLog));

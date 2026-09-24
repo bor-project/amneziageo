@@ -21,68 +21,62 @@
        </Border>
      </Grid>
 
-     <!-- One frame around all three blocks; below the card width it goes and plain spacing carries the boundaries. -->
+     <!-- One frame around all three blocks; below the card width it goes and the lines carry the boundaries. -->
      <Border Classes="sect">
        <StackPanel Spacing="14">
 
-         <!-- Update check: manual check + periodic auto-check. -->
-         <StackPanel Spacing="12">
-           <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontWeight="SemiBold" FontSize="15" />
-           <!-- The interval and its switch stand under the hint. -->
-           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-             <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Text="{l:Tr Main_AutoCheckHint}"
-                        Classes="muted" FontSize="12"
-                        TextWrapping="Wrap" MaxWidth="430" HorizontalAlignment="Left" VerticalAlignment="Center" />
-             <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="8"
-                         VerticalAlignment="Center" HorizontalAlignment="Left">
-               <controls:AdaptiveComboBox Classes="field" Width="92" VerticalAlignment="Center"
-                         IsEnabled="{Binding GeoAutoCheck}"
-                         ItemsSource="{Binding GeoCheckIntervals}"
-                         SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
-                 <controls:AdaptiveComboBox.ItemTemplate>
-                   <DataTemplate x:DataType="x:Int32">
-                     <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
-                   </DataTemplate>
-                 </controls:AdaptiveComboBox.ItemTemplate>
-               </controls:AdaptiveComboBox>
-               <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
-             </StackPanel>
-           </Grid>
+         <!-- Update check: the switch beside the title, the interval under it. -->
+         <StackPanel Spacing="8">
+           <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_AutoCheckTitle}"
+                                      Description="{l:Tr Main_AutoCheckHint}"
+                                      IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
+           <controls:AdaptiveComboBox Classes="field"
+                     Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                     HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                     IsEnabled="{Binding GeoAutoCheck}"
+                     ItemsSource="{Binding GeoCheckIntervals}"
+                     SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
+             <controls:AdaptiveComboBox.ItemTemplate>
+               <DataTemplate x:DataType="x:Int32">
+                 <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
+               </DataTemplate>
+             </controls:AdaptiveComboBox.ItemTemplate>
+           </controls:AdaptiveComboBox>
          </StackPanel>
 
-         <!-- Add database. -->
-         <StackPanel Spacing="10">
+         <Border Classes="rowsep" />
+
+         <!-- Add database: the kind, its hint, the URL, then the add button. -->
+         <StackPanel Spacing="8">
            <TextBlock Text="{l:Tr Main_AddDatabaseLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-
-           <!-- Kind picker and add button share the row; the URL takes its own. -->
-           <StackPanel Spacing="8">
-             <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
-                   HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-               <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
-                         Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}"
-                         ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
-                         IsEnabled="{Binding !SourceKindLocked}"
-                         ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
-               <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddSourceCommand}"
-                       Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}">
-                 <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                   <TextBlock Text="+" />
-                   <TextBlock Text="{l:Tr Main_AddButton}" />
-                 </StackPanel>
-               </Button>
-             </Grid>
-             <TextBox Classes="field" Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
-           </StackPanel>
-
-           <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_GeoKindsHint}" />
+           <controls:AdaptiveComboBox Classes="field"
+                     Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                     HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                     ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
+                     IsEnabled="{Binding !SourceKindLocked}"
+                     ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
+           <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_GeoKindsHint}"
+                      Margin="0,-2,0,0" />
+           <TextBox Classes="field" Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+           <Button Classes="accent" MinWidth="130" HorizontalAlignment="Left" Margin="0,2,0,0"
+                   Command="{Binding AddSourceCommand}">
+             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+               <TextBlock Text="+" />
+               <TextBlock Text="{l:Tr Main_AddButton}" />
+             </StackPanel>
+           </Button>
          </StackPanel>
 
-         <!-- Sources list. -->
+         <Border Classes="rowsep" />
+
+         <!-- Sources list: the update-all link beside the title. -->
          <StackPanel Spacing="10">
            <Grid ColumnDefinitions="*,Auto">
              <TextBlock Grid.Column="0" Text="{l:Tr Main_SourcesLabel}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
-             <Button Grid.Column="1" Classes="methodpick" Width="130" Padding="18,6"
-                     Command="{Binding UpdateSourcesCommand}" Content="{l:Tr Main_UpdateAllButton}" />
+             <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center"
+                     Command="{Binding UpdateSourcesCommand}">
+               <TextBlock Text="{l:Tr Main_UpdateAllButton}" />
+             </Button>
            </Grid>
            <ItemsControl ItemsSource="{Binding Sources}" IsVisible="{Binding HasSources}">
                <ItemsControl.ItemTemplate>
@@ -96,7 +90,8 @@
                      <StackPanel>
                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
                          <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                           <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
+                           <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold"
+                                      TextTrimming="CharacterEllipsis" />
                            <!-- Вторая строка: адрес, а на время загрузки - принятые мегабайты. -->
                            <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
                                       TextTrimming="CharacterEllipsis" IsVisible="{Binding !ShowDownload}" />

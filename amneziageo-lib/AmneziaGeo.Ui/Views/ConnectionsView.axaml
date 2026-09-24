@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:fleet="clr-namespace:AmneziaGeo.Ui.Fleet"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.ConnectionsView"
              x:CompileBindings="True"
@@ -21,46 +22,58 @@
     <Border Classes="sect">
       <StackPanel Spacing="12">
 
-        <!-- One tab per subject: the tunnel itself, then each way out of this machine. A tab whose
-             caption is empty is not offered on this platform. -->
-        <controls:SegmentedSelector IsVisible="{Binding HasConnectionTabs}"
-            Command="{Binding SelectShareTabCommand}"
-            IsCompact="{Binding IsCompact}"
-            Item1Text="{Binding TunnelTabText}" Item1Param="tunnel" Item1Active="{Binding IsTunnelTab}"
-            Item2Text="{l:Tr General_ShareTabProxy}" Item2Param="proxy" Item2Active="{Binding IsProxyTab}"
-            Item3Text="{l:Tr General_ShareTabWifi}" Item3Param="wifi" Item3Active="{Binding IsWifiTab}" />
+        <!-- One area per subject: the tunnel itself, then each way out of this machine; an area this platform
+             does not offer stays out of the list. -->
+        <controls:AdaptiveComboBox Classes="field" IsVisible="{Binding HasConnectionTabs}"
+            SelectedIndex="{Binding ShareTabIndex, Mode=TwoWay}"
+            Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+          <!-- Стопка строк без виртуализации. -->
+          <controls:AdaptiveComboBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel />
+            </ItemsPanelTemplate>
+          </controls:AdaptiveComboBox.ItemsPanel>
+          <ComboBoxItem Content="{Binding TunnelTabText}"
+                        IsVisible="{Binding CanConfigureConnection}" IsEnabled="{Binding CanConfigureConnection}" />
+          <ComboBoxItem Content="{l:Tr General_ShareTabProxy}" />
+          <ComboBoxItem Content="{l:Tr General_ShareTabWifi}"
+                        IsVisible="{Binding CanShareHotspot}" IsEnabled="{Binding CanShareHotspot}" />
+        </controls:AdaptiveComboBox>
+
+        <Border Classes="rowsep" IsVisible="{Binding HasConnectionTabs}" />
 
         <!-- Tunnel: what the agent does with the connection itself (#196, #199). -->
         <StackPanel Spacing="12" IsVisible="{Binding IsTunnelTab}">
-          <controls:SettingSwitchRow Label="{l:Tr General_ShowNotifications}"
+          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ShowNotifications}"
                                      Description="{l:Tr General_ShowNotificationsHint}"
                                      IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
 
           <Border Classes="rowsep" />
 
-          <controls:SettingSwitchRow Label="{l:Tr General_SurviveReboot}"
+          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_SurviveReboot}"
                                      Description="{l:Tr General_SurviveRebootHint}"
                                      IsChecked="{Binding SurviveReboot, Mode=TwoWay}" />
 
           <Border Classes="rowsep" />
 
-          <controls:SettingSwitchRow Label="{l:Tr General_PeriodicReconnect}"
+          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_PeriodicReconnect}"
                                      Description="{l:Tr General_PeriodicReconnectHint}"
                                      IsChecked="{Binding PeriodicReconnect, Mode=TwoWay}" />
 
           <Border Classes="rowsep" />
 
           <!-- The interval keeps its own line under the label: the number alone does not say what repeats. -->
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"
-                IsEnabled="{Binding PeriodicReconnectIntervalEnabled}">
-            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-              <TextBlock Text="{l:Tr General_ReconnectInterval}" FontSize="13.5" TextWrapping="Wrap" />
+          <StackPanel Spacing="8" IsEnabled="{Binding PeriodicReconnectIntervalEnabled}">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:Tr General_ReconnectInterval}" FontWeight="SemiBold" FontSize="15"
+                         TextWrapping="Wrap" />
               <TextBlock Text="{l:Tr General_ReconnectIntervalHint}" Classes="muted" FontSize="11.5"
                          TextWrapping="Wrap" />
             </StackPanel>
             <!-- The unit sits inside the box: beside it every language gives it a width of its own and
                  pushes the boxes out of line with each other. -->
-            <TextBox Grid.Column="1" Classes="field" Width="132" VerticalAlignment="Center"
+            <TextBox Classes="field" Width="132" HorizontalAlignment="Left"
                      controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="86400"
                      Text="{Binding ReconnectIntervalSeconds, Mode=TwoWay}">
               <TextBox.InnerRightContent>
@@ -68,14 +81,14 @@
                            VerticalAlignment="Center" IsHitTestVisible="False" />
               </TextBox.InnerRightContent>
             </TextBox>
-          </Grid>
+          </StackPanel>
 
           <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
                относятся. -->
           <StackPanel Spacing="12" IsVisible="{Binding MultiServerOffered}">
             <Border Classes="rowsep" />
 
-            <controls:SettingSwitchRow Label="{l:Tr General_MultiServer}"
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_MultiServer}"
                                        Description="{l:Tr General_MultiServerHint}"
                                        IsChecked="{Binding MultiServer, Mode=TwoWay}" />
 
@@ -93,7 +106,8 @@
         <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->
         <StackPanel Spacing="12" IsVisible="{Binding IsProxyTab}">
           <StackPanel Spacing="4">
-            <controls:SettingSwitchRow Label="{l:Tr General_ProxyEnabled}" Description="{l:Tr General_ProxyEnabledHint}"
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ProxyEnabled}"
+                                       Description="{l:Tr General_ProxyEnabledHint}"
                                        IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
             <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                        IsVisible="{Binding ProxyNeedsTunnel}" />
@@ -128,16 +142,16 @@
             <Border Classes="rowsep" IsVisible="{Binding HasProxyEndpoints}" />
 
             <!-- Each port box stands under its label, left-aligned. -->
-            <StackPanel Spacing="6">
-              <TextBlock Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" />
+            <StackPanel Spacing="8">
+              <TextBlock Text="{l:Tr General_ProxySocksPort}" FontWeight="SemiBold" FontSize="15" />
               <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
                        Text="{Binding ProxySocksPort, Mode=TwoWay}" />
             </StackPanel>
 
             <Border Classes="rowsep" />
 
-            <StackPanel Spacing="6">
-              <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" />
+            <StackPanel Spacing="8">
+              <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontWeight="SemiBold" FontSize="15" />
               <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
                        Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
             </StackPanel>
@@ -147,7 +161,8 @@
             <!-- Clients: the count first, and who holds them under the arrow. -->
             <StackPanel Spacing="6">
               <Grid ColumnDefinitions="Auto,Auto,*">
-                <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyClients}" FontSize="13.5" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyClients}" FontWeight="SemiBold" FontSize="15"
+                           VerticalAlignment="Center" />
                 <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding ProxyClientCount}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
@@ -181,7 +196,7 @@
             <Border Classes="rowsep" />
 
             <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
-            <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ProxyAnonymous}"
                                        Description="{l:Tr General_ProxyAnonymousHint}"
                                        IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
 
@@ -196,8 +211,8 @@
             <StackPanel Spacing="6">
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                 <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                  <TextBlock Text="{l:Tr General_ProxyAccounts}" FontSize="13.5" />
-                  <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                  <TextBlock Text="{l:Tr General_ProxyAccounts}" FontWeight="SemiBold" FontSize="15" />
+                  <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                 </StackPanel>
                 <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
                         Command="{Binding AddProxyAccountCommand}">
@@ -240,7 +255,7 @@
 
         <!-- Own access point: the network a device joins without being set up at all. -->
         <StackPanel Spacing="12" IsVisible="{Binding IsWifiTab}">
-          <controls:SettingSwitchRow Label="{l:Tr General_HotspotEnabled}"
+          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_HotspotEnabled}"
                                      Description="{l:Tr General_HotspotEnabledHint}"
                                      IsChecked="{Binding HotspotEnabled, Mode=TwoWay}"
                                      IsEnabled="{Binding HotspotSupported}" />
@@ -251,15 +266,15 @@
           <Border Classes="rowsep" />
 
           <StackPanel Spacing="12" IsEnabled="{Binding HotspotSettingsEnabled}">
-            <StackPanel Spacing="6">
-              <TextBlock Text="{l:Tr General_HotspotSsid}" FontSize="13.5" />
+            <StackPanel Spacing="8">
+              <TextBlock Text="{l:Tr General_HotspotSsid}" FontWeight="SemiBold" FontSize="15" />
               <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
             </StackPanel>
 
             <Border Classes="rowsep" />
 
-            <StackPanel Spacing="6">
-              <TextBlock Text="{l:Tr General_HotspotPassword}" FontSize="13.5" />
+            <StackPanel Spacing="8">
+              <TextBlock Text="{l:Tr General_HotspotPassword}" FontWeight="SemiBold" FontSize="15" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                 <TextBox Grid.Column="0" Classes="field" MaxLength="63" PasswordChar="●"
                          RevealPassword="{Binding IsHotspotPasswordRevealed}"
@@ -278,22 +293,26 @@
 
             <Border Classes="rowsep" />
 
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotBand}" FontSize="13.5" VerticalAlignment="Center" />
-              <controls:AdaptiveComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+            <!-- Band: the list under its title, what the pick means under the list. -->
+            <StackPanel Spacing="8">
+              <TextBlock Text="{l:Tr General_HotspotBand}" FontWeight="SemiBold" FontSize="15" />
+              <controls:AdaptiveComboBox Classes="field"
+                        Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
                         ItemsSource="{Binding BandOptions}"
                         SelectedIndex="{Binding SelectedBandIndex, Mode=TwoWay}" />
-            </Grid>
-
-            <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                         Margin="0,-2,0,0"
+                         IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
 
             <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
                        Foreground="{DynamicResource AgWarnBrush}"
                        IsVisible="{Binding HotspotErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding HotspotRunning}">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontSize="13.5" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontWeight="SemiBold" FontSize="15"
+                         VerticalAlignment="Center" />
               <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                       Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                 <TextBlock Text="{Binding HotspotClientsText}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
@@ -306,19 +325,21 @@
 
         <!-- Подписки стоят на вкладке туннеля, а где её нет - на той, что несёт раздел. -->
         <StackPanel Spacing="12" IsVisible="{Binding ShowSubscriptions}">
-            <controls:SettingSwitchRow Label="{l:Tr General_SubscriptionAutoRefresh}"
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_SubscriptionAutoRefresh}"
                                        Description="{l:Tr General_SubscriptionAutoRefreshHint}"
                                        IsChecked="{Binding SubscriptionAutoRefresh, Mode=TwoWay}" />
 
+            <Border Classes="rowsep" />
+
             <!-- Срок сервера главнее: поле стоит там, где панель своего не назвала. -->
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"
-                  IsEnabled="{Binding SubscriptionIntervalEnabled}">
-              <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                <TextBlock Text="{l:Tr General_SubscriptionInterval}" FontSize="13.5" TextWrapping="Wrap" />
+            <StackPanel Spacing="8" IsEnabled="{Binding SubscriptionIntervalEnabled}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{l:Tr General_SubscriptionInterval}" FontWeight="SemiBold" FontSize="15"
+                           TextWrapping="Wrap" />
                 <TextBlock Text="{l:Tr General_SubscriptionIntervalHint}" Classes="muted" FontSize="11.5"
                            TextWrapping="Wrap" />
               </StackPanel>
-              <TextBox Grid.Column="1" Classes="field" Width="132" VerticalAlignment="Center"
+              <TextBox Classes="field" Width="132" HorizontalAlignment="Left"
                        controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="168"
                        Text="{Binding SubscriptionIntervalHours, Mode=TwoWay}">
                 <TextBox.InnerRightContent>
@@ -326,7 +347,7 @@
                              VerticalAlignment="Center" IsHitTestVisible="False" />
                 </TextBox.InnerRightContent>
               </TextBox>
-            </Grid>
+            </StackPanel>
         </StackPanel>
       </StackPanel>
     </Border>

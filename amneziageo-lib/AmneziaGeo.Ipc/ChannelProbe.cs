@@ -98,7 +98,7 @@ public static class ChannelProbe
             legs.Add(tunneled
                 ? await InsideAsync(CheckLegs.Beyond, options.BeyondTargets, "nothing past the exit answered an echo", ct).ConfigureAwait(false)
                 : new CheckLeg(CheckLegs.Beyond, LegState.Skipped, Note: "the routing list carries only what it names, so this echo says nothing about the path past the exit"));
-            legs.Add(tunneled
+            legs.Add(TimesTunnel(options)
                 ? await RateAsync(CheckLegs.Tunnel, options.TunnelSpeedUrl, options.SpeedUrl, null, ct).ConfigureAwait(false)
                 : new CheckLeg(CheckLegs.Tunnel, LegState.Skipped, Note: "the routing list carries only what it names, so this download does not ride the tunnel"));
             legs.Add(await SourceAsync(options, tunneled, ct).ConfigureAwait(false));
@@ -117,6 +117,13 @@ public static class ChannelProbe
             culprit,
             advice);
     }
+
+    /// <summary>
+    /// Tells whether a download through the tunnel is timed: the tunnel holds the default route, or the server
+    /// offers its own service inside the tunnel.
+    /// </summary>
+    public static bool TimesTunnel(ChannelProbeOptions options) =>
+        options.Connected && (options.TunnelIsDefault || options.TunnelSpeedUrl.Length > 0);
 
     // The tightest size any leg measured: a tunnel packet has to pass all of them, so the smallest decides.
     private static int Narrowest(IReadOnlyList<CheckLeg> legs)

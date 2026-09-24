@@ -98,7 +98,7 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
 
-    <!-- Segmented-control button: shared by SegmentedSelector and the inline export/logs segments.
+    <!-- Segmented-control button of the inline segments.
          One selected look app-wide so no segment reads as an action button. box-sizing parity: the
          inactive segment carries a transparent 1px border so it keeps the active segment's height. -->
     <Style Selector="Button.seg">
@@ -115,24 +115,6 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.modecard">
-      <Setter Property="VerticalAlignment" Value="Stretch" />
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="10" />
-      <Setter Property="Padding" Value="12,10" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="VerticalContentAlignment" Value="Top" />
-    </Style>
-    <Style Selector="Button.modecard.active">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
-    </Style>
-    <Style Selector="Button.seg.dense">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="Padding" Value="6,0" />
-    </Style>
     <Style Selector="Button.seg.active">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
@@ -142,34 +124,6 @@
     <!-- Selected segment lift: soft shadow that separates it from the track. -->
     <Style Selector="Button.seg.active /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="BoxShadow" Value="0 1 2 0 #1A101828" />
-    </Style>
-
-    <!-- Segmented-control track: content-width and left when wide (cap + alignment set inline on the control),
-         full-width in compact. The 900px-class touch step is folded onto the app's compact signal: 44px height
-         when narrow, 36px otherwise. -->
-    <Style Selector="Border.segtrack">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="9" />
-      <Setter Property="Padding" Value="3" />
-    </Style>
-    <Style Selector="Border.segtrack.compact Button.seg">
-      <Setter Property="MinHeight" Value="44" />
-    </Style>
-
-    <!-- Second-level track: sits under a segmented control, so it drops the track and draws only the selected
-         chip. Content-width and left in both layouts. -->
-    <Style Selector="Border.segtrack.sub">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Left" />
-    </Style>
-    <Style Selector="Border.segtrack.sub Button.seg">
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="Padding" Value="18,0" />
-      <Setter Property="Margin" Value="0,0,6,0" />
     </Style>
 
     <Style Selector="Button.softbtn">
@@ -508,22 +462,20 @@
       <Setter Property="CornerRadius" Value="5" />
     </Style>
 
-    <!-- Плитка способа добавления и карточка готового набора. -->
-    <Style Selector="Button.presetcard">
+    <!-- Поле, открывающее выбор на своём экране: вид выпадающего списка. -->
+    <Style Selector="Button.pickfield">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="10" />
-      <Setter Property="Padding" Value="10,8" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Cursor" Value="Hand" />
-    </Style>
-    <Style Selector="Button.presetcard.on">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="BorderThickness" Value="1.5" />
     </Style>
 
     <!-- Header back button. -->

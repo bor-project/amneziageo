@@ -237,6 +237,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsProxyTab))]
     [NotifyPropertyChangedFor(nameof(IsWifiTab))]
     [NotifyPropertyChangedFor(nameof(ShowSubscriptions))]
+    [NotifyPropertyChangedFor(nameof(ShareTabIndex))]
     private string _shareTab = DefaultTab();
 
     /// <summary>
@@ -363,6 +364,33 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// Whether the access point tab is shown.
     /// </summary>
     public bool IsWifiTab => CanShareHotspot && ShareTab == WifiTab;
+
+    /// <summary>
+    /// Row of the shown tab in its list: 0 the tunnel, 1 the proxy, 2 the access point.
+    /// </summary>
+    public int ShareTabIndex
+    {
+        get => ShareTab switch
+        {
+            TunnelTab => 0,
+            WifiTab => 2,
+            _ => 1,
+        };
+        set
+        {
+            var tab = value switch
+            {
+                0 => TunnelTab,
+                1 => ProxyTab,
+                2 => WifiTab,
+                _ => string.Empty,
+            };
+            if (tab.Length > 0)
+            {
+                ShareTab = tab;
+            }
+        }
+    }
 
     /// <summary>
     /// Whether the subscription settings are shown: on the tunnel tab, and where there is none, on the tab that
@@ -591,15 +619,6 @@ internal partial class ConnectionsViewModel : ViewModelBase
         HotspotSsid = _baseHotspotSsid;
         HotspotPassword = _baseHotspotPassword;
         SelectedBandIndex = _baseBandIndex;
-    }
-
-    /// <summary>
-    /// Turns the section to one of its tabs.
-    /// </summary>
-    [RelayCommand]
-    private void SelectShareTab(string tab)
-    {
-        ShareTab = tab;
     }
 
     /// <summary>

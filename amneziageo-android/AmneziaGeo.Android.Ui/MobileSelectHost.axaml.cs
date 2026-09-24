@@ -170,6 +170,11 @@ internal sealed partial class MobileSelectHost : UserControl
         for (var index = 0; index < items.Length; index++)
         {
             var item = items[index];
+            if (item is ComboBoxItem { IsVisible: false })
+            {
+                continue;
+            }
+
             var content = item;
             var template = comboBox.ItemTemplate;
             var enabled = true;

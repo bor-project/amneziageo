@@ -211,25 +211,6 @@
                   </TextBox>
                 </StackPanel>
 
-                <Border Classes="rowsep" IsVisible="{Binding ShowDnsTransport}" />
-
-                <!-- Общая настройка агента: чем агент спрашивает резолвер за туннелем. -->
-                <StackPanel Spacing="8" IsVisible="{Binding ShowDnsTransport}">
-                  <StackPanel Spacing="2">
-                    <TextBlock Text="{l:Tr Main_DnsTransportTitle}" FontWeight="SemiBold" FontSize="15"
-                               TextWrapping="Wrap" />
-                    <TextBlock Text="{l:Tr Main_DnsTransportHint}" Classes="muted" FontSize="11.5"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                  <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding DnsTransportChoice, Mode=TwoWay}"
-                      Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-                      HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-                    <ComboBoxItem Content="{l:Tr Main_DnsTransportAuto}" />
-                    <ComboBoxItem Content="{l:Tr Main_DnsTransportPlain}" />
-                    <ComboBoxItem Content="{l:Tr Main_DnsTransportDoh}" />
-                  </controls:AdaptiveComboBox>
-                </StackPanel>
-
                 <Border Classes="rowsep" IsVisible="{Binding ShowLocalDoh}" />
 
                 <!-- Общая настройка агента: чем система доходит до прокси имён. -->

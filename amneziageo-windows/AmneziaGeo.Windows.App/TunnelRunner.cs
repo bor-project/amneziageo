@@ -730,9 +730,18 @@ internal sealed class TunnelRunner(
         // not. The gateway follows the point up and down, and goes away with this session. There is one adapter
         // for it on a machine, and it belongs to the tunnel carrying what no rule sends elsewhere - that is the
         // path a shared client's traffic takes.
+        // An address the system got for a name in place of a real one, the way a corporate resolver answers a blocked
+        // site, goes into the same gateway: its connections are opened again by the name they carry, behind the
+        // tunnel where the rules send that name.
+        var substituted = new SubstitutedAddresses();
         if (proxy is not null && duties.CarriesDefault)
         {
-            var gateway = new HotspotGateway(proxy, routes, new DirectProxyOutbound(), effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>());
+            var outbound = new NamedProxyOutbound(proxy, substituted, TunnelInterface,
+                () => underlayProbe is null ? 0u : RouteManager.UnderlayHop(underlayProbe).InterfaceIndex,
+                loggerFactory.CreateLogger<NamedProxyOutbound>());
+            substituted.Added += Admit;
+            proxy.SetSubstituted(substituted);
+            var gateway = new HotspotGateway(proxy, routes, outbound, effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>(), substituted);
             sessionCts.Token.Register(gateway.Dispose);
             _ = Task.Run(() => gateway.RunAsync(sessionCts.Token));
         }
@@ -879,7 +888,8 @@ internal sealed class TunnelRunner(
         // without a DNS lookup earns its Direct route.
         if ((tracker is not null && (matcher is not null || allUdp)) || routing is not null)
         {
-            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note, _processImages);
+            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note, _processImages,
+                address => substituted.Contains(address) || routes.HeldByAnother(address, TunnelInterface()));
             // A released destination must lose its dedupe record too, or the next packet to it is skipped and the
             // route never comes back.
             tracker?.SetForgetSink(flowTracker.Forget);
@@ -1495,6 +1505,15 @@ internal sealed class TunnelRunner(
             learning?.Cancel();
             learning?.Dispose();
         }
+    }
+
+    // Lets the connections to an address the system got in place of a real one through the leak protection on their
+    // way into the gateway.
+    private void Admit(IPAddress address)
+    {
+        var octets = address.GetAddressBytes();
+        var numeric = ((uint)octets[0] << 24) | ((uint)octets[1] << 16) | ((uint)octets[2] << 8) | octets[3];
+        firewall.TryPermitHost(numeric, out _, out _, out _);
     }
 
     // Puts the name proxy on HTTPS, points the adapters at it and keeps that only if the system's lookups

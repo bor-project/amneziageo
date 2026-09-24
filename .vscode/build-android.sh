@@ -140,7 +140,7 @@ BUILD_ARGS=(
 )
 
 if [ -n "$RUNTIME_IDENTIFIERS" ]; then
-  BUILD_ARGS+=("-p:AndroidRuntimeIdentifiers=$RUNTIME_IDENTIFIERS")
+  BUILD_ARGS+=("-p:AndroidRuntimeIdentifiers=\"$RUNTIME_IDENTIFIERS\"")
 fi
 
 echo "Deploying Android: Name=$NAME Target=$TARGET Configuration=$CONFIGURATION AdbTarget=$ADB_TARGET Abis=$ABIS"

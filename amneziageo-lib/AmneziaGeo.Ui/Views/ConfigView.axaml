@@ -189,7 +189,6 @@
                          VerticalAlignment="Center" />
               <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
               <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
-                      Classes.stale="{Binding OpenConfigSubscriptionStale}"
                       IsVisible="{Binding HasOpenConfigSubscription}"
                       IsEnabled="{Binding !OpenConfigSubscription.Busy}"
                       Command="{Binding OpenConfigSubscription.RefreshCommand}"
@@ -382,31 +381,21 @@
       <Border Classes="sect">
         <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
           <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-          <Border Background="{DynamicResource AgInsetBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                  CornerRadius="9" Padding="3" MaxWidth="480" HorizontalAlignment="Center">
-            <!-- Подпись вкладки держит ширину колонки: на трёх вкладках места мало, поэтому поля узкие,
-                 а текст ужимается. -->
-            <UniformGrid Columns="{Binding TabColumns}">
-              <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                      HorizontalAlignment="Stretch" Padding="4,6">
-                <TextBlock Text="{l:Tr Main_QrConfTabShort}" TextTrimming="CharacterEllipsis"
-                           TextAlignment="Center" />
-              </Button>
-              <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                      HorizontalAlignment="Stretch" Padding="4,6">
-                <TextBlock Text="{l:Tr Main_QrLinkTabShort}" TextTrimming="CharacterEllipsis"
-                           TextAlignment="Center" />
-              </Button>
-              <!-- Подписка есть не у всякой конфигурации, поэтому вкладка появляется вместе с ней. -->
-              <Button Classes="seg" Classes.active="{Binding IsQrSubscription}" Command="{Binding ShowQrSubscriptionCommand}"
-                      IsVisible="{Binding CanExportSubscription}"
-                      HorizontalAlignment="Stretch" Padding="4,6">
-                <TextBlock Text="{l:Tr Main_QrSubscriptionTabShort}" TextTrimming="CharacterEllipsis"
-                           TextAlignment="Center" />
-              </Button>
-            </UniformGrid>
-          </Border>
+          <!-- Способ экспорта списком; строка подписки только у конфигурации с подпиской. -->
+          <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding ModeIndex, Mode=TwoWay}"
+              Width="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+              HorizontalAlignment="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+            <!-- Стопка строк без виртуализации. -->
+            <controls:AdaptiveComboBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel />
+              </ItemsPanelTemplate>
+            </controls:AdaptiveComboBox.ItemsPanel>
+            <ComboBoxItem Content="{l:Tr Main_QrConfTabShort}" />
+            <ComboBoxItem Content="{l:Tr Main_QrLinkTabShort}" />
+            <ComboBoxItem Content="{l:Tr Main_QrSubscriptionTabShort}"
+                          IsVisible="{Binding CanExportSubscription}" IsEnabled="{Binding CanExportSubscription}" />
+          </controls:AdaptiveComboBox>
           <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                   IsVisible="{Binding ShowQr}">
             <Image Source="{Binding QrImage}" Width="220" Height="220" />

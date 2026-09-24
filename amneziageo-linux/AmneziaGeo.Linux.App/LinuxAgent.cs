@@ -1867,6 +1867,15 @@ internal sealed class LinuxAgent : IDisposable
                 _tunnel.SetRouteTtl(ttlSeconds);
                 await _store.SetSettingAsync(RouteTtlKey, _routeTtlSeconds.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
                 break;
+            case SettingKeys.DnsTransport:
+                if (!DnsTransports.IsKnown(args[1]))
+                {
+                    return Fail();
+                }
+
+                _dnsTransport = DnsTransports.Of(args[1]);
+                await _store.SetSettingAsync(SettingKeys.DnsTransport, _dnsTransport, ct).ConfigureAwait(false);
+                break;
             case GeoAutoCheckKey:
                 _geoAutoCheck = IsOn(args[1]);
                 await _store.SetSettingAsync(GeoAutoCheckKey, _geoAutoCheck ? "on" : "off", ct).ConfigureAwait(false);

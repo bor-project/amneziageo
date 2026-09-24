@@ -82,7 +82,6 @@ internal partial class RoutingViewModel : ViewModelBase
     private RoutingSettingsViewModel? _routingSettings;
 
     // What the agent last reported taking, so an editor built between snapshots opens on those values.
-    private string _dnsTransport = string.Empty;
     private string _localDoh = string.Empty;
 
     [ObservableProperty]
@@ -609,10 +608,8 @@ internal partial class RoutingViewModel : ViewModelBase
 
         SelectedRoutingListId = snapshot.SelectedRoutingList;
         MarkSelectedList();
-        _dnsTransport = snapshot.DnsTransport;
         _localDoh = snapshot.LocalDoh;
         RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
-        RoutingSettings?.ApplyDnsTransport(_dnsTransport);
         RoutingSettings?.ApplyLocalDoh(_localDoh);
     }
 
@@ -1069,7 +1066,6 @@ internal partial class RoutingViewModel : ViewModelBase
         {
             newValue.PropertyChanged += OnEditPropertyChanged;
             newValue.DirtyChanged += OnEditScopeDirty;
-            newValue.ApplyDnsTransport(_dnsTransport);
             newValue.ApplyLocalDoh(_localDoh);
         }
 

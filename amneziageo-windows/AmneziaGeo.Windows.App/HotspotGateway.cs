@@ -16,7 +16,7 @@ namespace AmneziaGeo.Windows.App;
 /// a socket of this machine, which the routing table then carries exactly as it carries this machine's own
 /// traffic. It stands only while the access point does.
 /// </summary>
-internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxyOutbound outbound, int mtu, Action<IPAddress> note, ILogger<HotspotGateway> logger) : IDisposable
+internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxyOutbound outbound, int mtu, Action<IPAddress> note, ILogger<HotspotGateway> logger, SubstitutedAddresses? substituted = null) : IDisposable
 {
     private const string AdapterName = "AmneziaGeo Gateway";
     // Address the adapter answers on.
@@ -39,12 +39,21 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
     private IPAddress? _served;
     private uint? _carried;
     private bool _reported;
+    // Addresses the system got in place of real ones that are routed into the gateway, and the adapter they are on.
+    private readonly HashSet<IPAddress> _taken = [];
+    private readonly Lock _takenGate = new();
+    private uint? _takenIndex;
 
     /// <summary>
     /// Follows the access point up and down until the session ends.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
+        if (substituted is not null)
+        {
+            substituted.Added += OnSubstituted;
+        }
+
         try
         {
             while (!ct.IsCancellationRequested)
@@ -58,6 +67,11 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
         }
         finally
         {
+            if (substituted is not null)
+            {
+                substituted.Added -= OnSubstituted;
+            }
+
             Lower();
         }
     }
@@ -86,6 +100,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
             }
 
             Carry();
+            Take();
             var point = Point();
             if (point is null)
             {
@@ -124,7 +139,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
             return;
         }
 
-        var relay = new HotspotProxy(_names, outbound, logger, note);
+        var relay = new HotspotProxy(_names, outbound, logger, note, substituted);
         if (!relay.Start())
         {
             relay.Dispose();
@@ -171,6 +186,65 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
         }
     }
 
+    // Takes an address the system got in place of a real one into the gateway as soon as it is known.
+    private void OnSubstituted(IPAddress address)
+    {
+        try
+        {
+            Take();
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "{Address} was not routed into the gateway; the next pass tries again", address);
+        }
+    }
+
+    // Routes the connections to every address the system got in place of a real one into the gateway, where they are
+    // opened again by the name they carry.
+    private void Take()
+    {
+        if (substituted is null || _process is null || !IPAddress.TryParse(AdapterHop, out var hop))
+        {
+            return;
+        }
+
+        var index = routes.FindInterfaceIndex(AdapterName);
+        if (index is null)
+        {
+            return;
+        }
+
+        lock (_takenGate)
+        {
+            _takenIndex = index;
+            foreach (var address in substituted.All)
+            {
+                if (!_taken.Contains(address) && routes.AddGatewayHost(address, index.Value, hop))
+                {
+                    _taken.Add(address);
+                }
+            }
+        }
+    }
+
+    // Takes those routes back out.
+    private void Release()
+    {
+        lock (_takenGate)
+        {
+            if (_takenIndex is { } index)
+            {
+                foreach (var address in _taken)
+                {
+                    routes.RemoveGatewayHost(address, index);
+                }
+            }
+
+            _taken.Clear();
+            _takenIndex = null;
+        }
+    }
+
     private void Uncarry()
     {
         if (_carried is not { } carried)
@@ -208,6 +282,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
     {
         proxy.StopServingClients();
         Uncarry();
+        Release();
         var process = _process;
         _process = null;
         if (process is not null)

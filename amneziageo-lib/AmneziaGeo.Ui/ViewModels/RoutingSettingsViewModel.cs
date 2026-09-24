@@ -19,7 +19,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     private bool _baseAllUdp;
     private bool _baseUseGlobalProxy;
     private string _baseRouteTtl = "300";
-    private int _baseDnsTransportChoice;
     private int _baseLocalDohChoice;
 
     [ObservableProperty]
@@ -61,19 +60,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// </summary>
     public bool RouteTtlInvalid => !TryParseTtl(RouteTtl, out _);
 
-    // Agent-wide: index into DnsTransports.All.
-    [ObservableProperty]
-    private int _dnsTransportChoice;
-
     // Agent-wide: index into LocalDohModes.All.
     [ObservableProperty]
     private int _localDohChoice;
-
-    /// <summary>
-    /// Whether the agent takes a transport for the resolver behind the tunnel.
-    /// </summary>
-    [ObservableProperty]
-    private bool _showDnsTransport;
 
     /// <summary>
     /// Whether the agent takes a local DoH mode.
@@ -152,12 +141,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
-    partial void OnDnsTransportChoiceChanged(int value)
-    {
-        OnEdited();
-        FireAutoSave();
-    }
-
     partial void OnLocalDohChoiceChanged(int value)
     {
         OnEdited();
@@ -185,35 +168,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         try
         {
             RouteTtl = text;
-        }
-        finally
-        {
-            _loading = false;
-        }
-    }
-
-    /// <summary>
-    /// Seeds the transport from the agent snapshot without pushing it back, leaving an uncommitted edit alone.
-    /// </summary>
-    public void ApplyDnsTransport(string token)
-    {
-        ShowDnsTransport = token.Length > 0;
-        if (!ShowDnsTransport || DnsTransportChoice != _baseDnsTransportChoice)
-        {
-            return;
-        }
-
-        var index = IndexOf(DnsTransports.All, token);
-        _baseDnsTransportChoice = index;
-        if (DnsTransportChoice == index)
-        {
-            return;
-        }
-
-        _loading = true;
-        try
-        {
-            DnsTransportChoice = index;
         }
         finally
         {
@@ -285,7 +239,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         var dirty = AllUdp != _baseAllUdp
             || UseGlobalProxy != _baseUseGlobalProxy
             || RouteTtl != _baseRouteTtl
-            || DnsTransportChoice != _baseDnsTransportChoice
             || LocalDohChoice != _baseLocalDohChoice;
         if (dirty != IsDirty)
         {
@@ -303,7 +256,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         _baseAllUdp = AllUdp;
         _baseUseGlobalProxy = UseGlobalProxy;
         _baseRouteTtl = RouteTtl;
-        _baseDnsTransportChoice = DnsTransportChoice;
         _baseLocalDohChoice = LocalDohChoice;
         if (IsDirty)
         {
@@ -321,7 +273,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             AllUdp = _baseAllUdp;
             UseGlobalProxy = _baseUseGlobalProxy;
             RouteTtl = _baseRouteTtl;
-            DnsTransportChoice = _baseDnsTransportChoice;
             LocalDohChoice = _baseLocalDohChoice;
             StatusMessage = string.Empty;
         }
@@ -406,12 +357,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             // Agent-wide, and live: the running tunnel adopts it without a reconnect.
             if (RouteTtl != _baseRouteTtl
                 && !await PushSettingAsync(SettingKeys.RouteTtl, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture)))
-            {
-                return false;
-            }
-
-            if (ShowDnsTransport && DnsTransportChoice != _baseDnsTransportChoice
-                && !await PushSettingAsync(SettingKeys.DnsTransport, TokenAt(DnsTransports.All, DnsTransportChoice)))
             {
                 return false;
             }

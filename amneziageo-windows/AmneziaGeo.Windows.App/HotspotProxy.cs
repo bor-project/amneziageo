@@ -31,6 +31,8 @@ internal sealed class HotspotProxy : IDisposable
     private const int SioUdpConnReset = unchecked((int)0x9800000C);
     private const int GreetTimeoutMs = 10_000;
     private const int ResolveTimeoutMs = 5000;
+    // How long a program is given to send its first flight before a connection is opened without a name.
+    private const int FirstFlightWaitMs = 1000;
     private const int RelayBuffer = 65535;
     private const int Backlog = 128;
     // The port is taken out of a window of its own instead of letting Windows pick. A listener on a port of the
@@ -46,6 +48,7 @@ internal sealed class HotspotProxy : IDisposable
     private readonly IProxyOutbound _outbound;
     private readonly ILogger _logger;
     private readonly Action<IPAddress>? _note;
+    private readonly SubstitutedAddresses? _substituted;
     private readonly object _sync = new();
     private Socket? _listener;
     private CancellationTokenSource? _life;
@@ -53,12 +56,13 @@ internal sealed class HotspotProxy : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public HotspotProxy(HotspotNames names, IProxyOutbound outbound, ILogger logger, Action<IPAddress>? note = null)
+    public HotspotProxy(HotspotNames names, IProxyOutbound outbound, ILogger logger, Action<IPAddress>? note = null, SubstitutedAddresses? substituted = null)
     {
         _names = names;
         _outbound = outbound;
         _logger = logger;
         _note = note;
+        _substituted = substituted;
     }
 
     /// <summary>
@@ -198,6 +202,12 @@ internal sealed class HotspotProxy : IDisposable
     // Opens one destination and carries the connection until either end goes quiet.
     private async Task ConnectAsync(Socket client, Request request, CancellationToken ct)
     {
+        if (request.Literal is not null && _substituted?.Contains(request.Literal) == true)
+        {
+            await ReopenAsync(client, request, ct).ConfigureAwait(false);
+            return;
+        }
+
         Route(request);
         var target = Target(request);
         _logger.LogDebug("a client of the access point is opening {Target}:{Port}", target, request.Port);
@@ -215,6 +225,63 @@ internal sealed class HotspotProxy : IDisposable
             return;
         }
 
+        await RelayAsync(client, link, [], ct).ConfigureAwait(false);
+    }
+
+    // Opens a connection the system aimed at an address it got in place of a real one by the name the connection
+    // carries: the gateway is answered at once, so the program sends its first flight, and the name read from it is
+    // opened instead of the address.
+    private async Task ReopenAsync(Socket client, Request request, CancellationToken ct)
+    {
+        await ReplyAsync(client, ReplyOk, null, ct).ConfigureAwait(false);
+        var (name, head) = await FirstFlightAsync(client, ct).ConfigureAwait(false);
+        var target = name ?? request.Host;
+        _logger.LogDebug("a connection to {Address}:{Port} is opened again as {Target}", request.Host, request.Port, target);
+        var (link, _) = await _outbound.ConnectAsync(target, request.Port, ct).ConfigureAwait(false);
+        if (link is null)
+        {
+            client.Dispose();
+            return;
+        }
+
+        await RelayAsync(client, link, head, ct).ConfigureAwait(false);
+    }
+
+    // Reads what the program sends first until it names the site or the wait is over; answers with the name and every
+    // byte read.
+    private static async Task<(string? Name, byte[] Head)> FirstFlightAsync(Socket client, CancellationToken ct)
+    {
+        var head = new byte[SiteName.Limit];
+        var filled = 0;
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        wait.CancelAfter(FirstFlightWaitMs);
+        try
+        {
+            while (filled < head.Length)
+            {
+                var read = await client.ReceiveAsync(head.AsMemory(filled), SocketFlags.None, wait.Token).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                filled += read;
+                if (SiteName.Read(head.AsSpan(0, filled), out var name) != SiteName.Reading.More)
+                {
+                    return (name, head[..filled]);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+        }
+
+        return (null, head[..filled]);
+    }
+
+    // Carries a connection until either end goes quiet, handing on first what was read from the program already.
+    private static async Task RelayAsync(Socket client, IProxyLink link, byte[] head, CancellationToken ct)
+    {
         try
         {
             using (link)
@@ -222,6 +289,11 @@ internal sealed class HotspotProxy : IDisposable
             {
                 await using var near = new NetworkStream(client, ownsSocket: false);
                 await using var far = new NetworkStream(link.Socket, ownsSocket: false);
+                if (head.Length > 0)
+                {
+                    await far.WriteAsync(head, ct).ConfigureAwait(false);
+                }
+
                 var up = CarryAsync(near, far, ct);
                 var down = CarryAsync(far, near, ct);
                 await Task.WhenAny(up, down).ConfigureAwait(false);
@@ -333,6 +405,13 @@ internal sealed class HotspotProxy : IDisposable
             }
 
             if (!TryUnpack(received.Buffer, out var request, out var wrapper, out var payload))
+            {
+                continue;
+            }
+
+            // A datagram aimed at an address the system got in place of a real one names nothing to open again by;
+            // it is dropped, and the program falls back to a connection.
+            if (request.Literal is not null && _substituted?.Contains(request.Literal) == true)
             {
                 continue;
             }

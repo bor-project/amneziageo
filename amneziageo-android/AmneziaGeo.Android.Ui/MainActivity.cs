@@ -6,10 +6,12 @@ using Avalonia.Android;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Presenters;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using AmneziaGeo.Android.Ui.Services;
+using AmneziaGeo.Ui.Services;
 
 namespace AmneziaGeo.Android.Ui;
 
@@ -51,8 +53,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     /// </summary>
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        // Текст, и моноширинный тоже, берёт у системных шрифтов начертание запрошенного веса.
         return base.CustomizeAppBuilder(builder)
-            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
+            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() })
+            .With(WeightedSystemFonts.Options("sans-serif", "monospace"))
+            .AfterPlatformServicesSetup(_ => WeightedSystemFonts.Register(FontManager.Current));
     }
 
     private static IReadOnlyList<AndroidRenderingMode> RenderingModes()

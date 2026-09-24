@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Media;
+using AmneziaGeo.Ui.Services;
+using SkiaSharp;
 
 namespace AmneziaGeo.Linux.Ui;
 
@@ -34,7 +37,23 @@ public static class Program
             .UsePlatformDetect()
             // Draws dropdowns and menus inside the window instead of separate X surfaces.
             .With(new X11PlatformOptions { OverlayPopups = true })
+            .With(FontOptions())
             .LogToTrace();
+    }
+
+    // Моноширинный текст без своих шрифтов в системе берёт системное моноширинное семейство.
+    private static FontManagerOptions FontOptions()
+    {
+        return MonoFonts.Design.Any(Installed)
+            ? new FontManagerOptions()
+            : new FontManagerOptions { FontFamilyMappings = MonoFonts.Mapped("monospace") };
+    }
+
+    // Отдаёт ли система шрифт, имя которого содержит имя семейства.
+    private static bool Installed(string family)
+    {
+        using var face = SKFontManager.Default.MatchFamily(family);
+        return face?.FamilyName.Contains(family, StringComparison.Ordinal) == true;
     }
 
     private static void WaitForDebugger()

@@ -47,6 +47,8 @@ internal sealed class NetworkFlowTracker : IDisposable
     // on-demand Direct routes for addresses that never went through the resolver.
     private readonly Action<uint, bool>? _noteV4;
     private readonly ProcessImages? _images;
+    // Whether another program keeps an address on a host route of its own, the way a VPN pins its server.
+    private readonly Func<IPAddress, bool>? _heldElsewhere;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
     // Seen destinations; ETW handler is single-threaded, no lock needed.
@@ -77,7 +79,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null)
     {
         _matcher = matcher;
         _tracker = tracker;
@@ -89,7 +91,26 @@ internal sealed class NetworkFlowTracker : IDisposable
             : 0;
         _noteV4 = noteV4;
         _images = images;
+        _heldElsewhere = heldElsewhere;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Whether the all-UDP rule leaves a destination on the host route another program keeps it on.
+    /// </summary>
+    internal bool LeftToItsOwnRoute(IPAddress remote)
+    {
+        return _allUdp && _heldElsewhere is not null && _heldElsewhere(remote);
+    }
+
+    // Writes down a destination the all-UDP rule leaves to another program's route.
+    private void NoteLeft(IPAddress remote, uint pid)
+    {
+        _logger.LogInformation("{Remote}: pid {Pid} sends here, and this address is held on a route of its own outside the tunnel, a VPN server or a site opened again by name, so all UDP leaves it there", remote, pid);
+        if (RouteLog.Enabled)
+        {
+            RouteLog.Note($"udp request -> {remote} (pid {pid}) left to its own route");
+        }
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -312,6 +333,13 @@ internal sealed class NetworkFlowTracker : IDisposable
                 return;
             }
 
+            if (LeftToItsOwnRoute(remoteIp))
+            {
+                NoteLeft(remoteIp, pid);
+                MarkSeen(_seenUdp, daddr);
+                return;
+            }
+
             // Mark seen only after a successful route; failures retry on the next datagram. All-UDP tunnels every
             // destination and must not promote domains off anycast resolvers; an app match promotes.
             if (RouteUdp(remoteIp))
@@ -371,6 +399,13 @@ internal sealed class NetworkFlowTracker : IDisposable
 
             if (!IsTunnelableRemote(remoteIp))
             {
+                MarkSeen(_seenUdpV6, key);
+                return;
+            }
+
+            if (LeftToItsOwnRoute(remoteIp))
+            {
+                NoteLeft(remoteIp, pid);
                 MarkSeen(_seenUdpV6, key);
                 return;
             }

@@ -29,6 +29,9 @@ internal sealed class DnsProxy
     private const int SioUdpConnReset = unchecked((int)0x9800000C);
     private const int TypeA = 1;
     private const int TypeAaaa = 28;
+    // How often one name is checked against the resolver behind the tunnel, and how many names are remembered.
+    private const long SubstitutionCheckMs = 60_000;
+    private const int SubstitutionChecksHeld = 4096;
     private const int TypeHttps = 65; // HTTPS/SVCB
     private const int MinCacheSeconds = 10;
     private const int MaxCacheSeconds = 300;
@@ -143,6 +146,10 @@ internal sealed class DnsProxy
     // How the resolver behind the tunnel is asked, and the transport that answered last.
     private readonly NameUpstream _tunnelAsk;
     private readonly DohResolver? _doh;
+    // Addresses the system got in place of the real ones; null while nothing looks for them.
+    private SubstitutedAddresses? _substituted;
+    // When each name was last checked against the resolver behind the tunnel.
+    private readonly ConcurrentDictionary<string, long> _substitutionChecks = new(StringComparer.Ordinal);
 
     /// <summary>
     /// ctor
@@ -499,6 +506,49 @@ internal sealed class DnsProxy
     }
 
     /// <summary>
+    /// Starts checking the answers the system gets past this proxy against the resolver behind the tunnel.
+    /// </summary>
+    public void SetSubstituted(SubstitutedAddresses substituted)
+    {
+        _substituted = substituted;
+    }
+
+    /// <summary>
+    /// Looks a name up behind the tunnel and puts its addresses on it; empty when nothing answered.
+    /// </summary>
+    public async Task<IReadOnlyList<IPAddress>> TunnelAddressesAsync(string name)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        var known = _tracker?.KnownIps(key)?
+            .Select(ip => IPAddress.TryParse(ip, out var parsed) ? parsed : null)
+            .OfType<IPAddress>()
+            .Where(ip => _substituted?.Contains(ip) != true)
+            .ToList();
+        if (known is { Count: > 0 })
+        {
+            return known;
+        }
+
+        var ips = new List<IPAddress>();
+        try
+        {
+            await CollectAddressesAsync(key, TypeA, ips).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "{Name}: the resolver in the tunnel did not answer, so it is not opened through the tunnel", key);
+            return [];
+        }
+
+        if (ips.Count > 0)
+        {
+            _tracker?.Add(key, [.. ips.Select(ip => ip.ToString())]);
+        }
+
+        return ips;
+    }
+
+    /// <summary>
     /// Applies the name rules and the ranges to an answer the system got past this proxy, as to an answer passing here,
     /// and returns what the names settle; an address <paramref name="foreign"/> names stays off the tunnel.
     /// </summary>
@@ -528,21 +578,32 @@ internal sealed class DnsProxy
         if (tunneled)
         {
             var carried = new List<string>();
+            var seen = new List<IPAddress>();
             foreach (var address in addresses)
             {
-                if (foreign(address))
+                if (_substituted?.Contains(address) == true)
+                {
+                    _logger.LogDebug("{Name}: {Address} was given in place of a real address, so the gateway opens it again by name", key, address);
+                }
+                else if (foreign(address))
                 {
                     _logger.LogDebug("{Name}: {Address} is reached through another adapter, a corporate VPN for example, so it stays off the tunnel", key, address);
                 }
                 else
                 {
                     carried.Add(address.ToString());
+                    seen.Add(address);
                 }
             }
 
             if (carried.Count > 0)
             {
                 _tracker?.Add(key, carried, late: true);
+            }
+
+            if (_substituted is not null && seen.Count > 0)
+            {
+                _ = CheckSubstitutionAsync(key, seen);
             }
         }
 
@@ -1863,6 +1924,49 @@ internal sealed class DnsProxy
         {
             _logger.LogDebug(ex, "{Name}: {Owner} did not answer, so it stays off that tunnel until the next query", name, owner);
             return [];
+        }
+    }
+
+    // Asks the resolver behind the tunnel for a name the system got past this proxy. Where none of the addresses the
+    // system got is among the real ones, they were given in place of them: connections to them go through the gateway,
+    // and the name keeps the real addresses.
+    private async Task CheckSubstitutionAsync(string name, IReadOnlyList<IPAddress> seen)
+    {
+        var now = Environment.TickCount64;
+        if (_substitutionChecks.TryGetValue(name, out var last) && now - last < SubstitutionCheckMs)
+        {
+            return;
+        }
+
+        if (_substitutionChecks.Count >= SubstitutionChecksHeld)
+        {
+            _substitutionChecks.Clear();
+        }
+
+        _substitutionChecks[name] = now;
+        try
+        {
+            var real = new List<IPAddress>();
+            await CollectAddressesAsync(name, TypeA, real).ConfigureAwait(false);
+            var given = SubstitutedAddresses.Of(seen, real);
+            if (given.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var address in given)
+            {
+                if (_substituted!.Add(address))
+                {
+                    _logger.LogInformation("{Name}: the system got {Address} for it, which the resolver in the tunnel does not give, so connections to that address go into the gateway and are opened again by name", name, address);
+                }
+            }
+
+            _tracker?.Replace(name, [.. real.Select(ip => ip.ToString())]);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "{Name}: the resolver in the tunnel was not asked whether the system got a real answer for it", name);
         }
     }
 

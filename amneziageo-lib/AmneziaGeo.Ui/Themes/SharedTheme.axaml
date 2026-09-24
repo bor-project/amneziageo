@@ -363,11 +363,6 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
-    <!-- Подписка ждёт обновления: кнопка обновления цветом предупреждения. -->
-    <Style Selector="Button.linkbtn.stale">
-      <Setter Property="Foreground" Value="{DynamicResource AgWarnBrush}" />
-    </Style>
-
     <!-- Обновлять нечего: ссылка уходит в спокойный тон. -->
     <Style Selector="Button.linkbtn:disabled">
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />

@@ -466,12 +466,12 @@ internal sealed partial class CatalogCard : UserControl
     }
 
     // Контролы карточки строками: обновление подписки с подключением сверху, подвал снизу;
-    // запертую кнопку туннеля и потухшее обновление пульт пропускает.
+    // запертую кнопку туннеля, потухшее и спрятанное обновление пульт пропускает.
     private List<List<Control>> Rows()
     {
         var rows = new List<List<Control>>();
         var head = new List<Control>();
-        if (RefreshPart is { IsVisible: true, IsEnabled: true })
+        if (RefreshPart is { IsEffectivelyVisible: true, IsEnabled: true })
         {
             head.Add(RefreshPart);
         }

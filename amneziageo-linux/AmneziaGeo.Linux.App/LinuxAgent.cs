@@ -1737,8 +1737,8 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
-        var position = sources.Count + 1;
-        var name = $"{args[0]}-{position}";
+        var position = sources.Count == 0 ? 1 : sources.Max(source => source.Position) + 1;
+        var name = GeoSourceNames.Free(sources, args[0], position);
         await _store.SaveGeoSourceAsync(new GeoSource(name, args[0], args[1], position), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return await UpdateSourcesAsync(name, ct).ConfigureAwait(false);

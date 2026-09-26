@@ -1965,7 +1965,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         var existing = await store.ListGeoSourcesAsync(ct);
         var position = existing.Count == 0 ? 1 : existing.Max(s => s.Position) + 1;
-        var name = $"{kind}-{position}";
+        var name = GeoSourceNames.Free(existing, kind, position);
         var source = new GeoSource(name, kind, url, position);
         await store.SaveGeoSourceAsync(source, ct);
         logger.LogInformation("added geo source {Name} ({Kind}) {Url}", name, kind, url);

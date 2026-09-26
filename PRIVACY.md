@@ -10,6 +10,8 @@ library.
 |---|---|---|
 | `github.com`, `api.github.com` | on an update check and on the download you start | read `update.json`, fetch the setup |
 | `github.com/Loyalsoldier/v2ray-rules-dat` | when the geo databases are refreshed | download `geoip.dat` and `geosite.dat` |
+| `github.com/runetfreedom/russia-blocked-geosite`, `github.com/runetfreedom/russia-blocked-geoip` | when the geo databases are refreshed | download `geosite-ru-only.dat` and `geoip-ru-only.dat` |
+| `github.com/jameszeroX/zkeen-ip` | when the geo databases are refreshed | download `zkeenip.dat` |
 | `speed.cloudflare.com` | only while you run the built-in speed probe | measure the channel |
 | the server from your own configuration | while the tunnel is up | carry your traffic |
 

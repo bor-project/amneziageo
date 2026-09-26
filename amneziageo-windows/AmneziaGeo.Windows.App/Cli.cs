@@ -160,7 +160,7 @@ internal sealed class Cli(
     {
         var sources = await store.ListGeoSourcesAsync();
         var position = sources.Count == 0 ? 1 : sources.Max(s => s.Position) + 1;
-        var name = $"{kind.ToLowerInvariant()}-{position}";
+        var name = GeoSourceNames.Free(sources, kind.ToLowerInvariant(), position);
         await store.SaveGeoSourceAsync(new GeoSource(name, kind.ToLowerInvariant(), url, position));
         Console.WriteLine($"added source {name} ({kind}) {url}");
         return 0;

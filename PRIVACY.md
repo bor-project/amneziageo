@@ -12,6 +12,7 @@ library.
 | `github.com/Loyalsoldier/v2ray-rules-dat` | when the geo databases are refreshed | download `geoip.dat` and `geosite.dat` |
 | `github.com/runetfreedom/russia-blocked-geosite`, `github.com/runetfreedom/russia-blocked-geoip` | when the geo databases are refreshed | download `geosite-ru-only.dat` and `geoip-ru-only.dat` |
 | `github.com/jameszeroX/zkeen-ip` | when the geo databases are refreshed | download `zkeenip.dat` |
+| `raw.githubusercontent.com/bor-project/amneziageo-geo` | when the geo databases are refreshed | download `geoip.dat` with the project's own `ag-` keys |
 | `speed.cloudflare.com` | only while you run the built-in speed probe | measure the channel |
 | the server from your own configuration | while the tunnel is up | carry your traffic |
 

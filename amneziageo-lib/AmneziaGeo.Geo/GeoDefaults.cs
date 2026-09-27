@@ -21,7 +21,7 @@ public static class GeoDefaults
     /// <summary>
     /// Состав набора по умолчанию: растёт, когда добавляются источники.
     /// </summary>
-    public const int SeedVersion = 3;
+    public const int SeedVersion = 4;
 
     private const string SeedVersionKey = "geo.seed-version";
 
@@ -54,6 +54,12 @@ public static class GeoDefaults
             "https://github.com/runetfreedom/russia-blocked-geoip/releases/latest/download/geoip-ru-only.dat",
             "geoip-ru-only.dat",
             Since: 2),
+        new(
+            "geoip",
+            "https://raw.githubusercontent.com/bor-project/amneziageo-geo/release/geoip.dat",
+            "",
+            "amneziageo",
+            4),
     ];
 
     /// <summary>

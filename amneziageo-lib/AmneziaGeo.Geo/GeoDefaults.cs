@@ -21,7 +21,7 @@ public static class GeoDefaults
     /// <summary>
     /// Состав набора по умолчанию: растёт, когда добавляются источники.
     /// </summary>
-    public const int SeedVersion = 4;
+    public const int SeedVersion = 5;
 
     private const string SeedVersionKey = "geo.seed-version";
 
@@ -60,6 +60,12 @@ public static class GeoDefaults
             "",
             "amneziageo",
             4),
+        new(
+            "geosite",
+            "https://raw.githubusercontent.com/bor-project/amneziageo-geo/release/geosite.dat",
+            "",
+            "amneziageo-geosite",
+            5),
     ];
 
     /// <summary>

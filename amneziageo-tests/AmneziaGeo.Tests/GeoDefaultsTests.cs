@@ -17,6 +17,7 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
     private const string SiteRu = "https://github.com/runetfreedom/russia-blocked-geosite/releases/latest/download/geosite-ru-only.dat";
     private const string IpRu = "https://github.com/runetfreedom/russia-blocked-geoip/releases/latest/download/geoip-ru-only.dat";
     private const string Ag = "https://raw.githubusercontent.com/bor-project/amneziageo-geo/release/geoip.dat";
+    private const string AgSite = "https://raw.githubusercontent.com/bor-project/amneziageo-geo/release/geosite.dat";
     private const string Mine = "https://example.org/mine.dat";
 
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"ageo-geo-{Guid.NewGuid():N}.db");
@@ -51,11 +52,11 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
         var held = await _store.ListGeoSourcesAsync();
 
         Assert.True(added);
-        Assert.Equal([Zkeenip, Geosite, Geoip, SiteRu, IpRu, Ag], held.Select(row => row.Url));
+        Assert.Equal([Zkeenip, Geosite, Geoip, SiteRu, IpRu, Ag, AgSite], held.Select(row => row.Url));
         Assert.Equal("zkeenip", held[0].Name);
-        Assert.Equal("amneziageo", held[^1].Name);
-        Assert.Equal([1, 2, 3, 4, 5, 6], held.Select(row => row.Position));
-        Assert.Equal("4", await _store.GetSettingAsync("geo.seed-version"));
+        Assert.Equal("amneziageo-geosite", held[^1].Name);
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7], held.Select(row => row.Position));
+        Assert.Equal("5", await _store.GetSettingAsync("geo.seed-version"));
     }
 
     [Fact]
@@ -69,12 +70,12 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
 
         Assert.True(added);
         Assert.False(again);
-        Assert.Equal(["zkeenip", "geosite-1", "geoip-2", "geosite-3", "geoip-4", "amneziageo"], held.Select(row => row.Name));
-        Assert.Equal([1, 2, 3, 4, 5, 6], held.Select(row => row.Position));
+        Assert.Equal(["zkeenip", "geosite-1", "geoip-2", "geosite-3", "geoip-4", "amneziageo", "amneziageo-geosite"], held.Select(row => row.Name));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7], held.Select(row => row.Position));
     }
 
     [Fact]
-    public async Task AnInstallOfTheThirdSetTakesOnlyTheOwnDatabaseOnce()
+    public async Task AnInstallOfTheThirdSetTakesOnlyTheOwnDatabasesOnce()
     {
         await HeldAsync("3", ("geoip-1", Zkeenip), ("geosite-2", Geosite), ("geoip-3", Geoip), ("geosite-4", SiteRu), ("geoip-5", IpRu));
 
@@ -84,9 +85,9 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
 
         Assert.True(added);
         Assert.False(again);
-        Assert.Equal([Zkeenip, Geosite, Geoip, SiteRu, IpRu, Ag], held.Select(row => row.Url));
-        Assert.Equal("amneziageo", held[^1].Name);
-        Assert.Equal([1, 2, 3, 4, 5, 6], held.Select(row => row.Position));
+        Assert.Equal([Zkeenip, Geosite, Geoip, SiteRu, IpRu, Ag, AgSite], held.Select(row => row.Url));
+        Assert.Equal("amneziageo-geosite", held[^1].Name);
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7], held.Select(row => row.Position));
     }
 
     [Fact]
@@ -97,7 +98,7 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
         await GeoDefaults.SeedAsync(_store, null, null, CancellationToken.None);
         var held = await _store.ListGeoSourcesAsync();
 
-        Assert.Equal([Zkeenip, Geoip, SiteRu, IpRu, Ag], held.Select(row => row.Url));
+        Assert.Equal([Zkeenip, Geoip, SiteRu, IpRu, Ag, AgSite], held.Select(row => row.Url));
     }
 
     [Fact]
@@ -108,14 +109,14 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
         await GeoDefaults.SeedAsync(_store, null, null, CancellationToken.None);
         var held = await _store.ListGeoSourcesAsync();
 
-        Assert.Equal([Zkeenip, Geosite, Geoip, SiteRu, IpRu, Ag], held.Select(row => row.Url));
-        Assert.Equal(["zkeenip", "geosite-1", "geoip-2", "geosite-4", "geoip-5", "amneziageo"], held.Select(row => row.Name));
+        Assert.Equal([Zkeenip, Geosite, Geoip, SiteRu, IpRu, Ag, AgSite], held.Select(row => row.Url));
+        Assert.Equal(["zkeenip", "geosite-1", "geoip-2", "geosite-4", "geoip-5", "amneziageo", "amneziageo-geosite"], held.Select(row => row.Name));
     }
 
     [Fact]
     public async Task ADefaultHeldUnderItsAddressIsNotAddedTwice()
     {
-        await HeldAsync("2", ("geosite-1", Geosite), ("geoip-2", Geoip), ("geosite-3", SiteRu), ("geoip-4", IpRu), ("geoip-5", Zkeenip), ("geoip-6", Ag));
+        await HeldAsync("2", ("geosite-1", Geosite), ("geoip-2", Geoip), ("geosite-3", SiteRu), ("geoip-4", IpRu), ("geoip-5", Zkeenip), ("geoip-6", Ag), ("geosite-7", AgSite));
 
         var added = await GeoDefaults.SeedAsync(_store, null, null, CancellationToken.None);
         var held = await _store.ListGeoSourcesAsync();
@@ -123,6 +124,7 @@ public sealed class GeoDefaultsTests : IAsyncLifetime
         Assert.False(added);
         Assert.Single(held, row => row.Url == Zkeenip);
         Assert.Single(held, row => row.Url == Ag);
+        Assert.Single(held, row => row.Url == AgSite);
     }
 
     [Fact]

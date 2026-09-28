@@ -136,6 +136,11 @@ public sealed class GeoVpnService : VpnService
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
     private const int LinkIntervalMs = 5_000;
+    // How long the tunnel may stay unvalidated before that is noted.
+    private const int UnvalidatedNoteSeconds = 30;
+    // Screen-off time below which waking is not noted, and how long after waking the session is looked at again.
+    private const int WakeNoteMs = 60_000;
+    private const int WakeFollowMs = 20_000;
     private const int HandshakeWaitSeconds = 30;
     private const int HandshakePollMs = 500;
     private const int TrafficWaitSeconds = 20;
@@ -209,6 +214,19 @@ public sealed class GeoVpnService : VpnService
     private long _linkHandshake;
     private LinkReading _linkReading = LinkReading.Empty;
 
+    // What the notes last said about the networks, kept across sessions so a raise does not repeat it.
+    private string? _underNoted;
+    private string? _privateDnsNoted;
+
+    // When the tunnel was first seen unvalidated, and whether that is noted.
+    private long _unvalidatedSince;
+    private bool _unvalidatedNoted;
+
+    // When the screen went off, on the clock that counts sleep and on the one that does not.
+    private long _screenOffElapsed = -1;
+    private long _screenOffUptime;
+    private VpnBridge.Listener? _screen;
+
     /// <inheritdoc/>
     public override void OnCreate()
     {
@@ -226,6 +244,9 @@ public sealed class GeoVpnService : VpnService
         _cards = new VpnBridge.Listener { Handler = _ => RunCards() };
         VpnBridge.Listen(this, _cards, VpnBridge.ActionCards);
         WatchUnderlay();
+        _screen = new VpnBridge.Listener { Handler = OnScreen };
+        VpnBridge.Listen(this, _screen, Intent.ActionScreenOff);
+        VpnBridge.Listen(this, _screen, Intent.ActionScreenOn);
     }
 
     /// <inheritdoc/>
@@ -325,6 +346,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_cards);
             _cards = null;
+        }
+
+        if (_screen is not null)
+        {
+            UnregisterReceiver(_screen);
+            _screen = null;
         }
 
         DropUnderlayWatch();
@@ -432,6 +459,7 @@ public sealed class GeoVpnService : VpnService
         }
 
         Report(why);
+        Note("tunnel", why);
         Publish(VpnStage.Connecting, request.Name);
         var plan = VpnBridge.ReadPlan();
         _ = Task.Run(async () =>
@@ -1707,6 +1735,7 @@ public sealed class GeoVpnService : VpnService
                 seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : 0);
             lastRx = rx;
             lastTx = tx;
+            WatchNetworks(seen, reading);
 
             // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
             if (seen > 0
@@ -1719,8 +1748,10 @@ public sealed class GeoVpnService : VpnService
             if (_recovery.GivenUp && !gaveUp)
             {
                 gaveUp = true;
-                Report($"{_recovery.Reason}, and {_recovery.Attempt} attempts to raise the session again did not "
-                    + "bring it back; nothing further is tried until the network changes or you connect again");
+                var text = $"{_recovery.Reason}, and {_recovery.Attempt} attempts to raise the session again did not "
+                    + "bring it back; nothing further is tried until the network changes or you connect again";
+                Report(text);
+                Note("tunnel", text);
             }
 
             if (seen == handshake && !reading.DiffersFrom(reported))
@@ -1732,6 +1763,144 @@ public sealed class GeoVpnService : VpnService
             reported = reading;
             PublishLink(seen, reading);
         }
+    }
+
+    // Notes what changed around the tunnel since the last look: the network the device sits on, how names resolve,
+    // and whether the system still reaches the internet through the tunnel.
+    private void WatchNetworks(long handshake, LinkReading reading)
+    {
+        var view = AndroidNetworks.Read(this);
+        if (view.Under.Length > 0)
+        {
+            var under = view.UnderText;
+            if (_underNoted is not null && !string.Equals(under, _underNoted, StringComparison.Ordinal))
+            {
+                Note("network", $"the device now sits on {under} (was {_underNoted})");
+            }
+
+            _underNoted = under;
+        }
+
+        var now = SystemClock.ElapsedRealtime();
+        if (view.TunnelValidated == false)
+        {
+            if (_unvalidatedSince == 0)
+            {
+                _unvalidatedSince = now;
+            }
+
+            var seconds = (now - _unvalidatedSince) / 1000;
+            if (!_unvalidatedNoted && seconds >= UnvalidatedNoteSeconds)
+            {
+                _unvalidatedNoted = true;
+                var age = handshake > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - handshake) : -1;
+                var snapshot = new NetworkSnapshot(ConnectionStatus.Connected, age, reading.RxBitsPerSecond,
+                    reading.LossPercent, reading.Churning, view.Under, view.UnderValidated, view.TunnelValidated,
+                    view.PrivateDnsHost, view.PrivateDnsActive);
+                Note("network", $"the system has not validated the tunnel for {seconds} s: {snapshot.Describe()}");
+            }
+
+            return;
+        }
+
+        if (view.TunnelValidated != true)
+        {
+            return;
+        }
+
+        if (_unvalidatedNoted)
+        {
+            Note("network", $"the system validated the tunnel again after {(now - _unvalidatedSince) / 1000} s");
+        }
+
+        _unvalidatedSince = 0;
+        _unvalidatedNoted = false;
+
+        // Private DNS is read on a validated tunnel only: a fresh one has not upgraded to it yet.
+        var dns = view.PrivateDnsText;
+        if (view.PrivateDnsActive is not null && !string.Equals(dns, _privateDnsNoted, StringComparison.Ordinal))
+        {
+            if (_privateDnsNoted is not null || view.PrivateDnsHost is not null)
+            {
+                Note("network", _privateDnsNoted is null ? $"private DNS {dns}" : $"private DNS {dns} (was {_privateDnsNoted})");
+            }
+
+            _privateDnsNoted = dns;
+        }
+    }
+
+    // Remembers when the screen went off and, once it comes back after a while, tells how long the device slept and
+    // what the session looked like on waking.
+    private void OnScreen(Intent intent)
+    {
+        if (intent.Action == Intent.ActionScreenOff)
+        {
+            _screenOffElapsed = SystemClock.ElapsedRealtime();
+            _screenOffUptime = SystemClock.UptimeMillis();
+            return;
+        }
+
+        if (intent.Action != Intent.ActionScreenOn || _screenOffElapsed < 0)
+        {
+            return;
+        }
+
+        var off = SystemClock.ElapsedRealtime() - _screenOffElapsed;
+        var asleep = Math.Max(0, off - (SystemClock.UptimeMillis() - _screenOffUptime));
+        _screenOffElapsed = -1;
+        var handle = _handle;
+        if (off < WakeNoteMs || _stage != VpnStage.Connected || handle < 0)
+        {
+            return;
+        }
+
+        var uapi = AwgEngine.GetConfig(handle);
+        var (rx, _) = PeerBytes(uapi);
+        Note("sleep", $"the screen came on after {Span(off)} off, {Span(asleep)} of it asleep; the peer last answered "
+            + Age(PeerHandshake(uapi)));
+        _ = Task.Run(() => FollowWakeAsync(handle, rx));
+    }
+
+    // Tells whether the session carried again shortly after waking.
+    private async Task FollowWakeAsync(int handle, long rx)
+    {
+        await Task.Delay(WakeFollowMs).ConfigureAwait(false);
+        var after = $"{WakeFollowMs / 1000} s after waking";
+        if (_handle != handle)
+        {
+            Note("sleep", _handle < 0 ? $"{after} the tunnel is down" : $"{after} the session has been raised again");
+            return;
+        }
+
+        var uapi = AwgEngine.GetConfig(handle);
+        var (received, _) = PeerBytes(uapi);
+        Note("sleep", $"{after} the tunnel received {received - rx} bytes; the peer last answered {Age(PeerHandshake(uapi))}");
+    }
+
+    // A stretch of time in the unit it reads best in.
+    private static string Span(long ms)
+    {
+        var seconds = ms / 1000;
+        if (seconds < 120)
+        {
+            return $"{seconds} s";
+        }
+
+        var minutes = seconds / 60;
+        return minutes < 120 ? $"{minutes} min" : $"{minutes / 60} h {minutes % 60} min";
+    }
+
+    // How long ago the peer answered, by the wall clock.
+    private static string Age(long unixSeconds)
+    {
+        return unixSeconds > 0 ? $"{DateTimeOffset.UtcNow.ToUnixTimeSeconds() - unixSeconds} s ago" : "never";
+    }
+
+    // Tells the head an event it keeps whatever its capture floor is.
+    private static void Note(string source, string text)
+    {
+        global::Android.Util.Log.Warn("GeoVpnService", source + " " + text);
+        VpnBridge.PublishNote(global::Android.App.Application.Context, source, text);
     }
 
     // What the peer has carried, received and sent apart.
@@ -2102,6 +2271,8 @@ public sealed class GeoVpnService : VpnService
     {
         _linkHandshake = 0;
         _linkReading = LinkReading.Empty;
+        _unvalidatedSince = 0;
+        _unvalidatedNoted = false;
         Release();
         Publish(stage, detail, reason);
         StopForeground(StopForegroundFlags.Remove);

@@ -155,7 +155,7 @@ internal sealed class AndroidUpdater : IDisposable
         }
         catch (Exception ex) when (ex is not System.OperationCanceledException)
         {
-            _log.Error("update", "the release manifest could not be read", ex);
+            _log.Failure("update", "the release manifest could not be read", ex);
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateServerUnavailable"));
         }
         finally
@@ -391,7 +391,7 @@ internal sealed class AndroidUpdater : IDisposable
             Failed = true;
             Percent = 0;
             Remove(path);
-            _log.Error("update", $"download of {version} failed", ex);
+            _log.Failure("update", $"download of {version} failed", ex);
         }
         finally
         {

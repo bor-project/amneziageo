@@ -88,6 +88,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private LinkReading _link = LinkReading.Empty;
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
+    private DateTimeOffset _churnSince;
     private bool _active;
     private bool _restartRequired;
 
@@ -160,6 +161,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
+        _log.Context = NetworkContext;
         _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
         _offers = new ServerOffers(_store, OfferNote);
         Current = this;
@@ -690,6 +692,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return;
         }
 
+        var note = intent.GetStringExtra(VpnBridge.ExtraNote);
+        if (note is not null)
+        {
+            _log.Note(intent.GetStringExtra(VpnBridge.ExtraNoteSource) ?? "tunnel", note);
+            return;
+        }
+
         var trace = intent.GetStringExtra(VpnBridge.ExtraTrace);
         if (trace is not null)
         {
@@ -794,6 +803,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Drops the link view a stopped tunnel left behind.
     private void ResetLink()
     {
+        if (_churnLogged)
+        {
+            _log.Note("link", $"the tunnel stopped after {ChurnSeconds()} s of re-establishing the session");
+        }
+
         _link = LinkReading.Empty;
         _churnLogged = false;
     }
@@ -808,12 +822,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _churnLogged = churning;
             if (churning)
             {
+                _churnSince = DateTimeOffset.UtcNow;
                 // Loud enough to survive the default capture floor: this is the record a transient outage leaves.
                 _log.Error("link", $"the session is re-established {reading.HandshakesPerMinute} times a minute, so the link carries almost nothing");
             }
             else
             {
-                _log.Info("link", "the session stopped re-establishing");
+                _log.Note("link", $"the session stopped re-establishing after {ChurnSeconds()} s");
             }
         }
 
@@ -825,6 +840,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _linkLoggedAt = now;
         _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min, loses {LossText(reading.LossPercent)}");
+    }
+
+    // How long the session has been re-established over and over.
+    private int ChurnSeconds() => (int)(DateTimeOffset.UtcNow - _churnSince).TotalSeconds;
+
+    // The tunnel and the networks under it as a failed request found them.
+    private string NetworkContext()
+    {
+        var view = AndroidNetworks.Read(Application.Context);
+        var age = _handshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix) : -1;
+        return new NetworkSnapshot(_boundStatus, age, _link.RxBitsPerSecond, _link.LossPercent, _link.Churning,
+            view.Under, view.UnderValidated, view.TunnelValidated, view.PrivateDnsHost, view.PrivateDnsActive).Describe();
     }
 
     // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
@@ -2093,7 +2120,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
         else
         {
-            _log.Error("agent", message, ex);
+            _log.Failure("agent", message, ex);
         }
     }
 
@@ -2778,7 +2805,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
         catch (Exception ex)
         {
-            _log.Error("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", ex);
+            _log.Failure("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", ex);
             return GeoUpdateChecker.Status.Unknown;
         }
     }

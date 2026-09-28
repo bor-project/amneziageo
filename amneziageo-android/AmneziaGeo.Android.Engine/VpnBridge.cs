@@ -77,6 +77,16 @@ public static class VpnBridge
     public const string ExtraTrace = "trace";
 
     /// <summary>
+    /// Event line extra: one the head keeps whatever its capture floor is.
+    /// </summary>
+    public const string ExtraNote = "note";
+
+    /// <summary>
+    /// Source extra of an event line.
+    /// </summary>
+    public const string ExtraNoteSource = "notesource";
+
+    /// <summary>
     /// Failure reason extra, a <see cref="AmneziaGeo.Ipc.ConnectFailureReason"/> name.
     /// </summary>
     public const string ExtraReason = "reason";
@@ -211,6 +221,17 @@ public static class VpnBridge
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraTrace, line);
+        context.SendBroadcast(intent);
+    }
+
+    /// <summary>
+    /// Reports an event line to the head.
+    /// </summary>
+    public static void PublishNote(Context context, string source, string line)
+    {
+        var intent = Broadcast(context, ActionEvent);
+        intent.PutExtra(ExtraNote, line);
+        intent.PutExtra(ExtraNoteSource, source);
         context.SendBroadcast(intent);
     }
 

@@ -82,6 +82,28 @@ internal sealed class AndroidAgentLog : IDisposable
     }
 
     /// <summary>
+    /// Describes the tunnel and the networks under it for a failed request; unset until the agent sets it.
+    /// </summary>
+    public Func<string>? Context { get; set; }
+
+    /// <summary>
+    /// Logs a failed request: a network failure as one error row naming its cause and the state of the network,
+    /// with the exception a level lower; any other failure as an error with the exception.
+    /// </summary>
+    public void Failure(string source, string message, Exception error)
+    {
+        var cause = AmneziaGeo.Ipc.NetworkFailure.Describe(error);
+        if (cause is null)
+        {
+            Error(source, message, error);
+            return;
+        }
+
+        Agent(5, source, $"{message}: {cause}; {Situation()}");
+        Agent(2, source, $"{message}{Environment.NewLine}{error}");
+    }
+
+    /// <summary>
     /// Stores one row whatever the capture floor is: a switchover is rare and is read before anything else.
     /// </summary>
     public void Note(string source, string message)
@@ -188,6 +210,20 @@ internal sealed class AndroidAgentLog : IDisposable
     }
 
     private static long UnixMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    // The state of the network, or a word that it is not known.
+    private string Situation()
+    {
+        try
+        {
+            return Context?.Invoke() ?? "the state of the network is not known";
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn(Tag, "reading the state of the network failed: " + ex);
+            return "the state of the network could not be read";
+        }
+    }
 
     private static void Mirror(int levelId, string source, string message)
     {

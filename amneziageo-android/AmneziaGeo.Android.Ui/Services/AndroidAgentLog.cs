@@ -24,7 +24,13 @@ internal sealed class AndroidAgentLog : IDisposable
     public AndroidAgentLog(string databasePath)
     {
         _store = new SqliteLogStore(databasePath);
+        Current = this;
     }
+
+    /// <summary>
+    /// Открытый журнал приложения; до него дотягивается обработчик необработанных ошибок.
+    /// </summary>
+    public static AndroidAgentLog? Current { get; private set; }
 
     /// <summary>
     /// The log database the diagnostics archive reads.

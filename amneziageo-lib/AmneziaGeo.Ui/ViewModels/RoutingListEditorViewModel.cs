@@ -152,6 +152,10 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // Discards a stale answer.
     private int _budgetToken;
 
+    // Счёт в работе и просьба пересчитать, пришедшая во время него.
+    private bool _budgetCounting;
+    private bool _budgetQueued;
+
     /// <summary>
     /// Routes the current rules turn into.
     /// </summary>
@@ -207,8 +211,38 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             return;
         }
 
+        // Счёт идёт по одному: запрос во время счёта ждёт его конца, иначе частые правки копят тяжёлые счёты.
+        if (_budgetCounting)
+        {
+            _budgetQueued = true;
+            return;
+        }
+
+        _budgetCounting = true;
+        try
+        {
+            do
+            {
+                _budgetQueued = false;
+                await CountRouteBudgetAsync();
+            }
+            while (_budgetQueued);
+        }
+        finally
+        {
+            _budgetCounting = false;
+        }
+    }
+
+    // Спрашивает агента о текущем наборе правил и держит ответ.
+    private async Task CountRouteBudgetAsync()
+    {
         var rules = AllRoleTokens();
-        var signature = (GlobalProxyActive ? "full\n" : "split\n") + string.Join('\n', rules);
+
+        // Подпись не зависит от порядка: перестановка правил не меняет, во что они разворачиваются, а пересчёт
+        // большого списка стоит секунд и мегабайт.
+        var signature = (GlobalProxyActive ? "full\n" : "split\n")
+            + string.Join('\n', rules.OrderBy(token => token, StringComparer.Ordinal));
         if (string.Equals(signature, _budgetSignature, StringComparison.Ordinal))
         {
             return;
@@ -1407,13 +1441,12 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private bool _reordering;
 
     /// <summary>
-    /// Reorders entries by name, flipping direction on each invocation. A saved list stores the order at once;
-    /// a list with edits under way carries it into their save.
+    /// Reorders entries by name, flipping direction on each invocation. The order waits for the user's save like
+    /// any other edit.
     /// </summary>
     [RelayCommand]
     private void SortRules()
     {
-        var wasSaved = !IsDirty;
         _sortDescending = !_sortDescending;
         var ordered = (_sortDescending
                 ? Rules.OrderByDescending(rule => rule, StringComparer.OrdinalIgnoreCase)
@@ -1439,13 +1472,6 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 
         RebuildRuleItems();
         MarkDirty();
-        if (wasSaved)
-        {
-            _ = PersistAsync();
-            return;
-        }
-
-        FireAutoSave();
     }
 
     // Per-app tunneling: the pools the input searches + the token-add path.

@@ -790,11 +790,18 @@ internal sealed partial class MobileSelectHost : UserControl
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Margin = new Thickness(0, 8, 0, 0),
-            // Имя и отметка берутся привязками, без чтения самой строки.
+            // Имя и отметка берутся привязками, без чтения самой строки. Имя в одну строку с многоточием: от равной
+            // высоты строк зависит счёт прокрутки, а перенос длинного имени оставлял пустую полосу под списком.
             ItemTemplate = new FuncDataTemplate<AppRow>((_, _) =>
             {
-                var check = new CheckBox();
-                check.Bind(ContentControl.ContentProperty, new Binding(nameof(AppRow.Label)));
+                var label = new TextBlock
+                {
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                label.Bind(TextBlock.TextProperty, new Binding(nameof(AppRow.Label)));
+                var check = new CheckBox { Content = label, VerticalContentAlignment = VerticalAlignment.Center };
                 check.Bind(Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty, new Binding(nameof(AppRow.Picked)) { Mode = BindingMode.TwoWay });
                 return check;
             }),
@@ -843,19 +850,29 @@ internal sealed partial class MobileSelectHost : UserControl
         actions.Children.Add(cancel);
         actions.Children.Add(save);
 
-        var title = new TextBlock { Text = Loc.Instance.Get("AppPicker_Title"), FontWeight = FontWeight.SemiBold, FontSize = 16, Margin = new Thickness(0, 0, 0, 8) };
+        var title = new TextBlock
+        {
+            Text = Loc.Instance.Get("AppPicker_Title"),
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 16,
+            TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 0, 0, 6),
+        };
         var hint = new TextBlock
         {
             Text = Loc.Instance.Get("AppPicker_Hint"),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxLines = 2,
             Margin = new Thickness(0, 0, 0, 8),
         };
         hint.Classes.Add("muted");
 
         var header = new StackPanel { Children = { title, hint } };
 
-        var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(16) };
+        var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(12) };
         DockPanel.SetDock(header, Dock.Top);
         DockPanel.SetDock(search, Dock.Top);
         DockPanel.SetDock(actions, Dock.Bottom);

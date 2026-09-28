@@ -30,9 +30,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     private const int VpnRequestCode = 0x7A11;
     private const int CameraRequestCode = 0x7A12;
     private const int StorageRequestCode = 0x7A13;
+    private const int NotificationRequestCode = 0x7A14;
     private static TaskCompletionSource<bool>? _vpnPermission;
     private static TaskCompletionSource<bool>? _cameraPermission;
     private static TaskCompletionSource<bool>? _storagePermission;
+    private static TaskCompletionSource<bool>? _notificationPermission;
+    private static bool _notificationRequested;
 
     /// <summary>
     /// Raised when the activity comes back to the foreground; screens that sent the user to system settings
@@ -140,10 +143,33 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         return tcs.Task;
     }
 
+    /// <summary>
+    /// Requests the notification permission and completes with whether it was granted; below API 33 the
+    /// manifest declaration is enough on its own.
+    /// </summary>
+    public Task<bool> RequestNotificationPermissionAsync()
+    {
+        if (global::Android.OS.Build.VERSION.SdkInt < global::Android.OS.BuildVersionCodes.Tiramisu)
+        {
+            return Task.FromResult(true);
+        }
+
+        if (ContextCompat.CheckSelfPermission(this, global::Android.Manifest.Permission.PostNotifications) == Permission.Granted)
+        {
+            return Task.FromResult(true);
+        }
+
+        var tcs = new TaskCompletionSource<bool>();
+        _notificationPermission = tcs;
+        RunOnUiThread(() => ActivityCompat.RequestPermissions(this, [global::Android.Manifest.Permission.PostNotifications], NotificationRequestCode));
+        return tcs.Task;
+    }
+
     /// <inheritdoc/>
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
+        CrashLog.Install();
         base.OnCreate(savedInstanceState);
 
         // Avalonia is up by now, so the theme it opened with is the one the bars are painted in.
@@ -159,6 +185,13 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         App.FollowSystemTheme(Resources?.Configuration);
         AndroidSystemBars.Refresh();
         Resumed?.Invoke();
+
+        // Asked once per process: the update and VPN notices otherwise never post past API 33.
+        if (!_notificationRequested)
+        {
+            _notificationRequested = true;
+            _ = RequestNotificationPermissionAsync();
+        }
     }
 
     /// <inheritdoc/>
@@ -234,6 +267,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         {
             _storagePermission?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
             _storagePermission = null;
+        }
+
+        if (requestCode == NotificationRequestCode)
+        {
+            _notificationPermission?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
+            _notificationPermission = null;
         }
     }
 }

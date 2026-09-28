@@ -29,6 +29,9 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private const int BytesOutOffset = 0;
     private const int BytesRetransOffset = 24;
 
+    // Lines of the carrier's stderr kept for the log of a carrier that dies before it listens.
+    private const int StderrTail = 20;
+
     private readonly string _serverHost;
     private readonly int _wsPort;
     // How often the headers are written anew, well inside the window the server takes a token in.
@@ -42,6 +45,9 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private readonly Action<string>? _onRejected;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
+    private readonly Queue<string> _stderr = new();
+    private readonly object _exitLock = new();
+    private (int Code, string Stderr)? _lastExit;
     private Process? _process;
     private Task? _supervisor;
     private Task? _refresher;
@@ -256,9 +262,44 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return transport;
         }
 
-        logger.LogError("the websocket carrier never started listening on port {Port}, so the tunnel has nothing to dial; the connect is aborted", transport.LocalPort);
+        if (transport.LastExit() is { } exit)
+        {
+            logger.LogError("the websocket carrier exited with code 0x{Code:X8} before it listened on port {Port}, so the tunnel has nothing to dial; the connect is aborted. Its stderr: {Stderr}", exit.Code, transport.LocalPort, exit.Stderr);
+        }
+        else
+        {
+            logger.LogError("the websocket carrier never started listening on port {Port}, so the tunnel has nothing to dial; the connect is aborted", transport.LocalPort);
+        }
+
         await transport.DisposeAsync().ConfigureAwait(false);
         return null;
+    }
+
+    // How the last carrier process ended and what it wrote to stderr; null while none has exited.
+    private (int Code, string Stderr)? LastExit()
+    {
+        lock (_exitLock)
+        {
+            return _lastExit;
+        }
+    }
+
+    // Keeps the last lines of the carrier's stderr.
+    private void Remember(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        lock (_exitLock)
+        {
+            _stderr.Enqueue(line);
+            while (_stderr.Count > StderrTail)
+            {
+                _stderr.Dequeue();
+            }
+        }
     }
 
     private void Spawn()
@@ -289,6 +330,11 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             RedirectStandardError = true,
         };
 
+        lock (_exitLock)
+        {
+            _stderr.Clear();
+        }
+
         Process? process;
         try
         {
@@ -308,7 +354,11 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
 
         process.OutputDataReceived += (_, e) => Trace(e.Data);
-        process.ErrorDataReceived += (_, e) => Trace(e.Data);
+        process.ErrorDataReceived += (_, e) =>
+        {
+            Remember(e.Data);
+            Trace(e.Data);
+        };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _process = process;
@@ -415,7 +465,13 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
                 return;
             }
 
-            _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, in a second", process.ExitCode, LocalPort);
+            var code = process.ExitCode;
+            lock (_exitLock)
+            {
+                _lastExit = (code, _stderr.Count == 0 ? "(empty)" : string.Join(Environment.NewLine, _stderr));
+            }
+
+            _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, in a second", code, LocalPort);
             process.Dispose();
             _process = null;
 

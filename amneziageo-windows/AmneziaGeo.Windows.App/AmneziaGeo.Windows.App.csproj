@@ -25,6 +25,7 @@
     <None Include="..\amneziawg-windows\.deps\wintun\bin\$(WintunArch)\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
     <!-- wstunnel client (erebe/wstunnel v10): the UDP-over-TCP transport launched per tunnel when a
          config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it.
+         Built by tools\build-wstunnel.ps1 with the C runtime linked in, so it runs without the VC++ Redistributable.
          x64-only for now; an arm64 build ships without it (WebSocket transport unavailable) until an
          arm64 wstunnel is added. -->
     <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />

@@ -54,6 +54,11 @@ jobs:
       - name: Build the solution
         run: dotnet build AmneziaGeo.Windows.slnx -c Release
 
+      - name: Check the native binaries need no VC++ runtime
+        # A clean Windows has the UCRT but not vcruntime140.dll or msvcp140.dll.
+        shell: pwsh
+        run: ./amneziageo-windows/tools/check-native-deps.ps1 -Path amneziageo-windows/AmneziaGeo.Windows.App/bin/Release, amneziageo-windows/AmneziaGeo.Windows.Ui/bin/Release
+
       - name: Run the tests
         run: dotnet test amneziageo-tests/AmneziaGeo.Tests/AmneziaGeo.Tests.csproj -c Release
 

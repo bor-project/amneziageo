@@ -370,6 +370,9 @@ function Build-Variant {
     # Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
     Invoke-SignLibraries $stage
 
+    # A clean Windows has no VC++ Redistributable, so nothing staged may import its DLLs without a copy.
+    & (Join-Path $win 'tools\check-native-deps.ps1') -Path $stage
+
     # ---- 2. build the MSI from the stage (per-arch Platform => per-arch bin\ and output name) ----
     Write-Host '== build MSI =='
     dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:Version=$version -p:StageDir=$stage "-p:HasIcon=$hasIcon"
@@ -393,6 +396,7 @@ function Build-Variant {
 
     # Sign our bootstrapper binaries before Burn embeds them as payloads (incl. the BA exe itself).
     Invoke-SignLibraries $baPublish
+    & (Join-Path $win 'tools\check-native-deps.ps1') -Path $baPublish
 
     # ---- 4. generate the PayloadGroup over the BA publish folder (every file except the BA exe) ----
     Write-Host '== generate BA payload group =='

@@ -706,7 +706,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 intent.GetLongExtra(VpnBridge.ExtraTxBits, 0),
                 intent.GetIntExtra(VpnBridge.ExtraChurn, 0),
                 intent.GetIntExtra(VpnBridge.ExtraLoss, LinkHealth.LossUnknown),
-                intent.GetIntExtra(VpnBridge.ExtraRtt, -1));
+                intent.GetIntExtra(VpnBridge.ExtraRtt, -1),
+                intent.GetBooleanExtra(VpnBridge.ExtraChurning, false),
+                intent.GetIntExtra(VpnBridge.ExtraLossStreak, 0));
             LogLink(_link);
             PushSnapshot();
             return;
@@ -800,7 +802,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // re-establishing the session.
     private void LogLink(LinkReading reading)
     {
-        var churning = LinkHealth.Churning(reading.HandshakesPerMinute);
+        var churning = reading.Churning;
         if (churning != _churnLogged)
         {
             _churnLogged = churning;
@@ -1003,6 +1005,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
             HandshakesPerMinute: reading.HandshakesPerMinute,
+            LinkChurning: reading.Churning,
+            LossStreak: reading.LossStreak,
             LossPercent: reading.LossPercent,
             RttMs: reading.RttMs,
             Subscription: member?.Subscription ?? string.Empty,
@@ -1028,6 +1032,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         EnsureLoaded();
         await _log.InitializeAsync().ConfigureAwait(false);
         _log.Info("agent", "android agent started");
+        _ = Task.Run(() => CrashLog.ReportPastExits(_log));
         await _store.InitializeAsync().ConfigureAwait(false);
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
@@ -2837,7 +2842,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
             CarrierPort: carrier.Port,
             TunnelSpeedUrl: ServerOffers.Download(speed, true),
-            DirectSpeedUrl: ServerOffers.Download(speed, false));
+            DirectSpeedUrl: ServerOffers.Download(speed, false),
+            Churning: running && _link.Churning);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);

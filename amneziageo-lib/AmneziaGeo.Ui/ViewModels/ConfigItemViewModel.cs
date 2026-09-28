@@ -398,14 +398,15 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private long _txBitsPerSecond;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(LinkChurning))]
     [NotifyPropertyChangedFor(nameof(LinkChurnText))]
     private int _handshakesPerMinute;
 
     /// <summary>
-    /// Whether the tunnel keeps re-establishing its session instead of carrying traffic.
+    /// Whether the tunnel keeps re-establishing its session while nothing comes back through it.
     /// </summary>
-    public bool LinkChurning => LinkHealth.Churning(HandshakesPerMinute);
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LinkChurnText))]
+    private bool _linkChurning;
 
     /// <summary>
     /// How many sessions a minute the link burns; empty while it holds one.
@@ -429,6 +430,13 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CardLossBrush))]
     private int _linkLossPercent = LinkHealth.LossUnknown;
 
+    // Longest run of the running tunnel's echoes lost one after another; 0 on every config that is not running.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LinkLossy))]
+    [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(CardLossBrush))]
+    private int _linkLossStreak;
+
     // Round trip the running tunnel timed to its far end; -1 on every config that is not running.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
@@ -438,7 +446,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// <summary>
     /// Whether the running tunnel drops enough for it to be felt.
     /// </summary>
-    public bool LinkLossy => LinkSteady && LinkHealth.Lossy(LinkLossPercent);
+    public bool LinkLossy => LinkSteady && LinkHealth.LossKnown(LinkLossPercent) && LinkLossStreak >= LinkHealth.LossyStreak;
 
     /// <summary>
     /// The share of the tunnel's own probes that never came back; names the absence while nothing has answered.
@@ -465,7 +473,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// <summary>
     /// Цвет потерь на карточке: серый у чистого канала, предупреждающий - у ощутимых потерь.
     /// </summary>
-    public IBrush CardLossBrush => CardLossKnown && LinkHealth.Lossy(CardLossPercent) ? _slow : _idle;
+    public IBrush CardLossBrush => CardLossKnown && (TunnelLossKnown ? LinkLossy : LinkHealth.Lossy(ProbeLossPercent)) ? _slow : _idle;
 
     // Потери, за которые отвечает работающий туннель.
     private bool TunnelLossKnown => LinkSteady && LinkHealth.LossKnown(LinkLossPercent);

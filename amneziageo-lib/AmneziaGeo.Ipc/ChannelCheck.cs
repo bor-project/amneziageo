@@ -607,7 +607,7 @@ public static class ChannelVerdict
             return (CheckVerdicts.NotConnected, [], string.Empty);
         }
 
-        if (handshake is { RekeysPerMinute: >= LinkHealth.ChurnPerMinute })
+        if (handshake is { State: LegState.Bad })
         {
             return (CheckVerdicts.Rekeying, [Text(handshake.RekeysPerMinute)], CheckLegs.Handshake);
         }

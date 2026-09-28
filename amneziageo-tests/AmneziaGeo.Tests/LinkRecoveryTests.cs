@@ -16,13 +16,13 @@ public sealed class LinkRecoveryTests
         [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Carrier, RecoveryStep.Restart];
 
     // Carrying: traffic both ways, one rekey every few minutes, every echo answered.
-    private static readonly LinkSample _carrying = new(true, true, 0, 0, 20);
+    private static readonly LinkSample _carrying = new(true, true, 0, false, 20);
 
     // Nobody using the tunnel, and no echo has ever been answered to measure it by.
-    private static readonly LinkSample _idle = new(true, false, Unknown, 0, 20);
+    private static readonly LinkSample _idle = new(true, false, Unknown, false, 20);
 
     // Every echo lost: the link is measurable and measures as gone.
-    private static readonly LinkSample _silent = new(true, false, 100, 0, 20);
+    private static readonly LinkSample _silent = new(true, false, 100, false, 20);
 
     [Fact]
     public void ALinkThatKeepsReceiving_IsNeverRepaired()
@@ -51,7 +51,7 @@ public sealed class LinkRecoveryTests
     {
         var recovery = Ladder();
 
-        var steps = Feed(recovery, LinkRecovery.DeadSeconds + 1, _carrying with { HandshakesPerMinute = LinkHealth.ChurnPerMinute });
+        var steps = Feed(recovery, LinkRecovery.DeadSeconds + 1, _idle with { Churning = true });
 
         Assert.Equal([RecoveryStep.Rebind], steps);
         Assert.Contains("re-established", recovery.Reason);

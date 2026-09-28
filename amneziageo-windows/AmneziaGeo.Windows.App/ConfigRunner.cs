@@ -722,7 +722,7 @@ internal sealed class ConfigRunner(
             control.SignalStatus();
         }
 
-        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1);
+        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0);
         LogLink(member, reading);
         if (control.SetLink(reading))
         {
@@ -732,8 +732,8 @@ internal sealed class ConfigRunner(
         var moved = new LinkSample(
             status.TxBytes > _lastTxBytes,
             status.RxBytes > _lastRxBytes,
-            reading.LossPercent,
-            reading.HandshakesPerMinute,
+            _loss?.RecentPercent ?? LinkHealth.LossUnknown,
+            reading.Churning,
             status.HandshakeSec > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec) : 0);
         _lastRxBytes = status.RxBytes;
         _lastTxBytes = status.TxBytes;
@@ -825,7 +825,7 @@ internal sealed class ConfigRunner(
     // re-establishing the session.
     private void LogLink(string member, LinkReading reading)
     {
-        var churning = LinkHealth.Churning(reading.HandshakesPerMinute);
+        var churning = reading.Churning;
         if (churning != _churnLogged)
         {
             _churnLogged = churning;
@@ -857,12 +857,14 @@ internal sealed class ConfigRunner(
         return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
-    // Starts this session's loss probe: a target inside the tunnel is echoed once a second, and what fails to come
+    // Starts this session's loss probe: a target inside the tunnel is echoed every few seconds, and what fails to come
     // back is the loss the screen shows. The resolvers follow the peer, which a configuration carving out the
     // local networks routes out of the tunnel: nothing answers there, and the session then measures nothing at all.
     private async Task StartLossProbeAsync(string config, CancellationToken ct)
     {
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        // The config's own rekey schedule sets the handshake rate its session is judged by.
+        _meter.ChurnPerMinute = LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(text));
         var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetDns(text)));
         _loss = probe;
         _ = Task.Run(() => probe.RunAsync(ct), ct);

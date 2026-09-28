@@ -667,13 +667,31 @@
                             Width="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w120}"
                             Click="OnFooterAction"
                             Command="{Binding Config.CancelSectionCommand}" />
-                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" HorizontalAlignment="Stretch"
+                    <Button Classes="accent" HorizontalAlignment="Stretch"
                             Width="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w120}"
                             Padding="6" Click="OnFooterAction"
                             Command="{Binding Config.SaveSectionCommand}"
                             IsVisible="{Binding Config.ShowSaveButton}"
                             Classes.unverified="{Binding Config.SaveUnverified}"
-                            IsEnabled="{Binding Config.CanSave}" />
+                            Classes.busy="{Binding Config.IsLoadingSubscription}"
+                            IsEnabled="{Binding Config.CanSave}">
+                      <Button.Styles>
+                        <Style Selector="Button.busy:disabled">
+                          <Setter Property="Opacity" Value="1" />
+                        </Style>
+                        <Style Selector="Button.busy TextBlock">
+                          <Setter Property="Opacity" Value="0" />
+                        </Style>
+                      </Button.Styles>
+                      <!-- Пока читается подписка, на месте текста крутится дуга. -->
+                      <Panel>
+                        <TextBlock Text="{l:Tr Main_SaveButton}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Ellipse Classes="connspin" Classes.spinning="{Binding Config.IsLoadingSubscription}"
+                                 Width="16" Height="16" Stroke="{Binding $parent[Button].Foreground}"
+                                 StrokeThickness="2" StrokeDashArray="7,15" StrokeLineCap="Round"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Panel>
+                    </Button>
                   </UniformGrid>
                 </Grid>
               </StackPanel>

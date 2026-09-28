@@ -29,7 +29,8 @@ public sealed record ChannelProbeOptions(
     int ConfiguredMtu = 0,
     int CarrierPort = 0,
     string TunnelSpeedUrl = "",
-    string DirectSpeedUrl = "");
+    string DirectSpeedUrl = "",
+    bool Churning = false);
 
 /// <summary>
 /// Runs the ladder: gateway, the server outside the tunnel, the session, the server inside the tunnel, the public
@@ -307,7 +308,7 @@ public static class ChannelProbe
     {
         var state = options.HandshakeAgeSeconds < 0
             ? LegState.Unknown
-            : options.RekeysPerMinute >= LinkHealth.ChurnPerMinute
+            : options.Churning
                 ? LegState.Bad
                 : options.HandshakeAgeSeconds > HandshakeAge.SilentSeconds
                     ? LegState.Weak

@@ -70,12 +70,30 @@ public interface ISubscriptionLibrary
 /// Читает подписку и приводит к ней библиотеку: новые узлы заводит, изменившиеся переписывает, пропавшие
 /// снимает. Текст конфигурации меняется, имя и все настройки пользователя остаются на месте.
 /// </summary>
-public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library)
+public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library, TimeSpan? fetchTimeout = null)
 {
+    // Сколько ждать ответа панели.
+    private readonly TimeSpan _fetchTimeout = fetchTimeout ?? TimeSpan.FromSeconds(25);
+
     /// <summary>
     /// Читает подписку по адресу и разбирает и тело, и заголовки. Сертификат с названным отпечатком тоже принимается.
     /// </summary>
     public async Task<SubscriptionSnapshot> FetchAsync(string url, string pin, CancellationToken ct)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(_fetchTimeout);
+        try
+        {
+            return await ReadAsync(url, pin, limit.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when ((ex is OperationCanceledException or HttpRequestException) && limit.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"no answer in {_fetchTimeout.TotalSeconds:0} seconds", ex);
+        }
+    }
+
+    // Читает подписку по адресу без предела ожидания.
+    private async Task<SubscriptionSnapshot> ReadAsync(string url, string pin, CancellationToken ct)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         using (request)
@@ -110,7 +128,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
         {
             snapshot = await FetchAsync(subscription.Url, subscription.Pin, ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or UriFormatException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or TimeoutException or UriFormatException or InvalidOperationException)
         {
             await store.SaveSubscriptionAsync(
                 subscription with { CheckedAt = DateTimeOffset.UtcNow, LastError = ex.Message },

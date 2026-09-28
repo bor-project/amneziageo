@@ -295,6 +295,27 @@ public static class WgConfigEditor
 
         return 0;
     }
+
+    /// <summary>
+    /// Returns the shortest interval in seconds the config renews its session at, or 0 when it names none.
+    /// </summary>
+    public static int GetRekeyAfterSeconds(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            var equals = trimmed.IndexOf('=');
+            if (equals > 0 && trimmed[..equals].Trim().Equals("RekeyAfterTime", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = trimmed[(equals + 1)..].Trim();
+                var dash = value.IndexOf('-');
+                return int.TryParse(dash > 0 ? value[..dash] : value, out var seconds) && seconds > 0 ? seconds : 0;
+            }
+        }
+
+        return 0;
+    }
+
     /// <summary>
     /// MTU the tunnel comes up with: the value stored for the config, else the one the config text declares, else
     /// the fallback. A stored zero means nothing was chosen, so the config decides.

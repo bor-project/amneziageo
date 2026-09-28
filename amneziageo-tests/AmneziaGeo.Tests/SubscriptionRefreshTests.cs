@@ -263,6 +263,19 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
         Assert.False(stored.Stale);
     }
 
+    [Fact]
+    public async Task SilentPanel_FailsOnceTheWaitRunsOut()
+    {
+        _feed.Silent = true;
+        var refresher = new SubscriptionRefresher(new GeoHttp(new HttpClient(_feed), NullLogger<GeoHttp>.Instance), _store, _library, TimeSpan.FromMilliseconds(200));
+
+        var result = await refresher.RefreshAsync(Fresh(), default);
+
+        Assert.False(result.Ok);
+        Assert.Empty(_library.Names);
+        Assert.Equal(result.Error, (await Stored()).LastError);
+    }
+
     private async Task<Subscription> Stored()
     {
         return (await _store.ListSubscriptionsAsync())[0];
@@ -290,8 +303,15 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
 
         public string? Tag { get; set; }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        public bool Silent { get; set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            if (Silent)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+
             Accept = request.Headers.TryGetValues("Accept", out var values) ? string.Join(',', values) : null;
 
             var response = new HttpResponseMessage(Status)
@@ -306,7 +326,7 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
                 response.Headers.TryAddWithoutValidation("ETag", "\"" + Tag + "\"");
             }
 
-            return Task.FromResult(response);
+            return response;
         }
     }
 

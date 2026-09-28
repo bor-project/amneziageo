@@ -527,6 +527,8 @@ internal sealed class FleetStatusBroker(
                 RxBitsPerSecond = 0,
                 TxBitsPerSecond = 0,
                 HandshakesPerMinute = 0,
+                LinkChurning = false,
+                LossStreak = 0,
                 LossPercent = LinkHealth.LossUnknown,
                 RttMs = -1,
             };
@@ -540,6 +542,8 @@ internal sealed class FleetStatusBroker(
             RxBitsPerSecond = link.RxBitsPerSecond,
             TxBitsPerSecond = link.TxBitsPerSecond,
             HandshakesPerMinute = link.HandshakesPerMinute,
+            LinkChurning = link.Churning,
+            LossStreak = link.LossStreak,
             LossPercent = link.LossPercent,
             RttMs = link.RttMs,
         };

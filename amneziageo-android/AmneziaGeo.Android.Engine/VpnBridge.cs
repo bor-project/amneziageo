@@ -102,6 +102,16 @@ public static class VpnBridge
     public const string ExtraChurn = "churn";
 
     /// <summary>
+    /// Churning extra: whether the session keeps being re-established while nothing comes back through it.
+    /// </summary>
+    public const string ExtraChurning = "churning";
+
+    /// <summary>
+    /// Loss run extra: the longest run of the tunnel's own echoes lost one after another.
+    /// </summary>
+    public const string ExtraLossStreak = "lossrun";
+
+    /// <summary>
     /// Loss extra: share of the tunnel's own echoes that never came back.
     /// </summary>
     public const string ExtraLoss = "loss";
@@ -189,6 +199,8 @@ public static class VpnBridge
         intent.PutExtra(ExtraChurn, reading.HandshakesPerMinute);
         intent.PutExtra(ExtraLoss, reading.LossPercent);
         intent.PutExtra(ExtraRtt, reading.RttMs);
+        intent.PutExtra(ExtraChurning, reading.Churning);
+        intent.PutExtra(ExtraLossStreak, reading.LossStreak);
         context.SendBroadcast(intent);
     }
 

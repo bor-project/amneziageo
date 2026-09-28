@@ -334,6 +334,11 @@ public sealed partial class MainView : UserControl
     // header's back arrow instead of the section the edit belonged to.
     private void OnFooterAction(object? sender, RoutedEventArgs e)
     {
+        if (!UiPlatform.WalksFocus)
+        {
+            return;
+        }
+
         Dispatcher.UIThread.Post(
             () =>
             {

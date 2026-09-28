@@ -14,22 +14,36 @@ namespace AmneziaGeo.Ipc;
 /// </summary>
 public sealed class LinkLossProbe
 {
-    private const int IntervalMs = 1_000;
+    /// <summary>
+    /// Pause between echoes once a target has answered.
+    /// </summary>
+    public const int IntervalMs = 5_000;
+
     private const int TimeoutMs = 1_500;
 
-    // Attempts the share is taken over: half a minute of history, long enough that one lost echo does not read as a
-    // broken link and short enough that a link recovering shows it.
-    private const int Window = 30;
+    // Pause between echoes while no target has answered yet.
+    private const int SearchIntervalMs = 1_000;
+
+    // Echoes sent at the search pace before the probe settles to its own.
+    private const int SearchAttempts = 20;
+
+    // History the share is taken over.
+    private const int WindowMs = 60_000;
+
+    // History the time and the recent share are taken over.
+    private const int RecentMs = 30_000;
 
     // Attempts before the first share is reported.
-    private const int MinAttempts = 10;
+    private const int MinAttempts = 4;
 
     // Targets tried; more than a few would only spend the first minute looking for a responder.
     private const int MaxTargets = 3;
 
     private readonly IPAddress[] _targets;
-    private readonly Queue<int> _window = new();
+    private readonly Queue<(long Tick, int Rtt)> _window = new();
     private readonly object _lock = new();
+    private readonly int _intervalMs;
+    private readonly Func<long> _clock;
     private IPAddress? _chosen;
 
     // Whether this session has been answered. Its window starts there: the seconds a fresh tunnel spends
@@ -39,13 +53,17 @@ public sealed class LinkLossProbe
 
     private int _attempts;
     private int _percent = LinkHealth.LossUnknown;
+    private int _recentPercent = LinkHealth.LossUnknown;
+    private int _streak;
     private int _rttMs = -1;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public LinkLossProbe(IReadOnlyList<string> targets)
+    public LinkLossProbe(IReadOnlyList<string> targets, int intervalMs = IntervalMs, Func<long>? clock = null)
     {
+        _intervalMs = intervalMs > 0 ? intervalMs : IntervalMs;
+        _clock = clock ?? (() => Environment.TickCount64);
         var parsed = new List<IPAddress>();
         foreach (var target in targets)
         {
@@ -59,12 +77,22 @@ public sealed class LinkLossProbe
     }
 
     /// <summary>
-    /// The share of echoes lost over the window; unknown while nothing has answered yet.
+    /// The share of echoes lost over the last minute; unknown while nothing has answered yet.
     /// </summary>
     public int Percent => Volatile.Read(ref _percent);
 
     /// <summary>
-    /// Average round trip of the echoes that came back over the window; -1 while none has. It is the far end of
+    /// The share of echoes lost over the last half minute; unknown while nothing has answered yet.
+    /// </summary>
+    public int RecentPercent => Volatile.Read(ref _recentPercent);
+
+    /// <summary>
+    /// The longest run of echoes lost one after another over the last minute.
+    /// </summary>
+    public int Streak => Volatile.Read(ref _streak);
+
+    /// <summary>
+    /// Quickest round trip of the echoes that came back over the last half minute; -1 while none has. It is the far end of
     /// the tunnel that answers, so this is the channel's own time, measured where an echo to the endpoint is
     /// swallowed by the tunnel it carries.
     /// </summary>
@@ -83,7 +111,8 @@ public sealed class LinkLossProbe
     public int Attempts => Volatile.Read(ref _attempts);
 
     /// <summary>
-    /// Echoes the target once a second for as long as the session runs.
+    /// Echoes the target for as long as the session runs: every second until one answers, then at the probe's own
+    /// pace.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -95,9 +124,10 @@ public sealed class LinkLossProbe
         var attempt = 0;
         while (!ct.IsCancellationRequested)
         {
+            var pause = _chosen is null && attempt < SearchAttempts ? Math.Min(SearchIntervalMs, _intervalMs) : _intervalMs;
             try
             {
-                await Task.Delay(IntervalMs, ct).ConfigureAwait(false);
+                await Task.Delay(pause, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -134,6 +164,8 @@ public sealed class LinkLossProbe
             _answered = false;
             _window.Clear();
             Volatile.Write(ref _percent, LinkHealth.LossUnknown);
+            Volatile.Write(ref _recentPercent, LinkHealth.LossUnknown);
+            Volatile.Write(ref _streak, 0);
             Volatile.Write(ref _rttMs, -1);
         }
     }
@@ -145,26 +177,48 @@ public sealed class LinkLossProbe
     {
         lock (_lock)
         {
-            _window.Enqueue(rttMs);
-            while (_window.Count > Window)
+            var now = _clock();
+            _window.Enqueue((now, rttMs));
+            while (now - _window.Peek().Tick >= WindowMs)
             {
                 _window.Dequeue();
             }
 
-            // The time stands on the first answer, unlike the share: a round trip needs no history, and waiting
-            // for one would leave a freshly connected server with no time on it at all.
             var answered = 0;
-            var total = 0L;
-            foreach (var one in _window)
+            var recent = 0;
+            var recentAnswered = 0;
+            var quickest = int.MaxValue;
+            var run = 0;
+            var streak = 0;
+            foreach (var (tick, one) in _window)
             {
-                if (one >= 0)
+                var fresh = now - tick < RecentMs;
+                recent += fresh ? 1 : 0;
+                if (one < 0)
                 {
-                    answered++;
-                    total += one;
+                    run++;
+                    streak = Math.Max(streak, run);
+                    continue;
+                }
+
+                run = 0;
+                answered++;
+                if (fresh)
+                {
+                    recentAnswered++;
+                    quickest = Math.Min(quickest, one);
                 }
             }
 
-            Volatile.Write(ref _rttMs, answered > 0 ? (int)(total / answered) : -1);
+            // The time stands on the first answer, unlike the share: a round trip needs no history, and waiting
+            // for one would leave a freshly connected server with no time on it at all.
+            Volatile.Write(ref _rttMs, quickest < int.MaxValue ? quickest : -1);
+            Volatile.Write(ref _streak, streak);
+            if (recent >= MinAttempts)
+            {
+                Volatile.Write(ref _recentPercent, (recent - recentAnswered) * 100 / recent);
+            }
+
             if (_window.Count < MinAttempts)
             {
                 return;

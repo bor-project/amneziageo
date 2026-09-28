@@ -205,11 +205,15 @@ public sealed class GeoVpnService : VpnService
     private string? _detail;
     private string? _reason;
 
+    // The link last told to the head, told again to a head that asks after a restart.
+    private long _linkHandshake;
+    private LinkReading _linkReading = LinkReading.Empty;
+
     /// <inheritdoc/>
     public override void OnCreate()
     {
         base.OnCreate();
-        _queries = new VpnBridge.Listener { Handler = _ => Publish(_stage, _detail, _reason) };
+        _queries = new VpnBridge.Listener { Handler = _ => Answer() };
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
         _stops = new VpnBridge.Listener { Handler = _ => Stop() };
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
@@ -615,7 +619,7 @@ public sealed class GeoVpnService : VpnService
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
             // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the far
-            // end is echoed once a second - the peer where the server gives it an address, and otherwise the
+            // end is echoed every few seconds - the peer where the server gives it an address, and otherwise the
             // resolvers, which the tunnel carries even where it carries nothing else of that subnet.
             var loss = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetDns(resolved)));
             _ = Task.Run(() => loss.RunAsync(keepalive.Token));
@@ -634,8 +638,8 @@ public sealed class GeoVpnService : VpnService
                 : $"the peer answered, but nothing has come back through the tun in {TrafficWaitSeconds} s; the "
                     + "session is reported as up on the handshake alone");
             Publish(VpnStage.Connected, name);
-            VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
-            _ = Task.Run(() => ReportLinkAsync(loss, keepalive.Token));
+            PublishLink(handshake, LinkReading.Empty);
+            _ = Task.Run(() => ReportLinkAsync(loss, LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(resolved)), keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
                 Report($"streams are decided on {ProxyHost}:{_proxyPort}, which no application is told about, "
@@ -1670,9 +1674,9 @@ public sealed class GeoVpnService : VpnService
 
     // Tells the head when the peer last answered, what the link carries, and how often the session is
     // re-established, so a tunnel that is up but dead shows as such there.
-    private async Task ReportLinkAsync(LinkLossProbe loss, CancellationToken ct)
+    private async Task ReportLinkAsync(LinkLossProbe loss, int churnPerMinute, CancellationToken ct)
     {
-        var meter = new LinkMeter();
+        var meter = new LinkMeter { ChurnPerMinute = churnPerMinute };
         var reported = LinkReading.Empty;
         var handshake = 0L;
         var lastRx = -1L;
@@ -1698,8 +1702,8 @@ public sealed class GeoVpnService : VpnService
             var uapi = AwgEngine.GetConfig(handle);
             var seen = PeerHandshake(uapi);
             var (rx, tx) = PeerBytes(uapi);
-            var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs);
-            var moved = new LinkSample(tx > lastTx, rx > lastRx, loss.Percent, reading.HandshakesPerMinute,
+            var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs, loss.Streak);
+            var moved = new LinkSample(tx > lastTx, rx > lastRx, loss.RecentPercent, reading.Churning,
                 seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : 0);
             lastRx = rx;
             lastTx = tx;
@@ -1726,7 +1730,7 @@ public sealed class GeoVpnService : VpnService
 
             handshake = seen;
             reported = reading;
-            VpnBridge.PublishLink(this, seen, reading);
+            PublishLink(seen, reading);
         }
     }
 
@@ -2076,8 +2080,28 @@ public sealed class GeoVpnService : VpnService
         Teardown(VpnStage.Disconnected, null);
     }
 
+    // Tells the head the stage and, on a live session, the link it was last told.
+    private void Answer()
+    {
+        Publish(_stage, _detail, _reason);
+        if (_stage == VpnStage.Connected && _linkHandshake > 0)
+        {
+            VpnBridge.PublishLink(this, _linkHandshake, _linkReading);
+        }
+    }
+
+    // Tells the head the link and keeps it for the next question.
+    private void PublishLink(long handshake, LinkReading reading)
+    {
+        _linkHandshake = handshake;
+        _linkReading = reading;
+        VpnBridge.PublishLink(this, handshake, reading);
+    }
+
     private void Teardown(VpnStage stage, string? detail, string? reason = null)
     {
+        _linkHandshake = 0;
+        _linkReading = LinkReading.Empty;
         Release();
         Publish(stage, detail, reason);
         StopForeground(StopForegroundFlags.Remove);

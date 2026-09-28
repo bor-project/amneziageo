@@ -58,7 +58,11 @@ public sealed record ConfigEntry(
     int WebSocketPort = 0,
     bool WebSocketManual = false,
     // Whether the subscription the config belongs to holds another revision than the one read last.
-    bool SubscriptionStale = false);
+    bool SubscriptionStale = false,
+    // Whether the running tunnel keeps re-establishing its session while nothing comes back through it.
+    bool LinkChurning = false,
+    // Longest run of the running tunnel's echoes lost one after another; 0 on every config that is not running.
+    int LossStreak = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

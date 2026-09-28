@@ -463,7 +463,7 @@ internal sealed class LinuxAgent : IDisposable
             age = peer.HandshakeUnix > 0
                 ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix))
                 : -1;
-            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1);
+            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0);
             LogLink(reading);
             await RepairAsync(peer, reading, ct).ConfigureAwait(false);
         }
@@ -558,8 +558,8 @@ internal sealed class LinuxAgent : IDisposable
         var moved = new LinkSample(
             peer.TxBytes > _lastTxBytes,
             peer.RxBytes > _lastRxBytes,
-            reading.LossPercent,
-            reading.HandshakesPerMinute,
+            _loss?.RecentPercent ?? LinkHealth.LossUnknown,
+            reading.Churning,
             peer.HandshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix) : 0);
         _lastRxBytes = peer.RxBytes;
         _lastTxBytes = peer.TxBytes;
@@ -603,7 +603,7 @@ internal sealed class LinuxAgent : IDisposable
     // re-establishing the session.
     private void LogLink(LinkReading reading)
     {
-        var churning = LinkHealth.Churning(reading.HandshakesPerMinute);
+        var churning = reading.Churning;
         if (churning != _churnLogged)
         {
             _churnLogged = churning;
@@ -634,12 +634,14 @@ internal sealed class LinuxAgent : IDisposable
         return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
-    // Starts this connection's loss probe: a target inside the tunnel is echoed once a second, and what fails to
+    // Starts this connection's loss probe: a target inside the tunnel is echoed every few seconds, and what fails to
     // come back is the loss the screen shows. The resolvers follow the peer, which a configuration carving out the
     // local networks routes out of the tunnel: nothing answers there, and the session then measures nothing at all.
     private void StartLossProbe(string config)
     {
         StopLossProbe();
+        // The config's own rekey schedule sets the handshake rate its session is judged by.
+        _meter.ChurnPerMinute = LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(config));
         var run = new CancellationTokenSource();
         var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), WgConfigEditor.GetDns(config)));
         _loss = probe;
@@ -2337,7 +2339,8 @@ internal sealed class LinuxAgent : IDisposable
             ConfiguredMtu: WgConfigEditor.GetMtu(text),
             CarrierPort: carrier.Port,
             TunnelSpeedUrl: ServerOffers.Download(speed, true),
-            DirectSpeedUrl: ServerOffers.Download(speed, false));
+            DirectSpeedUrl: ServerOffers.Download(speed, false),
+            Churning: _tunnel.Running && _link.Churning);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -2733,7 +2736,9 @@ internal sealed class LinuxAgent : IDisposable
             transport?.WebSocketHost ?? string.Empty,
             transport?.WebSocketPort ?? 0,
             WsEndpoint.SourceOf(text, offer) == WsSource.Settings,
-            member is not null && stale.Contains(member.Subscription));
+            member is not null && stale.Contains(member.Subscription),
+            reading.Churning,
+            reading.LossStreak);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

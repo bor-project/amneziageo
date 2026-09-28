@@ -56,6 +56,12 @@ internal partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     private bool _isActiveSection;
 
+    /// <summary>
+    /// Идёт ли чтение подписки, которую заводит «Сохранить».
+    /// </summary>
+    [ObservableProperty]
+    private bool _isLoadingSubscription;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConfigManage))]
     [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
@@ -768,7 +774,9 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.RxBitsPerSecond = entry.RxBitsPerSecond;
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
             existing.HandshakesPerMinute = entry.HandshakesPerMinute;
+            existing.LinkChurning = entry.LinkChurning;
             existing.LinkLossPercent = entry.LossPercent;
+            existing.LinkLossStreak = entry.LossStreak;
             existing.LinkRttMs = entry.RttMs;
             existing.Subscription = entry.Subscription;
             existing.SubscriptionGone = entry.SubscriptionGone;
@@ -1767,6 +1775,8 @@ internal partial class ConfigViewModel : ViewModelBase
         var url = SectionConfigText.Trim();
         var name = !SectionConfigNameIsDefault ? SectionConfigName.Trim() : SubscriptionCodec.AddressName(url);
         _sectionConfigSaving = true;
+        IsLoadingSubscription = true;
+        SectionConfigStatus = string.Empty;
         try
         {
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddSubscription, [url, name]));
@@ -1787,6 +1797,7 @@ internal partial class ConfigViewModel : ViewModelBase
         finally
         {
             _sectionConfigSaving = false;
+            IsLoadingSubscription = false;
         }
     }
 

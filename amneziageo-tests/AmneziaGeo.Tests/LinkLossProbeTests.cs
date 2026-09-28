@@ -10,6 +10,8 @@ namespace AmneziaGeo.Tests;
 /// </summary>
 public sealed class LinkLossProbeTests
 {
+    private long _now;
+
     [Fact]
     public void BeforeAnythingIsMeasured_TheShareIsUnknown()
     {
@@ -21,28 +23,77 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void FewerAttemptsThanTheFloor_LeaveTheShareUnknown()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
 
-        Record(probe, 9, false);
+        Record(probe, 3, false);
 
         Assert.Equal(LinkHealth.LossUnknown, probe.Percent);
     }
 
     [Fact]
-    public void ThreeAttemptsOfTenLost_ReadAsThirtyPercent()
+    public void TwoAttemptsOfSixLost_ReadAsAThird()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
 
-        Record(probe, 7, true);
-        Record(probe, 3, false);
+        Record(probe, 4, true);
+        Record(probe, 2, false);
 
-        Assert.Equal(30, probe.Percent);
+        Assert.Equal(33, probe.Percent);
+    }
+
+    [Fact]
+    public void AttemptsOlderThanAMinute_LeaveTheShare()
+    {
+        var probe = Probe();
+
+        Record(probe, 12, false);
+        Record(probe, 12, true);
+
+        Assert.Equal(0, probe.Percent);
+    }
+
+    [Fact]
+    public void TheRecentShare_KeepsHalfAMinute()
+    {
+        var probe = Probe();
+
+        Record(probe, 6, false);
+        Record(probe, 6, true);
+
+        Assert.Equal(50, probe.Percent);
+        Assert.Equal(0, probe.RecentPercent);
+    }
+
+    [Fact]
+    public void EchoesLostOneAfterAnother_MakeTheRun()
+    {
+        var probe = Probe();
+
+        Record(probe, 1, false);
+        Record(probe, 2, true);
+        Record(probe, 2, false);
+        Record(probe, 1, true);
+
+        Assert.Equal(LinkHealth.LossyStreak, probe.Streak);
+    }
+
+    [Fact]
+    public void ScatteredLosses_MakeNoRun()
+    {
+        var probe = Probe();
+
+        Record(probe, 1, false);
+        Record(probe, 1, true);
+        Record(probe, 1, false);
+        Record(probe, 1, true);
+
+        Assert.Equal(1, probe.Streak);
     }
 
     [Fact]
     public void ALinkThatRecovers_LosesItsOldMissesOutOfTheWindow()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
 
         Record(probe, 30, false);
         Assert.Equal(100, probe.Percent);
@@ -55,7 +106,7 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void AStoppedTunnel_LeavesNoHistoryBehind()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
         Record(probe, 10, false);
 
         probe.Reset();
@@ -143,7 +194,7 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void TheFirstEchoBack_AlreadyCarriesTheTime()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
 
         probe.Record(40);
 
@@ -152,13 +203,25 @@ public sealed class LinkLossProbeTests
     }
 
     [Fact]
-    public void TheEchoesThatNeverCameBack_AreLeftOutOfTheTime()
+    public void TheTime_IsTheQuickestEchoThatCameBack()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
 
-        probe.Record(30);
-        probe.Record(-1);
         probe.Record(50);
+        probe.Record(-1);
+        probe.Record(30);
+        probe.Record(70);
+
+        Assert.Equal(30, probe.RttMs);
+    }
+
+    [Fact]
+    public void AQuickEchoOlderThanHalfAMinute_LeavesTheTime()
+    {
+        var probe = Probe();
+        probe.Record(20);
+
+        Record(probe, 6, true);
 
         Assert.Equal(40, probe.RttMs);
     }
@@ -166,7 +229,7 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void ATunnelThatWentSilent_KeepsNoTime()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
         probe.Record(40);
 
         Record(probe, 30, false);
@@ -177,7 +240,7 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void AStoppedTunnel_LeavesNoTimeBehind()
     {
-        var probe = new LinkLossProbe(["10.0.0.1"]);
+        var probe = Probe();
         probe.Record(40);
 
         probe.Reset();
@@ -194,10 +257,17 @@ public sealed class LinkLossProbeTests
         Assert.False(quick.DiffersFrom(quick with { RttMs = 42 }));
     }
 
-    private static void Record(LinkLossProbe probe, int times, bool answered)
+    private LinkLossProbe Probe()
+    {
+        return new LinkLossProbe(["10.0.0.1"], clock: () => _now);
+    }
+
+    // One echo per probe interval, the clock moving with them.
+    private void Record(LinkLossProbe probe, int times, bool answered)
     {
         for (var i = 0; i < times; i++)
         {
+            _now += LinkLossProbe.IntervalMs;
             probe.Record(answered ? 40 : -1);
         }
     }

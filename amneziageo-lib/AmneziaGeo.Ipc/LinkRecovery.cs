@@ -34,15 +34,15 @@ public readonly record struct LinkSample(
     bool TxMoved,
     bool RxMoved,
     int LossPercent,
-    int HandshakesPerMinute,
+    bool Churning,
     int HandshakeAgeSeconds);
 
 /// <summary>
 /// Says when a live tunnel has stopped carrying and what to try next. No single counter names it: a session that
 /// keeps re-establishing holds a young handshake while nothing crosses it, and a tunnel nobody is using looks the
 /// same as a dead one from the outside. So three independent things are read - how often the session is
-/// re-established, what the echoes sent inside the tunnel lose, and whether anything at all comes back while the
-/// handshake ages - and each of them alone is enough.
+/// re-established while nothing comes back, what the echoes sent inside the tunnel lose, and whether anything at all
+/// comes back while the handshake ages - and each of them alone is enough.
 /// </summary>
 public sealed class LinkRecovery
 {
@@ -182,7 +182,7 @@ public sealed class LinkRecovery
     {
         // The one case the counters hide: every completed handshake makes the link look freshly alive, so a
         // session that spends its time being re-established reads as healthy for as long as it stays broken.
-        if (LinkHealth.Churning(sample.HandshakesPerMinute))
+        if (sample.Churning)
         {
             return "the session is being re-established instead of carrying";
         }

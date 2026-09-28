@@ -52,7 +52,8 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             ConfiguredMtu: MtuPlan.ResolveForLink(transport, text),
             CarrierPort: carrier.Port,
             TunnelSpeedUrl: ServerOffers.Download(speed, true),
-            DirectSpeedUrl: ServerOffers.Download(speed, false));
+            DirectSpeedUrl: ServerOffers.Download(speed, false),
+            Churning: connected && control.Link.Churning);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         await RecordAsync(report.Render(), report.Culprit.Length > 0, report.Advice, ct).ConfigureAwait(false);

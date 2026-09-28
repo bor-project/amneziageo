@@ -15,6 +15,11 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
     // carried by the tunnel never answers, and the reading it then never produces passes for perfect health.
     private const int UnmeasurableAttempts = 60;
 
+    /// <summary>
+    /// Pause between the echoes the watchdog judges the carrier by.
+    /// </summary>
+    public const int EchoIntervalMs = 1_000;
+
     // Shortest gap between re-dials, so a genuinely bad underlay is not dialled in a loop.
     private static readonly TimeSpan _redialCooldown = TimeSpan.FromMinutes(2);
 
@@ -69,7 +74,7 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
         _lastBytesOut = wire.BytesOut;
         _lastBytesRetrans = wire.BytesRetrans;
 
-        var reason = _health.Verdict(txMoved, rxMoved, bytesOut, bytesRetrans, probe.Percent, probe.RttMs);
+        var reason = _health.Verdict(txMoved, rxMoved, bytesOut, bytesRetrans, probe.RecentPercent, probe.RttMs);
         Unmeasurable();
         Trace(status);
         if (reason.Length == 0)

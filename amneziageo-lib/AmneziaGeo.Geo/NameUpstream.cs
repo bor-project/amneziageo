@@ -28,6 +28,10 @@ public sealed class NameUpstream(
     /// </summary>
     public const string OnEncrypted = "doh";
 
+    // Response code of an answer a filter on port 53 gives in place of the resolver.
+    private const int RefusedCode = 5;
+    private const string RefusedReason = "query refused";
+
     private readonly string _transport = DnsTransports.Of(transport);
     private readonly object _sync = new();
     private string _carrying = string.Empty;
@@ -125,7 +129,13 @@ public sealed class NameUpstream(
             {
                 try
                 {
-                    return await kept(query, ct).ConfigureAwait(false);
+                    var answer = await kept(query, ct).ConfigureAwait(false);
+                    if (!Refused(answer))
+                    {
+                        return answer;
+                    }
+
+                    Reset();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
@@ -139,8 +149,13 @@ public sealed class NameUpstream(
         try
         {
             var answer = await plain(query, ct).ConfigureAwait(false);
-            Took(OnPlain, string.Empty);
-            return answer;
+            if (!Refused(answer))
+            {
+                Took(OnPlain, string.Empty);
+                return answer;
+            }
+
+            refusal = RefusedReason;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -152,6 +167,13 @@ public sealed class NameUpstream(
             try
             {
                 var answer = await ask(query, ct).ConfigureAwait(false);
+                if (Refused(answer))
+                {
+                    refused = name;
+                    refusal = RefusedReason;
+                    continue;
+                }
+
                 Took(name, $"{refused} {refusal}");
                 return answer;
             }
@@ -205,6 +227,12 @@ public sealed class NameUpstream(
         report?.Invoke(reason.Length > 0
             ? $"names behind the tunnel now leave over {carrying}, because {reason}"
             : $"names behind the tunnel leave over {carrying}");
+    }
+
+    // Whether an answer is a refusal, the way a filter on port 53 answers in place of the resolver.
+    private static bool Refused(byte[] answer)
+    {
+        return answer.Length >= 12 && (answer[3] & 0x0F) == RefusedCode;
     }
 
     private static string Short(Exception ex)

@@ -457,21 +457,6 @@
   <data name="Main_RouteTtlHint" xml:space="preserve">
     <value>Сколько адрес хранится в кеше</value>
   </data>
-  <data name="Main_DnsTransportTitle" xml:space="preserve">
-    <value>DNS-запросы агента</value>
-  </data>
-  <data name="Main_DnsTransportHint" xml:space="preserve">
-    <value>Поиск адресов сайтов через туннель</value>
-  </data>
-  <data name="Main_DnsTransportAuto" xml:space="preserve">
-    <value>Автоматически</value>
-  </data>
-  <data name="Main_DnsTransportPlain" xml:space="preserve">
-    <value>Обычный</value>
-  </data>
-  <data name="Main_DnsTransportDoh" xml:space="preserve">
-    <value>DoH</value>
-  </data>
   <data name="Main_LocalDohTitle" xml:space="preserve">
     <value>DNS-запросы системы</value>
   </data>

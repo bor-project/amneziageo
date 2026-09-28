@@ -71,7 +71,6 @@ internal partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     [NotifyPropertyChangedFor(nameof(OpenConfigSubscription))]
     [NotifyPropertyChangedFor(nameof(HasOpenConfigSubscription))]
-    [NotifyPropertyChangedFor(nameof(OpenConfigSubscriptionStale))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -217,12 +216,6 @@ internal partial class ConfigViewModel : ViewModelBase
     /// Ведётся ли открытая конфигурация подпиской.
     /// </summary>
     public bool HasOpenConfigSubscription => OpenConfigSubscription is not null;
-
-    /// <summary>
-    /// Ждёт ли подписка открытой конфигурации обновления.
-    /// </summary>
-    public bool OpenConfigSubscriptionStale =>
-        Configs.FirstOrDefault(item => string.Equals(item.Name, OpenConfig, StringComparison.Ordinal)) is { SubscriptionStale: true };
 
     /// <summary>
     /// Идёт ли общее обновление подписок.
@@ -791,6 +784,7 @@ internal partial class ConfigViewModel : ViewModelBase
             _ = LoadSubscriptionsAsync();
         }
 
+        RefreshOpenTransportFront();
         ReconcileConfigOptions();
         EnsurePickedCard();
 
@@ -948,7 +942,6 @@ internal partial class ConfigViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(OpenConfigSubscription));
         OnPropertyChanged(nameof(HasOpenConfigSubscription));
-        OnPropertyChanged(nameof(OpenConfigSubscriptionStale));
     }
 
     private static IReadOnlyList<SubscriptionEntry> ParseSubscriptions(string json)
@@ -1109,6 +1102,24 @@ internal partial class ConfigViewModel : ViewModelBase
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.RoutingLocked ?? false, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0);
         RefreshEditBar();
+    }
+
+    // Переносит фронт WebSocket из свежего снимка в открытую страницу настроек конфигурации.
+    private void RefreshOpenTransportFront()
+    {
+        if (ConfigTransport is not { } transport)
+        {
+            return;
+        }
+
+        var item = Configs.FirstOrDefault(c => string.Equals(c.Name, transport.ConfigName, StringComparison.Ordinal));
+        if (item is null)
+        {
+            return;
+        }
+
+        transport.WebSocketOpen = item.WebSocketOffered;
+        transport.WebSocketManual = item.WebSocketManual;
     }
 
     // Subscribe the open-config editors' dirty signal so the footer Save/Cancel bar tracks their state.

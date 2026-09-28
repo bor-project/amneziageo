@@ -247,6 +247,89 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Adds a host route for one address into the gateway adapter.
+    /// </summary>
+    public bool AddGatewayHost(IPAddress address, uint interfaceIndex, IPAddress hop)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork || interfaceIndex == 0)
+        {
+            return false;
+        }
+
+        var row = NewRow(address, 32, interfaceIndex, hop);
+        row.Metric = 0;
+        var result = CreateIpForwardEntry2(ref row);
+        var ok = result is NoError or ErrorObjectAlreadyExists;
+        if (ok)
+        {
+            Remember(address, 32, interfaceIndex, row);
+        }
+
+        RouteLog.Write("gateway +host", $"{address}/32", $"{hop} if{interfaceIndex}", ok);
+        return ok;
+    }
+
+    /// <summary>
+    /// Removes a host route added by <see cref="AddGatewayHost"/>.
+    /// </summary>
+    public void RemoveGatewayHost(IPAddress address, uint interfaceIndex)
+    {
+        RemoveDirectHost(address, interfaceIndex);
+    }
+
+    /// <summary>
+    /// Whether another program keeps this address on a host route of its own through an adapter other than the
+    /// tunnel, the way a VPN pins its server to the physical path.
+    /// </summary>
+    public bool HeldByAnother(IPAddress address, uint? tunnelIndex)
+    {
+        var v6 = address.AddressFamily == AddressFamily.InterNetworkV6;
+        var dest = new SOCKADDR_INET { si_family = v6 ? AfInet6 : AfInet };
+        if (v6)
+        {
+            WriteV6(ref dest, address);
+        }
+        else
+        {
+            dest.sin_addr = ToRouteAddress(address);
+        }
+
+        var best = new MIB_IPFORWARD_ROW2();
+        var bestSource = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError)
+        {
+            return false;
+        }
+
+        var found = best.DestinationPrefix.Prefix;
+        var same = v6
+            ? found.si_family == AfInet6 && V6Equals(found, address)
+            : found.si_family == AfInet && found.sin_addr == dest.sin_addr;
+        var installed = Installed(address, best.DestinationPrefix.PrefixLength, best.InterfaceIndex);
+        return ForeignHostRoute(v6, same, best.DestinationPrefix.PrefixLength, best.InterfaceIndex, tunnelIndex, installed);
+    }
+
+    /// <summary>
+    /// Whether a best route is a host route to the address itself that neither the tunnel nor this agent holds.
+    /// </summary>
+    internal static bool ForeignHostRoute(bool v6, bool sameAddress, byte prefixLength, uint interfaceIndex, uint? tunnelIndex, bool installedHere)
+    {
+        return sameAddress
+            && prefixLength == (v6 ? 128 : 32)
+            && interfaceIndex != tunnelIndex
+            && !installedHere;
+    }
+
+    // Whether this agent installed the route for this exact destination, prefix and interface.
+    private bool Installed(IPAddress ip, byte prefix, uint ifIndex)
+    {
+        lock (_addedLock)
+        {
+            return _added.ContainsKey(KeyOf(ip, prefix, ifIndex));
+        }
+    }
+
+    /// <summary>
     /// Physical next hop toward a probe address. Probe with a destination that already routes off-tunnel (the
     /// endpoint), so the answer stays the underlay hop after the tunnel's default halves are installed.
     /// </summary>

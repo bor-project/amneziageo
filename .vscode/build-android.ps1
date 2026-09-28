@@ -130,7 +130,7 @@ $buildArgs = @(
 )
 
 if ($RuntimeIdentifiers) {
-  $buildArgs += "-p:AndroidRuntimeIdentifiers=$RuntimeIdentifiers"
+  $buildArgs += "-p:AndroidRuntimeIdentifiers=$($RuntimeIdentifiers -replace ';', '%3B')"
 }
 
 Write-Host "Deploying Android: Name=$name Target=$Target Configuration=$Configuration AdbTarget=$adbTarget Abis=$abis"

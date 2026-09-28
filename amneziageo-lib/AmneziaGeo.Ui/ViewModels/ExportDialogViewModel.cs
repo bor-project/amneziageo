@@ -42,6 +42,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(ShowLinkText))]
     [NotifyPropertyChangedFor(nameof(ShowQr))]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    [NotifyPropertyChangedFor(nameof(ModeIndex))]
     private ConfigViewMode _mode;
 
     [ObservableProperty]
@@ -58,7 +59,6 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanExportSubscription))]
-    [NotifyPropertyChangedFor(nameof(TabColumns))]
     private string _subscriptionUrl = string.Empty;
 
     [ObservableProperty]
@@ -108,9 +108,31 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     public bool CanExportSubscription => SubscriptionUrl.Length > 0;
 
     /// <summary>
-    /// How many tabs the export shows: the subscription one only for a config that has one.
+    /// The picked way of export as its row in the list: .conf QR, vpn:// link QR, subscription QR.
     /// </summary>
-    public int TabColumns => CanExportSubscription ? 3 : 2;
+    public int ModeIndex
+    {
+        get => Mode switch
+        {
+            ConfigViewMode.QrLink => 1,
+            ConfigViewMode.QrSubscription => 2,
+            _ => 0,
+        };
+        set
+        {
+            if (value < 0)
+            {
+                return;
+            }
+
+            Mode = value switch
+            {
+                1 => ConfigViewMode.QrLink,
+                2 => ConfigViewMode.QrSubscription,
+                _ => ConfigViewMode.QrConf,
+            };
+        }
+    }
 
     /// <summary>
     /// Whether the link under the QR is shown: both link modes carry one, the .conf QR does not.
@@ -242,13 +264,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     }
 
     [RelayCommand]
-    private void ShowQrConf() => Mode = ConfigViewMode.QrConf;
-
-    [RelayCommand]
     private void ShowQrLink() => Mode = ConfigViewMode.QrLink;
-
-    [RelayCommand]
-    private void ShowQrSubscription() => Mode = ConfigViewMode.QrSubscription;
 
     [RelayCommand]
     private void ShowText() => Mode = ConfigViewMode.Text;

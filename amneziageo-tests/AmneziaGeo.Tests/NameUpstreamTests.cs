@@ -13,6 +13,8 @@ public sealed class NameUpstreamTests
 {
     private static readonly byte[] _query = [0x00, 0x01];
     private static readonly byte[] _answer = [0x00, 0x02];
+    // A reply header with the refused response code, as a filter on port 53 answers in place of the resolver.
+    private static readonly byte[] _refusal = [0x00, 0x01, 0x81, 0x85, 0, 1, 0, 0, 0, 0, 0, 0];
 
     [Fact]
     public async Task PlainOnly_NeverReachesForTheOtherTransports()
@@ -39,6 +41,56 @@ public sealed class NameUpstreamTests
         Assert.Equal(_answer, await upstream.AskAsync(_query));
         Assert.Equal(NameUpstream.OnStream, upstream.Carrying);
         Assert.Contains("query refused", upstream.State, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlainAnsweredWithARefusal_TakesTheFramedTransportAndSaysWhy()
+    {
+        var upstream = new NameUpstream(DnsTransports.Auto,
+            (_, _) => Task.FromResult(_refusal),
+            (_, _) => Task.FromResult(_answer),
+            (_, _) => Task.FromResult(_answer));
+
+        Assert.Equal(_answer, await upstream.AskAsync(_query));
+        Assert.Equal(NameUpstream.OnStream, upstream.Carrying);
+        Assert.Contains("query refused", upstream.State, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EveryAnswerOnPort53ARefusal_EndsOnTheEncryptedOne()
+    {
+        var upstream = new NameUpstream(DnsTransports.Auto,
+            (_, _) => Task.FromResult(_refusal),
+            (_, _) => Task.FromResult(_refusal),
+            (_, _) => Task.FromResult(_answer));
+
+        Assert.Equal(_answer, await upstream.AskAsync(_query));
+        Assert.Equal(NameUpstream.OnEncrypted, upstream.Carrying);
+        Assert.Contains($"{NameUpstream.OnStream} query refused", upstream.State, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AKeptTransportThatStartsRefusing_IsLeftForTheLadder()
+    {
+        var streamRefuses = false;
+        var upstream = new NameUpstream(DnsTransports.Auto,
+            (_, _) => Task.FromResult(_refusal),
+            (_, _) => Task.FromResult(streamRefuses ? _refusal : _answer),
+            (_, _) => Task.FromResult(_answer));
+
+        await upstream.AskAsync(_query);
+        streamRefuses = true;
+
+        Assert.Equal(_answer, await upstream.AskAsync(_query));
+        Assert.Equal(NameUpstream.OnEncrypted, upstream.Carrying);
+    }
+
+    [Fact]
+    public async Task PlainOnly_HandsARefusalOnAsItCame()
+    {
+        var upstream = new NameUpstream(DnsTransports.Plain, (_, _) => Task.FromResult(_refusal));
+
+        Assert.Equal(_refusal, await upstream.AskAsync(_query));
     }
 
     [Fact]

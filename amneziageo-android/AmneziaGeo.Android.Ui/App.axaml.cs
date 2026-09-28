@@ -2,7 +2,6 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Controls.Documents;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
@@ -153,11 +152,11 @@ public sealed partial class App : Avalonia.Application
         return frame;
     }
 
-    // Draws the head larger in the hand, layout and all. A television keeps the size its own screen was laid out at.
+    // Draws the head at the hand scale, layout and all. A television keeps the size its own screen was laid out at.
     private static Control Enlarged(Control view)
     {
         var scale = UiPlatform.HandScale;
-        if (scale <= 1)
+        if (scale == 1)
         {
             return view;
         }
@@ -168,8 +167,6 @@ public sealed partial class App : Avalonia.Application
             LayoutTransform = new ScaleTransform(scale, scale),
         };
 
-        // Weight the letters up: the shared sizes are thin on a screen held in the hand.
-        TextElement.SetFontWeight(scaled, FontWeight.SemiBold);
         return scaled;
     }
 
@@ -181,8 +178,9 @@ public sealed partial class App : Avalonia.Application
             return 1;
         }
 
-        var width = global::Android.App.Application.Context.Resources?.Configuration?.SmallestScreenWidthDp ?? 0;
-        return width >= TabletWidthDp ? TabletScale : PhoneScale;
+        var configuration = global::Android.App.Application.Context.Resources?.Configuration;
+        var width = configuration?.SmallestScreenWidthDp ?? 0;
+        return UiPlatform.WithFontScale(width >= TabletWidthDp ? TabletScale : PhoneScale, configuration?.FontScale ?? 1);
     }
 
     /// <summary>

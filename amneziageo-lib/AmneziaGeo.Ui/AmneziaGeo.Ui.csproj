@@ -6,6 +6,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- UI awaits intentionally resume on Avalonia's synchronization context. -->
     <NoWarn>$(NoWarn);CA2007</NoWarn>
+    <!-- Начертание запрошенного веса берётся у платформы шрифтов Avalonia. -->
+    <AvaloniaAccessUnstablePrivateApis>true</AvaloniaAccessUnstablePrivateApis>
   </PropertyGroup>
 
   <ItemGroup>

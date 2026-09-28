@@ -40,7 +40,20 @@ internal static class UiPlatform
     public static double HandScale { get; set; } = 1;
 
     /// <summary>
+    /// The largest system font size the hand scale follows.
+    /// </summary>
+    public const double FontScaleCap = 1.15;
+
+    /// <summary>
     /// The region of the cellular network the device stands in, empty on a device without one.
     /// </summary>
     public static Func<string>? NetworkRegion { get; set; }
+
+    /// <summary>
+    /// Scales a hand scale by the system font size, up to <see cref="FontScaleCap"/>.
+    /// </summary>
+    public static double WithFontScale(double scale, double fontScale)
+    {
+        return fontScale > 0 ? scale * Math.Min(fontScale, FontScaleCap) : scale;
+    }
 }

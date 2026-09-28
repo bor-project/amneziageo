@@ -6,6 +6,8 @@
     <PlatformTarget>x64</PlatformTarget>
     <IsPackable>false</IsPackable>
     <IsPublishable>false</IsPublishable>
+    <!-- Тесты подставляют свою платформу шрифтов Avalonia. -->
+    <AvaloniaAccessUnstablePrivateApis>true</AvaloniaAccessUnstablePrivateApis>
   </PropertyGroup>
 
   <ItemGroup>

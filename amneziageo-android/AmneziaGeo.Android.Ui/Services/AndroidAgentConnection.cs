@@ -181,6 +181,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _events = new VpnBridge.Listener { Handler = OnVpnEvent };
         VpnBridge.Listen(Application.Context, _events, VpnBridge.ActionEvent);
         MainActivity.Resumed += SyncTunnelState;
+        TakeTunnelStage();
         Connected?.Invoke();
         PushSnapshot();
         SyncTunnelState();
@@ -663,6 +664,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             context.StartService(intent);
         }
+    }
+
+    // Takes the stage the running tunnel wrote last, so the first snapshot shows what runs.
+    private void TakeTunnelStage()
+    {
+        if (!VpnBridge.IsRunning(Application.Context) || VpnBridge.ReadStage() is not { } told
+            || told.Stage is not (VpnStage.Connecting or VpnStage.Connected))
+        {
+            return;
+        }
+
+        _active = true;
+        _boundStatus = told.Stage == VpnStage.Connected ? ConnectionStatus.Connected : ConnectionStatus.Connecting;
+        _boundTarget = told.Detail.Length > 0 ? told.Detail : _selectedTarget;
+        global::Android.Util.Log.Info("AndroidAgent", $"the head comes up on the stage the tunnel wrote: {told.Stage} {_boundTarget}");
     }
 
     // Reads what is running: the tunnel lives in another process and can be gone without a word, so the window

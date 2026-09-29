@@ -172,7 +172,9 @@ public static class VpnBridge
     private const string ProbeResultFile = "probe-result.txt";
     private const string CardsFile = "cards.json";
     private const string CardsResultFile = "cards-result.txt";
+    private const string StageFile = "stage.txt";
     private const string ProcessSuffix = ":vpn";
+    private static readonly object _stageGate = new();
 
     /// <summary>
     /// Reports a stage to the head.
@@ -233,6 +235,57 @@ public static class VpnBridge
         intent.PutExtra(ExtraNote, line);
         intent.PutExtra(ExtraNoteSource, source);
         context.SendBroadcast(intent);
+    }
+
+    /// <summary>
+    /// Writes the stage for a head that comes up while the tunnel runs.
+    /// </summary>
+    public static void WriteStage(VpnStage stage, string? detail)
+    {
+        try
+        {
+            lock (_stageGate)
+            {
+                var path = StagePath();
+                var fresh = path + ".new";
+                File.WriteAllText(fresh, $"{(int)stage}\n{detail}");
+                File.Move(fresh, path, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the tunnel stage failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the stage the tunnel wrote last; nothing when it wrote none.
+    /// </summary>
+    public static (VpnStage Stage, string Detail)? ReadStage()
+    {
+        try
+        {
+            var path = StagePath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var lines = File.ReadAllLines(path);
+            if (lines.Length == 0
+                || !int.TryParse(lines[0], NumberStyles.None, CultureInfo.InvariantCulture, out var stage)
+                || !Enum.IsDefined((VpnStage)stage))
+            {
+                return null;
+            }
+
+            return ((VpnStage)stage, lines.Length > 1 ? lines[1] : string.Empty);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the tunnel stage failed: " + ex);
+            return null;
+        }
     }
 
     /// <summary>
@@ -847,6 +900,9 @@ public static class VpnBridge
 
     private static string CardsResultPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", CardsResultFile);
+
+    private static string StagePath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", StageFile);
 
     /// <summary>
     /// Receiver handing every broadcast to a delegate.

@@ -53,10 +53,24 @@ internal sealed class RouteApplier(
     }
 
     /// <summary>
-    /// Adds a host route out the physical path; on-link for an address on the LAN, through the gateway otherwise.
+    /// Adds a host route out the physical path: the machine's own path to the address when it has one, on-link through
+    /// the adapter of a connected network the address is on, through the gateway otherwise.
     /// </summary>
     public bool TryAddRoute(IPAddress address, out uint interfaceIndex)
     {
+        if (routes.OwnPath(address) is { } own)
+        {
+            interfaceIndex = own.InterfaceIndex;
+            return Routed(address, routes.AddDirectHost(address, own.Gateway, interfaceIndex));
+        }
+
+        // An address on a network of this machine is reached on-link through the adapter that network is on.
+        if (routes.OnLinkIndex(address) is { } onLink)
+        {
+            interfaceIndex = onLink;
+            return Routed(address, routes.AddDirectHost(address, null, interfaceIndex));
+        }
+
         var hop = ResolveHop();
         interfaceIndex = hop.InterfaceIndex;
         if (interfaceIndex == 0)
@@ -64,10 +78,18 @@ internal sealed class RouteApplier(
             return false;
         }
 
-        // A /32 through the gateway outranks the on-link subnet route, so a LAN neighbour would be answered at the
-        // router's MAC - and the router does not forward that back into the segment it came from.
-        var gateway = routes.IsOnLocalSubnet(address) ? null : hop.Gateway;
-        return routes.AddDirectHost(address, gateway, interfaceIndex);
+        return Routed(address, routes.AddDirectHost(address, hop.Gateway, interfaceIndex));
+    }
+
+    // Aborts the attempts to the address that set out through the tunnel before its route existed.
+    private bool Routed(IPAddress address, bool added)
+    {
+        if (added)
+        {
+            synReset.AbortThroughTunnel([address]);
+        }
+
+        return added;
     }
 
     /// <summary>

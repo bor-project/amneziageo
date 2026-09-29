@@ -75,6 +75,12 @@ public static class HandshakeAge
     public const int StepSeconds = 30;
 
     /// <summary>
+    /// Age at which the side that opened the session opens a new one with its next packet, unless the config names
+    /// another.
+    /// </summary>
+    public const int RekeySeconds = 120;
+
+    /// <summary>
     /// Age beyond which the peer counts as gone. A keepalive refreshes the handshake only once the session
     /// reaches its own 180-second limit, so a live tunnel climbs to 180 every cycle; the reporting step and the
     /// interval add another minute on top of that.
@@ -87,5 +93,14 @@ public static class HandshakeAge
     public static int Step(long seconds)
     {
         return seconds < 0 ? -1 : (int)(seconds / StepSeconds * StepSeconds);
+    }
+
+    /// <summary>
+    /// Whether the session is past the rekey age while an engine whose clock skipped the sleep counts it younger.
+    /// </summary>
+    public static bool OutlivedBySleep(long ageSeconds, long sleptMs, int rekeySeconds = RekeySeconds)
+    {
+        var rekey = rekeySeconds > 0 ? rekeySeconds : RekeySeconds;
+        return ageSeconds >= rekey && ageSeconds - sleptMs / 1000 < rekey;
     }
 }

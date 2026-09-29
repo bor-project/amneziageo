@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using Android.App;
 using Android.Content;
@@ -141,6 +142,8 @@ public sealed class GeoVpnService : VpnService
     // Screen-off time below which waking is not noted, and how long after waking the session is looked at again.
     private const int WakeNoteMs = 60_000;
     private const int WakeFollowMs = 20_000;
+    // How long renewed session keys wait for their first answer while the head is told no handshake.
+    private const int RenewHoldMs = 20_000;
     private const int HandshakeWaitSeconds = 30;
     private const int HandshakePollMs = 500;
     private const int TrafficWaitSeconds = 20;
@@ -213,6 +216,19 @@ public sealed class GeoVpnService : VpnService
     // The link last told to the head, told again to a head that asks after a restart.
     private long _linkHandshake;
     private LinkReading _linkReading = LinkReading.Empty;
+
+    // Sleep since boot at the last look, the handshake it is counted from, and the sleep that stood at that handshake.
+    private readonly object _sleepGate = new();
+    private long _sleepSeen = -1;
+    private long _answered;
+    private long _sleepAtAnswer;
+
+    // The handshake whose keys were renewed, and until when the head is told none.
+    private long _renewedAfter;
+    private long _renewUntil;
+
+    // The age the config of the session renews its keys at, 0 when it names none.
+    private int _rekeySeconds;
 
     // What the notes last said about the networks, kept across sessions so a raise does not repeat it.
     private string? _underNoted;
@@ -667,7 +683,9 @@ public sealed class GeoVpnService : VpnService
                     + "session is reported as up on the handshake alone");
             Publish(VpnStage.Connected, name);
             PublishLink(handshake, LinkReading.Empty);
-            _ = Task.Run(() => ReportLinkAsync(loss, LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(resolved)), keepalive.Token));
+            var rekey = WgConfigEditor.GetRekeyAfterSeconds(resolved);
+            _rekeySeconds = rekey;
+            _ = Task.Run(() => ReportLinkAsync(loss, LinkHealth.ChurnPerMinuteFor(rekey), keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
                 Report($"streams are decided on {ProxyHost}:{_proxyPort}, which no application is told about, "
@@ -1079,6 +1097,7 @@ public sealed class GeoVpnService : VpnService
         _stage = stage;
         _detail = detail;
         _reason = reason;
+        VpnBridge.WriteStage(stage, detail);
         // Only a running tunnel can be asked whether the system holds it as the always-on one.
         var alwaysOn = Build.VERSION.SdkInt >= BuildVersionCodes.Q && IsAlwaysOn;
         VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled);
@@ -1704,6 +1723,12 @@ public sealed class GeoVpnService : VpnService
     // re-established, so a tunnel that is up but dead shows as such there.
     private async Task ReportLinkAsync(LinkLossProbe loss, int churnPerMinute, CancellationToken ct)
     {
+        // Counts the sleep of this session from its first look.
+        lock (_sleepGate)
+        {
+            _sleepSeen = -1;
+        }
+
         var meter = new LinkMeter { ChurnPerMinute = churnPerMinute };
         var reported = LinkReading.Empty;
         var handshake = 0L;
@@ -1728,6 +1753,7 @@ public sealed class GeoVpnService : VpnService
             }
 
             var uapi = AwgEngine.GetConfig(handle);
+            RenewAfterSleep(handle, uapi);
             var seen = PeerHandshake(uapi);
             var (rx, tx) = PeerBytes(uapi);
             var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs, loss.Streak);
@@ -1754,14 +1780,15 @@ public sealed class GeoVpnService : VpnService
                 Note("tunnel", text);
             }
 
-            if (seen == handshake && !reading.DiffersFrom(reported))
+            var told = Told(seen);
+            if (told == handshake && !reading.DiffersFrom(reported))
             {
                 continue;
             }
 
-            handshake = seen;
+            handshake = told;
             reported = reading;
-            PublishLink(seen, reading);
+            PublishLink(told, reading);
         }
     }
 
@@ -1858,6 +1885,7 @@ public sealed class GeoVpnService : VpnService
         var (rx, _) = PeerBytes(uapi);
         Note("sleep", $"the screen came on after {Span(off)} off, {Span(asleep)} of it asleep; the peer last answered "
             + Age(PeerHandshake(uapi)));
+        RenewAfterSleep(handle, uapi);
         _ = Task.Run(() => FollowWakeAsync(handle, rx));
     }
 
@@ -1875,6 +1903,60 @@ public sealed class GeoVpnService : VpnService
         var uapi = AwgEngine.GetConfig(handle);
         var (received, _) = PeerBytes(uapi);
         Note("sleep", $"{after} the tunnel received {received - rx} bytes; the peer last answered {Age(PeerHandshake(uapi))}");
+    }
+
+    // Renews the session keys once the sleep since the last handshake has left the engine counting them younger than
+    // the server does.
+    private void RenewAfterSleep(int handle, string? uapi)
+    {
+        var seen = PeerHandshake(uapi);
+        var sleep = SystemClock.ElapsedRealtime() - SystemClock.UptimeMillis();
+        lock (_sleepGate)
+        {
+            if (seen != _answered)
+            {
+                _answered = seen;
+                _sleepAtAnswer = _sleepSeen >= 0 ? _sleepSeen : sleep;
+            }
+
+            _sleepSeen = sleep;
+            var age = seen > 0 ? DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen : -1;
+            var slept = sleep - _sleepAtAnswer;
+            if (seen == _renewedAfter || !HandshakeAge.OutlivedBySleep(age, slept, _rekeySeconds) || !Renew(handle, uapi))
+            {
+                return;
+            }
+
+            _renewedAfter = seen;
+            _renewUntil = System.Environment.TickCount64 + RenewHoldMs;
+            var text = $"the session is {age} s old, {Span(slept)} of it asleep, which the engine does not count; its keys "
+                + "were renewed, so the next packet opens a handshake";
+            Report(text);
+            Note("tunnel", text);
+            PublishLink(0, _linkReading);
+        }
+    }
+
+    // The handshake the head is told: none while renewed keys wait for their first answer.
+    private long Told(long seen)
+    {
+        lock (_sleepGate)
+        {
+            return seen == _renewedAfter && System.Environment.TickCount64 < _renewUntil ? 0 : seen;
+        }
+    }
+
+    // Sets a stray private key and the own one back, which drops the session keys of every peer.
+    private static bool Renew(int handle, string? uapi)
+    {
+        var own = (uapi ?? string.Empty).Split('\n').FirstOrDefault(line => line.StartsWith("private_key=", StringComparison.Ordinal));
+        if (own is null)
+        {
+            return false;
+        }
+
+        var stray = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        return AwgEngine.SetConfig(handle, $"private_key={stray}\n{own}\n");
     }
 
     // A stretch of time in the unit it reads best in.

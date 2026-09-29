@@ -506,6 +506,14 @@ internal sealed class DnsProxy
     }
 
     /// <summary>
+    /// The verdict a name hands the addresses it answers with; a name of the own network keeps them on that network.
+    /// </summary>
+    internal static RouteVerdict AnswerVerdict(RouteVerdict byName, bool local)
+    {
+        return local && byName == RouteVerdict.None ? RouteVerdict.Direct : byName;
+    }
+
+    /// <summary>
     /// Starts checking the answers the system gets past this proxy against the resolver behind the tunnel.
     /// </summary>
     public void SetSubstituted(SubstitutedAddresses substituted)
@@ -1110,7 +1118,7 @@ internal sealed class DnsProxy
                 {
                     // A name in the Direct or Block bucket decides for the addresses it answers with, so a range
                     // covering one of them cannot pull it back into the tunnel.
-                    var byName = name is null ? RouteVerdict.None : NameVerdict(name);
+                    var byName = AnswerVerdict(name is null ? RouteVerdict.None : NameVerdict(name), isLocal);
                     foreach (var address in DnsMessage.Addresses(response))
                     {
                         if (byName is RouteVerdict.Direct or RouteVerdict.Block)

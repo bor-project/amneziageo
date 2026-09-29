@@ -34,6 +34,20 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
     /// </summary>
     public void Abort(IReadOnlyCollection<IPAddress> addresses, bool established = false)
     {
+        Reset(addresses, established, false);
+    }
+
+    /// <summary>
+    /// Aborts every half-open connection to these addresses that left through the tunnel.
+    /// </summary>
+    public void AbortThroughTunnel(IReadOnlyCollection<IPAddress> addresses)
+    {
+        Reset(addresses, false, true);
+    }
+
+    // Aborts the connections to these addresses on the given side of the tunnel.
+    private void Reset(IReadOnlyCollection<IPAddress> addresses, bool established, bool throughTunnel)
+    {
         if (addresses.Count == 0)
         {
             return;
@@ -55,7 +69,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
 
         try
         {
-            Sweep(wanted, established);
+            Sweep(wanted, established, throughTunnel);
         }
         catch (Exception ex)
         {
@@ -63,7 +77,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
         }
     }
 
-    private void Sweep(HashSet<uint> wanted, bool established)
+    private void Sweep(HashSet<uint> wanted, bool established, bool throughTunnel)
     {
         var mine = TunnelAddresses();
         var size = 0;
@@ -96,7 +110,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
 
                 var localAddr = (uint)Marshal.ReadInt32(row, 4);
                 var remoteAddr = (uint)Marshal.ReadInt32(row, 12);
-                if (!wanted.Contains(remoteAddr) || mine.Contains(localAddr))
+                if (!wanted.Contains(remoteAddr) || mine.Contains(localAddr) != throughTunnel)
                 {
                     continue;
                 }
@@ -121,7 +135,16 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
             Marshal.FreeHGlobal(buffer);
         }
 
-        if (reset > 0)
+        if (reset == 0)
+        {
+            return;
+        }
+
+        if (throughTunnel)
+        {
+            logger.LogDebug("{Count} connection(s) that had left through the tunnel were dropped, so the app opens them again outside it", reset);
+        }
+        else
         {
             logger.LogDebug("{Count} connection(s) that had already left outside the tunnel were dropped, so the app opens them again through it", reset);
         }

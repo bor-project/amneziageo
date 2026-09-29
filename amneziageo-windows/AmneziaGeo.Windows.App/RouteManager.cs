@@ -25,6 +25,16 @@ internal sealed partial class RouteManager
     private IReadOnlyList<string>? _localSubnets;
     private long _localSubnetsStamp;
     private int _subnetsWatched;
+    // Connected networks with the adapter each is on; dropped together with the local subnets.
+    private IReadOnlyList<(string Cidr, uint Index)>? _localNetworks;
+    private long _localNetworksStamp;
+
+    // Interface indexes and whether each is an adapter of ours, read again when old or when an index is missing.
+    private const long AdapterKindsTtlMs = 30_000;
+    private const long AdapterKindsRetryMs = 2_000;
+    private readonly Lock _adapterKindsLock = new();
+    private Dictionary<uint, bool> _adapterKinds = [];
+    private long _adapterKindsStamp;
 
     // Tunnel routes this instance installed, so a delete calls DeleteIpForwardEntry2 on the remembered row (O(1))
     // instead of reading and scanning the whole OS forwarding table. The scan stays the fallback for a route we
@@ -339,6 +349,73 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// The path the machine keeps for an address beside the tunnel; null when only a default route or an adapter of
+    /// ours leads there.
+    /// </summary>
+    public (IPAddress? Gateway, uint InterfaceIndex)? OwnPath(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return null;
+        }
+
+        var dest = new SOCKADDR_INET { si_family = AfInet, sin_addr = ToRouteAddress(address) };
+        var best = new MIB_IPFORWARD_ROW2();
+        var bestSource = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError
+            || !KeepsOwnPath(best.DestinationPrefix.PrefixLength, IsOwnAdapter(best.InterfaceIndex)))
+        {
+            return null;
+        }
+
+        var gateway = best.NextHop.si_family != AfInet || best.NextHop.sin_addr == 0
+            ? null
+            : new IPAddress(BitConverter.GetBytes(best.NextHop.sin_addr));
+        return (gateway, best.InterfaceIndex);
+    }
+
+    /// <summary>
+    /// Whether a best route is a path of the machine's own: narrower than a default route and its halves, and not
+    /// through an adapter of ours.
+    /// </summary>
+    internal static bool KeepsOwnPath(byte prefixLength, bool ownAdapter)
+    {
+        return prefixLength > 1 && !ownAdapter;
+    }
+
+    // Whether the interface index is an adapter of ours.
+    private bool IsOwnAdapter(uint interfaceIndex)
+    {
+        var now = Environment.TickCount64;
+        lock (_adapterKindsLock)
+        {
+            var age = now - _adapterKindsStamp;
+            var known = _adapterKinds.TryGetValue(interfaceIndex, out var own);
+            if (_adapterKindsStamp != 0 && age < (known ? AdapterKindsTtlMs : AdapterKindsRetryMs))
+            {
+                return known && own;
+            }
+        }
+
+        var kinds = new Dictionary<uint, bool>();
+        foreach (var nic in NetworkAdapters.All())
+        {
+            if (Ipv4Index(nic) is { } index)
+            {
+                kinds[(uint)index] = IsTunnelAdapter(nic);
+            }
+        }
+
+        lock (_adapterKindsLock)
+        {
+            _adapterKinds = kinds;
+            _adapterKindsStamp = now;
+        }
+
+        return kinds.TryGetValue(interfaceIndex, out var fresh) && fresh;
+    }
+
+    /// <summary>
     /// Returns whether the adapter is one of ours.
     /// </summary>
     public static bool IsTunnelAdapter(NetworkInterface ni)
@@ -372,14 +449,6 @@ internal sealed partial class RouteManager
         }
 
         return scanned;
-    }
-
-    /// <summary>
-    /// Whether the address sits on a connected local subnet.
-    /// </summary>
-    public bool IsOnLocalSubnet(IPAddress address)
-    {
-        return IsWithinSubnets(address, LocalSubnets());
     }
 
     /// <summary>
@@ -437,7 +506,82 @@ internal sealed partial class RouteManager
         lock (_subnetsLock)
         {
             _localSubnets = null;
+            _localNetworks = null;
         }
+    }
+
+    /// <summary>
+    /// The adapter whose connected network holds the address; null when no connected network does.
+    /// </summary>
+    public uint? OnLinkIndex(IPAddress address)
+    {
+        WatchAddressChanges();
+        foreach (var (cidr, index) in CachedNetworks() ?? RefreshNetworks())
+        {
+            if (IsWithinSubnets(address, [cidr]))
+            {
+                return index;
+            }
+        }
+
+        return null;
+    }
+
+    // The connected networks read before, while they are fresh.
+    private IReadOnlyList<(string Cidr, uint Index)>? CachedNetworks()
+    {
+        lock (_subnetsLock)
+        {
+            return _localNetworks is not null && Environment.TickCount64 - _localNetworksStamp < LocalSubnetsTtlMs
+                ? _localNetworks
+                : null;
+        }
+    }
+
+    // Reads the connected networks again and keeps them.
+    private IReadOnlyList<(string Cidr, uint Index)> RefreshNetworks()
+    {
+        var scanned = ScanLocalNetworks();
+        lock (_subnetsLock)
+        {
+            _localNetworks = scanned;
+            _localNetworksStamp = Environment.TickCount64;
+        }
+
+        return scanned;
+    }
+
+    // Connected IPv4 networks of the adapters that are not ours, each with its adapter.
+    private static IReadOnlyList<(string Cidr, uint Index)> ScanLocalNetworks()
+    {
+        var result = new List<(string Cidr, uint Index)>();
+        foreach (var ni in NetworkAdapters.All())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up
+                || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel
+                || IsTunnelAdapter(ni)
+                || Ipv4Index(ni) is not { } index)
+            {
+                continue;
+            }
+
+            foreach (var ua in UnicastAddresses(ni))
+            {
+                var prefix = ua.PrefixLength;
+                if (ua.Address.AddressFamily != AddressFamily.InterNetwork || prefix is <= 0 or >= 31)
+                {
+                    continue;
+                }
+
+                var network = NetworkAddress(ua.Address, prefix);
+                if (!IsLinkLocal(network, prefix))
+                {
+                    result.Add(($"{network}/{prefix}", (uint)index));
+                }
+            }
+        }
+
+        return result;
     }
 
     private static IReadOnlyList<string> ScanLocalSubnets()

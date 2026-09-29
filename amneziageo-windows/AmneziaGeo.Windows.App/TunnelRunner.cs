@@ -494,6 +494,21 @@ internal sealed class TunnelRunner(
             }
         }
 
+        // The own network's resolvers outside the ranges kept off the tunnel keep their own path in a full tunnel.
+        var lanResolverRoutes = geoSplit ? new List<string>() : OffLinkResolvers(lanResolvers, [.. tunnelResolver, .. routedResolvers], exclusionCidrs);
+        foreach (var cidr in lanResolverRoutes)
+        {
+            if (seenCidrs.Add(cidr))
+            {
+                exclusionCidrs.Add(cidr);
+            }
+        }
+
+        if (lanResolverRoutes.Count > 0)
+        {
+            logger.LogInformation("{Name}: your own network's resolvers {Resolvers} stand outside the networks this machine is in, so they are reached past the tunnel and the names kept off it keep resolving", name, string.Join(", ", lanResolverRoutes));
+        }
+
         // The Direct bucket is not materialized here at all: each of its prefixes becomes a host route on contact.
 
         // Adjacent prefixes fold into one another, cutting both the route table and the WFP filter set.
@@ -545,6 +560,13 @@ internal sealed class TunnelRunner(
         // otherwise pull the answers onto the physical path.
         var pinnedRoutes = new List<string>(routedResolvers);
         pinnedRoutes.AddRange(inboundRoutes);
+        // The server and the own network's resolvers keep the routes set up for them.
+        pinnedRoutes.AddRange(lanResolverRoutes);
+        if (underlayProbe is { AddressFamily: AddressFamily.InterNetwork } serverAddress)
+        {
+            pinnedRoutes.Add($"{serverAddress}/32");
+        }
+
         _standingBasis = new StandingBasis(geoSplit, ownNetworks, new HashSet<string>(resolverRoutes, StringComparer.Ordinal), [.. pinnedRoutes], inboundRoutes, inboundAddresses);
         _standing = standing;
         pinnedRoutes.AddRange(inboundReturn);
@@ -1047,6 +1069,34 @@ internal sealed class TunnelRunner(
         };
         thread.Start();
         return proxy;
+    }
+
+    /// <summary>
+    /// The own network's IPv4 resolvers outside the ranges kept off the tunnel and apart from the tunnel's own, as
+    /// host routes.
+    /// </summary>
+    internal static List<string> OffLinkResolvers(IReadOnlyList<string> resolvers, IReadOnlyCollection<string> tunnelResolvers, IReadOnlyList<string> keptOff)
+    {
+        var hosts = new List<string>();
+        foreach (var server in resolvers)
+        {
+            if (!IPAddress.TryParse(server, out var ip)
+                || ip.AddressFamily != AddressFamily.InterNetwork
+                || IPAddress.IsLoopback(ip)
+                || tunnelResolvers.Contains(ip.ToString())
+                || RouteManager.IsWithinSubnets(ip, keptOff))
+            {
+                continue;
+            }
+
+            var host = $"{ip}/32";
+            if (!hosts.Contains(host))
+            {
+                hosts.Add(host);
+            }
+        }
+
+        return hosts;
     }
 
     // The first of the own network's resolvers and the IPv4 ones the proxy races.

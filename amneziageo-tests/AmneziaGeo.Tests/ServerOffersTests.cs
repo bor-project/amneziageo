@@ -226,6 +226,79 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AServerOfOursThatFirstAnswers_NamesTheConfigWithoutAWebSocket()
+    {
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Offer(0, DateTimeOffset.UtcNow.AddMinutes(5)), true)));
+
+        offers.Warm([("office", Text)], config =>
+        {
+            changed.TrySetResult(config);
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task AConfigNeverAsked_IsAskedInTheBackgroundAndGetsTheWebSocketOfItsServer()
+    {
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true)));
+
+        var asked = await offers.WarmUnaskedAsync(
+            [("office", Text)],
+            config =>
+            {
+                changed.TrySetResult(config);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["office"], asked);
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(8446, (await offers.OfferAsync("office", Text, CancellationToken.None)).WebSocketPort);
+    }
+
+    [Fact]
+    public async Task AConfigAskedUnderItsText_AndOneWithoutKeys_AreLeftAlone()
+    {
+        var asked = 0;
+        var offers = new ServerOffers(_store, ask: (_, _) =>
+        {
+            Interlocked.Increment(ref asked);
+            return Task.FromResult(new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true));
+        });
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        var warmed = await offers.WarmUnaskedAsync([("office", Text), ("foreign", "[Interface]\nAddress = 10.0.0.2/32\n")], null, CancellationToken.None);
+
+        Assert.Empty(warmed);
+        Assert.Equal(1, asked);
+    }
+
+    [Fact]
+    public async Task AConfigWhoseTextNamesOtherServices_IsAskedAgain()
+    {
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true)));
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        var moved = Text.Replace("51820", "51821", StringComparison.Ordinal);
+
+        var asked = await offers.WarmUnaskedAsync(
+            [("office", moved)],
+            config =>
+            {
+                changed.TrySetResult(config);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["office"], asked);
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
     public async Task TheServersAskedTogether_AreAllWaitedForAndAFailureStaysWithItsConfig()
     {
         var offers = new ServerOffers(_store, ask: (point, _) => point.Host == "down.example"

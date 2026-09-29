@@ -88,6 +88,29 @@ public sealed class ServerOffers
     }
 
     /// <summary>
+    /// Asks in the background the servers of the configs that were never asked under their text, naming every config
+    /// whose offer settles the tunnel otherwise now. Returns the configs it asks.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> WarmUnaskedAsync(IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+
+        var unasked = new List<(string Config, string? Text)>();
+        foreach (var (config, text) in targets)
+        {
+            if (ConfigServices.Target(text) is not null
+                && await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false) is null)
+            {
+                unasked.Add((config, text));
+            }
+        }
+
+        Warm(unasked, changed);
+
+        return [.. unasked.Select(target => target.Config)];
+    }
+
+    /// <summary>
     /// Asks the servers of the configs at once and waits for every answer, naming every config whose offer settles
     /// the tunnel otherwise now.
     /// </summary>

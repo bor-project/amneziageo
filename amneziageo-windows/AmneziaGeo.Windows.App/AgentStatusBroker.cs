@@ -255,9 +255,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpSetConnection => await SetConnectionAsync(command.Args, ct),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
                 IpcContract.OpSelectConfig => await SelectConfigAsync(command.Args, ct),
-                IpcContract.OpAddSubscription => await AddSubscriptionAsync(command.Args, ct),
+                IpcContract.OpAddSubscription => await AskNewServersAsync(await AddSubscriptionAsync(command.Args, ct), ct),
                 IpcContract.OpListSubscriptions => await ListSubscriptionsAsync(ct),
-                IpcContract.OpRefreshSubscription => await RefreshSubscriptionAsync(command.Args, ct),
+                IpcContract.OpRefreshSubscription => await AskNewServersAsync(await RefreshSubscriptionAsync(command.Args, ct), ct),
                 IpcContract.OpRemoveSubscription => await RemoveSubscriptionAsync(command.Args, ct),
                 IpcContract.OpConfigSubscription => await ConfigSubscriptionAsync(command.Args, ct),
                 IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
@@ -276,7 +276,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpReorderConfigs => await ReorderConfigsAsync(command.Args, ct),
                 IpcContract.OpCopyConfig => await CopyConfigAsync(command.Args, ct),
                 IpcContract.OpExportBundle => await ExportBundleAsync(command.Args, ct),
-                IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
+                IpcContract.OpImportBundle => await AskNewServersAsync(await ImportBundleAsync(command.Args, ct), ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(command.Args, ct),
                 IpcContract.OpReportUpdateDownload => await ReportUpdateDownloadAsync(command.Args, ct),
                 IpcContract.OpCancelUpdateDownload => await CancelUpdateDownloadAsync(ct),
@@ -458,12 +458,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             // Removing a config of this library acts on this library.
             _connectionScope.Value = scope;
             var service = new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope));
+            var before = refreshed;
             foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
             {
                 var outcome = await service.RefreshAsync([subscription.Name], ct);
                 TakeRefreshed(outcome);
 
                 refreshed++;
+            }
+
+            if (refreshed > before)
+            {
+                await WarmUnaskedAsync(scope, ct).ConfigureAwait(false);
             }
         }
 
@@ -1478,6 +1484,20 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         return ack;
+    }
+
+    // Asks the servers of the configurations a subscription or a bundle brought.
+    private async Task<IpcAck> AskNewServersAsync(IpcAck ack, CancellationToken ct)
+    {
+        await WarmUnaskedAsync(CurrentScope, ct).ConfigureAwait(false);
+
+        return ack;
+    }
+
+    // Asks in the background the servers of the configurations of a library that were never asked under their text.
+    private async Task WarmUnaskedAsync(BrokerScope scope, CancellationToken ct)
+    {
+        await scope.Offers.WarmUnaskedAsync(await OfferTargetsAsync(scope, ct).ConfigureAwait(false), OfferChangedAsync, ct).ConfigureAwait(false);
     }
 
     // A server that offers the tunnel something else now shows it in the next snapshot.

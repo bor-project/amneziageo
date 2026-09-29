@@ -47,7 +47,7 @@ For any other server the front is set in the settings: an address and a port, an
 
 ## What the server offers
 
-The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front, whether routing on the client is allowed (a ban of the server turns the Routing on the client switch off) and where the speed is measured. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
+The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, after a subscription or a bundle brings a configuration whose server was not asked yet, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front, whether routing on the client is allowed (a ban of the server turns the Routing on the client switch off) and where the speed is measured. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
 
 ## Access to a remote network
 

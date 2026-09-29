@@ -99,6 +99,16 @@ public sealed class ServerOfferTests : IAsyncLifetime
     }
 
     [Fact]
+    public void AServerOfOurs_SettlesTheTunnelOtherwiseThanNoServerOfOurs()
+    {
+        var ours = ServerOffer.Parse("""{"server":"amneziageo","version":"1","client":"c","features":{}}""");
+
+        Assert.False(ServerOffer.None.Settles(ours));
+        Assert.False(ours.Settles(ServerOffer.None));
+        Assert.True(ours.Settles(ServerOffer.Parse("""{"server":"amneziageo","version":"2","client":"d","features":{}}""")));
+    }
+
+    [Fact]
     public void AnAnswerOfAServerOfOurs_NamesItsFeatures()
     {
         var offer = ServerOffer.Read(Encoding.UTF8.GetBytes(Answer))!;

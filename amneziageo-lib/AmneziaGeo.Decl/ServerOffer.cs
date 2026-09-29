@@ -184,13 +184,15 @@ public sealed class ServerOffer
     }
 
     /// <summary>
-    /// Tells whether another offer settles the tunnel the same way: the same websocket and the same routing.
+    /// Tells whether another offer settles the tunnel the same way: from a server of ours alike, with the same websocket
+    /// and the same routing.
     /// </summary>
     public bool Settles(ServerOffer other)
     {
         ArgumentNullException.ThrowIfNull(other);
 
-        return WebSocketPort == other.WebSocketPort
+        return Ours == other.Ours
+            && WebSocketPort == other.WebSocketPort
             && string.Equals(WebSocketPath, other.WebSocketPath, StringComparison.Ordinal)
             && RoutingLocked == other.RoutingLocked;
     }

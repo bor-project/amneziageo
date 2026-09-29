@@ -311,13 +311,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await CopyConfigAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpAddSubscription:
-                return await AddSubscriptionAsync(args).ConfigureAwait(false);
+                return await AskNewServersAsync(await AddSubscriptionAsync(args).ConfigureAwait(false)).ConfigureAwait(false);
 
             case IpcContract.OpListSubscriptions:
                 return await ListSubscriptionsAsync().ConfigureAwait(false);
 
             case IpcContract.OpRefreshSubscription:
-                return await RefreshSubscriptionAsync(args).ConfigureAwait(false);
+                return await AskNewServersAsync(await RefreshSubscriptionAsync(args).ConfigureAwait(false)).ConfigureAwait(false);
 
             case IpcContract.OpRemoveSubscription:
                 return await RemoveSubscriptionAsync(args).ConfigureAwait(false);
@@ -499,7 +499,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await ExportBundleAsync(args);
 
             case IpcContract.OpImportBundle:
-                return await ImportBundleAsync(args);
+                return await AskNewServersAsync(await ImportBundleAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpOpenVpnSettings:
                 return OpenVpnSettings();
@@ -2103,6 +2103,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return ack;
     }
 
+    // Asks the servers of the configurations a subscription or a bundle brought.
+    private async Task<IpcAck> AskNewServersAsync(IpcAck ack)
+    {
+        await _offers.WarmUnaskedAsync(OfferTargets(), OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
+
+        return ack;
+    }
+
     // A server that offers the tunnel something else now shows it in the next snapshot.
     private async Task OfferChangedAsync(string config)
     {
@@ -3431,6 +3439,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     {
                         Save();
                         PushSnapshot();
+                        await _offers.WarmUnaskedAsync(OfferTargets(), OfferChangedAsync, ct).ConfigureAwait(false);
                     }
                 }
 

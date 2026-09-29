@@ -701,13 +701,13 @@ internal sealed class LinuxAgent : IDisposable
                 return await CopyConfigAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpAddSubscription:
-                return await AddSubscriptionAsync(args, ct).ConfigureAwait(false);
+                return await AskNewServersAsync(await AddSubscriptionAsync(args, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
             case IpcContract.OpListSubscriptions:
                 return await Subscriptions().ListAsync(ct).ConfigureAwait(false);
 
             case IpcContract.OpRefreshSubscription:
-                return await RefreshSubscriptionAsync(args, ct).ConfigureAwait(false);
+                return await AskNewServersAsync(await RefreshSubscriptionAsync(args, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
             case IpcContract.OpRemoveSubscription:
                 return await RemoveSubscriptionAsync(args, ct).ConfigureAwait(false);
@@ -844,7 +844,7 @@ internal sealed class LinuxAgent : IDisposable
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpImportBundle:
-                return await ImportBundleAsync(args, ct).ConfigureAwait(false);
+                return await AskNewServersAsync(await ImportBundleAsync(args, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
             case IpcContract.OpSetConnection:
                 return await SetConnectionAsync(args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
@@ -1043,6 +1043,7 @@ internal sealed class LinuxAgent : IDisposable
                 if (due.Count > 0)
                 {
                     await PushAsync(ct).ConfigureAwait(false);
+                    await WarmUnaskedAsync(ct).ConfigureAwait(false);
                 }
             }
         }
@@ -2573,6 +2574,20 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         return ack;
+    }
+
+    // Asks the servers of the configurations a subscription or a bundle brought.
+    private async Task<IpcAck> AskNewServersAsync(IpcAck ack, CancellationToken ct)
+    {
+        await WarmUnaskedAsync(ct).ConfigureAwait(false);
+
+        return ack;
+    }
+
+    // Asks in the background the servers of the configurations that were never asked under their text.
+    private async Task WarmUnaskedAsync(CancellationToken ct)
+    {
+        await _offers.WarmUnaskedAsync(await OfferTargetsAsync(ct).ConfigureAwait(false), OfferChangedAsync, ct).ConfigureAwait(false);
     }
 
     // What asking the servers has to say, at the level its news deserves.

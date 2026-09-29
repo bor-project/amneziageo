@@ -33,6 +33,18 @@ public sealed class WsEndpointTests
     }
 
     [Fact]
+    public void TheFrontTheServerOffers_TakesThePathItNames()
+    {
+        var offer = ServerOffer.Parse("""{"server":"amneziageo","version":"1","client":"c","features":{"websocket":{"port":8446,"path":"q1w2e3r4t5y6u7i8"}}}""");
+
+        var front = WsEndpoint.Of(Text, offer, Settings);
+
+        Assert.Equal(new WsEndpoint("vpn.example", 8446, "q1w2e3r4t5y6u7i8", Offered: true), front);
+        Assert.Equal("wss://vpn.example:8446/q1w2e3r4t5y6u7i8", front?.Address());
+        Assert.Equal(front, WsEndpoint.Of(front?.Address(), 8446, "vpn.example:51820", string.Empty) with { Offered = true });
+    }
+
+    [Fact]
     public void AServerOfOursThatOffersNoFront_LeavesNoneWhateverTheConfigAndTheSettingsName()
     {
         Assert.Null(WsEndpoint.Of(Named, NoFront, Settings));

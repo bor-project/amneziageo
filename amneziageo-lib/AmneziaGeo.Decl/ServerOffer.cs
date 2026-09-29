@@ -109,6 +109,18 @@ public sealed class ServerOffer
             : 0;
 
     /// <summary>
+    /// The path the server takes the tunnel inside a websocket under; empty when it names none.
+    /// </summary>
+    public string WebSocketPath =>
+        Arguments(WebSocketFeature) is { } arguments
+        && arguments.TryGetProperty("path", out var path)
+        && path.ValueKind == JsonValueKind.String
+        && path.GetString() is { Length: > 0 and <= 64 } text
+        && text.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '_')
+            ? text
+            : string.Empty;
+
+    /// <summary>
     /// Whether the server bans routing on the device.
     /// </summary>
     public bool RoutingLocked =>
@@ -178,7 +190,9 @@ public sealed class ServerOffer
     {
         ArgumentNullException.ThrowIfNull(other);
 
-        return WebSocketPort == other.WebSocketPort && RoutingLocked == other.RoutingLocked;
+        return WebSocketPort == other.WebSocketPort
+            && string.Equals(WebSocketPath, other.WebSocketPath, StringComparison.Ordinal)
+            && RoutingLocked == other.RoutingLocked;
     }
 
     /// <summary>

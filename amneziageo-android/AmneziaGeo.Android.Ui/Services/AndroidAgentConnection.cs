@@ -650,7 +650,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         if (front is { } carried)
         {
-            intent.PutExtra(GeoVpnService.ExtraWsHost, carried.Offered ? carried.Host : carried.Address());
+            intent.PutExtra(GeoVpnService.ExtraWsHost, carried.Address());
             intent.PutExtra(GeoVpnService.ExtraWsPort, carried.Port);
             intent.PutExtra(GeoVpnService.ExtraWsOffered, carried.Offered);
         }

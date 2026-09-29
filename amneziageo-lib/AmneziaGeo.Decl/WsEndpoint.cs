@@ -29,7 +29,9 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         {
             var host = ConfigServices.Host(text);
 
-            return host.Length > 0 && offer.WebSocketPort > 0 ? new WsEndpoint(host, offer.WebSocketPort, Offered: true) : null;
+            return host.Length > 0 && offer.WebSocketPort > 0
+                ? new WsEndpoint(host, offer.WebSocketPort, offer.WebSocketPath, Offered: true)
+                : null;
         }
 
         var endpoint = EndpointOf(text);

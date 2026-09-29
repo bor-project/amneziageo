@@ -2108,7 +2108,8 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
 
-        var front = offered ? new WsEndpoint(host, port, Offered: true) : WsEndpoint.Of(host, port, endpoint, string.Empty);
+        var named = WsEndpoint.Of(host, port, endpoint, string.Empty);
+        var front = offered ? named with { Offered = true } : named;
         var address = ResolveHostV4(front.Host);
         if (address is null || !System.Net.IPAddress.TryParse(address, out var parsed))
         {

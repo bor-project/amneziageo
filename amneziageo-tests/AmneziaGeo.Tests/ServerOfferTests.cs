@@ -85,6 +85,20 @@ public sealed class ServerOfferTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ThePathOfTheWebSocket_IsReadWhenItIsOnePartOfLettersAndDigits()
+    {
+        static ServerOffer Of(string path) =>
+            ServerOffer.Parse("""{"server":"amneziageo","version":"1","client":"c","features":{"websocket":{"port":8446,"path":""" + path + "}}}");
+
+        Assert.Equal("q1w2-e3_r4", Of("\"q1w2-e3_r4\"").WebSocketPath);
+        Assert.Equal(string.Empty, Of("\"a/b\"").WebSocketPath);
+        Assert.Equal(string.Empty, Of("7").WebSocketPath);
+        Assert.Equal(string.Empty, ServerOffer.Parse(Answer).WebSocketPath);
+        Assert.False(Of("\"one\"").Settles(Of("\"two\"")));
+        Assert.True(Of("\"one\"").Settles(Of("\"one\"")));
+    }
+
+    [Fact]
     public void AnAnswerOfAServerOfOurs_NamesItsFeatures()
     {
         var offer = ServerOffer.Read(Encoding.UTF8.GetBytes(Answer))!;

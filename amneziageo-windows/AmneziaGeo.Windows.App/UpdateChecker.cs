@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// The result of an application update check.
 /// </summary>
-internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description, string Sha256);
+internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description, string Sha256, UpdateAsset? Asset = null);
 
 /// <summary>
 /// Checks an HTTP update metadata file for a different version.
@@ -76,7 +76,13 @@ internal sealed class UpdateChecker(HttpClient http)
         var setupUrl = new Uri(baseUrl, setup).ToString();
         // The setup's published SHA-256, matched by installer name; empty on a legacy manifest without hashes.
         var sha256 = UpdateFeed.Sha256Of(meta, setup);
-        return new UpdateInfo(UpdateFeed.IsUpdate(version, currentVersion), version, setupUrl, meta.Description ?? string.Empty, sha256);
+        return new UpdateInfo(
+            UpdateFeed.IsUpdate(version, currentVersion),
+            version,
+            setupUrl,
+            meta.Description ?? string.Empty,
+            sha256,
+            UpdateFeed.AssetNamed(meta, setup));
     }
 
     // The per-build installer name (AmneziaGeo-<version>-<target>.exe) so each arch/payload gets its own file;

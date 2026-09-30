@@ -166,6 +166,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the file a session of the tunnel holds from bring-up until its changes are taken down.
+    /// </summary>
+    public static string TurnFile(string name)
+    {
+        return Path.Combine(MachineRoot(), $"turn-{Sanitize(name)}.lock");
+    }
+
+    /// <summary>
     /// Path to a tunnel's persisted LAN-bypass exclusion routes.
     /// </summary>
     public static string LanStateFile(string name)

@@ -16,6 +16,9 @@
 
   Every <Variable> and <MsiProperty> is duplicated into both <?if?> branches along with the rest of
   the <Bundle>.
+
+  MsiCompressed=no builds the update layout: the MSI and its files lie beside the bundle instead of inside it,
+  and the app's update puts that layout together from the installed copy and the files it lacks.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
 
@@ -63,7 +66,7 @@
       <MsiPackage Id="AmneziaGeoMsi"
                   SourceFile="$(var.MsiPath)"
                   Vital="yes"
-                  Compressed="yes">
+                  Compressed="$(var.MsiCompressed)">
         <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
         <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
         <MsiProperty Name="STARTMENUSHORTCUT" Value="[STARTMENUSHORTCUT]" />
@@ -110,7 +113,7 @@
       <MsiPackage Id="AmneziaGeoMsi"
                   SourceFile="$(var.MsiPath)"
                   Vital="yes"
-                  Compressed="yes">
+                  Compressed="$(var.MsiCompressed)">
         <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
         <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
         <MsiProperty Name="STARTMENUSHORTCUT" Value="[STARTMENUSHORTCUT]" />

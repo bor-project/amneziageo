@@ -5,7 +5,10 @@
     3. publishes the WPF bootstrapper application (AmneziaGeo.Windows.Installer),
     4. generates a PayloadGroup over the BA publish folder (Burn does not auto-harvest it),
     5. builds the Burn bundle that hosts the BA and chains the MSI,
-  then copies the signed bundle into dist\ under an arch/payload-tagged name.
+    6. builds the update layout - the same MSI with its files beside it and a bundle that takes them from there -
+       and packs it file by file, so the app's update fetches only the files the installed copy lacks,
+  then copies the signed bundle into dist\ under an arch/payload-tagged name, with the pack and its list beside it
+  (AmneziaGeo-<version>-win-<arch>-<payload>.pack and .files).
 
   BUILD MATRIX (#49) - which variants to build is the cross product of two axes, both spelled the way
   the output file is tagged (AmneziaGeo-<version>-win-<arch>-<payload>.exe):
@@ -116,6 +119,8 @@ $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
 
 $stage     = Join-Path $bundleDir 'stage'
 $baPublish = Join-Path $bundleDir 'ba-publish'
+$layoutMsi = Join-Path $bundleDir 'layout-msi'
+$layout    = Join-Path $bundleDir 'layout'
 $genWxs    = Join-Path $bundleDir 'BaPayloads.generated.wxs'
 $dist      = Join-Path $bundleDir 'dist'
 $baExeName = 'AmneziaGeo.Windows.Installer.exe'
@@ -311,7 +316,38 @@ function Invoke-SignBundle([string]$bundle) {
     Invoke-Sign $bundle
 }
 
-# Build one matrix variant end-to-end (steps 1-5) and drop the signed bundle into dist\.
+# Packs every file of the update layout on its own, one after another, into <base>.pack and lists them in
+# <base>.files: digest, mode, size, place and length in the pack, path in the layout.
+function Write-Pack([string]$dir, [string]$base) {
+    $prefix = $dir.TrimEnd('\') + '\'
+    $names = [string[]]@(Get-ChildItem -Recurse -File $dir | Where-Object { $_.Extension -ne '.wixpdb' } |
+                         ForEach-Object { $_.FullName.Substring($prefix.Length).Replace('\', '/') })
+    [Array]::Sort($names, [StringComparer]::Ordinal)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add('# amneziageo files 1')
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $pack = [System.IO.File]::Create("$base.pack")
+    try {
+        foreach ($name in $names) {
+            $data = [System.IO.File]::ReadAllBytes((Join-Path $dir $name))
+            $packed = [System.IO.MemoryStream]::new()
+            $gzip = [System.IO.Compression.GZipStream]::new($packed, [System.IO.Compression.CompressionLevel]::Optimal, $true)
+            $gzip.Write($data, 0, $data.Length)
+            $gzip.Dispose()
+            $digest = ([System.BitConverter]::ToString($sha.ComputeHash($data)) -replace '-', '').ToLowerInvariant()
+            $lines.Add(('{0} 644 {1} {2} {3} {4}' -f $digest, $data.Length, $pack.Position, $packed.Length, $name))
+            $packed.WriteTo($pack)
+        }
+    }
+    finally {
+        $pack.Dispose()
+        $sha.Dispose()
+    }
+    [System.IO.File]::WriteAllText("$base.files", ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+    Write-Host "   -> $(Split-Path "$base.pack" -Leaf), $($names.Count) files"
+}
+
+# Build one matrix variant end-to-end (steps 1-6) and drop the signed bundle into dist\.
 function Build-Variant {
     param([string]$Arch, [bool]$SelfContained)
 
@@ -429,10 +465,27 @@ function Build-Variant {
     if (-not $setupExe) { throw "AmneziaGeoSetup.exe not found under $bundleBin after build." }
     Invoke-SignBundle $setupExe.FullName
 
+    # ---- 6. the update layout: the MSI built again with its files beside it, a bundle that takes it from there, and
+    # the layout packed file by file ----
+    Write-Host '== build update layout =='
+    foreach ($d in @($layoutMsi, $layout)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
+    dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:Version=$version -p:StageDir=$stage "-p:HasIcon=$hasIcon" -p:Compressed=no "-p:OutputPath=$layoutMsi\" "-p:IntermediateOutputPath=obj\$Arch\layout\"
+    if ($LASTEXITCODE -ne 0) { throw "Layout MSI build failed ($LASTEXITCODE)" }
+    $looseMsi = Join-Path $layoutMsi $msi.Name
+    if (-not (Test-Path $looseMsi)) { throw "Layout MSI not found: $looseMsi" }
+    Invoke-Sign $looseMsi
+
+    dotnet build $bundleProj -c $Configuration -p:Platform=$Arch -p:BundleVersion=$version -p:BaExe=$baExe -p:MsiPath=$looseMsi -p:MsiCompressed=no "-p:OutputPath=$layout\" "-p:IntermediateOutputPath=obj\$Arch\layout\" $iconProps
+    if ($LASTEXITCODE -ne 0) { throw "Layout bundle build failed ($LASTEXITCODE)" }
+    $layoutSetup = Join-Path $layout 'AmneziaGeoSetup.exe'
+    if (-not (Test-Path $layoutSetup)) { throw "AmneziaGeoSetup.exe not found under $layout after build." }
+    Invoke-SignBundle $layoutSetup
+
     # ---- collect into dist\ under a version-stamped name; only fdd is tagged, scd is unmarked ----
     $distName = "AmneziaGeo-$version-$buildTarget.exe"
     Copy-Item -Force $setupExe.FullName (Join-Path $dist $distName)
     Write-Host "   -> dist\$distName"
+    Write-Pack $layout (Join-Path $dist "AmneziaGeo-$version-$buildTarget")
 }
 
 Assert-SigningCert
@@ -472,5 +525,5 @@ foreach ($v in $variants) {
 
 Write-Host ''
 Write-Host '== result (dist) =='
-Get-ChildItem $dist -Filter *.exe |
+Get-ChildItem $dist -File |
     Select-Object Name, @{N = 'MB'; E = { [math]::Round($_.Length / 1MB, 1) } }

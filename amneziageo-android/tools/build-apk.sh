@@ -24,7 +24,8 @@ usage: build-apk.sh [options]
   --config <name>     Release or Debug (default: $CONFIGURATION)
   --version N.N.N.N   package version (default: 0.0.1.<commit count>); all four fields make the versionCode
   --abi <list>        runtime identifiers, comma separated: android-arm, android-arm64, android-x64
-                      (default: every ABI the project declares)
+                      (default: every ABI the project declares);
+                      one ABI names the APK after it: AmneziaGeo-<version>-android-arm64.apk
   --update-url <url>  update metadata baked into the package (default: $UPDATE_URL)
   --prerelease        keep the build on the prerelease channel
   --help              this help
@@ -121,7 +122,11 @@ if [ -z "$apk" ]; then
   exit 1
 fi
 
-name="AmneziaGeo-$VERSION-android.apk"
+# One ABI names the package after it, as the release publishes it for the app's own update.
+case "$ABIS" in
+  ''|*';'*) name="AmneziaGeo-$VERSION-android.apk" ;;
+  *) name="AmneziaGeo-$VERSION-$ABIS.apk" ;;
+esac
 cp -f "$apk" "$DIST/$name"
 
 echo

@@ -38,6 +38,9 @@ internal sealed class TunnelRunner(
     // small share of the 30s the service manager allows a service to report running.
     private static readonly TimeSpan _reconcileBudget = TimeSpan.FromSeconds(8);
 
+    // How long bring-up waits for the session before it to take its changes down.
+    private static readonly TimeSpan _turnBudget = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// Resolvers the config declares, IPv4 only.
     /// </summary>
@@ -87,6 +90,18 @@ internal sealed class TunnelRunner(
     /// </summary>
     public async Task RunAsync(string name)
     {
+        using var turn = await TunnelTurn.TakeAsync(TunnelPaths.TurnFile(name), _turnBudget).ConfigureAwait(false);
+        if (!turn.Held)
+        {
+            logger.LogWarning("{Name}: the session before this one has not taken its routes, firewall rules and DNS changes down in {Sec}s, so this one sets up without waiting and may lose them to it",
+                name, (int)_turnBudget.TotalSeconds);
+        }
+        else if (turn.Waited > TimeSpan.Zero)
+        {
+            logger.LogInformation("{Name}: the session before this one was still taking its routes, firewall rules and DNS changes down, so this one waited {Ms} ms for it",
+                name, (int)turn.Waited.TotalMilliseconds);
+        }
+
         try
         {
             await RunInnerAsync(name);
@@ -987,8 +1002,8 @@ internal sealed class TunnelRunner(
 
             // Before the engine closes, so the host routes go away with their permits still known.
             routing?.RemoveAll();
-            // The batched withdrawals leave now: the device is about to go, and a queued one would never be sent.
-            uapi.FlushWithdrawals();
+            // The queued withdrawals go with the device, which closed with the service.
+            uapi.DropWithdrawals();
             firewall.Disable();
 
             if (wsTransport is not null)

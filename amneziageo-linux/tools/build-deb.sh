@@ -186,7 +186,40 @@ normalize() {
   fi
 }
 
-# Control files, checksums and the package itself.
+# Packs every file of the package tree on its own, one after another, into <base>.pack and lists them in
+# <base>.files with the folders and links of the tree, so the agent's update fetches only the files a machine lacks
+# and builds the package again.
+pack_files() {
+  local tree="$1" base="$2" piece="$STAGE/piece" entry offset=0 length target
+  if [ -n "$(find "$tree" ! -type f ! -type d ! -type l -print -quit)" ]; then
+    echo "the package tree holds more than files, folders and links" >&2
+    exit 1
+  fi
+
+  : > "$base.pack"
+  echo '# amneziageo files 1' > "$base.files"
+  while IFS= read -r -d '' entry; do
+    if [ -L "$tree/$entry" ]; then
+      target="$(readlink "$tree/$entry")"
+      case "$target" in
+        ''|/*|*[[:space:]]*) echo "the link $entry points at '$target', which the list cannot carry" >&2; exit 1 ;;
+      esac
+      printf 'l %s %s\n' "$target" "$entry" >> "$base.files"
+    elif [ -d "$tree/$entry" ]; then
+      printf 'd %s %s\n' "$(stat -c %a "$tree/$entry")" "$entry" >> "$base.files"
+    else
+      gzip -9nc "$tree/$entry" > "$piece"
+      length="$(stat -c %s "$piece")"
+      cat "$piece" >> "$base.pack"
+      printf '%s %s %s %s %s %s\n' "$(sha256sum "$tree/$entry" | cut -c1-64)" "$(stat -c %a "$tree/$entry")" \
+        "$(stat -c %s "$tree/$entry")" "$offset" "$length" "$entry" >> "$base.files"
+      offset=$((offset + length))
+    fi
+  done < <(cd "$tree" && find . -mindepth 1 -printf '%P\0' | LC_ALL=C sort -z)
+  rm -f "$piece"
+}
+
+# Control files, checksums, the pack of the files and the package itself.
 pack() {
   local package="$1" arch="$2" tree="$3"
   local source="$PACKAGING/deb/$package"
@@ -212,6 +245,7 @@ pack() {
   ( cd "$tree" && find . -type f ! -path './DEBIAN/*' -printf '%P\0' | sort -z | xargs -0 -r md5sum > DEBIAN/md5sums )
   chmod 0644 "$tree/DEBIAN/md5sums"
 
+  pack_files "$tree" "$OUT/${package}_${VERSION}_${arch}"
   dpkg-deb --root-owner-group --build "$tree" "$OUT/${package}_${VERSION}_${arch}.deb" >/dev/null
   echo "   $OUT/${package}_${VERSION}_${arch}.deb"
 }

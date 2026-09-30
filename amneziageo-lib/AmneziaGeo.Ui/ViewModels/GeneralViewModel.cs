@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using Avalonia;
@@ -25,6 +26,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     private string _updateSetupUrl = string.Empty;
     private string _expectedSha256 = string.Empty;
+    private UpdateAsset? _updateAsset;
     private string? _bannerUpdateVersion;
     private string? _downloadedSetupPath;
     private string? _downloadedVersion;
@@ -307,6 +309,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         UpdateDescription = snapshot.UpdateDescription;
         _updateSetupUrl = snapshot.UpdateSetupUrl;
         _expectedSha256 = snapshot.UpdateSetupSha256;
+        _updateAsset = snapshot.UpdateSetupAsset;
 
         if (_agentUpdates)
         {
@@ -577,14 +580,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
-    // The setup byte-pump: streams the installer, reporting each phase to the agent. A cancel deletes the partial
-    // and returns to the available state; a failure latches the tray warning ("failed") and deletes the partial.
+    // The setup byte-pump: streams the installer, reporting each phase to the agent. A cancel deletes what came in
+    // and returns to the available state; a failure latches the tray warning ("failed") and keeps what came in for
+    // the next attempt.
     private async Task DownloadCoreAsync()
     {
         if (string.IsNullOrEmpty(_updateSetupUrl) || UpdateDownloading || UpdateDownloaded)
         {
             return;
         }
+
+        var url = _updateSetupUrl;
 
         WasDownloadCancelledByHost = false;
         CancelUpToDateAutoHide();
@@ -597,7 +603,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         await ReportDownloadAsync("downloading", 0, string.Empty, version);
         try
         {
-            _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => ReportDownloadProgress(p, version)), cts.Token);
+            _downloadedSetupPath = await DownloadSetupAsync(url, _updateAsset, new Progress<int>(p => ReportDownloadProgress(p, version)), LogToAgentAsync, cts.Token);
             _downloadedVersion = version;
             UpdateDownloaded = true;
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateReadyToInstall");
@@ -605,6 +611,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
+            SetupDownloads.Drop(SetupDownloads.Folder, SetupName(url));
             UpdateStatus = string.Empty;
             UpdateDownloadPercent = 0;
             await ReportDownloadAsync("idle", 0, string.Empty, string.Empty);
@@ -745,7 +752,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Verify integrity before running the installer; a mismatch drops the file and returns to the download
         // step. A manifest without a hash (legacy) verifies as trusted so the flow still works.
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateVerifying");
-        if (!await VerifySetupAsync(setupPath, _expectedSha256))
+        if (!await VerifySetupAsync(setupPath, SetupDownloads.DigestFor(setupPath, _updateAsset, _expectedSha256)))
         {
             _applying = false;
             UpdateInstalling = false;
@@ -1130,63 +1137,77 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _ => ThemeVariant.Default,
     };
 
-    // Full path of the completed setup; the download streams to the ".part" sibling and is promoted here only on
-    // a clean finish, so an interrupted run leaves only the partial and this name is never a half-written file.
-    private static string SetupPath => Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
-
-    private static string PartialPath => SetupPath + ".part";
+    // Where the window downloaded the setup before the downloads had a folder of their own.
+    private static string LegacySetupPath => Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
 
     /// <summary>
-    /// Deletes a leftover partial download from an interrupted run (killed mid-download), so it is never taken
-    /// for a ready update and the temp file does not linger (#21).
+    /// Deletes the downloaded setups nothing installs any more: the one earlier builds of the window left in the temp
+    /// folder and those of the version running or an older one.
     /// </summary>
-    public static void CleanupOrphanedPartial() => TryDeletePartial(PartialPath);
-
-    // Streams the installer to a ".part" temp file, reporting integer download percent (mirrors the agent's
-    // GeoFileUpdater loop but writes straight to disk - the setup is ~100 MB), then promotes it to the final name.
-    private static async Task<string> DownloadSetupAsync(string url, IProgress<int> progress, CancellationToken ct)
+    public static void DropStaleSetups()
     {
-        var path = SetupPath;
-        var partial = PartialPath;
-        try
+        TryDeletePartial(LegacySetupPath);
+        TryDeletePartial(LegacySetupPath + ".part");
+        if (typeof(GeneralViewModel).Assembly.GetName().Version is { } running)
         {
-            using var http = new HttpClient();
-            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            var total = response.Content.Headers.ContentLength;
-            await using (var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-            await using (var file = File.Create(partial))
-            {
-                var buffer = new byte[81920];
-                long read = 0;
-                var lastPercent = -1;
-                int n;
-                while ((n = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                {
-                    await file.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
-                    read += n;
-                    if (total is > 0)
-                    {
-                        var percent = (int)(read * 100 / total.Value);
-                        if (percent != lastPercent)
-                        {
-                            lastPercent = percent;
-                            progress.Report(percent);
-                        }
-                    }
-                }
-            }
-
-            // The stream finished cleanly: promote the partial onto the final setup name.
-            File.Move(partial, path, overwrite: true);
-            return path;
-        }
-        catch
-        {
-            TryDeletePartial(partial);
-            throw;
+            SetupDownloads.DropInstalled(SetupDownloads.Folder, running);
         }
     }
+
+    private static string SetupName(string url) => Path.GetFileName(new Uri(url).LocalPath);
+
+    // Downloads the setup into the downloads folder, reporting integer percent. Where the release carries the pack of
+    // the setup, the update layout is put together from the installed copy and the files it lacks; otherwise, or
+    // when the layout does not come together, the whole setup is downloaded, carrying on from its partial.
+    private static async Task<string> DownloadSetupAsync(
+        string url,
+        UpdateAsset? asset,
+        IProgress<int> progress,
+        Func<string, Task> note,
+        CancellationToken ct)
+    {
+        using var http = new HttpClient();
+        var address = new Uri(url);
+        var setup = SetupName(url);
+        var folder = SetupDownloads.Folder;
+        Directory.CreateDirectory(folder);
+        SetupDownloads.Sweep(folder, setup);
+
+        void Report(long done, long total)
+        {
+            if (total > 0)
+            {
+                progress.Report((int)(done * 100 / total));
+            }
+        }
+
+        if (asset is { Files: not null, Pack: not null })
+        {
+            try
+            {
+                var (layout, count) = await SetupDownloads
+                    .StageAsync(http, address, asset, [AppContext.BaseDirectory], folder, Report, ct)
+                    .ConfigureAwait(false);
+                var deltas = count.Deltas > 0 ? $" ({count.Deltas} of them as deltas of the installed ones)" : string.Empty;
+                await note($"update: fetched {count.Fetched} of the {count.Files} files{deltas}, {Megabytes(count.Bytes)} of the "
+                    + $"{Megabytes(asset.Size)} setup, the others came from the installed copy").ConfigureAwait(false);
+                return layout;
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or HttpRequestException or UnauthorizedAccessException
+                || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+            {
+                await note($"update: the changed files were not fetched apart, the whole setup is downloaded: {ex.Message}").ConfigureAwait(false);
+            }
+        }
+
+        var whole = SetupDownloads.WholePath(folder, setup);
+        await UpdateDownload.DownloadAsync(http, address, whole, Report, ct).ConfigureAwait(false);
+        SetupDownloads.DropLayout(folder, setup);
+        return whole;
+    }
+
+    private static string Megabytes(long bytes) =>
+        (bytes / (1024.0 * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " MB";
 
     // Drops a half-written or corrupt setup after a cancelled, failed, or unverified download.
     private static void TryDeletePartial(string path)

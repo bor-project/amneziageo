@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -6,12 +7,40 @@ namespace AmneziaGeo.Decl;
 /// <summary>
 /// One published file of a release.
 /// </summary>
+/// <param name="Name">The file among the files of the release.</param>
+/// <param name="Platform">The system the file installs on.</param>
+/// <param name="Arch">The architecture the file installs on.</param>
+/// <param name="Variant">The kind of the file for its platform.</param>
+/// <param name="Sha256">The digest of the file, empty on a legacy manifest.</param>
+/// <param name="Size">The size of the file in bytes, 0 where the manifest names none.</param>
+/// <param name="Files">The list of the files the file installs, null where the release carries none.</param>
+/// <param name="Pack">Those files packed one by one, null where the release carries none.</param>
+/// <param name="Deltas">The list of the deltas of those files from their versions in earlier releases, null where the
+/// release carries none.</param>
+/// <param name="DeltaPack">Those deltas one after another, null where the release carries none.</param>
 public sealed record UpdateAsset(
     [property: JsonPropertyName("name")] string? Name,
     [property: JsonPropertyName("platform")] string? Platform,
     [property: JsonPropertyName("arch")] string? Arch,
     [property: JsonPropertyName("variant")] string? Variant,
-    [property: JsonPropertyName("sha256")] string? Sha256);
+    [property: JsonPropertyName("sha256")] string? Sha256,
+    [property: JsonPropertyName("size")] long Size = 0,
+    [property: JsonPropertyName("files")] UpdateFile? Files = null,
+    [property: JsonPropertyName("pack")] UpdateFile? Pack = null,
+    [property: JsonPropertyName("deltas")] UpdateFile? Deltas = null,
+    [property: JsonPropertyName("deltapack")] UpdateFile? DeltaPack = null);
+
+/// <summary>
+/// A file of a release that goes with a published file: a list of the files it installs or of their deltas, or a pack
+/// of them.
+/// </summary>
+/// <param name="Name">The file among the files of the release.</param>
+/// <param name="Size">The size of the file, in bytes.</param>
+/// <param name="Sha256">The digest of the file, null where the manifest names none.</param>
+public sealed record UpdateFile(
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("size")] long Size,
+    [property: JsonPropertyName("sha256")] string? Sha256 = null);
 
 /// <summary>
 /// Update metadata published next to a release.
@@ -28,6 +57,9 @@ public sealed record UpdateManifest(
 /// </summary>
 public static class UpdateFeed
 {
+    private const string AndroidPlatform = "android";
+    private const string AndroidEveryArch = "universal";
+
     private static readonly JsonSerializerOptions _options = new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>
@@ -98,13 +130,41 @@ public static class UpdateFeed
     }
 
     /// <summary>
+    /// Android package for a processor type: its own one if the release carries it, the package of every type otherwise.
+    /// </summary>
+    public static UpdateAsset? AndroidAsset(UpdateManifest manifest, string arch)
+    {
+        return AssetsFor(manifest, AndroidPlatform, arch).FirstOrDefault()
+            ?? AssetsFor(manifest, AndroidPlatform, AndroidEveryArch).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Architecture the release names the Android package of a processor type by.
+    /// </summary>
+    public static string AndroidArch(Architecture processor) => processor switch
+    {
+        Architecture.Arm64 => "arm64",
+        Architecture.Arm => "arm",
+        Architecture.X64 => "x64",
+        Architecture.X86 => "x86",
+        _ => processor.ToString(),
+    };
+
+    /// <summary>
     /// Published SHA-256 of an asset; empty on a legacy manifest without hashes.
     /// </summary>
     public static string Sha256Of(UpdateManifest manifest, string name)
     {
+        return AssetNamed(manifest, name)?.Sha256 ?? string.Empty;
+    }
+
+    /// <summary>
+    /// The asset of a release by its file name.
+    /// </summary>
+    public static UpdateAsset? AssetNamed(UpdateManifest manifest, string name)
+    {
         return manifest.Installers?
-            .FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase))?
-            .Sha256 ?? string.Empty;
+            .FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

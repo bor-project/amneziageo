@@ -3032,7 +3032,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             SubscriptionRefreshIntervalHours: settings.SubscriptionRefreshIntervalHours,
             MultiServer: settings.MultiServer,
             DnsTransport: settings.DnsTransport,
-            LocalDoh: settings.LocalDoh), scope, states);
+            LocalDoh: settings.LocalDoh,
+            UpdateSetupAsset: update?.Asset), scope, states);
     }
 
     /// <summary>

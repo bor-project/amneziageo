@@ -13,7 +13,7 @@ You need Windows 7, 10 or 11 (x64 or arm64) and administrator rights: the instal
 3. Open AmneziaGeo and import a configuration - a `.conf` file, a QR code or a shared settings file.
 4. Pick a rule list or the full tunnel and connect.
 
-After that the app updates itself: it offers the new version, downloads the installer for its own architecture and runs it.
+After that the app updates itself: it offers the new version, takes from the release only the files that changed against the installed copy, a changed file as a delta against its installed version where the release carries one, and runs the installer on them; where it cannot, it downloads the whole installer for its own architecture. A download that broke off carries on from where it stopped.
 
 The installers are not signed yet, so SmartScreen warns about an unknown publisher and Smart App Control on Windows 11 may block the launch. What to do about it: [CODE_SIGNING.md](../CODE_SIGNING.md).
 
@@ -70,7 +70,7 @@ Import also takes `--link` with a `vpn://` URL or `--stdin`.
 
 ### Update
 
-A packaged build carries the release manifest it checks against, so the app updates itself: the window offers the new version, the agent downloads exactly the packages this machine has installed for its own architecture, verifies them against the published SHA-256 and lets apt install them from a transient unit that outlives the agent restart. `amneziageo update check` reports the same from the console. Restart the window afterwards to run the new interface too.
+A packaged build carries the release manifest it checks against, so the app updates itself: the window offers the new version, the agent takes exactly the packages this machine has installed for its own architecture and lets apt install them from a transient unit that outlives the agent restart. It fetches only the files that changed against the installed ones, a changed file as a delta against its installed version where the release carries one, checks each against its published SHA-256 and builds the package again; where it cannot, it downloads the whole package, checks it against the published SHA-256 and carries on after a break. `amneziageo update check` reports the same from the console. Restart the window afterwards to run the new interface too.
 
 ### Docker
 
@@ -93,8 +93,8 @@ Every `configs/<name>.conf` is imported at start under its file name, and `AMNEZ
 
 Android 7.0 or newer.
 
-1. Download `AmneziaGeo-<version>-android.apk` from the [Releases](https://github.com/bor-project/amneziageo/releases) page and allow installation from that source when the system asks.
+1. Download `AmneziaGeo-<version>-android.apk` from the [Releases](https://github.com/bor-project/amneziageo/releases) page, or the three times smaller APK of your processor type (`-android-arm64.apk` suits most phones), and allow installation from that source when the system asks.
 2. Open the app and import a configuration.
 3. On the first connect Android asks for VPN permission - it has to be granted.
 
-The app checks for updates itself and installs the new APK once you agree.
+The app checks for updates itself, downloads the APK of its processor type and installs it once you agree.

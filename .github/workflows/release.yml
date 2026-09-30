@@ -1,7 +1,11 @@
 # Builds every platform in CI and publishes the results as a GitHub Release on every tag push (v*).
 # Windows: a 2x2 matrix {x64, arm64} x {fdd (framework-dependent), scd (self-contained)} = 4 installers.
 # Linux:   the amneziageo and amneziageo-gui Debian packages for amd64 and arm64.
-# Android: one APK carrying arm64-v8a, armeabi-v7a and x86_64.
+# Android: one APK carrying arm64-v8a, armeabi-v7a and x86_64, and one APK per ABI that the app's own update
+#          fetches.
+# Beside every installer and package lie its files packed one by one and their list: the app's update fetches from
+# there only the files the installed copy lacks, and a changed file as a delta from its version in the Latest release
+# or one of the two newest when the copy holds that version (job deltas).
 # Every job is its own runner with fail-fast off, so a broken target still ships the ones that build.
 # Bundles are UNSIGNED. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID variable +
 # SIGNPATH_API_TOKEN secret) the sign job submits them to SignPath and the release ships signed; until
@@ -88,6 +92,16 @@ jobs:
           path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
           if-no-files-found: error
 
+      - name: Upload the update pack
+        # The update layout packed file by file with its list; kept apart from the installer the sign job takes.
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-pack-${{ matrix.arch }}-${{ matrix.variant }}
+          path: |
+            amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.pack
+            amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.files
+          if-no-files-found: error
+
   # Debian packages: amneziageo (agent, engine, console client, systemd unit) and amneziageo-gui.
   # Both are self-contained, so the target machine needs neither the .NET runtime nor Go. The arm64
   # package is cross-built on the x64 runner: `dotnet publish -r linux-arm64` and a CGO-free `go build`
@@ -138,12 +152,20 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: deb-${{ matrix.arch }}
-          path: dist/*.deb
+          path: |
+            dist/*.deb
+            dist/*.pack
+            dist/*.files
           if-no-files-found: error
 
-  # One APK for all three ABIs. Release is AOT-compiled: a weak TV box starts about twice as fast.
+  # One APK for all three ABIs and one per ABI, a third of the size, that the app's own update fetches. Release is
+  # AOT-compiled: a weak TV box starts about twice as fast.
   build-android:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: ['', android-arm64, android-arm, android-x64]   # '' builds every ABI the project declares
     steps:
       - name: Checkout (submodules + tags)
         uses: actions/checkout@v4
@@ -208,12 +230,13 @@ jobs:
           fi
           # A prerelease tag bakes the beta channel so the package does not offer the stable latest.
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
+          if [ -n "${{ matrix.abi }}" ]; then args+=(--abi "${{ matrix.abi }}"); fi
           amneziageo-android/tools/build-apk.sh "${args[@]}"
 
       - name: Upload the APK
         uses: actions/upload-artifact@v4
         with:
-          name: apk
+          name: apk${{ matrix.abi && format('-{0}', matrix.abi) || '' }}
           path: amneziageo-android/tools/dist/*.apk
           if-no-files-found: error
 
@@ -256,15 +279,79 @@ jobs:
           path: signed/*.exe
           if-no-files-found: error
 
+  # Deltas of the changed files of every installer and package from their versions in the Latest release and the two
+  # newest ones, this tag aside: an app that holds such a version downloads the delta and makes the file from its own.
+  # Beside the list of files and the pack of an asset lie the list of its deltas (.deltas) and their pack (.deltapack).
+  # An earlier release without the list of an asset gives it no delta; a failure here only leaves the deltas out.
+  deltas:
+    needs: [build, build-linux]
+    runs-on: ubuntu-latest
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download the lists and packs of the installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: update-pack-*
+          path: packs
+          merge-multiple: true
+
+      - name: Download the lists and packs of the packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: packs
+          merge-multiple: true
+
+      - name: Make the deltas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          lists=(packs/*.files)
+          [ ${#lists[@]} -gt 0 ] || { echo "no list of files built"; exit 0; }
+          VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          newest=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=20" \
+                     --jq '[.[] | select(.draft | not)] | sort_by(.published_at) | reverse | .[].tag_name' || true)
+          others=$(printf '%s\n' $newest | { grep -vxF -e "$GITHUB_REF_NAME" -e "${latest:-none}" || true; } | head -2)
+          bases=()
+          for tag in $latest $others; do
+            [ "$tag" != "$GITHUB_REF_NAME" ] || continue
+            v="${tag#v}"; v="${v%%-*}"
+            bases+=(--base "$v" "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/")
+            echo "earlier release: $tag"
+          done
+          [ ${#bases[@]} -gt 0 ] || { echo "no earlier release"; exit 0; }
+          dotnet run -c Release --project amneziageo-lib/AmneziaGeo.Deltas -- --version "$VER" --out deltas "${bases[@]}" "${lists[@]}"
+
+      - name: Upload the deltas
+        uses: actions/upload-artifact@v4
+        with:
+          name: deltas
+          path: |
+            deltas/*.deltas
+            deltas/*.deltapack
+          if-no-files-found: ignore
+
   # Publishes the GitHub Release that the app's auto-update reads. update.json + the installers, packages
-  # and the APK are attached as assets. A stable client polls
+  # and the APKs, with the packs, lists and deltas beside them, are attached as assets. A stable client polls
   # https://github.com/<repo>/releases/latest/download/update.json; a prerelease (allowPrerelease) client
   # finds the newest release via the releases API. Either way the client builds its own installer name
   # (AmneziaGeo-<version>-<its build target>.exe) from the manifest version, so each arch/payload downloads
   # its own file; `setup` stays as a legacy fallback. Runs on a tag push whether or not signing ran,
   # preferring signed installers and falling back to the unsigned ones.
   publish:
-    needs: [build, build-linux, build-android, sign]
+    needs: [build, build-linux, build-android, sign, deltas]
     runs-on: ubuntu-latest
     # always() + tag: publish whatever built even if some target failed or the sign job was skipped. It does
     # NOT gate on needs.*.result, so a partial matrix (e.g. x64 ok, arm64 broken) still ships.
@@ -285,7 +372,9 @@ jobs:
           mkdir -p release
           # Prefer signed over unsigned when both exist (signed dirs are globbed first; dedup by basename).
           for f in artifacts/installer-signed-*/*.exe artifacts/installer-unsigned-*/*.exe \
-                   artifacts/deb-*/*.deb artifacts/apk/*.apk; do
+                   artifacts/update-pack-*/*.pack artifacts/update-pack-*/*.files \
+                   artifacts/deb-*/*.deb artifacts/deb-*/*.pack artifacts/deb-*/*.files artifacts/apk*/*.apk \
+                   artifacts/deltas/*.deltas artifacts/deltas/*.deltapack; do
             b=$(basename "$f")
             if [ ! -e "release/$b" ]; then cp "$f" "release/$b"; echo "asset: $b"; fi
           done
@@ -309,7 +398,31 @@ jobs:
           # distribution. `setup` stays a legacy fallback; new clients build their own per-build name.
           CHANNEL=stable
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then CHANNEL=prerelease; fi
-          # SHA-256 lets the client verify the downloaded file before it runs it.
+          # SHA-256 lets the client verify the downloaded file before it runs it. Beside a Windows installer or a
+          # Debian package lie its files packed one by one and their list, which the app's update fetches instead of
+          # the whole file, and the deltas of its changed files with their list; the asset's own sha256 stays ahead of
+          # them, as install.sh takes the first one after the name.
+          asset() {
+            local f=$1 base=${1%.*} json
+            json=$(jq -n --arg name "$(basename "$f")" --arg platform "$2" --arg arch "$3" --arg variant "$4" \
+                     --arg sha256 "$(sha256sum "$f" | cut -d' ' -f1)" --argjson size "$(stat -c %s "$f")" \
+                     '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256, size:$size}')
+            if [ -f "$base.files" ] && [ -f "$base.pack" ]; then
+              json=$(jq --arg list "$(basename "$base.files")" --argjson listSize "$(stat -c %s "$base.files")" \
+                        --arg listSha256 "$(sha256sum "$base.files" | cut -d' ' -f1)" \
+                        --arg pack "$(basename "$base.pack")" --argjson packSize "$(stat -c %s "$base.pack")" \
+                        '. + {files: {name: $list, size: $listSize, sha256: $listSha256}, pack: {name: $pack, size: $packSize}}' \
+                        <<< "$json")
+              if [ -f "$base.deltas" ] && [ -f "$base.deltapack" ]; then
+                json=$(jq --arg list "$(basename "$base.deltas")" --argjson listSize "$(stat -c %s "$base.deltas")" \
+                          --arg listSha256 "$(sha256sum "$base.deltas" | cut -d' ' -f1)" \
+                          --arg pack "$(basename "$base.deltapack")" --argjson packSize "$(stat -c %s "$base.deltapack")" \
+                          '. + {deltas: {name: $list, size: $listSize, sha256: $listSha256}, deltapack: {name: $pack, size: $packSize}}' \
+                          <<< "$json")
+              fi
+            fi
+            printf '%s\n' "$json"
+          }
           # The slurp has to take all three loops; on the last one alone the other objects arrive raw.
           installers_json=$(
             {
@@ -318,23 +431,17 @@ jobs:
               rest=${b#AmneziaGeo-${VER}-}; rest=${rest%.exe}   # win-<arch> (scd) or win-<arch>-<variant> (fdd)
               arch=$(echo "$rest" | sed -n 's/^win-\([^-]*\).*/\1/p')
               variant=$(echo "$rest" | sed -n 's/^win-[^-]*-\(.*\)/\1/p'); variant=${variant:-scd}
-              sha=$(sha256sum "$f" | cut -d' ' -f1)
-              jq -n --arg name "$b" --arg platform windows --arg arch "$arch" --arg variant "$variant" --arg sha256 "$sha" \
-                 '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
+              asset "$f" windows "$arch" "$variant"
             done
             for f in release/*.deb; do
-              b=$(basename "$f")
-              rest=${b%.deb}                                   # <package>_<version>_<arch>
-              sha=$(sha256sum "$f" | cut -d' ' -f1)
-              jq -n --arg name "$b" --arg platform linux --arg arch "${rest##*_}" --arg variant "${rest%%_*}" --arg sha256 "$sha" \
-                 '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
+              rest=$(basename "$f" .deb)                       # <package>_<version>_<arch>
+              asset "$f" linux "${rest##*_}" "${rest%%_*}"
             done
             for f in release/*.apk; do
               b=$(basename "$f")
-              sha=$(sha256sum "$f" | cut -d' ' -f1)
-              # One package carries every ABI the engine is built for.
-              jq -n --arg name "$b" --arg platform android --arg arch universal --arg variant apk --arg sha256 "$sha" \
-                 '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
+              # AmneziaGeo-<version>-android.apk carries every ABI, AmneziaGeo-<version>-android-<arch>.apk one.
+              arch=${b#AmneziaGeo-${VER}-android}; arch=${arch%.apk}; arch=${arch#-}; arch=${arch:-universal}
+              asset "$f" android "$arch" apk
             done
             } | jq -s '.'
           )
@@ -363,20 +470,20 @@ jobs:
             awk -v b="$(stat -c %s "release/$1")" 'BEGIN { printf "%.1f MB", b / 1000000 }'
           }
           cell() {
-            if [ -e "release/$1" ]; then printf '[%s](%s/%s)<br>%s' "$1" "$BASE" "$1" "$(size "$1")"; else printf -- '-'; fi
+            if [ -n "$1" ] && [ -f "release/$1" ]; then printf '[%s](%s/%s)<br>%s' "$1" "$BASE" "$1" "$(size "$1")"; else printf -- '-'; fi
           }
           group() { GROUP="$1"; }
           row() {
-            if [ -e "release/$2" ] || [ -e "release/$3" ]; then
-              printf '| %s | %s | %s | %s |\n' "$GROUP" "$1" "$(cell "$2")" "$(cell "$3")"
+            if [ "$(cell "$2")$(cell "$3")$(cell "${4:-}")" != '---' ]; then
+              printf '| %s | %s | %s | %s | %s |\n' "$GROUP" "$1" "$(cell "$2")" "$(cell "$3")" "$(cell "${4:-}")"
               GROUP=''
             fi
           }
           {
             echo "## AmneziaGeo $VER"
             echo
-            echo '| Platform | Package | x64 / amd64 | arm64 |'
-            echo '| --- | --- | --- | --- |'
+            echo '| Platform | Package | x64 / amd64 | arm64 | arm (32-bit) |'
+            echo '| --- | --- | --- | --- | --- |'
             group '**Windows**'
             row 'installer, needs .NET 10 Desktop Runtime' "AmneziaGeo-$VER-win-x64-fdd.exe" "AmneziaGeo-$VER-win-arm64-fdd.exe"
             row 'installer, runtime included' "AmneziaGeo-$VER-win-x64.exe" "AmneziaGeo-$VER-win-arm64.exe"
@@ -384,7 +491,8 @@ jobs:
             row 'service, deb' "amneziageo_${VER}_amd64.deb" "amneziageo_${VER}_arm64.deb"
             row 'application, deb' "amneziageo-gui_${VER}_amd64.deb" "amneziageo-gui_${VER}_arm64.deb"
             group '**Android**'
-            row 'apk, every ABI in one package' "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk"
+            row 'apk, every ABI in one package' "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk"
+            row 'apk, one ABI' "AmneziaGeo-$VER-android-x64.apk" "AmneziaGeo-$VER-android-arm64.apk" "AmneziaGeo-$VER-android-arm.apk"
             echo
             echo '<details><summary>SHA-256</summary>'
             echo

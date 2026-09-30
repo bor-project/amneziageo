@@ -17,7 +17,9 @@
          build-installer.ps1, sourced from installer.config.json) gates the ARP/shortcut icon: "false"
          omits it entirely. -->
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
-    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon);Version=$(Version)</DefineConstants>
+    <!-- Compressed (yes/no): whether the files go inside the MSI or beside it (the update layout). -->
+    <Compressed Condition="'$(Compressed)' == ''">yes</Compressed>
+    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon);Version=$(Version);Compressed=$(Compressed)</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureStageDir" BeforeTargets="Build"

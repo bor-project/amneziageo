@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -7,8 +8,9 @@ using AmneziaGeo.Ipc;
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
-/// Application update for the Debian packages: reads the release manifest, downloads the packages this machine
-/// carries, and hands them to apt in a transient unit that outlives the agent restart the install triggers.
+/// Application update for the Debian packages: reads the release manifest, puts the packages this machine carries
+/// together from their installed files and the changed files of the release pack or downloads them whole, and hands
+/// them to apt in a transient unit that outlives the agent restart the install triggers.
 /// </summary>
 internal sealed class LinuxUpdater : IDisposable
 {
@@ -25,6 +27,9 @@ internal sealed class LinuxUpdater : IDisposable
     private readonly Func<CancellationToken, Task> _push;
     private readonly string _directory = Path.Combine(AgentPaths.Root, "updates");
     private readonly Lock _gate = new();
+
+    // Digest of every package this agent built from pieces, by its path.
+    private readonly ConcurrentDictionary<string, string> _built = new(StringComparer.Ordinal);
 
     private IReadOnlyList<PendingAsset> _assets = [];
     private CancellationTokenSource? _download;
@@ -338,7 +343,8 @@ internal sealed class LinuxUpdater : IDisposable
                 name,
                 new Uri(release.BaseUrl, name).ToString(),
                 asset.Sha256 ?? string.Empty,
-                Path.Combine(_directory, name)));
+                Path.Combine(_directory, name),
+                asset));
         }
 
         Version = release.Manifest.Version ?? string.Empty;
@@ -386,13 +392,22 @@ internal sealed class LinuxUpdater : IDisposable
         try
         {
             System.IO.Directory.CreateDirectory(_directory);
+            Sweep(assets);
             for (var i = 0; i < assets.Count; i++)
             {
                 var index = i;
-                await DownloadFileAsync(assets[index], p => Report((index * 100 + p) / assets.Count), ct).ConfigureAwait(false);
-                if (!await VerifyAsync(assets[index], ct).ConfigureAwait(false))
+                var asset = assets[index];
+                if (await VerifyAsync(asset, ct).ConfigureAwait(false))
                 {
-                    throw new InvalidOperationException($"{assets[index].Name}: checksum mismatch");
+                    continue;
+                }
+
+                await FetchAsync(asset, (done, total) => Report((int)((index * 100 + (total > 0 ? done * 100 / total : 0)) / assets.Count)), ct)
+                    .ConfigureAwait(false);
+                if (!await VerifyAsync(asset, ct).ConfigureAwait(false))
+                {
+                    Remove(asset.Path);
+                    throw new InvalidOperationException($"{asset.Name}: checksum mismatch");
                 }
             }
 
@@ -412,7 +427,6 @@ internal sealed class LinuxUpdater : IDisposable
         {
             Failed = true;
             Percent = 0;
-            DropPending(assets);
             _log.Error("update", $"download of {version} failed", ex);
         }
         finally
@@ -429,33 +443,60 @@ internal sealed class LinuxUpdater : IDisposable
         }
     }
 
-    private async Task DownloadFileAsync(PendingAsset asset, Action<int> progress, CancellationToken ct)
+    // The package put together from the installed files and the changed ones of the release pack and built again;
+    // the whole package, carrying on from its partial, where the release carries no pack or the pieces do not come
+    // together.
+    private async Task FetchAsync(PendingAsset asset, Action<long, long> progress, CancellationToken ct)
     {
-        var partial = asset.Path + ".part";
-        using var response = await _http.GetAsync(asset.Url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var length = response.Content.Headers.ContentLength ?? 0;
-        var buffer = new byte[81920];
-        var written = 0L;
-        await using (var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-        await using (var target = File.Create(partial))
+        _built.TryRemove(asset.Path, out _);
+        if (asset.Published is { Files: not null, Pack: not null } published)
         {
-            var read = await source.ReadAsync(buffer, ct).ConfigureAwait(false);
-            while (read > 0)
+            try
             {
-                await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                written += read;
-                if (length > 0)
-                {
-                    progress((int)(written * 100 / length));
-                }
-
-                read = await source.ReadAsync(buffer, ct).ConfigureAwait(false);
+                var count = await BuildAsync(asset, published, progress, ct).ConfigureAwait(false);
+                var deltas = count.Deltas > 0 ? $" ({count.Deltas} of them as deltas of the installed ones)" : string.Empty;
+                _log.Info("update", $"{asset.Name}: fetched {count.Fetched} of the {count.Files} files{deltas}, {Megabytes(count.Bytes)} of "
+                    + $"the {Megabytes(published.Size)} package, the others came from the installed one");
+                return;
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or HttpRequestException or UnauthorizedAccessException
+                or InvalidOperationException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+            {
+                _log.Warn("update", $"{asset.Name}: the changed files were not fetched apart, the whole package is downloaded: {ex.Message}");
             }
         }
 
-        File.Move(partial, asset.Path, true);
+        await UpdateDownload.DownloadAsync(_http, new Uri(asset.Url), asset.Path, progress, ct).ConfigureAwait(false);
+        RemoveTree(asset);
     }
+
+    // Stages the tree of the package from pieces and builds the package from it with dpkg-deb.
+    private async Task<UpdatePieceCount> BuildAsync(PendingAsset asset, UpdateAsset published, Action<long, long> progress, CancellationToken ct)
+    {
+        var tree = TreeOf(asset);
+        var count = await new UpdatePieces(_http)
+            .StageAsync(new Uri(asset.Url), published, [Path.Combine("/usr/lib", asset.Package)], tree, progress, ct)
+            .ConfigureAwait(false);
+        var (code, output) = await TryRunAsync("dpkg-deb", ct, "--root-owner-group", "-Zgzip", "-z1", "--build", tree, asset.Path)
+            .ConfigureAwait(false);
+        if (code != 0)
+        {
+            throw new InvalidOperationException($"dpkg-deb did not build {asset.Name}: {output.Trim()}");
+        }
+
+        using (var stream = File.OpenRead(asset.Path))
+        {
+            _built[asset.Path] = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false));
+        }
+
+        RemoveTree(asset);
+        return count;
+    }
+
+    private string TreeOf(PendingAsset asset) => Path.Combine(_directory, Path.GetFileNameWithoutExtension(asset.Name));
+
+    private static string Megabytes(long bytes) =>
+        (bytes / (1024.0 * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " MB";
 
     // Holds the shown percent below 100 until every package is on disk and verified.
     private void Report(int percent)
@@ -470,14 +511,17 @@ internal sealed class LinuxUpdater : IDisposable
         _ = _push(CancellationToken.None);
     }
 
-    private static async Task<bool> VerifyAsync(PendingAsset asset, CancellationToken ct)
+    // A package built from pieces is checked against the digest taken when it was built, a downloaded one against
+    // the published digest.
+    private async Task<bool> VerifyAsync(PendingAsset asset, CancellationToken ct)
     {
         if (!File.Exists(asset.Path))
         {
             return false;
         }
 
-        if (asset.Sha256.Length == 0)
+        var expected = _built.TryGetValue(asset.Path, out var built) ? built : asset.Sha256;
+        if (expected.Length == 0)
         {
             return true;
         }
@@ -486,7 +530,7 @@ internal sealed class LinuxUpdater : IDisposable
         {
             await using var stream = File.OpenRead(asset.Path);
             var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
-            return string.Equals(Convert.ToHexStringLower(hash), asset.Sha256.Trim(), StringComparison.OrdinalIgnoreCase);
+            return string.Equals(Convert.ToHexStringLower(hash), expected.Trim(), StringComparison.OrdinalIgnoreCase);
         }
         catch (IOException)
         {
@@ -584,11 +628,32 @@ internal sealed class LinuxUpdater : IDisposable
         Percent = 0;
         SetupPath = string.Empty;
         _downloadedVersion = string.Empty;
+        _built.Clear();
+        Sweep([]);
+    }
+
+    // Drops what earlier downloads left for packages other than these, the result of the last install aside.
+    private void Sweep(IReadOnlyList<PendingAsset> assets)
+    {
         try
         {
-            foreach (var file in System.IO.Directory.EnumerateFiles(_directory, "*.deb"))
+            foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(_directory).ToList())
             {
-                Remove(file);
+                var name = Path.GetFileName(entry);
+                if (name.StartsWith("apply.", StringComparison.Ordinal)
+                    || assets.Any(asset => name.StartsWith(Path.GetFileNameWithoutExtension(asset.Name), StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                if (System.IO.Directory.Exists(entry))
+                {
+                    System.IO.Directory.Delete(entry, recursive: true);
+                }
+                else
+                {
+                    Remove(entry);
+                }
             }
         }
         catch (IOException)
@@ -599,13 +664,34 @@ internal sealed class LinuxUpdater : IDisposable
         }
     }
 
-    // Nothing half-fetched or unverified is kept: the next attempt starts from scratch.
-    private static void DropPending(IReadOnlyList<PendingAsset> assets)
+    // A cancel drops everything fetched for the packages.
+    private void DropPending(IReadOnlyList<PendingAsset> assets)
     {
         foreach (var asset in assets)
         {
+            _built.TryRemove(asset.Path, out _);
             Remove(asset.Path + ".part");
             Remove(asset.Path);
+            RemoveTree(asset);
+        }
+    }
+
+    private void RemoveTree(PendingAsset asset)
+    {
+        var tree = TreeOf(asset);
+        Remove(tree + ".files");
+        try
+        {
+            if (System.IO.Directory.Exists(tree))
+            {
+                System.IO.Directory.Delete(tree, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 
@@ -640,5 +726,5 @@ internal sealed class LinuxUpdater : IDisposable
         }
     }
 
-    private sealed record PendingAsset(string Package, string Name, string Url, string Sha256, string Path);
+    private sealed record PendingAsset(string Package, string Name, string Url, string Sha256, string Path, UpdateAsset Published);
 }

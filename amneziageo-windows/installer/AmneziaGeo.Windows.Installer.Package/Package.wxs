@@ -25,12 +25,14 @@
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
+  <!-- Compressed=yes carries the files inside the MSI; no leaves them beside it, the way the update layout of
+       build-installer.ps1 lays them out. -->
   <Package Name="AmneziaGeo"
            Manufacturer="AmneziaGeo"
            Version="$(var.Version)"
            UpgradeCode="CF01DE97-3FF5-4A9A-B106-DAD6D3D95CB5"
            Scope="perMachine"
-           Compressed="yes">
+           Compressed="$(var.Compressed)">
 
     <!-- AllowDowngrades: the Burn bundle (AmneziaGeo.Windows.Installer) drives install / update /
          repair / remove and may reinstall the same code or downgrade. AllowDowngrades makes the MSI

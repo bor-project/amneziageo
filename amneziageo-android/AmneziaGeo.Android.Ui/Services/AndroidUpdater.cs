@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Android.App;
 using Android.Content;
@@ -11,15 +12,16 @@ using AmneziaGeo.Ipc;
 namespace AmneziaGeo.Android.Ui.Services;
 
 /// <summary>
-/// Application update for the Android package: reads the release manifest, downloads the published APK into the
-/// private cache, and hands it to the system installer, which replaces this very package.
+/// Application update for the Android package: reads the release manifest, downloads the APK published for this
+/// processor type into the private cache, and hands it to the system installer, which replaces this very package.
 /// </summary>
 internal sealed class AndroidUpdater : IDisposable
 {
     private const string Platform = "android";
-    private const string Arch = "universal";
     private const string UserAgent = "AmneziaGeo-UpdateChecker";
     private const string SessionEntry = "package";
+
+    private static readonly string _arch = UpdateFeed.AndroidArch(RuntimeInformation.ProcessArchitecture);
 
     private readonly HttpClient _http;
     private readonly AndroidAgentLog _log;
@@ -303,10 +305,10 @@ internal sealed class AndroidUpdater : IDisposable
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateCheckFailed"));
         }
 
-        var asset = UpdateFeed.AssetsFor(release.Manifest, Platform, Arch).FirstOrDefault();
+        var asset = UpdateFeed.AndroidAsset(release.Manifest, _arch);
         if (asset?.Name is not { Length: > 0 } name)
         {
-            return new IpcAck(false, IpcMessage.Key("Agent_UpdateNoPackageForArch", Platform, Arch));
+            return new IpcAck(false, IpcMessage.Key("Agent_UpdateNoPackageForArch", Platform, _arch));
         }
 
         Version = release.Manifest.Version ?? string.Empty;
@@ -331,7 +333,7 @@ internal sealed class AndroidUpdater : IDisposable
         SweepDownloads(FileFor(Version, name));
         await AdoptAsync(FileFor(Version, name), ct).ConfigureAwait(false);
 
-        _log.Info("update", $"{Version} published as {name} (installed {_installed})");
+        _log.Info("update", $"{Version} published as {name} for this {_arch} device (installed {_installed})");
         return Available
             ? new IpcAck(true, IpcMessage.Key("Agent_UpdateAvailable", Version))
             : new IpcAck(true, IpcMessage.Key("Agent_UpToDate"));

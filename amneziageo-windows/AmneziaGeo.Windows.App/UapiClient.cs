@@ -104,7 +104,7 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
     }
 
     /// <summary>
-    /// Sends every queued removal now; called on teardown so nothing outlives the tunnel it belonged to.
+    /// Sends every queued removal now.
     /// </summary>
     public void FlushWithdrawals()
     {
@@ -131,6 +131,18 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
             {
                 logger.LogDebug(ex, "uapi: batched allowed-ip removal for {Tunnel} failed", key.Tunnel);
             }
+        }
+    }
+
+    /// <summary>
+    /// Forgets every queued removal.
+    /// </summary>
+    public void DropWithdrawals()
+    {
+        lock (_pendingLock)
+        {
+            _pending.Clear();
+            _withdrawTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         }
     }
 

@@ -4,6 +4,8 @@ obj/
 obj-seed/
 stage/
 ba-publish/
+layout/
+layout-msi/
 dist/
 BaPayloads.generated.wxs
 *.wixpdb

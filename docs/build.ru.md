@@ -52,6 +52,8 @@ dotnet build amneziageo-windows\AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.cspr
 amneziageo-windows\installer\AmneziaGeo.Windows.Installer.Bundle\build-installer.ps1
 ```
 
+Рядом с каждым установщиком сборщик кладёт пачку его раскладки обновления и список её файлов (`.pack`, `.files`): обновление приложения берёт из них только файлы, которых нет в установленной копии. Выпуск добавляет дельты изменившихся файлов от их версий в Latest и двух новейших выпусках (`.deltas`, `.deltapack`, их делает `amneziageo-lib/AmneziaGeo.Deltas`), по ним обновление собирает изменившийся файл из установленного.
+
 По умолчанию собирается один вариант: `x64`, framework-dependent - на целевой машине нужен установленный .NET 10 Desktop Runtime. Ключи сборщика, у каждого есть короткий алиас, `-h` покажет весь список:
 
 - `-v, -Version N.N.N.N` - версия бандла и бинарей, иначе `0.0.1.<число коммитов>`;
@@ -79,7 +81,7 @@ git submodule update --init --recursive
 amneziageo-linux/tools/build-deb.sh --arch amd64,arm64
 ```
 
-Нужны .NET SDK и Go, целевой машине - ничего: пакеты self-contained. Результат кладётся в `dist/`. Ключи: `--version N.N.N.N` (иначе `0.0.1.<число коммитов>`), `--arch amd64,arm64`, `--out <каталог>`, `--no-gui`, `--debug`.
+Нужны .NET SDK и Go, целевой машине - ничего: пакеты self-contained. Результат кладётся в `dist/`, рядом с каждым пакетом пачка его файлов и их список (`.pack`, `.files`), из которых обновление агента берёт только файлы, которых нет на машине; выпуск добавляет рядом дельты изменившихся файлов, как у установщиков. Ключи: `--version N.N.N.N` (иначе `0.0.1.<число коммитов>`), `--arch amd64,arm64`, `--out <каталог>`, `--no-gui`, `--debug`.
 
 Список альтернатив `libicu` в скрипте перечисляет ICU-пакеты, которые могут оказаться в целевом дистрибутиве: новый выпуск дистрибутива добавляет туда одну запись.
 
@@ -96,7 +98,8 @@ amneziageo-android/tools/build-apk.sh --abi android-arm64
 
 - `--config Release|Debug` - по умолчанию `Release`, он AOT-компилируется и на слабом телевизоре стартует вдвое быстрее;
 - `--version N.N.N.N` - версия пакета, все четыре числа складываются в versionCode;
-- `--abi android-arm,android-arm64,android-x64` - список ABI, по умолчанию все объявленные проектом;
+- `--abi android-arm,android-arm64,android-x64` - список ABI, по умолчанию все объявленные проектом; с одним ABI
+  APK называется по нему (`AmneziaGeo-<версия>-android-arm64.apk`);
 - `--update-url <url>` - адрес манифеста обновлений, вшиваемый в пакет;
 - `--prerelease` - оставить сборку на бета-канале.
 

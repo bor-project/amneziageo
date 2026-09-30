@@ -61,12 +61,11 @@ public sealed partial class App : Application
             // Apply UI language before the first frame.
             Loc.Instance.ApplyStartupCulture(prefs.Language);
 
-            // Single-instance guarantees this is the only UI process, so a leftover partial download is orphaned
-            // from an interrupted run and safe to drop before anything can start a new one (#21). Skipped in an
-            // instance the activation watchdog forced up: the owner it could not reach may be downloading (#209).
+            // The setups downloaded for this version or an earlier one install nothing once this build runs. Skipped in
+            // an instance the activation watchdog forced up (#209).
             if (SingleInstance.OwnsSession)
             {
-                GeneralViewModel.CleanupOrphanedPartial();
+                GeneralViewModel.DropStaleSetups();
             }
 
             var connection = new AgentConnection();

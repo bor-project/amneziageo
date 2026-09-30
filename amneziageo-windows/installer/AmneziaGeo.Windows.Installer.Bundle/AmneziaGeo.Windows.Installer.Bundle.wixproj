@@ -13,7 +13,9 @@
          overrides the source. Defaults keep the bundled UI icon for a plain build. -->
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
     <IconFile Condition="'$(IconFile)' == ''">$(MSBuildProjectDirectory)\..\..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</IconFile>
-    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);HasIcon=$(HasIcon);IconFile=$(IconFile)</DefineConstants>
+    <!-- MsiCompressed (yes/no): whether the MSI goes inside the bundle or beside it (the update layout). -->
+    <MsiCompressed Condition="'$(MsiCompressed)' == ''">yes</MsiCompressed>
+    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);HasIcon=$(HasIcon);IconFile=$(IconFile);MsiCompressed=$(MsiCompressed)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

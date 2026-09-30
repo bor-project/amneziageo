@@ -52,6 +52,8 @@ dotnet build amneziageo-windows\AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.cspr
 amneziageo-windows\installer\AmneziaGeo.Windows.Installer.Bundle\build-installer.ps1
 ```
 
+Beside every installer the builder puts the pack of its update layout and the list of its files (`.pack`, `.files`): the app's update fetches from them only the files the installed copy lacks. The release adds the deltas of the changed files from their versions in the Latest release and the two newest ones (`.deltas`, `.deltapack`, made by `amneziageo-lib/AmneziaGeo.Deltas`), from which the update makes a changed file out of the installed one.
+
 By default one variant is built: `x64`, framework-dependent - the target machine needs the .NET 10 Desktop Runtime installed. Builder options, each with a short alias, `-h` lists them all:
 
 - `-v, -Version N.N.N.N` - bundle and binary version, otherwise `0.0.1.<commit count>`;
@@ -79,7 +81,7 @@ git submodule update --init --recursive
 amneziageo-linux/tools/build-deb.sh --arch amd64,arm64
 ```
 
-Building needs the .NET SDK and Go; the target machine needs neither, the packages are self-contained. They land in `dist/`. Options: `--version N.N.N.N` (otherwise `0.0.1.<commit count>`), `--arch amd64,arm64`, `--out <dir>`, `--no-gui`, `--debug`.
+Building needs the .NET SDK and Go; the target machine needs neither, the packages are self-contained. They land in `dist/`, each with the pack of its files and their list (`.pack`, `.files`), from which the agent's update fetches only the files a machine lacks; the release adds the deltas of the changed files beside them, as for the installers. Options: `--version N.N.N.N` (otherwise `0.0.1.<commit count>`), `--arch amd64,arm64`, `--out <dir>`, `--no-gui`, `--debug`.
 
 The `libicu` alternatives in the script name the ICU packages a target distribution may carry, so a new distribution release adds one entry there.
 
@@ -96,7 +98,8 @@ The engine is built with the Android NDK toolchain into `AmneziaGeo.Android.Engi
 
 - `--config Release|Debug` - `Release` by default, it is AOT-compiled and starts about twice as fast on a weak TV;
 - `--version N.N.N.N` - package version, all four fields make the versionCode;
-- `--abi android-arm,android-arm64,android-x64` - the ABI list, by default every ABI the project declares;
+- `--abi android-arm,android-arm64,android-x64` - the ABI list, by default every ABI the project declares; a single
+  ABI names the APK after it (`AmneziaGeo-<version>-android-arm64.apk`);
 - `--update-url <url>` - the update manifest baked into the package;
 - `--prerelease` - keep the build on the prerelease channel.
 

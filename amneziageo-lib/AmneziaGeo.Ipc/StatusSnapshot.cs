@@ -157,4 +157,10 @@ public sealed record StatusSnapshot(
     /// <summary>
     /// The local DoH mode chosen, empty where the platform takes no such choice.
     /// </summary>
-    string LocalDoh = "");
+    string LocalDoh = "",
+
+    /// <summary>
+    /// The setup the release publishes for this build target, with the list and the pack of its files; null where
+    /// the release names none.
+    /// </summary>
+    AmneziaGeo.Decl.UpdateAsset? UpdateSetupAsset = null);

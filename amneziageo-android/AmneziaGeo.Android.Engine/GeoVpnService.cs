@@ -198,6 +198,9 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _queries;
     private VpnBridge.Listener? _stops;
     private ConnectivityManager.NetworkCallback? _underlay;
+
+    // The network under the tunnel the session stands on.
+    private string? _underKey;
     private List<string> _carved = [];
 
     // Set when the engine refused to decide on the packet, so the next raise carves the local network out again.
@@ -209,6 +212,9 @@ public sealed class GeoVpnService : VpnService
     // here, so the one repair left is raising the session again - and the ladder is what keeps that from becoming
     // a loop, spacing the attempts and standing down when they stop helping.
     private readonly LinkRecovery _recovery = new([RecoveryStep.Restart]);
+
+    // Server names and the IPv4 addresses they resolved to last.
+    private static readonly ConcurrentDictionary<string, string> _resolvedHosts = new(StringComparer.OrdinalIgnoreCase);
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
     private string? _reason;
@@ -433,6 +439,15 @@ public sealed class GeoVpnService : VpnService
             return;
         }
 
+        // Skips the callbacks of the tunnel's own network, of the same network under it, and of no network at all.
+        var key = AndroidNetworks.Read(this).UnderKey;
+        if (key is null
+            || string.Equals(Interlocked.Exchange(ref _underKey, key), key, StringComparison.Ordinal)
+            || key == NetworkSnapshot.NoNetwork)
+        {
+            return;
+        }
+
         // The network under the tunnel is another one now, so a link that was being repaired is worth one
         // attempt straight away rather than at the end of a wait the old network earned.
         if (_recovery.Repairing)
@@ -462,6 +477,12 @@ public sealed class GeoVpnService : VpnService
             return false;
         }
 
+        // Leaves the session standing while no network is under it.
+        if (AndroidNetworks.Read(this).Under == NetworkSnapshot.NoNetwork)
+        {
+            return false;
+        }
+
         if (Interlocked.Exchange(ref _reraising, 1) == 1)
         {
             return false;
@@ -484,7 +505,7 @@ public sealed class GeoVpnService : VpnService
             {
                 await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
                     request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog, request.DirectTcp,
-                    request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel).ConfigureAwait(false);
+                    request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel, repair: true).ConfigureAwait(false);
             }
             finally
             {
@@ -515,7 +536,7 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, bool repair = false)
     {
         try
         {
@@ -630,7 +651,7 @@ public sealed class GeoVpnService : VpnService
                     + "leaves the tun again");
                 _localCarveForced = true;
                 await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort, wsOffered,
-                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel).ConfigureAwait(false);
+                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, repair).ConfigureAwait(false);
                 return;
             }
 
@@ -648,7 +669,7 @@ public sealed class GeoVpnService : VpnService
 
             // The peer has to answer before the session counts as up: the tun and the engine start over a dead
             // server just as well, and the head would paint a live connection over nothing.
-            var handshake = await WaitForHandshakeAsync(handle).ConfigureAwait(false);
+            var handshake = await WaitForHandshakeAsync(handle, repair).ConfigureAwait(false);
             if (handshake <= 0)
             {
                 // A session the user has already stopped is not a failure to report.
@@ -681,6 +702,7 @@ public sealed class GeoVpnService : VpnService
                 ? "the tunnel carries traffic both ways"
                 : $"the peer answered, but nothing has come back through the tun in {TrafficWaitSeconds} s; the "
                     + "session is reported as up on the handshake alone");
+            _underKey = AndroidNetworks.Read(this).UnderKey;
             Publish(VpnStage.Connected, name);
             PublishLink(handshake, LinkReading.Empty);
             var rekey = WgConfigEditor.GetRekeyAfterSeconds(resolved);
@@ -1696,11 +1718,11 @@ public sealed class GeoVpnService : VpnService
         return false;
     }
 
-    // Waits for the peer's first answer, the only proof the session carries anything; 0 when none comes or the
-    // session is gone.
-    private async Task<long> WaitForHandshakeAsync(int handle)
+    // Waits for the peer's first answer, the only proof the session carries anything; 0 when none comes in time or
+    // the session is gone.
+    private async Task<long> WaitForHandshakeAsync(int handle, bool untilAnswered)
     {
-        for (var attempt = 0; attempt < HandshakeWaitSeconds * 1000 / HandshakePollMs; attempt++)
+        for (var attempt = 0; untilAnswered || attempt < HandshakeWaitSeconds * 1000 / HandshakePollMs; attempt++)
         {
             if (_handle != handle)
             {
@@ -2226,8 +2248,28 @@ public sealed class GeoVpnService : VpnService
             return config;
         }
 
-        var ip = ResolveHostV4(host);
+        var ip = ResolveOrRecall(host);
         return ip is null ? config : WgConfigEditor.SetEndpoint(config, $"{ip}:{port}");
+    }
+
+    // Resolves the server name, or takes the address it resolved to last when the name does not resolve now.
+    private static string? ResolveOrRecall(string host)
+    {
+        try
+        {
+            var ip = ResolveHostV4(host);
+            if (ip is not null)
+            {
+                _resolvedHosts[host] = ip;
+            }
+
+            return ip;
+        }
+        catch (UnknownHostException) when (_resolvedHosts.TryGetValue(host, out var known))
+        {
+            Report($"{host} does not resolve now, so the session is raised on {known}, the address it had last time");
+            return known;
+        }
     }
 
     private static string? ResolveHostV4(string host)

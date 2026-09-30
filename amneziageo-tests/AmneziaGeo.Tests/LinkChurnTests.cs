@@ -54,6 +54,24 @@ public sealed class LinkChurnTests
     }
 
     [Fact]
+    public void HandshakesSpreadOverSleep_AreCountedOnTheirOwnTimes()
+    {
+        var reading = Awake(handshakeEverySeconds: 120, lossPercent: 80);
+
+        Assert.Equal(1, reading.HandshakesPerMinute);
+        Assert.False(reading.Churning);
+    }
+
+    [Fact]
+    public void FrequentHandshakes_OnTheWallClockToo_AreChurn()
+    {
+        var reading = Awake(handshakeEverySeconds: 5, lossPercent: 80);
+
+        Assert.Equal(12, reading.HandshakesPerMinute);
+        Assert.True(reading.Churning);
+    }
+
+    [Fact]
     public void AConfigThatRenewsItsSessionOften_IsJudgedByItsOwnSchedule()
     {
         var reading = TwoMinutes(handshakeEverySeconds: 15, lossPercent: 80, rxBytesPerSecond: 0, LinkHealth.ChurnPerMinuteFor(20));
@@ -81,6 +99,23 @@ public sealed class LinkChurnTests
         var config = $"[Interface]\nPrivateKey = key\n{line}\n\n[Peer]\nEndpoint = 192.0.2.1:51820\n";
 
         Assert.Equal(seconds, WgConfigEditor.GetRekeyAfterSeconds(config));
+    }
+
+    // Two minutes awake in five-second samples, each with a handshake the given wall seconds after the last.
+    private static LinkReading Awake(int handshakeEverySeconds, int lossPercent)
+    {
+        var now = 0L;
+        var meter = new LinkMeter(() => now);
+        var handshake = 1_000_000L;
+        var reading = LinkReading.Empty;
+        for (var second = 0; second <= LinkHealth.WindowSeconds; second += 5)
+        {
+            now = second * 1000L;
+            handshake += handshakeEverySeconds;
+            reading = meter.Sample(0, 0, handshake, lossPercent);
+        }
+
+        return reading;
     }
 
     // Two minutes of five-second samples: a handshake every given number of seconds and a steady receive rate.

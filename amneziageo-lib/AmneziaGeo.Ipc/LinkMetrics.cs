@@ -137,7 +137,7 @@ public sealed record LinkReading(
 /// </summary>
 public sealed class LinkMeter
 {
-    private readonly Queue<long> _handshakes = new();
+    private readonly Queue<(long Tick, long Unix)> _handshakes = new();
     private readonly Queue<(long Tick, long Bytes)> _received = new();
     private readonly Func<long> _clock;
     private long _rxBytes = -1;
@@ -175,13 +175,16 @@ public sealed class LinkMeter
             // The first handshake seen predates the meter, so it seeds the baseline instead of counting.
             if (_handshakeUnix > 0)
             {
-                _handshakes.Enqueue(now);
+                _handshakes.Enqueue((now, handshakeUnix));
             }
 
             _handshakeUnix = handshakeUnix;
         }
 
-        while (_handshakes.Count > 0 && now - _handshakes.Peek() > LinkHealth.WindowSeconds * 1000L)
+        // Drops the handshakes the window has left behind on the tick clock or on their own times.
+        while (_handshakes.Count > 0
+            && (now - _handshakes.Peek().Tick > LinkHealth.WindowSeconds * 1000L
+                || _handshakeUnix - _handshakes.Peek().Unix > LinkHealth.WindowSeconds))
         {
             _handshakes.Dequeue();
         }

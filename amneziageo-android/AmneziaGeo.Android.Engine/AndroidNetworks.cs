@@ -12,12 +12,14 @@ namespace AmneziaGeo.Android.Engine;
 /// <param name="TunnelValidated">Whether the system reaches the internet through the tunnel; null without one.</param>
 /// <param name="PrivateDnsHost">The host of a strict private DNS; null when none is set.</param>
 /// <param name="PrivateDnsActive">Whether names resolve over private DNS; null below Android 9.</param>
+/// <param name="UnderKey">The network the device sits on, its interface and IPv4 addresses; null when not read.</param>
 public sealed record NetworkView(
     string Under,
     bool? UnderValidated,
     bool? TunnelValidated,
     string? PrivateDnsHost,
-    bool? PrivateDnsActive)
+    bool? PrivateDnsActive,
+    string? UnderKey = null)
 {
     /// <summary>
     /// The network the device sits on in one phrase.
@@ -55,6 +57,7 @@ public static class AndroidNetworks
             var underValidated = default(bool?);
             var underRank = int.MaxValue;
             var underLink = default(LinkProperties);
+            var underNetwork = default(Network);
             var tunnelValidated = default(bool?);
             var tunnelLink = default(LinkProperties);
             foreach (var network in manager.GetAllNetworks())
@@ -81,17 +84,30 @@ public static class AndroidNetworks
                     under = Name(capabilities);
                     underValidated = validated;
                     underLink = manager.GetLinkProperties(network);
+                    underNetwork = network;
                 }
             }
 
             var (host, active) = PrivateDns(tunnelLink ?? underLink);
-            return new NetworkView(under, underValidated, tunnelValidated, host, active);
+            var key = underNetwork is null ? under : Key(underNetwork, underLink);
+            return new NetworkView(under, underValidated, tunnelValidated, host, active, key);
         }
         catch (Java.Lang.Exception ex)
         {
             global::Android.Util.Log.Warn(Tag, "reading the networks failed: " + ex);
             return new NetworkView(string.Empty, null, null, null, null);
         }
+    }
+
+    // The network handle, its interface and its IPv4 addresses in one line.
+    private static string Key(Network network, LinkProperties? link)
+    {
+        var addresses = (link?.LinkAddresses ?? [])
+            .Select(address => address.Address)
+            .OfType<Java.Net.Inet4Address>()
+            .Select(address => address.HostAddress ?? string.Empty)
+            .Order(StringComparer.Ordinal);
+        return $"{network.NetworkHandle}|{link?.InterfaceName}|{string.Join(",", addresses)}";
     }
 
     // The strict host and whether private DNS is in use on one link.

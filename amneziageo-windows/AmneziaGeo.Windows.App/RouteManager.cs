@@ -383,6 +383,88 @@ internal sealed partial class RouteManager
         return prefixLength > 1 && !ownAdapter;
     }
 
+    /// <summary>
+    /// Whether an adapter that is not ours has a route to the address.
+    /// </summary>
+    public bool ReachesBeside(IPAddress address)
+    {
+        if (BestRouteIndex(address, 0) is not { } best)
+        {
+            return false;
+        }
+
+        if (!IsOwnAdapter(best))
+        {
+            return true;
+        }
+
+        foreach (var nic in NetworkAdapters.All())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up
+                || nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel
+                || IsTunnelAdapter(nic)
+                || AdapterIndex(nic, address.AddressFamily) is not { } index)
+            {
+                continue;
+            }
+
+            if (BestRouteIndex(address, index) == index)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The interface of the best route to the address, kept to the named interface when one is given.
+    private static uint? BestRouteIndex(IPAddress address, uint interfaceIndex)
+    {
+        var dest = ToSockaddr(address);
+        var best = new MIB_IPFORWARD_ROW2();
+        var source = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, interfaceIndex, IntPtr.Zero, ref dest, 0, ref best, ref source) != NoError)
+        {
+            return null;
+        }
+
+        return best.InterfaceIndex;
+    }
+
+    // The address as the routing calls take it.
+    private static SOCKADDR_INET ToSockaddr(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return new SOCKADDR_INET { si_family = AfInet, sin_addr = ToRouteAddress(address) };
+        }
+
+        var bytes = address.GetAddressBytes();
+        return new SOCKADDR_INET
+        {
+            si_family = AfInet6,
+            sin6_addr_0 = BitConverter.ToUInt32(bytes, 0),
+            sin6_addr_1 = BitConverter.ToUInt32(bytes, 4),
+            sin6_addr_2 = BitConverter.ToUInt32(bytes, 8),
+            sin6_addr_3 = BitConverter.ToUInt32(bytes, 12),
+        };
+    }
+
+    // The adapter's interface index for the family.
+    private static uint? AdapterIndex(NetworkInterface nic, AddressFamily family)
+    {
+        try
+        {
+            var properties = nic.GetIPProperties();
+            var index = family == AddressFamily.InterNetworkV6 ? properties.GetIPv6Properties()?.Index : properties.GetIPv4Properties()?.Index;
+            return index is { } found ? (uint)found : null;
+        }
+        catch (NetworkInformationException)
+        {
+            return null;
+        }
+    }
+
     // Whether the interface index is an adapter of ours.
     private bool IsOwnAdapter(uint interfaceIndex)
     {

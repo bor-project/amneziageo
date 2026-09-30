@@ -242,6 +242,27 @@ internal sealed class AgentControl
     }
 
     /// <summary>
+    /// Leaves the tunnel of the selected target standing and wakes its pending retry; answers whether one runs.
+    /// </summary>
+    public bool KeepRunning()
+    {
+        if (!_running || _restartRequired || string.IsNullOrEmpty(_runningTarget)
+            || !string.Equals(_runningTarget, _target, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _retryAttempt = 0;
+        if (!_connected)
+        {
+            WakeIfRetrying();
+        }
+
+        SignalStatus();
+        return true;
+    }
+
+    /// <summary>
     /// Selects the active target config without changing running state.
     /// </summary>
     public void SetTarget(string name)

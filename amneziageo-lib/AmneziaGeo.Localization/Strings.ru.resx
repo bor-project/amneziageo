@@ -236,7 +236,7 @@
     <value>Переподключаться автоматически</value>
   </data>
   <data name="General_PeriodicReconnectHint" xml:space="preserve">
-    <value>Если подключение пропало, повторять попытки через заданный интервал.</value>
+    <value>Если подключение пропало, повторять попытки: сразу, через 5, 10 и 20 с, дальше через заданный интервал.</value>
   </data>
   <data name="General_MultiServer" xml:space="preserve">
     <value>Разрешить несколько VPN</value>
@@ -266,7 +266,7 @@
     <value>Интервал повтора</value>
   </data>
   <data name="General_ReconnectIntervalHint" xml:space="preserve">
-    <value>Пауза между попытками подключения.</value>
+    <value>Наибольшая пауза между попытками подключения.</value>
   </data>
   <data name="General_Seconds" xml:space="preserve">
     <value>с</value>

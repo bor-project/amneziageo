@@ -236,7 +236,7 @@
     <value>Reconnect automatically</value>
   </data>
   <data name="General_PeriodicReconnectHint" xml:space="preserve">
-    <value>If the connection drops, keep retrying at the set interval.</value>
+    <value>If the connection drops, keep retrying: at once, after 5, 10 and 20 s, then at the set interval.</value>
   </data>
   <data name="General_MultiServer" xml:space="preserve">
     <value>Allow several VPNs</value>
@@ -266,7 +266,7 @@
     <value>Retry interval</value>
   </data>
   <data name="General_ReconnectIntervalHint" xml:space="preserve">
-    <value>Pause between connection attempts.</value>
+    <value>Longest pause between connection attempts.</value>
   </data>
   <data name="General_Seconds" xml:space="preserve">
     <value>sec</value>

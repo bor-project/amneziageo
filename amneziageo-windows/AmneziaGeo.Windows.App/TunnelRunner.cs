@@ -974,6 +974,7 @@ internal sealed class TunnelRunner(
         }
 
         logger.LogInformation("{Name}: everything is prepared in {Elapsed} ms, starting the tunnel", name, connectSw.ElapsedMilliseconds);
+        _ = Task.Run(() => TunnelAddressCheck.RunAsync(name, TunnelDevice.NameOf(name), TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config)), logger, sessionCts.Token), CancellationToken.None);
 
         try
         {

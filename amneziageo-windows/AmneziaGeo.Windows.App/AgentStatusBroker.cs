@@ -1892,6 +1892,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         if (connect)
         {
+            var owned = control.Running && activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
             activeScope.SetOwner(scope.UserRoot, scope.Sid);
             var target = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
             if (!string.IsNullOrEmpty(target))
@@ -1901,6 +1902,13 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
             await store.SetSettingAsync("last-owner-target", target ?? string.Empty, ct);
+            if (owned && control.KeepRunning())
+            {
+                logger.LogInformation("connect requested by {Root}; {Config} is already {State}, so it is left standing",
+                    scope.UserRoot, control.RunningTarget, control.Connected ? "connected" : "being dialled");
+                return new IpcAck(true, control.Connected ? "connected" : "connecting");
+            }
+
             control.SetRunning(true);
             logger.LogInformation("connect requested by {Root}", scope.UserRoot);
             return new IpcAck(true, "connecting");

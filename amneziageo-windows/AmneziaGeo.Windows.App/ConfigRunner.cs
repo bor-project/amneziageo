@@ -21,6 +21,7 @@ internal sealed class ConfigRunner(
     ActiveTunnelScope activeScope,
     TunnelDutyRoster roster,
     GeoConfigurator geo,
+    RouteManager routes,
     ILogger<ConfigRunner> logger)
 {
     private IStateStore store => activeScope.Store;
@@ -30,6 +31,12 @@ internal sealed class ConfigRunner(
 
     // No-handshake/no-rx window: data-driven unreachable signal.
     private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
+
+    // How often the tunnel process is asked about the server during an attempt.
+    private static readonly TimeSpan _statusPoll = TimeSpan.FromMilliseconds(250);
+
+    // How often the way to the server is looked for while there is none.
+    private static readonly TimeSpan _networkLook = TimeSpan.FromSeconds(2);
 
     // Stop budget before the tunnel process is killed outright.
     private static readonly TimeSpan _stopTimeout = TimeSpan.FromSeconds(15);
@@ -271,14 +278,19 @@ internal sealed class ConfigRunner(
         }
     }
 
-    // Dials with retry. Transient/network failures keep the connection desired and retry - a capped backoff by
-    // default, the configured interval when periodic reconnect is on - while local/config failures latch and
-    // stop. Returns true on handshake, false on a fatal failure or a change signal (disconnect/reconfigure).
-    // The attempt counter lives on the control so it survives a signal-driven supervisor re-entry.
+    // Dials with retry. Transient/network failures keep the connection desired and retry after a pause that grows
+    // up to the configured interval, while local/config failures latch and stop. Returns true on handshake, false
+    // on a fatal failure or a change signal (disconnect/reconfigure). The attempt counter lives on the control so
+    // it survives a signal-driven supervisor re-entry.
     private async Task<(bool Ok, string Config)> ConnectWithRetryAsync(string config, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
+            if (!await WaitForNetworkAsync(config, ct).ConfigureAwait(false))
+            {
+                return (false, config);
+            }
+
             var outcome = await TryConnectAsync(config, ct);
             if (outcome.Ok)
             {
@@ -303,7 +315,7 @@ internal sealed class ConfigRunner(
             }
 
             var attempt = control.NextRetry();
-            var delay = RetryDelay(attempt);
+            var delay = RetryDelay(attempt, _settings.PeriodicReconnect, _settings.PeriodicReconnectIntervalSeconds);
             logger.LogWarning("could not reach the server of {Config}: {Reason}; trying again in {Delay}s, attempt {Attempt}",
                 config, outcome.Reason, (int)delay.TotalSeconds, attempt);
             await SetStateAsync("connecting");
@@ -354,17 +366,89 @@ internal sealed class ConfigRunner(
         _ => false,
     };
 
-    // Wait before the next attempt: the configured periodic interval when auto-reconnect is on, else a capped
-    // exponential backoff (5, 10, 20, 40, 60s).
-    private TimeSpan RetryDelay(int attempt)
+    // Pauses after the first four failures in a row; the ones after wait the ceiling.
+    private static readonly int[] _retrySteps = [0, 5, 10, 20];
+
+    // Longest pause between attempts while auto-reconnect is off.
+    private const int RetryCeilingSeconds = 60;
+
+    /// <summary>
+    /// The pause before the next attempt, capped by the retry interval while auto-reconnect is on.
+    /// </summary>
+    internal static TimeSpan RetryDelay(int attempt, bool periodic, int intervalSeconds)
     {
-        if (_settings.PeriodicReconnect && _settings.PeriodicReconnectIntervalSeconds > 0)
+        var ceiling = periodic && intervalSeconds > 0 ? intervalSeconds : RetryCeilingSeconds;
+        var index = Math.Max(attempt, 1) - 1;
+        var step = index < _retrySteps.Length ? _retrySteps[index] : ceiling;
+        return TimeSpan.FromSeconds(Math.Min(step, ceiling));
+    }
+
+    // Holds the dial while this machine has no way to the server beside the tunnels; a network change or the next
+    // look ends each wait.
+    private async Task<bool> WaitForNetworkAsync(string member, CancellationToken ct)
+    {
+        var server = await ServerAddressAsync(member, ct).ConfigureAwait(false);
+        if (OnNetwork(server))
         {
-            return TimeSpan.FromSeconds(_settings.PeriodicReconnectIntervalSeconds);
+            return true;
         }
 
-        var steps = Math.Min(Math.Max(attempt - 1, 0), 4);
-        return TimeSpan.FromSeconds(Math.Min(60, 5 * (1 << steps)));
+        if (server is null)
+        {
+            logger.LogInformation("{Member}: this machine is not on a network yet, so the tunnel is not started; it is dialled as soon as one is there", member);
+        }
+        else
+        {
+            logger.LogInformation("{Member}: this machine has no way to the server {Server} yet, so the tunnel is not started; it is dialled as soon as there is one", member, server);
+        }
+
+        var watch = Stopwatch.StartNew();
+        while (!ct.IsCancellationRequested)
+        {
+            await WaitRetryAsync(_networkLook, ct).ConfigureAwait(false);
+            if (OnNetwork(server))
+            {
+                logger.LogInformation("{Member}: a way to the server is there after {Sec}s, so the tunnel is started", member, (int)watch.Elapsed.TotalSeconds);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Whether the server is reachable beside the tunnels; with its address unknown, whether this machine is on a
+    // network at all.
+    private bool OnNetwork(IPAddress? server)
+    {
+        return server is null ? UnderlayReady() : routes.ReachesBeside(server);
+    }
+
+    // The address of the member's server, from its configuration or from the last time its name resolved.
+    private async Task<IPAddress?> ServerAddressAsync(string member, CancellationToken ct)
+    {
+        var text = await store.GetConfigTextAsync(member, ct).ConfigureAwait(false) ?? string.Empty;
+        var cached = await store.GetSettingAsync(TunnelPaths.EndpointIpKey(member), ct).ConfigureAwait(false);
+        return ServerAddress(WgConfigEditor.GetEndpoint(text), cached);
+    }
+
+    /// <summary>
+    /// The server address a dial checks the way to: the one the configuration names, else the one that worked
+    /// last time.
+    /// </summary>
+    internal static IPAddress? ServerAddress(string? endpoint, string? cached)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            return null;
+        }
+
+        var host = Host(endpoint.Trim()).Trim('[', ']');
+        if (IPAddress.TryParse(host, out var literal))
+        {
+            return literal;
+        }
+
+        return IPAddress.TryParse(cached, out var known) ? known : null;
     }
 
     // The retargeted latch after a live rename moved the config.
@@ -470,15 +554,6 @@ internal sealed class ConfigRunner(
             logger.LogInformation("{Member}: another tunnel holds this machine's name lookups, so rules by domain do not apply to it - only rules by address", member);
         }
 
-        // Hold the tunnel back while the machine has no network of its own. Right after a restart the agent is
-        // up seconds before the adapters are, and a tunnel raised into a machine with nowhere to send its
-        // handshake only burns the attempt; the network watcher wakes this dial the moment an address appears.
-        if (!UnderlayReady())
-        {
-            logger.LogInformation("{Member}: this machine is not on a network yet, so the tunnel is not started; it is dialled as soon as one is there", member);
-            return new ConnectOutcome(false, ConnectFailureReason.UnderlayUnreachable, string.Empty);
-        }
-
         // A service left half-started by an earlier run refuses every start with "already running", so the
         // retry never gets past it and the tunnel never comes up; it is forced down before this attempt.
         if (serviceManager.QueryState(member) == "PENDING")
@@ -497,12 +572,11 @@ internal sealed class ConfigRunner(
                 member, created, ScError(created), started, ScError(started));
         }
 
-        var start = DateTimeOffset.UtcNow;
-        var deadline = start.AddSeconds(_settings.ConnectTimeoutSeconds);
+        var window = new ConnectWindow(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(_settings.ConnectTimeoutSeconds), _noResponseWindow);
         var sawService = false;
         var serverSilent = false;
-        var lastHeartbeat = start;
-        while (DateTimeOffset.UtcNow < deadline)
+        var lastHeartbeat = window.Started;
+        while (!window.Over(DateTimeOffset.UtcNow))
         {
             if (ct.IsCancellationRequested)
             {
@@ -511,13 +585,15 @@ internal sealed class ConfigRunner(
 
             if (uapi.TryGetPeerStatus(member) is { } status)
             {
-                var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
+                var now = DateTimeOffset.UtcNow;
+                window.Answer(now);
+                var elapsed = (int)(now - window.Started).TotalMilliseconds;
                 // Per-poll handshake detail for Debug/Trace.
-                logger.LogDebug("{Member}: waiting for the server - last handshake {Handshake}, sent {Tx} B, received {Rx} B, {Sec}s into this attempt",
+                logger.LogDebug("{Member}: waiting for the server - last handshake {Handshake}, sent {Tx} B, received {Rx} B, {Ms} ms into this attempt",
                     member, LastHandshake(status.HandshakeSec), status.TxBytes, status.RxBytes, elapsed);
                 if (status.HandshakeSec > 0)
                 {
-                    logger.LogInformation("{Member}: the server answered after {Sec}s, the tunnel is up", member, elapsed);
+                    logger.LogInformation("{Member}: the server answered after {Ms} ms, the tunnel is up", member, elapsed);
                     return ConnectOutcome.Success;
                 }
 
@@ -525,18 +601,19 @@ internal sealed class ConfigRunner(
                 if (!sawService)
                 {
                     sawService = true;
-                    logger.LogInformation("{Member}: the tunnel process is running; waiting for the server to answer", member);
+                    lastHeartbeat = now;
+                    logger.LogInformation("{Member}: the tunnel process is running after {Ms} ms; waiting for the server to answer", member, elapsed);
                 }
 
-                if (DateTimeOffset.UtcNow - lastHeartbeat >= TimeSpan.FromSeconds(4))
+                if (now - lastHeartbeat >= TimeSpan.FromSeconds(4))
                 {
-                    lastHeartbeat = DateTimeOffset.UtcNow;
+                    lastHeartbeat = now;
                     logger.LogInformation("{Member}: still no answer from the server - sent {Tx} B, received {Rx} B in {Sec}s",
-                        member, status.TxBytes, status.RxBytes, elapsed);
+                        member, status.TxBytes, status.RxBytes, elapsed / 1000);
                 }
 
                 // No rx after the window: server silent, give up.
-                if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
+                if (status is { HandshakeSec: 0, RxBytes: 0 } && window.Silent(now))
                 {
                     logger.LogWarning("{Member}: the server sent nothing back in {Sec}s ({Tx} B went out), so it is unreachable - check the address, the port and whether the server is running",
                         member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
@@ -548,10 +625,10 @@ internal sealed class ConfigRunner(
             {
                 // Service not up yet; Trace only.
                 logger.LogTrace("{Member}: tunnel service not responding over UAPI yet ({Sec}s)",
-                    member, (int)(DateTimeOffset.UtcNow - start).TotalSeconds);
+                    member, (int)(DateTimeOffset.UtcNow - window.Started).TotalSeconds);
             }
 
-            await DelayAsync(TimeSpan.FromSeconds(1), ct);
+            await DelayAsync(_statusPoll, ct);
         }
 
         if (ct.IsCancellationRequested)

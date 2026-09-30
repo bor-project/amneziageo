@@ -717,7 +717,7 @@ internal sealed class TunnelRunner(
         var adapterIndex = default(uint?);
         uint? TunnelInterface() => adapterIndex ??= routes.FindTunnelIndex(name);
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport, appSettings.RouteTtlSeconds);
         session.SetProxy(proxy);
 
         // The names kept on the own network with these suffixes.
@@ -1060,13 +1060,14 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport, int routeTtlSeconds)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
         var (lanIp, lanPool) = LanResolvers(lanUpstream);
         var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport);
+        proxy.SetRouteTtl(routeTtlSeconds);
         if (!listen)
         {
             // It answers the holder of the machine's lookups over the pipe, so it serves no socket of its own.
@@ -1883,6 +1884,9 @@ internal sealed class TunnelRunner(
             var current = await settings.LoadAsync(ct);
             routing.SetTtl(current.RouteTtlSeconds);
             session.Tracker?.SetTtl(current.RouteTtlSeconds);
+            session.Proxy?.SetRouteTtl(current.RouteTtlSeconds);
+            // The system asks again for what it holds under the previous lifetime.
+            dns.FlushCache();
             logger.LogInformation("an address unused for {Ttl} s is now forgotten and decided again on the next contact", current.RouteTtlSeconds);
         }
         catch (Exception ex)

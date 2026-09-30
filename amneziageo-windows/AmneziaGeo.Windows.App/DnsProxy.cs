@@ -79,6 +79,8 @@ internal sealed class DnsProxy
 
     private readonly List<UdpClient> _servers = [];
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
+    // Longest an answer is kept, here or by the client: the lifetime of the routes it puts in place.
+    private volatile int _routeTtlSeconds = int.MaxValue;
     // Coalesces concurrent identical (name,type) misses onto a single upstream query.
     private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _inflight = new(StringComparer.Ordinal);
     // Per-name Environment.TickCount64 of the last background revalidate, to rate-limit them.
@@ -239,7 +241,8 @@ internal sealed class DnsProxy
     /// </summary>
     public IPAddress? BoundV6 { get; }
 
-    private sealed record CacheEntry(byte[] Response, DateTime Expiry);
+    // An answer and the Environment.TickCount64 it expires at.
+    private sealed record CacheEntry(byte[] Response, long Expiry);
 
     /// <summary>
     /// Serves DNS on every bound loopback address until the sockets close (process exit).
@@ -280,6 +283,15 @@ internal sealed class DnsProxy
     {
         _cache.Clear();
         _bypass.Clear();
+    }
+
+    /// <summary>
+    /// Sets the lifetime of the routes an answer puts in place and drops the cached answers.
+    /// </summary>
+    public void SetRouteTtl(int seconds)
+    {
+        _routeTtlSeconds = Math.Max(seconds, 0);
+        _cache.Clear();
     }
 
     /// <summary>
@@ -1156,7 +1168,8 @@ internal sealed class DnsProxy
                 _logger.LogDebug("{Name}: a client of the access point is answered with {Stand}, so this machine carries what it opens", name, stand);
             }
 
-            respond(response);
+            // The client keeps the answer no longer than its routes live.
+            respond(DnsMessage.CapTtl(response, _routeTtlSeconds));
         }
         catch (Exception)
         {
@@ -1406,9 +1419,11 @@ internal sealed class DnsProxy
         var key = CacheKey(name, type);
         if (_cache.TryGetValue(key, out var entry))
         {
-            if (entry.Expiry > DateTime.UtcNow)
+            var left = entry.Expiry - Environment.TickCount64;
+            if (left > 0)
             {
-                response = (byte[])entry.Response.Clone();
+                // The client keeps the answer no longer than it lives here.
+                response = DnsMessage.CapTtl(entry.Response, (int)(left / 1000));
                 if (response.Length >= 2 && query.Length >= 2)
                 {
                     response[0] = query[0];
@@ -1438,13 +1453,19 @@ internal sealed class DnsProxy
             return;
         }
 
-        var seconds = Math.Clamp(ttl, MinCacheSeconds, MaxCacheSeconds);
+        // An answer lives here no longer than the routes it put in place.
+        var seconds = Math.Min(Math.Clamp(ttl, MinCacheSeconds, MaxCacheSeconds), _routeTtlSeconds);
+        if (seconds <= 0)
+        {
+            return;
+        }
+
         if (_cache.Count >= MaxCacheEntries)
         {
             _cache.Clear();
         }
 
-        _cache[CacheKey(name, type)] = new CacheEntry((byte[])response.Clone(), DateTime.UtcNow.AddSeconds(seconds));
+        _cache[CacheKey(name, type)] = new CacheEntry((byte[])response.Clone(), Environment.TickCount64 + (seconds * 1000L));
     }
 
     private static string CacheKey(string name, int type)

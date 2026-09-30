@@ -272,6 +272,50 @@ internal static class DnsMessage
     }
 
     /// <summary>
+    /// Returns a copy of the message whose answer records are kept no longer than <paramref name="seconds"/>.
+    /// </summary>
+    public static byte[] CapTtl(byte[] message, int seconds)
+    {
+        var copy = (byte[])message.Clone();
+        if (copy.Length < 12)
+        {
+            return copy;
+        }
+
+        var cap = (uint)Math.Max(seconds, 0);
+        var questionCount = (copy[4] << 8) | copy[5];
+        var answerCount = (copy[6] << 8) | copy[7];
+        var offset = 12;
+        for (var i = 0; i < questionCount; i++)
+        {
+            SkipName(copy, ref offset);
+            offset += 4;
+        }
+
+        for (var i = 0; i < answerCount && offset + 10 <= copy.Length; i++)
+        {
+            SkipName(copy, ref offset);
+            if (offset + 10 > copy.Length)
+            {
+                break;
+            }
+
+            var ttl = ((uint)copy[offset + 4] << 24) | ((uint)copy[offset + 5] << 16) | ((uint)copy[offset + 6] << 8) | copy[offset + 7];
+            if (ttl > cap)
+            {
+                copy[offset + 4] = (byte)(cap >> 24);
+                copy[offset + 5] = (byte)(cap >> 16);
+                copy[offset + 6] = (byte)(cap >> 8);
+                copy[offset + 7] = (byte)cap;
+            }
+
+            offset += 10 + ((copy[offset + 8] << 8) | copy[offset + 9]);
+        }
+
+        return copy;
+    }
+
+    /// <summary>
     /// Returns the IPv4 (A) and IPv6 (AAAA) addresses from the answer section.
     /// </summary>
     public static IReadOnlyList<IPAddress> Addresses(byte[] message)

@@ -18,7 +18,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// <summary>
 /// Logs screen: one viewer over the selected source. A window of the log table is read from the DB on demand
 /// (nothing is cached across a page change); the header carries what the source records - capture verbosity
-/// (ageo) or the routing-log switch (routes).
+/// (ageo, dns) or the routing-log switch (routes).
 /// </summary>
 internal partial class LogsViewModel : ViewModelBase
 {
@@ -219,9 +219,9 @@ internal partial class LogsViewModel : ViewModelBase
     public bool ShowShortNav => IsStoredLog && IsShort && !IsSlim;
 
     /// <summary>
-    /// Whether a second list stands beside the journal: the level of ageo or the way of the live journal.
+    /// Whether a second list stands beside the journal: the level of a leveled one or the way of the live journal.
     /// </summary>
-    public bool HasSideChoice => IsAgentLog || IsLiveLog;
+    public bool HasSideChoice => IsLeveledLog || IsLiveLog;
 
     private void NotifyShape()
     {
@@ -254,9 +254,17 @@ internal partial class LogsViewModel : ViewModelBase
     public const string ConfigType = "config";
 
     /// <summary>
-    /// The selectable sources. The tokens are the same in every language.
+    /// The resolver log: what the name subsystem records.
     /// </summary>
-    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType, ConfigType];
+    public const string DnsType = "dns";
+
+    /// <summary>
+    /// The selectable sources, without the resolver log where the platform keeps none. The tokens are the same
+    /// in every language.
+    /// </summary>
+    public ObservableCollection<string> LogTypes { get; } = OperatingSystem.IsAndroid()
+        ? ["ageo", "routes", LiveType, ConfigType]
+        : ["ageo", DnsType, "routes", LiveType, ConfigType];
 
     [ObservableProperty]
     private string _selectedLogType = "ageo";
@@ -265,6 +273,16 @@ internal partial class LogsViewModel : ViewModelBase
     /// Whether the viewer is on the agent log (which carries a level; the routing log does not).
     /// </summary>
     public bool IsAgentLog => SelectedLogType == "ageo";
+
+    /// <summary>
+    /// Whether the viewer is on the resolver log.
+    /// </summary>
+    public bool IsDnsLog => SelectedLogType == DnsType;
+
+    /// <summary>
+    /// Whether the viewer is on a log whose rows carry a level.
+    /// </summary>
+    public bool IsLeveledLog => IsAgentLog || IsDnsLog;
 
     /// <summary>
     /// Whether the viewer is on the routing log.
@@ -305,6 +323,8 @@ internal partial class LogsViewModel : ViewModelBase
     partial void OnSelectedLogTypeChanged(string value)
     {
         OnPropertyChanged(nameof(IsAgentLog));
+        OnPropertyChanged(nameof(IsDnsLog));
+        OnPropertyChanged(nameof(IsLeveledLog));
         OnPropertyChanged(nameof(IsRouteLog));
         OnPropertyChanged(nameof(IsProbeLog));
         OnPropertyChanged(nameof(IsLiveLog));
@@ -604,7 +624,7 @@ internal partial class LogsViewModel : ViewModelBase
         }
 
         // The level the agent records at is the floor the viewer shows, so the rows follow the setting.
-        if (IsAgentLog && IsActive)
+        if (IsLeveledLog && IsActive)
         {
             ResetAndReload();
         }
@@ -1140,7 +1160,7 @@ internal partial class LogsViewModel : ViewModelBase
             type,
             LogLimit.ToString(CultureInfo.InvariantCulture),
             (beforeId ?? 0).ToString(CultureInfo.InvariantCulture),
-            type == "ageo" ? CaptureLevel : string.Empty,
+            (type is "ageo" or DnsType) ? CaptureLevel : string.Empty,
             SearchQuery ?? string.Empty,
         };
 

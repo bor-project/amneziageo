@@ -108,6 +108,8 @@ public sealed class RoutingCache
     private readonly ILiveDestinations _live;
     private readonly bool _split;
     private readonly bool _carriesDefault;
+    // The direct ranges of a full tunnel stand in the routes of the machine.
+    private readonly bool _directStanding;
     private long _idleTtlMs;
     private int _scansPerSweep;
     private readonly ILogger<RoutingCache> _logger;
@@ -130,13 +132,14 @@ public sealed class RoutingCache
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null, bool carriesDefault = true, int hot = HotEntries)
+    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null, bool carriesDefault = true, int hot = HotEntries, bool directStanding = false)
     {
         _hot = Math.Clamp(hot, 0, MaxEntries);
         _applier = applier;
         _live = live;
         _split = split;
         _carriesDefault = carriesDefault;
+        _directStanding = directStanding;
         SetTtl(ttlSeconds);
         _logger = logger;
         _rules = Build(proxy, direct, block, 0);
@@ -363,10 +366,11 @@ public sealed class RoutingCache
 
         Volatile.Write(ref existing.LastTouch, now);
         existing.ByName = true;
-        existing.Rules = Volatile.Read(ref _rules).Generation;
+        var rules = Volatile.Read(ref _rules);
+        existing.Rules = rules.Generation;
 
         // An adopted address belongs to the domain tracker; the two must not install competing routes for it.
-        if (existing.Verdict == verdict || existing.Plan == RoutePlan.External)
+        if (existing.Plan == RoutePlan.External || (existing.Verdict == verdict && !Replanned(rules, existing)))
         {
             if (!Installed(existing))
             {
@@ -631,7 +635,7 @@ public sealed class RoutingCache
                 Address = address,
                 Numeric = value,
                 Verdict = verdict,
-                Plan = Decide(verdict, route.ByApp),
+                Plan = Decide(rules, verdict, value, route.ByApp),
                 ByApp = route.ByApp,
                 ByName = carried is not null,
                 Rules = rules.Generation,
@@ -884,7 +888,7 @@ public sealed class RoutingCache
         {
             Release(entry, generation, filters, withdrawn);
             entry.Verdict = verdict;
-            entry.Plan = Decide(verdict);
+            entry.Plan = Decide(Volatile.Read(ref _rules), verdict, entry.Numeric);
         }
 
         _applier.RemoveTunnel(withdrawn);
@@ -910,7 +914,7 @@ public sealed class RoutingCache
             var named = byName?.Invoke(entry.Address) ?? RouteVerdict.None;
             entry.ByName = named != RouteVerdict.None;
             var verdict = entry.ByName ? named : Evaluate(rules, entry.Numeric);
-            if (verdict == entry.Verdict)
+            if (verdict == entry.Verdict && !Replanned(rules, entry))
             {
                 continue;
             }
@@ -920,6 +924,15 @@ public sealed class RoutingCache
         }
 
         return moved;
+    }
+
+    // Whether the ranges in force ask another path for a held destination than the one its verdict took.
+    private bool Replanned(RuleSet rules, Entry entry)
+    {
+        return _directStanding
+            && !entry.ByApp
+            && entry.Plan != RoutePlan.External
+            && Decide(rules, entry.Verdict, entry.Numeric) != entry.Plan;
     }
 
     // Decides a destination admitted under an older rule set again on its next contact; true when it changed side.
@@ -933,9 +946,20 @@ public sealed class RoutingCache
         }
 
         entry.Rules = rules.Generation;
-        if (entry.ByName || entry.ByApp || entry.Plan == RoutePlan.External)
+        if (entry.ByApp || entry.Plan == RoutePlan.External)
         {
             return false;
+        }
+
+        if (entry.ByName)
+        {
+            if (!Replanned(rules, entry))
+            {
+                return false;
+            }
+
+            Reclassify(entry, entry.Verdict, now);
+            return true;
         }
 
         var verdict = Evaluate(rules, entry.Numeric);
@@ -958,7 +982,7 @@ public sealed class RoutingCache
             Address = ToAddress(address),
             Numeric = address,
             Verdict = verdict,
-            Plan = Decide(verdict, app),
+            Plan = Decide(rules, verdict, address, app),
             ByApp = app,
             ByName = forced is not null,
             Rules = rules.Generation,
@@ -1388,7 +1412,7 @@ public sealed class RoutingCache
     // verdict exists - so Proxy earns the tunnel, Block stays dropped, and everything else earns a permit.
     // app: claimed by an app rule. Block still wins, and so does an explicit Direct range - the user pinned that
     // destination to the physical path on purpose.
-    private RoutePlan Decide(RouteVerdict verdict, bool app = false)
+    private RoutePlan Decide(RuleSet rules, RouteVerdict verdict, uint address, bool app = false)
     {
         if (verdict == RouteVerdict.Block)
         {
@@ -1400,6 +1424,12 @@ public sealed class RoutingCache
             if (verdict == RouteVerdict.Direct)
             {
                 return RoutePlan.Bypass;
+            }
+
+            // A name sends the address through the tunnel past a direct range that stands in the routes.
+            if (_directStanding && verdict == RouteVerdict.Proxy && rules.Direct.Contains(address))
+            {
+                return RoutePlan.Tunnel;
             }
 
             // The default belongs to another tunnel of the set, so what a rule names here takes a route of its own.

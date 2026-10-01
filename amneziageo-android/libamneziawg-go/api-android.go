@@ -155,6 +155,32 @@ func wgSetConfig(handle int32, settings *C.char) int32 {
 	return 0
 }
 
+// Переводит сокет движка на другой порт источника и отпускает его мимо туннеля.
+//
+//export wgRebind
+func wgRebind(handle int32) int32 {
+	t, ok := tunnelHandles[handle]
+	if !ok {
+		return -1
+	}
+	if err := t.dev.IpcSet("listen_port=0\n"); err != nil {
+		return -1
+	}
+	bind, ok := t.dev.Bind().(*conn.StdNetBind)
+	if !ok {
+		return -1
+	}
+	fd, err := bind.PeekLookAtSocketFd4()
+	if err != nil {
+		return -1
+	}
+	if fn := t.tun.protect.Load(); fn == nil || !(*fn)(fd) {
+		return -1
+	}
+	t.dev.SendKeepalivesToPeersWithCurrentKeypair()
+	return 0
+}
+
 //export wgSetVerdicts
 func wgSetVerdicts(handle int32, spec *C.char) int32 {
 	t, ok := tunnelHandles[handle]

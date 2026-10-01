@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using System.Globalization;
 using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Linux.App;
@@ -9,71 +7,73 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal sealed class ProcNet : ILiveDestinations
 {
-    private static readonly string[] Tables =
+    private static readonly string[] Streams =
     [
         "/proc/net/tcp",
         "/proc/net/tcp6",
+    ];
+
+    private static readonly string[] Datagrams =
+    [
         "/proc/net/udp",
         "/proc/net/udp6",
     ];
 
-    private const int RemoteColumn = 2;
-    private const int V4HexLength = 8;
-    private const int V6HexLength = 32;
+    private readonly bool _dialedOnly;
 
     /// <summary>
-    /// Remote addresses of every current connection, host order. The socket tables name no image here, so nothing
-    /// is attributed to an app rule.
+    /// ctor
+    /// </summary>
+    public ProcNet(bool dialedOnly = false)
+    {
+        _dialedOnly = dialedOnly;
+    }
+
+    /// <summary>
+    /// Remote addresses of every current connection, host order; where only the dialed ones are asked for, a
+    /// connection this machine took in is left out. The socket tables name no image here, so nothing is attributed
+    /// to an app rule.
     /// </summary>
     public LiveDestinations Snapshot()
     {
         var peers = new HashSet<uint>();
-        foreach (var table in Tables)
+        var streams = Streams.Select(Read).ToList();
+        var accepting = _dialedOnly ? Accepting(streams) : null;
+        foreach (var table in streams)
         {
-            Read(table, peers);
+            SocketTables.Peers(table, accepting, peers);
+        }
+
+        foreach (var table in Datagrams)
+        {
+            SocketTables.Peers(Read(table), null, peers);
         }
 
         return new LiveDestinations(peers, []);
     }
 
-    private static void Read(string path, HashSet<uint> peers)
+    // The ports the stream tables show connections taken in on.
+    private static HashSet<int> Accepting(IReadOnlyList<string[]> tables)
+    {
+        var ports = new HashSet<int>();
+        foreach (var table in tables)
+        {
+            ports.UnionWith(SocketTables.Listeners(table));
+        }
+
+        return ports;
+    }
+
+    // The lines of a table past its heading; none when it cannot be read.
+    private static string[] Read(string path)
     {
         try
         {
-            foreach (var line in File.ReadLines(path).Skip(1))
-            {
-                var columns = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (columns.Length <= RemoteColumn)
-                {
-                    continue;
-                }
-
-                var colon = columns[RemoteColumn].IndexOf(':', StringComparison.Ordinal);
-                if (colon > 0 && Parse(columns[RemoteColumn][..colon]) is { } address)
-                {
-                    peers.Add(address);
-                }
-            }
+            return [.. File.ReadLines(path).Skip(1)];
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            return [];
         }
-    }
-
-    // Each address is printed as host-order words, and an IPv4 socket on a dual-stack listener shows up mapped.
-    private static uint? Parse(string hex)
-    {
-        if (hex.Length == V6HexLength)
-        {
-            var mapped = hex.StartsWith("0000000000000000FFFF0000", StringComparison.OrdinalIgnoreCase);
-            return mapped ? Parse(hex[24..]) : null;
-        }
-
-        if (hex.Length != V4HexLength || !uint.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var word) || word == 0)
-        {
-            return null;
-        }
-
-        return BinaryPrimitives.ReverseEndianness(word);
     }
 }

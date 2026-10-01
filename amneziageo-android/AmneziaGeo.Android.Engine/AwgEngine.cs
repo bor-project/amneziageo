@@ -72,6 +72,14 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
+    /// Binds the socket of the engine to another source port and excuses it from the tunnel.
+    /// </summary>
+    public static bool Rebind(int handle)
+    {
+        return RebindNative(handle) == 0;
+    }
+
+    /// <summary>
     /// Hands the shim the ranges it decides on its own, one "cidr=role" a line.
     /// </summary>
     public static bool SetVerdicts(int handle, string spec)
@@ -210,6 +218,9 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgSetConfig", StringMarshalling = StringMarshalling.Utf8)]
     private static partial int SetConfigNative(int handle, string settings);
+
+    [LibraryImport(Lib, EntryPoint = "wgRebind")]
+    private static partial int RebindNative(int handle);
 
     [LibraryImport(Lib, EntryPoint = "wgSetVerdicts", StringMarshalling = StringMarshalling.Utf8)]
     private static partial int SetVerdictsNative(int handle, string spec);

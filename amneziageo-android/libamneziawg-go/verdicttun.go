@@ -508,8 +508,11 @@ func (d *verdictTun) setProtector(fn func(int) bool) {
 // Столько ответов о владельце держим разом.
 const ownerCacheMax = 8192
 
-// Сколько ответ о владельце живёт: порт освобождается и достаётся другому приложению.
+// Пауза потока, после которой о владельце спрашиваем заново.
 const ownerHold = 3 * time.Second
+
+// Срок, через который ответ «чужой» у идущего потока сверяется снова.
+const ownerRecheck = 30 * time.Second
 
 // Владелец, каким его называет хост.
 const (
@@ -574,13 +577,16 @@ func (d *verdictTun) ours(packet []byte) bool {
 	return d.whose(packet, protoTcp) == ownerSelf
 }
 
-// Ответ хоста о владельце и срок, до которого он годен.
+// Ответ хоста о владельце потока.
 type ownerHeld struct {
 	verdict int
-	until   int64
+	// Когда спросить снова у идущего потока; ноль - не спрашивать, пока он идёт.
+	again int64
+	// Последний пакет потока.
+	last atomic.Int64
 }
 
-// Чьё это соединение, как его называет хост; ответ держится по протоколу и паре портов, пока не истечёт срок.
+// Чьё это соединение, как его называет хост; ответ держится по протоколу и паре портов, пока поток идёт.
 func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	head := int(packet[0]&0x0f) * 4
 	if head < 20 || len(packet) < head+4 {
@@ -591,12 +597,21 @@ func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	dstPort := binary.BigEndian.Uint16(packet[head+2 : head+4])
 	key := uint64(proto)<<32 | uint64(srcPort)<<16 | uint64(dstPort)
 	nanos := time.Now().UnixNano()
+	foreign := false
 	if kept, ok := d.owners.Load(key); ok {
-		if held, fits := kept.(ownerHeld); fits && held.until > nanos {
-			return held.verdict
-		}
+		if held, fits := kept.(*ownerHeld); fits {
+			last := held.last.Load()
+			running := nanos-last < int64(ownerHold)
+			if running && (held.again == 0 || nanos < held.again) {
+				if nanos-last >= int64(time.Second) {
+					held.last.Store(nanos)
+				}
 
-		d.owners.Delete(key)
+				return held.verdict
+			}
+
+			foreign = running && held.verdict == ownerOther
+		}
 	}
 
 	fn := d.owner.Load()
@@ -606,12 +621,36 @@ func (d *verdictTun) whose(packet []byte, proto uint8) int {
 
 	answer := (*fn)(proto, binary.BigEndian.Uint32(packet[12:16]), srcPort, binary.BigEndian.Uint32(packet[16:20]), dstPort)
 	if d.owned.Add(1) > ownerCacheMax {
-		d.owners.Clear()
-		d.owned.Store(1)
+		d.forget(nanos)
 	}
 
-	d.owners.Store(key, ownerHeld{answer, nanos + int64(ownerHold)})
+	held := &ownerHeld{verdict: answer}
+	held.last.Store(nanos)
+	// «Чужой» сверяется снова: первый раз скоро, дальше редко.
+	if answer == ownerOther {
+		held.again = nanos + int64(ownerHold)
+		if foreign {
+			held.again = nanos + int64(ownerRecheck)
+		}
+	}
+
+	d.owners.Store(key, held)
 	return answer
+}
+
+// Убирает ответы потоков, которые встали.
+func (d *verdictTun) forget(nanos int64) {
+	left := int64(0)
+	d.owners.Range(func(key, kept any) bool {
+		if held, fits := kept.(*ownerHeld); fits && nanos-held.last.Load() < int64(ownerHold) {
+			left++
+		} else {
+			d.owners.Delete(key)
+		}
+
+		return true
+	})
+	d.owned.Store(left)
 }
 
 // Поднимает или гасит свой стек под потоки мимо туннеля.
@@ -736,10 +775,9 @@ func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 					continue
 				}
 			default:
-				// Поток решает релей, датаграмму - её владелец: приложение из правил едет туннелем, чужая
-				// уходит мимо, как ушёл бы поток того же приложения.
+				// Поток решает релей, датаграмму к адресу без правила - её владелец.
 				packet := bufs[i][offset : offset+sizes[i]]
-				if d.stream(packet) || (d.datagram(packet) && d.aside(packet)) {
+				if d.stream(packet) || (!named && d.datagram(packet) && d.aside(packet)) {
 					d.passed.Add(1)
 					continue
 				}

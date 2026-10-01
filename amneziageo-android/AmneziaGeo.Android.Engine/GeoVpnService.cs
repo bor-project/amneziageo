@@ -186,6 +186,7 @@ public sealed class GeoVpnService : VpnService
     private SessionReport? _routed;
     private LocalProxyServer? _proxy;
     private TunShape? _shape;
+    private readonly object _swapGate = new();
     private IReadOnlyList<string> _excluded = [];
     private bool _liveTun;
     private int _ttlSeconds = 300;
@@ -207,11 +208,9 @@ public sealed class GeoVpnService : VpnService
     private bool _localCarveForced;
     private int _reraising;
 
-    // The ladder a link that has stopped carrying is repaired by. This platform hands the engine a tun and a
-    // config and takes nothing back: neither the socket nor the endpoint of a running session can be moved from
-    // here, so the one repair left is raising the session again - and the ladder is what keeps that from becoming
-    // a loop, spacing the attempts and standing down when they stop helping.
-    private readonly LinkRecovery _recovery = new([RecoveryStep.Restart]);
+    // The ladder a link that has stopped carrying is repaired by: another source port for the engine, then the
+    // session raised again.
+    private readonly LinkRecovery _recovery = new([RecoveryStep.Rebind, RecoveryStep.Restart]);
 
     // Server names and the IPv4 addresses they resolved to last.
     private static readonly ConcurrentDictionary<string, string> _resolvedHosts = new(StringComparer.OrdinalIgnoreCase);
@@ -458,14 +457,90 @@ public sealed class GeoVpnService : VpnService
         }
 
         _recovery.Reset();
-        var swallowed = new List<string>(LocalSubnets()).FindAll(subnet => !_carved.Contains(subnet));
+        var shape = _shape;
+        if (shape is null)
+        {
+            return;
+        }
+
+        // A mobile network has nobody beside the device on it.
+        var mobile = MobileSubnets();
+        var carved = _carved;
+        var joined = new List<string>(LocalSubnets()).FindAll(subnet => !carved.Contains(subnet) && !mobile.Contains(subnet));
+        var swallowed = SystemRoutes.Captured(shape.Routes, joined);
         if (swallowed.Count == 0)
         {
             return;
         }
 
-        Reraise($"the device now sits on {string.Join(", ", swallowed)}, which this tunnel carries; raising the "
-            + "session again so the network around the device stays reachable");
+        Recarve(swallowed);
+    }
+
+    // Takes the networks the device has joined out of the running tunnel; the session is raised again only where
+    // that cannot be done under it.
+    private void Recarve(IReadOnlyList<string> joined)
+    {
+        var sits = $"the device now sits on {string.Join(", ", joined)}, which this tunnel carries";
+        lock (_swapGate)
+        {
+            var shape = _shape;
+            var handle = _handle;
+            if (shape is null || handle < 0)
+            {
+                return;
+            }
+
+            if (Refit(shape, handle, joined))
+            {
+                _carved = [.. _carved, .. joined];
+                var kept = $"{sits}; it leaves the tunnel on its own and the session stays";
+                Report(kept);
+                Note("tunnel", kept);
+                return;
+            }
+        }
+
+        Reraise($"{sits}; raising the session again so the network around the device stays reachable");
+    }
+
+    // Hands the networks to the engine where it sends the local network out itself, and rebuilds the tun without
+    // them otherwise.
+    private bool Refit(TunShape shape, int handle, IReadOnlyList<string> joined)
+    {
+        if (shape.LocalInside)
+        {
+            var verdicts = new StringBuilder(_verdicts);
+            foreach (var subnet in joined)
+            {
+                verdicts.Append(subnet).Append("=direct\n");
+            }
+
+            var spec = new StringBuilder(verdicts.ToString());
+            foreach (var address in Refused())
+            {
+                spec.Append('\n').Append(address).Append("/32=block");
+            }
+
+            if (!AwgEngine.SetVerdicts(handle, spec.ToString()))
+            {
+                return false;
+            }
+
+            _verdicts = verdicts.ToString();
+            return true;
+        }
+
+        var routes = SystemRoutes.Without(shape.Routes, joined);
+        var next = shape with { Routes = routes };
+        if (routes.Count == 0
+            || (shape.ProxyPort == 0 && routes.Count > RouteBudget.Max)
+            || !Swap(handle, next, _excluded, out _))
+        {
+            return false;
+        }
+
+        _shape = next;
+        return true;
     }
 
     // Raises the running session again, one at a time. What asks for it differs - the device changed networks, or
@@ -598,7 +673,7 @@ public sealed class GeoVpnService : VpnService
             // networks under it are not.
             _carved = new List<string>(rules.Local);
             _shape = new TunShape(resolved, name, appMode, appList, bypassApps, size, ipv6, rules.Tunneled, servers,
-                _proxyPort);
+                _proxyPort, !carveLocal);
             _excluded = excluded;
 
             var tunFd = pfd.DetachFd();
@@ -898,7 +973,8 @@ public sealed class GeoVpnService : VpnService
         bool Ipv6,
         IReadOnlyList<string> Routes,
         IReadOnlyList<string> Servers,
-        int ProxyPort);
+        int ProxyPort,
+        bool LocalInside);
 
     // Turns the rules into the two address lists a tunnel is built from. Behind the relay a destination is decided
     // while the session runs, so no name is resolved at connect - the mode only says where a destination no rule
@@ -1189,6 +1265,12 @@ public sealed class GeoVpnService : VpnService
 
             builder.SetMtu(mtu);
 
+            // The tunnel takes its meteredness from the network under it.
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.Q)
+            {
+                builder.SetMetered(false);
+            }
+
             _tunnelApps.Clear();
             foreach (var package in appList ?? [])
             {
@@ -1251,42 +1333,56 @@ public sealed class GeoVpnService : VpnService
     // Rebuilds the tun around the addresses the cache holds now.
     private void RefreshTun()
     {
-        var shape = _shape;
-        var handle = _handle;
-        if (shape is null || handle < 0 || _stage != VpnStage.Connected)
+        lock (_swapGate)
         {
-            return;
-        }
+            var shape = _shape;
+            var handle = _handle;
+            if (shape is null || handle < 0 || _stage != VpnStage.Connected)
+            {
+                return;
+            }
 
-        var wanted = DirectAddresses(AwgEngine.LiveAddresses(handle));
-        if (wanted.Count == _excluded.Count && new HashSet<string>(wanted).SetEquals(_excluded))
-        {
-            return;
-        }
+            var wanted = DirectAddresses(AwgEngine.LiveAddresses(handle));
+            if (wanted.Count == _excluded.Count && new HashSet<string>(wanted).SetEquals(_excluded))
+            {
+                return;
+            }
 
+            if (!Swap(handle, shape, wanted, out var error))
+            {
+                Report($"the tun could not be rebuilt around {wanted.Count} direct address(es): {error}");
+                return;
+            }
+
+            var added = wanted.Count - _excluded.Count;
+            _excluded = wanted;
+            Report($"{wanted.Count} address(es) decided direct now leave the tun on their own ({added:+#;-#;0})");
+        }
+    }
+
+    // Puts a tun of this shape under the running engine.
+    private bool Swap(int handle, TunShape shape, IReadOnlyList<string> excluded, out string? error)
+    {
         // Announces the swap before the replacement is established.
         AwgEngine.PrepareSwap(handle, true);
         var pfd = BuildTunnel(shape.Config, shape.Name, shape.AppMode, shape.AppList, shape.BypassApps, shape.Mtu,
-            shape.Ipv6, shape.Routes, shape.Servers, shape.ProxyPort, wanted, out var error);
+            shape.Ipv6, shape.Routes, shape.Servers, shape.ProxyPort, excluded, out error);
         if (pfd is null)
         {
             AwgEngine.PrepareSwap(handle, false);
-            Report($"the tun could not be rebuilt around {wanted.Count} direct address(es): {error}");
-            return;
+            return false;
         }
 
         var tunFd = pfd.DetachFd();
-        if (!AwgEngine.SwapTun(handle, tunFd))
+        if (AwgEngine.SwapTun(handle, tunFd))
         {
-            AwgEngine.PrepareSwap(handle, false);
-            ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
-            Report("the engine refused the rebuilt tun, so the session keeps the one it has");
-            return;
+            return true;
         }
 
-        var added = wanted.Count - _excluded.Count;
-        _excluded = wanted;
-        Report($"{wanted.Count} address(es) decided direct now leave the tun on their own ({added:+#;-#;0})");
+        AwgEngine.PrepareSwap(handle, false);
+        ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
+        error = "the engine refused the rebuilt tun";
+        return false;
     }
 
     // Addresses the engine decided direct, freshest first.
@@ -1515,16 +1611,51 @@ public sealed class GeoVpnService : VpnService
             : null;
     }
 
-    private static string? Subnet(UnicastIPAddressInformation unicast)
+    // The IPv4 networks of the mobile links.
+    private List<string> MobileSubnets()
     {
-        if (unicast.Address.AddressFamily != AddressFamily.InterNetwork)
+        var found = new List<string>();
+        try
+        {
+            var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
+            foreach (var network in manager?.GetAllNetworks() ?? [])
+            {
+                if (manager!.GetNetworkCapabilities(network) is not { } capabilities
+                    || !capabilities.HasTransport(TransportType.Cellular)
+                    || manager.GetLinkProperties(network) is not { } link)
+                {
+                    continue;
+                }
+
+                foreach (var entry in link.LinkAddresses)
+                {
+                    if (System.Net.IPAddress.TryParse(entry.Address?.HostAddress ?? string.Empty, out var address)
+                        && Subnet(address, entry.PrefixLength) is { } cidr)
+                    {
+                        found.Add(cidr);
+                    }
+                }
+            }
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "reading the mobile networks failed: " + ex);
+        }
+
+        return found;
+    }
+
+    private static string? Subnet(UnicastIPAddressInformation unicast) => Subnet(unicast.Address, unicast.PrefixLength);
+
+    private static string? Subnet(System.Net.IPAddress address, int prefix)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork)
         {
             return null;
         }
 
         // /31 and /32 name a host and /0 the whole internet; neither is a network the device shares with anything.
-        var prefix = unicast.PrefixLength;
-        if (prefix is <= 0 or >= 31 || !GeoIpRanges.TryToNumeric(unicast.Address, out var value))
+        if (prefix is <= 0 or >= 31 || !GeoIpRanges.TryToNumeric(address, out var value))
         {
             return null;
         }
@@ -1780,15 +1911,16 @@ public sealed class GeoVpnService : VpnService
             var (rx, tx) = PeerBytes(uapi);
             var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs, loss.Streak);
             var moved = new LinkSample(tx > lastTx, rx > lastRx, loss.RecentPercent, reading.Churning,
-                seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : 0);
+                seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : 0,
+                lastTx < 0 ? 0 : Math.Max(0, tx - lastTx));
             lastRx = rx;
             lastTx = tx;
             WatchNetworks(seen, reading);
 
             // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
             if (seen > 0
-                && _recovery.Sample(moved, System.Environment.TickCount64) is not null
-                && Reraise($"{_recovery.Reason}; raising the session again (attempt {_recovery.Attempt})"))
+                && _recovery.Sample(moved, System.Environment.TickCount64) is { } step
+                && Repair(handle, step))
             {
                 return;
             }
@@ -1812,6 +1944,28 @@ public sealed class GeoVpnService : VpnService
             reported = reading;
             PublishLink(told, reading);
         }
+    }
+
+    // Carries out a step of the ladder and tells whether the session is being raised again.
+    private bool Repair(int handle, RecoveryStep step)
+    {
+        if (step != RecoveryStep.Rebind)
+        {
+            return Reraise($"{_recovery.Reason}; raising the session again (attempt {_recovery.Attempt})");
+        }
+
+        // A carried tunnel dials its carrier on the loopback, where another port changes nothing.
+        if (_carrier is not null)
+        {
+            return false;
+        }
+
+        var text = $"{_recovery.Reason}; binding the tunnel to another source port (attempt {_recovery.Attempt})"
+            + (AwgEngine.Rebind(handle) ? string.Empty : " - the engine would not take it");
+        Report(text);
+        Note("tunnel", text);
+
+        return false;
     }
 
     // Notes what changed around the tunnel since the last look: the network the device sits on, how names resolve,
@@ -2449,6 +2603,14 @@ public sealed class GeoVpnService : VpnService
         if (Interlocked.Exchange(ref _refusing, 1) == 0)
         {
             _ = Task.Run(HandRefusedAsync);
+        }
+    }
+
+    private string[] Refused()
+    {
+        lock (_refused)
+        {
+            return [.. _refused];
         }
     }
 

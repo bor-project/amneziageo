@@ -1,4 +1,5 @@
 using System.Net;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Linux.Engine;
 using AmneziaGeo.Routing;
 
@@ -10,9 +11,6 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal sealed class LinuxRouteApplier : IRouteApplier
 {
-    // One generation for the whole session: nothing here rearms a filter set, so an installed route never goes stale.
-    private const int Session = 1;
-
     private readonly string _iface;
     private readonly string? _peerKey;
     private readonly AwgDaemon _daemon;
@@ -22,8 +20,16 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     private readonly string? _endpoint;
     private readonly AgentLog _log;
     private readonly HashSet<string> _live = new(StringComparer.Ordinal);
+    // The held addresses the mark of their range carries, which hold no route of their own.
+    private readonly HashSet<uint> _marked = [];
+    // The held addresses a route out the physical hop was laid for.
+    private readonly HashSet<uint> _laid = [];
+    // The held addresses a direct range of the list leads past the tunnel, which hold no route of their own.
+    private readonly HashSet<uint> _passed = [];
     private readonly object _sync = new();
     private AppTunnel? _apps;
+    private Func<uint, RouteVerdict>? _verdicts;
+    private int _generation = 1;
     private int _endpointWarned;
 
     /// <summary>
@@ -42,7 +48,12 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     }
 
     /// <inheritdoc/>
-    public int Generation => Session;
+    public int Generation => Volatile.Read(ref _generation);
+
+    /// <summary>
+    /// Tells that the ranges of the list were laid anew, so every permit is to be asked for again.
+    /// </summary>
+    public void Rearm() => Interlocked.Increment(ref _generation);
 
     /// <summary>
     /// Makes the peer carry every destination. The carried applications leave through the tunnel without asking the
@@ -59,16 +70,30 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     }
 
     /// <summary>
+    /// Hands over the verdicts of the cache, which tell an address a rule keeps direct from one no rule names.
+    /// </summary>
+    public void Follow(Func<uint, RouteVerdict> verdicts)
+    {
+        _verdicts = verdicts;
+    }
+
+    /// <summary>
     /// Permits one host address through the physical path; nothing to install, that path carries no kill-switch.
     /// </summary>
     public bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation)
     {
         outId = 0;
         inId = 0;
-        generation = Session;
+        generation = Generation;
         // The carried applications default into the tunnel, so an address a rule kept direct needs a route of its
         // own there.
         _apps?.Steer(address, $"{GeoIpRanges.Format(address)}/32", _gateway, _device, false);
+        // A range of the list, an application or every datagram would carry what a rule kept off the tunnel.
+        if (_apps?.Spare(address, _verdicts?.Invoke(address) == RouteVerdict.Direct) == true)
+        {
+            inId = address;
+        }
+
         return true;
     }
 
@@ -79,7 +104,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     {
         outId = address;
         inId = 0;
-        generation = Session;
+        generation = Generation;
         var host = $"{GeoIpRanges.Format(address)}/32";
         if (_endpoint is not null && host == $"{_endpoint}/32")
         {
@@ -97,28 +122,97 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     }
 
     /// <summary>
-    /// Adds a host route out the physical hop.
+    /// Adds a host route out the physical hop, unless the machine already leads the address past the tunnel.
     /// </summary>
     public bool TryAddRoute(IPAddress address, out uint interfaceIndex)
     {
         interfaceIndex = 0;
-        _apps?.Steer(AppTunnel.Numeric(address), Cidr(address), _gateway, _device, false);
-        return _gateway is not null && _device is not null
-            && Ip("route", "replace", Cidr(address), "via", _gateway, "dev", _device);
+        var numeric = AppTunnel.Numeric(address);
+        var host = Cidr(address);
+        _apps?.Steer(numeric, host, _gateway, _device, false);
+        lock (_laid)
+        {
+            if (Leading(address) is { } table)
+            {
+                var ranged = table == DirectPath.Table;
+                if (ranged)
+                {
+                    _passed.Add(numeric);
+                }
+
+                _log.Route($"{host} goes past {_iface} by {(ranged ? "a direct range of the list" : "the routes of the machine")}");
+                return true;
+            }
+
+            if (_gateway is null || _device is null || !Ip("route", "replace", host, "via", _gateway, "dev", _device))
+            {
+                return false;
+            }
+
+            _laid.Add(numeric);
+            return true;
+        }
     }
 
     /// <summary>
-    /// Removes a host route.
+    /// Removes the host route laid for an address.
     /// </summary>
     public void RemoveRoute(IPAddress address, uint interfaceIndex)
     {
-        _apps?.Unsteer(Cidr(address));
-        Ip("route", "del", Cidr(address));
+        var numeric = AppTunnel.Numeric(address);
+        var host = Cidr(address);
+        _apps?.Unsteer(host);
+        lock (_laid)
+        {
+            _passed.Remove(numeric);
+            if (_laid.Remove(numeric))
+            {
+                Ip("route", "del", host);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lays a route out the physical hop for every held address a direct range led past the tunnel and none of the
+    /// ranges given does.
+    /// </summary>
+    public void Uphold(IReadOnlyList<string> ranges)
+    {
+        lock (_laid)
+        {
+            if (_passed.Count == 0 || _gateway is null || _device is null)
+            {
+                return;
+            }
+
+            var standing = GeoIpRanges.Build(ranges);
+            var left = _passed.Where(address => !standing.Contains(address)).ToList();
+            if (left.Count == 0)
+            {
+                return;
+            }
+
+            var hosts = left.Select(address => $"{GeoIpRanges.Format(address)}/32").ToList();
+            if (!Batch(SteeringRules.Bypasses(hosts, _gateway, _device, SteeringRules.MainTable), $"routing {left.Count} address(es) out {_device}"))
+            {
+                return;
+            }
+
+            _passed.ExceptWith(left);
+            _laid.UnionWith(left);
+            foreach (var host in hosts)
+            {
+                _log.Route($"route replace {host} via {_gateway} dev {_device}");
+            }
+
+            _log.Info("routing", $"{left.Count} address(es) keep their way past {_iface} by a route of their own: the direct ranges standing in the routes no longer cover them");
+        }
     }
 
     /// <summary>
     /// Routes one address into the tunnel. The advertisement goes first: the engine drops what the peer does not
-    /// carry, so a route laid before it would lose the packets that earned it.
+    /// carry, so a route laid before it would lose the packets that earned it. An address the mark of its range
+    /// carries takes no route: one would send the answers to a connection that came in beside the tunnel into it.
     /// </summary>
     public bool TryTunnel(IPAddress address)
     {
@@ -131,6 +225,12 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         // The tunnel is where the carried applications go by default, so a route that held this address outside it
         // has to give way.
         _apps?.Unsteer(host);
+
+        if (Mark(address))
+        {
+            _log.Route($"{host} rides {_iface} by the mark of its range");
+            return true;
+        }
 
         if (Ip("route", "replace", host, "dev", _iface))
         {
@@ -168,10 +268,29 @@ internal sealed class LinuxRouteApplier : IRouteApplier
             _apps?.Unsteer(cidr);
         }
 
-        if (!RouteMany(cidrs))
+        var routed = new List<string>(addresses.Count);
+        foreach (var address in addresses)
         {
+            if (!Mark(address))
+            {
+                routed.Add(Cidr(address));
+            }
+        }
+
+        if (routed.Count > 0 && !RouteMany(routed))
+        {
+            foreach (var address in addresses)
+            {
+                Unmark(address);
+            }
+
             Withdraw(cidrs);
             return [];
+        }
+
+        if (routed.Count < addresses.Count)
+        {
+            _log.Route($"{addresses.Count - routed.Count} address(es) ride {_iface} by the mark of their range");
         }
 
         return addresses;
@@ -194,10 +313,31 @@ internal sealed class LinuxRouteApplier : IRouteApplier
             var host = Cidr(address);
             hosts.Add(host);
             _apps?.Unsteer(host);
-            Ip("route", "del", host, "dev", _iface);
+            if (!Unmark(address))
+            {
+                Ip("route", "del", host, "dev", _iface);
+            }
         }
 
         Withdraw(hosts);
+    }
+
+    /// <summary>
+    /// Lays a route of its own for every held address the mark is about to stop carrying, before the ranges it
+    /// goes by are replaced with the ones given.
+    /// </summary>
+    public void Shore(IReadOnlyList<string> ranges)
+    {
+        foreach (var address in Left(GeoIpRanges.Build(ranges)))
+        {
+            if (Ip("route", "replace", $"{GeoIpRanges.Format(address)}/32", "dev", _iface))
+            {
+                lock (_sync)
+                {
+                    _marked.Remove(address);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -251,17 +391,74 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     }
 
     /// <summary>
-    /// Deletes the blackhole routes of the addresses given.
+    /// Deletes the blackhole routes of the addresses given and hands the spared ones back to their ranges.
     /// </summary>
     public void DeleteFilters(IReadOnlyList<(ulong Out, ulong In)> filters, int generation)
     {
-        foreach (var (blackhole, _) in filters)
+        foreach (var (blackhole, spared) in filters)
         {
             if (blackhole != 0)
             {
                 _apps?.Unsteer($"{GeoIpRanges.Format((uint)blackhole)}/32");
                 Ip("route", "del", "blackhole", $"{GeoIpRanges.Format((uint)blackhole)}/32");
             }
+
+            if (spared != 0)
+            {
+                _apps?.Unspare((uint)spared);
+            }
+        }
+    }
+
+    // The routing table that leads the address anywhere but into the tunnel; null when the tunnel takes it.
+    private string? Leading(IPAddress address)
+    {
+        var (exitCode, output) = Shell.RunAsync("ip", CancellationToken.None, "route", "get", address.ToString()).GetAwaiter().GetResult();
+        return exitCode == 0 ? SteeringRules.Leading(output, _iface) : null;
+    }
+
+    // The held addresses the mark carries now and the ranges will not.
+    private uint[] Left(GeoIpRanges carried)
+    {
+        lock (_sync)
+        {
+            return [.. _marked.Where(address => !carried.Contains(address))];
+        }
+    }
+
+    // Remembers an address the mark of its range carries; false when no mark carries it.
+    private bool Mark(IPAddress address)
+    {
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork || _apps is not { } apps)
+        {
+            return false;
+        }
+
+        var numeric = AppTunnel.Numeric(address);
+        if (!apps.Carries(numeric))
+        {
+            return false;
+        }
+
+        lock (_sync)
+        {
+            _marked.Add(numeric);
+        }
+
+        return true;
+    }
+
+    // Forgets an address the mark carried; false when it held a route of its own.
+    private bool Unmark(IPAddress address)
+    {
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        lock (_sync)
+        {
+            return _marked.Remove(AppTunnel.Numeric(address));
         }
     }
 
@@ -372,29 +569,34 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     // Adds the tunnel routes in one iproute2 run.
     private bool RouteMany(IReadOnlyList<string> cidrs)
     {
+        if (!Batch(string.Concat(cidrs.Select(cidr => $"route replace {cidr} dev {_iface}\n")), $"routing {cidrs.Count} address(es) into {_iface}"))
+        {
+            return false;
+        }
+
+        _log.Route($"{cidrs.Count} address(es) into {_iface}");
+        return true;
+    }
+
+    // Hands iproute2 the lines in one run.
+    private bool Batch(string lines, string what)
+    {
         var file = Path.GetTempFileName();
         try
         {
-            var lines = new List<string>(cidrs.Count);
-            foreach (var cidr in cidrs)
-            {
-                lines.Add($"route replace {cidr} dev {_iface}");
-            }
-
-            File.WriteAllLines(file, lines);
+            File.WriteAllText(file, lines);
             var (exitCode, output) = Shell.RunAsync("ip", CancellationToken.None, "-batch", file).GetAwaiter().GetResult();
             if (exitCode != 0)
             {
-                _log.Warn("route", $"routing {cidrs.Count} address(es) into {_iface} failed: {output}");
+                _log.Warn("route", $"{what} failed: {output}");
                 return false;
             }
 
-            _log.Route($"{cidrs.Count} address(es) into {_iface}");
             return true;
         }
         catch (IOException ex)
         {
-            _log.Error("route", "writing the batch of tunnel routes failed", ex);
+            _log.Error("route", "writing the batch of routes failed", ex);
             return false;
         }
         finally

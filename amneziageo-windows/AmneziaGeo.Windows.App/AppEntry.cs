@@ -79,6 +79,7 @@ public static class AppEntry
                 var serviceManager = host.Services.GetRequiredService<ServiceManager>();
                 var guardLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SoleAgentGuard");
                 await SoleAgentGuard.EnsureSoleAsync(serviceManager, guardLogger, cancellationToken);
+                await MoveResolverRowsAsync(host.Services, cancellationToken);
 
                 await host.RunAsync(cancellationToken);
                 return 0;
@@ -86,6 +87,24 @@ public static class AppEntry
 
             var cli = host.Services.GetRequiredService<Cli>();
             return await cli.RunAsync(args);
+        }
+    }
+
+    // Hands the resolver log the rows of the name subsystem an earlier version left in the agent log.
+    private static async Task MoveResolverRowsAsync(IServiceProvider services, CancellationToken ct)
+    {
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("LogMigration");
+        try
+        {
+            var moved = await services.GetRequiredService<SqliteLogStore>().MoveToDnsAsync(ResolverLog.Sources, ct);
+            if (moved > 0)
+            {
+                logger.LogInformation("{Rows} row(s) of the name subsystem were moved from the agent log into the resolver log", moved);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "the rows of the name subsystem stay in the agent log until the next start");
         }
     }
 

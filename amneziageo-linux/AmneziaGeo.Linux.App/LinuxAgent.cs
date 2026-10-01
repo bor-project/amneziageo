@@ -194,7 +194,40 @@ internal sealed class LinuxAgent : IDisposable
             }
         }
 
-        await Task.WhenAll(SuperviseLoopAsync(ct), CheckGeoUpdatesAsync(ct), RefreshSubscriptionsAsync(ct)).ConfigureAwait(false);
+        await Task.WhenAll(SuperviseLoopAsync(ct), CheckGeoUpdatesAsync(ct), RefreshSubscriptionsAsync(ct), PruneLogsAsync(ct)).ConfigureAwait(false);
+    }
+
+    // Cuts the logs to their caps at start and on a schedule after it.
+    private async Task PruneLogsAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(LogRetention.Interval);
+        try
+        {
+            do
+            {
+                await PruneLogsOnceAsync(ct).ConfigureAwait(false);
+            }
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task PruneLogsOnceAsync(CancellationToken ct)
+    {
+        try
+        {
+            var pruned = await _log.PruneAsync(ct).ConfigureAwait(false);
+            if (pruned.Total > 0)
+            {
+                _log.Debug("agent", $"dropped the oldest {pruned.Agent} log entries, {pruned.Dns} resolver entries and {pruned.Routes} routing entries past the retention limit");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.Warn("agent", $"old log entries could not be removed; the log file keeps growing until this succeeds{Environment.NewLine}{ex}");
+        }
     }
 
     // The stations and the band in force are cheap to read every tick; what the adapter can do is not, so it is
@@ -560,7 +593,8 @@ internal sealed class LinuxAgent : IDisposable
             peer.RxBytes > _lastRxBytes,
             _loss?.RecentPercent ?? LinkHealth.LossUnknown,
             reading.Churning,
-            peer.HandshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix) : 0);
+            peer.HandshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix) : 0,
+            _lastTxBytes < 0 ? 0 : Math.Max(0, peer.TxBytes - _lastTxBytes));
         _lastRxBytes = peer.RxBytes;
         _lastTxBytes = peer.TxBytes;
 
@@ -1992,7 +2026,7 @@ internal sealed class LinuxAgent : IDisposable
 
         var limit = args.Count > 1 && int.TryParse(args[1], out var parsedLimit) ? Math.Clamp(parsedLimit, 1, 2000) : 400;
         var beforeId = args.Count > 2 && long.TryParse(args[2], out var parsedBefore) && parsedBefore > 0 ? parsedBefore : (long?)null;
-        var minLevelId = args[0] == SqliteLogStore.AgentTable && args.Count > 3 ? AgentLog.MinId(args[3]) : null;
+        var minLevelId = SqliteLogStore.IsLeveled(args[0]) && args.Count > 3 ? AgentLog.MinId(args[3]) : null;
         var search = args.Count > 4 && args[4].Length > 0 ? args[4] : null;
 
         var page = await _log.QueryAsync(args[0], beforeId, limit, minLevelId, search, ct).ConfigureAwait(false);
@@ -2859,8 +2893,8 @@ internal sealed class LinuxAgent : IDisposable
         return lines;
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable
-        or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.DnsTable
+        or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
 
     // Reconnect interval in seconds, clamped to a sane window.
     private static int ReconnectInterval(string? value) =>

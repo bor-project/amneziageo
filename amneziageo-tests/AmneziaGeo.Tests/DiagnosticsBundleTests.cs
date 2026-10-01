@@ -100,6 +100,22 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheResolverLog_TravelsInTheArchive()
+    {
+        _logs.AppendDns(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 4, "DnsProxy", "the resolver in the tunnel stopped answering");
+        await _logs.FlushAsync();
+
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(Path.Combine(_root, "out"), "header\n", row => row.Message);
+
+        using var zip = ZipFile.OpenRead(path);
+        using var reader = new StreamReader(zip.GetEntry("dns.log")!.Open());
+        var text = await reader.ReadToEndAsync();
+
+        Assert.Contains("the resolver in the tunnel stopped answering", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheRunsOfTheChecks_TravelInTheArchive()
     {
         _logs.AppendCheck(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "channel check for \"srv\"\n  verdict   nothing to blame");

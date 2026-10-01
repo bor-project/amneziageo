@@ -2558,7 +2558,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var table = args[0];
         var limit = args.Count > 1 && int.TryParse(args[1], out var l) ? Math.Clamp(l, 1, 2000) : 400;
         long? beforeId = args.Count > 2 && long.TryParse(args[2], out var b) && b > 0 ? b : null;
-        var minLevelId = table == SqliteLogStore.AgentTable && args.Count > 3 ? LogLevels.MinId(args[3]) : null;
+        var minLevelId = SqliteLogStore.IsLeveled(table) && args.Count > 3 ? LogLevels.MinId(args[3]) : null;
         var search = args.Count > 4 && args[4].Length > 0 ? args[4] : null;
 
         var page = await logStore.QueryAsync(table, beforeId, limit, minLevelId, search, ct);
@@ -2603,8 +2603,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     private static bool IsKnownTable(string name)
     {
-        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable
-            or SqliteLogStore.ProbeTable;
+        return name is SqliteLogStore.AgentTable or SqliteLogStore.DnsTable or SqliteLogStore.RoutesTable
+            or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
     }
 
     private async Task<IpcAck> CheckUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)

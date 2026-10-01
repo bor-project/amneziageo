@@ -811,7 +811,8 @@ internal sealed class ConfigRunner(
             status.RxBytes > _lastRxBytes,
             _loss?.RecentPercent ?? LinkHealth.LossUnknown,
             reading.Churning,
-            status.HandshakeSec > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec) : 0);
+            status.HandshakeSec > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec) : 0,
+            _lastTxBytes < 0 ? 0 : Math.Max(0, status.TxBytes - _lastTxBytes));
         _lastRxBytes = status.RxBytes;
         _lastTxBytes = status.TxBytes;
 

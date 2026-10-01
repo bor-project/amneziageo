@@ -7,31 +7,37 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
-/// Carries the named applications through the tunnel and nothing else of theirs past it, and every outbound
-/// datagram of the machine where all UDP is asked for. The kernel does the steering: the processes live in a
-/// cgroup, a netfilter rule marks what leaves it, and the mark selects a routing table whose default is the
-/// tunnel. A destination the rules decided keeps its own route in that table, so an address rule outranks an
-/// application rule. What stays outside the cgroup is untouched, which is what tells this apart from routing an
-/// application's addresses for the whole machine.
+/// Carries the named applications through the tunnel and nothing else of theirs past it, every outbound datagram
+/// of the machine where all UDP is asked for, and whatever the machine opens toward the ranges a list sends
+/// through the tunnel. The kernel does the steering: the processes live in a cgroup, a netfilter rule marks what
+/// leaves it, and the mark selects a routing table whose default is the tunnel. A destination the rules decided
+/// keeps its own route in that table, so an address rule outranks an application rule, and the ranges a list
+/// keeps direct take no mark at all. What stays outside the cgroup is untouched, which is what tells this apart
+/// from routing an application's addresses for the whole machine.
 /// </summary>
 internal sealed class AppTunnel : IDisposable
 {
     private const string CgroupRoot = "/sys/fs/cgroup";
     private const string CgroupName = "amneziageo";
     private const string Table = "51820";
-    private const string Mark = "0x51820";
-    private const string NftTable = "amneziageo";
+    private const string Mark = SteeringRules.Mark;
+    private const string NftTable = SteeringRules.Table;
     private const int RulePriority = 5000;
     private const int SyncIntervalMs = 3000;
 
     private readonly string _iface;
     private readonly AppImages _images;
     private readonly GeoIpRanges _named;
+    private readonly IReadOnlyList<string>? _ranges;
+    private readonly IReadOnlyList<string>? _past;
     private readonly bool _allUdp;
     private readonly string? _endpoint;
     private readonly AgentLog _log;
     private readonly CancellationTokenSource _cts = new();
     private readonly HashSet<int> _placed = [];
+    private readonly HashSet<uint> _spared = [];
+    private GeoIpRanges _carried;
+    private GeoIpRanges _passed;
     private Task? _syncing;
     private ProcEvents? _events;
     private bool _up;
@@ -40,11 +46,17 @@ internal sealed class AppTunnel : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    private AppTunnel(string interfaceName, AppImages images, GeoIpRanges named, bool allUdp, string? endpoint, AgentLog log)
+    private AppTunnel(string interfaceName, AppImages images, GeoIpRanges named, IReadOnlyList<string>? ranges, IEnumerable<uint> spared, IReadOnlyList<string> past, bool allUdp, string? endpoint, AgentLog log)
     {
         _iface = interfaceName;
         _images = images;
         _named = named;
+        _ranges = ranges;
+        _carried = GeoIpRanges.Build(ranges ?? []);
+        _spared.UnionWith(spared.Where(_carried.Contains));
+        // The mark of the ranges leaves the direct ones out by itself; the other two take them unless told.
+        _past = images.Empty && !allUdp ? null : past;
+        _passed = GeoIpRanges.Build(_past ?? []);
         _allUdp = allUdp;
         _endpoint = endpoint;
         _log = log;
@@ -56,13 +68,16 @@ internal sealed class AppTunnel : IDisposable
     public static string CgroupPath => $"{CgroupRoot}/{CgroupName}";
 
     /// <summary>
-    /// Raises the per-application path for the given rules and the datagram path where all UDP is asked for; null
-    /// when neither is asked for, the kernel offers no unified cgroups, or netfilter refuses the mark.
+    /// Raises the per-application path for the given rules, the path of the ranges a list sends through the tunnel
+    /// and the datagram path where all UDP is asked for; null when none is asked for, the kernel offers no unified
+    /// cgroups, or netfilter refuses the mark. Null ranges stand for a tunnel that carries everything; the spared
+    /// addresses are the ones a name already holds off the tunnel; the ranges past it are the ones the list keeps
+    /// direct, which neither an application nor a datagram is carried to.
     /// </summary>
-    public static async Task<AppTunnel?> TryStartAsync(string interfaceName, IReadOnlyList<string> apps, IReadOnlyList<string> named, bool allUdp, string? endpoint, AgentLog log, CancellationToken ct)
+    public static async Task<AppTunnel?> TryStartAsync(string interfaceName, IReadOnlyList<string> apps, IReadOnlyList<string> named, IReadOnlyList<string>? ranges, IEnumerable<uint> spared, IReadOnlyList<string> past, bool allUdp, string? endpoint, AgentLog log, CancellationToken ct)
     {
         var images = AppImages.Parse(apps);
-        if (images.Empty && !allUdp)
+        if (images.Empty && !allUdp && ranges is not { Count: > 0 })
         {
             return null;
         }
@@ -73,7 +88,7 @@ internal sealed class AppTunnel : IDisposable
             return null;
         }
 
-        var tunnel = new AppTunnel(interfaceName, images, GeoIpRanges.Build(named), allUdp, endpoint, log);
+        var tunnel = new AppTunnel(interfaceName, images, GeoIpRanges.Build(named), ranges, spared, past, allUdp, endpoint, log);
         if (!await tunnel.RaiseAsync(ct).ConfigureAwait(false))
         {
             await tunnel.StopAsync().ConfigureAwait(false);
@@ -91,6 +106,16 @@ internal sealed class AppTunnel : IDisposable
         if (allUdp)
         {
             log.Info("apps", $"every outbound datagram rides {interfaceName}, apart from the local networks and the server itself");
+        }
+
+        if (ranges is { Count: > 0 })
+        {
+            log.Info("routing", $"what this machine opens toward the {ranges.Count} tunnel range(s) of the list rides {interfaceName} from the first packet");
+        }
+
+        if (tunnel._past is { Count: > 0 } direct)
+        {
+            log.Info("routing", $"neither an application nor a datagram is carried to the {direct.Count} direct range(s) of the list");
         }
 
         return tunnel;
@@ -129,6 +154,123 @@ internal sealed class AppTunnel : IDisposable
         if (_up)
         {
             _ = Shell.RunAsync("ip", CancellationToken.None, "route", "del", destination, "table", Table);
+        }
+    }
+
+    /// <summary>
+    /// Replaces the ranges of the list the marks go by: the tunnel ones, sparing in the same go the held addresses
+    /// they now cover, and the ones past the tunnel. True when the tunnel ones were laid anew; false when this
+    /// path stands no set of them or netfilter refuses.
+    /// </summary>
+    public bool Reload(IReadOnlyList<string> ranges, IEnumerable<uint> held, IReadOnlyList<string> past)
+    {
+        if (!_up || (_ranges is null && _past is null))
+        {
+            return false;
+        }
+
+        var direct = _past is null ? null : past;
+        var passed = GeoIpRanges.Build(direct ?? []);
+        if (_ranges is null)
+        {
+            lock (_spared)
+            {
+                if (Load(SteeringRules.Reload(null, [], direct)))
+                {
+                    _passed = passed;
+                }
+            }
+
+            return false;
+        }
+
+        var carried = GeoIpRanges.Build(ranges);
+        lock (_spared)
+        {
+            var fresh = held.Where(address => carried.Contains(address) && !_spared.Contains(address)).Distinct().ToList();
+            if (!Load(SteeringRules.Reload(ranges, [.. fresh.Select(GeoIpRanges.Format)], direct)))
+            {
+                return false;
+            }
+
+            _spared.UnionWith(fresh);
+            _carried = carried;
+            _passed = passed;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the mark of the ranges carries the address: a range of the list covers it and no name spares it.
+    /// </summary>
+    public bool Carries(uint address)
+    {
+        if (!_up || _ranges is null)
+        {
+            return false;
+        }
+
+        lock (_spared)
+        {
+            return _carried.Contains(address) && !_spared.Contains(address);
+        }
+    }
+
+    /// <summary>
+    /// Keeps one address off the marks: one a tunnel range of the list covers, or one a rule keeps direct where
+    /// an application or every datagram is marked; false when no mark would take it.
+    /// </summary>
+    public bool Spare(uint address, bool direct)
+    {
+        if (!_up || (_ranges is null && _past is null))
+        {
+            return false;
+        }
+
+        lock (_spared)
+        {
+            if (!_carried.Contains(address) && !(direct && _past is not null && !_passed.Contains(address)))
+            {
+                if (_spared.Remove(address))
+                {
+                    Element("delete", address);
+                }
+
+                return false;
+            }
+
+            if (!_spared.Add(address))
+            {
+                return true;
+            }
+
+            if (Element("add", address))
+            {
+                return true;
+            }
+
+            _spared.Remove(address);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Hands one address back to the marks.
+    /// </summary>
+    public void Unspare(uint address)
+    {
+        if (!_up || (_ranges is null && _past is null))
+        {
+            return;
+        }
+
+        lock (_spared)
+        {
+            if (_spared.Remove(address))
+            {
+                Element("delete", address);
+            }
         }
     }
 
@@ -243,8 +385,37 @@ internal sealed class AppTunnel : IDisposable
             return false;
         }
 
-        await SixAsync(ct).ConfigureAwait(false);
+        Loosen();
+
+        // The ranges of a list are of the fourth family alone.
+        if (!_images.Empty || _allUdp)
+        {
+            await SixAsync(ct).ConfigureAwait(false);
+        }
+
         return true;
+    }
+
+    // Takes the answers to what the mark steered where the machine checks the path back strictly.
+    private void Loosen()
+    {
+        const string Root = "/proc/sys/net/ipv4/conf";
+        try
+        {
+            var all = int.Parse(File.ReadAllText($"{Root}/all/rp_filter").Trim(), CultureInfo.InvariantCulture);
+            var own = int.Parse(File.ReadAllText($"{Root}/{_iface}/rp_filter").Trim(), CultureInfo.InvariantCulture);
+            if (Math.Max(all, own) != 1)
+            {
+                return;
+            }
+
+            File.WriteAllText($"{Root}/{_iface}/rp_filter", "2");
+            _log.Info("apps", $"{_iface} checks the path back loosely: the strict check of this machine drops the answers to what the mark steered");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
+        {
+            _log.Warn("apps", $"the check of the path back on {_iface} was left as it is: {ex.Message}");
+        }
     }
 
     // The sixth family takes the same mark, so it needs the same table: the tunnel where the tunnel carries it, and
@@ -281,29 +452,8 @@ internal sealed class AppTunnel : IDisposable
     private async Task<bool> MarkAsync(CancellationToken ct)
     {
         var path = Path.Combine(Path.GetTempPath(), "amneziageo-apps.nft");
-        var carried = new List<string>();
-        if (!_images.Empty)
-        {
-            carried.Add("    socket cgroupv2 level 1 \"" + CgroupName + "\" meta mark set " + Mark);
-        }
-
-        if (_allUdp)
-        {
-            carried.AddRange(Datagrams());
-        }
-
-        var text = string.Join('\n', [
-            "table inet " + NftTable + " {",
-            "  chain apps {",
-            "    type route hook output priority mangle; policy accept;",
-            .. carried,
-            "  }",
-            "  chain source {",
-            "    type nat hook postrouting priority srcnat; policy accept;",
-            "    meta mark " + Mark + " oifname \"" + _iface + "\" masquerade",
-            "  }",
-            "}",
-            string.Empty]);
+        var text = SteeringRules.Marks(_iface, _images.Empty ? null : CgroupName, _ranges, _allUdp, _endpoint,
+            [.. _spared.Select(GeoIpRanges.Format)], _past);
         try
         {
             await File.WriteAllTextAsync(path, text, ct).ConfigureAwait(false);
@@ -333,23 +483,58 @@ internal sealed class AppTunnel : IDisposable
         }
     }
 
-    // Puts every outbound datagram on the mark, except what already rides the tunnel, the loopback, the broadcasts
-    // and the server itself.
-    private IEnumerable<string> Datagrams()
+    // Hands netfilter the lines in one go.
+    private bool Load(string text)
     {
-        yield return "    oifname \"lo\" return";
-        yield return "    oifname \"" + _iface + "\" return";
-        yield return "    ip daddr 255.255.255.255 return";
-        yield return "    ip daddr 224.0.0.0/4 return";
-        yield return "    ip6 daddr ff00::/8 return";
-        if (_endpoint is { Length: > 0 } endpoint)
+        var path = Path.Combine(Path.GetTempPath(), "amneziageo-ranges.nft");
+        try
         {
-            yield return endpoint.Contains(':', StringComparison.Ordinal)
-                ? "    ip6 daddr " + endpoint + " return"
-                : "    ip daddr " + endpoint + " return";
-        }
+            File.WriteAllText(path, text);
+            var (code, output) = Shell.RunAsync("nft", CancellationToken.None, "-f", path).GetAwaiter().GetResult();
+            if (code != 0)
+            {
+                _log.Warn("routing", $"netfilter refused the ranges of the list: {output}");
+            }
 
-        yield return "    meta l4proto udp meta mark set " + Mark;
+            return code == 0;
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("routing", $"the ranges of the list could not be written: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
+
+    // Adds one address to the spared ones or deletes it from them.
+    private bool Element(string verb, uint address)
+    {
+        var host = GeoIpRanges.Format(address);
+        try
+        {
+            var (code, output) = Shell.RunAsync("nft", CancellationToken.None, verb, "element", "inet", NftTable,
+                SteeringRules.Spared, "{", host, "}").GetAwaiter().GetResult();
+            if (code != 0)
+            {
+                _log.Warn("routing", $"netfilter refused to {verb} {host} among the spared addresses: {output}");
+            }
+
+            return code == 0;
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("routing", $"netfilter could not {verb} {host} among the spared addresses: {ex.Message}");
+            return false;
+        }
     }
 
     // Copies what the machine reaches without a default into the application table, or the carried processes lose

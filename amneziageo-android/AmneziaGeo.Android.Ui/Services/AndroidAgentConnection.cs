@@ -1074,6 +1074,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         EnsureLoaded();
         await _log.InitializeAsync().ConfigureAwait(false);
+        _ = Task.Run(PruneLogsAsync);
         _log.Info("agent", "android agent started");
         _ = Task.Run(() => CrashLog.ReportPastExits(_log));
         await _store.InitializeAsync().ConfigureAwait(false);
@@ -1082,6 +1083,28 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
+    }
+
+    // Cuts the logs to their caps at start and on a schedule after it.
+    private async Task PruneLogsAsync()
+    {
+        while (!_disposed)
+        {
+            try
+            {
+                var pruned = await _log.PruneAsync().ConfigureAwait(false);
+                if (pruned.Total > 0)
+                {
+                    _log.Debug("agent", $"dropped the oldest {pruned.Agent} log entries, {pruned.Dns} resolver entries and {pruned.Routes} routing entries past the retention limit");
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("agent", "old log entries could not be removed: " + ex);
+            }
+
+            await Task.Delay(LogRetention.Interval).ConfigureAwait(false);
+        }
     }
 
     // Rebuilds the stored lists when the app started covering a rule token differently than the run that wrote them.
@@ -3685,7 +3708,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var table = args[0];
         var limit = args.Count > 1 && int.TryParse(args[1], out var l) ? Math.Clamp(l, 1, 2000) : 400;
         var beforeId = args.Count > 2 && long.TryParse(args[2], out var b) && b > 0 ? (long?)b : null;
-        var minLevelId = table == SqliteLogStore.AgentTable && args.Count > 3 ? AndroidAgentLog.MinId(args[3]) : null;
+        var minLevelId = SqliteLogStore.IsLeveled(table) && args.Count > 3 ? AndroidAgentLog.MinId(args[3]) : null;
         var search = args.Count > 4 && args[4].Length > 0 ? args[4] : null;
 
         var page = await _log.QueryAsync(table, beforeId, limit, minLevelId, search).ConfigureAwait(false);
@@ -3953,8 +3976,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("  domains        : ").Append(summary?.DomainCount ?? 0).Append('\n');
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable
-        or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.DnsTable
+        or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable or SqliteLogStore.ProbeTable;
 
     private static string KnownLogLevel(string token)
     {

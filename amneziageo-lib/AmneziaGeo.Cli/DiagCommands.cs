@@ -9,7 +9,7 @@ namespace AmneziaGeo.Cli;
 /// </summary>
 internal static class DiagCommands
 {
-    private static readonly string[] _tables = ["ageo", "routes", "checks"];
+    private static readonly string[] _tables = ["ageo", "dns", "routes", "checks"];
 
     /// <summary>
     /// Runs one diagnostics command.
@@ -53,7 +53,7 @@ internal static class DiagCommands
         var table = flags.Value("table") ?? "ageo";
         if (!_tables.Contains(table))
         {
-            return Reply.Usage("--table takes ageo, routes or checks");
+            return Reply.Usage("--table takes ageo, dns, routes or checks");
         }
 
         return args[0] switch

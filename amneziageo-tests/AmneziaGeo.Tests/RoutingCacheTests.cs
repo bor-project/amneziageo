@@ -136,9 +136,9 @@ public sealed class RoutingCacheTests
 
     // Hot defaults to none here: the idle window is what most of these tests are about, and the entries a real
     // cache keeps whatever it says are exercised on their own.
-    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300, IReadOnlyCollection<string>? pinned = null, int hot = 0)
+    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300, IReadOnlyCollection<string>? pinned = null, int hot = 0, bool directStanding = false)
     {
-        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance, pinned, hot: hot);
+        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance, pinned, hot: hot, directStanding: directStanding);
     }
 
     private static uint Numeric(string address)
@@ -1043,5 +1043,124 @@ public sealed class RoutingCacheTests
 
         Assert.Equal(RouteVerdict.Block, cache.Classify(IPAddress.Parse(YandexAddress)));
         Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Dropped);
+    }
+
+    [Fact]
+    public void WhereTheDirectRangesStand_AnAddressANameTunnelsPastOne_TakesARouteOfItsOwn()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], directStanding: true);
+
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+        Assert.Empty(applier.Added);
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(RoutePlan.Tunnel, held.Plan);
+        Assert.True(held.Routed);
+    }
+
+    [Fact]
+    public void WhereTheDirectRangesStand_AnAddressANameTunnelsOutsideThem_InstallsNothing()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], directStanding: true);
+
+        cache.Note(IPAddress.Parse("8.8.8.8"), RouteVerdict.Proxy);
+
+        Assert.Empty(applier.Tunneled);
+        Assert.Equal(0, cache.Active);
+    }
+
+    [Fact]
+    public void WhereNoDirectRangeStands_AnAddressANameTunnelsPastOne_InstallsNothing()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        Assert.Empty(applier.Tunneled);
+        Assert.Equal(0, cache.Active);
+    }
+
+    [Fact]
+    public void WhereTheDirectRangesStand_AnAddressOfOneThatANameThenTunnels_LeavesItsBypassForTheTunnel()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], directStanding: true);
+        cache.Note(Numeric(YandexAddress));
+
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Removed);
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+    }
+
+    [Fact]
+    public void ARebuild_RoutesIntoTheTunnelAnAddressANameSendsThereOnceADirectRangeCoversIt()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, directStanding: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+        Assert.Empty(applier.Tunneled);
+
+        cache.Rebuild([], [YandexRange], [], _ => RouteVerdict.Proxy);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+        Assert.Equal(RouteVerdict.Proxy, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
+
+    [Fact]
+    public void ARebuild_TakesTheRouteBackOnceTheDirectRangeIsGone()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], directStanding: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        cache.Rebuild([], [], [], _ => RouteVerdict.Proxy);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Untunneled);
+        Assert.Equal(0, cache.Active);
+    }
+
+    [Fact]
+    public void ARebuild_LeavesTheRouteOfAnAddressTheDirectRangeStillCovers()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], directStanding: true);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+
+        cache.Rebuild([], [YandexRange, "8.8.8.0/24"], [], _ => RouteVerdict.Proxy);
+
+        Assert.Empty(applier.Untunneled);
+        Assert.Single(applier.Tunneled);
+    }
+
+    [Fact]
+    public void InSplit_WhereTheDirectRangesAreSaidToStand_NothingChanges()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: [YandexRange], directStanding: true);
+
+        cache.Note(Numeric(YandexAddress));
+        cache.Rebuild([], [YandexRange], []);
+
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
+        Assert.Empty(applier.Tunneled);
+        Assert.Empty(applier.Deleted);
+    }
+
+    [Fact]
+    public async Task Warming_RoutesIntoTheTunnelARestoredAddressANameSendsPastADirectRange()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange], hot: 8, directStanding: true);
+        cache.Restore([new RememberedRoute(YandexAddress, nameof(RouteVerdict.Proxy), true, false, DateTimeOffset.UtcNow)]);
+
+        await cache.WarmAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+        Assert.Empty(applier.Added);
     }
 }

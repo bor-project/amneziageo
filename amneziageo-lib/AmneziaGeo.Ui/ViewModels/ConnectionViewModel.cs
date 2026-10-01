@@ -54,6 +54,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    [NotifyPropertyChangedFor(nameof(ShowConnectHint))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
@@ -75,6 +76,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    [NotifyPropertyChangedFor(nameof(ShowConnectHint))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
@@ -373,6 +375,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         ? Loc.Instance.Get("MainVm_ConnectHintServerSilent")
         : ConnState switch
     {
+        1 when !IsTunnelActive => StatusLabels.Text(ConnectionStatus.Disconnecting),
         1 => Loc.Instance.Get(ShowRetry ? "MainVm_ConnectHintRetrying" : "MainVm_ConnectHintConnecting"),
         2 => Loc.Instance.Get("MainVm_ConnectHintClickToDisconnect"),
         _ when ActiveConfig is null => Loc.Instance.Get("MainVm_ConnectHintSelectConfig"),
@@ -380,9 +383,9 @@ internal partial class ConnectionViewModel : ViewModelBase
     };
 
     /// <summary>
-    /// Whether a hint stands under the status; the connect and disconnect prompts do not.
+    /// Whether a hint stands under the status; the connect and disconnect prompts and a tunnel going down do not.
     /// </summary>
-    public bool ShowConnectHint => ServerSilent || ConnState == 1 || (ConnState != 2 && ActiveConfig is null);
+    public bool ShowConnectHint => ServerSilent || (ConnState == 1 && IsTunnelActive) || (ConnState == 0 && ActiveConfig is null);
 
     // A stalled connect is retrying (more than one attempt made).
     public bool ShowRetry => RetryAttempt >= 1;

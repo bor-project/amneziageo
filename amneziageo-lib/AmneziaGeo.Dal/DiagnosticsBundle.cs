@@ -17,7 +17,7 @@ public sealed record BundleSources(
 
 /// <summary>
 /// Builds a redacted diagnostics archive for support: the library summary, the effective configuration, the live
-/// cache, the diagnostic runs and both log tables.
+/// cache, the diagnostic runs and the log tables.
 /// </summary>
 public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
 {
@@ -41,13 +41,14 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
 
     // The structured log tables and their file names inside the archive.
     private static readonly (string Table, string Entry)[] LogTables =
-        [(SqliteLogStore.AgentTable, "ageo.log"), (SqliteLogStore.RoutesTable, "routes.log"),
-         (SqliteLogStore.ChecksTable, "checks.log"), (SqliteLogStore.ProbeTable, "probe.log")];
+        [(SqliteLogStore.AgentTable, "ageo.log"), (SqliteLogStore.DnsTable, "dns.log"),
+         (SqliteLogStore.RoutesTable, "routes.log"), (SqliteLogStore.ChecksTable, "checks.log"),
+         (SqliteLogStore.ProbeTable, "probe.log")];
 
     /// <summary>
     /// Writes a diagnostics zip into a directory and returns its full path. The header opens the summary the
     /// platform builds for itself; the rest of the archive is what support has to read together - the effective
-    /// configuration, the live cache, the diagnostic runs and both logs.
+    /// configuration, the live cache, the diagnostic runs and the logs.
     /// </summary>
     public async Task<string> WriteAsync(
         string directory,

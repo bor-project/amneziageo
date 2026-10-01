@@ -44,7 +44,9 @@ internal sealed class TunnelController : IDisposable
     private IReadOnlyList<string> _appRules = [];
     private IRouteMemory? _memory;
     private AppTunnel? _apps;
+    private DirectPath? _direct;
     private bool _allUdp;
+    private string? _peerAddress;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
     private string _sessionConfig = string.Empty;
@@ -65,6 +67,9 @@ internal sealed class TunnelController : IDisposable
         _iface = interfaceName;
         _log = log;
         ResolvConf.RestoreAsync(interfaceName, log).GetAwaiter().GetResult();
+        // Drops the refusals and the routes past the tunnel a killed run left standing.
+        BlockFirewall.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
+        DirectPath.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -109,14 +114,15 @@ internal sealed class TunnelController : IDisposable
     public IReadOnlyList<string> Advertised { get; private set; } = [];
 
     /// <summary>
-    /// Destinations routed into the tunnel right now; in a full tunnel nothing has to earn a route into it.
+    /// Destinations holding a route into the tunnel right now; in a full tunnel only an address a name sends
+    /// through it past a direct range has to earn one.
     /// </summary>
-    public IReadOnlyCollection<string> Tunneled => _split ? Routed() : [];
+    public IReadOnlyCollection<string> Tunneled => Routed(RoutePlan.Tunnel);
 
     /// <summary>
     /// Destinations pinned to the physical hop right now; in a split they follow it without a route.
     /// </summary>
-    public IReadOnlyCollection<string> Bypassed => _split ? [] : Routed();
+    public IReadOnlyCollection<string> Bypassed => Routed(RoutePlan.Bypass);
 
     /// <summary>
     /// Brings the tunnel up from a wg-quick config under the given rules; returns null on success or the reason
@@ -267,8 +273,14 @@ internal sealed class TunnelController : IDisposable
         _standingRoutes = [.. inboundRoutes, .. standing.All];
         // All UDP belongs to a split: a full tunnel already carries every datagram.
         var allUdp = split && routing.AllUdp;
+        // The ranges of the list take the mark in a split alone: a full tunnel already carries them.
+        var marked = split ? SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes) : null;
+        // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
+        // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
+        IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn];
+        var past = SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, endpointIp is null ? pinned : [.. pinned, endpointIp]);
         _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
-            [.. routing.DirectRoutes, .. routing.BlockRoutes], allUdp, endpointIp, _log, ct).ConfigureAwait(false);
+            [.. routing.DirectRoutes, .. routing.BlockRoutes], marked, [], past, allUdp, endpointIp, _log, ct).ConfigureAwait(false);
         _appRules = routing.TunnelApps;
         _allUdp = allUdp && _apps is not null;
         applier.Attach(_apps);
@@ -277,11 +289,17 @@ internal sealed class TunnelController : IDisposable
             _log.Warn("apps", "the peer would not take the whole range, so the applications reach only what the rules "
                 + "already advertised");
         }
-        // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
-        // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
         // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
-        var cache = new RoutingCache(applier, new ProcNet(), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn]);
+        // In a split the far end of a connection this machine took in earns no route: its answers go back the way
+        // the connection came.
+        var cache = new RoutingCache(applier, new ProcNet(split), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), pinned, directStanding: !split);
         _cache = cache;
+        applier.Follow(cache.Classify);
+        _peerAddress = endpointIp;
+        await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
+        // A split leaves the direct ranges on the path of the machine as it is.
+        _direct = !split && hop is ({ } gateway, { } device) ? new DirectPath(gateway, device, _log) : null;
+        await PassAsync(cache, routing, ct).ConfigureAwait(false);
         if (_memory is { } memory)
         {
             cache.SetMemory(memory);
@@ -402,10 +420,16 @@ internal sealed class TunnelController : IDisposable
         var hasRules = routing.HasRules;
         routing = AroundLocal(routing);
         Restand(cache, routing);
+        Steer(cache, routing);
+        RefuseAsync(cache, routing, CancellationToken.None).GetAwaiter().GetResult();
+        // A direct range that left the list goes before the rebuild and a new one comes after it, so an address a
+        // name sends through the tunnel past one never stands without its own route.
+        Shed(cache, routing);
 
         // Names take the edit first: the rebuild decides each held address by the name it came with.
         _dns?.ApplyRules(routing);
         cache.Rebuild(Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, address => _dns?.VerdictOf(address) ?? RouteVerdict.None);
+        PassAsync(cache, routing, CancellationToken.None).GetAwaiter().GetResult();
         Mode = _split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
         RoutingMode = Token(_split, hasRules);
         ListName = routing.ListName;
@@ -431,7 +455,10 @@ internal sealed class TunnelController : IDisposable
         }
 
         _inboundRoutes = wanted;
-        Restand(cache, AroundLocal(routing));
+        routing = AroundLocal(routing);
+        Restand(cache, routing);
+        await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
+        await PassAsync(cache, routing, ct).ConfigureAwait(false);
         if (!block)
         {
             await BlockInboundAsync(false, ct).ConfigureAwait(false);
@@ -440,6 +467,99 @@ internal sealed class TunnelController : IDisposable
         _log.Info("tunnel", $"{_iface} takes what arrives from the tunnel at: {(wanted.Count == 0 ? "nothing" : string.Join(", ", wanted))}");
         return true;
     }
+
+    // Hands the kernel the ranges of the edited list the marks go by, raising the path of the tunnel ones when they
+    // are its first; what the cache holds off the tunnel stays off it.
+    private void Steer(RoutingCache cache, TunnelRouting routing)
+    {
+        if (_standingBasis is not { } basis)
+        {
+            return;
+        }
+
+        var past = Past(cache, routing);
+        if (!_split)
+        {
+            _apps?.Reload([], [], past);
+            return;
+        }
+
+        var ranges = SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes);
+        var held = cache.Snapshot()
+            .Where(one => one.Plan == RoutePlan.Permit)
+            .Select(one => AppTunnel.Numeric(one.Address))
+            .ToList();
+        if (_apps is { } apps)
+        {
+            basis.Applier.Shore(ranges);
+            if (!apps.Reload(ranges, held, past))
+            {
+                return;
+            }
+        }
+        else
+        {
+            if (ranges.Count == 0)
+            {
+                return;
+            }
+
+            _apps = AppTunnel.TryStartAsync(_iface, routing.TunnelApps, [.. routing.DirectRoutes, .. routing.BlockRoutes],
+                ranges, held, past, false, _peerAddress, _log, CancellationToken.None).GetAwaiter().GetResult();
+            basis.Applier.Attach(_apps);
+            if (_apps is null)
+            {
+                return;
+            }
+
+            if (!basis.Applier.CarryEverything())
+            {
+                _log.Warn("routing", "the peer would not take the whole range, so the ranges of the list reach only what the rules already advertised");
+            }
+        }
+
+        basis.Applier.Rearm();
+        cache.Reinstall();
+    }
+
+    // Refuses the ranges the list blocks, apart from what the connection itself stands on.
+    private async Task RefuseAsync(RoutingCache cache, TunnelRouting routing, CancellationToken ct)
+    {
+        await BlockFirewall.ApplyAsync(SteeringRules.Refused(routing.BlockRoutes, Kept(cache)), _log, ct).ConfigureAwait(false);
+    }
+
+    // Lays the ranges the list keeps direct past a tunnel that carries everything; a held address they no longer
+    // lead there takes a route of its own.
+    private async Task PassAsync(RoutingCache cache, TunnelRouting routing, CancellationToken ct)
+    {
+        if (_direct is { } direct)
+        {
+            await direct.ApplyAsync(Past(cache, routing), ct).ConfigureAwait(false);
+            _standingBasis?.Applier.Uphold(direct.Standing);
+        }
+    }
+
+    // Takes the direct ranges that left the list out of the routes; a held address they led past the tunnel takes
+    // a route of its own first.
+    private void Shed(RoutingCache cache, TunnelRouting routing)
+    {
+        if (_direct is not { } direct)
+        {
+            return;
+        }
+
+        var past = Past(cache, routing);
+        _standingBasis?.Applier.Uphold(direct.Staying(past));
+        direct.ShedAsync(past, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    // The ranges the list keeps off the tunnel, apart from what the connection itself stands on.
+    private IReadOnlyList<string> Past(RoutingCache cache, TunnelRouting routing) =>
+        SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, Kept(cache));
+
+    // What the connection itself stands on: the ranges held outside the cache and the server.
+    private IReadOnlyList<string> Kept(RoutingCache cache) =>
+        _peerAddress is { } peer ? [.. cache.PinnedRoutes, peer] : cache.PinnedRoutes;
 
     // Raises or drops the table holding the tunnel off this machine.
     private async Task BlockInboundAsync(bool block, CancellationToken ct)
@@ -549,6 +669,15 @@ internal sealed class TunnelController : IDisposable
             apps.Dispose();
         }
 
+        await BlockFirewall.RemoveAsync(CancellationToken.None).ConfigureAwait(false);
+        if (_direct is not null)
+        {
+            _direct = null;
+            await DirectPath.RemoveAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        _peerAddress = null;
+
         if (_inboundBlocked)
         {
             _inboundBlocked = false;
@@ -589,7 +718,6 @@ internal sealed class TunnelController : IDisposable
         _standingRoutes = [];
     }
 
-    // The addresses holding a host route: into the tunnel in a split, out the physical hop in a full tunnel.
     // How the session routes, for the journal that reports on it.
     private static string Token(bool split, bool hasRules)
     {
@@ -601,12 +729,13 @@ internal sealed class TunnelController : IDisposable
         return hasRules ? SessionReport.ModeFull : SessionReport.ModeOff;
     }
 
-    private IReadOnlyCollection<string> Routed()
+    // The addresses holding a host route of the kind: into the tunnel or out the physical hop.
+    private IReadOnlyCollection<string> Routed(RoutePlan plan)
     {
         var routed = new List<string>();
         foreach (var entry in _cache?.Snapshot() ?? [])
         {
-            if (entry.Routed)
+            if (entry.Routed && entry.Plan == plan)
             {
                 routed.Add(entry.Address.ToString());
             }

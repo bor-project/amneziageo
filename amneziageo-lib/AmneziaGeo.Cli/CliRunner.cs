@@ -172,10 +172,10 @@ public static class CliRunner
               The access point stands on its own switch, apart from the proxy.
 
             logs and diagnostics
-              log tail [--table ageo|routes|checks] [--limit <n>] [--level <token>] [--search <text>]
+              log tail [--table ageo|dns|routes|checks] [--limit <n>] [--level <token>] [--search <text>]
               log follow [--table ...] [--level ...] [--search ...] [--interval <sec>]
-              log clear [--table ageo|routes|checks]
-              log export [--table ageo|routes|checks] [--out <path>]
+              log clear [--table ageo|dns|routes|checks]
+              log export [--table ageo|dns|routes|checks] [--out <path>]
               log say <text>                    mark the agent log from a test script
               runtime                           the configuration the next connect would use
               sessions [--filter <text>]        every address the tunnel decides for, and why

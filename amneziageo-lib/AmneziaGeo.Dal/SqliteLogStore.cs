@@ -6,8 +6,8 @@ using Microsoft.Data.Sqlite;
 namespace AmneziaGeo.Dal;
 
 /// <summary>
-/// One structured log row: growing id, event time (unix ms), optional level token (ageo only), optional
-/// source (ageo only), message.
+/// One structured log row: growing id, event time (unix ms), optional level token (leveled tables only),
+/// optional source (leveled tables only), message.
 /// </summary>
 public readonly record struct LogRow(long Id, long UnixMs, string? Level, string? Source, string Message);
 
@@ -17,7 +17,7 @@ public readonly record struct LogRow(long Id, long UnixMs, string? Level, string
 public sealed record LogPage(IReadOnlyList<LogRow> Rows, bool HasOlder);
 
 /// <summary>
-/// SQLite-backed structured log store: the agent log (ageo, leveled), the routing log (routes, levelless) and
+/// SQLite-backed structured log store: the agent log (ageo, leveled), the resolver log (dns, leveled), the routing log (routes, levelless) and
 /// the diagnostic runs (checks, levelless), each with a growing bigint key. Levels are normalized into a small log_levels dictionary (severity is the
 /// id, so a "&gt;= level" viewer filter is a cheap range) and joined back for display. Appends are queued and
 /// flushed in batches by a single writer loop; reads/clear/prune/export open their own connections. WAL makes
@@ -32,6 +32,11 @@ public sealed class SqliteLogStore : IDisposable
     /// Table for the agent log (leveled Serilog events).
     /// </summary>
     public const string AgentTable = "ageo";
+
+    /// <summary>
+    /// Table for the resolver log (leveled events of the name subsystem).
+    /// </summary>
+    public const string DnsTable = "dns";
 
     /// <summary>
     /// Table for the routing log (levelless route/DNS events).
@@ -49,7 +54,7 @@ public sealed class SqliteLogStore : IDisposable
     public const string ProbeTable = "probe";
 
     // Enqueued append not yet written; id is assigned by the table AUTOINCREMENT on insert. LevelId applies to
-    // the agent table only (0 for routes).
+    // the leveled tables only (0 for the rest).
     private readonly record struct Pending(string Table, long UnixMs, int LevelId, string? Source, string Message, TaskCompletionSource? Flush = null);
 
     private readonly string _connectionString;
@@ -276,6 +281,14 @@ public sealed class SqliteLogStore : IDisposable
                         msg      TEXT NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS dns (
+                        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ts       INTEGER NOT NULL,
+                        level_id INTEGER NOT NULL REFERENCES log_levels(id),
+                        source   TEXT,
+                        msg      TEXT NOT NULL
+                    );
+
                     CREATE TABLE IF NOT EXISTS routes (
                         id  INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts  INTEGER NOT NULL,
@@ -308,6 +321,14 @@ public sealed class SqliteLogStore : IDisposable
     }
 
     /// <summary>
+    /// Queues a leveled resolver-log row.
+    /// </summary>
+    public void AppendDns(long unixMs, int levelId, string? source, string message)
+    {
+        _queue.Writer.TryWrite(new Pending(DnsTable, unixMs, levelId, source, message));
+    }
+
+    /// <summary>
     /// Queues a levelless routing-log row.
     /// </summary>
     public void AppendRoute(long unixMs, string message)
@@ -333,8 +354,16 @@ public sealed class SqliteLogStore : IDisposable
     }
 
     /// <summary>
+    /// Whether the rows of a table carry a level and a source.
+    /// </summary>
+    public static bool IsLeveled(string table)
+    {
+        return table is AgentTable or DnsTable;
+    }
+
+    /// <summary>
     /// Reads a window of rows newest-first: the live tail when beforeId is null, otherwise rows with id below
-    /// it (page older). minLevelId (ageo) hides rows less severe than it; search matches message or source.
+    /// it (page older). minLevelId (leveled tables) hides rows less severe than it; search matches message or source.
     /// </summary>
     public async Task<LogPage> QueryAsync(string table, long? beforeId, int limit, int? minLevelId, string? search, CancellationToken ct = default)
     {
@@ -493,6 +522,65 @@ public sealed class SqliteLogStore : IDisposable
                 }
 
                 return removed;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves the agent-log rows of the named sources into the resolver log, oldest first; returns how many moved.
+    /// </summary>
+    public async Task<int> MoveToDnsAsync(IReadOnlyCollection<string> sources, CancellationToken ct = default)
+    {
+        if (sources.Count == 0)
+        {
+            return 0;
+        }
+
+        await FlushAsync(ct).ConfigureAwait(false);
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var connection = lease.Connection;
+            var moved = await MoveRowsAsync(connection, sources, ct).ConfigureAwait(false);
+            if (moved > 0)
+            {
+                await ReleaseFreePagesAsync(connection, ct).ConfigureAwait(false);
+            }
+
+            return moved;
+        }
+    }
+
+    // Copies the rows of the sources into the resolver log and drops them from the agent log in one transaction.
+    private static async Task<int> MoveRowsAsync(SqliteConnection connection, IReadOnlyCollection<string> sources, CancellationToken ct)
+    {
+        var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+        await using (transaction.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.Transaction = transaction;
+                var names = new List<string>(sources.Count);
+                foreach (var source in sources)
+                {
+                    var name = $"$source{names.Count}";
+                    names.Add(name);
+                    command.Parameters.AddWithValue(name, source);
+                }
+
+                var list = string.Join(", ", names);
+                command.CommandText =
+                    $"INSERT INTO {DnsTable} (ts, level_id, source, msg) SELECT ts, level_id, source, msg FROM {AgentTable} WHERE source IN ({list}) ORDER BY id;";
+                var moved = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                if (moved > 0)
+                {
+                    command.CommandText = $"DELETE FROM {AgentTable} WHERE source IN ({list});";
+                    await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return moved;
             }
         }
     }
@@ -770,9 +858,9 @@ public sealed class SqliteLogStore : IDisposable
                             command.Parameters.Clear();
                             command.Parameters.AddWithValue("$ts", row.UnixMs);
                             command.Parameters.AddWithValue("$msg", row.Message);
-                            if (row.Table == AgentTable)
+                            if (IsLeveled(row.Table))
                             {
-                                command.CommandText = "INSERT INTO ageo (ts, level_id, source, msg) VALUES ($ts, $level, $source, $msg);";
+                                command.CommandText = $"INSERT INTO {row.Table} (ts, level_id, source, msg) VALUES ($ts, $level, $source, $msg);";
                                 command.Parameters.AddWithValue("$level", row.LevelId);
                                 command.Parameters.AddWithValue("$source", (object?)row.Source ?? DBNull.Value);
                             }
@@ -828,23 +916,23 @@ public sealed class SqliteLogStore : IDisposable
     // tables have no level/source, so those columns come back NULL and ReadRow yields nulls for them.
     private static (string From, string Columns) Projection(string table)
     {
-        return table == AgentTable
-            ? ("ageo a JOIN log_levels l ON a.level_id = l.id", "a.id, a.ts, l.name, a.source, a.msg")
+        return IsLeveled(table)
+            ? ($"{table} a JOIN log_levels l ON a.level_id = l.id", "a.id, a.ts, l.name, a.source, a.msg")
             : (table, "id, ts, NULL, NULL, msg");
     }
 
-    // Qualified id column for ORDER BY / cursor: aliased in the agent join, bare for routes.
+    // Qualified id column for ORDER BY / cursor: aliased in the leveled join, bare for the rest.
     private static string IdColumn(string table)
     {
-        return table == AgentTable ? "a.id" : "id";
+        return IsLeveled(table) ? "a.id" : "id";
     }
 
-    // Appends a WHERE clause for the id cursor, min-severity (ageo), and search substring; binds parameters.
+    // Appends a WHERE clause for the id cursor, min-severity (leveled tables), and search substring; binds parameters.
     private static string BuildFilter(SqliteCommand command, string table, long? beforeId, int? minLevelId, string? search)
     {
-        var agent = table == AgentTable;
+        var leveled = IsLeveled(table);
         var idCol = IdColumn(table);
-        var msgCol = agent ? "a.msg" : "msg";
+        var msgCol = leveled ? "a.msg" : "msg";
 
         var clauses = new List<string>();
         if (beforeId is { } cursor)
@@ -853,7 +941,7 @@ public sealed class SqliteLogStore : IDisposable
             command.Parameters.AddWithValue("$before", cursor);
         }
 
-        if (agent && minLevelId is { } min)
+        if (leveled && minLevelId is { } min)
         {
             clauses.Add("a.level_id >= $minlevel");
             command.Parameters.AddWithValue("$minlevel", min);
@@ -861,7 +949,7 @@ public sealed class SqliteLogStore : IDisposable
 
         if (!string.IsNullOrEmpty(search))
         {
-            var like = agent
+            var like = leveled
                 ? $"({msgCol} LIKE $q ESCAPE '\\' OR a.source LIKE $q ESCAPE '\\')"
                 : $"{msgCol} LIKE $q ESCAPE '\\'";
             clauses.Add(like);
@@ -888,7 +976,7 @@ public sealed class SqliteLogStore : IDisposable
 
     private static string Validate(string table)
     {
-        return table is AgentTable or RoutesTable or ChecksTable or ProbeTable
+        return table is AgentTable or DnsTable or RoutesTable or ChecksTable or ProbeTable
             ? table
             : throw new ArgumentException($"unknown log table: {table}", nameof(table));
     }

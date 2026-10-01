@@ -78,7 +78,7 @@
      <Grid RowDefinitions="Auto,*" RowSpacing="{Binding SectionSpacing}">
 
        <!-- Header: source and level share a row under their headings, the routing switch takes the next one.
-            ageo records up to a level; routes is on or off; the live source is read from the tunnel, not recorded. -->
+            ageo and dns record up to a level; routes is on or off; the live source is read from the tunnel, not recorded. -->
        <StackPanel Grid.Row="0" Spacing="{Binding HeadSpacing}">
          <Grid ColumnSpacing="10" IsVisible="{Binding !IsProbeLog}">
            <!-- Узкому телефону журнал и уровень делят строку поровну. -->
@@ -95,7 +95,7 @@
            </StackPanel>
            <!-- The level takes width off the source only while it is shown, so the source fills the row alone
                 on every other journal. -->
-           <StackPanel Grid.Column="1" Spacing="4" IsVisible="{Binding IsAgentLog}"
+           <StackPanel Grid.Column="1" Spacing="4" IsVisible="{Binding IsLeveledLog}"
                        Width="{Binding IsSlim, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w132}">
              <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontWeight="SemiBold" FontSize="15"
                         IsVisible="{Binding !IsShort}" />

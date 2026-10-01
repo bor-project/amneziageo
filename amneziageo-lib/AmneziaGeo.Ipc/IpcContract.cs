@@ -386,9 +386,9 @@ public static class IpcContract
     public const string OpAskServers = "ask-servers";
 
     /// <summary>
-    /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");
+    /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"dns"/"routes"/"checks");
     /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
-    /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less
+    /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo and dns: hide rows less
     /// severe than it); [4] optional search substring (matches message or source). The ack message holds a
     /// JSON object { lines: string[] (rendered, newest first), firstId: long (smallest id in the window),
     /// hasOlder: bool, matchCount: int (total matches when searching) }.
@@ -396,12 +396,12 @@ public static class IpcContract
     public const string OpReadLog = "read-log";
 
     /// <summary>
-    /// Command to clear one log table. Args: [0] table ("ageo"/"routes"/"checks"). Other logs are left untouched.
+    /// Command to clear one log table. Args: [0] table ("ageo"/"dns"/"routes"/"checks"). Other logs are left untouched.
     /// </summary>
     public const string OpClearLog = "clear-log";
 
     /// <summary>
-    /// Command to render a whole log table to text for the UI to save. Args: [0] table ("ageo"/"routes"/"checks").
+    /// Command to render a whole log table to text for the UI to save. Args: [0] table ("ageo"/"dns"/"routes"/"checks").
     /// The agent renders every row and returns the text in the ack message; the UI writes the file under the
     /// user account. The agent never writes a caller-supplied path.
     /// </summary>

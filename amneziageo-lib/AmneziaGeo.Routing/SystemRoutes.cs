@@ -41,6 +41,34 @@ public static class SystemRoutes
     }
 
     /// <summary>
+    /// The ranges the routes of a tun reach into.
+    /// </summary>
+    public static IReadOnlyList<string> Captured(IReadOnlyList<string> routes, IReadOnlyList<string> ranges)
+    {
+        var carried = Spans(routes);
+        var captured = new List<string>();
+        foreach (var range in ranges)
+        {
+            if (Spans([range]).Any(span => carried.Any(route => route.Start <= span.End && route.End >= span.Start)))
+            {
+                captured.Add(range);
+            }
+        }
+
+        return captured;
+    }
+
+    /// <summary>
+    /// The routes of a tun with the ranges left outside it.
+    /// </summary>
+    public static IReadOnlyList<string> Without(IReadOnlyList<string> routes, IReadOnlyList<string> ranges)
+    {
+        var left = Subtract(Spans(routes), Spans(ranges));
+
+        return left.Count == 0 ? [] : ToCidrs(left);
+    }
+
+    /// <summary>
     /// How many direct addresses fit the tun route budget.
     /// </summary>
     public static int Fit(

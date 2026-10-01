@@ -58,6 +58,7 @@ public static class Program
 
         using var log = new AgentLog(AgentPaths.LogDb);
         await log.InitializeAsync().ConfigureAwait(false);
+        await MoveResolverRowsAsync(log).ConfigureAwait(false);
         log.Info("agent", $"starting: pid {Environment.ProcessId}, version {AgentBuild.Version}, interface {options.Interface}, engine {options.EnginePath} (present: {File.Exists(options.EnginePath)}){(ContainerHost.Detected ? ", in a container" : string.Empty)}");
 
         using var cts = new CancellationTokenSource();
@@ -95,6 +96,23 @@ public static class Program
         log.Info("agent", "stopped");
         await log.FlushAsync(CancellationToken.None).ConfigureAwait(false);
         return 0;
+    }
+
+    // Hands the resolver log the rows an earlier version left in the agent log.
+    private static async Task MoveResolverRowsAsync(AgentLog log)
+    {
+        try
+        {
+            var moved = await log.MoveResolverRowsAsync().ConfigureAwait(false);
+            if (moved > 0)
+            {
+                log.Info("agent", $"{moved} resolver row(s) were moved from the agent log into the resolver log");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.Debug("agent", $"the resolver rows stay in the agent log until the next start{Environment.NewLine}{ex}");
+        }
     }
 
     private static void WaitForDebugger()

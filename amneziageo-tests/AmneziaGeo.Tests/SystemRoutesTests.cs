@@ -141,4 +141,44 @@ public sealed class SystemRoutesTests
         Assert.Empty(SystemRoutes.Carve(["10.0.0.0/8"], [], [], 0));
         Assert.Empty(SystemRoutes.Carve([], [], [], 1000));
     }
+
+    [Fact]
+    public void Captured_NamesNothingWhenTheRoutesStopShortOfTheNetwork()
+    {
+        var routes = new[] { "149.154.160.0/20", "91.108.4.0/22", "10.8.0.1/32" };
+
+        Assert.Empty(SystemRoutes.Captured(routes, ["192.168.31.0/24", "10.105.20.48/29"]));
+    }
+
+    [Fact]
+    public void Captured_NamesTheNetworkAFullTunnelCarries()
+    {
+        var routes = SystemRoutes.Tunneled(true, [], ["192.168.1.0/24"], []);
+
+        Assert.Equal(["192.168.31.0/24"], SystemRoutes.Captured(routes, ["192.168.1.0/24", "192.168.31.0/24"]));
+    }
+
+    [Fact]
+    public void Captured_NamesTheNetworkInsideARangeOfTheList()
+    {
+        Assert.Equal(["10.20.30.0/24"], SystemRoutes.Captured(["10.0.0.0/8"], ["10.20.30.0/24", "192.168.31.0/24"]));
+    }
+
+    [Fact]
+    public void Without_LeavesTheNetworkOutsideTheTun()
+    {
+        var routes = SystemRoutes.Tunneled(true, [], ["192.168.1.0/24"], []);
+
+        var left = SystemRoutes.Without(routes, ["192.168.31.0/24"]);
+
+        Assert.Empty(SystemRoutes.Captured(left, ["192.168.1.0/24", "192.168.31.0/24"]));
+        Assert.Equal(["192.168.30.0/24", "192.168.32.0/24"], SystemRoutes.Captured(left, ["192.168.30.0/24", "192.168.32.0/24"]));
+        Assert.Equal(SystemRoutes.Tunneled(true, [], ["192.168.1.0/24", "192.168.31.0/24"], []), left);
+    }
+
+    [Fact]
+    public void Without_LeavesNothingOfATunThatCarriedTheNetworkAlone()
+    {
+        Assert.Empty(SystemRoutes.Without(["192.168.31.0/24"], ["192.168.31.0/24"]));
+    }
 }

@@ -158,6 +158,11 @@ internal sealed class AndroidAgentLog : IDisposable
     public Task<string> RenderAllAsync(string table, CancellationToken ct = default) => _store.RenderAsync(table, Render, ct);
 
     /// <summary>
+    /// Drops the oldest rows of every log table past its cap.
+    /// </summary>
+    public Task<LogPruned> PruneAsync(CancellationToken ct = default) => LogRetention.PruneAsync(_store, LogRetention.MaxRows, ct);
+
+    /// <summary>
     /// Renders one row: "yyyy-MM-dd HH:mm:ss.fff [LVL] source message"; routes carry no level or source.
     /// </summary>
     public static string Render(LogRow row)

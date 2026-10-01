@@ -24,6 +24,9 @@ public sealed class LinkRecoveryTests
     // Every echo lost: the link is measurable and measures as gone.
     private static readonly LinkSample _silent = new(true, false, 100, false, 20);
 
+    // Sending goes on and nothing comes back, while the echoes of the last half minute still count as answered.
+    private static readonly LinkSample _muted = new(true, false, 0, false, 20);
+
     [Fact]
     public void ALinkThatKeepsReceiving_IsNeverRepaired()
     {
@@ -181,9 +184,164 @@ public sealed class LinkRecoveryTests
         Assert.All(steps, step => Assert.Equal(RecoveryStep.Restart, step));
     }
 
+    [Fact]
+    public void ATunnelThatWasCarrying_ChangesItsPortAfterSecondsOfSilence()
+    {
+        var recovery = Ladder();
+
+        var steps = Readings(recovery, 5, 60, second => second <= 15 ? _carrying : _muted);
+
+        Assert.Equal([(25, RecoveryStep.Rebind)], steps);
+        Assert.Contains("hears nothing", recovery.Reason);
+        Assert.Equal(1, recovery.Attempt);
+        Assert.False(recovery.Repairing);
+    }
+
+    [Fact]
+    public void ATunnelCarryingACall_ChangesItsPortOnTheFirstReadingThatHearsNothing()
+    {
+        var recovery = Ladder();
+        var call = _muted with { Sent = 20_000 };
+
+        var steps = Readings(recovery, 5, 60, second => second <= 15 ? _carrying : call);
+
+        Assert.Equal([(20, RecoveryStep.Rebind)], steps);
+        Assert.Contains("hears nothing", recovery.Reason);
+    }
+
+    [Fact]
+    public void AnIdleTunnelThatMissesOneEcho_KeepsItsPort()
+    {
+        var recovery = Ladder();
+
+        var steps = Readings(recovery, 5, 60, second => second == 20 ? _muted : _carrying);
+
+        Assert.Empty(steps);
+    }
+
+    [Fact]
+    public void ATunnelThatNeverCarried_KeepsItsPort()
+    {
+        var recovery = Ladder();
+
+        var steps = Feed(recovery, 120, _muted);
+
+        Assert.Empty(steps);
+    }
+
+    [Fact]
+    public void APortChangeThatBroughtTheLinkBack_LeavesNoTrace()
+    {
+        var recovery = Ladder();
+        var now = Mute(recovery);
+
+        recovery.Sample(_carrying, now + 5000);
+
+        Assert.Equal(0, recovery.Attempt);
+        Assert.Equal(string.Empty, recovery.Reason);
+        Assert.False(recovery.Repairing);
+    }
+
+    [Fact]
+    public void ThePort_IsNotChangedTwiceWithinAMinute()
+    {
+        var recovery = Ladder();
+        Mute(recovery);
+
+        var steps = Readings(recovery, 30, 100, second => second is <= 40 or (>= 60 and <= 70) ? _carrying : _muted);
+
+        Assert.Equal([(85, RecoveryStep.Rebind)], steps);
+    }
+
+    [Fact]
+    public void ASilenceThatLasts_GoesOnFromTheNextRung()
+    {
+        var recovery = Ladder();
+        var now = Mute(recovery);
+
+        var steps = new List<RecoveryStep>();
+        for (var second = 1; second <= LinkRecovery.DeadSeconds + 1; second++)
+        {
+            if (recovery.Sample(_silent, now + (second * 1000L)) is { } step)
+            {
+                steps.Add(step);
+            }
+        }
+
+        Assert.Equal([RecoveryStep.Resolve], steps);
+        Assert.Equal(2, recovery.Attempt);
+        Assert.True(recovery.Repairing);
+    }
+
+    [Fact]
+    public void WhereThePortChangeIsTheOnlyCheapRung_TheSessionIsRaisedAfterIt()
+    {
+        var recovery = new LinkRecovery([RecoveryStep.Rebind, RecoveryStep.Restart], jitterPercent: 0);
+        var now = Mute(recovery);
+
+        var steps = new List<RecoveryStep>();
+        for (var second = 1; second <= LinkRecovery.DeadSeconds + 1; second++)
+        {
+            if (recovery.Sample(_silent, now + (second * 1000L)) is { } step)
+            {
+                steps.Add(step);
+            }
+        }
+
+        Assert.Equal([RecoveryStep.Restart], steps);
+    }
+
+    [Fact]
+    public void WhereNoEchoMeasuresTheLink_OnlyTrafficSentIntoTheSilenceChangesThePort()
+    {
+        var carrying = _carrying with { LossPercent = Unknown };
+        var chatter = new LinkSample(true, false, Unknown, false, 20, 150);
+        var sending = new LinkSample(true, false, Unknown, false, 20, 20_000);
+
+        var quiet = Readings(Ladder(), 5, 120, second => second <= 15 ? carrying : chatter);
+        var busy = Readings(Ladder(), 5, 120, second => second <= 15 ? carrying : sending);
+
+        Assert.Empty(quiet);
+        Assert.Equal([(25, RecoveryStep.Rebind)], busy);
+    }
+
+    [Fact]
+    public void ALadderWithoutThePortChange_TakesNoStepOnSilenceAlone()
+    {
+        var recovery = new LinkRecovery([RecoveryStep.Restart], jitterPercent: 0);
+
+        var steps = Readings(recovery, 5, 60, second => second <= 15 ? _carrying : _muted);
+
+        Assert.Empty(steps);
+    }
+
     private static LinkRecovery Ladder()
     {
         return new LinkRecovery(_ladder, jitterPercent: 0);
+    }
+
+    // Carries for a while, falls silent and returns the moment the port was changed.
+    private static long Mute(LinkRecovery recovery)
+    {
+        var steps = Readings(recovery, 5, 25, second => second <= 15 ? _carrying : _muted);
+        Assert.Equal([(25, RecoveryStep.Rebind)], steps);
+
+        return 25_000;
+    }
+
+    // Reads the link every five seconds and returns the steps asked for with the second each came at.
+    private static List<(int Second, RecoveryStep Step)> Readings(LinkRecovery recovery, int from, int to, Func<int, LinkSample> link)
+    {
+        var steps = new List<(int Second, RecoveryStep Step)>();
+        for (var second = from; second <= to; second += 5)
+        {
+            if (recovery.Sample(link(second), second * 1000L) is { } step)
+            {
+                steps.Add((second, step));
+            }
+        }
+
+        return steps;
     }
 
     // Runs the link dead and returns the moment the first repair was asked for.

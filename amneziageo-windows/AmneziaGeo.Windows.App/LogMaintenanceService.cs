@@ -10,11 +10,6 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings settings, AgentControl control, ILogger<LogMaintenanceService> logger) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(2);
-
-    // Diagnostic runs kept: each is a whole report, and a handful of them covers any support thread.
-    private const int ChecksKept = 50;
-
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -28,7 +23,7 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
                 // Prune only while a tunnel is up: log.db grows during a session; idle, little is written.
                 await control.WaitUntilRunningAsync(stoppingToken);
                 await PruneAsync(stoppingToken);
-                await Task.Delay(Interval, stoppingToken);
+                await Task.Delay(LogRetention.Interval, stoppingToken);
             }
         }
         catch (OperationCanceledException)
@@ -40,13 +35,10 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
     {
         try
         {
-            var agent = await store.PruneAsync(SqliteLogStore.AgentTable, settings.MaxRowsPerTable, ct);
-            var routes = await store.PruneAsync(SqliteLogStore.RoutesTable, settings.MaxRowsPerTable, ct);
-            await store.PruneAsync(SqliteLogStore.ChecksTable, ChecksKept, ct);
-            await store.PruneAsync(SqliteLogStore.ProbeTable, ChecksKept, ct);
-            if (agent + routes > 0)
+            var pruned = await LogRetention.PruneAsync(store, settings.MaxRowsPerTable, ct);
+            if (pruned.Total > 0)
             {
-                logger.LogDebug("dropped the oldest {Agent} log entries and {Routes} routing entries past the retention limit", agent, routes);
+                logger.LogDebug("dropped the oldest {Agent} log entries, {Dns} resolver entries and {Routes} routing entries past the retention limit", pruned.Agent, pruned.Dns, pruned.Routes);
             }
         }
         catch (OperationCanceledException)

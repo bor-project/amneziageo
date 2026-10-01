@@ -28,14 +28,15 @@ public enum RecoveryStep
 }
 
 /// <summary>
-/// One second of a live tunnel, as the counters and the echoes inside it saw it.
+/// One reading of a live tunnel, as the counters and the echoes inside it saw it.
 /// </summary>
 public readonly record struct LinkSample(
     bool TxMoved,
     bool RxMoved,
     int LossPercent,
     bool Churning,
-    int HandshakeAgeSeconds);
+    int HandshakeAgeSeconds,
+    long Sent = 0);
 
 /// <summary>
 /// Says when a live tunnel has stopped carrying and what to try next. No single counter names it: a session that
@@ -69,6 +70,36 @@ public sealed class LinkRecovery
     /// </summary>
     public const int DefaultDeadHandshakeSeconds = 180;
 
+    /// <summary>
+    /// Seconds a tunnel that was carrying sends into silence before its source port is changed.
+    /// </summary>
+    public const int SilentSeconds = 6;
+
+    /// <summary>
+    /// Seconds of that silence that are enough where traffic and an echo that used to answer both went unanswered.
+    /// </summary>
+    public const int BusySilentSeconds = 4;
+
+    /// <summary>
+    /// Seconds of a silence within which the source port is changed on it.
+    /// </summary>
+    public const int SilentWindowSeconds = 30;
+
+    /// <summary>
+    /// Seconds of traffic arriving reading after reading that make a tunnel count as carrying.
+    /// </summary>
+    public const int LiveSeconds = 4;
+
+    /// <summary>
+    /// Seconds before the source port of a silent tunnel is changed again.
+    /// </summary>
+    public const int SilentHoldSeconds = 60;
+
+    /// <summary>
+    /// Bytes sent into a silence that count as sending where no echo measures the link.
+    /// </summary>
+    public const int SilentBytes = 2000;
+
     // Waits between rungs; the last one is served for every attempt past it.
     private static readonly int[] _backoffSeconds = [2, 4, 8, 15, 30, 60];
 
@@ -81,6 +112,12 @@ public sealed class LinkRecovery
     private long _repairingSinceMs;
     private long _nextActionMs;
     private int _rung = -1;
+    private long _heardSinceMs;
+    private long _heardAtMs;
+    private long _sentSilent;
+    private long _reboundAtMs;
+    private bool _live;
+    private bool _rebound;
 
     /// <summary>
     /// ctor
@@ -119,13 +156,19 @@ public sealed class LinkRecovery
     /// </summary>
     public RecoveryStep? Sample(LinkSample sample, long nowMs)
     {
+        Follow(sample, nowMs);
         var reason = Stalling(sample);
         if (reason.Length == 0)
         {
             _stalledSinceMs = 0;
 
             // A tunnel nobody is using proves nothing either way, so only traffic stands the ladder down.
-            return sample.RxMoved ? Carrying(nowMs) : null;
+            if (sample.RxMoved)
+            {
+                return Carrying(nowMs);
+            }
+
+            return Muted(sample, nowMs) ? Rebound(nowMs) : null;
         }
 
         _healthySinceMs = 0;
@@ -155,6 +198,12 @@ public sealed class LinkRecovery
         _repairingSinceMs = 0;
         _nextActionMs = 0;
         _rung = -1;
+        _heardSinceMs = 0;
+        _heardAtMs = 0;
+        _sentSilent = 0;
+        _reboundAtMs = 0;
+        _live = false;
+        _rebound = false;
         Attempt = 0;
         Reason = string.Empty;
         GivenUp = false;
@@ -174,7 +223,72 @@ public sealed class LinkRecovery
             Reset();
         }
 
+        // Forgets the port change of a silence that is over.
+        if (!Repairing && Attempt > 0)
+        {
+            _rung = -1;
+            Attempt = 0;
+            Reason = string.Empty;
+        }
+
         return null;
+    }
+
+    // Follows the reception: since when it has been arriving, when it last did and what was sent after it.
+    private void Follow(LinkSample sample, long nowMs)
+    {
+        if (sample.RxMoved)
+        {
+            if (_heardSinceMs == 0)
+            {
+                _heardSinceMs = nowMs;
+            }
+
+            _heardAtMs = nowMs;
+            _sentSilent = 0;
+            _rebound = false;
+            return;
+        }
+
+        if (_heardSinceMs > 0)
+        {
+            _live = _heardAtMs - _heardSinceMs >= LiveSeconds * 1000L;
+            _heardSinceMs = 0;
+        }
+
+        _sentSilent += sample.Sent;
+    }
+
+    // Tells a tunnel that was carrying, keeps sending and has heard nothing for seconds.
+    private bool Muted(LinkSample sample, long nowMs)
+    {
+        var silence = nowMs - _heardAtMs;
+        var measured = LinkHealth.LossKnown(sample.LossPercent);
+        var sending = _sentSilent >= SilentBytes;
+
+        return _live
+            && !_rebound
+            && !Repairing
+            && !GivenUp
+            && _steps.Length > 0
+            && _steps[0] == RecoveryStep.Rebind
+            && sample.TxMoved
+            && silence >= (measured && sending ? BusySilentSeconds : SilentSeconds) * 1000L
+            && silence <= SilentWindowSeconds * 1000L
+            && (measured || sending)
+            && (_reboundAtMs == 0 || nowMs - _reboundAtMs >= SilentHoldSeconds * 1000L);
+    }
+
+    // Takes the first rung ahead of the ladder.
+    private RecoveryStep Rebound(long nowMs)
+    {
+        _rebound = true;
+        _reboundAtMs = nowMs;
+        _rung = 0;
+        Attempt = 1;
+        Reason = "the tunnel was carrying, keeps sending and hears nothing";
+
+        return RecoveryStep.Rebind;
     }
 
     // What names a dead link, in the order the evidence is worth trusting.

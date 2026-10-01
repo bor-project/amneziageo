@@ -9,6 +9,11 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal sealed class AgentLog : IDisposable
 {
+    /// <summary>
+    /// The source whose rows make up the resolver log.
+    /// </summary>
+    public const string ResolverSource = "dns";
+
     private readonly SqliteLogStore _store;
     private volatile int _captureFloor = 5;
     private volatile bool _routeLog;
@@ -85,11 +90,24 @@ internal sealed class AgentLog : IDisposable
     public void Agent(int levelId, string source, string message)
     {
         Console.WriteLine($"{Stamp()} [{LevelToken(levelId)}] {source} {message}");
-        if (levelId >= _captureFloor)
+        if (levelId < _captureFloor)
         {
-            _store.AppendAgent(UnixMs(), levelId, source, message);
+            return;
         }
+
+        if (source == ResolverSource)
+        {
+            _store.AppendDns(UnixMs(), levelId, source, message);
+            return;
+        }
+
+        _store.AppendAgent(UnixMs(), levelId, source, message);
     }
+
+    /// <summary>
+    /// Moves the resolver rows an earlier version left in the agent log into the resolver log.
+    /// </summary>
+    public Task<int> MoveResolverRowsAsync(CancellationToken ct = default) => _store.MoveToDnsAsync([ResolverSource], ct);
 
     /// <summary>
     /// Stores one routing-log row when the routing log is on.
@@ -123,6 +141,11 @@ internal sealed class AgentLog : IDisposable
     /// Renders a whole log table to text for export.
     /// </summary>
     public Task<string> RenderAllAsync(string table, CancellationToken ct = default) => _store.RenderAsync(table, Render, ct);
+
+    /// <summary>
+    /// Drops the oldest rows of every log table past its cap.
+    /// </summary>
+    public Task<LogPruned> PruneAsync(CancellationToken ct = default) => LogRetention.PruneAsync(_store, LogRetention.MaxRows, ct);
 
     /// <summary>
     /// Flushes pending rows to the database.

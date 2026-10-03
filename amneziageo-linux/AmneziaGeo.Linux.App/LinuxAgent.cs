@@ -629,7 +629,8 @@ internal sealed class LinuxAgent : IDisposable
             _loss?.RecentPercent ?? LinkHealth.LossUnknown,
             reading.Churning,
             peer.HandshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix) : 0,
-            _lastTxBytes < 0 ? 0 : Math.Max(0, peer.TxBytes - _lastTxBytes));
+            _lastTxBytes < 0 ? 0 : Math.Max(0, peer.TxBytes - _lastTxBytes),
+            _lastRxBytes < 0 ? 0 : Math.Max(0, peer.RxBytes - _lastRxBytes));
         _lastRxBytes = peer.RxBytes;
         _lastTxBytes = peer.TxBytes;
 
@@ -1858,7 +1859,8 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    // Downloads one source, or every source when no name is given, then re-materializes the routing lists.
+    // Downloads one source, or every source when no name is given, re-materializes the routing lists and hands a base
+    // that changed to the running tunnel.
     private async Task<IpcAck> UpdateSourcesAsync(string? name, CancellationToken ct)
     {
         var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
@@ -1877,11 +1879,14 @@ internal sealed class LinuxAgent : IDisposable
         await PushAsync(ct).ConfigureAwait(false);
         var pump = new CancellationTokenSource();
         var ticker = ProgressPumpAsync(pump.Token);
+        var changed = false;
         foreach (var source in targets)
         {
             try
             {
+                var before = await _store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
                 var meta = await _geoUpdater.UpdateAsync(source, new SourceProgress(_sourceProgress, source.Name), ct).ConfigureAwait(false);
+                changed |= !string.Equals(before?.Sha256, meta.Sha256, StringComparison.Ordinal);
                 _sourceErrors[source.Name] = null;
                 _log.Info("geo", $"{source.Name}: {meta.CategoryCount} categories");
             }
@@ -1902,6 +1907,14 @@ internal sealed class LinuxAgent : IDisposable
         await ticker.ConfigureAwait(false);
         pump.Dispose();
         await _geo.RematerializeAllRoutingListsAsync(ct).ConfigureAwait(false);
+
+        // A base that changed reaches the running tunnel at once and without a reconnect: a list that sends a
+        // category through the tunnel would otherwise let the addresses and names the category gained go past it.
+        if (changed)
+        {
+            await ApplyRoutingAsync(ct).ConfigureAwait(false);
+        }
+
         await PushAsync(ct).ConfigureAwait(false);
         return failures.Count == 0
             ? new IpcAck(true, $"{targets.Count} source(s) updated")
@@ -2520,7 +2533,7 @@ internal sealed class LinuxAgent : IDisposable
         return new IpcAck(true, report.ToPayload());
     }
 
-    // Measures one destination over the path asked for; the routing cache holds it there for the run only.
+    // Measures one destination over the path asked for; the routing cache holds it in the tunnel for the run only.
     private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -2540,10 +2553,17 @@ internal sealed class LinuxAgent : IDisposable
         var (upload, own) = await UploadAsync(path, args.Count > 2 ? args[2] : string.Empty, ct).ConfigureAwait(false);
         var cache = _tunnel.Cache;
         var address = await ProbeAddressAsync(target, ct).ConfigureAwait(false);
-        var held = HoldProbe(cache, address, path);
+
+        // Past the tunnel only the probe's own sockets leave by the physical device: a route would take everything
+        // the machine sends to the address with them, and what the rules send through the tunnel would go past it
+        // for the whole run. The route is left for a system that refuses the binding.
+        var bypass = path == ProbePaths.Bypass && cache is not null
+            ? PhysicalPath.Bypass(await _tunnel.PhysicalDeviceAsync(ct).ConfigureAwait(false))
+            : null;
+        var held = bypass is null ? HoldProbe(cache, address, path) : null;
         try
         {
-            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), upload, OwnUpload: own);
+            var options = new TargetProbeOptions(target, path, TakenPath(cache, address, path), upload, bypass, own);
             var report = await TargetProbe.RunAsync(options, ct).ConfigureAwait(false);
             RecordProbe(report);
             return new IpcAck(true, report.ToPayload());
@@ -2750,8 +2770,6 @@ internal sealed class LinuxAgent : IDisposable
                             _log.Warn("geo", $"{source.Name}: the source the server handed out was not fetched: {ack.Message}");
                         }
                     }
-
-                    await ApplyRoutingAsync(CancellationToken.None).ConfigureAwait(false);
                 },
                 CancellationToken.None).ConfigureAwait(false);
         }

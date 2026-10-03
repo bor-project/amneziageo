@@ -72,6 +72,30 @@ public sealed class LinkRecoveryTests
     }
 
     [Fact]
+    public void EchoesLostBehindADownload_DoNotTakeTheTunnelDown()
+    {
+        var recovery = Ladder();
+        var busy = _silent with { RxMoved = true, Received = 2_000_000 };
+
+        var steps = Readings(recovery, 5, 300, second => second <= 15 ? _carrying : busy);
+
+        Assert.Empty(steps);
+        Assert.False(recovery.Repairing);
+    }
+
+    [Fact]
+    public void EchoesLostWhileOnlyATrickleArrives_StillNameTheLinkDead()
+    {
+        var recovery = Ladder();
+        var trickle = _silent with { RxMoved = true, Received = 148 };
+
+        var steps = Feed(recovery, LinkRecovery.DeadSeconds + 1, trickle);
+
+        Assert.Equal([RecoveryStep.Rebind], steps);
+        Assert.Contains("echo", recovery.Reason);
+    }
+
+    [Fact]
     public void ATunnelSendingIntoSilenceWithAnAgeingHandshake_IsRepaired()
     {
         var recovery = Ladder();

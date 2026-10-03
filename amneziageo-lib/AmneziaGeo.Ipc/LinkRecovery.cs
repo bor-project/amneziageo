@@ -36,7 +36,8 @@ public readonly record struct LinkSample(
     int LossPercent,
     bool Churning,
     int HandshakeAgeSeconds,
-    long Sent = 0);
+    long Sent = 0,
+    long Received = 0);
 
 /// <summary>
 /// Says when a live tunnel has stopped carrying and what to try next. No single counter names it: a session that
@@ -99,6 +100,12 @@ public sealed class LinkRecovery
     /// Bytes sent into a silence that count as sending where no echo measures the link.
     /// </summary>
     public const int SilentBytes = 2000;
+
+    /// <summary>
+    /// Bytes arriving in one reading that prove the tunnel carries, whatever its echoes lose. A dead link brings
+    /// back a handshake answer or a keepalive at most, far below it.
+    /// </summary>
+    public const int FlowingBytes = 16 * 1024;
 
     // Waits between rungs; the last one is served for every attempt past it.
     private static readonly int[] _backoffSeconds = [2, 4, 8, 15, 30, 60];
@@ -301,7 +308,9 @@ public sealed class LinkRecovery
             return "the session is being re-established instead of carrying";
         }
 
-        if (LinkHealth.LossKnown(sample.LossPercent) && sample.LossPercent >= 100)
+        // An echo waits behind whatever fills the link: a download over a slow one keeps every echo past its
+        // timeout while the data itself keeps arriving, and that link is busy, not dead.
+        if (LinkHealth.LossKnown(sample.LossPercent) && sample.LossPercent >= 100 && sample.Received < FlowingBytes)
         {
             return "every echo sent inside the tunnel was lost";
         }

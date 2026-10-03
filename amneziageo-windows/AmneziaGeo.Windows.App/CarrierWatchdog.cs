@@ -65,6 +65,7 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
     {
         var rxMoved = _lastRx >= 0 && status.RxBytes > _lastRx;
         var txMoved = _lastTx >= 0 && status.TxBytes > _lastTx;
+        var received = Moved(_lastRx, status.RxBytes);
         _lastRx = status.RxBytes;
         _lastTx = status.TxBytes;
 
@@ -74,7 +75,7 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
         _lastBytesOut = wire.BytesOut;
         _lastBytesRetrans = wire.BytesRetrans;
 
-        var reason = _health.Verdict(txMoved, rxMoved, bytesOut, bytesRetrans, probe.RecentPercent, probe.RttMs);
+        var reason = _health.Verdict(txMoved, rxMoved, bytesOut, bytesRetrans, probe.RecentPercent, probe.RttMs, received);
         Unmeasurable();
         Trace(status);
         if (reason.Length == 0)

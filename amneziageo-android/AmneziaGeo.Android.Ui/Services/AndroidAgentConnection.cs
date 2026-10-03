@@ -999,6 +999,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Whether a list rebuilt from the bases carries what it carried before.
+    private static bool SameCarry(RoutingList before, RoutingList? after) =>
+        after is not null
+        && before.Routes.SequenceEqual(after.Routes)
+        && before.Domains.SequenceEqual(after.Domains)
+        && before.DirectRoutes.SequenceEqual(after.DirectRoutes)
+        && before.DirectDomains.SequenceEqual(after.DirectDomains)
+        && before.BlockRoutes.SequenceEqual(after.BlockRoutes)
+        && before.BlockDomains.SequenceEqual(after.BlockDomains);
+
     // A live tun keeps the routes establish() was given, so an edited list only reaches the tunnel on a reconnect.
     private void MarkRoutingChanged(long listId)
     {
@@ -1177,7 +1187,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.InitializeAsync().ConfigureAwait(false);
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
-        if (await RoutingSeed.SeedAsync(_store, _geo, Loc.Instance.Get("Preset_ClosedName"), CancellationToken.None).ConfigureAwait(false))
+        // The configurations live in the agent's own file, not in the store, so the seed hears of them from here.
+        if (await RoutingSeed.SeedAsync(_store, _geo, Loc.Instance.Get("Preset_ClosedName"), CancellationToken.None, inUse: _configs.Count > 0).ConfigureAwait(false))
         {
             _log.Info("agent", "a fresh install routes the unavailable sites through the tunnel; the list is the owner's to change");
         }
@@ -1423,12 +1434,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Re-materializes routing lists against the changed bases, refreshes caches, and pushes a fresh snapshot.
     private async Task AfterSourcesChangedAsync()
     {
+        var routed = _active ? RoutedList : null;
+        var before = routed is { } held ? await _store.GetRoutingListAsync(held).ConfigureAwait(false) : null;
         try
         {
             await _geo.RematerializeAllRoutingListsAsync().ConfigureAwait(false);
         }
         catch (Exception)
         {
+        }
+
+        // The tunnel routes by the plan it was raised with. A base that changed what the routed list carries reaches
+        // it only with a fresh tunnel, and the owner is told so rather than having the tunnel raised behind their
+        // back: what the list sends through it goes past it while the tunnel is down.
+        if (before is not null && routed is { } listId && !_restartRequired
+            && !SameCarry(before, await _store.GetRoutingListAsync(listId).ConfigureAwait(false)))
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the refreshed rule databases change what the routing list carries; they apply on the next connect");
         }
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
@@ -2380,11 +2403,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             From: await ListNameAsync(_selectedRoutingList).ConfigureAwait(false),
             To: await ListNameAsync(picked).ConfigureAwait(false))).ConfigureAwait(false);
 
+        // The list in force picked again changes nothing the tunnel carries, and raising it again would only open a
+        // gap where its traffic goes past it; a pending edit still asks for the fresh tunnel it needs.
+        var same = picked == _selectedRoutingList && !_restartRequired;
         Journal(SwitchLog.RoutingList(names.From, names.To));
         _selectedRoutingList = picked;
         Save();
         PushSnapshot();
-        if (_active)
+        if (_active && !same)
         {
             _ = SetConnectionAsync("connect");
         }

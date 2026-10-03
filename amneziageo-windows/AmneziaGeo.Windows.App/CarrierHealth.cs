@@ -29,6 +29,10 @@ internal sealed class CarrierHealth
     // Seconds a degraded reading holds before it is acted on.
     private const int DegradedSeconds = 20;
 
+    // Bytes arriving in a second that prove the channel carries whatever its echoes say: an echo waits behind the
+    // transfer that fills the link, and a re-dial would cut that transfer off.
+    private const long FlowingBytes = LinkRecovery.FlowingBytes;
+
     // Share of the carrier's outgoing bytes it had to send again before the carrier is called the reason a
     // transfer stalls, and the volume the window needs for that share to mean anything: on a near-idle
     // connection one repeated segment is most of what was sent.
@@ -51,9 +55,10 @@ internal sealed class CarrierHealth
 
     /// <summary>
     /// Folds one second into the window and names the reason to re-dial, or nothing while the channel carries.
-    /// The byte counts are what the carrier put on the wire during that second, not totals.
+    /// The byte counts are what the carrier put on the wire during that second, not totals; received is what the
+    /// tunnel took in during it.
     /// </summary>
-    public string Verdict(bool sent, bool returned, long bytesOut, long bytesRetrans, int lossPercent, int rttMs)
+    public string Verdict(bool sent, bool returned, long bytesOut, long bytesRetrans, int lossPercent, int rttMs, long received = 0)
     {
         _window.Add(new Tick(sent, returned, bytesOut, bytesRetrans));
         while (_window.Count > Window)
@@ -61,7 +66,7 @@ internal sealed class CarrierHealth
             _window.RemoveAt(0);
         }
 
-        _degraded = Degraded(lossPercent, rttMs) ? _degraded + 1 : 0;
+        _degraded = received < FlowingBytes && Degraded(lossPercent, rttMs) ? _degraded + 1 : 0;
         Measure();
 
         if (Stalled())

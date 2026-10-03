@@ -53,6 +53,12 @@ internal sealed class ConfigRunner(
     private long _lastRxBytes = -1;
     private long _lastTxBytes = -1;
 
+    // Polls in a row the tunnel's counters could not be read on, and whether the last restart was asked for by a
+    // tunnel service that stopped rather than by the ladder.
+    private int _unreadable;
+    private bool _serviceLost;
+    private const int UnreadableLimit = 3;
+
     // The ladder a link that has stopped carrying is repaired by. The rungs below the reconnect leave the
     // session, its routes, its DNS and its firewall standing, so a NAT that dropped the mapping or a server that
     // moved costs a second instead of a full bring-up.
@@ -206,6 +212,7 @@ internal sealed class ConfigRunner(
 
         _lastRxBytes = -1;
         _lastTxBytes = -1;
+        _unreadable = 0;
         _recovery = new LinkRecovery(_ladder, _settings.DeadThresholdSeconds);
         await StartLossProbeAsync(config, ct);
 
@@ -230,8 +237,17 @@ internal sealed class ConfigRunner(
                     continue;
                 }
 
-                logger.LogWarning("{Config}: {Reason}, and the repairs that keep the session standing did not bring it back; reconnecting now (attempt {Attempt})",
-                    config, _recovery.Reason, _recovery.Attempt);
+                if (_serviceLost)
+                {
+                    logger.LogWarning("{Config}: the tunnel service stopped while connected and took its routes and firewall with it; reconnecting now",
+                        config);
+                }
+                else
+                {
+                    logger.LogWarning("{Config}: {Reason}, and the repairs that keep the session standing did not bring it back; reconnecting now (attempt {Attempt})",
+                        config, _recovery.Reason, _recovery.Attempt);
+                }
+
                 sessions.Of(config).Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 _lastRxBytes = -1;
                 _lastTxBytes = -1;
@@ -774,11 +790,23 @@ internal sealed class ConfigRunner(
     // screen: the connect control is coloured from the handshake age and the rates.
     private RecoveryStep? Sample(string member)
     {
+        _serviceLost = false;
         if (uapi.TryGetPeerStatus(member) is not { } status)
         {
-            // UAPI momentarily unreadable - inconclusive, not a reason to touch a live session.
-            return null;
+            // UAPI momentarily unreadable - inconclusive, not a reason to touch a live session. A service that has
+            // stopped is another matter: its routes and its firewall are gone, everything leaves past the tunnel
+            // while the screen still says connected, and nothing else would ever raise it again.
+            if (++_unreadable < UnreadableLimit || serviceManager.QueryState(member) is "RUNNING" or "PENDING")
+            {
+                return null;
+            }
+
+            _unreadable = 0;
+            _serviceLost = true;
+            return RecoveryStep.Restart;
         }
+
+        _unreadable = 0;
 
         // Hand the keepalive view to the snapshot: the UI colours the connect control from it. Only a moved
         // step is worth a push; the seconds in between change nothing on screen.
@@ -803,7 +831,8 @@ internal sealed class ConfigRunner(
             _loss?.RecentPercent ?? LinkHealth.LossUnknown,
             reading.Churning,
             status.HandshakeSec > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec) : 0,
-            _lastTxBytes < 0 ? 0 : Math.Max(0, status.TxBytes - _lastTxBytes));
+            _lastTxBytes < 0 ? 0 : Math.Max(0, status.TxBytes - _lastTxBytes),
+            _lastRxBytes < 0 ? 0 : Math.Max(0, status.RxBytes - _lastRxBytes));
         _lastRxBytes = status.RxBytes;
         _lastTxBytes = status.TxBytes;
 

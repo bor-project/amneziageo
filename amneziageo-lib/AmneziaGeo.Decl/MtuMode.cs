@@ -31,12 +31,17 @@ public static class MtuModes
     /// <summary>
     /// Smallest MTU a tunnel is allowed to come up with.
     /// </summary>
-    public const int MinMtu = 576;
+    public const int MinMtu = 1280;
 
     /// <summary>
     /// Largest MTU a tunnel is allowed to come up with.
     /// </summary>
     public const int MaxMtu = 1500;
+
+    /// <summary>
+    /// Raises a stored size to the smallest a tunnel takes; none stays none.
+    /// </summary>
+    public static int Raised(int size) => size > 0 ? Math.Max(size, MinMtu) : 0;
 
     /// <summary>
     /// The mode a stored number stands for; anything unknown follows the link.

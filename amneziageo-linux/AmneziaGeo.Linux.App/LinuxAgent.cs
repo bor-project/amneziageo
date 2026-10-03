@@ -1475,6 +1475,11 @@ internal sealed class LinuxAgent : IDisposable
         var mtu = args.Count > 2
             ? int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMtu) ? parsedMtu : 0
             : stored?.Mtu ?? 0;
+        if (args.Count > 2 && mtu != 0 && mtu is < MtuModes.MinMtu or > MtuModes.MaxMtu)
+        {
+            return new IpcAck(false, IpcMessage.Key("Transport_InvalidMtu"));
+        }
+
         var ipv6 = args.Count > 3 ? IsOn(args[3]) : stored?.UseIpv6 ?? false;
 
         // A size sent without a mode stands for a choice of its own.

@@ -1415,7 +1415,7 @@
     <value>Preempted</value>
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
-    <value>MTU must be 576 to 1500; leave it empty for 1280.</value>
+    <value>MTU must be 1280 to 1500; leave it empty for 1280.</value>
   </data>
   <data name="Transport_InvalidHost" xml:space="preserve">
     <value>Enter a valid WebSocket address (host, host:port or a wss address).</value>

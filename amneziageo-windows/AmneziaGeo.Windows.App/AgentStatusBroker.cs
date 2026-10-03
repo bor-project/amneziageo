@@ -1136,13 +1136,13 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
 
-        // Optional 3rd arg: tunnel MTU (range 576-1500); empty leaves the config in charge.
+        // Optional 3rd arg: tunnel MTU; empty leaves the config in charge.
         var mtu = 0;
         if (args.Count > 2 && args[2].Trim().Length > 0)
         {
-            if (!int.TryParse(args[2].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < 576 or > 1500)
+            if (!int.TryParse(args[2].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < MtuModes.MinMtu or > MtuModes.MaxMtu)
             {
-                return new IpcAck(false, "invalid MTU (576-1500)");
+                return new IpcAck(false, $"invalid MTU ({MtuModes.MinMtu}-{MtuModes.MaxMtu})");
             }
         }
 

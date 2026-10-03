@@ -1,4 +1,5 @@
 using AmneziaGeo.Cli;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using Xunit;
 
@@ -119,6 +120,44 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal([IpcContract.OpSetWebSocket], link.Sent);
         Assert.Equal(["office", "on", "1300", "on"], link.Args[0].Take(4));
         Assert.Equal(["9443", "wss://own.example:9443/t"], link.Args[0].Skip(9));
+    }
+
+    [Fact]
+    public async Task ConfigMtu_SendsASizeOnlyWithTheCustomMode()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [], Mtu: 1420, MtuMode: MtuMode.Custom)]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["mtu", "office", "auto"]));
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["mtu", "office", "config"]));
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["mtu", "office", "1380"]));
+
+        Assert.Equal([string.Empty, "auto"], new[] { link.Args[0][2], link.Args[0][4] });
+        Assert.Equal([string.Empty, "config"], new[] { link.Args[1][2], link.Args[1][4] });
+        Assert.Equal(["1380", "custom"], new[] { link.Args[2][2], link.Args[2][4] });
+    }
+
+    [Fact]
+    public async Task ConfigMtu_TurnsDownASizeBelowTheSmallestOne()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["mtu", "office", "1279"]));
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["mtu", "office", "1280"]));
+
+        Assert.Single(link.Sent);
+        Assert.Equal("1280", link.Args[0][2]);
+    }
+
+    [Fact]
+    public async Task ConfigWebsocket_WithASize_SendsItAsCustom()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--mtu", "1300"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--mtu", "1279"]));
+
+        Assert.Single(link.Sent);
+        Assert.Equal(["1300", "custom"], new[] { link.Args[0][2], link.Args[0][4] });
     }
 
     [Fact]

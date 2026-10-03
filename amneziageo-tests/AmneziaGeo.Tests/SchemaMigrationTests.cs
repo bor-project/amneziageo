@@ -71,6 +71,124 @@ public sealed class SchemaMigrationTests
         }
     }
 
+    [Fact]
+    public async Task InitializeAsync_OnAStoreOpenedAgain_KeepsTheAutoModeBesideAStoredSize()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-mode-{Guid.NewGuid():N}.db");
+        try
+        {
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+            await store.SetConfigTransportAsync(new ConfigTransport("office", false, 1420, MtuMode: MtuMode.Auto));
+
+            var again = new SqliteStateStore(path);
+            await again.InitializeAsync();
+
+            var transport = await again.GetConfigTransportAsync("office");
+            Assert.Equal(MtuMode.Auto, transport?.MtuMode);
+            Assert.Equal(1420, transport?.Mtu);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_OnARowFromBeforeTheModes_TurnsItsSizeIntoACustomOne()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-sized-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteSizedTransportAsync(path, "office", 1400);
+
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+
+            var transport = await store.GetConfigTransportAsync("office");
+            Assert.Equal(MtuMode.Custom, transport?.MtuMode);
+            Assert.Equal(1400, transport?.Mtu);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_OnASizeBelowTheSmallestOne_RaisesIt()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-small-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteSizedTransportAsync(path, "office", 1200);
+
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+
+            var transport = await store.GetConfigTransportAsync("office");
+            Assert.Equal(MtuMode.Custom, transport?.MtuMode);
+            Assert.Equal(1280, transport?.Mtu);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task SetConfigTransportAsync_OnASizeBelowTheSmallestOne_StoresTheSmallest()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-floor-{Guid.NewGuid():N}.db");
+        try
+        {
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+            await store.SetConfigTransportAsync(new ConfigTransport("office", false, 1200, MtuMode: MtuMode.Custom));
+            await store.SetConfigTransportAsync(new ConfigTransport("home", false, 0, MtuMode: MtuMode.Custom));
+
+            Assert.Equal(1280, (await store.GetConfigTransportAsync("office"))?.Mtu);
+            Assert.Equal(0, (await store.GetConfigTransportAsync("home"))?.Mtu);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    // A config_transport from before the modes, with one row that carries a size.
+    private static async Task WriteSizedTransportAsync(string path, string name, int mtu)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    CREATE TABLE config_transport (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name       TEXT NOT NULL UNIQUE,
+                        use_ws     INTEGER NOT NULL DEFAULT 0,
+                        ws_port    INTEGER NOT NULL DEFAULT 443,
+                        mtu        INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL
+                    );
+                    INSERT INTO config_transport (name, mtu, updated_at) VALUES ($name, $mtu, '2026-01-01T00:00:00Z');
+                    PRAGMA user_version = 1;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$mtu", mtu);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        ClearPool(path);
+    }
+
     // Drops a one-time marker, as a file written before the rewrite carries none.
     private static async Task ForgetAsync(string path, string key)
     {

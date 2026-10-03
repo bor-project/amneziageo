@@ -3,7 +3,7 @@ using System.Globalization;
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// Per-config transport: WebSocket (the tunnel carried inside a websocket to the front the server offers, else the one the config names, else the one of the settings), tunnel MTU (default 1420, valid 576-1500) with the mode that picks it, the IPv6 opt-in (off keeps the tunnel v4-only; on only when the server has an IPv6 address), the router (on decides every connection on its own; off leaves every verdict to the route table), inbound access (off refuses everything arriving from the tunnel; on accepts it from the server alone, or from the whole tunnel network), routing (off keeps the config off the routing list), and the websocket front of the settings (a host or a ws(s):// address, and a port; empty and zero take the host and the port of the Endpoint).
+/// Per-config transport: WebSocket (the tunnel carried inside a websocket to the front the server offers, else the one the config names, else the one of the settings), tunnel MTU (default 1420, valid 1280-1500) with the mode that picks it, the IPv6 opt-in (off keeps the tunnel v4-only; on only when the server has an IPv6 address), the router (on decides every connection on its own; off leaves every verdict to the route table), inbound access (off refuses everything arriving from the tunnel; on accepts it from the server alone, or from the whole tunnel network), routing (off keeps the config off the routing list), and the websocket front of the settings (a host or a ws(s):// address, and a port; empty and zero take the host and the port of the Endpoint).
 /// </summary>
 public sealed record ConfigTransport(
     string Name,

@@ -463,7 +463,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             return false;
         }
 
-        // MTU: empty = default; validate 576-1500. The other modes pick the size themselves, so the field is theirs.
+        // MTU: empty = default; validate 1280-1500. The other modes pick the size themselves, so the field is theirs.
         var mtuVal = Mtu.Trim();
         if (!IsMtuReadOnly && mtuVal.Length > 0
             && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < MtuModes.MinMtu or > MtuModes.MaxMtu))

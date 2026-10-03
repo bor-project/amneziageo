@@ -990,6 +990,7 @@ internal sealed class TunnelRunner(
         try
         {
             WireGuardEngine.RunTunnelService(config, TunnelDevice.NameOf(name));
+            await ReportEngineExitAsync(name).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not ConnectFailureException)
         {
@@ -1054,6 +1055,28 @@ internal sealed class TunnelRunner(
             {
                 InboundFirewall.Remove(name, logger);
             }
+        }
+    }
+
+    // Names the error the engine ended the service with and leaves it for the agent.
+    private async Task ReportEngineExitAsync(string name)
+    {
+        var (win32, specific) = ServiceExit.Read(TunnelPaths.ServiceName(name));
+        var fault = ServiceExit.Describe(win32, specific);
+        if (fault.Length == 0)
+        {
+            return;
+        }
+
+        logger.LogError("{Name}: the tunnel engine stopped by itself with {Fault}; the tunnel is down until the next attempt", name, fault);
+        try
+        {
+            await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), fault).ConfigureAwait(false);
+            await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(name), nameof(ConnectFailureReason.EngineStopped)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Name}: the error of the engine could not be saved, so the next attempt may be reported as an unreachable server", name);
         }
     }
 

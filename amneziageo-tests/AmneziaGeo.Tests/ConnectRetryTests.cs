@@ -39,6 +39,12 @@ public sealed class ConnectRetryTests
     }
 
     [Fact]
+    public void AnEngineThatStoppedByItself_IsDialledAgain()
+    {
+        Assert.True(ConnectRetry.IsTransient(ConnectFailureReason.EngineStopped));
+    }
+
+    [Fact]
     public async Task AServerThatAnswersOnTheSixthAttempt_IsDialledAfterEachPauseUntilItDoes()
     {
         var dial = new Dial { Outcomes = { Silent, Silent, Silent, Silent, Silent, DialOutcome.Raised } };

@@ -239,6 +239,15 @@ internal static class ConfigCommands
         // An unset MTU goes over empty; the agents read that as the default.
         var storedMtu = stored?.Mtu ?? 0;
         var mtu = flags.Value("mtu") ?? (storedMtu > 0 ? storedMtu.ToString(CultureInfo.InvariantCulture) : string.Empty);
+
+        // A size the command names stands for the custom mode.
+        var sized = flags.Value("mtu") is { Length: > 0 };
+        if (sized && !(MtuModes.TryParse(mtu, out var asked, out _) && asked == MtuMode.Custom))
+        {
+            return Reply.Usage($"--mtu takes a size from {MtuModes.MinMtu} to {MtuModes.MaxMtu}");
+        }
+
+        var mode = sized ? MtuMode.Custom : stored?.MtuMode ?? MtuMode.Auto;
         var ipv6 = flags.Value("ipv6") ?? ((stored?.UseIpv6 ?? false) ? "on" : "off");
         if (!Toggle.TryParse(ipv6, out var useIpv6))
         {
@@ -257,7 +266,7 @@ internal static class ConfigCommands
             Toggle.Text(on),
             mtu,
             Toggle.Text(useIpv6),
-            MtuModes.Text(stored?.MtuMode ?? MtuMode.Auto),
+            MtuModes.Text(mode),
             Toggle.Text(useRouter),
             Toggle.Text(stored?.AllowInbound ?? false),
             Toggle.Text(stored?.InboundNetwork ?? false),
@@ -280,13 +289,13 @@ internal static class ConfigCommands
             return Reply.Usage($"unknown config: {args[0]}");
         }
 
-        // Custom carries the size the command names; the other modes keep whatever was stored.
-        var size = mode == MtuMode.Custom ? value : stored.Mtu;
+        // Only the custom mode carries a size.
+        var size = mode == MtuMode.Custom ? value.ToString(CultureInfo.InvariantCulture) : string.Empty;
         return Reply.Report(await agent.SendAsync(
             IpcContract.OpSetWebSocket,
             args[0],
             stored.WebSocket ? "on" : "off",
-            size > 0 ? size.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            size,
             stored.UseIpv6 ? "on" : "off",
             MtuModes.Text(mode),
             stored.UseRouter ? "on" : "off").ConfigureAwait(false));

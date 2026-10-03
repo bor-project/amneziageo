@@ -316,8 +316,16 @@ internal sealed class ConfigRunner(
 
             var attempt = control.NextRetry();
             var delay = ConnectRetry.Delay(attempt, _settings.PeriodicReconnect, _settings.PeriodicReconnectIntervalSeconds);
-            logger.LogWarning("could not reach the server of {Config}: {Reason}; trying again in {Delay}s, attempt {Attempt}",
-                config, outcome.Reason, (int)delay.TotalSeconds, attempt);
+            if (outcome.Reason == ConnectFailureReason.EngineStopped)
+            {
+                logger.LogWarning("the tunnel of {Config} stopped by itself with {Fault}; trying again in {Delay}s, attempt {Attempt}",
+                    config, outcome.Detail, (int)delay.TotalSeconds, attempt);
+            }
+            else
+            {
+                logger.LogWarning("could not reach the server of {Config}: {Reason}; trying again in {Delay}s, attempt {Attempt}",
+                    config, outcome.Reason, (int)delay.TotalSeconds, attempt);
+            }
             await SetStateAsync("connecting");
             await WaitRetryAsync(delay, ct);
 
@@ -634,6 +642,12 @@ internal sealed class ConfigRunner(
         if (stored == ConnectFailureReason.TransportRejected)
         {
             logger.LogWarning("{Member}: the server's carrier refused the connection ({Message}); retrying will not help until that is fixed on the server", member, storedMessage);
+            return new ConnectOutcome(false, stored, TrimDetail(storedMessage));
+        }
+
+        // The error the engine stopped with wins over a server that stayed silent.
+        if (stored == ConnectFailureReason.EngineStopped)
+        {
             return new ConnectOutcome(false, stored, TrimDetail(storedMessage));
         }
 

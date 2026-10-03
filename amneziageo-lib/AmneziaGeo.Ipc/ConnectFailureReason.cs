@@ -89,4 +89,9 @@ public enum ConnectFailureReason
     /// The firewall drops UDP on the loopback, where the carrier hands the tunnel to the engine.
     /// </summary>
     LoopbackBlocked,
+
+    /// <summary>
+    /// The tunnel engine stopped by itself with an error.
+    /// </summary>
+    EngineStopped,
 }

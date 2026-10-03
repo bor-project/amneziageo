@@ -27,6 +27,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     // Marks the one-time rewrite of the former websocket port default to the port of the Endpoint.
     private const string LegacyWebSocketPortCleared = "schema-legacy-ws-port-cleared";
 
+    // Marks the one-time raise of the sizes stored below the smallest a tunnel takes.
+    private const string SmallMtuRaised = "schema-small-mtu-raised";
+
+    // Marks the one-time turn of the sizes stored before the modes into custom ones.
+    private const string LegacyMtuModeSet = "schema-legacy-mtu-mode-set";
+
     /// <inheritdoc/>
     /// <remarks>
     /// Corruption self-heal, escalating: first quarantine only the -wal/-shm sidecars (a stale pair from a
@@ -296,9 +302,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // WebSocket transport host.
             await AddColumnAsync(connection, schema, "config_transport", "ws_host", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
 
-            // Tunnel MTU, valid 576-1500; 0 is unset and follows the agent's default at connect time.
+            // Tunnel MTU, valid 1280-1500; 0 is unset and follows the agent's default at connect time.
             await AddColumnAsync(connection, schema, "config_transport", "mtu", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
             await RewriteOnceAsync(connection, LegacyMtuCleared, "UPDATE config_transport SET mtu = 0 WHERE mtu = 1280;", ct).ConfigureAwait(false);
+            await RewriteOnceAsync(
+                connection,
+                SmallMtuRaised,
+                $"UPDATE config_transport SET mtu = {MtuModes.MinMtu} WHERE mtu > 0 AND mtu < {MtuModes.MinMtu};",
+                ct).ConfigureAwait(false);
 
             // A websocket port nobody chose follows the port of the Endpoint: the transport stands off at its defaults.
             await RewriteOnceAsync(
@@ -313,11 +324,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // How the MTU is picked: 0 auto, 1 from the config text, 2 the stored size. A row that already carries
             // a size kept it as a choice of its own, so it becomes custom; an empty one follows the path.
             await AddColumnAsync(connection, schema, "config_transport", "mtu_mode", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+            await RewriteOnceAsync(connection, LegacyMtuModeSet, "UPDATE config_transport SET mtu_mode = 2 WHERE mtu > 0 AND mtu_mode = 0;", ct).ConfigureAwait(false);
 
             // Per-config router: every connection gets its own verdict. Off leaves the route table alone
             // with the rules, and no byte crosses userspace twice.
             await AddColumnAsync(connection, schema, "config_transport", "use_router", "INTEGER NOT NULL DEFAULT 1", ct).ConfigureAwait(false);
-            await ExecuteAsync(connection, "UPDATE config_transport SET mtu_mode = 2 WHERE mtu > 0 AND mtu_mode = 0;", ct).ConfigureAwait(false);
 
             // Inbound access from the tunnel, off by default: the server alone, or the whole tunnel network.
             await AddColumnAsync(connection, schema, "config_transport", "allow_inbound", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
@@ -959,7 +970,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$use", transport.UseWebSocket ? 1 : 0);
                 command.Parameters.AddWithValue("$host", transport.WebSocketHost);
                 command.Parameters.AddWithValue("$port", transport.WebSocketPort);
-                command.Parameters.AddWithValue("$mtu", transport.Mtu);
+                command.Parameters.AddWithValue("$mtu", MtuModes.Raised(transport.Mtu));
                 command.Parameters.AddWithValue("$v6", transport.UseIpv6 ? 1 : 0);
                 command.Parameters.AddWithValue("$mode", (int)transport.MtuMode);
                 command.Parameters.AddWithValue("$router", transport.UseRouter ? 1 : 0);

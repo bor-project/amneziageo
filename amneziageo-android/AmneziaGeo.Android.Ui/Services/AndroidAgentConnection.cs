@@ -2065,7 +2065,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         // Empty leaves the config in charge: a zero here means nothing was chosen.
         var mtuText = args.Count > 2 ? args[2].Trim() : string.Empty;
-        if ((mtuText.Length == 0 ? 0 : ParseRange(mtuText, 576, 1500)) is not { } mtu)
+        if ((mtuText.Length == 0 ? 0 : ParseRange(mtuText, MtuModes.MinMtu, MtuModes.MaxMtu)) is not { } mtu)
         {
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidMtu"));
         }

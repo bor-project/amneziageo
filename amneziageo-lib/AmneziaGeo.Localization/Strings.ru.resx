@@ -1415,7 +1415,7 @@
     <value>Вытеснено</value>
   </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
-    <value>MTU должен быть от 576 до 1500. Если оставить поле пустым, будет 1280.</value>
+    <value>MTU должен быть от 1280 до 1500. Если оставить поле пустым, будет 1280.</value>
   </data>
   <data name="Transport_InvalidHost" xml:space="preserve">
     <value>Укажите корректный адрес WebSocket (хост, хост:порт или адрес wss).</value>

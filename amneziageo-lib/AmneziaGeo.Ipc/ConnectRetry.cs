@@ -67,7 +67,7 @@ public static class ConnectRetry
     {
         ConnectFailureReason.NoHandshake or ConnectFailureReason.UnderlayUnreachable
             or ConnectFailureReason.Timeout or ConnectFailureReason.ServiceLaunchFailed
-            or ConnectFailureReason.Unknown => true,
+            or ConnectFailureReason.EngineStopped or ConnectFailureReason.Unknown => true,
         _ => false,
     };
 

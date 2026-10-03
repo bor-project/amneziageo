@@ -47,17 +47,19 @@ public static class MtuPlan
 
     /// <summary>
     /// MTU the tunnel comes up with under this mode: the stored size for custom, the declared one for config, and
-    /// the largest the link, the carrier and the profile carry for auto.
+    /// the largest the link, the carrier and the profile carry for auto; never below the smallest a tunnel takes.
     /// </summary>
     public static int Resolve(MtuMode mode, int stored, string config, int linkMtu = MtuModes.MaxMtu, bool webSocket = false)
     {
         var declared = WgConfigEditor.GetMtu(config);
-        return mode switch
+        var size = mode switch
         {
             MtuMode.Custom => stored > 0 ? stored : Declared(declared),
             MtuMode.Config => Declared(declared),
             _ => Ceiling(config, linkMtu, webSocket),
         };
+
+        return Math.Max(size, MtuModes.MinMtu);
     }
 
     /// <summary>

@@ -103,7 +103,35 @@ public sealed class MtuPlanTests
     [Fact]
     public void Custom_TakesTheStoredSize()
     {
-        Assert.Equal(1200, MtuPlan.Resolve(MtuMode.Custom, 1200, WithMtu(Plain, 1340)));
+        Assert.Equal(1300, MtuPlan.Resolve(MtuMode.Custom, 1300, WithMtu(Plain, 1340)));
+    }
+
+    [Fact]
+    public void Custom_BelowTheSmallestSize_IsRaisedToIt()
+    {
+        Assert.Equal(1280, MtuPlan.Resolve(MtuMode.Custom, 1279, Plain));
+    }
+
+    [Fact]
+    public void ADeclaredSizeBelowTheSmallestOne_IsRaisedToItInEveryMode()
+    {
+        Assert.Equal(1280, MtuPlan.Resolve(MtuMode.Config, 0, WithMtu(Plain, 1200)));
+        Assert.Equal(1280, MtuPlan.Resolve(MtuMode.Custom, 0, WithMtu(Plain, 1200)));
+        Assert.Equal(1280, MtuPlan.Resolve(MtuMode.Auto, 0, WithMtu(Plain, 1200)));
+    }
+
+    [Fact]
+    public void Auto_UnderALinkOf1400InAWebsocket_StaysAtTheSmallestSize()
+    {
+        var trailers = """
+            [Interface]
+            Address = 10.0.0.2/32
+            RandomTrailers = on
+            """;
+
+        // 1400 - 78 carrier - 32 tunnel - 16 trailer.
+        Assert.Equal(1280, MtuPlan.Resolve(MtuMode.Auto, 0, trailers, 1400, webSocket: true));
+        Assert.Equal(1280, MtuPlan.Resolve(MtuMode.Auto, 0, Plain, 1339));
     }
 
     [Fact]
@@ -169,6 +197,26 @@ public sealed class MtuPlanTests
         Assert.False(MtuModes.TryParse("100", out _, out _));
         Assert.False(MtuModes.TryParse("9000", out _, out _));
         Assert.False(MtuModes.TryParse("wide", out _, out _));
+    }
+
+    [Fact]
+    public void Mode_TurnsDownASizeBelowTheSmallestOne()
+    {
+        Assert.False(MtuModes.TryParse("1279", out _, out _));
+        Assert.False(MtuModes.TryParse("576", out _, out _));
+
+        Assert.True(MtuModes.TryParse("1280", out var mode, out var size));
+        Assert.Equal(MtuMode.Custom, mode);
+        Assert.Equal(1280, size);
+    }
+
+    [Fact]
+    public void AStoredSize_IsRaisedToTheSmallestOne()
+    {
+        Assert.Equal(0, MtuModes.Raised(0));
+        Assert.Equal(1280, MtuModes.Raised(576));
+        Assert.Equal(1280, MtuModes.Raised(1279));
+        Assert.Equal(1420, MtuModes.Raised(1420));
     }
 
     [Fact]

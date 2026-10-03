@@ -411,6 +411,81 @@ public sealed class RoutingCache
     }
 
     /// <summary>
+    /// What a destination held before a verdict was forced on it for a while: Unforce puts it back.
+    /// </summary>
+    public sealed record Forced(uint Address, bool Admitted, RouteVerdict Verdict, RoutePlan Plan, bool ByName, bool ByApp, int Rules);
+
+    /// <summary>
+    /// Forces a verdict on an address for a while, as a measurement over a chosen path asks, and returns what
+    /// Unforce needs to undo it; null for an address the cache does not decide.
+    /// </summary>
+    public Forced? Force(IPAddress address, RouteVerdict verdict)
+    {
+        if (!GeoIpRanges.TryToNumeric(address, out var value) || Volatile.Read(ref _pinned).Contains(value))
+        {
+            return null;
+        }
+
+        var rules = Volatile.Read(ref _rules).Generation;
+        var forced = _entries.TryGetValue(value, out var entry)
+            ? new Forced(value, false, entry.Verdict, entry.Plan, entry.ByName, entry.ByApp, rules)
+            : new Forced(value, true, RouteVerdict.None, RoutePlan.None, false, false, rules);
+        Note(value, verdict);
+        return forced;
+    }
+
+    /// <summary>
+    /// Takes a forced verdict back. A destination held before returns to what it held; one the force brought in is
+    /// forgotten and decided again on its next contact. A rule edit in between has already decided it anew.
+    /// </summary>
+    public void Unforce(Forced forced)
+    {
+        if (Volatile.Read(ref _rules).Generation != forced.Rules || !_entries.TryGetValue(forced.Address, out var entry))
+        {
+            return;
+        }
+
+        var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
+        var generation = _applier.Generation;
+        if (forced.Admitted)
+        {
+            if (!_entries.TryRemove(forced.Address, out _))
+            {
+                return;
+            }
+
+            Interlocked.Decrement(ref _size);
+            lock (entry)
+            {
+                Release(entry, generation, filters, withdrawn);
+            }
+
+            _applier.RemoveTunnel(withdrawn);
+            _applier.DeleteFilters(filters, generation);
+            return;
+        }
+
+        lock (entry)
+        {
+            entry.ByName = forced.ByName;
+            entry.ByApp = forced.ByApp;
+            if (entry.Verdict == forced.Verdict && entry.Plan == forced.Plan)
+            {
+                return;
+            }
+
+            Release(entry, generation, filters, withdrawn);
+            entry.Verdict = forced.Verdict;
+            entry.Plan = forced.Plan;
+        }
+
+        _applier.RemoveTunnel(withdrawn);
+        _applier.DeleteFilters(filters, generation);
+        Install(entry, Environment.TickCount64);
+    }
+
+    /// <summary>
     /// Reinstalls permits for live entries after the filter set was rebuilt; routes survive an arm, filters do not.
     /// </summary>
     public void Reinstall()
@@ -427,7 +502,9 @@ public sealed class RoutingCache
 
             lock (entry)
             {
-                if (entry.Generation == generation)
+                // An entry the sweep took meanwhile is gone with its filters; laying them again would leave them to
+                // nobody.
+                if (entry.Generation == generation || !_entries.TryGetValue(pair.Key, out var held) || !ReferenceEquals(held, entry))
                 {
                     continue;
                 }
@@ -875,7 +952,7 @@ public sealed class RoutingCache
             if (!entry.Datagrams && entry.Plan == RoutePlan.Permit)
             {
                 entry.Datagrams = true;
-                if (entry.Generation == generation && (entry.FilterOut != 0 || entry.FilterIn != 0))
+                if (Standing(entry, generation))
                 {
                     filters.Add((entry.FilterOut, entry.FilterIn));
                 }
@@ -1461,7 +1538,7 @@ public sealed class RoutingCache
             Interlocked.Decrement(ref _applied);
         }
 
-        if (entry.Generation == generation && (entry.FilterOut != 0 || entry.FilterIn != 0))
+        if (Standing(entry, generation))
         {
             filters.Add((entry.FilterOut, entry.FilterIn));
         }
@@ -1469,6 +1546,13 @@ public sealed class RoutingCache
         entry.FilterOut = 0;
         entry.FilterIn = 0;
         entry.Generation = 0;
+    }
+
+    // Whether the entry holds filters still there to delete: a filter set rebuilt whole took the ones of an older
+    // generation with it, while filters laid one by one stay until deleted, whatever generation laid them.
+    private bool Standing(Entry entry, int generation)
+    {
+        return (entry.Generation == generation || _applier.FiltersOutliveRearm) && (entry.FilterOut != 0 || entry.FilterIn != 0);
     }
 
     // Block wins over Direct: a blocked address must never earn a bypass. Direct wins over Proxy: an address in both

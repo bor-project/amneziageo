@@ -119,6 +119,37 @@ public sealed class NameUpstream(
         return await LadderAsync(query, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Sends one query for a client that came over a stream and wants the whole answer: one plain DNS cut to fit a
+    /// datagram is asked again over the transports that carry it whole, and stands only when none of them answers.
+    /// The transport in force stays, since a cut answer says nothing about a filter on the way.
+    /// </summary>
+    public async Task<byte[]> AskWholeAsync(byte[] query, CancellationToken ct = default)
+    {
+        var answer = await AskAsync(query, ct).ConfigureAwait(false);
+        if (!Truncated(answer))
+        {
+            return answer;
+        }
+
+        foreach (var ask in WholeRungs())
+        {
+            try
+            {
+                var whole = await ask(query, ct).ConfigureAwait(false);
+                if (!Refused(whole) && !Truncated(whole))
+                {
+                    return whole;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+            }
+        }
+
+        return answer;
+    }
+
     // Plain DNS, then the transports a filter on port 53 cannot reach, keeping the one that answers.
     private async Task<byte[]> LadderAsync(byte[] query, CancellationToken ct)
     {
@@ -201,6 +232,21 @@ public sealed class NameUpstream(
         }
     }
 
+    // The transports that carry an answer whole, as far as the setting leaves them open: the framed one is still
+    // plain DNS on port 53, the encrypted one only auto reaches for.
+    private IEnumerable<Func<byte[], CancellationToken, Task<byte[]>>> WholeRungs()
+    {
+        if (_transport != DnsTransports.Doh && stream is not null)
+        {
+            yield return stream;
+        }
+
+        if (_transport == DnsTransports.Auto && encrypted is not null)
+        {
+            yield return encrypted;
+        }
+    }
+
     // The transport a query would take before any answer has settled it.
     private string Planned()
     {
@@ -233,6 +279,12 @@ public sealed class NameUpstream(
     private static bool Refused(byte[] answer)
     {
         return answer.Length >= 12 && (answer[3] & 0x0F) == RefusedCode;
+    }
+
+    // Whether an answer was cut to fit a datagram: the TC bit of the header.
+    private static bool Truncated(byte[] answer)
+    {
+        return answer.Length >= 12 && (answer[2] & 0x02) != 0;
     }
 
     private static string Short(Exception ex)

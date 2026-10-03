@@ -61,7 +61,7 @@ internal static class HotspotCommands
             HotspotReasons.NoAdapter => "no wireless adapter on this machine.",
             HotspotReasons.RadioOff => "the wireless adapter is switched off.",
             HotspotReasons.NoApMode => "this adapter does not run as an access point.",
-            HotspotReasons.NoTools => "hostapd and dnsmasq are not installed.",
+            HotspotReasons.NoTools => "the access point needs hostapd, dnsmasq and iw installed.",
             HotspotReasons.ServiceOff => "the Internet Connection Sharing service is stopped.",
             HotspotReasons.NoPlatform => "this system carries no access point.",
             _ => string.Empty,

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 
 namespace AmneziaGeo.Linux.App;
@@ -23,7 +24,7 @@ internal static class Shell
             info.ArgumentList.Add(arg);
         }
 
-        using var process = Process.Start(info);
+        using var process = Start(info);
         if (process is null)
         {
             return (-1, $"could not start {file}");
@@ -33,6 +34,20 @@ internal static class Shell
         var stderr = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
         await process.WaitForExitAsync(ct).ConfigureAwait(false);
         return (process.ExitCode, (stdout + stderr).Trim());
+    }
+
+    // A helper that is not installed fails the one call that needed it, the way a helper that refused would,
+    // instead of throwing through whatever loop asked.
+    private static Process? Start(ProcessStartInfo info)
+    {
+        try
+        {
+            return Process.Start(info);
+        }
+        catch (Win32Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

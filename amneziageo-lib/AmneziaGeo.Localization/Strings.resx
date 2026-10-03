@@ -197,7 +197,7 @@
     <value>This adapter can't share Wi-Fi.</value>
   </data>
   <data name="General_HotspotNoTools" xml:space="preserve">
-    <value>Sharing Wi-Fi needs the hostapd and dnsmasq packages.</value>
+    <value>Sharing Wi-Fi needs the hostapd, dnsmasq and iw packages.</value>
   </data>
   <data name="General_HotspotServiceOff" xml:space="preserve">
     <value>The Internet Connection Sharing service is stopped.</value>

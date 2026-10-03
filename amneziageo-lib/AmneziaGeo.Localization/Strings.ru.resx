@@ -197,7 +197,7 @@
     <value>Этот адаптер не умеет раздавать Wi-Fi.</value>
   </data>
   <data name="General_HotspotNoTools" xml:space="preserve">
-    <value>Для раздачи Wi-Fi нужны пакеты hostapd и dnsmasq.</value>
+    <value>Для раздачи Wi-Fi нужны пакеты hostapd, dnsmasq и iw.</value>
   </data>
   <data name="General_HotspotServiceOff" xml:space="preserve">
     <value>Служба «Общий доступ к подключению к Интернету» остановлена.</value>

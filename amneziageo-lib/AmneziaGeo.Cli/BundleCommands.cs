@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Text;
 using System.Text.Json;
 using AmneziaGeo.Ipc;
 
@@ -61,18 +63,47 @@ internal static class BundleCommands
             return Exit.Ok;
         }
 
-        await File.WriteAllTextAsync(path, ack.Message).ConfigureAwait(false);
-
         // The bundle carries private keys in the clear.
         if (!OperatingSystem.IsWindows())
         {
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            await WritePrivateAsync(path, ack.Message).ConfigureAwait(false);
             Output.Info($"wrote {path} (mode 600: it holds private keys)");
             return Exit.Ok;
         }
 
+        await File.WriteAllTextAsync(path, ack.Message).ConfigureAwait(false);
         Output.Info($"wrote {path}: it holds private keys, keep it out of shared folders");
         return Exit.Ok;
+    }
+
+    // The file is born 600 under a fresh name and only then takes the target's place, so the keys never sit in a
+    // file another account may open: neither a new one under the umask nor an old one someone holds open.
+    [UnsupportedOSPlatform("windows")]
+    private static async Task WritePrivateAsync(string path, string text)
+    {
+        var target = Path.GetFullPath(path);
+        var staging = Path.Combine(Path.GetDirectoryName(target)!, $".{Path.GetFileName(target)}.{Guid.NewGuid():N}");
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        };
+
+        try
+        {
+            using (var stream = new FileStream(staging, options))
+            {
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(text)).ConfigureAwait(false);
+            }
+
+            File.Move(staging, target, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(staging);
+            throw;
+        }
     }
 
     private static async Task<int> ImportAsync(IAgentLink agent, IReadOnlyList<string> args)

@@ -17,10 +17,12 @@ public static class RoutingSeed
     private const string SeedVersionKey = "routing.seed-version";
 
     /// <summary>
-    /// Adds the list under the name to a store that never held a list or a configuration and applies it. Returns
+    /// Adds the list under the name to a store that never held a list or a configuration and applies it. A host
+    /// that keeps its configurations outside the store says through <paramref name="inUse"/> whether it holds any:
+    /// an install in use without a list sends everything through the tunnel, and a list would narrow that. Returns
     /// whether it was added.
     /// </summary>
-    public static async Task<bool> SeedAsync(IStateStore store, GeoConfigurator geo, string name, CancellationToken ct)
+    public static async Task<bool> SeedAsync(IStateStore store, GeoConfigurator geo, string name, CancellationToken ct, bool inUse = false)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(geo);
@@ -32,7 +34,7 @@ public static class RoutingSeed
 
         var lists = await store.ListRoutingListsAsync(ct).ConfigureAwait(false);
         var configs = await store.ListConfigNamesAsync(ct).ConfigureAwait(false);
-        var fresh = lists.Count == 0 && configs.Count == 0;
+        var fresh = !inUse && lists.Count == 0 && configs.Count == 0;
         if (fresh)
         {
             var id = await OfferedLists.AddListAsync(store, geo, name, RoutingDefaults.Unavailable, true, false, ct).ConfigureAwait(false);

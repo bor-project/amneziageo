@@ -47,7 +47,8 @@ public static class OfferedLists
 
     /// <summary>
     /// Adds the routing lists the store holds none of under their name and leaves the ones it holds as the owner
-    /// keeps them. The first list of a store that held none applies at once, as a list made by hand does. Returns
+    /// keeps them. None of them is put in use: the list in force is the owner's choice, and a store left without a
+    /// list sends everything through the tunnel, which a list picked behind the owner's back would narrow. Returns
     /// how many lists were added.
     /// </summary>
     public static async Task<int> AddPresetsAsync(IStateStore store, GeoConfigurator geo, IReadOnlyList<OfferedPreset> offered, CancellationToken ct)
@@ -71,12 +72,7 @@ public static class OfferedLists
                 continue;
             }
 
-            var id = await AddListAsync(store, geo, preset.Name, preset.Rules, preset.AllUdp, preset.Full, ct).ConfigureAwait(false);
-            if (held.Count == 0 && added == 0)
-            {
-                await store.SetSelectedRoutingListAsync(id, ct).ConfigureAwait(false);
-            }
-
+            await AddListAsync(store, geo, preset.Name, preset.Rules, preset.AllUdp, preset.Full, ct).ConfigureAwait(false);
             added++;
         }
 

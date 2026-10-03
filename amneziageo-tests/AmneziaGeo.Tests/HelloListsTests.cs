@@ -97,7 +97,6 @@ public sealed class HelloListsTests : IAsyncLifetime
         Assert.Equal(
             ["proxy|geosite:youtube", "direct|geoip:ru", "block|domain:ads.example"],
             lists[0].Rules.Select(GeoConfigurator.FormatWithRole));
-        Assert.Equal(lists[0].Id, await _store.GetSelectedRoutingListAsync());
         Assert.True((await _store.GetRoutingSettingsAsync(lists[0].Id))!.AllUdp);
         Assert.True((await _store.GetRoutingSettingsAsync(lists[1].Id))!.UseGlobalProxy);
     }
@@ -119,7 +118,16 @@ public sealed class HelloListsTests : IAsyncLifetime
         Assert.Equal(["Unblock", "Everything"], after.Select(list => list.Name));
         Assert.Equal(["proxy|geosite:openai"], after[0].Rules.Select(GeoConfigurator.FormatWithRole));
         Assert.Contains(await _store.ListGeoSourcesAsync(), source => source.Name == "amneziageo");
-        Assert.Equal(lists[0].Id, await _store.GetSelectedRoutingListAsync());
+    }
+
+    [Fact]
+    public async Task ADeviceWithoutLists_KeepsSendingEverythingThroughTheTunnel()
+    {
+        await Offers().AskAsync("office", Text, CancellationToken.None);
+        await Offers().AskAsync("office", Text, CancellationToken.None);
+
+        Assert.Equal(2, (await _store.ListRoutingListsAsync()).Count);
+        Assert.Null(await _store.GetSelectedRoutingListAsync());
     }
 
     [Fact]
@@ -189,6 +197,18 @@ public sealed class HelloListsTests : IAsyncLifetime
         Assert.False(seeded);
         Assert.False(later);
         Assert.Empty(await _store.ListRoutingListsAsync());
+    }
+
+    [Fact]
+    public async Task AnInstallWhoseConfigurationsLiveOutsideTheStore_IsNotSeeded()
+    {
+        var geo = new GeoConfigurator(_store, new NoFiles());
+
+        var seeded = await RoutingSeed.SeedAsync(_store, geo, "Unavailable sites", CancellationToken.None, inUse: true);
+
+        Assert.False(seeded);
+        Assert.Empty(await _store.ListRoutingListsAsync());
+        Assert.Null(await _store.GetSelectedRoutingListAsync());
     }
 
     private ServerOffers Offers(Action<IReadOnlyList<GeoSource>>? fetch = null) =>

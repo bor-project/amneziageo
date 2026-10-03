@@ -27,32 +27,31 @@ internal static class ProbeRoute
         }
         finally
         {
-            Release(cache, address, held);
+            Release(cache, held);
         }
     }
 
     // Holds the address on the path asked for; auto holds nothing, and without a live cache there is nothing to
     // hold it with.
-    private static bool Hold(RoutingCache? cache, IPAddress? address, string path)
+    private static RoutingCache.Forced? Hold(RoutingCache? cache, IPAddress? address, string path)
     {
         if (cache is null || address is null || path == ProbePaths.Auto)
         {
-            return false;
+            return null;
         }
 
-        cache.Note(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
-        return true;
+        return cache.Force(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
     }
 
-    // Puts the address back under the rules that own it.
-    private static void Release(RoutingCache? cache, IPAddress? address, bool held)
+    // Puts a held address back where it stood before the run. Asking the cache what the rules make of it would
+    // only hand back the verdict the hold forced, and an address the rules send through the tunnel would stay past
+    // it for good, carried into later sessions by the route memory.
+    private static void Release(RoutingCache? cache, RoutingCache.Forced? held)
     {
-        if (!held || cache is null || address is null)
+        if (held is not null)
         {
-            return;
+            cache?.Unforce(held);
         }
-
-        cache.Note(address, cache.Classify(address));
     }
 
     // Where the run went: the path forced, or - for auto - what the rules in force make of the address.

@@ -88,6 +88,17 @@ public sealed class CarrierHealthTests
     }
 
     [Fact]
+    public void EchoesSlowedByADownload_LeaveTheCarrierAlone()
+    {
+        var health = new CarrierHealth();
+
+        var reason = Feed(health, 60, sent: true, returned: true, loss: 100, rttMs: 2500, received: 400_000);
+
+        Assert.Equal(string.Empty, reason);
+        Assert.False(health.Degrading);
+    }
+
+    [Fact]
     public void ACarrierRepeatingMostOfWhatItSends_IsTheReasonATransferStalls()
     {
         var health = new CarrierHealth();
@@ -131,12 +142,12 @@ public sealed class CarrierHealthTests
         Assert.Equal(string.Empty, reason);
     }
 
-    private static string Feed(CarrierHealth health, int seconds, bool sent, bool returned, int loss = Unknown, int rttMs = -1, long bytesOut = 0, long bytesRetrans = 0)
+    private static string Feed(CarrierHealth health, int seconds, bool sent, bool returned, int loss = Unknown, int rttMs = -1, long bytesOut = 0, long bytesRetrans = 0, long received = 0)
     {
         var reason = string.Empty;
         for (var second = 0; second < seconds; second++)
         {
-            reason = health.Verdict(sent, returned, bytesOut, bytesRetrans, loss, rttMs);
+            reason = health.Verdict(sent, returned, bytesOut, bytesRetrans, loss, rttMs, received);
         }
 
         return reason;

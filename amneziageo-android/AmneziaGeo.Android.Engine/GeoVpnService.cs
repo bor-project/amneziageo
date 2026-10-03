@@ -837,7 +837,7 @@ public sealed class GeoVpnService : VpnService
             }
 
             var servers = DnsServers(resolved);
-            var relay = NeedsRelay(plan) ? new ProxyRelay(plan, Protect, Report, ResolveOwner, Refuse) : null;
+            var relay = NeedsRelay(plan) ? new ProxyRelay(Carried(plan, resolved, servers), Protect, Report, ResolveOwner, Refuse) : null;
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
             // Live tun replacement from Android 13.
@@ -1285,6 +1285,10 @@ public sealed class GeoVpnService : VpnService
             }
         }
 
+        // The engine decides the resolver and those networks as ranges of the list: behind the relay a split hands a
+        // datagram no rule names to its owner, and a query to the resolver would leave past the tunnel.
+        var listed = new List<string>(proxy);
+
         // Ranges the tun leaves out whatever the budget holds: the network the device sits on, and the addresses a
         // direct name resolved to.
         var kept = new List<string>();
@@ -1398,7 +1402,23 @@ public sealed class GeoVpnService : VpnService
         var decided = new List<string>(plan.DirectRoutes);
         decided.AddRange(onPacket);
 
-        return new Materialized(tunneled, allowed, local, Verdicts(plan.ProxyRoutes, decided, block));
+        return new Materialized(tunneled, allowed, local, Verdicts(listed, decided, block));
+    }
+
+    // The plan with what rides the tunnel whatever the list says - the resolvers and the private networks the
+    // configuration reaches - among its ranges, for the relay that decides a stream no rule names as direct.
+    private static GeoRoutingPlan Carried(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers)
+    {
+        var ranges = new List<string>(plan.ProxyRoutes);
+        foreach (var range in servers.Select(server => server + "/32").Concat(PrivateNetworks.ForTunnel(config, LocalSubnets())))
+        {
+            if (!ranges.Contains(range, StringComparer.OrdinalIgnoreCase))
+            {
+                ranges.Add(range);
+            }
+        }
+
+        return plan with { ProxyRoutes = ranges };
     }
 
     // What the shim decides on the packet: block wins over direct, direct over proxy. The ranges stay inside the
@@ -2243,7 +2263,8 @@ public sealed class GeoVpnService : VpnService
             var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs, loss.Streak);
             var moved = new LinkSample(tx > lastTx, rx > lastRx, loss.RecentPercent, reading.Churning,
                 seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : 0,
-                lastTx < 0 ? 0 : Math.Max(0, tx - lastTx));
+                lastTx < 0 ? 0 : Math.Max(0, tx - lastTx),
+                lastRx < 0 ? 0 : Math.Max(0, rx - lastRx));
             lastRx = rx;
             lastTx = tx;
             WatchNetworks(seen, reading);

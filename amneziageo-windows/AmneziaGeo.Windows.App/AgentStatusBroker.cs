@@ -2421,10 +2421,39 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             Interlocked.Increment(ref _geoUpdatedTick);
             await BroadcastIfChangedAsync(CancellationToken.None);
+            await ReprojectRunningAsync(CancellationToken.None);
         }
 
         logger.LogDebug("geo refresh session done: changed={Changed}, re-resolve triggered={Bumped} [{Ms} ms]",
             changed, forceResolve || changed, geoSw.ElapsedMilliseconds);
+    }
+
+    // A base that changed reaches the running tunnel without a reconnect: its share is cut afresh from the rebuilt
+    // lists of the user who raised it and announced, as a saved list is. The tunnel reads only the share it was
+    // handed, so without this a list that sends a category through it lets what the category gained go past it.
+    private async Task ReprojectRunningAsync(CancellationToken ct)
+    {
+        var members = RunningMembers();
+        if (members.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var owner = activeScope.Store;
+            var ownerGeo = new GeoConfigurator(owner, geoFiles);
+            foreach (var member in members)
+            {
+                await RoutingProjection.ProjectAsync(owner, ownerGeo, Roster, member, logger, ct);
+            }
+
+            AnnounceRules();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "the refreshed rule databases could not be handed to the running tunnel; they take effect on the next connect");
+        }
     }
 
     // Internal counters (not user settings): resolve epoch and last-refresh stamp.

@@ -56,11 +56,13 @@ sudo apt install ./amneziageo_<версия>_amd64.deb ./amneziageo-gui_<вер�
 
 ```bash
 sudo amneziageo geo download
-sudo amneziageo config import work --file work.conf     # либо --link 'vpn://…', либо --stdin
+sudo amneziageo config import work --file work.conf     # либо --link 'vpn://…' или 'https://…', либо --stdin
 sudo amneziageo up work
 sudo amneziageo settings set survive-reboot on
 sudo amneziageo settings set periodic-reconnect-enabled on
 ```
+
+Адрес `http(s)` в `--link` скачивается: агент читает его как подписку - и список ссылок, и одну конфигурацию - и держит её свежей. Окно импорта в `amneziageo tui` принимает те же три вида текста.
 
 `up <конфиг>` выбирает конфигурацию и подключается на ней, `select <конфиг>` только запоминает её для следующего подключения. Список маршрутизации - одна настройка на всю машину, а не привязка к конфигурации: `routing use <имя>` выбирает список, `routing use none` оставляет решение за собственными `AllowedIPs` конфигурации.
 

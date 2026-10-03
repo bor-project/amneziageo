@@ -102,6 +102,7 @@ public static class CliRunner
               config show <name>                print the stored wg-quick text
               config link <name>                print the config as a vpn:// share link
               config import [<name>] (--file <path> | --link <url> | --text <s> | --stdin)
+                                                an http(s) address is downloaded as a subscription
               config edit <name> (--file <path> | --text <s> | --stdin)
               config rename <name> <new-name>
               config copy <name> <new-name>

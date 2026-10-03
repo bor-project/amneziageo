@@ -283,6 +283,7 @@ internal sealed class Shell : Window
             }));
     }
 
+    // One box takes all three: an address is downloaded by the agent, a configuration or a link to one is imported.
     private void Import()
     {
         if (Prompt.Block(Localized("Main_ImportButton"), Localized("Tui_ImportHint")) is not { } payload)
@@ -290,16 +291,48 @@ internal sealed class Shell : Window
             return;
         }
 
-        var imported = VpnLinkCodec.TryDecode(payload);
-        var confText = imported?.ConfText ?? payload;
+        var recognized = ImportCodec.Recognize(payload);
+        if (recognized.Kind == ImportKind.Subscription)
+        {
+            Download(recognized.Address);
+            return;
+        }
+
+        if (recognized.Config is not { } imported)
+        {
+            Prompt.Error(Localized("MainVm_ConfigNotRecognized"));
+            return;
+        }
+
+        var confText = imported.ConfText;
         var taken = _agent.Snapshot.Configs.Select(config => config.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var suggestion = imported?.Name ?? VpnLinkCodec.HostName(confText) ?? string.Empty;
+        var suggestion = imported.Name ?? VpnLinkCodec.HostName(confText) ?? string.Empty;
         if (Prompt.Line(Localized("Main_ImportButton"), Localized("Main_NameLabel"), UniqueName.ResolveParen(suggestion, taken)) is not { } name)
         {
             return;
         }
 
         Apply(Send(IpcContract.OpImportConfig, name, confText));
+    }
+
+    // The agent reads the address as a subscription and keeps what it serves up to date.
+    private void Download(string address)
+    {
+        if (SubscriptionCodec.IsPlainAddress(address))
+        {
+            Prompt.Info(Localized("Main_SubscriptionInsecure"));
+        }
+
+        if (Prompt.Line(Localized("Main_ImportButton"), Localized("Main_NameLabel"), SubscriptionCodec.AddressName(address)) is not { } name)
+        {
+            return;
+        }
+
+        var ack = Send(IpcContract.OpAddSubscription, address, name);
+        if (Apply(ack))
+        {
+            Prompt.Info(AckText.Localize(ack.Message));
+        }
     }
 
     private View Routing()

@@ -23,7 +23,14 @@ public static class SubscriptionCodec
             return result;
         }
 
-        foreach (var rawLine in Decode(body).Split('\n'))
+        // A link straight to one configuration answers with its text rather than with a list of links.
+        var text = Decode(body);
+        if (VpnLinkCodec.LooksLikeConf(text))
+        {
+            return VpnLinkCodec.TryDecode(text) is { } single ? [single] : result;
+        }
+
+        foreach (var rawLine in text.Split('\n'))
         {
             var line = rawLine.Trim();
             if (line.Length == 0)

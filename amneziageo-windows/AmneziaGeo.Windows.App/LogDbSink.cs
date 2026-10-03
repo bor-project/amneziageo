@@ -10,9 +10,10 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Serilog sink that writes rendered events into the structured log store: those of the name subsystem into
-/// the resolver log, the rest into the agent log.
+/// the resolver log, the rest into the agent log. The rows of level info and above are kept in memory as well,
+/// whatever the level in force stores.
 /// </summary>
-internal sealed class LogDbSink(SqliteLogStore store) : ILogEventSink
+internal sealed class LogDbSink(SqliteLogStore store, RecentLog? recent = null, LogLevelController? level = null) : ILogEventSink
 {
     // Writes string values as they stand: the default rendering wraps every one of them in quotes.
     private static readonly MessageTemplateTextFormatter _message = new("{Message:l}", CultureInfo.InvariantCulture);
@@ -29,6 +30,12 @@ internal sealed class LogDbSink(SqliteLogStore store) : ILogEventSink
         var unixMs = logEvent.Timestamp.ToUnixTimeMilliseconds();
         var levelId = LogLevels.Id(logEvent.Level);
         var source = Source(logEvent);
+        recent?.Add(unixMs, levelId, source, message);
+        if (level is not null && !level.Captures(levelId))
+        {
+            return;
+        }
+
         if (ResolverLog.Takes(source))
         {
             store.AppendDns(unixMs, levelId, source, message);

@@ -129,7 +129,14 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     /// </summary>
     public string HeldText(string config)
     {
-        var report = HeldSessions(config);
+        return HeldText(HeldSessions(config));
+    }
+
+    /// <summary>
+    /// A session report rendered one row per line for the support archive.
+    /// </summary>
+    public static string HeldText(AmneziaGeo.Ipc.SessionReport report)
+    {
         return report.Sessions.Count == 0 ? "the tunnel holds nothing right now" : report.Render();
     }
 
@@ -155,21 +162,21 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         {
             var tracked = session.Tracker?.Snapshot() ?? [];
             var owners = Owners(tracked);
+            var routed = session.Tracker?.AppRoutes() ?? new Dictionary<string, (bool Datagrams, int IdleSeconds)>(StringComparer.Ordinal);
             var split = session.Cache?.Split ?? true;
             var listed = new HashSet<string>(StringComparer.Ordinal);
             foreach (var held in session.Cache?.Snapshot() ?? [])
             {
-                var verdict = Verdict(held.Verdict.ToString());
-                if (verdict == AmneziaGeo.Ipc.LiveSession.Undecided)
+                var address = held.Address.ToString();
+                listed.Add(address);
+                var row = HeldRows.Of(held, split, Owner(address, held.Adopted, owners), held.Adopted && owners.ContainsKey(address),
+                    routed.TryGetValue(address, out var route) ? route.Datagrams : null);
+                if (row.Verdict == AmneziaGeo.Ipc.LiveSession.Undecided)
                 {
                     undecided++;
                 }
 
-                var address = held.Address.ToString();
-                listed.Add(address);
-                rows.Add(new AmneziaGeo.Ipc.LiveSession(address, verdict, IdleSeconds: held.IdleSeconds,
-                    Name: Owner(address, held.Adopted, owners), Path: PathOf(held, split), Reason: ReasonOf(held),
-                    LeftSeconds: Math.Max(held.TtlSeconds - held.IdleSeconds, 0)));
+                rows.Add(row);
             }
 
             // A name keeps its own route, so its addresses belong here even where the cache holds none of them.
@@ -186,13 +193,22 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
                     }
                 }
             }
+
+            // An address routed for a matched app or for all-UDP holds its route whether the cache met it or not.
+            foreach (var pair in routed)
+            {
+                if (listed.Add(pair.Key))
+                {
+                    undecided++;
+                    rows.Add(HeldRows.OfRouted(pair.Key, pair.Value.Datagrams, pair.Value.IdleSeconds, Owner(pair.Key, false, owners)));
+                }
+            }
         }
 
+        var past = new HashSet<string>(session.Bypassed, StringComparer.Ordinal);
         foreach (var range in session.Cache?.PinnedRoutes ?? [])
         {
-            rows.Add(new AmneziaGeo.Ipc.LiveSession(range, "proxy",
-                Path: AmneziaGeo.Ipc.LiveSession.PathTunnel,
-                Reason: AmneziaGeo.Ipc.LiveSession.ReasonService));
+            rows.Add(HeldRows.OfStanding(range, past.Contains(range)));
         }
 
         var tunnel = 0;
@@ -228,27 +244,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
             block,
             mode,
             session.ListName);
-    }
-
-    // What settled the destination, in the order the cache settles it.
-    private static string ReasonOf(RoutingCache.Held held)
-    {
-        if (held.Adopted)
-        {
-            return AmneziaGeo.Ipc.LiveSession.ReasonResolved;
-        }
-
-        if (held.ByName)
-        {
-            return AmneziaGeo.Ipc.LiveSession.ReasonName;
-        }
-
-        if (held.Verdict != RouteVerdict.None)
-        {
-            return AmneziaGeo.Ipc.LiveSession.ReasonRange;
-        }
-
-        return held.ByApp ? AmneziaGeo.Ipc.LiveSession.ReasonApp : AmneziaGeo.Ipc.LiveSession.ReasonNone;
     }
 
     // Which name holds each adopted address: the freshest one, the way the cache row reports its clock.
@@ -289,18 +284,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         };
     }
 
-    // Where the address actually goes. An entry the verdict installed nothing for follows the default of the mode.
-    private static string PathOf(RoutingCache.Held held, bool split)
-    {
-        return held.Plan switch
-        {
-            RoutePlan.Tunnel or RoutePlan.External => AmneziaGeo.Ipc.LiveSession.PathTunnel,
-            RoutePlan.Permit or RoutePlan.Bypass => AmneziaGeo.Ipc.LiveSession.PathDirect,
-            RoutePlan.Drop => AmneziaGeo.Ipc.LiveSession.PathBlock,
-            _ => split ? AmneziaGeo.Ipc.LiveSession.PathDirect : AmneziaGeo.Ipc.LiveSession.PathTunnel,
-        };
-    }
-
     /// <summary>
     /// The same, read from the service process when the tunnel runs there.
     /// </summary>
@@ -315,12 +298,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         return served is { Length: > 0 }
             ? AmneziaGeo.Ipc.SessionReport.Parse(served)
             : AmneziaGeo.Ipc.SessionReport.Empty;
-    }
-
-    // The word a session row carries: an address no rule names is undecided, not "none".
-    private static string Verdict(string name)
-    {
-        return name == "None" ? AmneziaGeo.Ipc.LiveSession.Undecided : name.ToLowerInvariant();
     }
 
     // What the running tunnel holds. Read from this process when it runs the tunnel, otherwise from the service

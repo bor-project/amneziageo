@@ -22,6 +22,7 @@ internal sealed class ConfigRunner(
     TunnelDutyRoster roster,
     GeoConfigurator geo,
     RouteManager routes,
+    SessionBook sessions,
     ILogger<ConfigRunner> logger)
 {
     private IStateStore store => activeScope.Store;
@@ -200,6 +201,7 @@ internal sealed class ConfigRunner(
         config = dialled.Config;
 
         logger.LogInformation("connected through {Config}; traffic now follows the routing rules", config);
+        sessions.Of(config).Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), config);
         await SetStateAsync("connected");
 
         _lastRxBytes = -1;
@@ -230,6 +232,7 @@ internal sealed class ConfigRunner(
 
                 logger.LogWarning("{Config}: {Reason}, and the repairs that keep the session standing did not bring it back; reconnecting now (attempt {Attempt})",
                     config, _recovery.Reason, _recovery.Attempt);
+                sessions.Of(config).Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 _lastRxBytes = -1;
                 _lastTxBytes = -1;
                 await SetStateAsync("connecting");
@@ -252,6 +255,7 @@ internal sealed class ConfigRunner(
 
                 config = redialled.Config;
 
+                sessions.Of(config).Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), config);
                 await SetStateAsync("connected");
                 _lastRxBytes = -1;
                 _lastTxBytes = -1;
@@ -263,6 +267,8 @@ internal sealed class ConfigRunner(
         }
         finally
         {
+            sessions.Of(config).Closed();
+
             // A user disconnect announces "disconnecting", then tears down and reports the outcome (clean, or a
             // stuck teardown kept as connected); a re-run (reconfigure/re-dial) just drops to disconnected.
             if (!control.Running)
@@ -821,6 +827,11 @@ internal sealed class ConfigRunner(
             var rebound = uapi.Rebind(config);
             logger.LogWarning("{Config}: {Reason}; binding the tunnel to another source port (attempt {Attempt}){Outcome}",
                 config, _recovery.Reason, _recovery.Attempt, rebound ? string.Empty : " - the tunnel would not take it");
+            if (rebound)
+            {
+                sessions.Of(config).Repaired(step);
+            }
+
             return rebound;
         }
 
@@ -843,6 +854,11 @@ internal sealed class ConfigRunner(
         var pointed = uapi.SetEndpoint(config, key, resolved);
         logger.LogWarning("{Config}: {Reason}; the server's address was resolved again to {Endpoint} and handed to the tunnel (attempt {Attempt}){Outcome}",
             config, _recovery.Reason, resolved, _recovery.Attempt, pointed ? string.Empty : " - the tunnel would not take it");
+        if (pointed)
+        {
+            sessions.Of(config).Repaired(step);
+        }
+
         return pointed;
     }
 

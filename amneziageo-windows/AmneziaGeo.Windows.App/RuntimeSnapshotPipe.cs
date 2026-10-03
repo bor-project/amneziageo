@@ -38,6 +38,11 @@ internal static class RuntimeSnapshotPipe
     public const string OpSessions = "sessions";
 
     /// <summary>
+    /// Asks for the journal rows the process of the tunnel keeps in memory.
+    /// </summary>
+    public const string OpRecent = "recent";
+
+    /// <summary>
     /// Asks the tunnel to measure one destination. Only the process holding the cache can put an address on a
     /// path and take it off again, so the whole run happens there.
     /// </summary>

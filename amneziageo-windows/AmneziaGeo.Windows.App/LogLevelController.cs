@@ -22,6 +22,11 @@ internal sealed class LogLevelController
     public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Error);
 
     /// <summary>
+    /// The level below which no sink sees an event: the one in force, and info at the highest.
+    /// </summary>
+    public LoggingLevelSwitch Floor { get; } = new(LogEventLevel.Information);
+
+    /// <summary>
     /// The current level as a persisted token ("error" / "warning" / "info" / "debug" / "trace").
     /// </summary>
     public string Current => Format(Switch.MinimumLevel);
@@ -31,7 +36,9 @@ internal sealed class LogLevelController
     /// </summary>
     public void Set(string? token)
     {
-        Switch.MinimumLevel = Parse(token);
+        var level = Parse(token);
+        Switch.MinimumLevel = level;
+        Floor.MinimumLevel = level < LogEventLevel.Information ? level : LogEventLevel.Information;
     }
 
     /// <summary>

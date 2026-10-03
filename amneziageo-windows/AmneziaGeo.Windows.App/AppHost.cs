@@ -33,15 +33,19 @@ internal static class AppHost
         var logLevel = new LogLevelController();
         builder.Services.AddSingleton(logLevel);
 
+        // Rows of level info and above kept in memory for the diagnostics archive, whatever the level stores.
+        var recent = new RecentLog();
+        builder.Services.AddSingleton(recent);
+
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog((services, config) =>
         {
-            config.MinimumLevel.ControlledBy(logLevel.Switch)
+            config.MinimumLevel.ControlledBy(logLevel.Floor)
                 .Enrich.FromLogContext()
                 // Source column: the logger's class name, derived from SourceContext.
                 .Enrich.With(new LogSourceEnricher())
-                .WriteTo.Console()
-                .WriteTo.Sink(new LogDbSink(services.GetRequiredService<SqliteLogStore>()));
+                .WriteTo.Console(levelSwitch: logLevel.Switch)
+                .WriteTo.Sink(new LogDbSink(services.GetRequiredService<SqliteLogStore>(), recent, logLevel));
         });
 
         RegisterServices(builder.Services, userRoot);
@@ -96,6 +100,7 @@ internal static class AppHost
         // Default composite store for this process: the machine store paired with this session's user library.
         services.AddSingleton<IStateStore>(sp => sp.GetRequiredService<ScopedStoreFactory>().For(userRoot));
         services.AddSingleton<AgentControl>();
+        services.AddSingleton<SessionBook>();
         // Single tunnel: it holds every duty. The agent replaces this with the set's own arbiter when the mode is on.
         services.AddSingleton<TunnelDutyRoster>();
         services.AddSingleton<ResolverHolder>();

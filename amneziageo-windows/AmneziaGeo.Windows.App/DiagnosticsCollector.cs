@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds a redacted diagnostics bundle for support.
 /// </summary>
-internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore settings, SqliteLogStore logStore, AgentControl control, RuntimeInspector inspector, ILogger<DiagnosticsCollector> logger)
+internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore settings, SqliteLogStore logStore, AgentControl control, RuntimeInspector inspector, RecentLog recent, SessionBook sessions, ILogger<DiagnosticsCollector> logger)
 {
     private readonly DiagnosticsBundle _bundle = new(store, logStore);
 
@@ -19,8 +19,9 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
     /// </summary>
     public async Task<string> CollectAsync(CancellationToken ct = default)
     {
-        var header = await HeaderAsync(ct);
         var target = control.RunningTarget ?? control.Target ?? string.Empty;
+        var held = target.Length == 0 ? null : inspector.HeldSessions(target);
+        var header = await HeaderAsync(target, held, ct);
         var zipPath = await _bundle.WriteAsync(
             TunnelPaths.DiagnosticsDirectory(),
             header,
@@ -28,7 +29,8 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             new BundleSources(
                 (config, token) => store.GetSettingAsync(TunnelPaths.ConnectMessageKey(config), token),
                 token => RuntimeAsync(target, token),
-                _ => Task.FromResult(target.Length == 0 ? "no configuration is selected" : inspector.HeldText(target))),
+                _ => Task.FromResult(held is null ? "no configuration is selected" : RuntimeInspector.HeldText(held)),
+                _ => Task.FromResult(Recent(target))),
             ct);
 
         logger.LogInformation("the diagnostics archive is ready at {Path}; keys and addresses in it are masked, so it can be sent for support", zipPath);
@@ -43,7 +45,19 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             : await inspector.RenderAsync(store, config, control.Running, ct);
     }
 
-    private async Task<string> HeaderAsync(CancellationToken ct)
+    // The rows this process keeps and the ones the process of the running tunnel keeps, by time.
+    private IReadOnlyList<LogRow> Recent(string target)
+    {
+        var own = recent.Snapshot();
+        if (target.Length == 0 || !control.Running || inspector.HasLiveSession)
+        {
+            return own;
+        }
+
+        return RecentLog.Merge(own, RecentLog.Parse(RuntimeSnapshotPipe.Send(target, RuntimeSnapshotPipe.OpRecent, logger)));
+    }
+
+    private async Task<string> HeaderAsync(string target, AmneziaGeo.Ipc.SessionReport? held, CancellationToken ct)
     {
         var s = await settings.LoadAsync(ct);
         var sb = new StringBuilder();
@@ -67,6 +81,12 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         sb.AppendLine($"selected target: {control.Target ?? "-"}");
         sb.AppendLine($"running:         {control.Running}");
         sb.AppendLine($"connect failed:  {control.ConnectFailed}");
+        sb.AppendLine();
+        foreach (var line in sessions.Of(target).Lines(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), held))
+        {
+            sb.AppendLine(line);
+        }
+
         sb.AppendLine();
         return sb.ToString();
     }

@@ -105,6 +105,9 @@ internal sealed class LinuxAgent : IDisposable
     // session, its routes and its resolver standing.
     private static readonly RecoveryStep[] _ladder = [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Restart];
     private readonly LinkRecovery _recovery = new(_ladder);
+
+    // What the session went through since it came up, for the diagnostics archive.
+    private readonly SessionMarks _session = new();
     private long _lastRxBytes = -1;
     private long _lastTxBytes = -1;
     private bool _gaveUpLogged;
@@ -563,6 +566,7 @@ internal sealed class LinuxAgent : IDisposable
             _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Connected;
             _log.Info("agent", $"connected: {_boundTarget}");
+            _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
             await PushAsync(ct).ConfigureAwait(false);
             return;
         }
@@ -578,6 +582,7 @@ internal sealed class LinuxAgent : IDisposable
         _connectFailReason = ConnectFailureReason.NoHandshake.ToString();
         _connectFailDetail = "no handshake";
         _boundStatus = ConnectionStatus.Failed;
+        _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
         StopLossProbe();
         await _tunnel.DownAsync(ct).ConfigureAwait(false);
@@ -614,14 +619,20 @@ internal sealed class LinuxAgent : IDisposable
         if (step != RecoveryStep.Restart)
         {
             _log.Warn("agent", $"{_recovery.Reason}; repairing the link without taking the tunnel down (attempt {_recovery.Attempt})");
-            _ = step == RecoveryStep.Rebind
+            var repaired = step == RecoveryStep.Rebind
                 ? await _tunnel.RebindAsync(ct).ConfigureAwait(false)
                 : await _tunnel.RepointAsync(ct).ConfigureAwait(false);
+            if (repaired)
+            {
+                _session.Repaired(step);
+            }
+
             return;
         }
 
         _log.Warn("agent", $"{_recovery.Reason}, and the repairs that keep the tunnel standing did not bring it back; "
             + $"raising the session again (attempt {_recovery.Attempt})");
+        _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var ack = await DispatchAsync(new IpcCommand(IpcContract.OpSetConnection, ["connect"]), ct).ConfigureAwait(false);
         if (!ack.Ok)
         {
@@ -916,6 +927,7 @@ internal sealed class LinuxAgent : IDisposable
             await PushAsync(ct).ConfigureAwait(false);
             await _tunnel.DownAsync(ct).ConfigureAwait(false);
             StopLossProbe();
+            _session.Closed();
             _boundTarget = null;
             _boundStatus = ConnectionStatus.Disconnected;
             await PushAsync(ct).ConfigureAwait(false);
@@ -972,6 +984,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             _boundStatus = ConnectionStatus.Connected;
             _log.Info("agent", $"connected: {_boundTarget}");
+            _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
             await PushAsync(ct).ConfigureAwait(false);
             return Ok();
         }
@@ -2157,6 +2170,12 @@ internal sealed class LinuxAgent : IDisposable
     // takes and what settled it. While routing is off the AllowedIPs of the configuration answer instead.
     private IpcAck GetSessions()
     {
+        return new IpcAck(true, Sessions().ToPayload());
+    }
+
+    // The same as a report, which the diagnostics archive counts the named addresses in.
+    private SessionReport Sessions()
+    {
         var mode = _tunnel.RoutingMode.Length > 0 ? _tunnel.RoutingMode : SessionReport.ModeOff;
         var rows = new List<LiveSession>();
         var undecided = 0;
@@ -2203,7 +2222,7 @@ internal sealed class LinuxAgent : IDisposable
         var tunnel = rows.Count(row => row.Route == LiveSession.PathTunnel);
         var direct = rows.Count(row => row.Route == LiveSession.PathDirect);
         var block = rows.Count(row => row.Route == LiveSession.PathBlock);
-        var report = new SessionReport(
+        return new SessionReport(
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             [.. rows.OrderBy(row => row.IdleSeconds < 0 ? int.MaxValue : row.IdleSeconds).Take(SessionReport.MaxRows)],
             rows.Count,
@@ -2214,7 +2233,6 @@ internal sealed class LinuxAgent : IDisposable
             block,
             mode,
             _tunnel.ListName);
-        return new IpcAck(true, report.ToPayload());
     }
 
     // Where the address goes; an entry the verdict installed nothing for follows the default of the mode.
@@ -2715,7 +2733,8 @@ internal sealed class LinuxAgent : IDisposable
                 new BundleSources(
                     null,
                     async token => (await GetRuntimeConfigAsync(token).ConfigureAwait(false)).Message,
-                    token => Task.FromResult(CacheText())),
+                    token => Task.FromResult(CacheText()),
+                    token => Task.FromResult(_log.Recent.Snapshot())),
                 ct).ConfigureAwait(false);
             _log.Info("agent", $"diagnostics archive written to {path}; keys and credentials in it are masked");
             return new IpcAck(true, path);
@@ -2750,6 +2769,12 @@ internal sealed class LinuxAgent : IDisposable
         sb.AppendLine($"bound target:    {_boundTarget ?? "-"}");
         sb.AppendLine($"status:          {_boundStatus}");
         sb.AppendLine($"connect failed:  {_connectFailed}");
+        sb.AppendLine();
+        foreach (var line in _session.Lines(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Sessions()))
+        {
+            sb.AppendLine(line);
+        }
+
         sb.AppendLine();
         return sb.ToString();
     }

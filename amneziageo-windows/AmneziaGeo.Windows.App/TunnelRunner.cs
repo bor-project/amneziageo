@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
@@ -26,6 +27,7 @@ internal sealed class TunnelRunner(
     WindowsFirewall firewall,
     LiveSession session,
     RuntimeInspector inspector,
+    RecentLog recent,
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
@@ -576,11 +578,13 @@ internal sealed class TunnelRunner(
         var pinnedRoutes = new List<string>(routedResolvers);
         pinnedRoutes.AddRange(inboundRoutes);
         // The server and the own network's resolvers keep the routes set up for them.
-        pinnedRoutes.AddRange(lanResolverRoutes);
+        var bypassed = new List<string>(lanResolverRoutes);
         if (underlayProbe is { AddressFamily: AddressFamily.InterNetwork } serverAddress)
         {
-            pinnedRoutes.Add($"{serverAddress}/32");
+            bypassed.Add($"{serverAddress}/32");
         }
+
+        pinnedRoutes.AddRange(bypassed);
 
         _standingBasis = new StandingBasis(geoSplit, ownNetworks, new HashSet<string>(resolverRoutes, StringComparer.Ordinal), [.. pinnedRoutes], inboundRoutes, inboundAddresses);
         _standing = standing;
@@ -597,6 +601,7 @@ internal sealed class TunnelRunner(
         }
 
         session.SetCache(routing);
+        session.SetBypassed(bypassed);
         session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
             WgConfigEditor.GetAllowedIps(config));
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
@@ -1839,6 +1844,12 @@ internal sealed class TunnelRunner(
         if (op == RuntimeSnapshotPipe.OpSessions)
         {
             return inspector.Sessions().ToPayload();
+        }
+
+        if (op == RuntimeSnapshotPipe.OpRecent)
+        {
+            var rows = recent.Snapshot();
+            return rows.Count == 0 ? "-" : RecentLog.ToPayload(rows);
         }
 
         if (op.StartsWith(RuntimeSnapshotPipe.OpProbe, StringComparison.Ordinal))

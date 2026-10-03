@@ -203,4 +203,87 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
         Assert.DoesNotContain("topSecretKey", text, StringComparison.Ordinal);
         Assert.Contains("[REDACTED]", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task TheRowsKeptInMemory_TravelInTheArchiveBesideAnEmptyJournal()
+    {
+        var recent = new RecentLog();
+        recent.Add(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 3, "agent", "connected: srv");
+        recent.Add(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 4, "agent", "PrivateKey = topSecretKey");
+
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(
+            Path.Combine(_root, "out"),
+            "header\n",
+            row => $"[{row.Level}] {row.Source} {row.Message}",
+            new BundleSources(Recent: _ => Task.FromResult(recent.Snapshot())));
+
+        using var zip = ZipFile.OpenRead(path);
+        Assert.Equal(string.Empty, await TextAsync(zip, "ageo.log"));
+        var text = await TextAsync(zip, "recent.log");
+        Assert.Contains("[INF] agent connected: srv", text, StringComparison.Ordinal);
+        Assert.Contains("[WRN] agent PrivateKey = [REDACTED]", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("topSecretKey", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WithoutRowsKeptInMemory_TheArchiveSaysSo()
+    {
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(Path.Combine(_root, "out"), "header\n", row => row.Message);
+
+        using var zip = ZipFile.OpenRead(path);
+        Assert.Contains("not available on this system", await TextAsync(zip, "recent.log"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheLibraryOfThePlatform_StandsInForTheStore()
+    {
+        const string text = "[Interface]\nPrivateKey = topSecretKey\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.1:51820\n";
+        await _store.SetConfigTransportAsync(new ConfigTransport("phone", true, 1380, MtuMode: MtuMode.Custom));
+
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(
+            Path.Combine(_root, "out"),
+            "header\n",
+            row => row.Message,
+            new BundleSources(Library: new BundleLibrary(["phone"], name => name == "phone" ? text : null, 7)));
+
+        using var zip = ZipFile.OpenRead(path);
+        var summary = await TextAsync(zip, "summary.txt");
+        Assert.Contains("[configs] (1)", summary, StringComparison.Ordinal);
+        Assert.Contains("  phone:", summary, StringComparison.Ordinal);
+        Assert.Contains("mtu:        1380", summary, StringComparison.Ordinal);
+        Assert.Contains("websocket:  on -> 10.0.0.1:51820 (settings)", summary, StringComparison.Ordinal);
+        Assert.Contains("[routing] list 7", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("topSecretKey", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheRulesOfAList_ArePrintedUnderIt()
+    {
+        var rules = new[]
+        {
+            new GeoRule(GeoRuleKind.GeoSite, "youtube"),
+            new GeoRule(GeoRuleKind.GeoIp, "ru", RouteRole.Direct),
+            new GeoRule(GeoRuleKind.Domain, "ads.example", RouteRole.Block),
+        };
+        await _store.SaveRoutingListAsync(new RoutingList(0, "main", rules, [], [], [], [], [], [], [], []));
+
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(Path.Combine(_root, "out"), "header\n", row => row.Message);
+
+        using var zip = ZipFile.OpenRead(path);
+        var summary = await TextAsync(zip, "summary.txt");
+        Assert.Contains("main: 3 rule(s)", summary, StringComparison.Ordinal);
+        Assert.Contains("    proxy|geosite:youtube", summary, StringComparison.Ordinal);
+        Assert.Contains("    direct|geoip:ru", summary, StringComparison.Ordinal);
+        Assert.Contains("    block|domain:ads.example", summary, StringComparison.Ordinal);
+    }
+
+    private static async Task<string> TextAsync(ZipArchive zip, string entry)
+    {
+        using var reader = new StreamReader(zip.GetEntry(entry)!.Open());
+        return await reader.ReadToEndAsync();
+    }
 }

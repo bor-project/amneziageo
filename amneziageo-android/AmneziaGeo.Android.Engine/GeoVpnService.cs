@@ -225,6 +225,9 @@ public sealed class GeoVpnService : VpnService
     // session raised again.
     private readonly LinkRecovery _recovery = new([RecoveryStep.Rebind, RecoveryStep.Restart]);
 
+    // What the session went through since it came up, written where the head reads it for its archive.
+    private readonly SessionMarks _session = new();
+
     // Server names and the IPv4 addresses they resolved to last.
     private static readonly ConcurrentDictionary<string, string> _resolvedHosts = new(StringComparer.OrdinalIgnoreCase);
     private VpnStage _stage = VpnStage.Disconnected;
@@ -327,6 +330,8 @@ public sealed class GeoVpnService : VpnService
         }
 
         _retry = 0;
+        _session.Closed();
+        KeepMarks();
         Publish(VpnStage.Connecting, request.Name);
 
         // A connect the user asked for is a fresh start, whatever the previous session was being repaired for.
@@ -344,6 +349,8 @@ public sealed class GeoVpnService : VpnService
         // A service stopped from outside says goodbye itself, or the head keeps showing a tunnel that is gone.
         if (_stage is VpnStage.Connecting or VpnStage.Connected)
         {
+            _session.Closed();
+            KeepMarks();
             Publish(VpnStage.Disconnected, null);
         }
 
@@ -587,6 +594,8 @@ public sealed class GeoVpnService : VpnService
 
         Report(why);
         Note("tunnel", why);
+        _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        KeepMarks();
         Publish(VpnStage.Connecting, request.Name);
         Dial(VpnBridge.ReadPlan(), request, repair: true, () => Interlocked.Exchange(ref _reraising, 0));
 
@@ -899,6 +908,8 @@ public sealed class GeoVpnService : VpnService
                 : $"the peer answered, but nothing has come back through the tun in {TrafficWaitSeconds} s; the "
                     + "session is reported as up on the handshake alone");
             _underKey = AndroidNetworks.Read(this).UnderKey;
+            _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), name);
+            KeepMarks();
             Publish(VpnStage.Connected, name);
             PublishLink(handshake, LinkReading.Empty);
             var rekey = WgConfigEditor.GetRekeyAfterSeconds(resolved);
@@ -2087,12 +2098,24 @@ public sealed class GeoVpnService : VpnService
             return false;
         }
 
+        var rebound = AwgEngine.Rebind(handle);
         var text = $"{_recovery.Reason}; binding the tunnel to another source port (attempt {_recovery.Attempt})"
-            + (AwgEngine.Rebind(handle) ? string.Empty : " - the engine would not take it");
+            + (rebound ? string.Empty : " - the engine would not take it");
         Report(text);
         Note("tunnel", text);
+        if (rebound)
+        {
+            _session.Repaired(step);
+            KeepMarks();
+        }
 
         return false;
+    }
+
+    // Writes the marks of the session where the head reads them.
+    private void KeepMarks()
+    {
+        VpnBridge.WriteMarks(_session.ToPayload());
     }
 
     // Notes what changed around the tunnel since the last look: the network the device sits on, how names resolve,
@@ -2281,10 +2304,11 @@ public sealed class GeoVpnService : VpnService
         return unixSeconds > 0 ? $"{DateTimeOffset.UtcNow.ToUnixTimeSeconds() - unixSeconds} s ago" : "never";
     }
 
-    // Tells the head an event it keeps whatever its capture floor is.
+    // Tells the head an event it keeps whatever its capture floor is, and keeps it for a head that is not there.
     private static void Note(string source, string text)
     {
         global::Android.Util.Log.Warn("GeoVpnService", source + " " + text);
+        VpnBridge.KeepNote(source, text);
         VpnBridge.PublishNote(global::Android.App.Application.Context, source, text);
     }
 
@@ -2681,6 +2705,8 @@ public sealed class GeoVpnService : VpnService
         _unvalidatedSince = 0;
         _unvalidatedNoted = false;
         Release();
+        _session.Closed();
+        KeepMarks();
         Publish(stage, detail, reason);
         StopForeground(StopForegroundFlags.Remove);
         StopSelf();

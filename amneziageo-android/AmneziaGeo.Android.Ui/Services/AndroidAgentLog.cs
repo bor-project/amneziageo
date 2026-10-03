@@ -15,6 +15,7 @@ internal sealed class AndroidAgentLog : IDisposable
     private const string Tag = "AmneziaGeo";
 
     private readonly SqliteLogStore _store;
+    private readonly RecentLog _recent = new();
     private volatile int _captureFloor = 5;
     private volatile bool _routeLog;
 
@@ -36,6 +37,11 @@ internal sealed class AndroidAgentLog : IDisposable
     /// The log database the diagnostics archive reads.
     /// </summary>
     public SqliteLogStore Store => _store;
+
+    /// <summary>
+    /// The rows of level info and above kept in memory, whatever the capture floor stores.
+    /// </summary>
+    public RecentLog Recent => _recent;
 
     /// <summary>
     /// Creates the log tables and starts the writer loop.
@@ -109,18 +115,23 @@ internal sealed class AndroidAgentLog : IDisposable
     public void Note(string source, string message)
     {
         Mirror(AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
-        _store.AppendAgent(UnixMs(), AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
+        var now = UnixMs();
+        _recent.Add(now, AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
+        _store.AppendAgent(now, AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
     }
 
     /// <summary>
-    /// Stores one leveled agent row when the level clears the capture floor; always mirrors to logcat.
+    /// Stores one leveled agent row when the level clears the capture floor, keeps it in memory from info up and
+    /// always mirrors it to logcat.
     /// </summary>
     public void Agent(int levelId, string source, string message)
     {
         Mirror(levelId, source, message);
+        var now = UnixMs();
+        _recent.Add(now, levelId, source, message);
         if (levelId >= _captureFloor)
         {
-            _store.AppendAgent(UnixMs(), levelId, source, message);
+            _store.AppendAgent(now, levelId, source, message);
         }
     }
 

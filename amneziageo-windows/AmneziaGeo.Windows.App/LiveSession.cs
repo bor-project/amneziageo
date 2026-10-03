@@ -17,6 +17,7 @@ internal sealed class LiveSession
     private volatile string _systemNames = string.Empty;
     private volatile string _listName = string.Empty;
     private volatile IReadOnlyList<string> _configRoutes = [];
+    private volatile IReadOnlyList<string> _bypassed = [];
 
     /// <summary>
     /// Per-destination verdict cache of the session in flight.
@@ -54,6 +55,11 @@ internal sealed class LiveSession
     public IReadOnlyList<string> ConfigRoutes => _configRoutes;
 
     /// <summary>
+    /// Standing ranges kept past the tunnel: the server and the resolvers of the own network.
+    /// </summary>
+    public IReadOnlyList<string> Bypassed => _bypassed;
+
+    /// <summary>
     /// Publishes what the session routes by.
     /// </summary>
     public void SetPlan(string mode, string listName, IReadOnlyList<string> configRoutes)
@@ -61,6 +67,14 @@ internal sealed class LiveSession
         _mode = mode;
         _listName = listName;
         _configRoutes = configRoutes;
+    }
+
+    /// <summary>
+    /// Publishes the standing ranges kept past the tunnel.
+    /// </summary>
+    public void SetBypassed(IReadOnlyList<string> ranges)
+    {
+        _bypassed = ranges;
     }
 
     /// <summary>
@@ -107,5 +121,6 @@ internal sealed class LiveSession
         _systemNames = string.Empty;
         _listName = string.Empty;
         _configRoutes = [];
+        _bypassed = [];
     }
 }

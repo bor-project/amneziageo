@@ -15,6 +15,7 @@ internal sealed class AgentLog : IDisposable
     public const string ResolverSource = "dns";
 
     private readonly SqliteLogStore _store;
+    private readonly RecentLog _recent = new();
     private volatile int _captureFloor = 5;
     private volatile bool _routeLog;
 
@@ -30,6 +31,11 @@ internal sealed class AgentLog : IDisposable
     /// The log database the diagnostics archive reads.
     /// </summary>
     public SqliteLogStore Store => _store;
+
+    /// <summary>
+    /// The rows of level info and above kept in memory, whatever the capture floor stores.
+    /// </summary>
+    public RecentLog Recent => _recent;
 
     /// <summary>
     /// Creates the log tables and starts the writer loop.
@@ -81,15 +87,20 @@ internal sealed class AgentLog : IDisposable
     public void Note(string source, string message)
     {
         Console.WriteLine($"{Stamp()} [{LevelToken(AmneziaGeo.Ipc.SwitchLog.LevelId)}] {source} {message}");
-        _store.AppendAgent(UnixMs(), AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
+        var now = UnixMs();
+        _recent.Add(now, AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
+        _store.AppendAgent(now, AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
     }
 
     /// <summary>
-    /// Stores one leveled agent row when the level clears the capture floor; always mirrors to the console.
+    /// Stores one leveled agent row when the level clears the capture floor, keeps it in memory from info up and
+    /// always mirrors it to the console.
     /// </summary>
     public void Agent(int levelId, string source, string message)
     {
         Console.WriteLine($"{Stamp()} [{LevelToken(levelId)}] {source} {message}");
+        var now = UnixMs();
+        _recent.Add(now, levelId, source, message);
         if (levelId < _captureFloor)
         {
             return;
@@ -97,11 +108,11 @@ internal sealed class AgentLog : IDisposable
 
         if (source == ResolverSource)
         {
-            _store.AppendDns(UnixMs(), levelId, source, message);
+            _store.AppendDns(now, levelId, source, message);
             return;
         }
 
-        _store.AppendAgent(UnixMs(), levelId, source, message);
+        _store.AppendAgent(now, levelId, source, message);
     }
 
     /// <summary>

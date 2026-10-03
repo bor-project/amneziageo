@@ -636,7 +636,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
 
         var key = remoteIp.ToString();
-        return _allUdp ? _tracker.UpdateAppIps([key]) : _tracker.NoteAppRemotes([key]);
+        return _allUdp ? _tracker.UpdateAppIps([key], datagrams: true) : _tracker.NoteAppRemotes([key]);
     }
 
     // Routes a matched app's TCP remote and promotes the domain(s) it resolved to; true when routed.

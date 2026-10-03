@@ -3249,7 +3249,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             await _log.Store.FlushAsync().ConfigureAwait(false);
             var bundle = new DiagnosticsBundle(_store, _log.Store);
-            var path = await bundle.WriteAsync(DiagnosticsDirectory(), DiagnosticsHeader(), AndroidAgentLog.Render).ConfigureAwait(false);
+            var held = VpnBridge.ReadSessions(SessionWindowSeconds);
+            var texts = new Dictionary<string, string>(_configs, StringComparer.Ordinal);
+            var path = await bundle.WriteAsync(
+                DiagnosticsDirectory(),
+                DiagnosticsHeader(held),
+                AndroidAgentLog.Render,
+                new BundleSources(
+                    Cache: _ => Task.FromResult(held.Sessions.Count == 0 ? "the tunnel holds nothing right now" : held.Render()),
+                    Recent: _ => Task.FromResult(RecentLog.Merge(_log.Recent.Snapshot(), RecentLog.Parse(VpnBridge.ReadRecent()))),
+                    Library: new BundleLibrary([.. _order.Where(texts.ContainsKey)], name => texts.GetValueOrDefault(name), _selectedRoutingList))).ConfigureAwait(false);
             _log.Info("agent", $"diagnostics archive written to {path}; keys and credentials in it are masked");
             return new IpcAck(true, path);
         }
@@ -3268,8 +3277,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return System.IO.Path.Combine(root, "diagnostics");
     }
 
-    // Opens the diagnostics summary with the build, the device and the agent's own state.
-    private string DiagnosticsHeader()
+    // Opens the diagnostics summary with the build, the device, the agent's own state and what the session of the
+    // tunnel went through.
+    private string DiagnosticsHeader(SessionReport held)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("AmneziaGeo diagnostics");
@@ -3289,6 +3299,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         sb.AppendLine($"bound target:    {_boundTarget ?? "-"}");
         sb.AppendLine($"status:          {_boundStatus}");
         sb.AppendLine($"connect failed:  {_connectFailed}");
+        sb.AppendLine();
+        var marks = VpnBridge.IsRunning(Application.Context) ? SessionMarks.Parse(VpnBridge.ReadMarks()) : new SessionMarks();
+        foreach (var line in marks.Lines(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), held))
+        {
+            sb.AppendLine(line);
+        }
+
         sb.AppendLine();
         return sb.ToString();
     }

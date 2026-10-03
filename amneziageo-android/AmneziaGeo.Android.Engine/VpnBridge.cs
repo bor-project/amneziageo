@@ -3,6 +3,7 @@ using System.Text.Json;
 using Android.App;
 using Android.Content;
 using Android.OS;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Routing;
 
@@ -183,8 +184,18 @@ public static class VpnBridge
     private const string CardsFile = "cards.json";
     private const string CardsResultFile = "cards-result.txt";
     private const string StageFile = "stage.txt";
+    private const string RecentFile = "recent.txt";
+    private const string MarksFile = "marks.txt";
+
+    // Events of the tunnel kept at most.
+    private const int RecentRows = 300;
+
+    // The level the head stores an event of the tunnel at.
+    private const string NoteLevel = "WRN";
     private const string ProcessSuffix = ":vpn";
     private static readonly object _stageGate = new();
+    private static readonly object _recentGate = new();
+    private static List<string>? _recent;
 
     /// <summary>
     /// Reports a stage to the head.
@@ -660,6 +671,82 @@ public static class VpnBridge
     }
 
     /// <summary>
+    /// Keeps an event the tunnel told, for a head that was not there to hear it.
+    /// </summary>
+    public static void KeepNote(string source, string text)
+    {
+        try
+        {
+            lock (_recentGate)
+            {
+                _recent ??= [.. ReadRecent().Split('\n', StringSplitOptions.RemoveEmptyEntries)];
+                _recent.Add(LogLine.Compose(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), NoteLevel, source, text));
+                if (_recent.Count > RecentRows)
+                {
+                    _recent.RemoveRange(0, _recent.Count - RecentRows);
+                }
+
+                var path = RecentPath();
+                File.WriteAllText(path + ".new", string.Join('\n', _recent) + "\n");
+                File.Move(path + ".new", path, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "keeping an event of the tunnel failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the events the tunnel kept, one row a line.
+    /// </summary>
+    public static string ReadRecent()
+    {
+        try
+        {
+            var path = RecentPath();
+            return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the events of the tunnel failed: " + ex);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Writes what the session went through for the head to read.
+    /// </summary>
+    public static void WriteMarks(string payload)
+    {
+        try
+        {
+            File.WriteAllText(MarksPath(), payload);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the marks of the session failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads what the session went through, as the tunnel last wrote it.
+    /// </summary>
+    public static string ReadMarks()
+    {
+        try
+        {
+            var path = MarksPath();
+            return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the marks of the session failed: " + ex);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
     /// Leaves the probe for the tunnel to run.
     /// </summary>
     public static void WriteProbe(ProbeRequest request)
@@ -915,6 +1002,12 @@ public static class VpnBridge
 
     private static string StagePath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", StageFile);
+
+    private static string RecentPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RecentFile);
+
+    private static string MarksPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", MarksFile);
 
     /// <summary>
     /// Receiver handing every broadcast to a delegate.

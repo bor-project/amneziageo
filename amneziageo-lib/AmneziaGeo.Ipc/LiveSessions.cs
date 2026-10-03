@@ -62,6 +62,11 @@ public sealed record LiveSession(
     public const string ReasonApp = "app";
 
     /// <summary>
+    /// Sent into the tunnel by the mode that carries every datagram.
+    /// </summary>
+    public const string ReasonUdp = "udp";
+
+    /// <summary>
     /// Brought in by a tracked name, whose route it keeps.
     /// </summary>
     public const string ReasonResolved = "resolved";
@@ -280,6 +285,16 @@ public sealed record SessionReport(
     /// Destinations something is connected to that have carried nothing for the stall window.
     /// </summary>
     public int Stalled => Sessions.Count(one => one.Stalled);
+
+    /// <summary>
+    /// Destinations the session met, the standing ranges left out.
+    /// </summary>
+    public int Met => Sessions.Count(one => one.IdleSeconds >= 0);
+
+    /// <summary>
+    /// Destinations the session met whose name is known.
+    /// </summary>
+    public int Named => Sessions.Count(one => one.IdleSeconds >= 0 && one.Name.Length > 0);
 
     /// <summary>
     /// Renders the report as the ack payload: one row per destination, then the totals.

@@ -37,6 +37,9 @@ internal sealed class DomainTracker(
     // whatever put it here.
     private readonly Dictionary<string, long> _appIps = [];
 
+    // The app-discovered addresses the all-UDP mode brought; the rest came with a matched app.
+    private readonly HashSet<string> _udpIps = [];
+
     // App-promotion hint cache (non-authoritative): learned name->IPs and its reverse index, plus the set of
     // app-promoted domains. Feeds route-before-answer for a matched app's repeat domains; stale entries are
     // harmless (at worst one dead /32), so these are NOT mirrored on Add/Replace/Remove eviction.
@@ -739,6 +742,7 @@ internal sealed class DomainTracker(
             foreach (var ip in apps)
             {
                 _appIps.Remove(ip);
+                _udpIps.Remove(ip);
                 released.Add(ip);
             }
 
@@ -825,15 +829,35 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Routes per-app discovered remote IPs through the tunnel; only newly seen IPs install a route.
+    /// Addresses routed into the tunnel for a matched app or for all-UDP: whether the mode brought each, and the
+    /// seconds since its last contact.
     /// </summary>
-    public bool UpdateAppIps(IReadOnlyList<string> ips)
+    public Dictionary<string, (bool Datagrams, int IdleSeconds)> AppRoutes()
+    {
+        var now = Environment.TickCount64;
+        lock (_lock)
+        {
+            var routes = new Dictionary<string, (bool Datagrams, int IdleSeconds)>(_appIps.Count, StringComparer.Ordinal);
+            foreach (var pair in _appIps)
+            {
+                routes[pair.Key] = (_udpIps.Contains(pair.Key), (int)Math.Max((now - pair.Value) / 1000, 0));
+            }
+
+            return routes;
+        }
+    }
+
+    /// <summary>
+    /// Routes per-app discovered remote IPs through the tunnel; only newly seen IPs install a route. Datagrams
+    /// marks the ones the all-UDP mode brought.
+    /// </summary>
+    public bool UpdateAppIps(IReadOnlyList<string> ips, bool datagrams = false)
     {
         List<string> addedCidrs;
         bool allHandled;
         lock (_lock)
         {
-            (allHandled, addedCidrs) = RouteAppIpsLocked(ips);
+            (allHandled, addedCidrs) = RouteAppIpsLocked(ips, datagrams);
         }
 
         // Advertise off-lock so the pipe round-trip never blocks the DNS resolve / serve-known path on _lock.
@@ -845,7 +869,7 @@ internal sealed class DomainTracker(
 
     // Installs /32(/128) routes for app IPs; assumes _lock held. Returns the CIDRs whose routes were installed so
     // the caller advertises them to the engine OFF-lock, plus whether every input IP was handled (else caller retries).
-    private (bool AllHandled, List<string> AddedCidrs) RouteAppIpsLocked(IEnumerable<string> ips)
+    private (bool AllHandled, List<string> AddedCidrs) RouteAppIpsLocked(IEnumerable<string> ips, bool datagrams = false)
     {
         var addedCidrs = new List<string>();
         var index = EnsureIndex();
@@ -867,6 +891,11 @@ internal sealed class DomainTracker(
             if (_appIps.ContainsKey(ip))
             {
                 _appIps[ip] = now;
+                if (!datagrams)
+                {
+                    _udpIps.Remove(ip);
+                }
+
                 continue;
             }
 
@@ -888,6 +917,11 @@ internal sealed class DomainTracker(
             if (ok)
             {
                 _appIps[ip] = now;
+                if (datagrams)
+                {
+                    _udpIps.Add(ip);
+                }
+
                 addedCidrs.Add(Cidr(parsed));
                 logger.LogTrace("{Ip}: routed into the tunnel for a matched app", ip);
             }

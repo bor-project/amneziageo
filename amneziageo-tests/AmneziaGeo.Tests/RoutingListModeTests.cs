@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ipc.Fleet;
 using AmneziaGeo.Localization;
@@ -331,8 +332,8 @@ public sealed class RoutingListModeTests
     {
         var routing = Routing();
         routing.BeginAddListCommand.Execute(null);
-        var raised = new List<string?>();
-        routing.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        var raised = new ConcurrentQueue<string?>();
+        routing.PropertyChanged += (_, e) => raised.Enqueue(e.PropertyName);
 
         routing.RoutingSettings!.VpnModeIndex = 1;
 

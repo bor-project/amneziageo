@@ -656,7 +656,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _boundStatus = ConnectionStatus.Connected;
         _boundTarget = standing;
         _restartRequired = restart;
-        SetConnectFailure(nameof(ConnectFailureReason.NoHandshake), asked);
+        SetConnectFailure(nameof(ConnectFailureReason.SwitchNoHandshake), asked);
         Save();
         PushSnapshot();
         _ = RetellAsync();
@@ -859,6 +859,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _handshakeUnix = 0;
                 ResetLink();
                 ResetAlwaysOn();
+                ForgetKeptSwitch();
                 break;
             case VpnStage.Failed:
                 _active = false;
@@ -973,6 +974,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _connectFailed = false;
         _connectFailReason = string.Empty;
         _connectFailDetail = string.Empty;
+    }
+
+    // Drops the failure of a move to another configuration: the tunnel that was kept is down.
+    private void ForgetKeptSwitch()
+    {
+        if (_connectFailReason == nameof(ConnectFailureReason.SwitchNoHandshake))
+        {
+            ClearConnectFailure();
+        }
     }
 
     // Records a tunnel state transition in the agent log; a failure is logged at error level with its cause.

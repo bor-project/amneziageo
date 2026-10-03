@@ -32,6 +32,7 @@ internal sealed class CompactConverter : IValueConverter
             "col2" => compact ? 0 : 2,
             "span2" => compact ? 2 : 1,
             "span3" => compact ? 3 : 1,
+            "span4" => compact ? 4 : 1,
             "alignRL" => compact ? HorizontalAlignment.Left : HorizontalAlignment.Right,
             "alignLC" => compact ? HorizontalAlignment.Center : HorizontalAlignment.Left,
             "stretchL" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
@@ -68,6 +69,8 @@ internal sealed class CompactConverter : IValueConverter
             "gapTop4Of12" => compact ? new Thickness(0, 4, 0, 0) : new Thickness(0, 12, 0, 0),
             // Gap of a button row: under the field when stacked, before the buttons otherwise.
             "gapTopOrLeft8" => compact ? new Thickness(0, 8, 0, 0) : new Thickness(8, 0, 0, 0),
+            // Gap of a banner action: under the text when stacked, after the text otherwise.
+            "gapTop6OrLeft10" => compact ? new Thickness(0, 6, 0, 0) : new Thickness(10, 0, 0, 0),
             // Link inset: flush with the heading it drops under, the link's own inset beside it.
             "linkUnder" => compact ? new Thickness(0, 2, 7, 4) : new Thickness(7, 4),
             // Подпись отходит от своей строки только на большом экране: узкому окну эта высота дорога.

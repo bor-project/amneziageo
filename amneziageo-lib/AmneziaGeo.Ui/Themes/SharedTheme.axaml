@@ -264,11 +264,15 @@
       </Setter>
     </Style>
 
-    <!-- Метка режима на карточке списка: включённый режим носит цвет действия, выключенный уходит в серое. -->
+    <!-- Метка режима на карточке: включённый режим на светлом фоне цвета действия, выключенный уходит в серое. -->
+    <Style Selector="Border.cardtag">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+    </Style>
     <Style Selector="Border.cardtag TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
     </Style>
     <Style Selector="Border.cardtag.off">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="Opacity" Value="0.7" />
     </Style>
     <Style Selector="Border.cardtag.off TextBlock">
@@ -278,6 +282,7 @@
     <!-- Режим, который отбила проверка: красный текст в красной рамке. Отступ ужат на толщину рамки, чтобы ряд
          не поехал. Пока проверка идёт, плашка гаснет. -->
     <Style Selector="Border.cardtag.bad">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="6,1" />

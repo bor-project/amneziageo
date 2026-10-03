@@ -1216,6 +1216,9 @@
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
     <value>The server did not answer: it is unreachable or rejected the key.</value>
   </data>
+  <data name="MainVm_NoticeSwitchKept" xml:space="preserve">
+    <value>Server {0} did not answer. The tunnel stays on {1}.</value>
+  </data>
   <data name="MainVm_NoticeConnectFailed_LoopbackBlocked" xml:space="preserve">
     <value>UDP on the loopback (lo) is blocked on this computer, and WebSocket hands the tunnel to the engine through it. Allow UDP on lo.</value>
   </data>

@@ -94,4 +94,9 @@ public enum ConnectFailureReason
     /// The tunnel engine stopped by itself with an error.
     /// </summary>
     EngineStopped,
+
+    /// <summary>
+    /// The server of the configuration asked for sent no handshake, so the tunnel stays on the one before it.
+    /// </summary>
+    SwitchNoHandshake,
 }

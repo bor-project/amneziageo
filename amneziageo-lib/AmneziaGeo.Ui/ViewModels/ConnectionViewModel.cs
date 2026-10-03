@@ -540,7 +540,8 @@ internal partial class ConnectionViewModel : ViewModelBase
         {
             notice = ConnectFailureNotice(snapshot);
             // Offer a retry from the banner: the failed dial left the tunnel down, so reconnect just re-dials (#11).
-            reconnect = true;
+            // A tunnel kept on the configuration before it has nothing to re-dial.
+            reconnect = !KeptOnAnother(snapshot);
         }
         else if (snapshot.DisconnectFailed)
         {
@@ -1358,9 +1359,20 @@ internal partial class ConnectionViewModel : ViewModelBase
         snapshot.SelectedTarget is { Length: > 0 }
         && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal);
 
+    // The dial that failed was a move to another configuration, and the tunnel stands on the one before it.
+    private static bool KeptOnAnother(StatusSnapshot snapshot) =>
+        snapshot.Active
+        && snapshot.BoundTarget is { Length: > 0 }
+        && snapshot.ConnectFailReason is nameof(ConnectFailureReason.SwitchNoHandshake);
+
     // Maps the agent's classified failure reason to a localized notice.
     private static string ConnectFailureNotice(StatusSnapshot snapshot)
     {
+        if (KeptOnAnother(snapshot))
+        {
+            return Loc.Instance.Get("MainVm_NoticeSwitchKept", snapshot.ConnectFailDetail, snapshot.BoundTarget);
+        }
+
         var key = ConnectFailureKey(snapshot.ConnectFailReason);
         return NoticeUsesDetail(key)
             ? Loc.Instance.Get(key, snapshot.ConnectFailDetail)
@@ -1377,7 +1389,7 @@ internal partial class ConnectionViewModel : ViewModelBase
             "ServiceLaunchFailed" => "MainVm_NoticeConnectFailed_ServiceLaunchFailed",
             "UnderlayUnreachable" => "MainVm_NoticeConnectFailed_UnderlayUnreachable",
             "AdapterStartFailed" => "MainVm_NoticeConnectFailed_AdapterStartFailed",
-            "NoHandshake" => "MainVm_NoticeConnectFailed_NoHandshake",
+            "NoHandshake" or "SwitchNoHandshake" => "MainVm_NoticeConnectFailed_NoHandshake",
             "TransportRejected" => "MainVm_NoticeConnectFailed_TransportRejected",
             "Timeout" => "MainVm_NoticeConnectFailed_Timeout",
             "NoTargetSelected" => "MainVm_NoticeConnectFailed_NoTargetSelected",

@@ -1216,6 +1216,9 @@
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
     <value>Сервер не ответил: он недоступен или не принял ключ.</value>
   </data>
+  <data name="MainVm_NoticeSwitchKept" xml:space="preserve">
+    <value>Сервер {0} не ответил. Туннель остался на {1}.</value>
+  </data>
   <data name="MainVm_NoticeConnectFailed_LoopbackBlocked" xml:space="preserve">
     <value>На этом компьютере закрыт UDP на локальном интерфейсе lo, а через него WebSocket передаёт туннель движку. Разрешите UDP на lo.</value>
   </data>

@@ -163,4 +163,10 @@ public sealed record StatusSnapshot(
     /// The setup the release publishes for this build target, with the list and the pack of its files; null where
     /// the release names none.
     /// </summary>
-    AmneziaGeo.Decl.UpdateAsset? UpdateSetupAsset = null);
+    AmneziaGeo.Decl.UpdateAsset? UpdateSetupAsset = null,
+
+    /// <summary>
+    /// Whether the agent dials a dropped or failed connection again whatever <c>PeriodicReconnect</c> says, which
+    /// then only sets the longest pause between the attempts.
+    /// </summary>
+    bool ReconnectAlways = false);

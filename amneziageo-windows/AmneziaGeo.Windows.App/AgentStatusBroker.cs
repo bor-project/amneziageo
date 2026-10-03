@@ -3041,7 +3041,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             MultiServer: settings.MultiServer,
             DnsTransport: settings.DnsTransport,
             LocalDoh: settings.LocalDoh,
-            UpdateSetupAsset: update?.Asset), scope, states);
+            UpdateSetupAsset: update?.Asset,
+            ReconnectAlways: true), scope, states);
     }
 
     /// <summary>

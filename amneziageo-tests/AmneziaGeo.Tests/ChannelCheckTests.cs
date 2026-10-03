@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -480,5 +481,107 @@ public sealed class TargetCheckTests
 
         Assert.Equal(TargetVerdicts.Blocked, key);
         Assert.Equal("doubleclick.net", args[0]);
+    }
+
+    // A burst of eight 1000-byte probes, as the channel check counts its silent peer.
+    private static TunnelTrace Burst(long handed, long sent, long received) => new(8, 1000, handed, 0, sent, received);
+
+    // A target in the tunnel by rule whose probe nothing accepted, with what the burst after it counted.
+    private static TargetFindings Unanswered(TunnelTrace? trace) => new(CheckTargetKind.Address, Split: true, RoutingActive: true,
+        MatchedRule: "198.18.10.0-198.18.10.255", Role: RoleToken.Proxy, Addresses: 1, Reachable: false, Trace: trace);
+
+    [Fact]
+    public void AProbeTheSystemNeverGaveTheTunnel_IsBlamedOnThisDeviceNotPastTheTunnel()
+    {
+        var (key, args) = TargetVerdict.Decide(Unanswered(Burst(0, 0, 0)), "198.18.10.10:7777");
+
+        Assert.Equal(TargetVerdicts.UnreachableNotFed, key);
+        Assert.Equal(["198.18.10.10:7777", "0", "8"], args);
+        var phrase = TargetPhrase.English(key, args);
+        Assert.Contains("the system gave the tunnel 0 of 8 probes: the fault is on this device, a filter or a route keeps traffic out of the tunnel", phrase, StringComparison.Ordinal);
+        Assert.DoesNotContain("past the tunnel", phrase, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AProbeTheTunnelTookAndNeverSent_IsBlamedOnThisDevice()
+    {
+        var (key, args) = TargetVerdict.Decide(Unanswered(Burst(8, 100, 0)), "198.18.10.10");
+
+        Assert.Equal(TargetVerdicts.UnreachableNotSent, key);
+        Assert.Equal(["198.18.10.10", "100 B", "7.8 KB"], args);
+        Assert.Contains("the fault is on this device, not the server", TargetPhrase.English(key, args), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnAnswerThatCameIntoTheTunnelAndNoFurther_IsBlamedOnThisDevice()
+    {
+        var (key, args) = TargetVerdict.Decide(Unanswered(Burst(8, 8500, 8500)), "198.18.10.10");
+
+        Assert.Equal(TargetVerdicts.UnreachableNotDelivered, key);
+        Assert.Equal(["198.18.10.10", "8.3 KB", "8.3 KB"], args);
+        Assert.Contains("something drops what the tunnel brings", TargetPhrase.English(key, args), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AProbeTheTunnelSentWithoutAnAnswer_StaysPastTheTunnel()
+    {
+        var (key, args) = TargetVerdict.Decide(Unanswered(Burst(8, 8500, 0)), "198.18.10.10");
+
+        Assert.Equal(TargetVerdicts.Unreachable, key);
+        Assert.Contains("the fault is past the tunnel", TargetPhrase.English(key, args), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AProbeNothingCounted_StaysPastTheTunnel()
+    {
+        var (key, args) = TargetVerdict.Decide(Unanswered(null), "198.18.10.10");
+
+        Assert.Equal(TargetVerdicts.Unreachable, key);
+        Assert.Equal(["198.18.10.10"], args);
+    }
+
+    [Fact]
+    public async Task AProbeNothingAccepted_IsFollowedByACountedBurstToItsAddress()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        var asked = new List<IPAddress>();
+        var probes = new TargetProbes(Trace: (address, _) =>
+        {
+            asked.Add(address);
+            return Task.FromResult<TunnelTrace?>(Burst(0, 0, 0));
+        });
+
+        var report = await new TargetInspector(List(proxy: ["127.0.0.0/8"]), split: true)
+            .InspectAsync($"127.0.0.1:{port}", "srv", probes, CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.UnreachableNotFed, report.VerdictKey);
+        Assert.Equal([IPAddress.Loopback], asked);
+        Assert.Contains(report.Facts, fact => fact.Kind == "probe" && fact.State == "bad");
+        Assert.Contains(report.Facts, fact => fact.Kind == "burst" && fact.State == TunnelSteps.NotHanded
+            && fact.Detail == "the system gave the tunnel 0 of 8 probes");
+    }
+
+    [Fact]
+    public async Task AProbeThatWasAccepted_SendsNoBurst()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var asked = 0;
+        var probes = new TargetProbes(Trace: (_, _) =>
+        {
+            asked++;
+            return Task.FromResult<TunnelTrace?>(null);
+        });
+
+        var report = await new TargetInspector(List(proxy: ["127.0.0.0/8"]), split: true)
+            .InspectAsync($"127.0.0.1:{port}", "srv", probes, CancellationToken.None);
+        listener.Stop();
+
+        Assert.Equal(TargetVerdicts.Proxy, report.VerdictKey);
+        Assert.Equal(0, asked);
     }
 }

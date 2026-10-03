@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -57,7 +58,7 @@ internal sealed class AppDestinationMemory
         {
             foreach (var ip in ips)
             {
-                if (ip.Contains(':') || !_index.Add(ip))
+                if (!Kept(ip) || !_index.Add(ip))
                 {
                     continue;
                 }
@@ -167,23 +168,35 @@ internal sealed class AppDestinationMemory
                 return;
             }
 
+            var taken = 0;
             lock (_lock)
             {
                 foreach (var ip in stored.Ips)
                 {
-                    if (!ip.Contains(':') && _index.Add(ip))
+                    if (Kept(ip) && _index.Add(ip))
                     {
                         _known.Add(ip);
+                        taken++;
                     }
                 }
             }
 
-            _logger.LogInformation("{Count} address(es) your tunneled apps reached before are routed again from the start, so their first request does not have to fail to be recognised", stored.Ips.Count);
+            if (taken > 0)
+            {
+                _logger.LogInformation("{Count} address(es) your tunneled apps reached before are routed again from the start, so their first request does not have to fail to be recognised", taken);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "the addresses remembered for tunneled apps could not be read");
         }
+    }
+
+    // An address worth remembering: IPv4, and one a packet goes to through a tunnel, so what an earlier version kept
+    // of the machine itself or of a group is let go on the next start.
+    private static bool Kept(string ip)
+    {
+        return !ip.Contains(':') && IPAddress.TryParse(ip, out var address) && !SpecialAddresses.Holds(address);
     }
 
     // Installs every remembered address; false while the adapter is not ready, so the caller keeps trying.

@@ -92,7 +92,8 @@ internal static class SettingsCommands
             return Reply.Report(ack);
         }
 
-        if (key == _surviveRebootKey && value == "on" && !agent.Snapshot.PeriodicReconnect)
+        // An agent that always dials again brings a dropped tunnel back without the setting.
+        if (key == _surviveRebootKey && value == "on" && !agent.Snapshot.PeriodicReconnect && !agent.Snapshot.ReconnectAlways)
         {
             Output.Info("the agent will connect at start; turn periodic-reconnect-enabled on as well so a dropped tunnel comes back");
         }

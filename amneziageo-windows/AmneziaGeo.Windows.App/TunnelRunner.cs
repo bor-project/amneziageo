@@ -589,6 +589,13 @@ internal sealed class TunnelRunner(
         // What the previous session used most is taken back from the store: the verdicts an address settled are
         // taken again under the list in force now, and each takes its path with the connection.
         routing.SetMemory(new StoredRouteMemory(store, name, apps, domains, directDomains, blockDomains));
+        // The tunnel that holds the leak protection routes a dropped datagram to an address no list names into itself.
+        var flows = default(NetworkFlowTracker);
+        if (allUdp && killSwitch)
+        {
+            routing.SetDatagramRule(address => flows?.TakeDatagram(address) ?? false);
+        }
+
         session.SetCache(routing);
         session.SetPlan(RoutingMode(geoSplit, activeList is not null), activeList?.Name ?? string.Empty,
             WgConfigEditor.GetAllowedIps(config));
@@ -926,7 +933,9 @@ internal sealed class TunnelRunner(
         if ((tracker is not null && (matcher is not null || allUdp)) || routing is not null)
         {
             var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note, _processImages,
-                address => substituted.Contains(address) || routes.HeldByAnother(address, TunnelInterface()));
+                address => substituted.Contains(address) || routes.HeldByAnother(address, TunnelInterface()),
+                Addresses([.. localResolver, .. lanResolvers]));
+            flows = flowTracker;
             // A released destination must lose its dedupe record too, or the next packet to it is skipped and the
             // route never comes back.
             tracker?.SetForgetSink(flowTracker.Forget);
@@ -974,7 +983,9 @@ internal sealed class TunnelRunner(
         }
 
         logger.LogInformation("{Name}: everything is prepared in {Elapsed} ms, starting the tunnel", name, connectSw.ElapsedMilliseconds);
-        _ = Task.Run(() => TunnelAddressCheck.RunAsync(name, TunnelDevice.NameOf(name), TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config)), logger, sessionCts.Token), CancellationToken.None);
+        var adapterAddresses = TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config));
+        routes.LeaveToSystem(adapterAddresses);
+        _ = Task.Run(() => TunnelAddressCheck.RunAsync(name, TunnelDevice.NameOf(name), adapterAddresses, logger, sessionCts.Token), CancellationToken.None);
 
         try
         {
@@ -1114,6 +1125,18 @@ internal sealed class TunnelRunner(
         }
 
         return hosts;
+    }
+
+    // The addresses among the given servers.
+    private static IEnumerable<IPAddress> Addresses(IEnumerable<string> servers)
+    {
+        foreach (var server in servers)
+        {
+            if (IPAddress.TryParse(server, out var address))
+            {
+                yield return address;
+            }
+        }
     }
 
     // The first of the own network's resolvers and the IPv4 ones the proxy races.
@@ -2097,7 +2120,13 @@ internal sealed class TunnelRunner(
             }
 
             // Soft block only where a verdict is still coming: without the cache nothing would ever unblock the retry.
-            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, routing is not null, endpoint, blockInbound, ct), ct))
+            var (armed, attempts) = await ArmRetry.RunAsync(
+                () => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, routing is not null, endpoint, blockInbound, ct),
+                FirewallArmAttempts,
+                FirewallArmRetryDelay,
+                attempt => logger.LogWarning("the leak protection did not take on attempt {Attempt}, usually because a previous session is still letting go of it; retrying in {Delay}s", attempt, FirewallArmRetryDelay.TotalSeconds),
+                ct).ConfigureAwait(false);
+            if (armed)
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
@@ -2111,7 +2140,7 @@ internal sealed class TunnelRunner(
             }
             else
             {
-                logger.LogError("{Name}: the leak protection did not take after {Attempts} attempts; the tunnel is running unprotected, so if it drops, traffic goes out in the clear - reconnect to restore it", name, FirewallArmAttempts);
+                logger.LogError("{Name}: the leak protection did not take after {Attempts} attempts; the tunnel is running unprotected, so if it drops, traffic goes out in the clear - reconnect to restore it", name, attempts);
             }
         }
         catch (OperationCanceledException)
@@ -2136,27 +2165,6 @@ internal sealed class TunnelRunner(
         }
 
         return armed;
-    }
-
-    // Retries the arm: a sublayer left by an overlapping teardown clears within seconds; without a retry the tunnel
-    // would run unprotected (or behind a stale block-all) until the next reconnect.
-    private async Task<bool> ArmWithRetryAsync(Func<bool> arm, CancellationToken ct)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            if (arm())
-            {
-                return true;
-            }
-
-            if (attempt >= FirewallArmAttempts || ct.IsCancellationRequested)
-            {
-                return false;
-            }
-
-            logger.LogWarning("the leak protection did not take on attempt {Attempt}, usually because a previous session is still letting go of it; retrying in {Delay}s", attempt, FirewallArmRetryDelay.TotalSeconds);
-            await Task.Delay(FirewallArmRetryDelay, ct);
-        }
     }
 
     // Returns the tunnel interface index, or null when the adapter never appears.

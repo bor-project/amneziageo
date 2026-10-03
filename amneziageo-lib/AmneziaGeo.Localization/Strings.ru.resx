@@ -766,11 +766,8 @@
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Трафик для адресов и приложений из этого списка будет заблокирован.</value>
   </data>
-  <data name="Main_GlobalProxyTitle" xml:space="preserve">
-    <value>Глобальный прокси</value>
-  </data>
-  <data name="Main_GlobalProxyHint" xml:space="preserve">
-    <value>Всё идёт через туннель, кроме «Напрямую»</value>
+  <data name="Main_RoleProxyRouteHint" xml:space="preserve">
+    <value>Трафик для адресов из этого списка будет идти по маршруту, выбранному у записи.</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Загрузить файл…</value>
@@ -1882,6 +1879,9 @@
   <data name="Android_PerConfigResolverUnsupported" xml:space="preserve">
     <value>На Android собственные DNS и исключения конфигурации не действуют: домены определяются внутри туннеля, а исключения задаются в списке маршрутизации.</value>
   </data>
+  <data name="Android_ReconnectFixed" xml:space="preserve">
+    <value>{0} на Android не настраивается: подключение повторяется всегда, пауза до {1} с.</value>
+  </data>
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Разрешите AmneziaGeo устанавливать приложения и нажмите «Установить» ещё раз.</value>
   </data>
@@ -1900,11 +1900,8 @@
   <data name="Main_ImportListTitle" xml:space="preserve">
     <value>Откуда взять список</value>
   </data>
-  <data name="Main_MethodPresetTitle" xml:space="preserve">
-    <value>Готовый набор</value>
-  </data>
-  <data name="Main_MethodPresetHint" xml:space="preserve">
-    <value>Без ручной настройки</value>
+  <data name="Main_TemplateTitle" xml:space="preserve">
+    <value>Выбор шаблона</value>
   </data>
   <data name="Main_MethodManualTitle" xml:space="preserve">
     <value>Вручную</value>
@@ -1917,9 +1914,6 @@
   </data>
   <data name="Main_MethodImportHint" xml:space="preserve">
     <value>Готовый список из файла, буфера или QR-кода</value>
-  </data>
-  <data name="Preset_SectionTitle" xml:space="preserve">
-    <value>Готовый набор</value>
   </data>
   <data name="Preset_AdsTitle" xml:space="preserve">
     <value>Блокировать рекламу</value>
@@ -2176,11 +2170,8 @@
   <data name="Main_CardRulesBlock" xml:space="preserve">
     <value>{0} блок</value>
   </data>
-  <data name="Main_CardTagGlobal" xml:space="preserve">
-    <value>Глобально</value>
-  </data>
   <data name="Main_CardTagUdp" xml:space="preserve">
-    <value>UDP</value>
+    <value>Весь UDP через туннель</value>
   </data>
   <data name="Main_CardTagMtu" xml:space="preserve">
     <value>MTU {0}</value>
@@ -2670,5 +2661,8 @@
   </data>
   <data name="Main_AdvancedSubtitle" xml:space="preserve">
     <value>UDP, кеш и экспорт</value>
+  </data>
+  <data name="Main_AdvancedSubtitleFull" xml:space="preserve">
+    <value>Кеш и экспорт</value>
   </data>
 </root>

@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
+using AmneziaGeo.Ipc;
+
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
@@ -50,6 +52,49 @@ internal static class PhysicalPath
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Шлюз, через который машина выходит к адресу мимо туннеля, а без такого - шлюз первого физического адаптера.
+    /// </summary>
+    public static string? Gateway(string? toward)
+    {
+        var declared = LocalGateway.Find(RouteManager.IsTunnelAdapter);
+        if (!IPAddress.TryParse(toward, out var address) || address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return declared;
+        }
+
+        var (hop, index) = RouteManager.UnderlayHop(address);
+        return Choose(hop, hop is not null && Ours(index), declared);
+    }
+
+    /// <summary>
+    /// Шлюз маршрута к серверу, если маршрут идёт не через адаптер клиента; иначе объявленный адаптером.
+    /// </summary>
+    internal static string? Choose(IPAddress? hop, bool hopOurs, string? declared)
+    {
+        return hop is not null && !hopOurs ? hop.ToString() : declared;
+    }
+
+    // Принадлежит ли интерфейс клиенту; интерфейс, которого среди адаптеров нет, физическим не считается.
+    private static bool Ours(uint index)
+    {
+        foreach (var adapter in NetworkAdapters.All())
+        {
+            try
+            {
+                if ((uint)adapter.GetIPProperties().GetIPv4Properties().Index == index)
+                {
+                    return RouteManager.IsTunnelAdapter(adapter);
+                }
+            }
+            catch (Exception ex) when (ex is NetworkInformationException or InvalidOperationException)
+            {
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

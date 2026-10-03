@@ -353,10 +353,11 @@ internal sealed class Shell : Window
             ?? new Traffic(string.Empty, false, "split", false);
 
         var dialog = new Dialog { Title = entry.Name, Width = Dim.Percent(75), Height = Dim.Percent(70) };
-        var udp = new CheckBox { Text = Localized("Main_AllUdpTitle"), X = 1, Y = 0, Value = State(settings.AllUdp) };
-        var proxy = new CheckBox { Text = Localized("Main_GlobalProxyTitle"), X = 1, Y = 1, Value = State(settings.UseGlobalProxy) };
-        var caption = new Label { Text = Localized("Main_ExclusionsLabel"), X = 1, Y = 3 };
-        var editor = new TextView { Text = settings.Exclusions, X = 1, Y = 4, Width = Dim.Fill(2), Height = Dim.Fill(3) };
+        var split = !settings.UseGlobalProxy;
+        var top = split ? 2 : 0;
+        var udp = new CheckBox { Text = Localized("Main_AllUdpTitle"), X = 1, Y = 0, Value = State(settings.AllUdp), Visible = split };
+        var caption = new Label { Text = Localized("Main_ExclusionsLabel"), X = 1, Y = top };
+        var editor = new TextView { Text = settings.Exclusions, X = 1, Y = top + 1, Width = Dim.Fill(2), Height = Dim.Fill(3) };
         var saved = false;
 
         var save = new Button { Text = Localized("Tui_Save"), IsDefault = true, X = 1, Y = Pos.AnchorEnd(1) };
@@ -369,19 +370,18 @@ internal sealed class Shell : Window
         var cancel = new Button { Text = Localized("Main_CancelButton"), X = 16, Y = Pos.AnchorEnd(1) };
         cancel.Accepting += (_, _) => Application.RequestStop();
 
-        dialog.Add(udp, proxy, caption, editor, save, cancel);
+        dialog.Add(udp, caption, editor, save, cancel);
         Application.Run(dialog);
 
         if (saved)
         {
-            var globalProxy = proxy.Value == CheckState.Checked;
             Apply(Send(
                 IpcContract.OpSetRoutingSettings,
                 id,
                 editor.Text,
                 Toggle.Text(udp.Value == CheckState.Checked),
-                globalProxy ? "full" : "split",
-                Toggle.Text(globalProxy)));
+                settings.UseGlobalProxy ? "full" : "split",
+                Toggle.Text(settings.UseGlobalProxy)));
         }
 
         dialog.Dispose();

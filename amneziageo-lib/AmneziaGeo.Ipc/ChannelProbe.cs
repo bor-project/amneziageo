@@ -9,6 +9,7 @@ namespace AmneziaGeo.Ipc;
 /// measured from inside the process that owns it, so nothing here is discovered by guessing. A carrier port set
 /// means the tunnel rides a websocket, and the endpoint is that front: it is reached by a connect, not an echo.
 /// A server of the configuration that measures itself names where the throughput legs pull their bytes from.
+/// The counters are those of the tunnel the probes to the far end ride.
 /// </summary>
 public sealed record ChannelProbeOptions(
     string Config,
@@ -30,7 +31,10 @@ public sealed record ChannelProbeOptions(
     int CarrierPort = 0,
     string TunnelSpeedUrl = "",
     string DirectSpeedUrl = "",
-    bool Churning = false);
+    bool Churning = false,
+    int RekeySeconds = -1,
+    int ChurnPerMinute = LinkHealth.ChurnPerMinute,
+    Func<CancellationToken, Task<TunnelCounters?>>? Counters = null);
 
 /// <summary>
 /// Runs the ladder: gateway, the server outside the tunnel, the session, the server inside the tunnel, the public
@@ -57,6 +61,13 @@ public static class ChannelProbe
 
     // Attempts a dead target is given before the leg is abandoned; without it a dead leg costs the whole budget.
     private const int DeadAfter = 3;
+
+    // Probes of the counted burst and the payload of each.
+    private const int TraceProbes = 8;
+    private const int TracePayloadBytes = 1000;
+
+    // How long the tunnel is listened to before the burst.
+    private const int TraceQuietMs = 1_000;
 
     /// <summary>
     /// Payload a path of the usual 1500-byte MTU carries whole.
@@ -95,9 +106,9 @@ public static class ChannelProbe
         if (options.Connected)
         {
             legs.Add(Handshake(options));
-            legs.Add(await InsideAsync(CheckLegs.Peer, options.TunnelTargets, "nothing inside the tunnel answered an echo", ct).ConfigureAwait(false));
+            legs.Add(await InsideAsync(CheckLegs.Peer, options.TunnelTargets, "nothing inside the tunnel answered an echo", options.Counters, ct).ConfigureAwait(false));
             legs.Add(tunneled
-                ? await InsideAsync(CheckLegs.Beyond, options.BeyondTargets, "nothing past the exit answered an echo", ct).ConfigureAwait(false)
+                ? await InsideAsync(CheckLegs.Beyond, options.BeyondTargets, "nothing past the exit answered an echo", null, ct).ConfigureAwait(false)
                 : new CheckLeg(CheckLegs.Beyond, LegState.Skipped, Note: "the routing list carries only what it names, so this echo says nothing about the path past the exit"));
             legs.Add(TimesTunnel(options)
                 ? await RateAsync(CheckLegs.Tunnel, options.TunnelSpeedUrl, options.SpeedUrl, null, ct).ConfigureAwait(false)
@@ -304,7 +315,7 @@ public static class ChannelProbe
     }
 
     // The session itself: nothing is sent, the engine's own counters are read.
-    private static CheckLeg Handshake(ChannelProbeOptions options)
+    internal static CheckLeg Handshake(ChannelProbeOptions options)
     {
         var state = options.HandshakeAgeSeconds < 0
             ? LegState.Unknown
@@ -318,16 +329,18 @@ public static class ChannelProbe
             CheckLegs.Handshake,
             state,
             AgeSeconds: options.HandshakeAgeSeconds,
-            RekeysPerMinute: options.RekeysPerMinute,
+            RekeysPerMinute: options.Churning || options.RekeysPerMinute >= Math.Max(options.ChurnPerMinute, 1) ? options.RekeysPerMinute : -1,
             RxBytes: options.RxBytes,
-            TxBytes: options.TxBytes);
+            TxBytes: options.TxBytes,
+            RekeySeconds: options.RekeySeconds);
     }
 
     // A leg sent through the tunnel: the first target that answers is the one measured. A silent set leaves the
     // leg unknown rather than borrowing the next target's path, which is how a resolver past the exit came to
-    // stand in for the peer.
-    private static async Task<CheckLeg> InsideAsync(string name, IReadOnlyList<string>? targets, string silent, CancellationToken ct)
+    // stand in for the peer. A silent set is sent a burst to count.
+    private static async Task<CheckLeg> InsideAsync(string name, IReadOnlyList<string>? targets, string silent, Func<CancellationToken, Task<TunnelCounters?>>? counters, CancellationToken ct)
     {
+        var first = default(IPAddress);
         foreach (var target in targets ?? [])
         {
             if (!IPAddress.TryParse(target, out var address))
@@ -335,6 +348,7 @@ public static class ChannelProbe
                 continue;
             }
 
+            first ??= address;
             var (rtt, jitter, loss) = await EchoAsync(address, null, ct).ConfigureAwait(false);
             if (loss < 100)
             {
@@ -342,7 +356,55 @@ public static class ChannelProbe
             }
         }
 
-        return new CheckLeg(name, LegState.Unknown, Note: silent);
+        var trace = first is null ? null : await TraceAsync(first, counters, ct).ConfigureAwait(false);
+        return new CheckLeg(name, LegState.Unknown, Note: silent, Trace: trace);
+    }
+
+    // The counters of the tunnel, or null where nothing reads them.
+    private static async Task<TunnelCounters?> CountAsync(Func<CancellationToken, Task<TunnelCounters?>>? counters, CancellationToken ct)
+    {
+        if (counters is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await counters(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    // Counts a burst of echoes into the tunnel after listening to it; null when an echo came back.
+    private static async Task<TunnelTrace?> TraceAsync(IPAddress address, Func<CancellationToken, Task<TunnelCounters?>>? counters, CancellationToken ct)
+    {
+        if (await CountAsync(counters, ct).ConfigureAwait(false) is not { } idle)
+        {
+            return null;
+        }
+
+        await Task.Delay(TraceQuietMs, ct).ConfigureAwait(false);
+        if (await CountAsync(counters, ct).ConfigureAwait(false) is not { } before)
+        {
+            return null;
+        }
+
+        var burst = new Task<int>[TraceProbes];
+        for (var probe = 0; probe < burst.Length; probe++)
+        {
+            burst[probe] = IcmpEcho.RoundTripAsync(address, EchoTimeoutMs, TracePayloadBytes, false, null, ct);
+        }
+
+        var answers = await Task.WhenAll(burst).ConfigureAwait(false);
+        if (answers.Any(answer => answer >= 0) || await CountAsync(counters, ct).ConfigureAwait(false) is not { } after)
+        {
+            return null;
+        }
+
+        return TunnelTrace.Between(before, after, TraceProbes, TracePayloadBytes, TunnelTrace.Heard(idle, before));
     }
 
     // Round trip, jitter and loss over one burst; a target silent from the start is abandoned early.

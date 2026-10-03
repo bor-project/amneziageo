@@ -305,7 +305,7 @@ internal sealed class ConfigRunner(
             }
 
             _launchStreak = outcome.Reason == ConnectFailureReason.ServiceLaunchFailed ? _launchStreak + 1 : 0;
-            if (!IsTransient(outcome.Reason) || _launchStreak > LaunchStreakLimit)
+            if (!ConnectRetry.IsTransient(outcome.Reason) || _launchStreak > LaunchStreakLimit)
             {
                 logger.LogWarning("could not connect through {Config}: {Reason} {Detail}; a retry does not get past this, so dialling stops here", config, outcome.Reason, outcome.Detail);
                 Stop(config);
@@ -315,7 +315,7 @@ internal sealed class ConfigRunner(
             }
 
             var attempt = control.NextRetry();
-            var delay = RetryDelay(attempt, _settings.PeriodicReconnect, _settings.PeriodicReconnectIntervalSeconds);
+            var delay = ConnectRetry.Delay(attempt, _settings.PeriodicReconnect, _settings.PeriodicReconnectIntervalSeconds);
             logger.LogWarning("could not reach the server of {Config}: {Reason}; trying again in {Delay}s, attempt {Attempt}",
                 config, outcome.Reason, (int)delay.TotalSeconds, attempt);
             await SetStateAsync("connecting");
@@ -352,35 +352,6 @@ internal sealed class ConfigRunner(
         {
             control.EndRetryWait();
         }
-    }
-
-    // A transient failure is a network/server condition worth retrying; the rest are local/config faults that
-    // need user action. WireGuard-over-UDP cannot tell "server unreachable" from "keys rejected" (both silence
-    // the handshake), so NoHandshake counts as transient. A tunnel service that was too slow to answer counts
-    // as well: a machine that has just booted misses the window and comes up on the next attempt (#247).
-    private static bool IsTransient(ConnectFailureReason reason) => reason switch
-    {
-        ConnectFailureReason.NoHandshake or ConnectFailureReason.UnderlayUnreachable
-            or ConnectFailureReason.Timeout or ConnectFailureReason.ServiceLaunchFailed
-            or ConnectFailureReason.Unknown => true,
-        _ => false,
-    };
-
-    // Pauses after the first four failures in a row; the ones after wait the ceiling.
-    private static readonly int[] _retrySteps = [0, 5, 10, 20];
-
-    // Longest pause between attempts while auto-reconnect is off.
-    private const int RetryCeilingSeconds = 60;
-
-    /// <summary>
-    /// The pause before the next attempt, capped by the retry interval while auto-reconnect is on.
-    /// </summary>
-    internal static TimeSpan RetryDelay(int attempt, bool periodic, int intervalSeconds)
-    {
-        var ceiling = periodic && intervalSeconds > 0 ? intervalSeconds : RetryCeilingSeconds;
-        var index = Math.Max(attempt, 1) - 1;
-        var step = index < _retrySteps.Length ? _retrySteps[index] : ceiling;
-        return TimeSpan.FromSeconds(Math.Min(step, ceiling));
     }
 
     // Holds the dial while this machine has no way to the server beside the tunnels; a network change or the next
@@ -639,7 +610,7 @@ internal sealed class ConfigRunner(
         var outcome = await ClassifyFailureAsync(member, sawService, serverSilent, startFailed, created, started, ct);
         // A retryable failure keeps the service installed, so the next attempt only restarts it instead of
         // reinstalling a fresh service on every pass (#206).
-        if (IsTransient(outcome.Reason))
+        if (ConnectRetry.IsTransient(outcome.Reason))
         {
             Halt(member);
         }
@@ -925,14 +896,7 @@ internal sealed class ConfigRunner(
         }
 
         _linkLoggedAt = now;
-        logger.LogInformation("{Member}: link receives {Rx} kbit/s, sends {Tx} kbit/s, handshakes {Rate}/min, loses {Loss}",
-            member, reading.RxBitsPerSecond / 1000, reading.TxBitsPerSecond / 1000, reading.HandshakesPerMinute, LossText(reading.LossPercent));
-    }
-
-    // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
-    private static string LossText(int percent)
-    {
-        return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
+        logger.LogInformation("{Member}: link {Link}", member, reading.Describe(_meter.ChurnPerMinute));
     }
 
     // Starts this session's loss probe: a target inside the tunnel is echoed every few seconds, and what fails to come

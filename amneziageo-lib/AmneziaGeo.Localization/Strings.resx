@@ -766,11 +766,8 @@
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Traffic for addresses and apps in this list will be blocked.</value>
   </data>
-  <data name="Main_GlobalProxyTitle" xml:space="preserve">
-    <value>Global proxy</value>
-  </data>
-  <data name="Main_GlobalProxyHint" xml:space="preserve">
-    <value>Route everything through the tunnel except Direct</value>
+  <data name="Main_RoleProxyRouteHint" xml:space="preserve">
+    <value>Traffic for addresses in this list will go by the route picked on the entry.</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Load file…</value>
@@ -1882,6 +1879,9 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Android_PerConfigResolverUnsupported" xml:space="preserve">
     <value>On Android a configuration's own DNS and exclusions have no effect: domains are resolved inside the tunnel, and exclusions are set in the routing list.</value>
   </data>
+  <data name="Android_ReconnectFixed" xml:space="preserve">
+    <value>{0} is not a setting on Android: a connection is always dialled again, with pauses of up to {1} s.</value>
+  </data>
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Allow AmneziaGeo to install applications, then press Install again.</value>
   </data>
@@ -1900,11 +1900,8 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Main_ImportListTitle" xml:space="preserve">
     <value>Where to take the list from</value>
   </data>
-  <data name="Main_MethodPresetTitle" xml:space="preserve">
-    <value>Preset</value>
-  </data>
-  <data name="Main_MethodPresetHint" xml:space="preserve">
-    <value>No setup needed</value>
+  <data name="Main_TemplateTitle" xml:space="preserve">
+    <value>Choose a template</value>
   </data>
   <data name="Main_MethodManualTitle" xml:space="preserve">
     <value>By hand</value>
@@ -1917,9 +1914,6 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   </data>
   <data name="Main_MethodImportHint" xml:space="preserve">
     <value>A ready list from a file, the clipboard or a QR code</value>
-  </data>
-  <data name="Preset_SectionTitle" xml:space="preserve">
-    <value>Preset</value>
   </data>
   <data name="Preset_AdsTitle" xml:space="preserve">
     <value>Block ads</value>
@@ -2176,11 +2170,8 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Main_CardRulesBlock" xml:space="preserve">
     <value>{0} blocked</value>
   </data>
-  <data name="Main_CardTagGlobal" xml:space="preserve">
-    <value>Global</value>
-  </data>
   <data name="Main_CardTagUdp" xml:space="preserve">
-    <value>UDP</value>
+    <value>All UDP through the tunnel</value>
   </data>
   <data name="Main_CardTagMtu" xml:space="preserve">
     <value>MTU {0}</value>
@@ -2670,5 +2661,8 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   </data>
   <data name="Main_AdvancedSubtitle" xml:space="preserve">
     <value>UDP, cache and export</value>
+  </data>
+  <data name="Main_AdvancedSubtitleFull" xml:space="preserve">
+    <value>Cache and export</value>
   </data>
 </root>

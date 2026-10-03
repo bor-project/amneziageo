@@ -19,6 +19,15 @@ public interface IRouteApplier
     bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation);
 
     /// <summary>
+    /// Permits one host address through the physical path for everything but datagrams; a system that does not
+    /// tell them apart permits it whole.
+    /// </summary>
+    bool TryPermitStreams(uint address, out ulong outId, out ulong inId, out int generation)
+    {
+        return TryPermit(address, out outId, out inId, out generation);
+    }
+
+    /// <summary>
     /// Drops one host address, reporting the filter ids and their generation.
     /// </summary>
     bool TryDrop(uint address, out ulong outId, out ulong inId, out int generation);

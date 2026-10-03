@@ -1,4 +1,4 @@
-using AmneziaGeo.Windows.App;
+using AmneziaGeo.Ipc;
 using Xunit;
 
 namespace AmneziaGeo.Tests;
@@ -19,7 +19,7 @@ public sealed class RetryDelayTests
     public void EachFailure_WaitsItsStep(bool periodic, int interval, int[] expected)
     {
         var delays = Enumerable.Range(1, expected.Length)
-            .Select(attempt => (int)ConfigRunner.RetryDelay(attempt, periodic, interval).TotalSeconds)
+            .Select(attempt => (int)ConnectRetry.Delay(attempt, periodic, interval).TotalSeconds)
             .ToArray();
 
         Assert.Equal(expected, delays);

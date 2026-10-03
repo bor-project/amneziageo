@@ -33,7 +33,9 @@ Private addresses are never picked up by such a rule: 10.0.0.0/8, 172.16.0.0/12,
 
 ## All UDP through the tunnel
 
-Calls and games usually learn their server addresses without DNS, so a domain rule never catches them. The toggle sends every outgoing UDP datagram into the tunnel, except the local network and the VPN server itself.
+Calls and games usually learn their server addresses without DNS, so a domain rule never catches them. The toggle sends every outgoing UDP datagram into the tunnel, except the local network and the VPN server itself. A list set to "Everything except selected" has no toggle: UDP rides the tunnel there without it.
+
+On Windows the first datagram to an address nothing decided yet is held back until its route into the tunnel is in place, and the repeat rides the tunnel. A program that keeps sending from a socket it connected to the address before that has to open the socket again.
 
 ## WebSocket transport
 
@@ -118,3 +120,4 @@ Discord text and voice go through the tunnel, everything else goes direct.
 - Destinations are decided by the names the machine looks up, so an application that resolves on its own over DoH is decided by address alone.
 - While the tunnel carries no IPv6, an address over it is withheld from the names the rules send through the tunnel, which would otherwise leave by the physical path.
 - The Linux agent runs as root: it creates the tunnel device and rewrites routes, and `CAP_NET_ADMIN` alone does not satisfy its preflight. The control socket is `/tmp/CoreFxPipe_AmneziaGeo.Agent`, so the unit must not set `PrivateTmp`; every local account that can reach the socket can drive the agent and read the keys of a configuration.
+- On Android a connect stays dialled until the tunnel is up or you take it back: with no network it waits for one, and after a failure it tries again at once, then in 5, 10 and 20 s, then every 60 s. Between attempts there is no tunnel, so traffic leaves by the physical path unless the system setting "Block connections without VPN" is on.

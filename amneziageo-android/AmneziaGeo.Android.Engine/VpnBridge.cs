@@ -92,6 +92,11 @@ public static class VpnBridge
     public const string ExtraReason = "reason";
 
     /// <summary>
+    /// Retry extra: failed attempts in a row of the connect being dialled.
+    /// </summary>
+    public const string ExtraRetry = "retry";
+
+    /// <summary>
     /// Peer handshake extra: unix seconds of the server's last answer.
     /// </summary>
     public const string ExtraHandshake = "handshake";
@@ -110,6 +115,11 @@ public static class VpnBridge
     /// Handshake rate extra: sessions established per minute.
     /// </summary>
     public const string ExtraChurn = "churn";
+
+    /// <summary>
+    /// Rekey extra: seconds between the last two handshakes.
+    /// </summary>
+    public const string ExtraRekey = "rekey";
 
     /// <summary>
     /// Churning extra: whether the session keeps being re-established while nothing comes back through it.
@@ -180,12 +190,13 @@ public static class VpnBridge
     /// Reports a stage to the head.
     /// </summary>
     public static void Publish(Context context, VpnStage stage, string? detail, string? reason = null,
-        bool alwaysOn = false, bool lockdown = false)
+        bool alwaysOn = false, bool lockdown = false, int retry = 0)
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraStage, (int)stage);
         intent.PutExtra(ExtraAlwaysOn, alwaysOn);
         intent.PutExtra(ExtraLockdown, lockdown);
+        intent.PutExtra(ExtraRetry, retry);
         if (detail is not null)
         {
             intent.PutExtra(ExtraDetail, detail);
@@ -213,6 +224,7 @@ public static class VpnBridge
         intent.PutExtra(ExtraRtt, reading.RttMs);
         intent.PutExtra(ExtraChurning, reading.Churning);
         intent.PutExtra(ExtraLossStreak, reading.LossStreak);
+        intent.PutExtra(ExtraRekey, reading.RekeySeconds);
         context.SendBroadcast(intent);
     }
 

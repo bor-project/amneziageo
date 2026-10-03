@@ -98,9 +98,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Сколько ждать остановки туннеля перед подъёмом заново.
     private const int RestartTickMs = 100;
     private const int RestartWaitTicks = 50;
+
+    // Setting keys of the retry, which this platform holds fixed.
+    private const string PeriodicReconnectKey = "periodic-reconnect-enabled";
+    private const string ReconnectIntervalKey = "periodic-reconnect-interval-seconds";
     private bool _connectFailed;
     private string _connectFailReason = string.Empty;
     private string _connectFailDetail = string.Empty;
+
+    // Failed attempts in a row of the connect the tunnel is dialling.
+    private int _retryAttempt;
     private bool _started;
     private bool _loaded;
     private bool _disposed;
@@ -560,6 +567,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         ClearConnectFailure();
+        _retryAttempt = 0;
         _restartRequired = false;
         _dialWanted = true;
         Save();
@@ -733,7 +741,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 intent.GetIntExtra(VpnBridge.ExtraLoss, LinkHealth.LossUnknown),
                 intent.GetIntExtra(VpnBridge.ExtraRtt, -1),
                 intent.GetBooleanExtra(VpnBridge.ExtraChurning, false),
-                intent.GetIntExtra(VpnBridge.ExtraLossStreak, 0));
+                intent.GetIntExtra(VpnBridge.ExtraLossStreak, 0),
+                intent.GetIntExtra(VpnBridge.ExtraRekey, -1));
             LogLink(_link);
             PushSnapshot();
             return;
@@ -745,14 +754,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _alwaysOn = intent.GetBooleanExtra(VpnBridge.ExtraAlwaysOn, false);
             _alwaysOnLockdown = intent.GetBooleanExtra(VpnBridge.ExtraLockdown, false);
             OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail),
-                intent.GetStringExtra(VpnBridge.ExtraReason));
+                intent.GetStringExtra(VpnBridge.ExtraReason), intent.GetIntExtra(VpnBridge.ExtraRetry, 0));
         }
     }
 
-    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null)
+    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null, int retry = 0)
     {
         // The session name comes back from the tunnel, so a head that started after it still names what runs.
         var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
+        _retryAttempt = stage == VpnStage.Connecting ? retry : 0;
         switch (stage)
         {
             case VpnStage.Connecting:
@@ -855,7 +865,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _linkLoggedAt = now;
-        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min, loses {LossText(reading.LossPercent)}");
+        _log.Info("link", reading.Describe(ChurnPerMinute(_boundTarget)));
+    }
+
+    // Handshake rate from which the session of a configuration counts as re-establishing.
+    private int ChurnPerMinute(string? config)
+    {
+        return LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(_configs.GetValueOrDefault(config ?? string.Empty, string.Empty)));
     }
 
     // How long the session has been re-established over and over.
@@ -868,12 +884,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var age = _handshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix) : -1;
         return new NetworkSnapshot(_boundStatus, age, _link.RxBitsPerSecond, _link.LossPercent, _link.Churning,
             view.Under, view.UnderValidated, view.TunnelValidated, view.PrivateDnsHost, view.PrivateDnsActive).Describe();
-    }
-
-    // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
-    private static string LossText(int percent)
-    {
-        return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
     // Marks the last connect as failed and names its cause for the notice.
@@ -936,6 +946,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ConnectFailed: _connectFailed,
             ConnectFailReason: _connectFailReason,
             ConnectFailDetail: _connectFailDetail,
+            RetryAttempt: _retryAttempt,
+            PeriodicReconnect: true,
+            PeriodicReconnectIntervalSeconds: ConnectRetry.CeilingSeconds,
             EngineVersion: string.Empty,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
@@ -2358,7 +2371,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             directDomains,
             list.BlockDomains,
             settings is { UseGlobalProxy: true } || (perApp && !attributed),
-            settings is { AllUdp: true },
+            settings is { AllUdp: true, UseGlobalProxy: false },
             _routeTtl)
         {
             TunnelApps = perApp && attributed ? apps : [],
@@ -2910,14 +2923,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             true,
             false,
-            running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
+            running && _handshakeUnix > 0 ? (int)Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix) : -1,
             running ? _link.HandshakesPerMinute : -1,
             SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
             ConfiguredMtu: text.Length == 0 ? 0 : MtuPlan.ResolveForLink(transport, text),
             CarrierPort: carrier.Port,
             TunnelSpeedUrl: ServerOffers.Download(speed, true),
             DirectSpeedUrl: ServerOffers.Download(speed, false),
-            Churning: running && _link.Churning);
+            Churning: running && _link.Churning,
+            RekeySeconds: running ? _link.RekeySeconds : -1,
+            ChurnPerMinute: ChurnPerMinute(config));
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -3847,6 +3862,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 PublishProxy();
                 PushSnapshot();
                 return Ok();
+            case PeriodicReconnectKey:
+            case ReconnectIntervalKey:
+                return new IpcAck(false, IpcMessage.Key("Android_ReconnectFixed", args[0], ConnectRetry.CeilingSeconds));
             default:
                 return Ok();
         }

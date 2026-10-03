@@ -64,6 +64,7 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
         RouteChoices = Choices(servers, false);
         FallbackChoices = Choices(servers, true);
         OnPropertyChanged(nameof(CanAddSubnets));
+        RefreshProxyBucket();
         DropSettled();
         RebuildRuleItems();
     }

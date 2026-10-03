@@ -208,6 +208,19 @@ public sealed class GeoVpnService : VpnService
     private bool _localCarveForced;
     private int _reraising;
 
+    // What takes the dial in flight back, and its failed attempts in a row as the head is told them.
+    private CancellationTokenSource? _dial;
+    private int _retry;
+
+    // The dial in flight; the next one starts once it has ended.
+    private readonly object _dialGate = new();
+    private Task _dialing = Task.CompletedTask;
+    private readonly object _releaseGate = new();
+
+    // What ends the pause between two attempts, and the network the pause began on.
+    private CancellationTokenSource? _wake;
+    private string? _wakeKey;
+
     // The ladder a link that has stopped carrying is repaired by: another source port for the engine, then the
     // session raised again.
     private readonly LinkRecovery _recovery = new([RecoveryStep.Rebind, RecoveryStep.Restart]);
@@ -300,6 +313,8 @@ public sealed class GeoVpnService : VpnService
             return StartCommandResult.NotSticky;
         }
 
+        // The dial this connect replaces is taken back before the head hears of the new one.
+        Interlocked.Exchange(ref _dial, null)?.Cancel();
         if (carried is not null)
         {
             VpnBridge.WriteRequest(carried);
@@ -311,20 +326,19 @@ public sealed class GeoVpnService : VpnService
             return StartCommandResult.NotSticky;
         }
 
+        _retry = 0;
         Publish(VpnStage.Connecting, request.Name);
 
         // A connect the user asked for is a fresh start, whatever the previous session was being repaired for.
         _recovery.Reset();
-        var plan = VpnBridge.ReadPlan();
-        Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
-            request.Mtu, request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog,
-            request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel));
+        Dial(VpnBridge.ReadPlan(), request, repair: false);
         return StartCommandResult.RedeliverIntent;
     }
 
     /// <inheritdoc/>
     public override void OnDestroy()
     {
+        Interlocked.Exchange(ref _dial, null)?.Cancel();
         Release();
 
         // A service stopped from outside says goodbye itself, or the head keeps showing a tunnel that is gone.
@@ -433,6 +447,7 @@ public sealed class GeoVpnService : VpnService
     // nothing, while a segment the tun covers takes away the router, the printer and everything else beside the box.
     private void OnUnderlayChanged()
     {
+        WakeDial();
         if (_stage != VpnStage.Connected || _handle < 0)
         {
             return;
@@ -573,22 +588,134 @@ public sealed class GeoVpnService : VpnService
         Report(why);
         Note("tunnel", why);
         Publish(VpnStage.Connecting, request.Name);
-        var plan = VpnBridge.ReadPlan();
-        _ = Task.Run(async () =>
+        Dial(VpnBridge.ReadPlan(), request, repair: true, () => Interlocked.Exchange(ref _reraising, 0));
+
+        return true;
+    }
+
+    // Dials the session until it stands, fails on a cause another attempt does not get past, or is taken back.
+    private void Dial(GeoRoutingPlan plan, VpnRequest request, bool repair, Action? done = null)
+    {
+        var dial = new CancellationTokenSource();
+        Interlocked.Exchange(ref _dial, dial)?.Cancel();
+        var ct = dial.Token;
+        var steps = new DialSteps(
+            () => AndroidNetworks.Read(this).Under != NetworkSnapshot.NoNetwork,
+            _ => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
+                request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog,
+                request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel, repair, ct),
+            PauseAsync,
+            () => Tell($"this device is on no network, so {request.Name} is not dialled; it is dialled as soon as one is there"),
+            () => Tell($"a network is there, so {request.Name} is dialled"),
+            (failures, delay, outcome) => Retrying(request.Name, failures, delay, outcome, ct));
+        lock (_dialGate)
         {
+            var previous = _dialing;
+            _dialing = Task.Run(() => DialAsync(previous, steps, done, ct));
+        }
+    }
+
+    // Runs a dial once the one before it has ended, and ends the session on a cause no attempt gets past.
+    private async Task DialAsync(Task previous, DialSteps steps, Action? done, CancellationToken ct)
+    {
+        try
+        {
+            await previous.ConfigureAwait(false);
+            var end = await ConnectRetry.RunAsync(steps, ct).ConfigureAwait(false);
+            if (end is null)
+            {
+                Release();
+            }
+            else if (!end.Value.Up && !ct.IsCancellationRequested)
+            {
+                Teardown(VpnStage.Failed, end.Value.Detail, end.Value.Reason.ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Error("GeoVpnService", "the dial failed: " + ex);
+            if (!ct.IsCancellationRequested)
+            {
+                Teardown(VpnStage.Failed, ex.Message, nameof(ConnectFailureReason.Unknown));
+            }
+        }
+        finally
+        {
+            done?.Invoke();
+        }
+    }
+
+    // Takes down what the failed attempt left and tells the head the dial goes on.
+    private void Retrying(string name, int failures, TimeSpan delay, DialOutcome outcome, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Release();
+        _retry = failures;
+        Publish(VpnStage.Connecting, name);
+        var cause = outcome.Detail.Length > 0 ? outcome.Detail : outcome.Reason.ToString();
+        var when = delay > TimeSpan.Zero ? $"in {(int)delay.TotalSeconds} s" : "at once";
+        Tell($"could not reach the server of {name}: {cause}; trying again {when}, attempt {failures + 1}");
+    }
+
+    // Waits the time out; a network under the device other than the one the wait began on ends it sooner.
+    private async Task PauseAsync(TimeSpan delay, CancellationToken ct)
+    {
+        if (delay <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        using (var wake = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            _wakeKey = AndroidNetworks.Read(this).UnderKey;
+            _wake = wake;
             try
             {
-                await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
-                    request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog, request.DirectTcp,
-                    request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel, repair: true).ConfigureAwait(false);
+                await Task.Delay(delay, wake.Token).ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
             }
             finally
             {
-                Interlocked.Exchange(ref _reraising, 0);
+                _wake = null;
             }
-        });
+        }
+    }
 
-        return true;
+    // Ends the pause of the dial once the network under the device is another one.
+    private void WakeDial()
+    {
+        var wake = _wake;
+        if (wake is null)
+        {
+            return;
+        }
+
+        var key = AndroidNetworks.Read(this).UnderKey;
+        if (key is null || string.Equals(key, _wakeKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        try
+        {
+            wake.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    // Writes a line of the dial to the routing log and to the journal.
+    private static void Tell(string text)
+    {
+        Report(text);
+        Note("tunnel", text);
     }
 
     /// <summary>
@@ -611,7 +738,8 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, bool repair = false)
+    // Raises the session once and tells what the attempt ended with.
+    private async Task<DialOutcome> BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, bool repair, CancellationToken ct)
     {
         try
         {
@@ -632,8 +760,7 @@ public sealed class GeoVpnService : VpnService
             var uapi = WgQuickToUapi.Convert(resolved);
             if (uapi is null)
             {
-                Teardown(VpnStage.Failed, "invalid config", nameof(ConnectFailureReason.ConfigInvalid));
-                return;
+                return DialOutcome.Failed(ConnectFailureReason.ConfigInvalid, "invalid config");
             }
 
             var servers = DnsServers(resolved);
@@ -651,9 +778,13 @@ public sealed class GeoVpnService : VpnService
             {
                 Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
                     + "transaction; shorten the routing list");
-                Teardown(VpnStage.Failed, $"{rules.Tunneled.Count} of {RouteBudget.Max}",
-                    nameof(ConnectFailureReason.TooManyRoutes));
-                return;
+                return DialOutcome.Failed(ConnectFailureReason.TooManyRoutes, $"{rules.Tunneled.Count} of {RouteBudget.Max}");
+            }
+
+            // A dial taken back by now builds no tun.
+            if (ct.IsCancellationRequested)
+            {
+                return DialOutcome.Failed(ConnectFailureReason.Unknown);
             }
 
             // The mode says where the size comes from: the link, the config text, or the one stored for it.
@@ -664,9 +795,7 @@ public sealed class GeoVpnService : VpnService
                 _proxyPort, excluded, out var establishError);
             if (pfd is null)
             {
-                Teardown(VpnStage.Failed, establishError ?? "establish failed",
-                    nameof(ConnectFailureReason.TunnelSetupFailed));
-                return;
+                return DialOutcome.Failed(ConnectFailureReason.TunnelSetupFailed, establishError ?? "establish failed");
             }
 
             // What this tun leaves outside itself, held for as long as it lives: its route list is fixed now and the
@@ -681,8 +810,7 @@ public sealed class GeoVpnService : VpnService
             if (handle < 0)
             {
                 ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
-                Teardown(VpnStage.Failed, "engine start failed", nameof(ConnectFailureReason.EngineStartFailed));
-                return;
+                return DialOutcome.Failed(ConnectFailureReason.EngineStartFailed, "engine start failed");
             }
 
             _handle = handle;
@@ -725,9 +853,8 @@ public sealed class GeoVpnService : VpnService
                 Report("the engine decides no destination on the packet here, so the network the device sits on "
                     + "leaves the tun again");
                 _localCarveForced = true;
-                await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort, wsOffered,
-                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, repair).ConfigureAwait(false);
-                return;
+                return await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort, wsOffered,
+                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, repair, ct).ConfigureAwait(false);
             }
 
             // All UDP on the tunnel leaves no datagram to the owner check.
@@ -744,16 +871,10 @@ public sealed class GeoVpnService : VpnService
 
             // The peer has to answer before the session counts as up: the tun and the engine start over a dead
             // server just as well, and the head would paint a live connection over nothing.
-            var handshake = await WaitForHandshakeAsync(handle, repair).ConfigureAwait(false);
+            var handshake = await WaitForHandshakeAsync(handle, repair, ct).ConfigureAwait(false);
             if (handshake <= 0)
             {
-                // A session the user has already stopped is not a failure to report.
-                if (_handle == handle)
-                {
-                    Teardown(VpnStage.Failed, "no handshake", nameof(ConnectFailureReason.NoHandshake));
-                }
-
-                return;
+                return DialOutcome.Failed(ConnectFailureReason.NoHandshake, "no handshake");
             }
 
             var keepalive = new CancellationTokenSource();
@@ -767,10 +888,10 @@ public sealed class GeoVpnService : VpnService
             // The handshake proves the channel, not the path to it: the system takes a fresh network into use a
             // while after establish() returns, and until then the applications go beside the tunnel. The stage
             // waits for the first byte that came back through it.
-            var carried = await WaitForTrafficAsync(loss, handle).ConfigureAwait(false);
-            if (_handle != handle)
+            var carried = await WaitForTrafficAsync(loss, handle, ct).ConfigureAwait(false);
+            if (_handle != handle || ct.IsCancellationRequested)
             {
-                return;
+                return DialOutcome.Raised;
             }
 
             Report(carried
@@ -802,11 +923,12 @@ public sealed class GeoVpnService : VpnService
             // The port the user set up: it opens with the tunnel, because everything it carries leaves through it.
             _proxy = new LocalProxyServer((IProxyOutbound?)relay ?? new DirectProxyOutbound(), Report);
             ApplyProxy();
+            return DialOutcome.Raised;
         }
         catch (Exception ex)
         {
             global::Android.Util.Log.Error("GeoVpnService", "bring-up failed: " + ex);
-            Teardown(VpnStage.Failed, ex.Message, ReasonFor(ex));
+            return DialOutcome.Failed(ReasonFor(ex), NetworkFailure.Describe(ex) ?? ex.Message);
         }
     }
 
@@ -869,11 +991,11 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Names the causes worth telling apart; the rest stay unclassified and get the generic notice.
-    private static string ReasonFor(Exception ex)
+    private static ConnectFailureReason ReasonFor(Exception ex)
     {
         return ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException
-            ? nameof(ConnectFailureReason.EngineUnavailable)
-            : nameof(ConnectFailureReason.Unknown);
+            ? ConnectFailureReason.EngineUnavailable
+            : ConnectFailureReason.Unknown;
     }
 
     /// <summary>
@@ -1195,10 +1317,15 @@ public sealed class GeoVpnService : VpnService
         _stage = stage;
         _detail = detail;
         _reason = reason;
+        if (stage != VpnStage.Connecting)
+        {
+            _retry = 0;
+        }
+
         VpnBridge.WriteStage(stage, detail);
         // Only a running tunnel can be asked whether the system holds it as the always-on one.
         var alwaysOn = Build.VERSION.SdkInt >= BuildVersionCodes.Q && IsAlwaysOn;
-        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled);
+        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled, _retry);
     }
 
     private static void Report(string text)
@@ -1829,11 +1956,11 @@ public sealed class GeoVpnService : VpnService
 
     // Waits for the first echo to come back through the tun; false when none does inside the window or the
     // session is gone. What it proves is the path the applications take, which the handshake does not.
-    private async Task<bool> WaitForTrafficAsync(LinkLossProbe loss, int handle)
+    private async Task<bool> WaitForTrafficAsync(LinkLossProbe loss, int handle, CancellationToken ct)
     {
         for (var attempt = 0; attempt < TrafficWaitSeconds * 1000 / TrafficPollMs; attempt++)
         {
-            if (_handle != handle)
+            if (_handle != handle || ct.IsCancellationRequested)
             {
                 return false;
             }
@@ -1851,11 +1978,11 @@ public sealed class GeoVpnService : VpnService
 
     // Waits for the peer's first answer, the only proof the session carries anything; 0 when none comes in time or
     // the session is gone.
-    private async Task<long> WaitForHandshakeAsync(int handle, bool untilAnswered)
+    private async Task<long> WaitForHandshakeAsync(int handle, bool untilAnswered, CancellationToken ct)
     {
         for (var attempt = 0; untilAnswered || attempt < HandshakeWaitSeconds * 1000 / HandshakePollMs; attempt++)
         {
-            if (_handle != handle)
+            if (_handle != handle || ct.IsCancellationRequested)
             {
                 return 0;
             }
@@ -2548,6 +2675,7 @@ public sealed class GeoVpnService : VpnService
 
     private void Teardown(VpnStage stage, string? detail, string? reason = null)
     {
+        Interlocked.Exchange(ref _dial, null)?.Cancel();
         _linkHandshake = 0;
         _linkReading = LinkReading.Empty;
         _unvalidatedSince = 0;
@@ -2664,39 +2792,42 @@ public sealed class GeoVpnService : VpnService
 
     private void Release()
     {
-        _reports?.Cancel();
-        _reports?.Dispose();
-        _reports = null;
-        _keepalive?.Cancel();
-        _keepalive?.Dispose();
-        _keepalive = null;
-        _relay?.Dispose();
-        _relay = null;
-        _proxy?.Dispose();
-        _proxy = null;
-        VpnBridge.WriteProxyState(false, string.Empty);
-        VpnBridge.ClearSessions();
-        _shape = null;
-        _excluded = [];
-        _liveTun = false;
-        _proxyPort = 0;
-        _proxyEnd = null;
-        _packages.Clear();
-        _owners.Clear();
-        _verdicts = string.Empty;
-        lock (_refused)
+        lock (_releaseGate)
         {
-            _refused.Clear();
-        }
+            _reports?.Cancel();
+            _reports?.Dispose();
+            _reports = null;
+            _keepalive?.Cancel();
+            _keepalive?.Dispose();
+            _keepalive = null;
+            _relay?.Dispose();
+            _relay = null;
+            _proxy?.Dispose();
+            _proxy = null;
+            VpnBridge.WriteProxyState(false, string.Empty);
+            VpnBridge.ClearSessions();
+            _shape = null;
+            _excluded = [];
+            _liveTun = false;
+            _proxyPort = 0;
+            _proxyEnd = null;
+            _packages.Clear();
+            _owners.Clear();
+            _verdicts = string.Empty;
+            lock (_refused)
+            {
+                _refused.Clear();
+            }
 
-        _carrier?.Dispose();
-        _carrier = null;
-        if (_handle >= 0)
-        {
-            KeepHotDirect();
-            KeepLive();
-            AwgEngine.TurnOff(_handle);
-            _handle = -1;
+            _carrier?.Dispose();
+            _carrier = null;
+            if (_handle >= 0)
+            {
+                KeepHotDirect();
+                KeepLive();
+                AwgEngine.TurnOff(_handle);
+                _handle = -1;
+            }
         }
     }
 }

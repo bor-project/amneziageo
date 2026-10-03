@@ -21,6 +21,8 @@ public sealed class RoutingCacheTests
 
         public List<uint> Permitted { get; } = [];
 
+        public List<uint> PermittedStreams { get; } = [];
+
         public List<uint> Dropped { get; } = [];
 
         public List<string> Added { get; } = [];
@@ -48,6 +50,15 @@ public sealed class RoutingCacheTests
         public bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation)
         {
             Permitted.Add(address);
+            outId = _nextId++;
+            inId = _nextId++;
+            generation = Generation;
+            return true;
+        }
+
+        public bool TryPermitStreams(uint address, out ulong outId, out ulong inId, out int generation)
+        {
+            PermittedStreams.Add(address);
             outId = _nextId++;
             inId = _nextId++;
             generation = Generation;
@@ -145,6 +156,155 @@ public sealed class RoutingCacheTests
     {
         Assert.True(GeoIpRanges.TryToNumeric(IPAddress.Parse(address), out var value));
         return value;
+    }
+
+    // Runs the pump over what the firewall reported until the condition holds, then stops it.
+    private static async Task PumpAsync(RoutingCache cache, Func<bool> done)
+    {
+        using var stop = new CancellationTokenSource();
+        var pump = cache.PumpAsync(stop.Token);
+        for (var wait = 0; wait < 300 && !done(); wait++)
+        {
+            await Task.Delay(10);
+        }
+
+        await stop.CancelAsync();
+        await pump;
+    }
+
+    [Fact]
+    public async Task WhereEveryDatagramRidesTheTunnel_ADroppedDatagramToAnUnlistedAddress_IsRoutedThereAndEarnsNoPermit()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var asked = new List<string>();
+        cache.SetDatagramRule(address =>
+        {
+            asked.Add(address.ToString());
+            return true;
+        });
+
+        cache.Report(IPAddress.Parse("208.67.222.222"), null, datagram: true);
+        await PumpAsync(cache, () => asked.Count > 0 || applier.Permitted.Count > 0);
+
+        Assert.Equal(new[] { "208.67.222.222" }, asked);
+        Assert.Empty(applier.Permitted);
+        Assert.Empty(applier.PermittedStreams);
+    }
+
+    [Fact]
+    public async Task ADatagramTheRuleLeavesAlone_IsPermittedWhole()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.SetDatagramRule(_ => false);
+
+        cache.Report(IPAddress.Parse("208.67.222.222"), null, datagram: true);
+        await PumpAsync(cache, () => applier.Permitted.Count > 0 || applier.PermittedStreams.Count > 0);
+
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.Permitted);
+        Assert.Empty(applier.PermittedStreams);
+    }
+
+    [Fact]
+    public void WhereEveryDatagramRidesTheTunnel_AnUnlistedAddressIsPermittedWithoutDatagrams()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.SetDatagramRule(_ => true);
+
+        cache.Note(IPAddress.Parse("208.67.222.222"));
+
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.PermittedStreams);
+        Assert.Empty(applier.Permitted);
+    }
+
+    [Fact]
+    public async Task ADatagramToAnAddressPermittedWithoutThem_IsStillHandedToTheRule()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var asked = 0;
+        cache.SetDatagramRule(_ =>
+        {
+            asked++;
+            return true;
+        });
+        cache.Note(IPAddress.Parse("208.67.222.222"));
+
+        cache.Report(IPAddress.Parse("208.67.222.222"), null, datagram: true);
+        await PumpAsync(cache, () => asked > 0 || applier.Permitted.Count > 0);
+
+        Assert.Equal(1, asked);
+        Assert.Empty(applier.Permitted);
+    }
+
+    [Fact]
+    public async Task AnAddressTheRuleLeavesAloneLater_TradesItsPermitForAWholeOne()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.SetDatagramRule(_ => false);
+        cache.Note(IPAddress.Parse("208.67.222.222"));
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.PermittedStreams);
+
+        cache.Report(IPAddress.Parse("208.67.222.222"), null, datagram: true);
+        await PumpAsync(cache, () => applier.Permitted.Count > 0);
+
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.Permitted);
+        Assert.Single(applier.Deleted);
+    }
+
+    [Fact]
+    public async Task AnAddressAListKeepsDirect_IsPermittedWholeAndNeverHandedToTheRule()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: [YandexRange]);
+        var asked = 0;
+        cache.SetDatagramRule(_ =>
+        {
+            asked++;
+            return true;
+        });
+
+        cache.Report(IPAddress.Parse(YandexAddress), null, datagram: true);
+        await PumpAsync(cache, () => applier.Permitted.Count > 0 || asked > 0);
+
+        Assert.Equal(0, asked);
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
+        Assert.Empty(applier.PermittedStreams);
+    }
+
+    [Fact]
+    public async Task APacketThatIsNoDatagram_IsDecidedByTheListsAlone()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var asked = 0;
+        cache.SetDatagramRule(_ =>
+        {
+            asked++;
+            return true;
+        });
+
+        cache.Report(IPAddress.Parse("208.67.222.222"), null);
+        await PumpAsync(cache, () => applier.PermittedStreams.Count > 0 || applier.Permitted.Count > 0);
+
+        Assert.Equal(0, asked);
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.PermittedStreams);
+    }
+
+    [Fact]
+    public async Task WithoutTheRule_ADroppedDatagramEarnsAWholePermit()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+
+        cache.Report(IPAddress.Parse("208.67.222.222"), null, datagram: true);
+        await PumpAsync(cache, () => applier.Permitted.Count > 0 || applier.PermittedStreams.Count > 0);
+
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.Permitted);
+        Assert.Empty(applier.PermittedStreams);
     }
 
     [Fact]

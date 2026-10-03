@@ -144,6 +144,31 @@ public static class CheckVerdicts
     public const string SourceBehindTunnel = "Check_SourceBehindTunnel";
 
     /// <summary>
+    /// The system never gave the probes to the tunnel adapter. Args: probes that reached it, probes sent.
+    /// </summary>
+    public const string TunnelNotFed = "Check_TunnelNotFed";
+
+    /// <summary>
+    /// The tunnel took the probes and did not send them. Args: bytes it sent, bytes the probes weigh.
+    /// </summary>
+    public const string TunnelNotSent = "Check_TunnelNotSent";
+
+    /// <summary>
+    /// The answers came back into the tunnel and never reached the program. Args: bytes sent, bytes received.
+    /// </summary>
+    public const string TunnelNotDelivered = "Check_TunnelNotDelivered";
+
+    /// <summary>
+    /// The tunnel sent the probes and heard nothing back while its session is alive. Args: bytes sent.
+    /// </summary>
+    public const string TunnelUnanswered = "Check_TunnelUnanswered";
+
+    /// <summary>
+    /// Nothing passes through a tunnel whose session is alive, and nothing counted says where it is lost.
+    /// </summary>
+    public const string TunnelSilent = "Check_TunnelSilent";
+
+    /// <summary>
     /// Nothing to blame. Args: bits per second.
     /// </summary>
     public const string Healthy = "Check_Healthy";
@@ -302,6 +327,159 @@ public sealed record MtuAdvice(int PayloadBytes, int PathMtu, int ConfiguredMtu,
 }
 
 /// <summary>
+/// Counters of the tunnel: packets the system gave its adapter and took back from it, bytes the engine sent to
+/// the peer and received from it; a value below zero is not known.
+/// </summary>
+public sealed record TunnelCounters(long HandedPackets = -1, long ReturnedPackets = -1, long SentBytes = -1, long ReceivedBytes = -1);
+
+/// <summary>
+/// Steps a packet sent into the tunnel is lost at, near to far.
+/// </summary>
+public static class TunnelSteps
+{
+    /// <summary>
+    /// The system never gave the packet to the tunnel adapter.
+    /// </summary>
+    public const string NotHanded = "not-handed";
+
+    /// <summary>
+    /// The tunnel took the packet and did not send it.
+    /// </summary>
+    public const string NotSent = "not-sent";
+
+    /// <summary>
+    /// The packet left for the server and nothing came back.
+    /// </summary>
+    public const string Unanswered = "unanswered";
+
+    /// <summary>
+    /// The answer came back into the tunnel and never reached the program.
+    /// </summary>
+    public const string NotDelivered = "not-delivered";
+}
+
+/// <summary>
+/// What a counted burst of probes into the tunnel left on its counters.
+/// </summary>
+public sealed record TunnelTrace(int Probes, int PayloadBytes, long Handed, long Returned, long Sent, long Received, long Quiet = 0)
+{
+    /// <summary>
+    /// The burst between two readings of the counters, with the bytes the tunnel received in the second before it.
+    /// </summary>
+    public static TunnelTrace Between(TunnelCounters before, TunnelCounters after, int probes, int payloadBytes, long quiet = 0)
+    {
+        return new TunnelTrace(
+            probes,
+            payloadBytes,
+            Moved(before.HandedPackets, after.HandedPackets),
+            Moved(before.ReturnedPackets, after.ReturnedPackets),
+            Moved(before.SentBytes, after.SentBytes),
+            Moved(before.ReceivedBytes, after.ReceivedBytes),
+            quiet);
+    }
+
+    /// <summary>
+    /// What the tunnel received between two readings, or -1 where it is not counted.
+    /// </summary>
+    public static long Heard(TunnelCounters before, TunnelCounters after)
+    {
+        return Moved(before.ReceivedBytes, after.ReceivedBytes);
+    }
+
+    /// <summary>
+    /// Bytes the burst put into the tunnel.
+    /// </summary>
+    public long Weight => (long)Probes * PayloadBytes;
+
+    /// <summary>
+    /// The step the burst was lost at; empty when the counters do not say.
+    /// </summary>
+    public string Step
+    {
+        get
+        {
+            var floor = Weight / 2;
+            if (Handed >= 0 && Handed < Probes)
+            {
+                return TunnelSteps.NotHanded;
+            }
+
+            if (Sent < 0 || Received < 0)
+            {
+                return string.Empty;
+            }
+
+            if (Sent < floor)
+            {
+                return TunnelSteps.NotSent;
+            }
+
+            if (Received < floor)
+            {
+                return TunnelSteps.Unanswered;
+            }
+
+            // Bytes received during the burst count as answers only on a tunnel that was quiet before it.
+            return Quiet >= 0 && Quiet < floor / 4 ? TunnelSteps.NotDelivered : string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Renders the trace as one row field.
+    /// </summary>
+    public string ToField()
+    {
+        return string.Join('/', new[] { Probes, PayloadBytes, Handed, Returned, Sent, Received, Quiet }
+            .Select(value => value.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    /// <summary>
+    /// Reads the trace back from its row field.
+    /// </summary>
+    public static TunnelTrace? TryParse(string? field)
+    {
+        var parts = (field ?? string.Empty).Split('/');
+        var numbers = new long[7];
+        if (parts.Length != numbers.Length)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < numbers.Length; i++)
+        {
+            if (!long.TryParse(parts[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out numbers[i]))
+            {
+                return null;
+            }
+        }
+
+        return new TunnelTrace((int)numbers[0], (int)numbers[1], numbers[2], numbers[3], numbers[4], numbers[5], numbers[6]);
+    }
+
+    /// <summary>
+    /// Says in English where the burst was lost, for the log and the support archive.
+    /// </summary>
+    public string Describe()
+    {
+        return Step switch
+        {
+            TunnelSteps.NotHanded => $"the system gave the tunnel {Text(Handed)} of {Text(Probes)} probes",
+            TunnelSteps.NotSent => $"the tunnel sent {CheckFormat.Bytes(Sent)} where the probes weigh {CheckFormat.Bytes(Weight)}",
+            TunnelSteps.Unanswered => $"the tunnel sent {CheckFormat.Bytes(Sent)} and got no answer",
+            TunnelSteps.NotDelivered => $"{CheckFormat.Bytes(Received)} of answers came into the tunnel and did not reach the program",
+            _ => string.Empty,
+        };
+    }
+
+    private static long Moved(long before, long after)
+    {
+        return before < 0 || after < 0 ? -1 : Math.Max(after - before, 0);
+    }
+
+    private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
+}
+
+/// <summary>
 /// One measured leg. A value below zero was not measured.
 /// </summary>
 public sealed record CheckLeg(
@@ -316,7 +494,9 @@ public sealed record CheckLeg(
     int RekeysPerMinute = -1,
     long RxBytes = -1,
     long TxBytes = -1,
-    string Note = "")
+    string Note = "",
+    int RekeySeconds = -1,
+    TunnelTrace? Trace = null)
 {
     /// <summary>
     /// Renders the leg as one protocol row.
@@ -331,8 +511,14 @@ public sealed record CheckLeg(
         Pair(row, "size", MaxPacketBytes <= 0 ? -1 : MaxPacketBytes);
         Pair(row, "age", AgeSeconds);
         Pair(row, "rekeys", RekeysPerMinute);
+        Pair(row, "rekey", RekeySeconds);
         Pair(row, "rx", RxBytes);
         Pair(row, "tx", TxBytes);
+        if (Trace is { } trace)
+        {
+            row.Append("\ttrace=").Append(trace.ToField());
+        }
+
         if (Note.Length > 0)
         {
             row.Append("\tnote=").Append(Note);
@@ -374,7 +560,9 @@ public sealed record CheckLeg(
             (int)Number(values, "rekeys"),
             Number(values, "rx"),
             Number(values, "tx"),
-            values.GetValueOrDefault("note", string.Empty));
+            values.GetValueOrDefault("note", string.Empty),
+            (int)Number(values, "rekey"),
+            TunnelTrace.TryParse(values.GetValueOrDefault("trace")));
     }
 
     /// <summary>
@@ -408,6 +596,11 @@ public sealed record CheckLeg(
             parts.Add($"age {Text(AgeSeconds)} s");
         }
 
+        if (RekeySeconds > 0)
+        {
+            parts.Add($"a new key every {Text(RekeySeconds)} s");
+        }
+
         if (RekeysPerMinute >= 0)
         {
             parts.Add($"{Text(RekeysPerMinute)} rekey(s) per minute");
@@ -426,6 +619,11 @@ public sealed record CheckLeg(
         if (Note.Length > 0)
         {
             parts.Add(Note);
+        }
+
+        if (Trace?.Describe() is { Length: > 0 } lost)
+        {
+            parts.Add(lost);
         }
 
         return parts.Count == 0 ? "-" : string.Join(", ", parts);
@@ -612,6 +810,20 @@ public static class ChannelVerdict
             return (CheckVerdicts.Rekeying, [Text(handshake.RekeysPerMinute)], CheckLegs.Handshake);
         }
 
+        // A burst lost on this device names the device where nothing shows the tunnel carrying.
+        if (peer?.Trace is { } trace && Silent(beyond) && tunnel is not { BitsPerSecond: > 0 })
+        {
+            switch (trace.Step)
+            {
+                case TunnelSteps.NotHanded:
+                    return (CheckVerdicts.TunnelNotFed, [Text(trace.Handed), Text(trace.Probes)], CheckLegs.Peer);
+                case TunnelSteps.NotSent:
+                    return (CheckVerdicts.TunnelNotSent, [CheckFormat.Bytes(trace.Sent), CheckFormat.Bytes(trace.Weight)], CheckLegs.Peer);
+                case TunnelSteps.NotDelivered:
+                    return (CheckVerdicts.TunnelNotDelivered, [CheckFormat.Bytes(trace.Sent), CheckFormat.Bytes(trace.Received)], CheckLegs.Peer);
+            }
+        }
+
         if (Lossy(peer))
         {
             return (CheckVerdicts.ServerLoss, [Text(peer!.LossPercent)], CheckLegs.Peer);
@@ -624,6 +836,14 @@ public static class ChannelVerdict
 
         if (tunnel is { BitsPerSecond: >= 0 })
         {
+            // A silent tunnel names the server only where the burst is known to have left and brought nothing back.
+            if (tunnel.BitsPerSecond == 0 && Silent(peer) && Silent(beyond))
+            {
+                return peer?.Trace is { Step: TunnelSteps.Unanswered } unanswered
+                    ? (CheckVerdicts.TunnelUnanswered, [CheckFormat.Bytes(unanswered.Sent)], CheckLegs.Tunnel)
+                    : (CheckVerdicts.TunnelSilent, [], CheckLegs.Tunnel);
+            }
+
             if (direct is { BitsPerSecond: >= 0 } && direct.BitsPerSecond >= tunnel.BitsPerSecond * DirectRatio
                 && direct.BitsPerSecond >= SlowBitsPerSecond)
             {
@@ -701,7 +921,13 @@ public static class ChannelVerdict
         return leg is not null && LinkHealth.LossKnown(leg.LossPercent) && LinkHealth.Lossy(leg.LossPercent);
     }
 
-    private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
+    // Whether no echo of the leg came back; a leg that was not run counts as silent too.
+    private static bool Silent(CheckLeg? leg)
+    {
+        return leg is null || leg.RttMs < 0;
+    }
+
+    private static string Text(long value) => value.ToString(CultureInfo.InvariantCulture);
 }
 
 /// <summary>
@@ -726,6 +952,11 @@ public static class CheckPhrase
             CheckVerdicts.ServerSlow => $"the tunnel delivers {Arg(args, 0)} Mbit/s while the server answers: change the server",
             CheckVerdicts.TunnelBehindDirect => $"the tunnel delivers {Arg(args, 0)} Mbit/s where the same download outside it delivers {Arg(args, 1)}: the fault is the server, not the home channel",
             CheckVerdicts.SourceBehindTunnel => $"the destination this traffic goes to delivers {Arg(args, 0)} Mbit/s where a neutral download over the same tunnel delivers {Arg(args, 1)}: the fault is the source, not the tunnel",
+            CheckVerdicts.TunnelNotFed => $"the system gives the tunnel nothing, {Arg(args, 0)} of {Arg(args, 1)} probes reached its adapter: the fault is on this device, a filter or a route keeps traffic out of the tunnel",
+            CheckVerdicts.TunnelNotSent => $"the tunnel does not send what it is given, {Arg(args, 0)} went out where the probes weigh {Arg(args, 1)}: the fault is on this device, not the server",
+            CheckVerdicts.TunnelNotDelivered => $"the tunnel sent {Arg(args, 0)} and {Arg(args, 1)} of answers came back into it, yet none reached the program: the fault is on this device, something drops what the tunnel brings",
+            CheckVerdicts.TunnelUnanswered => $"the tunnel sent {Arg(args, 0)} and heard nothing back while its session is alive: the fault is the server or the path to it, not this device",
+            CheckVerdicts.TunnelSilent => "nothing passes through the tunnel while its session is alive, and nothing counted says where it is lost: the fault may be on this device as well as on the server",
             CheckVerdicts.Healthy => $"nothing to blame: the tunnel delivers {Arg(args, 0)} Mbit/s without loss",
             CheckVerdicts.HealthyOutsideTunnel => $"nothing to blame on the legs measured; the {Arg(args, 0)} Mbit/s belongs to the path beside the tunnel, which is where this download went",
             CheckVerdicts.SweepEmpty => "there is no saved server to measure",

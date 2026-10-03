@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
 using AmneziaGeo.Dal;
@@ -16,7 +17,7 @@ namespace AmneziaGeo.Windows.App;
 /// Runs the diagnostic checks and keeps their answers where the support archive picks them up. A run is stored
 /// whole rather than logged: the capture floor is errors by default, so a healthy run would leave no trace at all.
 /// </summary>
-internal sealed class CheckService(AgentControl control, RuntimeInspector inspector, LiveSession session, SqliteLogStore logStore, FleetLive live, ILogger<CheckService> logger)
+internal sealed class CheckService(AgentControl control, RuntimeInspector inspector, LiveSession session, SqliteLogStore logStore, FleetLive live, UapiClient uapi, ILogger<CheckService> logger)
 {
     /// <summary>
     /// Runs the ladder from the local gateway out to a download, and returns the measured legs with the verdict.
@@ -37,23 +38,35 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var offers = new ServerOffers(store);
         var carrier = Carrier(text, transport, await offers.OfferAsync(config, text, ct).ConfigureAwait(false));
         var speed = await offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
+        var endpoint = await ResolveAsync(carrier.Host, ct).ConfigureAwait(false);
+        // In the mode each server carries its own control.
+        var standing = live.Of(config) ?? control;
+        var link = standing.Link;
+        var peer = connected ? uapi.TryGetPeerStatus(config) : null;
+        var targets = LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text));
+        var riding = connected ? await RidingAsync(store, config, targets, ct).ConfigureAwait(false) : config;
         var options = new ChannelProbeOptions(
             config,
             connected,
-            LocalGateway.Find(),
-            await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
-            LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text)),
+            PhysicalPath.Gateway(endpoint),
+            endpoint,
+            targets,
             LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             !split,
             true,
-            connected ? control.HandshakeAge : -1,
-            connected ? control.Link.HandshakesPerMinute : -1,
+            connected ? HandshakeSeconds(peer, standing) : -1,
+            connected ? link.HandshakesPerMinute : -1,
+            peer?.RxBytes ?? -1,
+            peer?.TxBytes ?? -1,
             SourceHost: source,
             ConfiguredMtu: MtuPlan.ResolveForLink(transport, text),
             CarrierPort: carrier.Port,
             TunnelSpeedUrl: ServerOffers.Download(speed, true),
             DirectSpeedUrl: ServerOffers.Download(speed, false),
-            Churning: connected && control.Link.Churning);
+            Churning: connected && link.Churning,
+            RekeySeconds: connected ? link.RekeySeconds : -1,
+            ChurnPerMinute: LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(text)),
+            Counters: connected ? _ => Task.FromResult<TunnelCounters?>(Counters(riding)) : null);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         await RecordAsync(report.Render(), report.Culprit.Length > 0, report.Advice, ct).ConfigureAwait(false);
@@ -81,7 +94,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var live = servers.FirstOrDefault(server => server.Live);
         var full = live is not null && !(await ActiveListAsync(store, live.Name, ct).ConfigureAwait(false)).Split;
         var report = await ServerSweep
-            .RunAsync(servers, new SweepOptions(LocalGateway.Find(), live is not null, full), ct)
+            .RunAsync(servers, new SweepOptions(PhysicalPath.Gateway(live?.Address), live is not null, full), ct)
             .ConfigureAwait(false);
 
         await RecordAsync(report.Render(), report.VerdictKey != CheckVerdicts.SweepBest, null, ct).ConfigureAwait(false);
@@ -222,6 +235,89 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         }
 
         logger.LogInformation("check: {Verdict}", closing);
+    }
+
+    // Seconds since the peer last answered, as the engine says at this moment; the step the screen is fed stands
+    // in where the engine does not answer.
+    private static int HandshakeSeconds(UapiClient.PeerStatus? peer, AgentControl standing)
+    {
+        return peer is { HandshakeSec: > 0 } answered
+            ? (int)Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - answered.HandshakeSec)
+            : standing.HandshakeAge;
+    }
+
+    // The tunnel the system routes the first probe to the far end through, or the configuration itself when the
+    // route leads to no tunnel.
+    private static async Task<string> RidingAsync(IStateStore store, string config, IReadOnlyList<string> targets, CancellationToken ct)
+    {
+        var target = targets
+            .Select(one => IPAddress.TryParse(one, out var parsed) ? parsed : null)
+            .FirstOrDefault(one => one is { AddressFamily: AddressFamily.InterNetwork });
+        if (target is null)
+        {
+            return config;
+        }
+
+        var index = RouteManager.UnderlayHop(target).InterfaceIndex;
+        var device = NetworkAdapters.All().FirstOrDefault(adapter => Carries(adapter, index))?.Name;
+        if (device is null)
+        {
+            return config;
+        }
+
+        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            if (string.Equals(TunnelDevice.NameOf(name), device, StringComparison.Ordinal))
+            {
+                return name;
+            }
+        }
+
+        return config;
+    }
+
+    // Whether the adapter holds the interface index given.
+    private static bool Carries(NetworkInterface adapter, uint index)
+    {
+        try
+        {
+            return (uint)adapter.GetIPProperties().GetIPv4Properties().Index == index;
+        }
+        catch (Exception ex) when (ex is NetworkInformationException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    // What the tunnel of the config has carried so far: its adapter as the system counts it, its engine as the
+    // peer counts it.
+    private TunnelCounters Counters(string config)
+    {
+        var handed = -1L;
+        var returned = -1L;
+        var device = TunnelDevice.NameOf(config);
+        foreach (var adapter in NetworkAdapters.All())
+        {
+            if (adapter.Name != device)
+            {
+                continue;
+            }
+
+            try
+            {
+                var statistics = adapter.GetIPStatistics();
+                handed = statistics.UnicastPacketsSent + statistics.NonUnicastPacketsSent;
+                returned = statistics.UnicastPacketsReceived + statistics.NonUnicastPacketsReceived;
+            }
+            catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException)
+            {
+            }
+
+            break;
+        }
+
+        var peer = uapi.TryGetPeerStatus(config);
+        return new TunnelCounters(handed, returned, peer?.TxBytes ?? -1, peer?.RxBytes ?? -1);
     }
 
     private bool Connected(string config)

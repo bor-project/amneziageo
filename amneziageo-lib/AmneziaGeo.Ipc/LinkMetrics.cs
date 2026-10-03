@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
@@ -82,6 +84,26 @@ public static class LinkHealth
     }
 
     /// <summary>
+    /// How the session renews its keys, in English: the interval between the last two handshakes and the rate
+    /// from the one that counts as re-establishing; empty while there is neither.
+    /// </summary>
+    public static string KeysText(int rekeySeconds, int handshakesPerMinute, int churnPerMinute)
+    {
+        var parts = new List<string>(2);
+        if (rekeySeconds > 0)
+        {
+            parts.Add($"a new key every {rekeySeconds.ToString(CultureInfo.InvariantCulture)} s");
+        }
+
+        if (handshakesPerMinute >= Math.Max(churnPerMinute, 1))
+        {
+            parts.Add($"handshakes {handshakesPerMinute.ToString(CultureInfo.InvariantCulture)}/min");
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>
     /// Whether the share names a link that drops enough to be felt.
     /// </summary>
     public static bool Lossy(int lossPercent)
@@ -104,12 +126,29 @@ public sealed record LinkReading(
     // Whether the session keeps being re-established while nothing comes back through it.
     bool Churning = false,
     // Longest run of the tunnel's echoes lost one after another.
-    int LossStreak = 0)
+    int LossStreak = 0,
+    // Seconds between the last two handshakes; -1 until two were seen.
+    int RekeySeconds = -1)
 {
     /// <summary>
     /// A link that has carried nothing yet.
     /// </summary>
     public static readonly LinkReading Empty = new(0, 0, 0);
+
+    /// <summary>
+    /// The link in one line of the journal, in English.
+    /// </summary>
+    public string Describe(int churnPerMinute)
+    {
+        var keys = LinkHealth.KeysText(RekeySeconds, HandshakesPerMinute, churnPerMinute);
+        var loss = LinkHealth.LossKnown(LossPercent)
+            ? $"{LossPercent.ToString(CultureInfo.InvariantCulture)}%"
+            : "nothing that answers";
+        return $"receives {(RxBitsPerSecond / 1000).ToString(CultureInfo.InvariantCulture)} kbit/s, "
+            + $"sends {(TxBitsPerSecond / 1000).ToString(CultureInfo.InvariantCulture)} kbit/s, "
+            + (keys.Length > 0 ? keys + ", " : string.Empty)
+            + $"loses {loss}";
+    }
 
     // Rate step the screen resolves; a smaller move is not worth a snapshot.
     private const long Resolution = 100_000;
@@ -144,6 +183,7 @@ public sealed class LinkMeter
     private long _txBytes = -1;
     private long _tick;
     private long _handshakeUnix;
+    private int _rekeySeconds = -1;
 
     /// <summary>
     /// ctor
@@ -176,6 +216,7 @@ public sealed class LinkMeter
             if (_handshakeUnix > 0)
             {
                 _handshakes.Enqueue((now, handshakeUnix));
+                _rekeySeconds = Interval(handshakeUnix - _handshakeUnix, _rekeySeconds);
             }
 
             _handshakeUnix = handshakeUnix;
@@ -205,8 +246,14 @@ public sealed class LinkMeter
         _rxBytes = rxBytes;
         _txBytes = txBytes;
         _tick = now;
-        Reading = new LinkReading(rx, tx, perMinute, lossPercent, rttMs, LinkHealth.Churning(perMinute, ChurnPerMinute, heard, lossPercent), lossStreak);
+        Reading = new LinkReading(rx, tx, perMinute, lossPercent, rttMs, LinkHealth.Churning(perMinute, ChurnPerMinute, heard, lossPercent), lossStreak, _rekeySeconds);
         return Reading;
+    }
+
+    // The interval a new handshake closes; a pause longer than a silent session keeps the one known before.
+    private static int Interval(long seconds, int known)
+    {
+        return seconds is > 0 and <= HandshakeAge.SilentSeconds ? (int)seconds : known;
     }
 
     /// <summary>
@@ -220,6 +267,7 @@ public sealed class LinkMeter
         _txBytes = -1;
         _tick = 0;
         _handshakeUnix = 0;
+        _rekeySeconds = -1;
         Reading = LinkReading.Empty;
     }
 

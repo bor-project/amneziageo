@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Keeps the tunnel adapter's addresses out of the duplicate address check.
+/// Keeps the tunnel adapter's addresses out of the duplicate address check and on the routes Windows gives them.
 /// </summary>
 internal static partial class TunnelAddressCheck
 {
@@ -24,9 +24,15 @@ internal static partial class TunnelAddressCheck
     private static readonly TimeSpan _look = TimeSpan.FromMilliseconds(5);
     private static readonly TimeSpan _adapterLimit = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan _addressLimit = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _routeLook = TimeSpan.FromMilliseconds(20);
+    private static readonly TimeSpan _routeLimit = TimeSpan.FromSeconds(3);
+
+    // How many times one address is added again for its route.
+    private const int RouteTries = 3;
 
     /// <summary>
-    /// Turns the check off on the adapter as soon as it appears and adds again the addresses that entered it before.
+    /// Turns the check off on the adapter as soon as it appears, adds again the addresses that entered it before and
+    /// the ones whose own route went when the adapter's routes were set.
     /// </summary>
     public static async Task RunAsync(string name, string adapter, IReadOnlyList<IPAddress> expected, ILogger logger, CancellationToken ct)
     {
@@ -67,6 +73,12 @@ internal static partial class TunnelAddressCheck
 
             logger.LogDebug("{Name}: the tunnel adapter skips the duplicate address check: it appeared after {Found} ms, its addresses were {State} after {Elapsed} ms",
                 name, found, ready ? "ready" : "not all ready", watch.ElapsedMilliseconds);
+
+            var routed = await KeepRoutesAsync(luid, expected, ct).ConfigureAwait(false);
+            if (routed > 0)
+            {
+                logger.LogInformation("{Name}: {Count} address(es) of the tunnel had lost the route Windows keeps to its own addresses when the adapter's routes were set, so they were added again", name, routed);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -111,6 +123,14 @@ internal static partial class TunnelAddressCheck
         return expected.All(address => present.Any(row => row.Address.Equals(address) && row.DadState != DadTentative));
     }
 
+    /// <summary>
+    /// The configured addresses that are out of the duplicate address check and have no route of their own.
+    /// </summary>
+    internal static IReadOnlyList<IPAddress> Unrouted(IReadOnlyList<(IPAddress Address, int DadState)> present, IReadOnlyList<IPAddress> expected, Func<IPAddress, bool> routed)
+    {
+        return [.. present.Where(row => row.DadState != DadTentative && expected.Contains(row.Address) && !routed(row.Address)).Select(row => row.Address)];
+    }
+
     // The adapter's LUID once it is there; null when it never appears.
     private static async Task<ulong?> AdapterAsync(string adapter, CancellationToken ct)
     {
@@ -126,6 +146,49 @@ internal static partial class TunnelAddressCheck
         }
 
         return null;
+    }
+
+    // Adds again the addresses whose own route went when the engine set the adapter's routes; answers how many.
+    private static async Task<int> KeepRoutesAsync(ulong luid, IReadOnlyList<IPAddress> expected, CancellationToken ct)
+    {
+        var watch = Stopwatch.StartNew();
+        var tries = new Dictionary<IPAddress, int>();
+        var again = new HashSet<IPAddress>();
+        while (watch.Elapsed < _routeLimit)
+        {
+            foreach (var address in Unrouted(Present(luid), expected, address => Routed(luid, address)))
+            {
+                var tried = tries.GetValueOrDefault(address);
+                if (tried >= RouteTries)
+                {
+                    continue;
+                }
+
+                tries[address] = tried + 1;
+                if (AddAgain(luid, address, tentativeOnly: false))
+                {
+                    again.Add(address);
+                }
+            }
+
+            await Task.Delay(_routeLook, ct).ConfigureAwait(false);
+        }
+
+        return again.Count;
+    }
+
+    // Whether Windows holds its own route to the address on the adapter.
+    private static bool Routed(ulong luid, IPAddress address)
+    {
+        var v6 = address.AddressFamily == AddressFamily.InterNetworkV6;
+        var row = new MIB_IPFORWARD_ROW2
+        {
+            InterfaceLuid = luid,
+            Destination = ToSockaddr(address),
+            PrefixLength = (byte)(v6 ? 128 : 32),
+            NextHop = new SOCKADDR_INET { Family = v6 ? AfInet6 : AfInet },
+        };
+        return GetIpForwardEntry2(ref row) == NoError && row.Loopback != 0;
     }
 
     // Sets no duplicate probes for the family; answers whether the adapter has the family and took it.
@@ -181,11 +244,11 @@ internal static partial class TunnelAddressCheck
         return result;
     }
 
-    // Adds a tentative address again, marked as already checked.
-    private static bool AddAgain(ulong luid, IPAddress address)
+    // Adds an address again, marked as already checked; only a tentative one unless told otherwise.
+    private static bool AddAgain(ulong luid, IPAddress address, bool tentativeOnly = true)
     {
         var row = new MIB_UNICASTIPADDRESS_ROW { Address = ToSockaddr(address), InterfaceLuid = luid };
-        if (GetUnicastIpAddressEntry(ref row) != NoError || row.DadState != DadTentative)
+        if (GetUnicastIpAddressEntry(ref row) != NoError || (tentativeOnly && row.DadState != DadTentative))
         {
             return false;
         }
@@ -290,8 +353,22 @@ internal static partial class TunnelAddressCheck
         [FieldOffset(144)] public uint SitePrefixLength;
     }
 
+    // Only the fields this sets and reads are named, at the offsets of the native row.
+    [StructLayout(LayoutKind.Explicit, Size = 104)]
+    private struct MIB_IPFORWARD_ROW2
+    {
+        [FieldOffset(0)] public ulong InterfaceLuid;
+        [FieldOffset(12)] public SOCKADDR_INET Destination;
+        [FieldOffset(40)] public byte PrefixLength;
+        [FieldOffset(44)] public SOCKADDR_INET NextHop;
+        [FieldOffset(92)] public byte Loopback;
+    }
+
     [LibraryImport("iphlpapi.dll", StringMarshalling = StringMarshalling.Utf16)]
     private static partial uint ConvertInterfaceAliasToLuid(string alias, out ulong luid);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint GetIpForwardEntry2(ref MIB_IPFORWARD_ROW2 row);
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint GetIpInterfaceEntry(ref MIB_IPINTERFACE_ROW row);

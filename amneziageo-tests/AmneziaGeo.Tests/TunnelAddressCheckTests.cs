@@ -5,8 +5,8 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// Which addresses of the tunnel adapter are added again without the duplicate address check, and when the adapter
-/// counts as ready.
+/// Which addresses of the tunnel adapter are added again without the duplicate address check or for the route
+/// Windows gives them, and when the adapter counts as ready.
 /// </summary>
 public sealed class TunnelAddressCheckTests
 {
@@ -45,5 +45,21 @@ public sealed class TunnelAddressCheckTests
         Assert.False(TunnelAddressCheck.Settled([(_v4, Preferred)], expected));
         Assert.False(TunnelAddressCheck.Settled([(_v4, Preferred), (_v6, Tentative)], expected));
         Assert.True(TunnelAddressCheck.Settled([(_v4, Preferred), (_v6, Preferred)], expected));
+    }
+
+    [Fact]
+    public void OnlyCheckedConfiguredAddressesWithoutTheirOwnRoute_AreAddedAgainForIt()
+    {
+        var present = new List<(IPAddress Address, int DadState)>
+        {
+            (_v4, Preferred),
+            (_v6, Preferred),
+            (IPAddress.Parse("fe80::1"), Preferred),
+        };
+
+        Assert.Equal(new[] { _v4 }, TunnelAddressCheck.Unrouted(present, [_v4, _v6], address => address.Equals(_v6)));
+        Assert.Equal(new[] { _v4, _v6 }, TunnelAddressCheck.Unrouted(present, [_v4, _v6], _ => false));
+        Assert.Empty(TunnelAddressCheck.Unrouted([(_v4, Tentative)], [_v4], _ => false));
+        Assert.Empty(TunnelAddressCheck.Unrouted(present, [_v4, _v6], _ => true));
     }
 }

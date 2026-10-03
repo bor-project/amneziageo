@@ -659,13 +659,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _linkLoggedAt = now;
-        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min, loses {LossText(reading.LossPercent)}");
-    }
-
-    // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
-    private static string LossText(int percent)
-    {
-        return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
+        _log.Info("link", reading.Describe(_meter.ChurnPerMinute));
     }
 
     // Starts this connection's loss probe: a target inside the tunnel is echoed every few seconds, and what fails to
@@ -674,6 +668,8 @@ internal sealed class LinuxAgent : IDisposable
     private void StartLossProbe(string config)
     {
         StopLossProbe();
+        // A connection counts its handshakes from its own first one.
+        _meter.Reset();
         // The config's own rekey schedule sets the handshake rate its session is judged by.
         _meter.ChurnPerMinute = LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(config));
         var run = new CancellationTokenSource();
@@ -2359,6 +2355,7 @@ internal sealed class LinuxAgent : IDisposable
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport, await _offers.OfferAsync(config, text, ct).ConfigureAwait(false));
         var speed = await _offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
+        var peer = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
         var options = new ChannelProbeOptions(
             config,
             _tunnel.Running,
@@ -2368,18 +2365,32 @@ internal sealed class LinuxAgent : IDisposable
             LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             _tunnel.RoutingMode != SessionReport.ModeSplit,
             true,
-            _tunnel.Running ? _handshakeAge : -1,
+            _tunnel.Running ? HandshakeSeconds(peer) : -1,
             _tunnel.Running ? _link.HandshakesPerMinute : -1,
+            peer?.RxBytes ?? -1,
+            peer?.TxBytes ?? -1,
             SourceHost: args.Count > 0 ? args[0] : null,
             ConfiguredMtu: WgConfigEditor.GetMtu(text),
             CarrierPort: carrier.Port,
             TunnelSpeedUrl: ServerOffers.Download(speed, true),
             DirectSpeedUrl: ServerOffers.Download(speed, false),
-            Churning: _tunnel.Running && _link.Churning);
+            Churning: _tunnel.Running && _link.Churning,
+            RekeySeconds: _tunnel.Running ? _link.RekeySeconds : -1,
+            ChurnPerMinute: _meter.ChurnPerMinute,
+            Counters: _tunnel.Running ? _tunnel.TunnelCountersAsync : null);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
         return new IpcAck(true, report.ToPayload());
+    }
+
+    // Seconds since the peer last answered, as the engine says at this moment; the step the screen is fed stands
+    // in where the engine does not answer.
+    private int HandshakeSeconds(PeerCounters? peer)
+    {
+        return peer is { HandshakeUnix: > 0 } answered
+            ? (int)Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - answered.HandshakeUnix)
+            : _handshakeAge;
     }
 
     // Every saved server measured by the legs that cost only echoes.

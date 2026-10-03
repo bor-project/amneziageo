@@ -42,6 +42,9 @@ internal sealed partial class RouteManager
     private readonly Dictionary<RouteKey, MIB_IPFORWARD_ROW2> _added = [];
     private readonly object _addedLock = new();
 
+    // The tunnel adapter's own addresses: Windows keeps the routes to them, so none is put or taken off here.
+    private volatile IReadOnlyCollection<IPAddress> _own = [];
+
     private readonly record struct RouteKey(ushort Family, uint A0, uint A1, uint A2, uint A3, byte Prefix, uint IfIndex);
 
     private static RouteKey KeyOf(IPAddress ip, byte prefix, uint ifIndex)
@@ -877,17 +880,53 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Names the tunnel adapter's own addresses, whose routes are left to Windows.
+    /// </summary>
+    public void LeaveToSystem(IReadOnlyCollection<IPAddress> addresses)
+    {
+        _own = [.. addresses];
+    }
+
+    /// <summary>
+    /// Whether the address is one of the tunnel adapter's own.
+    /// </summary>
+    internal static bool Own(IPAddress address, IReadOnlyCollection<IPAddress> own)
+    {
+        var plain = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+        return own.Contains(plain);
+    }
+
+    /// <summary>
+    /// Whether a route that was already there is one a client put, not one Windows keeps to an address of its own.
+    /// </summary>
+    internal static bool Managed(uint protocol)
+    {
+        return protocol == MibIpProtoNetMgmt;
+    }
+
+    // The protocol of the route standing where the given one was to go; 0 when it cannot be read.
+    private static uint ProtocolThere(MIB_IPFORWARD_ROW2 row)
+    {
+        return GetIpForwardEntry2(ref row) == NoError ? row.Protocol : 0;
+    }
+
+    /// <summary>
     /// Adds an on-link host route for an IP through the tunnel interface.
     /// </summary>
     public bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
+        if (Own(ip, _own))
+        {
+            return true;
+        }
+
         var prefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
         var row = ip.AddressFamily == AddressFamily.InterNetworkV6
             ? NewRowV6(ip, 128, tunnelInterfaceIndex, nextHop: null) // on-link (no gateway)
             : NewRow(ip, 32, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
         var ok = result is NoError or ErrorObjectAlreadyExists;
-        if (ok)
+        if (result == NoError || (ok && Managed(ProtocolThere(row))))
         {
             Remember(ip, (byte)prefix, tunnelInterfaceIndex, row);
         }
@@ -914,7 +953,7 @@ internal sealed partial class RouteManager
             var rowV6 = NewRowV6(ip, prefixV6, tunnelInterfaceIndex, nextHop: null);
             var resultV6 = CreateIpForwardEntry2(ref rowV6);
             var okV6 = resultV6 is NoError or ErrorObjectAlreadyExists;
-            if (okV6)
+            if (resultV6 == NoError || (okV6 && Managed(ProtocolThere(rowV6))))
             {
                 Remember(ip, prefixV6, tunnelInterfaceIndex, rowV6);
             }
@@ -932,7 +971,7 @@ internal sealed partial class RouteManager
         var row = NewRow(ip, prefix, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
         var ok = result is NoError or ErrorObjectAlreadyExists;
-        if (ok)
+        if (result == NoError || (ok && Managed(ProtocolThere(row))))
         {
             Remember(ip, prefix, tunnelInterfaceIndex, row);
         }
@@ -979,6 +1018,11 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
+        if (Own(ip, _own))
+        {
+            return;
+        }
+
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
             if (!TryDeleteRemembered(ip, 128, tunnelInterfaceIndex))
@@ -1013,6 +1057,11 @@ internal sealed partial class RouteManager
         // Fast-path each remembered route; routes we did not install this session fall through to a targeted lookup.
         foreach (var ip in ips)
         {
+            if (Own(ip, _own))
+            {
+                continue;
+            }
+
             if (ip.AddressFamily == AddressFamily.InterNetworkV6)
             {
                 if (!TryDeleteRemembered(ip, 128, tunnelInterfaceIndex))
@@ -1479,4 +1528,7 @@ internal sealed partial class RouteManager
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint DeleteIpForwardEntry2(ref MIB_IPFORWARD_ROW2 row);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint GetIpForwardEntry2(ref MIB_IPFORWARD_ROW2 row);
 }

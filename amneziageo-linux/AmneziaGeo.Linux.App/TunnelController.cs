@@ -827,6 +827,34 @@ internal sealed class TunnelController : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// What the tunnel has carried so far: its device as the kernel counts it, its engine as the peer counts it;
+    /// null when nothing runs.
+    /// </summary>
+    public async Task<TunnelCounters?> TunnelCountersAsync(CancellationToken ct)
+    {
+        if (await PeerCountersAsync(ct).ConfigureAwait(false) is not { } peer)
+        {
+            return null;
+        }
+
+        return new TunnelCounters(DeviceCount("tx_packets"), DeviceCount("rx_packets"), peer.TxBytes, peer.RxBytes);
+    }
+
+    // One counter of the tunnel device as the kernel keeps it; -1 where it cannot be read.
+    private long DeviceCount(string counter)
+    {
+        try
+        {
+            var text = File.ReadAllText($"/sys/class/net/{_iface}/statistics/{counter}").Trim();
+            return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : -1;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return -1;
+        }
+    }
+
     // Whether the peer has answered at least once.
     private async Task<bool> HandshakeSeenAsync(CancellationToken ct)
     {

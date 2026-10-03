@@ -76,6 +76,11 @@ internal static class RoutingPresets
     ];
 
     /// <summary>
+    /// Наборы режима в порядке показа.
+    /// </summary>
+    public static IEnumerable<RoutingPreset> Of(bool full) => All.Where(preset => preset.UseGlobalProxy == full);
+
+    /// <summary>
     /// Страна устройства, без запроса разрешений.
     /// </summary>
     public static string CurrentCountry()
@@ -176,24 +181,62 @@ internal static class RoutingPresets
 }
 
 /// <summary>
-/// Карточка набора на экране выбора.
+/// Строка списка шаблонов: готовый набор, свои правила или импорт.
 /// </summary>
-internal sealed class RoutingPresetItemViewModel(RoutingPreset preset)
+internal sealed class RoutingTemplateItemViewModel
 {
-    /// <summary>
-    /// Набор, стоящий за карточкой.
-    /// </summary>
-    public RoutingPreset Preset => preset;
+    private readonly string _nameKey;
+    private readonly string _hintKey;
 
     /// <summary>
-    /// Имя набора, оно же имя создаваемого списка.
+    /// ctor
     /// </summary>
-    public string Name => Loc.Instance.Get($"Preset_{preset.Key}Name");
+    public RoutingTemplateItemViewModel(RoutingPreset preset)
+    {
+        Preset = preset;
+        Method = RoutingImportMethod.Presets;
+        _nameKey = $"Preset_{preset.Key}Name";
+        _hintKey = $"Preset_{preset.Key}Hint";
+    }
 
     /// <summary>
-    /// Что идёт через VPN, а что напрямую.
+    /// ctor
     /// </summary>
-    public string Hint => Loc.Instance.Get($"Preset_{preset.Key}Hint");
+    public RoutingTemplateItemViewModel(RoutingImportMethod method)
+    {
+        Method = method;
+        var key = method == RoutingImportMethod.Manual ? "Main_MethodManual" : "Main_MethodImport";
+        _nameKey = $"{key}Title";
+        _hintKey = $"{key}Hint";
+    }
+
+    /// <summary>
+    /// Набор, стоящий за строкой.
+    /// </summary>
+    public RoutingPreset? Preset { get; }
+
+    /// <summary>
+    /// Способ, которым строка заводит список.
+    /// </summary>
+    public RoutingImportMethod Method { get; }
+
+    /// <summary>
+    /// Имя строки; у набора оно же имя создаваемого списка.
+    /// </summary>
+    public string Name => Loc.Instance.Get(_nameKey);
+
+    /// <summary>
+    /// Что даёт строка.
+    /// </summary>
+    public string Hint => Loc.Instance.Get(_hintKey);
+
+    /// <summary>
+    /// Та же ли это строка: тот же способ и тот же набор.
+    /// </summary>
+    public bool Matches(RoutingTemplateItemViewModel? other) =>
+        other is not null
+        && Method == other.Method
+        && string.Equals(Preset?.Key, other.Preset?.Key, StringComparison.Ordinal);
 }
 
 /// <summary>

@@ -45,6 +45,22 @@ internal sealed class RouteApplier(
     }
 
     /// <summary>
+    /// Permits one host address through the physical path for everything but datagrams; a no-op without a kill-switch.
+    /// </summary>
+    public bool TryPermitStreams(uint address, out ulong outId, out ulong inId, out int generation)
+    {
+        if (!killSwitch)
+        {
+            outId = 0;
+            inId = 0;
+            generation = 0;
+            return true;
+        }
+
+        return firewall.TryPermitHost(address, out outId, out inId, out generation, datagrams: false);
+    }
+
+    /// <summary>
     /// Drops one host address at the highest weight, so a blocked destination loses to no permit.
     /// </summary>
     public bool TryDrop(uint address, out ulong outId, out ulong inId, out int generation)

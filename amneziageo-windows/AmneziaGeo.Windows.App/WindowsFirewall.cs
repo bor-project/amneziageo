@@ -54,7 +54,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private ulong? _keywordsPrevious;
     // Held so the thunk the engine calls back into outlives the subscription.
     private NetEventCallback? _dropCallback;
-    private Action<IPAddress, string?>? _onDrop;
+    private Action<IPAddress, string?, bool>? _onDrop;
     private int _dropEvents;
     // A dynamic session drops its filters with the engine handle, and arming rebuilds the set from scratch, so
     // on-demand permits carry the generation they were installed under and are reinstalled when it moves.
@@ -212,11 +212,12 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     }
 
     /// <summary>
-    /// Reports the destination of every packet the filters drop. A destination blocked before its verdict exists
-    /// announces itself here and nowhere else: the send never happens, so no ETW send or connect event follows it.
+    /// Reports the destination of every packet the filters drop, the image it belonged to and whether it was a
+    /// datagram. A destination blocked before its verdict exists announces itself here and nowhere else: the send
+    /// never happens, so no ETW send or connect event follows it.
     /// Returns false when the platform has no subscription - the tunnel still runs, on-demand just loses this source.
     /// </summary>
-    public bool WatchDrops(Action<IPAddress, string?> onDrop)
+    public bool WatchDrops(Action<IPAddress, string?, bool> onDrop)
     {
         lock (_gate)
         {
@@ -370,12 +371,13 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             Interlocked.Increment(ref _dropEvents);
             var version = Marshal.ReadInt32(netEvent, HeaderIpVersionOffset);
             var app = ReadAppId(netEvent);
+            var datagram = IsDatagram((uint)Marshal.ReadInt32(netEvent, HeaderFlagsOffset), Marshal.ReadByte(netEvent, HeaderIpProtocolOffset));
             if (version == IpVersionV4)
             {
                 var value = (uint)Marshal.ReadInt32(netEvent, HeaderRemoteAddressOffset);
                 if (value != 0)
                 {
-                    sink(new IPAddress(new[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value }), app);
+                    sink(new IPAddress(new[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value }), app, datagram);
                 }
 
                 return;
@@ -385,13 +387,21 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             {
                 var raw = new byte[16];
                 Marshal.Copy(netEvent + HeaderRemoteAddressOffset, raw, 0, raw.Length);
-                sink(new IPAddress(raw), app);
+                sink(new IPAddress(raw), app, datagram);
             }
         }
         catch (Exception ex)
         {
             logger.LogDebug(ex, "one blocked-destination report could not be read and was skipped; that address is decided on its next attempt");
         }
+    }
+
+    /// <summary>
+    /// Whether the header of a drop names a UDP packet.
+    /// </summary>
+    internal static bool IsDatagram(uint headerFlags, byte protocol)
+    {
+        return (headerFlags & HeaderFlagProtocolSet) != 0 && protocol == ProtocolUdp;
     }
 
     // Image path the dropped packet belonged to, as the NT device path the engine reports. Absent on events the
@@ -813,10 +823,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     /// <summary>
     /// Permits one host address through the physical path, reporting the filter ids and the generation they belong to.
+    /// Without <paramref name="datagrams"/> the permit leaves UDP out.
     /// </summary>
-    public bool TryPermitHost(uint address, out ulong outId, out ulong inId, out int generation)
+    public bool TryPermitHost(uint address, out ulong outId, out ulong inId, out int generation, bool datagrams = true)
     {
-        return TryHostFilter(address, ActionPermit, WeightLan, "Permit direct host", out outId, out inId, out generation);
+        return TryHostFilter(address, ActionPermit, WeightLan, "Permit direct host", out outId, out inId, out generation, datagrams);
     }
 
     /// <summary>
@@ -824,10 +835,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// </summary>
     public bool TryDropHost(uint address, out ulong outId, out ulong inId, out int generation)
     {
-        return TryHostFilter(address, ActionBlock, WeightBlockList, "Block host", out outId, out inId, out generation);
+        return TryHostFilter(address, ActionBlock, WeightBlockList, "Block host", out outId, out inId, out generation, true);
     }
 
-    private bool TryHostFilter(uint address, uint action, byte weight, string label, out ulong outId, out ulong inId, out int generation)
+    private bool TryHostFilter(uint address, uint action, byte weight, string label, out ulong outId, out ulong inId, out int generation, bool datagrams)
     {
         outId = 0;
         inId = 0;
@@ -851,7 +862,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
                 // A block belongs on ALE, where the program is told at once; a permit belongs where the block-all is.
                 var outLayer = action == ActionBlock ? LayerAleAuthConnectV4 : _outboundV4;
-                if (AddRaw(_engine, outLayer, weight, action, 0, cond, $"{label} (out)", out outId) != 0)
+                // A permit without datagrams names the protocol on the transport layer.
+                var leaving = datagrams || outLayer != LayerOutboundTransportV4
+                    ? cond
+                    : [.. cond, Condition(CondIpProtocol, MatchNotEqual, FwpUint8, ProtocolUdp)];
+                if (AddRaw(_engine, outLayer, weight, action, 0, leaving, $"{label} (out)", out outId) != 0)
                 {
                     outId = 0;
                     return false;
@@ -1187,6 +1202,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // FWP_MATCH_TYPE.
     private const uint MatchEqual = 0;
     private const uint MatchFlagsAllSet = 6;
+    private const uint MatchNotEqual = 10;
 
     // FWPM_ENGINE_OPTION: event collection, then the keyword filter that narrows it.
     private const uint EngineOptionCollectNetEvents = 0;
@@ -1195,11 +1211,14 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     // FWPM_NET_EVENT_HEADER3 (x64): timeStamp 0, flags 8, ipVersion 12, ipProtocol 16, localAddr 20, remoteAddr 36.
     private const int HeaderIpVersionOffset = 12;
+    private const int HeaderIpProtocolOffset = 16;
     private const int HeaderRemoteAddressOffset = 36;
     private const int HeaderFlagsOffset = 8;
     private const int HeaderAppIdSizeOffset = 64;
     private const int HeaderAppIdDataOffset = 72;
-    private const uint HeaderFlagAppIdSet = 0x00000004;
+    // FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET and FWPM_NET_EVENT_FLAG_APP_ID_SET (fwpmtypes.h).
+    private const uint HeaderFlagProtocolSet = 0x00000001;
+    private const uint HeaderFlagAppIdSet = 0x00000020;
     // Longest image path accepted from the event; anything above it is a layout mismatch, not a path.
     private const uint MaxAppIdBytes = 4096;
     private const int IpVersionV4 = 0;

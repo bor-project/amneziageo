@@ -58,8 +58,8 @@ public sealed class RoutingPickListsTests
         Assert.True(routing.ShowImportMethods);
         Assert.True(routing.ShowImportPresets);
         Assert.False(routing.ShowImportEditor);
-        Assert.Equal(0, routing.ImportMethodIndex);
-        Assert.Equal("Closed", routing.SelectedPresetCard?.Preset.Key);
+        Assert.True(routing.IsImportPresets);
+        Assert.Equal("Closed", routing.SelectedTemplate?.Preset?.Key);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class RoutingPickListsTests
         var routing = Routing();
         routing.BeginAddListCommand.Execute(null);
 
-        routing.ImportMethodIndex = 1;
+        routing.SelectedTemplate = routing.Templates.Single(row => row.Method == RoutingImportMethod.Manual);
 
         Assert.True(routing.ShowImportMethods);
         Assert.True(routing.ShowImportEditor);
@@ -82,7 +82,7 @@ public sealed class RoutingPickListsTests
         var routing = Routing();
         routing.BeginAddListCommand.Execute(null);
 
-        routing.ImportMethodIndex = 2;
+        routing.SelectedTemplate = routing.Templates.Single(row => row.Method == RoutingImportMethod.External);
 
         Assert.True(routing.IsImportExternal);
         Assert.True(routing.ShowImportMethods);
@@ -96,7 +96,7 @@ public sealed class RoutingPickListsTests
         var routing = Routing();
         routing.BeginAddListCommand.Execute(null);
 
-        await routing.ApplyPresetCommand.ExecuteAsync(routing.SelectedPresetCard);
+        await routing.ApplyPresetCommand.ExecuteAsync(routing.SelectedTemplate);
 
         Assert.True(routing.IsImportDraft);
         Assert.True(routing.ShowImportEditor);

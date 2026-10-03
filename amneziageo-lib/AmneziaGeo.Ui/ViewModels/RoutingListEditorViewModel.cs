@@ -325,7 +325,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // Mirrors the list's global-proxy flag, kept in sync by RoutingViewModel.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanUseProxyBucket))]
+    [NotifyPropertyChangedFor(nameof(CanAddApps))]
     [NotifyPropertyChangedFor(nameof(AppBucketsHint))]
+    [NotifyPropertyChangedFor(nameof(RoleHint))]
     private bool _globalProxyActive;
 
     // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
@@ -339,8 +341,30 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             SelectedRole = "direct";
         }
 
+        KeepAddMethod();
         RefreshTransfer();
         _ = RefreshRouteBudgetAsync();
+    }
+
+    /// <summary>
+    /// Re-reads whether the Proxy bucket is pickable and leaves it once it is not.
+    /// </summary>
+    protected void RefreshProxyBucket()
+    {
+        OnPropertyChanged(nameof(CanUseProxyBucket));
+        if (!CanUseProxyBucket && IsProxyRole)
+        {
+            SelectedRole = "direct";
+        }
+    }
+
+    // Returns the add row to addresses where the shown bucket takes no applications.
+    private void KeepAddMethod()
+    {
+        if (!CanAddApps && !IsAddressMethod)
+        {
+            AddMethod = "address";
+        }
     }
 
     partial void OnAllUdpActiveChanged(bool value) => RefreshTransfer();
@@ -585,9 +609,10 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// True while the Proxy bucket is pickable: the full tunnel carries everything by itself.
+    /// True while the Proxy bucket is pickable: in a list that tunnels only what it names, and in a full one where
+    /// its rules name the connection they ride.
     /// </summary>
-    public bool CanUseProxyBucket => !GlobalProxyActive;
+    public bool CanUseProxyBucket => !GlobalProxyActive || AddressesRules;
 
     /// <summary>
     /// Localized help line for the active role.
@@ -596,7 +621,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     {
         "direct" => Loc.Instance.Get("Main_RoleDirectHint"),
         "block" => Loc.Instance.Get("Main_RoleBlockHint"),
-        _ => Loc.Instance.Get("Main_RoleProxyHint"),
+        _ => Loc.Instance.Get(GlobalProxyActive ? "Main_RoleProxyRouteHint" : "Main_RoleProxyHint"),
     };
 
     /// <summary>
@@ -620,11 +645,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     partial void OnSelectedRoleChanged(string value)
     {
         ClearPending = false;
-        if (!CanAddApps && !IsAddressMethod)
-        {
-            AddMethod = "address";
-        }
-
+        KeepAddMethod();
         RebuildRuleItems();
         _ = ApplySuggestionFilterAsync();
     }
@@ -704,10 +725,10 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsAndroid();
 
     /// <summary>
-    /// True while the application method is pickable: the Proxy bucket everywhere, the Direct bucket where an
-    /// application can be kept out of the tunnel altogether.
+    /// True while the application method is pickable: the Proxy bucket of a list that tunnels only what it names,
+    /// the Direct bucket where an application can be kept out of the tunnel altogether.
     /// </summary>
-    public bool CanAddApps => IsProxyRole || (IsDirectRole && OperatingSystem.IsAndroid());
+    public bool CanAddApps => (IsProxyRole && !GlobalProxyActive) || (IsDirectRole && OperatingSystem.IsAndroid());
 
     /// <summary>
     /// Application method caption, empty where the platform runs no app rules.

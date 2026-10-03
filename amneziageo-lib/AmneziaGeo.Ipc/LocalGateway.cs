@@ -12,12 +12,14 @@ public static class LocalGateway
 {
     /// <summary>
     /// The first physical IPv4 gateway an operational adapter declares, or null when the system declares none -
-    /// android hands out no gateway through this interface and supplies its own.
+    /// android hands out no gateway through this interface and supplies its own. An adapter the caller names as
+    /// the client's own is passed over.
     /// </summary>
-    public static string? Find()
+    public static string? Find(Func<NetworkInterface, bool>? own = null)
     {
         try
         {
+            var declared = new List<(bool Own, IReadOnlyList<IPAddress> Gateways)>();
             foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (adapter.OperationalStatus != OperationalStatus.Up
@@ -26,18 +28,37 @@ public static class LocalGateway
                     continue;
                 }
 
-                foreach (var gateway in adapter.GetIPProperties().GatewayAddresses)
-                {
-                    if (gateway.Address is { AddressFamily: AddressFamily.InterNetwork } address
-                        && !address.Equals(IPAddress.Any))
-                    {
-                        return address.ToString();
-                    }
-                }
+                declared.Add((own?.Invoke(adapter) ?? false, [.. adapter.GetIPProperties().GatewayAddresses.Select(gateway => gateway.Address)]));
             }
+
+            return Pick(declared);
         }
         catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException)
         {
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The first IPv4 gateway declared by an adapter that is not the client's own.
+    /// </summary>
+    internal static string? Pick(IEnumerable<(bool Own, IReadOnlyList<IPAddress> Gateways)> adapters)
+    {
+        foreach (var (own, gateways) in adapters)
+        {
+            if (own)
+            {
+                continue;
+            }
+
+            foreach (var address in gateways)
+            {
+                if (address.AddressFamily == AddressFamily.InterNetwork && !address.Equals(IPAddress.Any))
+                {
+                    return address.ToString();
+                }
+            }
         }
 
         return null;

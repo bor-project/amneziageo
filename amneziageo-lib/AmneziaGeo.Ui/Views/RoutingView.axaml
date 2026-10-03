@@ -21,12 +21,18 @@
         controls:FileDropBehavior.Command="{Binding DropFilesCommand}">
 
     <!-- Заголовок раздела: стоит и над каталогом, и над экранами открытого списка. -->
-    <StackPanel Grid.Row="0" Spacing="2">
-      <TextBlock Classes="section" Text="{l:Tr Main_RoutingSection}" />
-      <!-- Имя открытого списка: экраны его настроек иначе не различить. -->
-      <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{Binding OpenListName}"
-                 IsVisible="{Binding OpenListName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-    </StackPanel>
+    <WrapPanel Grid.Row="0" ItemSpacing="10" LineSpacing="4">
+      <TextBlock Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
+      <!-- Режим открытого списка. -->
+      <Border Classes="cardbadge" IsVisible="{Binding ShowListMode}">
+        <Panel DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+          <TextBlock Text="{l:Tr Main_VpnModeSelected}" FontSize="12" FontWeight="SemiBold"
+                     IsVisible="{Binding IsSelectedOnly}" />
+          <TextBlock Text="{l:Tr Main_VpnModeFull}" FontSize="12" FontWeight="SemiBold"
+                     IsVisible="{Binding UseGlobalProxy}" />
+        </Panel>
+      </Border>
+    </WrapPanel>
 
     <!-- Шапка каталога: добавление списка маршрутизации. Способ выбирается плитками на экране ниже. -->
     <StackPanel x:Name="CatalogueHeader" Grid.Row="1" Margin="0,14,0,0" Spacing="8"
@@ -133,8 +139,13 @@
                 <StackPanel Grid.Column="0" Spacing="2">
                   <TextBlock Text="{l:Tr Main_AdvancedTitle}" FontWeight="SemiBold" FontSize="15"
                              TextWrapping="Wrap" />
-                  <TextBlock Text="{l:Tr Main_AdvancedSubtitle}" Classes="muted" FontSize="11.5"
-                             TextWrapping="Wrap" />
+                  <!-- Подпись по составу экрана: с UDP или без него. -->
+                  <Panel>
+                    <TextBlock Text="{l:Tr Main_AdvancedSubtitle}" Classes="muted" FontSize="11.5"
+                               TextWrapping="Wrap" IsVisible="{Binding ShowAllUdp}" />
+                    <TextBlock Text="{l:Tr Main_AdvancedSubtitleFull}" Classes="muted" FontSize="11.5"
+                               TextWrapping="Wrap" IsVisible="{Binding !ShowAllUdp}" />
+                  </Panel>
                 </StackPanel>
                 <PathIcon Grid.Column="1" Data="{DynamicResource AgChevronGeometry}" Width="12" Height="12"
                           VerticalAlignment="Center" />
@@ -187,11 +198,15 @@
                         IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
               <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}"
                           x:DataType="vm:RoutingSettingsViewModel">
-                <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_AllUdpTitle}"
-                                           Description="{l:Tr Main_AllUdpHint}"
-                                           IsChecked="{Binding AllUdp, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                <!-- Весь UDP: у списка, который несёт только выбранное. -->
+                <StackPanel Spacing="14"
+                            IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ShowAllUdp}">
+                  <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_AllUdpTitle}"
+                                             Description="{l:Tr Main_AllUdpHint}"
+                                             IsChecked="{Binding AllUdp, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
-                <Border Classes="rowsep" />
+                  <Border Classes="rowsep" />
+                </StackPanel>
 
                 <!-- Общая настройка агента: время жизни держит кеш всех списков. -->
                 <StackPanel Spacing="8">
@@ -335,71 +350,73 @@
         </Border>
       </StackPanel>
 
-      <!-- Новый список: способ выбирается списком, под ним его форма; черновик набора или импорта - сам редактор. -->
+      <!-- Новый список: режим и шаблон выбираются списками, под ними форма шаблона; черновик набора или импорта -
+           сам редактор. -->
       <Border Classes="sect" IsVisible="{Binding ShowImportFrame}">
         <StackPanel Spacing="14">
           <StackPanel Spacing="14" IsVisible="{Binding ShowImportMethods}">
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr Main_TransferSubtitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+            <!-- Режим списка: весь трафик или только отмеченное. -->
+            <StackPanel Spacing="8" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+              <TextBlock Text="{l:Tr Main_VpnModeTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
               <!-- Телефон открывает список шторкой снизу, десктоп выпадающим списком. -->
-              <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding ImportMethodIndex, Mode=TwoWay}"
+              <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding VpnModeIndex, Mode=TwoWay}"
+                  Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                  HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+                <ComboBoxItem Content="{l:Tr Main_VpnModeSelected}" />
+                <ComboBoxItem Content="{l:Tr Main_VpnModeFull}" />
+              </controls:AdaptiveComboBox>
+              <!-- Что делает выбранный режим. -->
+              <Panel Margin="0,-2,0,0">
+                <TextBlock Text="{l:Tr Main_VpnModeHintSelected}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                           IsVisible="{Binding IsSelectedOnly}" />
+                <TextBlock Text="{l:Tr Main_VpnModeHintFull}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                           IsVisible="{Binding UseGlobalProxy}" />
+              </Panel>
+            </StackPanel>
+
+            <Border Classes="rowsep" />
+
+            <!-- Шаблон: наборы выбранного режима, свои правила или импорт. -->
+            <StackPanel Spacing="8">
+              <TextBlock Text="{l:Tr Main_TemplateTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+              <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding Templates}"
+                  SelectedItem="{Binding SelectedTemplate, Mode=TwoWay}"
                   Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
                   HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-                <ComboBoxItem Content="{l:Tr Main_MethodPresetTitle}" />
-                <ComboBoxItem Content="{l:Tr Main_MethodManualTitle}" />
-                <ComboBoxItem Content="{l:Tr Main_MethodImportTitle}" />
+                <controls:AdaptiveComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RoutingTemplateItemViewModel">
+                    <TextBlock Text="{Binding Name}" />
+                  </DataTemplate>
+                </controls:AdaptiveComboBox.ItemTemplate>
               </controls:AdaptiveComboBox>
-              <!-- Что даёт выбранный способ. -->
-              <Panel Margin="0,-2,0,0">
-                <TextBlock Text="{l:Tr Main_MethodPresetHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                           IsVisible="{Binding IsImportPresets}" />
-                <TextBlock Text="{l:Tr Main_MethodManualHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                           IsVisible="{Binding IsImportManual}" />
-                <TextBlock Text="{l:Tr Main_MethodImportHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                           IsVisible="{Binding IsImportExternal}" />
-              </Panel>
+              <!-- Что даёт выбранный шаблон. -->
+              <TextBlock Text="{Binding SelectedTemplate.Hint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                         Margin="0,-2,0,0" />
             </StackPanel>
 
             <Border Classes="rowsep" />
           </StackPanel>
 
-          <!-- Готовый набор: регион, набор и реклама; «Добавить» кладёт набор в черновик. -->
+          <!-- Готовый набор: регион и реклама; «Добавить» кладёт набор в черновик. -->
           <StackPanel Spacing="14" IsVisible="{Binding ShowImportPresets}">
             <!-- Регион набора: его адреса идут напрямую, выбор стоит на своём экране. -->
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr Preset_RegionTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-              <Button Classes="pickfield" Command="{Binding OpenRegionsCommand}"
-                      Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                  <TextBlock Grid.Column="0" Text="{Binding PresetRegionsLabel}" TextTrimming="CharacterEllipsis"
-                             VerticalAlignment="Center" />
-                  <PathIcon Grid.Column="1" Data="{DynamicResource AgChevronGeometry}" Width="10" Height="10"
-                            Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                </Grid>
-              </Button>
+            <StackPanel Spacing="14" IsVisible="{Binding ShowPresetRegion}">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{l:Tr Preset_RegionTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                <Button Classes="pickfield" Command="{Binding OpenRegionsCommand}"
+                        Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Text="{Binding PresetRegionsLabel}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" />
+                    <PathIcon Grid.Column="1" Data="{DynamicResource AgChevronGeometry}" Width="10" Height="10"
+                              Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+              </StackPanel>
+
+              <Border Classes="rowsep" />
             </StackPanel>
-
-            <Border Classes="rowsep" />
-
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr Preset_SectionTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-              <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding PresetCards}"
-                  SelectedItem="{Binding SelectedPresetCard, Mode=TwoWay}"
-                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-                <controls:AdaptiveComboBox.ItemTemplate>
-                  <DataTemplate x:DataType="vm:RoutingPresetItemViewModel">
-                    <TextBlock Text="{Binding Name}" />
-                  </DataTemplate>
-                </controls:AdaptiveComboBox.ItemTemplate>
-              </controls:AdaptiveComboBox>
-              <!-- Что даёт выбранный набор. -->
-              <TextBlock Text="{Binding SelectedPresetCard.Hint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                         Margin="0,-2,0,0" />
-            </StackPanel>
-
-            <Border Classes="rowsep" />
 
             <!-- Добавка к любому набору: реклама уходит в корзину «Блок». -->
             <controls:SettingSwitchRow Heading="True" Label="{l:Tr Preset_AdsTitle}" Description="{l:Tr Preset_AdsHint}"
@@ -408,7 +425,7 @@
             <Border Classes="rowsep" />
 
             <Button Classes="accent" MinWidth="130" HorizontalAlignment="Left"
-                    Command="{Binding ApplyPresetCommand}" CommandParameter="{Binding SelectedPresetCard}">
+                    Command="{Binding ApplyPresetCommand}" CommandParameter="{Binding SelectedTemplate}">
               <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                 <TextBlock Text="+" />
                 <TextBlock Text="{l:Tr Main_AddButton}" />

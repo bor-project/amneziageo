@@ -84,14 +84,17 @@ public sealed class RoutingCache
         public int Generation;
         // Rule set the verdict was taken under.
         public int Rules;
+        // Whether the permit of the address covers datagrams.
+        public bool Datagrams;
     }
 
     // Swapped as one immutable set, so a live rule edit never leaves a half-applied mix. The generation tells an
     // entry decided under an older set from one already decided under this one.
     private sealed record RuleSet(GeoIpRanges Proxy, GeoIpRanges Direct, GeoIpRanges Block, int Generation);
 
-    // A dropped destination and the image it belonged to, as reported by the firewall.
-    private readonly record struct Reported(uint Address, string? App);
+    // A dropped destination, the image it belonged to and whether the packet was a datagram, as reported by the
+    // firewall.
+    private readonly record struct Reported(uint Address, string? App, bool Datagram);
 
     // Destinations reported from a caller that must not block - the firewall's own event thread. Bounded and
     // drop-on-full: a flood of drops to one address repeats, so losing a report costs a retransmit, not a route.
@@ -117,6 +120,8 @@ public sealed class RoutingCache
     private Func<string, bool>? _appMatch;
     // Tells whether an adopted address is still held by a tracked domain.
     private Func<IPAddress, bool>? _adopted;
+    // Takes the destination of a dropped datagram into the tunnel where every datagram rides it.
+    private Func<IPAddress, bool>? _datagrams;
     private RuleSet _rules;
     private int _size;
     private int _applied;
@@ -427,10 +432,7 @@ public sealed class RoutingCache
                     continue;
                 }
 
-                var filtered = entry.Plan == RoutePlan.Drop
-                    ? _applier.TryDrop(pair.Key, out var outId, out var inId, out var installed)
-                    : _applier.TryPermit(pair.Key, out outId, out inId, out installed);
-                if (filtered)
+                if (Filter(entry, out var outId, out var inId, out var installed))
                 {
                     entry.FilterOut = outId;
                     entry.FilterIn = inId;
@@ -450,12 +452,21 @@ public sealed class RoutingCache
     /// Queues a destination reported from a thread that must not do work: installing a route or a filter from the
     /// firewall's event callback would re-enter the engine that raised it.
     /// </summary>
-    public void Report(IPAddress address, string? app)
+    public void Report(IPAddress address, string? app, bool datagram = false)
     {
         if (GeoIpRanges.TryToNumeric(address, out var value))
         {
-            _reported.Writer.TryWrite(new Reported(value, app));
+            _reported.Writer.TryWrite(new Reported(value, app, datagram));
         }
+    }
+
+    /// <summary>
+    /// Attaches the rule that takes the destination of a dropped datagram no list names into the tunnel; while
+    /// it is attached, the permit of such an address leaves datagrams out.
+    /// </summary>
+    public void SetDatagramRule(Func<IPAddress, bool>? takes)
+    {
+        Volatile.Write(ref _datagrams, takes);
     }
 
     /// <summary>
@@ -486,6 +497,11 @@ public sealed class RoutingCache
             {
                 try
                 {
+                    if (reported.Datagram && SettledAsDatagram(reported.Address))
+                    {
+                        continue;
+                    }
+
                     Note(reported.Address, Matches(reported.App));
                 }
                 catch (Exception ex)
@@ -829,6 +845,73 @@ public sealed class RoutingCache
             Volatile.Read(ref _installed), Volatile.Read(ref _reclaimed));
     }
 
+    // Hands the destination of a dropped datagram to the rule and permits it whole where the rule leaves it
+    // alone; false leaves it to the lists.
+    private bool SettledAsDatagram(uint address)
+    {
+        if (Volatile.Read(ref _datagrams) is not { } rule
+            || Volatile.Read(ref _pinned).Contains(address)
+            || Classify(address) != RouteVerdict.None)
+        {
+            return false;
+        }
+
+        if (rule(ToAddress(address)))
+        {
+            return true;
+        }
+
+        var now = Environment.TickCount64;
+        if (!_entries.TryGetValue(address, out var entry))
+        {
+            Admit(address, now, datagrams: true);
+            return true;
+        }
+
+        var filters = new List<(ulong Out, ulong In)>();
+        var generation = _applier.Generation;
+        lock (entry)
+        {
+            if (!entry.Datagrams && entry.Plan == RoutePlan.Permit)
+            {
+                entry.Datagrams = true;
+                if (entry.Generation == generation && (entry.FilterOut != 0 || entry.FilterIn != 0))
+                {
+                    filters.Add((entry.FilterOut, entry.FilterIn));
+                }
+
+                entry.FilterOut = 0;
+                entry.FilterIn = 0;
+                entry.Generation = 0;
+            }
+        }
+
+        _applier.DeleteFilters(filters, generation);
+        if (!Installed(entry))
+        {
+            Install(entry, now);
+        }
+
+        return true;
+    }
+
+    // Installs the filter a plan asks for: a drop, a whole permit, or one that leaves datagrams out.
+    private bool Filter(Entry entry, out ulong outId, out ulong inId, out int generation)
+    {
+        if (entry.Plan == RoutePlan.Drop)
+        {
+            return _applier.TryDrop(entry.Numeric, out outId, out inId, out generation);
+        }
+
+        var streams = entry.Plan == RoutePlan.Permit
+            && entry.Verdict == RouteVerdict.None
+            && !entry.Datagrams
+            && Volatile.Read(ref _datagrams) is not null;
+        return streams
+            ? _applier.TryPermitStreams(entry.Numeric, out outId, out inId, out generation)
+            : _applier.TryPermit(entry.Numeric, out outId, out inId, out generation);
+    }
+
     // Whether a dropped image is covered by the app rules.
     private bool Matches(string? app)
     {
@@ -973,7 +1056,7 @@ public sealed class RoutingCache
     }
 
     // Creates the entry for an address seen for the first time and applies what its verdict asks for.
-    private void Admit(uint address, long now, bool app = false, RouteVerdict? forced = null)
+    private void Admit(uint address, long now, bool app = false, RouteVerdict? forced = null, bool datagrams = false)
     {
         var rules = Volatile.Read(ref _rules);
         var verdict = forced ?? Evaluate(rules, address);
@@ -984,6 +1067,7 @@ public sealed class RoutingCache
             Verdict = verdict,
             Plan = Decide(rules, verdict, address, app),
             ByApp = app,
+            Datagrams = datagrams,
             ByName = forced is not null,
             Rules = rules.Generation,
             LastTouch = now,
@@ -1157,9 +1241,7 @@ public sealed class RoutingCache
             // permit hands the packets to a physical path the kill-switch drops. A blocked address takes the same
             // path with the opposite action.
             var generation = _applier.Generation;
-            var filtered = entry.Plan == RoutePlan.Drop
-                ? _applier.TryDrop(entry.Numeric, out var outId, out var inId, out var installed)
-                : _applier.TryPermit(entry.Numeric, out outId, out inId, out installed);
+            var filtered = Filter(entry, out var outId, out var inId, out var installed);
             if (entry.Generation != generation && filtered)
             {
                 entry.FilterOut = outId;

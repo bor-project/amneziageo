@@ -14,12 +14,17 @@
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
-          <!-- Имя списка и его применение: тумблер стоит на месте кнопки подключения карточки сервера. -->
+          <!-- Имя списка с его режимом и применение: тумблер стоит на месте кнопки подключения карточки сервера,
+               на строке имени. -->
           <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding ModeText}" FontSize="12.5" Classes="muted"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
 
-            <Button x:Name="ActivePart" Grid.Column="1" Classes="cardpick" VerticalAlignment="Center"
+            <Button x:Name="ActivePart" Grid.Column="1" Classes="cardpick" VerticalAlignment="Top" Margin="0,1,0,0"
                     ClickMode="Press" ToolTip.Tip="{l:Tr Main_CardActiveFlag}"
                     Command="{Binding $parent[controls:RoutingCard].SelectCommand}"
                     CommandParameter="{Binding}">
@@ -34,9 +39,8 @@
           </Grid>
 
           <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
-          <WrapPanel Grid.Row="1" Classes="cardinfo" ItemSpacing="10" LineSpacing="4" Margin="0,8,0,0"
-                     VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="5">
+          <WrapPanel Grid.Row="1" Classes="cardinfo" ItemSpacing="10" LineSpacing="4" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowProxyRules}">
               <Ellipse Width="6" Height="6" VerticalAlignment="Center"
                        Fill="{DynamicResource AgAccentBrush}" />
               <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"

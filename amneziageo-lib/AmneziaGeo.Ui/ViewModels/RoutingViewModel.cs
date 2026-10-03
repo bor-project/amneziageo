@@ -91,7 +91,6 @@ internal partial class RoutingViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
     [NotifyPropertyChangedFor(nameof(UseOpenList))]
     [NotifyPropertyChangedFor(nameof(DeleteListPrompt))]
-    [NotifyPropertyChangedFor(nameof(OpenListName))]
     private RoutingListSummaryViewModel? _editRoutingList;
 
     // The routing list every config uses, mirrored from the snapshot; null leaves each config on its own settings.
@@ -270,11 +269,6 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsNarrowPane;
 
     /// <summary>
-    /// Имя открытого списка под заголовком раздела.
-    /// </summary>
-    public string OpenListName => IsCreatingSectionRouting ? string.Empty : EditRoutingList?.Name ?? string.Empty;
-
-    /// <summary>
     /// Delete-card prompt naming the open list.
     /// </summary>
     public string DeleteListPrompt => Loc.Instance.Get("Main_DeleteListPrompt", EditRoutingList?.Name ?? string.Empty);
@@ -327,48 +321,36 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool IsImportDraft => ImportMethod == RoutingImportMethod.Draft;
 
     /// <summary>
-    /// Whether the add-method list stands over the form of the picked method.
+    /// Whether the mode and template lists stand over the form of the picked template.
     /// </summary>
     public bool ShowImportMethods => IsSectionImport && !ApplyingPreset
         && (IsImportPresets || IsImportManual || IsImportExternal);
 
     /// <summary>
-    /// Whether the new-list frame is shown: the method list with its form, or the draft editor.
+    /// Whether the new-list frame is shown: the mode and template lists with their form, or the draft editor.
     /// </summary>
     public bool ShowImportFrame => ShowImportMethods || ShowImportEditor;
-
-    /// <summary>
-    /// Row of the add method in its list: 0 a preset, 1 by hand, 2 an import.
-    /// </summary>
-    public int ImportMethodIndex
-    {
-        get => ImportMethod switch
-        {
-            RoutingImportMethod.Manual => 1,
-            RoutingImportMethod.External => 2,
-            _ => 0,
-        };
-        set
-        {
-            if (value == 0)
-            {
-                BeginPresetImport();
-            }
-            else if (value == 1)
-            {
-                BeginManualImport();
-            }
-            else if (value == 2)
-            {
-                BeginExternalImport();
-            }
-        }
-    }
 
     /// <summary>
     /// Whether the ready-made preset form is shown.
     /// </summary>
     public bool ShowImportPresets => IsSectionImport && IsImportPresets && !ApplyingPreset;
+
+    /// <summary>
+    /// Стоит ли в форме набора поле региона.
+    /// </summary>
+    public bool ShowPresetRegion => SelectedTemplate?.Preset is { NeedsCountry: true };
+
+    /// <summary>
+    /// Стоит ли у заголовка раздела бейдж с режимом списка.
+    /// </summary>
+    public bool ShowListMode => RoutingSettings is not null && !SectionLoading
+        && (IsSectionImport ? IsImportDraft : EditRoutingList is not null);
+
+    /// <summary>
+    /// Стоит ли у списка переключатель всего UDP.
+    /// </summary>
+    public bool ShowAllUdp => RoutingSettings is { UseGlobalProxy: false };
 
     /// <summary>
     /// Показан ли экран выбора регионов.
@@ -424,15 +406,19 @@ internal partial class RoutingViewModel : ViewModelBase
     private bool _isSaving;
 
     /// <summary>
-    /// Готовые наборы на экране выбора.
+    /// Шаблоны режима нового списка: его наборы, свои правила и импорт.
     /// </summary>
-    public ObservableCollection<RoutingPresetItemViewModel> PresetCards { get; } = [];
+    public ObservableCollection<RoutingTemplateItemViewModel> Templates { get; } = [];
 
     /// <summary>
-    /// Набор, выбранный в списке.
+    /// Шаблон, выбранный в списке.
     /// </summary>
     [ObservableProperty]
-    private RoutingPresetItemViewModel? _selectedPresetCard;
+    [NotifyPropertyChangedFor(nameof(ShowPresetRegion))]
+    private RoutingTemplateItemViewModel? _selectedTemplate;
+
+    // Идёт ли пересборка списка шаблонов.
+    private bool _fillingTemplates;
 
     /// <summary>
     /// Добавлять ли к набору блокировку рекламы.
@@ -519,12 +505,11 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportDraft));
         OnPropertyChanged(nameof(ShowImportMethods));
         OnPropertyChanged(nameof(ShowImportFrame));
-        OnPropertyChanged(nameof(ImportMethodIndex));
+        OnPropertyChanged(nameof(ShowListMode));
         OnPropertyChanged(nameof(ShowImportPresets));
         OnPropertyChanged(nameof(ShowImportRegions));
         OnPropertyChanged(nameof(ShowPresetLoader));
         OnPropertyChanged(nameof(CanExportOpenList));
-        OnPropertyChanged(nameof(OpenListName));
         NotifyCatalogueChanged();
         RefreshEditBar();
     }
@@ -702,7 +687,7 @@ internal partial class RoutingViewModel : ViewModelBase
         }
     }
 
-    // Плашка режима на карточке списка: тот же блок, что и в настройках списка.
+    // Плашка UDP на карточке списка: тот же блок, что и в настройках списка.
     private async Task<bool> SaveRoutingSettingsAsync(RoutingListSummaryViewModel item)
     {
         try
@@ -1070,6 +1055,8 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         SyncTrafficFlags();
+        OnPropertyChanged(nameof(ShowListMode));
+        OnPropertyChanged(nameof(ShowAllUdp));
         RefreshEditBar();
     }
 
@@ -1078,6 +1065,19 @@ internal partial class RoutingViewModel : ViewModelBase
     {
         RoutingDeleteStatus = string.Empty;
         SyncTrafficFlags();
+        if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.UseGlobalProxy))
+        {
+            OnPropertyChanged(nameof(ShowAllUdp));
+            if (IsCreatingSectionRouting)
+            {
+                RebuildTemplates();
+                if (RoutingEditor is { GlobalProxyActive: false } draft)
+                {
+                    draft.SelectedRole = "proxy";
+                }
+            }
+        }
+
         RefreshEditBar();
     }
 
@@ -1247,7 +1247,6 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         MarkSelectedList();
-        OnPropertyChanged(nameof(OpenListName));
     }
 
     // ---- Import create-form: "+ Импорт" opens a new-list draft with a method picker (blank / file / paste / QR). ----
@@ -1273,6 +1272,8 @@ internal partial class RoutingViewModel : ViewModelBase
         // Draft traffic settings (id 0, no load - a new list has none server-side). Committed once the list is
         // created and retargeted at the real id (#5).
         RoutingSettings = new RoutingSettingsViewModel(_connection, 0);
+        SelectedTemplate = null;
+        RebuildTemplates();
 
         ImportMethod = RoutingImportMethod.Picker;
         SectionScan = null;
@@ -1305,33 +1306,47 @@ internal partial class RoutingViewModel : ViewModelBase
         _host.ShowGeoSources();
     }
 
-    // Способ «Вручную».
+    // Шаблон «Вручную».
     private void BeginManualImport()
     {
         EnsureSectionRouting();
-        ImportMethod = RoutingImportMethod.Manual;
+        PickTemplate(RoutingImportMethod.Manual);
     }
 
-    // Кнопка «Добавить»: способ выбирается списком, первым стоит готовый набор.
+    // Кнопка «Добавить»: режим и шаблон выбираются списками, первым стоит готовый набор режима.
     [RelayCommand]
     private void BeginAddList()
     {
         BeginPresetImport();
     }
 
-    // Способ «Готовый набор».
+    // Шаблон готового набора.
     private void BeginPresetImport()
     {
         EnsureSectionRouting();
-        RebuildPresetCards();
-        ImportMethod = RoutingImportMethod.Presets;
+        PickTemplate(RoutingImportMethod.Presets);
     }
 
-    // Способ «Импорт»: файл, буфер обмена или живой сканер QR.
-    private void BeginExternalImport()
+    // Ставит выбор на первую строку способа и открывает его форму.
+    private void PickTemplate(RoutingImportMethod method)
     {
-        EnsureSectionRouting();
-        ImportMethod = RoutingImportMethod.External;
+        if (SelectedTemplate?.Method != method)
+        {
+            SelectedTemplate = Templates.FirstOrDefault(row => row.Method == method) ?? SelectedTemplate;
+        }
+
+        ImportMethod = method;
+    }
+
+    // Выбранная строка открывает форму своего способа.
+    partial void OnSelectedTemplateChanged(RoutingTemplateItemViewModel? value)
+    {
+        if (value is null || _fillingTemplates || !IsCreatingSectionRouting)
+        {
+            return;
+        }
+
+        ImportMethod = value.Method;
     }
 
     /// <summary>
@@ -1372,7 +1387,7 @@ internal partial class RoutingViewModel : ViewModelBase
             }
 
             BeginPresetImport();
-            if (PresetCards.FirstOrDefault() is { } card)
+            if (Templates.FirstOrDefault(row => row.Preset is not null) is { } card)
             {
                 await ApplyPresetAsync(card, true);
             }
@@ -1383,16 +1398,28 @@ internal partial class RoutingViewModel : ViewModelBase
         }
     }
 
-    private void RebuildPresetCards()
+    // Собирает шаблоны под режим черновика: наборы режима, свои правила, импорт; выбор остаётся на той же строке.
+    private void RebuildTemplates()
     {
-        var picked = SelectedPresetCard?.Preset.Key;
-        PresetCards.Clear();
-        foreach (var preset in RoutingPresets.All)
+        var full = RoutingSettings?.UseGlobalProxy ?? false;
+        var picked = SelectedTemplate;
+        _fillingTemplates = true;
+        try
         {
-            PresetCards.Add(new RoutingPresetItemViewModel(preset));
-        }
+            Templates.Clear();
+            foreach (var preset in RoutingPresets.Of(full))
+            {
+                Templates.Add(new RoutingTemplateItemViewModel(preset));
+            }
 
-        SelectedPresetCard = PresetCards.FirstOrDefault(card => card.Preset.Key == picked) ?? PresetCards.FirstOrDefault();
+            Templates.Add(new RoutingTemplateItemViewModel(RoutingImportMethod.Manual));
+            Templates.Add(new RoutingTemplateItemViewModel(RoutingImportMethod.External));
+            SelectedTemplate = Templates.FirstOrDefault(row => row.Matches(picked)) ?? Templates[0];
+        }
+        finally
+        {
+            _fillingTemplates = false;
+        }
     }
 
     // Экран выбора региона: список geoip из гео-баз с поиском.
@@ -1491,20 +1518,19 @@ internal partial class RoutingViewModel : ViewModelBase
     /// Заполняет черновик набором и открывает редактор.
     /// </summary>
     [RelayCommand]
-    private async Task ApplyPreset(RoutingPresetItemViewModel? item)
+    private async Task ApplyPreset(RoutingTemplateItemViewModel? item)
     {
         await ApplyPresetAsync(item, false);
     }
 
     // Набор ложится в черновик; посев первого запуска сохраняет его сам.
-    private async Task ApplyPresetAsync(RoutingPresetItemViewModel? item, bool commit)
+    private async Task ApplyPresetAsync(RoutingTemplateItemViewModel? item, bool commit)
     {
-        if (item is null || RoutingEditor is not { } editor)
+        if (item?.Preset is not { } preset || RoutingEditor is not { } editor)
         {
             return;
         }
 
-        var preset = item.Preset;
         if (preset.NeedsCountry && _presetRegions.Count == 0)
         {
             OpenRegions();

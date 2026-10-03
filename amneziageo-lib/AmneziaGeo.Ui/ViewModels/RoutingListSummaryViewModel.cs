@@ -15,7 +15,6 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 {
     private readonly ObservableCollection<CardTag> _tags = [];
 
-    private AsyncRelayCommand? _toggleGlobal;
     private AsyncRelayCommand? _toggleUdp;
 
     [ObservableProperty]
@@ -35,6 +34,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProxyRulesText))]
+    [NotifyPropertyChangedFor(nameof(ShowProxyRules))]
     private int _proxyRuleCount;
 
     [ObservableProperty]
@@ -47,6 +47,8 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     // Whether the list carries everything instead of its own rules.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ModeText))]
+    [NotifyPropertyChangedFor(nameof(ShowProxyRules))]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useGlobalProxy;
 
@@ -69,6 +71,16 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     private bool _isPicked;
 
     /// <summary>
+    /// Режим списка строкой под его именем.
+    /// </summary>
+    public string ModeText => Loc.Instance.Get(UseGlobalProxy ? "Main_VpnModeFull" : "Main_VpnModeSelected");
+
+    /// <summary>
+    /// Стоит ли в строке состава счётчик правил туннеля.
+    /// </summary>
+    public bool ShowProxyRules => !UseGlobalProxy || ProxyRuleCount > 0;
+
+    /// <summary>
     /// Сколько правил уводит в туннель.
     /// </summary>
     public string ProxyRulesText => Loc.Instance.Get("Main_CardRulesProxy", ProxyRuleCount);
@@ -89,29 +101,21 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public Func<RoutingListSummaryViewModel, Task<bool>>? SaveSettings { get; set; }
 
     /// <summary>
-    /// Переключает полный туннель с плашки карточки.
-    /// </summary>
-    public IAsyncRelayCommand ToggleGlobalCommand =>
-        _toggleGlobal ??= new AsyncRelayCommand(() => ToggleAsync(() => UseGlobalProxy = !UseGlobalProxy));
-
-    /// <summary>
     /// Переключает весь UDP с плашки карточки.
     /// </summary>
     public IAsyncRelayCommand ToggleUdpCommand =>
         _toggleUdp ??= new AsyncRelayCommand(() => ToggleAsync(() => AllUdp = !AllUdp));
 
     /// <summary>
-    /// Mode labels on the card: everything through the tunnel and all UDP.
+    /// Плашки карточки: весь UDP у списка, который несёт только выбранное.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
         get
         {
-            CardTag.Sync(_tags,
-            [
-                new(Loc.Instance.Get("Main_CardTagGlobal"), UseGlobalProxy, ToggleGlobalCommand),
-                new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand),
-            ]);
+            CardTag.Sync(_tags, UseGlobalProxy
+                ? []
+                : [new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand)]);
             return _tags;
         }
     }
@@ -153,6 +157,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(ModeText));
         OnPropertyChanged(nameof(ProxyRulesText));
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));

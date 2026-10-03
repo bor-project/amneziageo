@@ -38,8 +38,7 @@
     </DataTemplate>
   </UserControl.Resources>
 
-  <!-- Общий редактор списка: имя, режим туннеля, корзины правил и трафик. Стоит и в разделе настроек, и в
-       черновике импорта. -->
+  <!-- Общий редактор списка: имя, корзины правил и трафик. Стоит и в разделе настроек, и в черновике импорта. -->
   <StackPanel Spacing="14">
 
     <!-- Имя списка. -->
@@ -62,29 +61,6 @@
     </Border>
 
     <Border Classes="rowsep" />
-
-    <!-- Направление туннеля: весь трафик или только отмеченное. -->
-    <Border IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
-      <StackPanel Spacing="8" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
-        <TextBlock Text="{l:Tr Main_VpnModeTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-        <!-- Телефон открывает список шторкой снизу, десктоп выпадающим списком. -->
-        <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding VpnModeIndex, Mode=TwoWay}"
-            Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-            HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-          <ComboBoxItem Content="{l:Tr Main_VpnModeSelected}" />
-          <ComboBoxItem Content="{l:Tr Main_VpnModeFull}" />
-        </controls:AdaptiveComboBox>
-        <!-- Что делает выбранный режим. -->
-        <Panel Margin="0,-2,0,0">
-          <TextBlock Text="{l:Tr Main_VpnModeHintSelected}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                     IsVisible="{Binding IsSelectedOnly}" />
-          <TextBlock Text="{l:Tr Main_VpnModeHintFull}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                     IsVisible="{Binding UseGlobalProxy}" />
-        </Panel>
-      </StackPanel>
-    </Border>
-
-    <Border Classes="rowsep" IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
     <!-- Правила: список корзин, затем сама корзина. -->
     <Border>
@@ -120,7 +96,14 @@
           <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding RoleIndex, Mode=TwoWay}"
               Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
               HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-            <ComboBoxItem Content="{Binding ProxyTabText}" IsEnabled="{Binding CanUseProxyBucket}" />
+            <!-- Строки стоят в простой панели: она оставляет скрытую строку скрытой. -->
+            <controls:AdaptiveComboBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel />
+              </ItemsPanelTemplate>
+            </controls:AdaptiveComboBox.ItemsPanel>
+            <ComboBoxItem Content="{Binding ProxyTabText}" IsVisible="{Binding CanUseProxyBucket}"
+                          IsEnabled="{Binding CanUseProxyBucket}" />
             <ComboBoxItem Content="{Binding DirectTabText}" />
             <ComboBoxItem Content="{Binding BlockTabText}" />
           </controls:AdaptiveComboBox>

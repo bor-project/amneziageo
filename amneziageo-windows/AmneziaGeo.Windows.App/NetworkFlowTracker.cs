@@ -49,6 +49,10 @@ internal sealed class NetworkFlowTracker : IDisposable
     private readonly ProcessImages? _images;
     // Whether another program keeps an address on a host route of its own, the way a VPN pins its server.
     private readonly Func<IPAddress, bool>? _heldElsewhere;
+    // Resolvers this process asks itself.
+    private readonly HashSet<IPAddress> _ownResolvers;
+    // Destinations a dropped datagram sent into the tunnel.
+    private readonly ConcurrentDictionary<IPAddress, bool> _taken = new();
     private readonly ILogger _logger;
     private TraceEventSession? _session;
     // Seen destinations; ETW handler is single-threaded, no lock needed.
@@ -79,8 +83,9 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null, IEnumerable<IPAddress>? ownResolvers = null)
     {
+        _ownResolvers = [.. ownResolvers ?? []];
         _matcher = matcher;
         _tracker = tracker;
         _allUdp = allUdp;
@@ -101,6 +106,82 @@ internal sealed class NetworkFlowTracker : IDisposable
     internal bool LeftToItsOwnRoute(IPAddress remote)
     {
         return _allUdp && _heldElsewhere is not null && _heldElsewhere(remote);
+    }
+
+    /// <summary>
+    /// Routes the destination of a datagram the leak protection dropped into the tunnel; false leaves the address
+    /// to the routing cache.
+    /// </summary>
+    internal bool TakeDatagram(IPAddress remote)
+    {
+        if (!TakesDatagram(_allUdp, remote, _excludeEndpoint, _ownResolvers))
+        {
+            return false;
+        }
+
+        if (Taken(remote))
+        {
+            return true;
+        }
+
+        if (LeftToItsOwnRoute(remote))
+        {
+            _logger.LogInformation("{Remote}: a datagram to it was held back, and this address is held on a route of its own outside the tunnel, a VPN server or a site opened again by name, so all UDP leaves it there", remote);
+            if (RouteLog.Enabled)
+            {
+                RouteLog.Note($"udp blocked -> {remote} left to its own route");
+            }
+
+            return false;
+        }
+
+        if (!RouteUdp(remote))
+        {
+            return false;
+        }
+
+        MarkTaken(remote);
+        _logger.LogTrace("{Remote}: a datagram to it was held back until its route existed, routed into the tunnel", remote);
+        if (RouteLog.Enabled)
+        {
+            RouteLog.Note($"udp blocked -> {remote} routed into the tunnel");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a dropped datagram already sent the destination into the tunnel.
+    /// </summary>
+    internal bool Taken(IPAddress remote)
+    {
+        return _taken.ContainsKey(remote);
+    }
+
+    /// <summary>
+    /// Records a destination a dropped datagram sent into the tunnel.
+    /// </summary>
+    internal void MarkTaken(IPAddress remote)
+    {
+        if (_taken.Count >= 65536)
+        {
+            _taken.Clear();
+        }
+
+        _taken[remote] = true;
+    }
+
+    /// <summary>
+    /// Whether the all-UDP rule takes a dropped datagram's destination: a public address that is neither the
+    /// server nor a resolver of this process.
+    /// </summary>
+    internal static bool TakesDatagram(bool allUdp, IPAddress remote, IPAddress? endpoint, IReadOnlySet<IPAddress> ownResolvers)
+    {
+        return allUdp
+            && remote.AddressFamily == AddressFamily.InterNetwork
+            && !remote.Equals(endpoint)
+            && IsTunnelableRemote(remote)
+            && !ownResolvers.Contains(remote);
     }
 
     // Writes down a destination the all-UDP rule leaves to another program's route.
@@ -210,6 +291,10 @@ internal sealed class NetworkFlowTracker : IDisposable
         foreach (var address in addresses)
         {
             _forgetFlow.Enqueue(address);
+            if (IPAddress.TryParse(address, out var released))
+            {
+                _taken.TryRemove(released, out _);
+            }
         }
 
         if (_matcher is null)

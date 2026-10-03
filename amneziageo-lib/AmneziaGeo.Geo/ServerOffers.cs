@@ -13,7 +13,12 @@ public sealed class ServerOffers
     /// </summary>
     public static readonly TimeSpan PassMargin = TimeSpan.FromMinutes(1);
 
+    // Two configs of one server answer at once: one of them adds what it hands out, the other finds it held.
+    private static readonly SemaphoreSlim _listing = new(1, 1);
+
     private readonly IStateStore _store;
+    private readonly GeoConfigurator? _geo;
+    private readonly Action<IReadOnlyList<GeoSource>>? _fetch;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
@@ -27,12 +32,16 @@ public sealed class ServerOffers
         IStateStore store,
         Action<string, Exception?>? note = null,
         Func<ServiceTarget, CancellationToken, Task<HelloReply>>? ask = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        GeoConfigurator? geo = null,
+        Action<IReadOnlyList<GeoSource>>? fetch = null)
     {
         _store = store;
         _note = note;
         _ask = ask ?? ServerHello.AskAsync;
         _time = time ?? TimeProvider.System;
+        _geo = geo;
+        _fetch = fetch;
     }
 
     /// <summary>
@@ -183,7 +192,51 @@ public sealed class ServerOffers
                 : $"{config}: no server of ours answers at {point}", null);
         }
 
-        return (offer, await BindAsync(config, text, offer, ct).ConfigureAwait(false));
+        var bound = await BindAsync(config, text, offer, ct).ConfigureAwait(false);
+        var listed = await ListAsync(config, offer, ct).ConfigureAwait(false);
+
+        return (offer, bound || listed);
+    }
+
+    // Adds the geo sources and the routing lists the server hands out that the store holds none of, and has the files
+    // of the new sources fetched. Without the geo of the device it leaves both as they are.
+    private async Task<bool> ListAsync(string config, ServerOffer offer, CancellationToken ct)
+    {
+        var sources = offer.Sources();
+        var presets = offer.Presets();
+        if (_geo is null || (sources.Count == 0 && presets.Count == 0))
+        {
+            return false;
+        }
+
+        await _listing.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var added = await OfferedLists.AddSourcesAsync(_store, sources, ct).ConfigureAwait(false);
+            if (added.Count > 0)
+            {
+                _note?.Invoke($"{config}: the server added the geo sources {string.Join(", ", added.Select(source => source.Name))}", null);
+                _fetch?.Invoke(added);
+            }
+
+            var lists = await OfferedLists.AddPresetsAsync(_store, _geo, presets, ct).ConfigureAwait(false);
+            if (lists > 0)
+            {
+                _note?.Invoke($"{config}: the server added {lists} routing list(s)", null);
+            }
+
+            return added.Count > 0 || lists > 0;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _note?.Invoke($"{config}: the geo sources and routing lists the server hands out were not kept", ex);
+
+            return false;
+        }
+        finally
+        {
+            _listing.Release();
+        }
     }
 
     // Binds the config to the subscription its server names.

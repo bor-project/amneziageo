@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -32,7 +33,7 @@ internal static class RoutingPresets
     /// <summary>
     /// Заготовленные списки недоступных сервисов.
     /// </summary>
-    public static readonly string[] ClosedRules = ["geosite:ru-blocked", "geoip:ru-blocked"];
+    public static readonly string[] ClosedRules = RoutingDefaults.Closed;
 
     /// <summary>
     /// Наборы в порядке показа: сверху точечный, снизу самый грубый.
@@ -41,17 +42,7 @@ internal static class RoutingPresets
     [
         new(
             "Closed",
-            [
-                .. ClosedRules,
-                "geosite:youtube",
-                "geosite:meta",
-                "geosite:whatsapp",
-                "geosite:twitter",
-                "geosite:discord",
-                "geosite:openai",
-                "geosite:telegram",
-                "geoip:telegram",
-            ],
+            RoutingDefaults.Unavailable,
             [],
             false,
             true,

@@ -24,9 +24,6 @@ internal partial class RoutingViewModel : ViewModelBase
     // Сколько найденных регионов показывает список.
     private const int RegionLimit = 60;
 
-    // Сколько посев набора ждёт определения региона.
-    private static readonly TimeSpan RegionWait = TimeSpan.FromSeconds(9);
-
     private long? _pendingEditRoutingListId;
 
     // Регионы, по которым разворачиваются правила наборов.
@@ -34,8 +31,6 @@ internal partial class RoutingViewModel : ViewModelBase
 
     // Коды geoip из гео-баз, прочитанные один раз на экран выбора.
     private readonly List<string> _geoRegions = [];
-
-    private bool _presetSeeded;
 
     // Ставит сохранённый черновик набора действующим списком.
     private bool _assignAfterSave;
@@ -588,7 +583,6 @@ internal partial class RoutingViewModel : ViewModelBase
             SyncRoutingLists(entries);
             HasRoutingLists = RoutingLists.Count > 0;
             MarkCatalogueKnown();
-            SeedDefaultPreset();
         }
 
         SelectedRoutingListId = snapshot.SelectedRoutingList;
@@ -1355,47 +1349,6 @@ internal partial class RoutingViewModel : ViewModelBase
     public void EnterPresets()
     {
         BeginPresetImport();
-    }
-
-    // Первый запуск без списков: ставит и применяет верхний набор.
-    private void SeedDefaultPreset()
-    {
-        if (_presetSeeded || _prefs.PresetSeeded || HasRoutingLists || IsCreatingSectionRouting)
-        {
-            return;
-        }
-
-        _presetSeeded = true;
-        _prefs.PresetSeeded = true;
-        _prefs.Save();
-        _ = SeedDefaultPresetAsync();
-    }
-
-    private async Task SeedDefaultPresetAsync()
-    {
-        try
-        {
-            if (_regionProbe is { } probe)
-            {
-                await Task.WhenAny(probe, Task.Delay(RegionWait));
-            }
-
-            // Список, начатый или пришедший за время ожидания, посев не трогает.
-            if (HasRoutingLists || IsCreatingSectionRouting)
-            {
-                return;
-            }
-
-            BeginPresetImport();
-            if (Templates.FirstOrDefault(row => row.Preset is not null) is { } card)
-            {
-                await ApplyPresetAsync(card, true);
-            }
-        }
-        catch (Exception)
-        {
-            CancelNewList();
-        }
     }
 
     // Собирает шаблоны под режим черновика: наборы режима, свои правила, импорт; выбор остаётся на той же строке.

@@ -72,11 +72,6 @@ internal sealed class UiPreferences
     public bool AlwaysOnMode { get; set; }
 
     /// <summary>
-    /// Стоял ли уже готовый набор при первом запуске.
-    /// </summary>
-    public bool PresetSeeded { get; set; }
-
-    /// <summary>
     /// Регионы наборов, коды через запятую.
     /// </summary>
     public string PresetRegions { get; set; } = string.Empty;
@@ -171,7 +166,6 @@ internal sealed class UiPreferences
             ["last-config"] = LastConfig,
             ["last-routing-list"] = LastRoutingList.ToString(CultureInfo.InvariantCulture),
             ["always-on-mode"] = AlwaysOnMode ? "1" : "0",
-            ["preset-seeded"] = PresetSeeded ? "1" : "0",
             ["preset-regions"] = PresetRegions,
             ["region-auto"] = RegionAuto,
             ["shown-update"] = ShownUpdateVersion,
@@ -211,11 +205,6 @@ internal sealed class UiPreferences
         if (values.TryGetValue("maximized", out var maximized))
         {
             prefs.Maximized = maximized == "1";
-        }
-
-        if (values.TryGetValue("preset-seeded", out var presetSeeded))
-        {
-            prefs.PresetSeeded = presetSeeded == "1";
         }
 
         if (values.TryGetValue("preset-regions", out var presetRegions))

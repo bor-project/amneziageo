@@ -8,6 +8,8 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class BrokerScope(string userRoot, IStateStore store, ConfigRepository configRepo, GeoConfigurator geo, ServerOffers offers)
 {
+    private int _used;
+
     /// <summary>
     /// What the servers of the user's configurations offer.
     /// </summary>
@@ -37,4 +39,9 @@ internal sealed class BrokerScope(string userRoot, IStateStore store, ConfigRepo
     /// A geo configurator over the user's store.
     /// </summary>
     public GeoConfigurator Geo => geo;
+
+    /// <summary>
+    /// Tells the first caller only that the scope is new to this run, so what a fresh library is given goes in once.
+    /// </summary>
+    public bool FirstUse() => Interlocked.Exchange(ref _used, 1) == 0;
 }

@@ -139,7 +139,7 @@ internal sealed class LinuxAgent : IDisposable
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
         _hotspot = new LinuxHotspot(log, interfaceName);
-        _offers = new ServerOffers(_store, OfferNote);
+        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered);
     }
 
     /// <summary>
@@ -155,6 +155,10 @@ internal sealed class LinuxAgent : IDisposable
         await _store.InitializeAsync(ct).ConfigureAwait(false);
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, ct).ConfigureAwait(false);
         await _geo.RematerializeIfStaleAsync(ct).ConfigureAwait(false);
+        if (await RoutingSeed.SeedAsync(_store, _geo, RoutingDefaults.UnavailableName(SystemLanguage()), ct).ConfigureAwait(false))
+        {
+            _log.Info("agent", "a fresh install routes the unavailable sites through the tunnel; the list is the owner's to change");
+        }
 
         var settings = await _store.GetSettingsAsync(ct).ConfigureAwait(false);
         _selectedTarget = settings.TryGetValue(StateKeys.SelectedTarget, out var target) && target.Length > 0 ? target : null;
@@ -2701,8 +2705,61 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    // A server that offers the tunnel something else now shows it in the next snapshot.
-    private Task OfferChangedAsync(string config) => PushAsync(CancellationToken.None);
+    // A server that offers the tunnel something else now shows it in the next snapshot. An offer that changed may
+    // change the routing too, by lists the server handed out or by a ban; the tunnel takes it once the command that
+    // asked is done.
+    private Task OfferChangedAsync(string config)
+    {
+        _ = Task.Run(ReapplyRoutingAsync);
+
+        return PushAsync(CancellationToken.None);
+    }
+
+    private async Task ReapplyRoutingAsync()
+    {
+        try
+        {
+            await GatedAsync(() => ApplyRoutingAsync(CancellationToken.None), CancellationToken.None).ConfigureAwait(false);
+            await PushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "the routing the server changed was not applied", ex);
+        }
+    }
+
+    // The language of the system the service runs under, as the locale systemd hands it says.
+    private static string? SystemLanguage() =>
+        new[] { "LC_ALL", "LC_MESSAGES", "LANG" }.Select(Environment.GetEnvironmentVariable).FirstOrDefault(value => !string.IsNullOrEmpty(value));
+
+    // The files of the geo sources a server handed out are fetched in the background, after the command that asked.
+    private void FetchOffered(IReadOnlyList<GeoSource> sources) => _ = Task.Run(() => FetchOfferedAsync(sources));
+
+    private async Task FetchOfferedAsync(IReadOnlyList<GeoSource> sources)
+    {
+        try
+        {
+            await GatedAsync(
+                async () =>
+                {
+                    foreach (var source in sources)
+                    {
+                        var ack = await UpdateSourcesAsync(source.Name, CancellationToken.None).ConfigureAwait(false);
+                        if (!ack.Ok)
+                        {
+                            _log.Warn("geo", $"{source.Name}: the source the server handed out was not fetched: {ack.Message}");
+                        }
+                    }
+
+                    await ApplyRoutingAsync(CancellationToken.None).ConfigureAwait(false);
+                },
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("geo", "the sources the server handed out were not fetched", ex);
+        }
+    }
 
     // What the server of the selected configuration offers; it is asked again behind the answer.
     private async Task<IpcAck> ServerOfferAsync(CancellationToken ct)

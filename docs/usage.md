@@ -9,6 +9,8 @@
 
 The mode belongs to the routing list, not to the configuration: the same list attaches to different servers.
 
+A fresh install starts with one list in use, Unavailable sites, in the language of the system: the services closed off in Russia and the ones that turn it away go through the VPN. It is put in once: a list removed stays removed, and an install that already held lists or configurations gets none.
+
 ## Rule lists
 
 A rule is a kind and a value:
@@ -49,7 +51,7 @@ For any other server the front is set in the settings: an address and a port, an
 
 ## What the server offers
 
-The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, after a subscription or a bundle brings a configuration whose server was not asked yet, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front, whether routing on the client is allowed (a ban of the server turns the Routing on the client switch off) and where the speed is measured. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
+The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, after a subscription or a bundle brings a configuration whose server was not asked yet, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front, whether routing on the client is allowed (a ban of the server turns the Routing on the client switch off) and where the speed is measured. The answer also hands out the geo sources of the server and the routing lists the template of the client names. The application adds a source it holds none of at that address and a list it holds none of under that name, and fetches the new sources at once; a source or a list the owner removed comes back with the next answer, a list the owner changed stays as it is. A list added to an application that held none is put in use. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
 
 ## Access to a remote network
 

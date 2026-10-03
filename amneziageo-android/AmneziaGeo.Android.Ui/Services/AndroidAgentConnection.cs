@@ -179,7 +179,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
         _log.Context = NetworkContext;
         _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
-        _offers = new ServerOffers(_store, OfferNote);
+        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)));
         Current = this;
     }
 
@@ -1177,6 +1177,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.InitializeAsync().ConfigureAwait(false);
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
+        if (await RoutingSeed.SeedAsync(_store, _geo, Loc.Instance.Get("Preset_ClosedName"), CancellationToken.None).ConfigureAwait(false))
+        {
+            _log.Info("agent", "a fresh install routes the unavailable sites through the tunnel; the list is the owner's to change");
+        }
+
+        await TakeStorePickAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
@@ -2252,7 +2258,47 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         await RefreshOffersAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+        await TakeStorePickAsync().ConfigureAwait(false);
+        await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
+    }
+
+    // A list the store side puts in picks itself in the store, where this agent keeps no pick: it takes the pick over
+    // while it has none of its own, and clears it there either way, so a pick the owner drops does not come back.
+    private async Task TakeStorePickAsync()
+    {
+        if (await _store.GetSelectedRoutingListAsync().ConfigureAwait(false) is not { } picked)
+        {
+            return;
+        }
+
+        await _store.SetSelectedRoutingListAsync(null).ConfigureAwait(false);
+        if (_selectedRoutingList is null && (await _store.ListRoutingListsAsync().ConfigureAwait(false)).Any(list => list.Id == picked))
+        {
+            _selectedRoutingList = picked;
+            Save();
+            MarkRoutingChanged(picked);
+        }
+    }
+
+    // The files of the geo sources a server handed out are fetched in the background, then the lists take them.
+    private async Task FetchOfferedAsync(IReadOnlyList<GeoSource> sources)
+    {
+        try
+        {
+            await RefreshGeoSourcesAsync().ConfigureAwait(false);
+            foreach (var source in sources)
+            {
+                await UpdateOneSourceAsync(source).ConfigureAwait(false);
+            }
+
+            await AfterSourcesChangedAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("geo", "the sources the server handed out were not fetched: " + ex.Message);
+        }
     }
 
     // What asking the servers has to say, at the level its news deserves.

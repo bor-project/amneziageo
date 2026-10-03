@@ -20,6 +20,23 @@ public sealed record SpeedLeg(string Down, string Up);
 public sealed record OfferedSubscription(string Url, string Revision, string Pin);
 
 /// <summary>
+/// A geo source a server of ours hands its clients.
+/// </summary>
+/// <param name="Name">The name the server knows the source by, empty when it names none.</param>
+/// <param name="Kind">geoip or geosite.</param>
+/// <param name="Url">The address the file of the source is fetched from.</param>
+public sealed record OfferedSource(string Name, string Kind, string Url);
+
+/// <summary>
+/// A routing list a server of ours hands its clients.
+/// </summary>
+/// <param name="Name">The name the list takes.</param>
+/// <param name="Rules">The rules of the list, each led by what it does with the traffic.</param>
+/// <param name="AllUdp">Whether every UDP packet goes through the tunnel.</param>
+/// <param name="Full">Whether everything goes through the tunnel but what goes directly.</param>
+public sealed record OfferedPreset(string Name, IReadOnlyList<string> Rules, bool AllUdp, bool Full);
+
+/// <summary>
 /// What a server of ours offers one config: its version, the name it holds the client under and the arguments of
 /// every feature by name.
 /// </summary>
@@ -49,6 +66,39 @@ public sealed class ServerOffer
     /// The feature that names the subscription of the client.
     /// </summary>
     public const string SubscriptionFeature = "subscription";
+
+    /// <summary>
+    /// The feature that names the geo sources the client holds.
+    /// </summary>
+    public const string SourcesFeature = "sources";
+
+    /// <summary>
+    /// The feature that names the routing lists the client holds.
+    /// </summary>
+    public const string PresetsFeature = "presets";
+
+    /// <summary>
+    /// The most geo sources one answer is taken for.
+    /// </summary>
+    public const int MaxSources = 64;
+
+    /// <summary>
+    /// The most routing lists one answer is taken for.
+    /// </summary>
+    public const int MaxPresets = 32;
+
+    /// <summary>
+    /// The most rules one offered routing list is taken with.
+    /// </summary>
+    public const int MaxPresetRules = 1024;
+
+    /// <summary>
+    /// The longest name an offered routing list is taken under.
+    /// </summary>
+    public const int MaxPresetName = 64;
+
+    private static readonly string[] PresetRoles = ["proxy", "direct", "block"];
+    private static readonly string[] PresetKinds = ["geosite", "geoip", "domain", "cidr"];
 
     private readonly Dictionary<string, JsonElement> _features;
 
@@ -184,6 +234,77 @@ public sealed class ServerOffer
     }
 
     /// <summary>
+    /// Returns the geo sources the server names, the ones of a kind or at an address the client cannot take left out.
+    /// </summary>
+    public IReadOnlyList<OfferedSource> Sources()
+    {
+        if (Arguments(SourcesFeature) is not { } arguments
+            || !arguments.TryGetProperty("items", out var items)
+            || items.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var sources = new List<OfferedSource>();
+        foreach (var item in items.EnumerateArray().Take(MaxSources))
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var kind = Text(item, "kind").ToLowerInvariant();
+            var url = Text(item, "url").Trim();
+            if (kind is "geoip" or "geosite"
+                && Uri.TryCreate(url, UriKind.Absolute, out var address)
+                && (address.Scheme == Uri.UriSchemeHttps || address.Scheme == Uri.UriSchemeHttp))
+            {
+                sources.Add(new OfferedSource(Text(item, "name").Trim(), kind, url));
+            }
+        }
+
+        return sources;
+    }
+
+    /// <summary>
+    /// Returns the routing lists the server names, each with the rules the client routes by: what goes through the
+    /// tunnel, past it or nowhere, by geo key, network or domain. Lists without a name are left out.
+    /// </summary>
+    public IReadOnlyList<OfferedPreset> Presets()
+    {
+        if (Arguments(PresetsFeature) is not { } arguments
+            || !arguments.TryGetProperty("lists", out var lists)
+            || lists.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var presets = new List<OfferedPreset>();
+        foreach (var list in lists.EnumerateArray().Take(MaxPresets))
+        {
+            if (list.ValueKind != JsonValueKind.Object
+                || Text(list, "name").Trim() is not { Length: > 0 and <= MaxPresetName } name
+                || presets.Exists(one => string.Equals(one.Name, name, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var rules = list.TryGetProperty("rules", out var given) && given.ValueKind == JsonValueKind.Array
+                ? given.EnumerateArray()
+                    .Where(rule => rule.ValueKind == JsonValueKind.String)
+                    .Select(rule => rule.GetString()!.Trim())
+                    .Where(IsPresetRule)
+                    .Take(MaxPresetRules)
+                    .ToList()
+                : [];
+
+            presets.Add(new OfferedPreset(name, rules, Flag(list, "allUdp"), Flag(list, "full")));
+        }
+
+        return presets;
+    }
+
+    /// <summary>
     /// Tells whether another offer settles the tunnel the same way: from a server of ours alike, with the same websocket
     /// and the same routing.
     /// </summary>
@@ -273,6 +394,23 @@ public sealed class ServerOffer
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? string.Empty
             : string.Empty;
+
+    private static bool Flag(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    // A rule of an offered list says what it does and names a geo key, a network or a domain; a server never
+    // routes the applications of the device.
+    private static bool IsPresetRule(string rule)
+    {
+        var bar = rule.IndexOf('|', StringComparison.Ordinal);
+        var colon = rule.IndexOf(':', StringComparison.Ordinal);
+
+        return bar > 0
+            && colon > bar + 1
+            && colon < rule.Length - 1
+            && PresetRoles.Contains(rule[..bar], StringComparer.OrdinalIgnoreCase)
+            && PresetKinds.Contains(rule[(bar + 1)..colon], StringComparer.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

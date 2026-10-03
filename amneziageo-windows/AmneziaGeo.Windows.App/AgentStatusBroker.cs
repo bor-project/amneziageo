@@ -40,14 +40,39 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var scope = _scopes.GetOrAdd(key, root =>
         {
             var scopeStore = storeFactory.For(root);
-            return new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), new GeoConfigurator(scopeStore, geoFiles), new ServerOffers(scopeStore, OfferNote));
+            var scopeGeo = new GeoConfigurator(scopeStore, geoFiles);
+            var offers = new ServerOffers(scopeStore, OfferNote, geo: scopeGeo, fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false));
+            return new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), scopeGeo, offers);
         });
         if (sid is not null)
         {
             scope.Sid = sid;
         }
 
+        if (scope.FirstUse())
+        {
+            _ = SeedRoutingAsync(scope);
+        }
+
         return scope;
+    }
+
+    // A library new to the device starts with the list of unavailable sites, once: a list the owner removes stays
+    // removed.
+    private async Task SeedRoutingAsync(BrokerScope scope)
+    {
+        try
+        {
+            if (await RoutingSeed.SeedAsync(scope.Store, scope.Geo, RoutingDefaults.UnavailableName(SystemLanguage.Letters()), CancellationToken.None).ConfigureAwait(false))
+            {
+                logger.LogInformation("the library under {Root} routes the unavailable sites through the tunnel; the list is the owner's to change", scope.UserRoot);
+                await BroadcastIfChangedAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "the list of unavailable sites could not be put in the library under {Root}", scope.UserRoot);
+        }
     }
 
     // The connecting client's user scope, or the default scope when the identity cannot be resolved.

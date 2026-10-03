@@ -135,6 +135,22 @@ public sealed class SubscriptionTests
     }
 
     [Fact]
+    public void Body_OfOneConfiguration_IsThatConfiguration()
+    {
+        var configs = SubscriptionCodec.Parse(AwgConfig() + "\n");
+
+        Assert.Equal(AwgConfig(), Assert.Single(configs).ConfText);
+    }
+
+    [Fact]
+    public void Body_OfOneConfigurationInBase64_IsThatConfiguration()
+    {
+        var configs = SubscriptionCodec.Parse(Convert.ToBase64String(Encoding.UTF8.GetBytes(AwgConfig())));
+
+        Assert.Equal(AwgConfig(), Assert.Single(configs).ConfText);
+    }
+
+    [Fact]
     public void Body_WithoutOurProtocols_IsEmpty()
     {
         var configs = SubscriptionCodec.Parse(Convert.ToBase64String(Encoding.UTF8.GetBytes(Foreign)));

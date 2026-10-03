@@ -129,11 +129,29 @@ internal static class ConfigCommands
             return Reply.Usage(error);
         }
 
+        if (flags.Positional.Count > 1)
+        {
+            return Reply.Usage("usage: amneziageo config import [<name>] (--file <path> | --link <url> | --text <s> | --stdin)");
+        }
+
+        // An address is downloaded by the agent, which keeps what it serves as a subscription.
+        if (SubscriptionCodec.LooksLikeAddress(text))
+        {
+            var address = text.Trim();
+            if (SubscriptionCodec.IsPlainAddress(address))
+            {
+                Output.Error("the address is plain http: the keys it serves travel unencrypted");
+            }
+
+            var named = flags.Positional.Count > 0 ? flags.Positional[0] : SubscriptionCodec.AddressName(address);
+            return Reply.Report(await agent.SendAsync(IpcContract.OpAddSubscription, address, named).ConfigureAwait(false));
+        }
+
         var imported = VpnLinkCodec.TryDecode(text);
         var confText = imported?.ConfText ?? text;
         if (!VpnLinkCodec.LooksLikeConf(confText))
         {
-            return Reply.Usage("the input is not a configuration: expected wg-quick text, a vpn:// link, or the text of a QR code");
+            return Reply.Usage("the input is not a configuration: expected wg-quick text, a vpn:// link, an http(s) address or the text of a QR code");
         }
 
         var name = flags.Positional.Count > 0
@@ -143,11 +161,6 @@ internal static class ConfigCommands
         if (name is null)
         {
             return Reply.Usage("the configuration name could not be derived from the input; pass it explicitly");
-        }
-
-        if (flags.Positional.Count > 1)
-        {
-            return Reply.Usage("usage: amneziageo config import [<name>] (--file <path> | --link <url> | --text <s> | --stdin)");
         }
 
         var ack = await agent.SendAsync(IpcContract.OpImportConfig, name, confText).ConfigureAwait(false);

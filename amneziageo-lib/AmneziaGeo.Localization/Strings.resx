@@ -2072,7 +2072,8 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
     <value>Delete «{0}»?</value>
   </data>
   <data name="Tui_ImportHint" xml:space="preserve">
-    <value>Paste a wg-quick configuration or a vpn:// link (Ctrl+Shift+V)</value>
+    <value>Paste a wg-quick configuration, a vpn:// link or an http(s) address
+an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Tui_PasteHint" xml:space="preserve">
     <value>Ctrl+V reads the clipboard through wl-paste, xclip or xsel, and this session has none of them. Paste with the terminal's own Ctrl+Shift+V, or install wl-clipboard (Wayland) or xclip (X11).</value>

@@ -62,7 +62,7 @@ sudo amneziageo settings set survive-reboot on
 sudo amneziageo settings set periodic-reconnect-enabled on
 ```
 
-Import also takes `--link` with a `vpn://` URL or `--stdin`.
+Import also takes `--link` with a `vpn://` URL or `--stdin`. An `http(s)` address in `--link` is downloaded: the agent reads it as a subscription, whether it serves a list of links or a single configuration, and keeps it up to date. The import box of `amneziageo tui` takes the same three kinds of text.
 
 `up <config>` selects the configuration and connects on it; `select <config>` only remembers it for the next connect. The routing list is one setting for the whole machine, not a per-configuration pairing: `routing use <name>` picks it, `routing use none` leaves the configuration's own `AllowedIPs` to decide what the tunnel carries.
 

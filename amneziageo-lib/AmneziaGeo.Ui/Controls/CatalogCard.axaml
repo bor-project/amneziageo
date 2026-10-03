@@ -111,7 +111,7 @@
             <controls:CardTags x:Name="TagsPart" Grid.Column="1" Margin="0,0,8,0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <!-- Шестерёнка встаёт под кнопку подключения: поле повторяет её ширину. -->
             <Panel Grid.Column="2" Width="64">
-              <Button x:Name="SettingsPart" Classes="methodpick cardgear" Width="46" HorizontalAlignment="Center"
+              <Button x:Name="SettingsPart" Classes="methodpick cardgear" HorizontalAlignment="Center"
                       ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                       Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
                 <PathIcon Data="{DynamicResource AgGearGeometry}" Width="15" Height="15" />

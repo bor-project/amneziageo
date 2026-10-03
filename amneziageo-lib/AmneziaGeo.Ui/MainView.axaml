@@ -353,8 +353,8 @@
       </DockPanel>
     </Border>
 
-    <!-- SETTINGS screen: back to home (left), title centered, connect control (right), over the section rail
-         and content pane. -->
+    <!-- SETTINGS screen: back to home (left), the app name centered in the wide layout, connect control (right),
+         over the section rail and content pane. -->
       <Border Classes="card" Height="48" Padding="12,0"
               Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHead}"
               VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
@@ -368,38 +368,11 @@
                       Foreground="{DynamicResource AgMutedBrush}" />
           </Button>
 
-          <!-- Name of the section a compact detail has open, hidden when it does not fit between the back
-               arrow and the connect control. -->
-          <controls:HeaderTitle Grid.Column="1" Margin="8,0">
-            <Panel IsVisible="{Binding SectionTitleVisible}">
-              <TextBlock Text="{l:Tr Main_ConfigSection}" IsVisible="{Binding IsSettingsConfig}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{l:Tr Main_RoutingSection}" IsVisible="{Binding IsSettingsRouting}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{l:Tr General_ProxySection}" IsVisible="{Binding IsSettingsConnections}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{l:Tr Main_SourcesSection}" IsVisible="{Binding IsSettingsSources}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{l:Tr Main_DiagnosticsSection}" IsVisible="{Binding IsSettingsLogs}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{l:Tr Probe_SettingsSection}" IsVisible="{Binding IsSettingsProbe}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{l:Tr General_Section}" IsVisible="{Binding IsSettingsGeneral}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
-            </Panel>
-          </controls:HeaderTitle>
-
           <!-- Connect control (right), the same pill the compact home header carries. -->
           <controls:ConnectPill Grid.Column="2" DataContext="{Binding Home}" />
 
-          <!-- App name and the running download centred on the window, moved aside when the edges crowd them. -->
+          <!-- App name of the wide layout and the running download centred on the window, moved aside when the
+               edges crowd them. -->
           <controls:HeaderCenter Grid.Column="0" Grid.ColumnSpan="3">
             <controls:HeaderTitle>
               <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" IsHitTestVisible="False"

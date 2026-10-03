@@ -53,9 +53,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
-    [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderName))]
-    [NotifyPropertyChangedFor(nameof(SectionTitleVisible))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(ShowSplitter))]
@@ -69,9 +67,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
-    [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderName))]
-    [NotifyPropertyChangedFor(nameof(SectionTitleVisible))]
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private bool _settingsDetailOpen;
@@ -233,11 +228,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsCompact => WindowWidth < UiLayout.CompactWidth;
 
     /// <summary>
-    /// Whether a section detail is open in compact mode; the header then shows the section name.
-    /// </summary>
-    public bool IsSectionDetail => IsCompact && SettingsDetailOpen;
-
-    /// <summary>
     /// Whether the settings section rail is shown: always in wide mode, and in compact mode only when no section
     /// detail is open.
     /// </summary>
@@ -285,14 +275,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool HeaderDownloadVisible => General.DownloadActive && !UiPlatform.IsTelevision;
 
     /// <summary>
-    /// Whether the settings header shows the app name: no section detail open and no download running.
+    /// Whether the settings header shows the app name: the wide layout with no download running.
     /// </summary>
-    public bool ShowHeaderName => !IsSectionDetail && !HeaderDownloadVisible;
-
-    /// <summary>
-    /// Whether the settings header shows the open section name.
-    /// </summary>
-    public bool SectionTitleVisible => IsSectionDetail && !HeaderDownloadVisible;
+    public bool ShowHeaderName => !IsCompact && !HeaderDownloadVisible;
 
     /// <summary>
     /// Whether the home column carries the update offer itself. Television only; its row opens the sheet that
@@ -697,7 +682,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(AppUpdateBannerVisible));
             OnPropertyChanged(nameof(HeaderDownloadVisible));
             OnPropertyChanged(nameof(ShowHeaderName));
-            OnPropertyChanged(nameof(SectionTitleVisible));
         }
     }
 

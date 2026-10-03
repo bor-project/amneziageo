@@ -34,6 +34,7 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
+	"github.com/bor-project/amneziageo/libamneziawg-go/probe"
 )
 
 const logTag = "amneziawg-go"
@@ -295,6 +296,25 @@ func wgPreloadLive(handle int32, text *C.char) int32 {
 		return -1
 	}
 	return int32(t.tun.preload(C.GoString(text)))
+}
+
+// Спрашивает сервер рукопожатием на движке без tun: 1 - ответил, 0 - молчит, -1 - движок не поднялся.
+//
+//export wgProbe
+func wgProbe(settings *C.char, fn C.ag_protect_fn, waitMs int32, logLevel int32) int32 {
+	logger := newAndroidLogger(int(logLevel))
+	return int32(probe.Run(C.GoString(settings), func(dev *device.Device) {
+		bind, ok := dev.Bind().(*conn.StdNetBind)
+		if !ok {
+			return
+		}
+		if fd, err := bind.PeekLookAtSocketFd4(); err == nil {
+			C.ag_call_protect(fn, C.int(fd))
+		}
+		if fd, err := bind.PeekLookAtSocketFd6(); err == nil {
+			C.ag_call_protect(fn, C.int(fd))
+		}
+	}, time.Duration(waitMs)*time.Millisecond, logger))
 }
 
 // c-shared requires a main function; it is never invoked.

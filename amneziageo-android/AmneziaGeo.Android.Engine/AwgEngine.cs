@@ -15,6 +15,9 @@ internal static partial class AwgEngine
     // Кто называет владельца соединения.
     private static Func<int, uint, ushort, uint, ushort, int>? _owner;
 
+    // Кто отпускает сокет пробы мимо туннеля.
+    private static Func<int, bool>? _probeProtect;
+
     /// <summary>
     /// Движок молчит.
     /// </summary>
@@ -166,6 +169,40 @@ internal static partial class AwgEngine
         return SetRelayNative(handle, port, split ? 1 : 0, &OwnerNative) == 0;
     }
 
+    /// <summary>
+    /// Asks a server for a handshake on an engine that carries nothing: true when it answered, false when it kept
+    /// silent for the wait, null when the engine did not start.
+    /// </summary>
+    public static unsafe bool? Probe(string settings, Func<int, bool> protect, int waitMs, int logLevel)
+    {
+        _probeProtect = protect;
+        return ProbeNative(settings, &ProbeProtectNative, waitMs, logLevel) switch
+        {
+            1 => true,
+            0 => false,
+            _ => null,
+        };
+    }
+
+    [UnmanagedCallersOnly]
+    private static int ProbeProtectNative(int fd)
+    {
+        var protect = _probeProtect;
+        if (protect is null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return protect(fd) ? 1 : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     [UnmanagedCallersOnly]
     private static int OwnerNative(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
     {
@@ -251,4 +288,7 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgSetRelay")]
     private static unsafe partial int SetRelayNative(int handle, int port, int split, delegate* unmanaged<int, uint, ushort, uint, ushort, int> owner);
+
+    [LibraryImport(Lib, EntryPoint = "wgProbe", StringMarshalling = StringMarshalling.Utf8)]
+    private static unsafe partial int ProbeNative(string settings, delegate* unmanaged<int, int> protect, int waitMs, int logLevel);
 }

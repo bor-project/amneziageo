@@ -69,6 +69,7 @@ public sealed partial class App : Avalonia.Application
                 .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
             UiPlatform.SupportsGeoPreview = false;
             UiPlatform.UsesActionSheets = true;
+            UiPlatform.AgentMovesTunnel = true;
             UiPlatform.HandScale = HandScale();
             UiPlatform.NetworkRegion = NetworkRegion;
             if (!UiPlatform.IsTelevision)
@@ -100,7 +101,8 @@ public sealed partial class App : Avalonia.Application
             Loc.Instance.ApplyStartupCulture(prefs.Language);
             Stage("preferences", clock);
 
-            var connection = new AndroidAgentConnection();
+            // The console may have raised the agent of this process already: the window joins that one.
+            var connection = AndroidAgentConnection.Current ?? new AndroidAgentConnection();
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection, prefs);
             Stage("view models", clock);

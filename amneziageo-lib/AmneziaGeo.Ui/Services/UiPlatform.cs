@@ -34,6 +34,12 @@ internal static class UiPlatform
     public static bool SupportsWebSocket { get; set; } = true;
 
     /// <summary>
+    /// Whether the agent moves a live tunnel to another configuration by itself and keeps it where the server of
+    /// that configuration does not answer. Off where the window takes the tunnel down before it dials the next.
+    /// </summary>
+    public static bool AgentMovesTunnel { get; set; }
+
+    /// <summary>
     /// How much over the laid-out size the head is drawn on this device. A block that has to keep the size it
     /// was laid out at divides by it.
     /// </summary>

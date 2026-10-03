@@ -42,6 +42,12 @@ public sealed record ProbeRequest(string Target, string Path, string Taken, stri
 public sealed record CardsRequest(IReadOnlyList<SweepServer> Servers, bool CarriesDefault);
 
 /// <summary>
+/// The configuration the head wants the tunnel to move to while another one is connected. The tunnel asks its
+/// server first: only the process of the tunnel dials past the tunnel.
+/// </summary>
+public sealed record SwitchRequest(string Config, string Name, string? WsHost, int WsPort, bool WsOffered, int EngineLog = 1);
+
+/// <summary>
 /// Carries the routing rules and the tunnel stage between the head and the tunnel, which run in separate
 /// processes: the head can then be unloaded whole while the tunnel keeps running.
 /// </summary>
@@ -172,6 +178,11 @@ public static class VpnBridge
     /// </summary>
     public const string ActionRouteTtl = "org.amneziageo.android.VPN_ROUTE_TTL";
 
+    /// <summary>
+    /// Broadcast that makes a running tunnel ask the server of the configuration the head wants to move to.
+    /// </summary>
+    public const string ActionSwitch = "org.amneziageo.android.VPN_SWITCH";
+
     private const string PlanFile = "plan.json";
     private const string PlanStampFile = "plan-stamp.txt";
     private const string ProxyFile = "proxy.json";
@@ -183,6 +194,8 @@ public static class VpnBridge
     private const string ProbeResultFile = "probe-result.txt";
     private const string CardsFile = "cards.json";
     private const string CardsResultFile = "cards-result.txt";
+    private const string SwitchFile = "switch.json";
+    private const string SwitchResultFile = "switch-result.txt";
     private const string StageFile = "stage.txt";
     private const string RecentFile = "recent.txt";
     private const string MarksFile = "marks.txt";
@@ -960,6 +973,113 @@ public static class VpnBridge
     /// </summary>
     public static void RequestCards(Context context) => context.SendBroadcast(Broadcast(context, ActionCards));
 
+    /// <summary>
+    /// Leaves the configuration to move to for the tunnel to ask its server.
+    /// </summary>
+    public static void WriteSwitch(SwitchRequest request)
+    {
+        try
+        {
+            using var stream = File.Create(SwitchPath());
+            JsonSerializer.Serialize(stream, request);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the switch failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the configuration the head left, nothing when there is none.
+    /// </summary>
+    public static SwitchRequest? ReadSwitch()
+    {
+        try
+        {
+            var path = SwitchPath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            using var stream = File.OpenRead(path);
+            var request = JsonSerializer.Deserialize<SwitchRequest>(stream);
+            return request is { Config.Length: > 0 } ? request : null;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the switch failed: " + ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Drops the configuration, so a tunnel that starts later does not ask about it.
+    /// </summary>
+    public static void ClearSwitch()
+    {
+        try
+        {
+            File.Delete(SwitchPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the switch failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Writes what the server said for the head to read.
+    /// </summary>
+    public static void WriteSwitchResult(string verdict)
+    {
+        try
+        {
+            File.WriteAllText(SwitchResultPath(), verdict);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the switch verdict failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads what the server said, an empty string while it is still being asked.
+    /// </summary>
+    public static string ReadSwitchResult()
+    {
+        try
+        {
+            var path = SwitchResultPath();
+            return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the switch verdict failed: " + ex);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Drops the verdict, so the next switch is not answered with the last one.
+    /// </summary>
+    public static void ClearSwitchResult()
+    {
+        try
+        {
+            File.Delete(SwitchResultPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the switch verdict failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Asks a running tunnel to take the switch the head left.
+    /// </summary>
+    public static void RequestSwitch(Context context) => context.SendBroadcast(Broadcast(context, ActionSwitch));
+
     private static Intent Broadcast(Context context, string action)
     {
         var intent = new Intent(action);
@@ -999,6 +1119,12 @@ public static class VpnBridge
 
     private static string CardsResultPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", CardsResultFile);
+
+    private static string SwitchPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SwitchFile);
+
+    private static string SwitchResultPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SwitchResultFile);
 
     private static string StagePath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", StageFile);

@@ -37,6 +37,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private const int ProbeWaitMs = 40_000;
     private const int ProbePollMs = 250;
 
+    // How long the tunnel is waited for while it asks the server of a configuration before a switch.
+    private const int SwitchWaitMs = 15_000;
+
+    // How long after a refused switch the snapshot is told once more.
+    private const int RetellMs = 100;
+
     // Leaves the start-up rush to the interface before the first geo check goes out.
     private const int GeoStartDelaySeconds = 5;
     private const int GeoTickSeconds = 60;
@@ -109,6 +115,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Failed attempts in a row of the connect the tunnel is dialling.
     private int _retryAttempt;
     private bool _started;
+
+    // Whether a listener was there when the agent announced itself.
+    private bool _heard;
     private bool _loaded;
     private bool _disposed;
     private string _logLevel = "error";
@@ -176,12 +185,26 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     public void Start()
     {
-        if (_started || _disposed)
+        if (_disposed)
         {
             return;
         }
 
+        // A window that joins an agent the console raised is told what the agent has told nobody.
+        if (_started)
+        {
+            if (!_heard && Connected is not null)
+            {
+                _heard = true;
+                Connected.Invoke();
+                PushSnapshot();
+            }
+
+            return;
+        }
+
         _started = true;
+        _heard = Connected is not null;
         EnsureLoaded();
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
@@ -566,6 +589,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "vpn permission denied");
         }
 
+        // A tunnel connected on another configuration stays until the server of this one answers.
+        var standing = SwitchGuard.Standing(_active && VpnBridge.IsRunning(Application.Context), _boundStatus, _boundTarget, configName);
+        var restart = _restartRequired;
         ClearConnectFailure();
         _retryAttempt = 0;
         _restartRequired = false;
@@ -581,6 +607,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // The server is asked what it offers before the plan and the tunnel take its word.
         await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
         await RefreshOffersAsync().ConfigureAwait(false);
+        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText).ConfigureAwait(false)))
+        {
+            return Kept(configName, standing, restart);
+        }
+
         var useRouter = RouterEnabled();
 
         // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
@@ -594,6 +625,49 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _transports.GetValueOrDefault(configName), Front(configName, configText), foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel);
         return Ok();
+    }
+
+    // Hands the server of a configuration to the tunnel, which dials it past itself, and waits for its word; a
+    // tunnel that says nothing leaves the verdict unknown.
+    private async Task<string> AskedAsync(string name, string text)
+    {
+        var front = Front(name, text);
+        VpnBridge.ClearSwitchResult();
+        VpnBridge.WriteSwitch(new SwitchRequest(text, name, front?.Address(), front?.Port ?? 0, front?.Offered ?? false, EngineLogLevel(_logLevel)));
+        VpnBridge.RequestSwitch(Application.Context);
+        var said = await SwitchGuard
+            .AwaitAsync(VpnBridge.ReadSwitchResult, SwitchWaitMs, ProbePollMs, pause => Task.Delay(pause))
+            .ConfigureAwait(false);
+        VpnBridge.ClearSwitchResult();
+        VpnBridge.ClearSwitch();
+        return said;
+    }
+
+    // Puts the head back on the configuration the tunnel stands on: the server of the one asked for kept silent.
+    private IpcAck Kept(string asked, string standing, bool restart)
+    {
+        _log.Warn("agent", $"connect refused: the server of '{asked}' did not answer, so the tunnel stays on '{standing}'");
+        if (string.Equals(_selectedTarget, asked, StringComparison.Ordinal))
+        {
+            Journal(SwitchLog.Config(asked, standing));
+            _selectedTarget = standing;
+        }
+
+        _boundStatus = ConnectionStatus.Connected;
+        _boundTarget = standing;
+        _restartRequired = restart;
+        SetConnectFailure(nameof(ConnectFailureReason.NoHandshake), asked);
+        Save();
+        PushSnapshot();
+        _ = RetellAsync();
+        return new IpcAck(false, $"the server of '{asked}' did not answer; '{standing}' stays connected");
+    }
+
+    // Tells the snapshot once more, after the window has taken the refusal of its command.
+    private async Task RetellAsync()
+    {
+        await Task.Delay(RetellMs).ConfigureAwait(false);
+        PushSnapshot();
     }
 
     private static async Task<bool> EnsureVpnPermissionAsync()

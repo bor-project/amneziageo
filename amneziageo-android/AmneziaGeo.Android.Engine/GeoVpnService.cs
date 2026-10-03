@@ -145,6 +145,8 @@ public sealed class GeoVpnService : VpnService
     // How long renewed session keys wait for their first answer while the head is told no handshake.
     private const int RenewHoldMs = 20_000;
     private const int HandshakeWaitSeconds = 30;
+    // How long the server of a configuration the head wants to move to is waited for.
+    private const int SwitchWaitMs = 7_000;
     private const int HandshakePollMs = 500;
     private const int TrafficWaitSeconds = 20;
     private const int TrafficPollMs = 250;
@@ -194,6 +196,7 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _routeTtl;
     private VpnBridge.Listener? _probes;
     private VpnBridge.Listener? _cards;
+    private VpnBridge.Listener? _switches;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
     private VpnBridge.Listener? _queries;
@@ -280,6 +283,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _probes, VpnBridge.ActionProbe);
         _cards = new VpnBridge.Listener { Handler = _ => RunCards() };
         VpnBridge.Listen(this, _cards, VpnBridge.ActionCards);
+        _switches = new VpnBridge.Listener { Handler = _ => RunSwitch() };
+        VpnBridge.Listen(this, _switches, VpnBridge.ActionSwitch);
         WatchUnderlay();
         _screen = new VpnBridge.Listener { Handler = OnScreen };
         VpnBridge.Listen(this, _screen, Intent.ActionScreenOff);
@@ -388,6 +393,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_cards);
             _cards = null;
+        }
+
+        if (_switches is not null)
+        {
+            UnregisterReceiver(_switches);
+            _switches = null;
         }
 
         if (_screen is not null)
@@ -969,6 +980,85 @@ public sealed class GeoVpnService : VpnService
                 VpnBridge.WriteCardsResult(CardProbe.Path(bypassed: false, request.CarriesDefault));
             }
         });
+    }
+
+    // Asks the server of the configuration the head wants to move to. The session that stands is left alone: the
+    // engine that asks carries nothing, and only this process dials past the tunnel.
+    private void RunSwitch()
+    {
+        var request = VpnBridge.ReadSwitch();
+        if (request is null)
+        {
+            return;
+        }
+
+        VpnBridge.ClearSwitch();
+        var standing = _detail ?? string.Empty;
+        _ = Task.Run(() =>
+        {
+            var verdict = Asked(request);
+            if (verdict == SwitchVerdict.Answered)
+            {
+                Report($"the server of {request.Name} answered, so the tunnel leaves {standing} for it");
+            }
+            else
+            {
+                Tell(verdict == SwitchVerdict.Silent
+                    ? $"the server of {request.Name} did not answer in {SwitchWaitMs / 1000} s, so the tunnel stays on {standing}"
+                    : $"the server of {request.Name} could not be asked before the tunnel leaves {standing}");
+            }
+
+            VpnBridge.WriteSwitchResult(verdict);
+        });
+    }
+
+    // What the server of a configuration said to a handshake.
+    private string Asked(SwitchRequest request)
+    {
+        try
+        {
+            return SwitchVerdict.Of(Answers(request));
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "asking the server before the switch failed: " + ex);
+            return SwitchVerdict.Unknown;
+        }
+    }
+
+    // Whether the server of a configuration answers a handshake; null when it could not be asked.
+    private bool? Answers(SwitchRequest request)
+    {
+        var resolved = Resolved(request.Config);
+        if (resolved is null)
+        {
+            return false;
+        }
+
+        var carrier = StartCarrier(request.Config, request.WsHost, request.WsPort, request.WsOffered);
+        try
+        {
+            var dialled = carrier is null ? resolved : WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
+            var uapi = WgQuickToUapi.Convert(dialled);
+            return uapi is null ? null : AwgEngine.Probe(uapi, Protect, SwitchWaitMs, request.EngineLog);
+        }
+        finally
+        {
+            carrier?.Dispose();
+        }
+    }
+
+    // The configuration with the name of its server resolved; null when the name does not resolve.
+    private static string? Resolved(string config)
+    {
+        try
+        {
+            return WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
+        }
+        catch (UnknownHostException)
+        {
+            return null;
+        }
     }
 
     // Measures the destination the head left here. Only this process can excuse a socket from the tunnel, so a

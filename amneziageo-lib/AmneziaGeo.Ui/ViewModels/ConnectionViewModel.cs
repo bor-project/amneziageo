@@ -980,7 +980,8 @@ internal partial class ConnectionViewModel : ViewModelBase
 
     /// <summary>
     /// Ведёт кнопку карточки: со своей конфигурации туннель снимается, на чужой поднимается. Занятый туннель
-    /// уходит целиком перед сменой цели: агент поднимать новую поверх живой не умеет.
+    /// уходит целиком перед сменой цели там, где агент поднимать новую поверх живой не умеет; где умеет, туннель
+    /// переносит агент.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDialConfig))]
     protected virtual async Task ConnectConfig(ConfigItemViewModel? item)
@@ -1002,7 +1003,7 @@ internal partial class ConnectionViewModel : ViewModelBase
 
             // Снос не удался: цель остаётся прежней, иначе выбор уехал бы на конфигурацию, которую поднять
             // всё равно не вышло.
-            if (ConnState != 0 && !await StopTunnelAsync())
+            if (ConnState != 0 && !UiPlatform.AgentMovesTunnel && !await StopTunnelAsync())
             {
                 return;
             }

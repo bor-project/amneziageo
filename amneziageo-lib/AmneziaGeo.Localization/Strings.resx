@@ -2009,7 +2009,7 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
     <value>Status</value>
   </data>
   <data name="Tui_Hint" xml:space="preserve">
-    <value>Tab moves between panes, F10 quits</value>
+    <value>Arrows or Tab move between panes, F10 quits</value>
   </data>
   <data name="Tui_Tunnel" xml:space="preserve">
     <value>Tunnel</value>

@@ -48,6 +48,7 @@ internal sealed class Shell : Window
         _state = new Label { X = 1, Y = 0, Width = Dim.Fill(1), Text = string.Empty };
         _rail = new ListView { X = 0, Y = 2, Width = 24, Height = Dim.Fill(1) };
         _rail.SetSource(new ObservableCollection<string>(_sections));
+        _rail.SelectedItem = 0;
 
         // A frame is a group of its own, which only F6 enters; as a stop Tab walks from the rail into the panel,
         // through its controls and back, as the hint says.
@@ -56,6 +57,10 @@ internal sealed class Shell : Window
 
         _rail.ValueChanged += (_, _) => Show();
         _rail.KeyDown += (_, key) => Enter(key);
+
+        // Arrows the rail has no use for stay in it rather than wander into the panel as Tab would.
+        _rail.KeyDownNotHandled += (_, key) => key.Handled |= Arrow(key);
+        _content.KeyDown += (_, key) => Steer(key);
         Add(_state, _rail, _content, hint);
 
         _agent.SnapshotReceived += OnSnapshot;
@@ -76,27 +81,75 @@ internal sealed class Shell : Window
 
     private static string Localized(string key) => Loc.Instance.Get(key);
 
-    // Tab from the rail enters the panel at its first control and Shift+Tab at its last; left to itself the panel
-    // would come back to the control it was left from, and Tab would only swing between that one and the rail.
+    // Tab, Right and Enter from the rail enter the panel at its first control and Shift+Tab at its last; left to
+    // itself the panel would come back to the control it was left from, and Tab would only swing between that one
+    // and the rail.
     private void Enter(Key key)
     {
-        if (key != Key.Tab && key != Key.Tab.WithShift)
+        if (key != Key.Tab && key != Key.Tab.WithShift && key != Key.CursorRight && key != Key.Enter)
         {
             return;
         }
 
-        Edge(_content, key == Key.Tab)?.SetFocus();
+        Edge(_content, key != Key.Tab.WithShift)?.SetFocus();
         key.Handled = true;
     }
 
-    // The first or the last control inside a view that a key can stop at, the deepest one.
-    private static View? Edge(View view, bool first)
+    // An arrow the focused control has no use for moves to the nearest control that way. Right with nothing beside
+    // it carries on to the row below, so a list leads to its buttons, and Left from the leftmost control goes back
+    // to the rail; with nothing that way the focus stays instead of wrapping around as Tab would.
+    private void Steer(Key key)
     {
-        var inside = first ? view.SubViews : view.SubViews.Reverse();
-        var stop = inside.FirstOrDefault(one => one.Visible && one.Enabled && one.CanFocus && one.TabStop != TabBehavior.NoStop);
+        if (!Arrow(key) || Stops(_content).FirstOrDefault(stop => stop.HasFocus) is not { } from)
+        {
+            return;
+        }
 
-        return stop is null ? null : Edge(stop, first) ?? stop;
+        if ((Toward(from, key) ?? (key == Key.CursorRight ? Toward(from, Key.CursorDown) : null)) is { } next)
+        {
+            next.SetFocus();
+        }
+        else if (key == Key.CursorLeft)
+        {
+            _rail.SetFocus();
+        }
+
+        key.Handled = true;
     }
+
+    // The nearest control in the direction of an arrow: in the same row for Left and Right, in the rows past it
+    // for Up and Down, where the one closest to its left edge wins.
+    private View? Toward(View from, Key key)
+    {
+        var origin = from.FrameToScreen();
+        var across = key == Key.CursorLeft || key == Key.CursorRight;
+
+        return Stops(_content)
+            .Where(stop => stop != from)
+            .Select(stop => (Stop: stop, Area: stop.FrameToScreen()))
+            .Where(one => !across || (one.Area.Top < origin.Bottom && origin.Top < one.Area.Bottom))
+            .Select(one => (one.Stop, Gap: key == Key.CursorLeft ? origin.Left - one.Area.Right
+                : key == Key.CursorRight ? one.Area.Left - origin.Right
+                : key == Key.CursorUp ? origin.Top - one.Area.Bottom
+                : one.Area.Top - origin.Bottom, Offset: across ? 0 : Math.Abs(one.Area.Left - origin.Left)))
+            .Where(one => one.Gap >= 0)
+            .OrderBy(one => one.Gap)
+            .ThenBy(one => one.Offset)
+            .Select(one => one.Stop)
+            .FirstOrDefault();
+    }
+
+    private static bool Arrow(Key key) =>
+        key == Key.CursorLeft || key == Key.CursorRight || key == Key.CursorUp || key == Key.CursorDown;
+
+    // The first or the last control inside a view that a key can stop at.
+    private static View? Edge(View view, bool first) => first ? Stops(view).FirstOrDefault() : Stops(view).LastOrDefault();
+
+    // The controls inside a view that a key can stop at, the deepest ones, in the order they were added.
+    private static IEnumerable<View> Stops(View view) =>
+        view.SubViews
+            .Where(one => one.Visible && one.Enabled && one.CanFocus && one.TabStop != TabBehavior.NoStop)
+            .SelectMany(one => Stops(one).DefaultIfEmpty(one));
 
     private void OnSnapshot(StatusSnapshot snapshot) => Application.Invoke(Header);
 
@@ -116,6 +169,11 @@ internal sealed class Shell : Window
 
     private void Show()
     {
+        // A refresh rebuilds the panel under the keyboard; the focus and the selected row go back where they were.
+        var stops = Stops(_content).ToList();
+        var focused = stops.FindIndex(stop => stop.HasFocus);
+        var row = stops.OfType<ListView>().FirstOrDefault()?.SelectedItem;
+
         _content.RemoveAll();
         var index = _rail.SelectedItem ?? 0;
         _content.Title = _sections[Math.Clamp(index, 0, _sections.Length - 1)];
@@ -130,6 +188,18 @@ internal sealed class Shell : Window
         };
 
         _content.Add(view);
+        if (focused < 0)
+        {
+            return;
+        }
+
+        stops = [.. Stops(_content)];
+        if (row is { } at && stops.OfType<ListView>().FirstOrDefault() is { Source.Count: > 0 } list)
+        {
+            list.SelectedItem = Math.Min(at, list.Source.Count - 1);
+        }
+
+        stops.ElementAtOrDefault(Math.Min(focused, stops.Count - 1))?.SetFocus();
     }
 
     // Blocks the UI thread for the round trip; commands answer in milliseconds, downloads warn first.
@@ -179,10 +249,17 @@ internal sealed class Shell : Window
         return button;
     }
 
+    // The first row starts selected: without a selection the buttons have nothing to act on and the keyboard
+    // nothing to show.
     private static ListView Rows(IReadOnlyList<string> rows)
     {
         var list = new ListView();
         list.SetSource(new ObservableCollection<string>([.. rows]));
+        if (rows.Count > 0)
+        {
+            list.SelectedItem = 0;
+        }
+
         return list;
     }
 
@@ -207,7 +284,7 @@ internal sealed class Shell : Window
         }
 
         return Panel(
-            new ReadOnlyText { Text = string.Join('\n', lines) },
+            new ReadOnlyText { Text = string.Join('\n', lines), CanFocus = false },
             Action(Localized("Tui_Connect"), () => Apply(Send(IpcContract.OpSetConnection, "connect"))),
             Action(Localized("Tui_Disconnect"), () => Apply(Send(IpcContract.OpSetConnection, "disconnect"))),
             Action(Localized("Tui_Refresh"), Refresh));
@@ -497,6 +574,17 @@ internal sealed class Shell : Window
             Value = Math.Max(0, Array.IndexOf(levels, snapshot.LogLevel)),
         };
 
+        // The selector wraps around at its ends; there an arrow leaves it as it leaves any other control.
+        level.KeyDown += (_, key) =>
+        {
+            var options = level.SubViews.OfType<CheckBox>().ToList();
+            var at = options.FindIndex(option => option.HasFocus);
+            if ((key == Key.CursorUp && at == 0) || (key == Key.CursorDown && at == options.Count - 1))
+            {
+                Steer(key);
+            }
+        };
+
         var routeLog = new CheckBox { Text = Localized("Main_RouteLogTitle"), X = 1, Y = 7, Value = State(snapshot.RouteLog) };
         var survive = new CheckBox { Text = Localized("General_SurviveReboot"), X = 1, Y = 8, Value = State(snapshot.SurviveReboot) };
         var periodic = new CheckBox { Text = Localized("General_PeriodicReconnect"), X = 1, Y = 9, Value = State(snapshot.PeriodicReconnect) };
@@ -548,7 +636,10 @@ internal sealed class Shell : Window
     private View Log()
     {
         var search = new TextField { X = 1, Y = 0, Width = 30, Text = string.Empty };
-        var viewer = new ReadOnlyText { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(2) };
+        // Long lines wrap, so Left and Right have nothing to scroll and lead out of the log like elsewhere.
+        var viewer = new ReadOnlyText { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(2), WordWrap = true };
+        viewer.KeyBindings.Remove(Key.CursorLeft);
+        viewer.KeyBindings.Remove(Key.CursorRight);
         var host = Host();
         var caption = new Label { Text = Localized("Main_LogSearchWatermark"), X = 33, Y = 0 };
 

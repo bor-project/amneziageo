@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Net;
 using System.Threading.Channels;
 using AmneziaGeo.Decl;
@@ -106,6 +107,8 @@ public sealed class RoutingCache
     // Its route must outlive every idle window - the agent's own queries to it are not attributed to any process,
     // so nothing here would ever refresh it and a sweep would take the tunnel's DNS down with it.
     private GeoIpRanges _pinned;
+    // The tunnel adapter's own addresses, which a packet never leaves this machine for.
+    private FrozenSet<uint> _own = FrozenSet<uint>.Empty;
     private IReadOnlyList<string> _pinnedRoutes;
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
@@ -303,6 +306,24 @@ public sealed class RoutingCache
     }
 
     /// <summary>
+    /// Names the tunnel adapter's own addresses. A packet to one of them stays on this machine, so none earns a verdict,
+    /// a route or a range of the engine; the system keeps the route to it.
+    /// </summary>
+    public void Spare(IEnumerable<IPAddress> own)
+    {
+        var numbers = new HashSet<uint>();
+        foreach (var address in own)
+        {
+            if (GeoIpRanges.TryToNumeric(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address, out var value))
+            {
+                numbers.Add(value);
+            }
+        }
+
+        Volatile.Write(ref _own, numbers.ToFrozenSet());
+    }
+
+    /// <summary>
     /// Raised when an app rule alone puts a destination in the tunnel - no range covers it. Nothing resolved to
     /// such an address, so this is the only moment it can be learned.
     /// </summary>
@@ -324,7 +345,7 @@ public sealed class RoutingCache
     /// </summary>
     public void Note(uint address, bool app)
     {
-        if (Volatile.Read(ref _pinned).Contains(address))
+        if (Spared(address))
         {
             return;
         }
@@ -357,7 +378,7 @@ public sealed class RoutingCache
     /// </summary>
     public void Note(uint address, RouteVerdict verdict)
     {
-        if (Volatile.Read(ref _pinned).Contains(address))
+        if (Spared(address))
         {
             return;
         }
@@ -715,7 +736,7 @@ public sealed class RoutingCache
 
             if (!IPAddress.TryParse(route.Address, out var address)
                 || !GeoIpRanges.TryToNumeric(address, out var value)
-                || Volatile.Read(ref _pinned).Contains(value)
+                || Spared(value)
                 || _entries.ContainsKey(value))
             {
                 continue;
@@ -922,12 +943,19 @@ public sealed class RoutingCache
             Volatile.Read(ref _installed), Volatile.Read(ref _reclaimed));
     }
 
+    // An address the cache keeps no entry for: one a range held whole for the connection covers, one of the tunnel
+    // adapter itself, or one no packet goes to through a tunnel, which neither a rule nor an application may claim.
+    private bool Spared(uint address)
+    {
+        return SpecialAddresses.Holds(address) || Volatile.Read(ref _own).Contains(address) || Volatile.Read(ref _pinned).Contains(address);
+    }
+
     // Hands the destination of a dropped datagram to the rule and permits it whole where the rule leaves it
     // alone; false leaves it to the lists.
     private bool SettledAsDatagram(uint address)
     {
         if (Volatile.Read(ref _datagrams) is not { } rule
-            || Volatile.Read(ref _pinned).Contains(address)
+            || Spared(address)
             || Classify(address) != RouteVerdict.None)
         {
             return false;
@@ -1181,7 +1209,7 @@ public sealed class RoutingCache
         var now = Environment.TickCount64;
         foreach (var address in addresses)
         {
-            if (!GeoIpRanges.TryToNumeric(address, out var value) || Volatile.Read(ref _pinned).Contains(value))
+            if (!GeoIpRanges.TryToNumeric(address, out var value) || Spared(value))
             {
                 continue;
             }

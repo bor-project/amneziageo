@@ -299,6 +299,7 @@ internal sealed class TunnelController : IDisposable
             // In a split the far end of a connection this machine took in earns no route: its answers go back the way
             // the connection came.
             var cache = new RoutingCache(applier, new ProcNet(split), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), pinned, directStanding: !split);
+            cache.Spare(WgConfigEditor.GetAddresses(config).Select(Host).OfType<IPAddress>());
             _cache = cache;
             applier.Follow(cache.Classify);
             _peerAddress = endpointIp;
@@ -854,6 +855,16 @@ internal sealed class TunnelController : IDisposable
         return new TunnelCounters(DeviceCount("tx_packets"), DeviceCount("rx_packets"), peer.TxBytes, peer.RxBytes);
     }
 
+    /// <summary>
+    /// Whether the system routes an address into the tunnel device. A far end a rule of the list keeps beside the
+    /// tunnel leaves by another device; an answer that names none counts as carried.
+    /// </summary>
+    public async Task<bool> CarriesAsync(IPAddress address, CancellationToken ct)
+    {
+        var (exitCode, output) = await Shell.RunAsync("ip", ct, "route", "get", address.ToString()).ConfigureAwait(false);
+        return exitCode != 0 || SteeringRules.Leading(output, _iface) is null;
+    }
+
     // One counter of the tunnel device as the kernel keeps it; -1 where it cannot be read.
     private long DeviceCount(string counter)
     {
@@ -1073,6 +1084,13 @@ internal sealed class TunnelController : IDisposable
         }
 
         return false;
+    }
+
+    // The address an Address line of the configuration gives the adapter, without its prefix.
+    private static IPAddress? Host(string entry)
+    {
+        var slash = entry.IndexOf('/', StringComparison.Ordinal);
+        return IPAddress.TryParse(slash < 0 ? entry.Trim() : entry[..slash].Trim(), out var address) ? address : null;
     }
 
     // Addresses, MTU, and the routes for the ranges the tunnel starts with.

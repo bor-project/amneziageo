@@ -50,10 +50,6 @@ internal static class StatusCommands
             return;
         }
 
-        var reconnect = snapshot.PeriodicReconnect
-            ? $"on, every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s"
-            : "off";
-
         var pairs = new List<(string, string)>
         {
             ("agent", snapshot.AgentVersion),
@@ -64,7 +60,7 @@ internal static class StatusCommands
             ("routing", RoutingLabel(snapshot)),
             ("names", NameLine(snapshot)),
             ("survive reboot", snapshot.SurviveReboot ? "on" : "off"),
-            ("auto reconnect", reconnect),
+            ("auto reconnect", Reconnect(snapshot)),
             ("log level", snapshot.LogLevel),
         };
 
@@ -87,6 +83,23 @@ internal static class StatusCommands
 
         Output.Line();
         Output.Table([" ", "CONFIG", "ENDPOINT", "STATE"], rows, "no configurations yet");
+    }
+
+    /// <summary>
+    /// What the agent does with a dropped tunnel. An agent that always dials again takes the setting for the
+    /// longest pause between the attempts only.
+    /// </summary>
+    public static string Reconnect(StatusSnapshot snapshot)
+    {
+        var every = $"every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s";
+        if (snapshot.ReconnectAlways)
+        {
+            return snapshot.PeriodicReconnect
+                ? $"always, {every}"
+                : $"always, pause up to {ConnectRetry.CeilingSeconds.ToString(CultureInfo.InvariantCulture)}s";
+        }
+
+        return snapshot.PeriodicReconnect ? $"on, {every}" : "off";
     }
 
     private static string NameLine(StatusSnapshot snapshot)

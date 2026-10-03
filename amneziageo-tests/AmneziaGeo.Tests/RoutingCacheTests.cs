@@ -1420,4 +1420,81 @@ public sealed class RoutingCacheTests
 
         Assert.Empty(applier.Deleted);
     }
+
+    [Theory]
+    [InlineData("127.0.0.2")]
+    [InlineData("224.0.0.251")]
+    [InlineData("255.255.255.255")]
+    [InlineData("169.254.10.20")]
+    [InlineData("0.0.0.1")]
+    [InlineData("240.0.0.1")]
+    public void AnAddressNoPacketGoesToThroughATunnel_EarnsNoEntryWhateverClaimsIt(string address)
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["0.0.0.0/0"]);
+        var value = Numeric(address);
+
+        cache.Note(value, app: true);
+        cache.Note(value, RouteVerdict.Proxy);
+        cache.Note(IPAddress.Parse(address));
+
+        Assert.Empty(cache.Snapshot());
+        Assert.Empty(applier.Tunneled);
+        Assert.Empty(applier.Permitted);
+        Assert.Empty(applier.Added);
+    }
+
+    [Fact]
+    public void WhatAnEarlierSessionHeldOfTheMachineItselfOrAGroup_IsNotTakenBack()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, hot: 8);
+        var now = DateTimeOffset.UtcNow;
+
+        cache.Restore([
+            new RememberedRoute("127.0.0.1", nameof(RouteVerdict.Proxy), false, true, now),
+            new RememberedRoute("224.0.0.251", nameof(RouteVerdict.Proxy), false, true, now),
+            new RememberedRoute(YandexAddress, nameof(RouteVerdict.Proxy), false, true, now),
+        ]);
+        cache.Adopt([IPAddress.Parse("127.0.0.2"), IPAddress.Parse("239.255.255.250")]);
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(YandexAddress, held.Address.ToString());
+    }
+
+    [Fact]
+    public async Task ADroppedDatagramToAGroup_IsNeitherHandedToTheRuleNorPermitted()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var asked = new List<string>();
+        cache.SetDatagramRule(address =>
+        {
+            asked.Add(address.ToString());
+            return false;
+        });
+
+        cache.Report(IPAddress.Parse("224.0.0.251"), null, datagram: true);
+        cache.Report(IPAddress.Parse("208.67.222.222"), null, datagram: true);
+        await PumpAsync(cache, () => applier.Permitted.Count > 0);
+
+        Assert.Equal(new[] { "208.67.222.222" }, asked);
+        Assert.Equal(new[] { Numeric("208.67.222.222") }, applier.Permitted);
+    }
+
+    [Fact]
+    public void AnAddressOfTheTunnelAdapterItself_EarnsNoEntryUnderTheRangeOfItsNetwork()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["10.8.0.0/24"], hot: 8);
+        cache.Spare([IPAddress.Parse("10.8.0.11"), IPAddress.Parse("fdcc:ad94::cafe:10")]);
+
+        cache.Note(Numeric("10.8.0.11"), app: true);
+        cache.Restore([new RememberedRoute("10.8.0.11", nameof(RouteVerdict.Proxy), false, false, DateTimeOffset.UtcNow)]);
+        cache.Note(Numeric("10.8.0.1"));
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal("10.8.0.1", held.Address.ToString());
+        Assert.Equal(new[] { "10.8.0.1" }, applier.Tunneled);
+    }
 }

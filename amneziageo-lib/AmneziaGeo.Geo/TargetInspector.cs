@@ -14,12 +14,14 @@ namespace AmneziaGeo.Geo;
 public sealed record HeldRoute(RoleToken Role, string Detail);
 
 /// <summary>
-/// What the platform lends the inspector: what its live tunnel holds for an address, and which addresses an
-/// application is talking to right now. Both are optional - without them the answer comes from the rules alone.
+/// What the platform lends the inspector: what its live tunnel holds for an address, which addresses an
+/// application is talking to right now, and a counted burst of echoes to an address into the tunnel. All are
+/// optional - without them the answer comes from the rules alone, and a probe nothing answers is not counted.
 /// </summary>
 public sealed record TargetProbes(
     Func<IPAddress, HeldRoute?>? Held = null,
-    Func<string, IReadOnlyList<string>>? AppAddresses = null);
+    Func<string, IReadOnlyList<string>>? AppAddresses = null,
+    Func<IPAddress, CancellationToken, Task<TunnelTrace?>>? Trace = null);
 
 /// <summary>
 /// Answers "why does this address, name, application or category go where it goes". The active list decides it,
@@ -61,7 +63,8 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             && findings.Addresses > 0 && findings.OffPath == 0)
         {
             var reached = await ReachableAsync(token, facts, ct).ConfigureAwait(false);
-            findings = findings with { Reachable = reached };
+            var trace = reached ? null : await TraceAsync(token, kind, facts, probes, ct).ConfigureAwait(false);
+            findings = findings with { Reachable = reached, Trace = trace };
         }
 
         var (key, args) = TargetVerdict.Decide(findings, token);
@@ -295,6 +298,33 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             facts.Add(new CheckFact("probe", $"tcp {port.ToString(CultureInfo.InvariantCulture)}", "bad", "nothing accepted the connection"));
             return false;
         }
+    }
+
+    // A probe nothing answered is followed by a counted burst of echoes, the one the channel check sends its silent
+    // peer, so the verdict can tell this device from what lies past the tunnel; null where the platform counts
+    // nothing or an echo came back.
+    private static async Task<TunnelTrace?> TraceAsync(string token, string kind, List<CheckFact> facts, TargetProbes probes, CancellationToken ct)
+    {
+        if (probes.Trace is not { } count)
+        {
+            return null;
+        }
+
+        var host = Host(token);
+        var address = kind == CheckTargetKind.Address
+            ? IPAddress.Parse(host)
+            : (await ResolveAsync(host, ct).ConfigureAwait(false)).FirstOrDefault();
+        if (address is null || await count(address, ct).ConfigureAwait(false) is not { } trace)
+        {
+            return null;
+        }
+
+        if (trace.Step.Length > 0)
+        {
+            facts.Add(new CheckFact("burst", $"echo x{trace.Probes.ToString(CultureInfo.InvariantCulture)}", trace.Step, trace.Describe()));
+        }
+
+        return trace;
     }
 
     private static async Task<IReadOnlyList<IPAddress>> ResolveAsync(string host, CancellationToken ct)

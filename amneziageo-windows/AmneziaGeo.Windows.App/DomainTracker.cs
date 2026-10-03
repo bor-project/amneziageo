@@ -1084,6 +1084,14 @@ internal sealed class DomainTracker(
     // decision, and two host routes on different interfaces would be settled by metric instead of by the rules.
     private bool KeptOffTunnel(IPAddress address)
     {
+        // A name answering with a stub or an application talking to the machine itself or to a group would
+        // otherwise leave a route and a range of the engine nothing ever goes through.
+        if (SpecialAddresses.Holds(address))
+        {
+            logger.LogDebug("{Address}: kept out of the tunnel, no packet goes to it through a tunnel", address);
+            return true;
+        }
+
         if (routing is null)
         {
             return false;

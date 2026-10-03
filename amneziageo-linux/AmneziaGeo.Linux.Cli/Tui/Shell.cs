@@ -4,6 +4,7 @@ using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using Terminal.Gui.App;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -47,10 +48,14 @@ internal sealed class Shell : Window
         _state = new Label { X = 1, Y = 0, Width = Dim.Fill(1), Text = string.Empty };
         _rail = new ListView { X = 0, Y = 2, Width = 24, Height = Dim.Fill(1) };
         _rail.SetSource(new ObservableCollection<string>(_sections));
-        _content = new FrameView { X = 25, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(1) };
+
+        // A frame is a group of its own, which only F6 enters; as a stop Tab walks from the rail into the panel,
+        // through its controls and back, as the hint says.
+        _content = new FrameView { X = 25, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(1), TabStop = TabBehavior.TabStop };
         var hint = new Label { X = 1, Y = Pos.AnchorEnd(1), Text = Localized("Tui_Hint") };
 
         _rail.ValueChanged += (_, _) => Show();
+        _rail.KeyDown += (_, key) => Enter(key);
         Add(_state, _rail, _content, hint);
 
         _agent.SnapshotReceived += OnSnapshot;
@@ -70,6 +75,28 @@ internal sealed class Shell : Window
     }
 
     private static string Localized(string key) => Loc.Instance.Get(key);
+
+    // Tab from the rail enters the panel at its first control and Shift+Tab at its last; left to itself the panel
+    // would come back to the control it was left from, and Tab would only swing between that one and the rail.
+    private void Enter(Key key)
+    {
+        if (key != Key.Tab && key != Key.Tab.WithShift)
+        {
+            return;
+        }
+
+        Edge(_content, key == Key.Tab)?.SetFocus();
+        key.Handled = true;
+    }
+
+    // The first or the last control inside a view that a key can stop at, the deepest one.
+    private static View? Edge(View view, bool first)
+    {
+        var inside = first ? view.SubViews : view.SubViews.Reverse();
+        var stop = inside.FirstOrDefault(one => one.Visible && one.Enabled && one.CanFocus && one.TabStop != TabBehavior.NoStop);
+
+        return stop is null ? null : Edge(stop, first) ?? stop;
+    }
 
     private void OnSnapshot(StatusSnapshot snapshot) => Application.Invoke(Header);
 
@@ -121,9 +148,12 @@ internal sealed class Shell : Window
         return true;
     }
 
+    // A view that cannot take the focus keeps it from everything inside, so every panel takes it.
+    private static View Host() => new() { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
+
     private View Panel(View body, params Button[] buttons)
     {
-        var host = new View { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+        var host = Host();
         body.X = 0;
         body.Y = 0;
         body.Width = Dim.Fill();
@@ -177,7 +207,7 @@ internal sealed class Shell : Window
         }
 
         return Panel(
-            new TextView { Text = string.Join('\n', lines), ReadOnly = true },
+            new TextView { Text = string.Join('\n', lines), ReadOnly = true, TabKeyAddsTab = false },
             Action(Localized("Tui_Connect"), () => Apply(Send(IpcContract.OpSetConnection, "connect"))),
             Action(Localized("Tui_Disconnect"), () => Apply(Send(IpcContract.OpSetConnection, "disconnect"))),
             Action(Localized("Tui_Refresh"), Refresh));
@@ -423,7 +453,7 @@ internal sealed class Shell : Window
     {
         var snapshot = _agent.Snapshot;
         var levels = new[] { "error", "warning", "info", "debug", "trace" };
-        var host = new View { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+        var host = Host();
 
         var levelCaption = new Label { Text = Localized("Main_LogVerbosityTitle"), X = 1, Y = 0 };
         var level = new OptionSelector
@@ -485,8 +515,8 @@ internal sealed class Shell : Window
     private View Log()
     {
         var search = new TextField { X = 1, Y = 0, Width = 30, Text = string.Empty };
-        var viewer = new TextView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(2), ReadOnly = true };
-        var host = new View { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill() };
+        var viewer = new TextView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(2), ReadOnly = true, TabKeyAddsTab = false };
+        var host = Host();
         var caption = new Label { Text = Localized("Main_LogSearchWatermark"), X = 33, Y = 0 };
 
         void Load()

@@ -9,7 +9,8 @@ namespace AmneziaGeo.Ipc;
 /// measured from inside the process that owns it, so nothing here is discovered by guessing. A carrier port set
 /// means the tunnel rides a websocket, and the endpoint is that front: it is reached by a connect, not an echo.
 /// A server of the configuration that measures itself names where the throughput legs pull their bytes from.
-/// The counters are those of the tunnel the probes to the far end ride.
+/// The counters are those of the tunnel the probes to the far end ride. Carried says whether the system routes an
+/// address into the tunnel right now; a far end it routes beside the tunnel is not measured through it.
 /// </summary>
 public sealed record ChannelProbeOptions(
     string Config,
@@ -34,7 +35,8 @@ public sealed record ChannelProbeOptions(
     bool Churning = false,
     int RekeySeconds = -1,
     int ChurnPerMinute = LinkHealth.ChurnPerMinute,
-    Func<CancellationToken, Task<TunnelCounters?>>? Counters = null);
+    Func<CancellationToken, Task<TunnelCounters?>>? Counters = null,
+    Func<IPAddress, CancellationToken, Task<bool>>? Carried = null);
 
 /// <summary>
 /// Runs the ladder: gateway, the server outside the tunnel, the session, the server inside the tunnel, the public
@@ -106,13 +108,11 @@ public static class ChannelProbe
         if (options.Connected)
         {
             legs.Add(Handshake(options));
-            legs.Add(await InsideAsync(CheckLegs.Peer, options.TunnelTargets, "nothing inside the tunnel answered an echo", options.Counters, ct).ConfigureAwait(false));
+            legs.Add(await PeerAsync(options, ct).ConfigureAwait(false));
             legs.Add(tunneled
                 ? await InsideAsync(CheckLegs.Beyond, options.BeyondTargets, "nothing past the exit answered an echo", null, ct).ConfigureAwait(false)
                 : new CheckLeg(CheckLegs.Beyond, LegState.Skipped, Note: "the routing list carries only what it names, so this echo says nothing about the path past the exit"));
-            legs.Add(TimesTunnel(options)
-                ? await RateAsync(CheckLegs.Tunnel, options.TunnelSpeedUrl, options.SpeedUrl, null, ct).ConfigureAwait(false)
-                : new CheckLeg(CheckLegs.Tunnel, LegState.Skipped, Note: "the routing list carries only what it names, so this download does not ride the tunnel"));
+            legs.Add(await TunnelAsync(options, ct).ConfigureAwait(false));
             legs.Add(await SourceAsync(options, tunneled, ct).ConfigureAwait(false));
         }
 
@@ -251,6 +251,65 @@ public static class ChannelProbe
         return leg with { Note = leg.Note.Length > 0 ? $"{leg.Note}, {against}" : against };
     }
 
+    // The echo to the far end of the tunnel. A far end the system routes beside the tunnel, a rule of the list taking
+    // the tunnel network, never answers through it, and its silence says nothing about the server.
+    internal static async Task<CheckLeg> PeerAsync(ChannelProbeOptions options, CancellationToken ct)
+    {
+        if (await AsideAsync(options, options.TunnelTargets, ct).ConfigureAwait(false) is { } aside)
+        {
+            return new CheckLeg(CheckLegs.Peer, LegState.Skipped, Note: $"{aside} is routed past the tunnel on this machine, so this echo says nothing about the server");
+        }
+
+        return await InsideAsync(CheckLegs.Peer, options.TunnelTargets, "nothing inside the tunnel answered an echo", options.Counters, ct).ConfigureAwait(false);
+    }
+
+    // The download through the tunnel, where it rides the tunnel at all: under a routing list only the server's own
+    // service inside the tunnel does, and only while the system routes its address there.
+    internal static async Task<CheckLeg> TunnelAsync(ChannelProbeOptions options, CancellationToken ct)
+    {
+        if (!TimesTunnel(options))
+        {
+            return new CheckLeg(CheckLegs.Tunnel, LegState.Skipped, Note: "the routing list carries only what it names, so this download does not ride the tunnel");
+        }
+
+        if (await AsideAsync(options, [UrlHost(options.TunnelSpeedUrl)], ct).ConfigureAwait(false) is { } aside)
+        {
+            return new CheckLeg(CheckLegs.Tunnel, LegState.Skipped, Note: $"{aside} is routed past the tunnel on this machine, so this download would not ride it");
+        }
+
+        return await RateAsync(CheckLegs.Tunnel, options.TunnelSpeedUrl, options.SpeedUrl, null, ct).ConfigureAwait(false);
+    }
+
+    // The first of the addresses given when the system routes none of them into the tunnel; null where it routes one,
+    // where none is an address, or where nothing says.
+    internal static async Task<string?> AsideAsync(ChannelProbeOptions options, IReadOnlyList<string>? targets, CancellationToken ct)
+    {
+        if (options.Carried is not { } carried)
+        {
+            return null;
+        }
+
+        var addresses = (targets ?? [])
+            .Select(target => IPAddress.TryParse(target, out var address) ? address : null)
+            .OfType<IPAddress>()
+            .ToList();
+        foreach (var address in addresses)
+        {
+            if (await carried(address, ct).ConfigureAwait(false))
+            {
+                return null;
+            }
+        }
+
+        return addresses.Count > 0 ? addresses[0].ToString() : null;
+    }
+
+    // The host a link names, empty when it names none.
+    private static string UrlHost(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.DnsSafeHost : string.Empty;
+    }
+
     // The host a speed address names.
     private static string SpeedHost(string url)
     {
@@ -378,8 +437,11 @@ public static class ChannelProbe
         }
     }
 
-    // Counts a burst of echoes into the tunnel after listening to it; null when an echo came back.
-    private static async Task<TunnelTrace?> TraceAsync(IPAddress address, Func<CancellationToken, Task<TunnelCounters?>>? counters, CancellationToken ct)
+    /// <summary>
+    /// Counts a burst of echoes to an address into the tunnel after listening to it: where the burst was lost, or
+    /// null when an echo came back or nothing reads the counters.
+    /// </summary>
+    public static async Task<TunnelTrace?> TraceAsync(IPAddress address, Func<CancellationToken, Task<TunnelCounters?>>? counters, CancellationToken ct)
     {
         if (await CountAsync(counters, ct).ConfigureAwait(false) is not { } idle)
         {

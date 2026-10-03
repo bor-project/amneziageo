@@ -356,9 +356,7 @@ internal static class DiagCommands
         [
             new("config selected", snapshot.SelectedTarget is { Length: > 0 }, snapshot.SelectedTarget ?? "nothing selected"),
             new("survive reboot", snapshot.SurviveReboot, snapshot.SurviveReboot ? "on" : "off: the agent will not connect after a reboot"),
-            new("auto reconnect", snapshot.PeriodicReconnect, snapshot.PeriodicReconnect
-                ? $"every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s"
-                : "off: a dropped tunnel stays down"),
+            Reconnect(snapshot),
             new("geo sources", (snapshot.Sources?.Count ?? 0) > 0, $"{(snapshot.Sources?.Count ?? 0).ToString(CultureInfo.InvariantCulture)} configured"),
             new("geo categories", categories > 0, categories > 0
                 ? categories.ToString(CultureInfo.InvariantCulture)
@@ -374,6 +372,19 @@ internal static class DiagCommands
         var rows = checks.Select(check => (IReadOnlyList<string>)[check.Ok ? "ok" : "!!", check.Name, check.Detail]).ToList();
         Output.Table(["", "CHECK", "DETAIL"], rows);
         return checks.All(check => check.Ok) ? Exit.Ok : Exit.Failed;
+    }
+
+    // A dropped tunnel comes back where the agent always dials again or the setting asks it to.
+    private static DoctorCheck Reconnect(StatusSnapshot snapshot)
+    {
+        if (snapshot.ReconnectAlways)
+        {
+            return new("auto reconnect", true, StatusCommands.Reconnect(snapshot));
+        }
+
+        return snapshot.PeriodicReconnect
+            ? new("auto reconnect", true, $"every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s")
+            : new("auto reconnect", false, "off: a dropped tunnel stays down");
     }
 
     private static async Task<(IpcAck? Ack, IReadOnlyList<string> Lines)> ReadAsync(IAgentLink agent, string table, Flags flags)

@@ -2427,7 +2427,8 @@ internal sealed class LinuxAgent : IDisposable
             Churning: _tunnel.Running && _link.Churning,
             RekeySeconds: _tunnel.Running ? _link.RekeySeconds : -1,
             ChurnPerMinute: _meter.ChurnPerMinute,
-            Counters: _tunnel.Running ? _tunnel.TunnelCountersAsync : null);
+            Counters: _tunnel.Running ? _tunnel.TunnelCountersAsync : null,
+            Carried: _tunnel.Running ? _tunnel.CarriesAsync : null);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -2503,8 +2504,12 @@ internal sealed class LinuxAgent : IDisposable
                 ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
                 : null;
         var split = _tunnel.RoutingMode is not (SessionReport.ModeFull or SessionReport.ModeOff);
+        // A probe nothing answers is counted on the tunnel, as the ladder counts its peer.
+        var probes = new TargetProbes(
+            Held,
+            Trace: _tunnel.Running ? (address, token) => ChannelProbe.TraceAsync(address, _tunnel.TunnelCountersAsync, token) : null);
         var report = await new TargetInspector(list, split)
-            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(Held), ct)
+            .InspectAsync(args[0], _selectedTarget ?? string.Empty, probes, ct)
             .ConfigureAwait(false);
 
         Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);

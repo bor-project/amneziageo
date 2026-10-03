@@ -590,6 +590,7 @@ internal sealed class TunnelRunner(
         _standing = standing;
         pinnedRoutes.AddRange(inboundReturn);
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, proxyRanges, listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
+        routing.Spare(TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config)));
         // What the previous session used most is taken back from the store: the verdicts an address settled are
         // taken again under the list in force now, and each takes its path with the connection.
         routing.SetMemory(new StoredRouteMemory(store, name, apps, domains, directDomains, blockDomains));

@@ -66,7 +66,8 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             Churning: connected && link.Churning,
             RekeySeconds: connected ? link.RekeySeconds : -1,
             ChurnPerMinute: LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(text)),
-            Counters: connected ? _ => Task.FromResult<TunnelCounters?>(Counters(riding)) : null);
+            Counters: connected ? _ => Task.FromResult<TunnelCounters?>(Counters(riding)) : null,
+            Carried: connected ? (address, _) => Task.FromResult(Rides(riding, address)) : null);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         await RecordAsync(report.Render(), report.Culprit.Length > 0, report.Advice, ct).ConfigureAwait(false);
@@ -140,8 +141,12 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var held = Held(config);
         // An app rule here adds the addresses its application reaches; the rest of the list keeps deciding.
         var apps = list is { Apps.Count: > 0 } ? AppScope.Additive : AppScope.None;
+        // A probe nothing answers is counted on the tunnel that carries its address, as the ladder counts its peer.
+        var probes = new TargetProbes(
+            address => held.GetValueOrDefault(address.ToString()),
+            Trace: Connected(config) ? (address, token) => TraceAsync(store, config, address, token) : null);
         var report = await new TargetInspector(list, split, apps)
-            .InspectAsync(target, config, new TargetProbes(address => held.GetValueOrDefault(address.ToString())), ct)
+            .InspectAsync(target, config, probes, ct)
             .ConfigureAwait(false);
 
         await RecordAsync(report.Render(), report.VerdictKey != TargetVerdicts.Proxy, null, ct).ConfigureAwait(false);
@@ -274,6 +279,25 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         }
 
         return config;
+    }
+
+    // A counted burst of echoes to an address, read on the tunnel the system routes it into, or on the configuration
+    // itself where the route leads to no tunnel.
+    private async Task<TunnelTrace?> TraceAsync(IStateStore store, string config, IPAddress address, CancellationToken ct)
+    {
+        var riding = await RidingAsync(store, config, [address.ToString()], ct).ConfigureAwait(false);
+        return await ChannelProbe.TraceAsync(address, _ => Task.FromResult<TunnelCounters?>(Counters(riding)), ct).ConfigureAwait(false);
+    }
+
+    // Whether the system routes an address into the adapter of the tunnel given. A far end a rule of the list keeps
+    // beside the tunnel is routed to the physical adapter instead; a route or an adapter nothing can read counts as
+    // carried, and the leg is measured as before.
+    private static bool Rides(string config, IPAddress address)
+    {
+        var index = RouteManager.UnderlayHop(address).InterfaceIndex;
+        var device = TunnelDevice.NameOf(config);
+        var adapter = NetworkAdapters.All().FirstOrDefault(one => one.Name == device);
+        return index == 0 || adapter is null || Carries(adapter, index);
     }
 
     // Whether the adapter holds the interface index given.

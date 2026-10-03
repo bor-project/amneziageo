@@ -85,9 +85,28 @@ public static class TargetVerdicts
     public const string Proxy = "Check_TargetProxy";
 
     /// <summary>
-    /// In the tunnel by rule, and still nothing answers. Args: the address.
+    /// In the tunnel by rule, and still nothing answers: the probe left and nothing came back, or nothing counted it.
+    /// Args: the address.
     /// </summary>
     public const string Unreachable = "Check_TargetUnreachable";
+
+    /// <summary>
+    /// In the tunnel by rule, nothing answers, and the counted burst never reached the tunnel adapter. Args: the
+    /// address, the probes the adapter took, the probes sent.
+    /// </summary>
+    public const string UnreachableNotFed = "Check_TargetUnreachableNotFed";
+
+    /// <summary>
+    /// In the tunnel by rule, nothing answers, and the tunnel took the burst without sending it. Args: the address,
+    /// what went out, what the probes weigh.
+    /// </summary>
+    public const string UnreachableNotSent = "Check_TargetUnreachableNotSent";
+
+    /// <summary>
+    /// In the tunnel by rule, nothing reaches the program, and the answers came back into the tunnel. Args: the
+    /// address, what went out, what came back.
+    /// </summary>
+    public const string UnreachableNotDelivered = "Check_TargetUnreachableNotDelivered";
 
     /// <summary>
     /// In the tunnel by rule, and the live tunnel holds its addresses beside it. Args: the rule, how many such
@@ -165,7 +184,8 @@ public sealed record TargetFindings(
     bool Reachable = true,
     string AppRule = "",
     AppScope Apps = AppScope.None,
-    int AppCount = 0);
+    int AppCount = 0,
+    TunnelTrace? Trace = null);
 
 /// <summary>
 /// A finished targeted check: everything found about one address, name, application or category, and the phrase
@@ -312,7 +332,7 @@ public static class TargetVerdict
 
             if (!found.Reachable)
             {
-                return (TargetVerdicts.Unreachable, [target]);
+                return Unreached(found.Trace, target);
             }
 
             return found.Apps == AppScope.Exclusive
@@ -321,6 +341,22 @@ public static class TargetVerdict
         }
 
         return found.Split ? (TargetVerdicts.UnlistedSplit, [target]) : (TargetVerdicts.UnlistedFull, [target]);
+    }
+
+    // Where a probe nothing answered was lost, as far as the counted burst says. The steps on this device are
+    // certain; a burst the tunnel sent without an answer proves nothing about the server, since a sound address may
+    // leave an echo unanswered too, so that one stays past the tunnel, as does a burst nothing counted.
+    private static (string Key, IReadOnlyList<string> Args) Unreached(TunnelTrace? trace, string target)
+    {
+        return trace?.Step switch
+        {
+            TunnelSteps.NotHanded => (TargetVerdicts.UnreachableNotFed,
+                [target, trace.Handed.ToString(CultureInfo.InvariantCulture), trace.Probes.ToString(CultureInfo.InvariantCulture)]),
+            TunnelSteps.NotSent => (TargetVerdicts.UnreachableNotSent, [target, CheckFormat.Bytes(trace.Sent), CheckFormat.Bytes(trace.Weight)]),
+            TunnelSteps.NotDelivered => (TargetVerdicts.UnreachableNotDelivered,
+                [target, CheckFormat.Bytes(trace.Sent), CheckFormat.Bytes(trace.Received)]),
+            _ => (TargetVerdicts.Unreachable, [target]),
+        };
     }
 }
 
@@ -368,6 +404,9 @@ public static class TargetPhrase
             TargetVerdicts.Direct => $"kept out of the tunnel by the direct rule \"{Arg(args, 0)}\"",
             TargetVerdicts.Proxy => $"carried by the tunnel under the rule \"{Arg(args, 0)}\"",
             TargetVerdicts.Unreachable => $"in the tunnel by rule and still nothing answers at {Arg(args, 0)}: the fault is past the tunnel",
+            TargetVerdicts.UnreachableNotFed => $"in the tunnel by rule and nothing answers at {Arg(args, 0)}, and the system gave the tunnel {Arg(args, 1)} of {Arg(args, 2)} probes: the fault is on this device, a filter or a route keeps traffic out of the tunnel",
+            TargetVerdicts.UnreachableNotSent => $"in the tunnel by rule and nothing answers at {Arg(args, 0)}, and the tunnel does not send what it is given, {Arg(args, 1)} went out where the probes weigh {Arg(args, 2)}: the fault is on this device, not the server",
+            TargetVerdicts.UnreachableNotDelivered => $"in the tunnel by rule and nothing reaches the program from {Arg(args, 0)}, though the tunnel sent {Arg(args, 1)} and {Arg(args, 2)} of answers came back into it: the fault is on this device, something drops what the tunnel brings",
             TargetVerdicts.ProxyOffPath => $"in the tunnel by the rule \"{Arg(args, 0)}\" and still {Arg(args, 1)} of its address(es) leave beside it: the resolver answered with addresses no rule carries",
             TargetVerdicts.AppUnlisted => $"\"{Arg(args, 0)}\" is in no list, so its traffic follows the default route",
             TargetVerdicts.AppOutside => $"\"{Arg(args, 0)}\" is named by no app rule, and the tunnel carries only the {Arg(args, 1)} application(s) that are: it leaves beside the tunnel, past every rule in the list",

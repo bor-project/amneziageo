@@ -23,6 +23,12 @@ internal static class TuiApp
         Application.Init();
         try
         {
+            // Left to itself the driver reads the clipboard through xclip alone, which a Wayland desktop lacks.
+            if (SystemClipboard.Find() is { } clipboard && Application.Driver is { } driver)
+            {
+                driver.Clipboard = clipboard;
+            }
+
             using var shell = new Shell(agent);
             Application.Run(shell);
         }

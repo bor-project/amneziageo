@@ -91,7 +91,8 @@ Next steps:
   sudo amneziageo geo download                       # seed and download the geo bases
   sudo amneziageo config import work --file work.conf
   sudo amneziageo up work
-  sudo amneziageo settings set survive-reboot on
+  sudo amneziageo settings set survive-reboot on     # start at boot and connect again
   sudo amneziageo settings set periodic-reconnect-enabled on
   sudo amneziageo tui                                # full-screen console
+  sudo amneziageo stop                               # stop the agent; 'start' brings it back
 EOF

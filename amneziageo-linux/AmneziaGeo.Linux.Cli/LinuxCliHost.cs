@@ -19,6 +19,8 @@ internal sealed class LinuxCliHost : ICliHost
     /// <inheritdoc/>
     public string ExtraUsage => """
         service
+          start                             start the agent; it starts at boot while survive-reboot is on
+          stop                              stop the agent and drop the tunnel
           daemon install [--data <dir>] [--iface <name>] [--engine <path>] [--print]
           daemon uninstall | start | stop | restart | status | logs [--follow]
 
@@ -47,15 +49,19 @@ internal sealed class LinuxCliHost : ICliHost
     {
         if (!File.Exists(SocketPath))
         {
-            return $"the agent is not running: {SocketPath} does not exist";
+            return $"the agent is not running: {SocketPath} does not exist; start it with 'sudo amneziageo start'";
         }
 
         return $"could not talk to the agent on {SocketPath}; check its permissions and that the agent is alive";
     }
 
     /// <inheritdoc/>
-    public Task<int>? TryRunLocalAsync(IReadOnlyList<string> args, CancellationToken ct) =>
-        args[0] == "daemon" ? DaemonCommands.RunAsync([.. args.Skip(1)]) : null;
+    public Task<int>? TryRunLocalAsync(IReadOnlyList<string> args, CancellationToken ct) => args[0] switch
+    {
+        "daemon" => DaemonCommands.RunAsync(this, [.. args.Skip(1)], ct),
+        "start" or "stop" => DaemonCommands.RunAsync(this, args, ct),
+        _ => null,
+    };
 
     /// <inheritdoc/>
     public Task<int>? TryRunWithAgentAsync(IAgentLink agent, IReadOnlyList<string> args, CancellationToken ct) =>

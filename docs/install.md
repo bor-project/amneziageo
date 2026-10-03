@@ -48,7 +48,7 @@ sudo apt install ./amneziageo_<version>_amd64.deb
 sudo apt install ./amneziageo_<version>_amd64.deb ./amneziageo-gui_<version>_amd64.deb
 ```
 
-The agent starts and is enabled at boot right away. The binaries live in `/usr/lib/amneziageo`, the library in `/var/lib/amneziageo`, the client is `/usr/bin/amneziageo`, and the interface name comes from `/etc/default/amneziageo`. `apt remove` keeps the library, `apt purge` deletes it.
+The agent starts right away; it starts at boot while `survive-reboot` is on. The binaries live in `/usr/lib/amneziageo`, the library in `/var/lib/amneziageo`, the client is `/usr/bin/amneziageo`, and the interface name comes from `/etc/default/amneziageo`. `apt remove` keeps the library, `apt purge` deletes it.
 
 For a machine that is not Debian-based, `amneziageo-linux/tools/install-server.sh` publishes the agent and the console client from the sources straight into `/opt/amneziageo`.
 
@@ -66,7 +66,17 @@ Import also takes `--link` with a `vpn://` URL or `--stdin`.
 
 `up <config>` selects the configuration and connects on it; `select <config>` only remembers it for the next connect. The routing list is one setting for the whole machine, not a per-configuration pairing: `routing use <name>` picks it, `routing use none` leaves the configuration's own `AllowedIPs` to decide what the tunnel carries.
 
-`survive-reboot` dials at agent start, `periodic-reconnect-enabled` redials when the tunnel dies. Without them a reboot or a crashed engine leaves the server without a tunnel.
+`survive-reboot` starts the agent at boot and dials at its start, `periodic-reconnect-enabled` redials when the tunnel dies. Without them a reboot or a crashed engine leaves the server without a tunnel.
+
+### Start and stop
+
+```bash
+sudo amneziageo start    # start the agent
+sudo amneziageo stop     # stop it and drop the tunnel
+amneziageo daemon status # running, at boot, control socket
+```
+
+Whether the agent starts at boot follows `survive-reboot`: the agent enables or disables its unit at start and whenever the setting changes, from the console, the full-screen console or the window alike. With the setting off a reboot leaves the agent stopped until `sudo amneziageo start`.
 
 ### Update
 

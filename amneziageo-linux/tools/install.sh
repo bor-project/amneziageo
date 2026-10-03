@@ -25,7 +25,8 @@ SHA-256 published in update.json and installs them with apt. Needs root:
 
   curl -fsSL https://raw.githubusercontent.com/$REPO/master/amneziageo-linux/tools/install.sh | sudo bash
 
-The agent starts and is enabled at boot right away; it checks for later versions by itself.
+The agent starts right away and checks for later versions by itself; it starts at boot while the
+survive-reboot setting is on.
 EOF
 }
 
@@ -162,13 +163,24 @@ done
 echo "== installing =="
 DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades --reinstall "${PATHS[@]}"
 
+# Packages older than this script leave the agent stopped when they are reinstalled after a remove.
+if [ -d /run/systemd/system ]; then
+  systemctl start amneziageo-agent.service || true
+fi
+
 cat <<EOF
 
 Installed: ${FILES[*]}
-The agent runs as the amneziageo-agent service and is enabled at boot; it checks for later versions itself.
-  amneziageo status              # console client
-  amneziageo-gui                 # desktop interface
+The agent runs as the amneziageo-agent service and checks for later versions itself.
+  amneziageo status                               # console client
+  amneziageo tui                                  # full-screen console
+  sudo amneziageo start                           # start the agent
+  sudo amneziageo stop                            # stop the agent and drop the tunnel
+  sudo amneziageo settings set survive-reboot on  # start at boot and connect again
 EOF
+if [ -n "${GUI_URL:-}" ]; then
+  echo "  amneziageo-gui                                  # desktop interface"
+fi
 
 if [ "$KEEP" = "yes" ]; then
   echo "Packages kept in $WORK"

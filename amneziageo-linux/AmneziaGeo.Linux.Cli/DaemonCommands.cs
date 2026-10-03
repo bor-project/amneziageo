@@ -130,10 +130,12 @@ internal static class Systemd
 /// </summary>
 internal static class DaemonCommands
 {
+    private const string _bootFollowsFlag = "start at boot follows survive-reboot: amneziageo settings set survive-reboot on|off";
+
     /// <summary>
     /// Runs one daemon command.
     /// </summary>
-    public static async Task<int> RunAsync(IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(ICliHost host, IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count == 0)
         {
@@ -145,7 +147,10 @@ internal static class DaemonCommands
         {
             "install" => await InstallAsync(rest).ConfigureAwait(false),
             "uninstall" => Uninstall(),
-            "start" or "stop" or "restart" or "enable" or "disable" => Control(args[0]),
+            "start" => await StartAsync(host, ct).ConfigureAwait(false),
+            "stop" => Stop(),
+            "restart" => Control(args[0]),
+            "enable" or "disable" => Reply.Usage(_bootFollowsFlag),
             "status" => Status(),
             "logs" => Logs(rest),
             _ => Reply.Usage($"unknown daemon command '{args[0]}'"),
@@ -200,14 +205,16 @@ internal static class DaemonCommands
             return Exit.Failed;
         }
 
-        var enable = Systemd.Run("systemctl", ["enable", "--now", Systemd.Unit]);
-        Output.Info(enable.Output.Trim());
-        if (enable.Code != 0)
+        // The agent enables its unit at boot itself once survive-reboot is on.
+        var start = Systemd.Run("systemctl", ["start", Systemd.Unit]);
+        if (start.Code != 0)
         {
+            Output.Error(start.Output.Trim());
             return Exit.Failed;
         }
 
         Output.Info($"the library lives in {flags.Value("data") ?? Systemd.DefaultDataRoot}; import a configuration with 'amneziageo config import'");
+        Output.Info(_bootFollowsFlag);
         return Exit.Ok;
     }
 
@@ -235,9 +242,104 @@ internal static class DaemonCommands
         return Exit.Ok;
     }
 
+    // Starts the unit and reads back what survive-reboot made of its start at boot.
+    private static async Task<int> StartAsync(ICliHost host, CancellationToken ct)
+    {
+        if (!Systemd.Exists)
+        {
+            return Reply.Usage($"{Systemd.Unit} is not installed: sudo apt install amneziageo, or sudo amneziageo daemon install");
+        }
+
+        if (!IsRoot())
+        {
+            return Reply.Usage("starting the agent needs root: sudo amneziageo start");
+        }
+
+        var started = Systemd.Run("systemctl", ["start", Systemd.Unit]);
+        if (started.Code != 0)
+        {
+            Output.Error(started.Output.Trim());
+            Output.Error("the reason is in 'amneziageo daemon logs'");
+            return Exit.Failed;
+        }
+
+        // The agent settles its start at boot before it opens the socket, so the first snapshot already holds it.
+        var agent = await host.ConnectAsync(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+        try
+        {
+            if (agent is null)
+            {
+                Output.Error($"{Systemd.Unit} started but the agent does not answer; the reason is in 'amneziageo daemon logs'");
+                return Exit.Failed;
+            }
+
+            var survive = agent.Snapshot.SurviveReboot;
+            var atBoot = Systemd.Run("systemctl", ["is-enabled", Systemd.Unit]).Output.Trim();
+            if (Output.Json)
+            {
+                Output.AsJson(new { unit = Systemd.Unit, active = true, atBoot, surviveReboot = survive });
+                return Exit.Ok;
+            }
+
+            Output.Pairs(
+            [
+                ("agent", "running"),
+                ("at boot", atBoot),
+                ("survive reboot", survive ? "on" : "off"),
+            ]);
+            Output.Info(survive
+                ? "the agent starts at boot and connects again; 'amneziageo settings set survive-reboot off' keeps it off after a reboot"
+                : "the agent stays off after a reboot; 'amneziageo settings set survive-reboot on' brings it back connected");
+            return Exit.Ok;
+        }
+        finally
+        {
+            (agent as IDisposable)?.Dispose();
+        }
+    }
+
+    // Stops the unit; whether it comes back at boot stays with survive-reboot.
+    private static int Stop()
+    {
+        if (!Systemd.Exists)
+        {
+            return Reply.Usage($"{Systemd.Unit} is not installed");
+        }
+
+        if (!IsRoot())
+        {
+            return Reply.Usage("stopping the agent needs root: sudo amneziageo stop");
+        }
+
+        if (!Output.Json)
+        {
+            Output.Info("this drops the tunnel: the agent tears the interface down when it exits");
+        }
+
+        var stopped = Systemd.Run("systemctl", ["stop", Systemd.Unit]);
+        if (stopped.Code != 0)
+        {
+            Output.Error(stopped.Output.Trim());
+            return Exit.Failed;
+        }
+
+        var atBoot = Systemd.Run("systemctl", ["is-enabled", Systemd.Unit]).Output.Trim();
+        if (Output.Json)
+        {
+            Output.AsJson(new { unit = Systemd.Unit, active = false, atBoot });
+            return Exit.Ok;
+        }
+
+        Output.Pairs([("agent", "stopped"), ("at boot", atBoot)]);
+        Output.Info(atBoot == "enabled"
+            ? "survive-reboot is on, so the agent starts again at boot; turn it off first to keep the agent off"
+            : "the agent stays off until 'sudo amneziageo start'");
+        return Exit.Ok;
+    }
+
     private static int Control(string verb)
     {
-        if (verb == "restart" || verb == "stop")
+        if (verb == "restart")
         {
             Output.Info("this drops the tunnel: the agent tears the interface down when it exits");
         }

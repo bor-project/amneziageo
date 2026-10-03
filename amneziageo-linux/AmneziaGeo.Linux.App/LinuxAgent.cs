@@ -180,6 +180,7 @@ internal sealed class LinuxAgent : IDisposable
         _log.SetRouteLog(_routeLog);
         _updater.CollectInstallResult();
         _log.Info("agent", $"library {AgentPaths.Root}, target '{_selectedTarget ?? "(none)"}'");
+        await BootUnit.SyncAsync(_surviveReboot, _log, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1926,6 +1927,7 @@ internal sealed class LinuxAgent : IDisposable
             case SurviveRebootKey:
                 _surviveReboot = IsOn(args[1]);
                 await _store.SetSettingAsync(SurviveRebootKey, _surviveReboot ? "on" : "off", ct).ConfigureAwait(false);
+                await BootUnit.SyncAsync(_surviveReboot, _log, ct).ConfigureAwait(false);
                 break;
             case PeriodicReconnectKey:
                 _periodicReconnect = IsOn(args[1]);

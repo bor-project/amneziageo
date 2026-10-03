@@ -1,5 +1,6 @@
 using AmneziaGeo.Localization;
 using Terminal.Gui.App;
+using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -48,6 +49,16 @@ internal static class Prompt
         var caption = new Label { Text = label, X = 1, Y = 0 };
         var editor = new TextView { Text = initial, X = 1, Y = 2, Width = Dim.Fill(2), Height = Dim.Fill(3) };
         var answer = default(string);
+
+        // Without a clipboard tool Ctrl+V would paste nothing and say nothing; the terminal's own paste still works.
+        editor.KeyDown += (_, key) =>
+        {
+            if (key == Key.V.WithCtrl && Application.Driver?.Clipboard is not SystemClipboard)
+            {
+                key.Handled = true;
+                Info(Loc.Instance.Get("Tui_PasteHint"));
+            }
+        };
 
         var ok = new Button { Text = Loc.Instance.Get("Tui_Ok"), X = 1, Y = Pos.AnchorEnd(1) };
         ok.Accepting += (_, _) =>

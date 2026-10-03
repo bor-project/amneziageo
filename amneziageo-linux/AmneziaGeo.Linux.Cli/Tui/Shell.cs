@@ -109,8 +109,8 @@ internal sealed class Shell : Window
     private void Header()
     {
         var snapshot = _agent.Snapshot;
-        _state.Text = $"{snapshot.BoundStatus} · {snapshot.SelectedTarget ?? Localized("Main_NotSelected")} · " +
-            $"{Localized("Main_RailRoutingTitle")}: {(snapshot.RoutingLists?.Count ?? 0).ToString(CultureInfo.InvariantCulture)} · " +
+        _state.Text = $"{StatusWord(snapshot.BoundStatus)} · {Selected(snapshot)} · " +
+            $"{Localized("Main_RailRoutingTitle")}: {RoutingLabel(snapshot)} · " +
             $"{Localized("Main_LogVerbosityTitle")}: {snapshot.LogLevel}";
     }
 
@@ -191,8 +191,8 @@ internal sealed class Shell : Window
         var snapshot = _agent.Snapshot;
         var lines = new List<string>
         {
-            $"{Localized("Tui_SectionStatus")}: {snapshot.BoundStatus}",
-            $"{Localized("Main_RailConfigTitle")}: {snapshot.SelectedTarget ?? Localized("Main_NotSelected")}",
+            $"{Localized("Tui_SectionStatus")}: {StatusWord(snapshot.BoundStatus)}",
+            $"{Localized("Main_RailConfigTitle")}: {Selected(snapshot)}",
             $"{Localized("Main_RailRoutingTitle")}: {RoutingLabel(snapshot)}",
             $"{Localized("Tui_Tunnel")}: {(snapshot.Active ? Localized("Tui_Up") : Localized("Tui_Down"))}",
             $"{Localized("General_SurviveReboot")}: {OnOff(snapshot.SurviveReboot)}",
@@ -207,7 +207,7 @@ internal sealed class Shell : Window
         }
 
         return Panel(
-            new TextView { Text = string.Join('\n', lines), ReadOnly = true, TabKeyAddsTab = false },
+            new ReadOnlyText { Text = string.Join('\n', lines) },
             Action(Localized("Tui_Connect"), () => Apply(Send(IpcContract.OpSetConnection, "connect"))),
             Action(Localized("Tui_Disconnect"), () => Apply(Send(IpcContract.OpSetConnection, "disconnect"))),
             Action(Localized("Tui_Refresh"), Refresh));
@@ -230,7 +230,7 @@ internal sealed class Shell : Window
         var snapshot = _agent.Snapshot;
         var configs = snapshot.Configs;
         var list = Rows([.. configs.Select(config =>
-            $"{(config.Name == snapshot.SelectedTarget ? "*" : " ")} {config.Name}  {(config.Endpoint.Length > 0 ? config.Endpoint : "-")}  {config.Status}")]);
+            $"{(config.Name == snapshot.SelectedTarget ? "*" : " ")} {config.Name}  {(config.Endpoint.Length > 0 ? config.Endpoint : "-")}  {StatusWord(config.Status)}")]);
 
         ConfigEntry? Current() => Pick(list, configs);
 
@@ -515,7 +515,7 @@ internal sealed class Shell : Window
     private View Log()
     {
         var search = new TextField { X = 1, Y = 0, Width = 30, Text = string.Empty };
-        var viewer = new TextView { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(2), ReadOnly = true, TabKeyAddsTab = false };
+        var viewer = new ReadOnlyText { X = 0, Y = 2, Width = Dim.Fill(), Height = Dim.Fill(2) };
         var host = Host();
         var caption = new Label { Text = Localized("Main_LogSearchWatermark"), X = 33, Y = 0 };
 
@@ -564,6 +564,21 @@ internal sealed class Shell : Window
     private static CheckState State(bool on) => on ? CheckState.Checked : CheckState.UnChecked;
 
     private static string OnOff(bool on) => Loc.Instance.Get(on ? "Tui_On" : "Tui_Off");
+
+    // The agent reports no selection as an empty name as well as a missing one.
+    private static string Selected(StatusSnapshot snapshot) =>
+        snapshot.SelectedTarget is { Length: > 0 } name ? name : Localized("Main_NotSelected");
+
+    private static string StatusWord(string status) => Localized(status switch
+    {
+        ConnectionStatus.Connected => "Status_Connected",
+        ConnectionStatus.Connecting => "Status_Connecting",
+        ConnectionStatus.Disconnecting => "Status_Disconnecting",
+        ConnectionStatus.Disconnected => "Status_Disconnected",
+        ConnectionStatus.Preempted => "Status_Preempted",
+        ConnectionStatus.Failed => "Status_Failed",
+        _ => "Status_Idle",
+    });
 
     private static string Confirm(string name) => Loc.Instance.Get("Tui_ConfirmDelete", name);
 

@@ -83,7 +83,7 @@ internal static class Prompt
     public static void View(string title, string text)
     {
         var dialog = new Dialog { Title = title, Width = Dim.Percent(85), Height = Dim.Percent(80) };
-        var viewer = new TextView { Text = text, ReadOnly = true, X = 1, Y = 0, Width = Dim.Fill(2), Height = Dim.Fill(2) };
+        var viewer = new ReadOnlyText { Text = text, X = 1, Y = 0, Width = Dim.Fill(2), Height = Dim.Fill(2) };
         var close = new Button { Text = Loc.Instance.Get("Main_CloseTooltip"), IsDefault = true, X = 1, Y = Pos.AnchorEnd(1) };
         close.Accepting += (_, _) => Application.RequestStop();
 

@@ -2012,7 +2012,7 @@
     <value>Состояние</value>
   </data>
   <data name="Tui_Hint" xml:space="preserve">
-    <value>Tab: переход между панелями, F10: выход</value>
+    <value>Стрелки или Tab: переход между панелями, F10: выход</value>
   </data>
   <data name="Tui_Tunnel" xml:space="preserve">
     <value>Туннель</value>

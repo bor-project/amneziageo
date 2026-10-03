@@ -297,7 +297,7 @@ internal sealed class DnsRouter : IDisposable
         };
 
         var answer = ReferenceEquals(upstream, _tunnelResolvers)
-            ? await AskThroughTunnelAsync(query, length, ct).ConfigureAwait(false)
+            ? await AskThroughTunnelAsync(query, length, overTcp, ct).ConfigureAwait(false)
             : await AskAsync(upstream, query, length, overTcp, ct).ConfigureAwait(false);
         if (answer is null)
         {
@@ -382,12 +382,16 @@ internal sealed class DnsRouter : IDisposable
     /// </summary>
     public string NameTransport => _tunnelAsk.State;
 
-    // The resolvers behind the tunnel, asked over the transport the setting allows.
-    private async Task<byte[]?> AskThroughTunnelAsync(byte[] query, int length, CancellationToken ct)
+    // The resolvers behind the tunnel, asked over the transport the setting allows. A client that came over TCP came
+    // for the whole answer, which plain DNS would cut to a datagram again.
+    private async Task<byte[]?> AskThroughTunnelAsync(byte[] query, int length, bool overTcp, CancellationToken ct)
     {
         try
         {
-            return await _tunnelAsk.AskAsync(length == query.Length ? query : query[..length], ct).ConfigureAwait(false);
+            var asked = length == query.Length ? query : query[..length];
+            return overTcp
+                ? await _tunnelAsk.AskWholeAsync(asked, ct).ConfigureAwait(false)
+                : await _tunnelAsk.AskAsync(asked, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {

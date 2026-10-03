@@ -56,6 +56,12 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     public void Rearm() => Interlocked.Increment(ref _generation);
 
     /// <summary>
+    /// A blackhole is a route of the main table and a spared address an element of the application set: a rearm
+    /// leaves both in place, so they are deleted whatever generation laid them.
+    /// </summary>
+    public bool FiltersOutliveRearm => true;
+
+    /// <summary>
     /// Makes the peer carry every destination. The carried applications leave through the tunnel without asking the
     /// cache first, so the engine has to accept what it never advertised for them.
     /// </summary>

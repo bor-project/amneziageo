@@ -25,6 +25,8 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
     private const int Capacity = 32;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Tail _hostapdSays = new();
+    private readonly Tail _dnsmasqSays = new();
     private HotspotOptions _applied = new();
     private Process? _hostapd;
     private Process? _dnsmasq;
@@ -82,7 +84,8 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
             return;
         }
 
-        if (Which("hostapd") is null || Which("dnsmasq") is null)
+        // iw is what tells an adapter that serves a point from one that does not, and what counts its stations.
+        if (Which("hostapd") is null || Which("dnsmasq") is null || Which("iw") is null)
         {
             Set(false, HotspotReasons.NoTools);
             return;
@@ -295,7 +298,7 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         await File.WriteAllTextAsync(path, HostapdConfig(options, await CountryAsync(ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
 
-        _hostapd = Spawn(Which("hostapd") ?? "hostapd", path);
+        _hostapd = Spawn(_hostapdSays, Which("hostapd") ?? "hostapd", path);
         if (_hostapd is null)
         {
             Error = "hostapd did not start";
@@ -309,7 +312,7 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
             return true;
         }
 
-        Error = FirstFault(await ReadOutputAsync(_hostapd).ConfigureAwait(false), "hostapd stopped");
+        Error = FirstFault(await ReadOutputAsync(_hostapd, _hostapdSays).ConfigureAwait(false), "hostapd stopped");
         log.Error("hotspot", $"hostapd refused the access point: {Error}");
         _hostapd = null;
         return false;
@@ -320,7 +323,7 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         var path = Path.Combine(_runDirectory, "dnsmasq.conf");
         await File.WriteAllTextAsync(path, DnsmasqConfig(), ct).ConfigureAwait(false);
 
-        _dnsmasq = Spawn(Which("dnsmasq") ?? "dnsmasq", "--conf-file=" + path, "--keep-in-foreground");
+        _dnsmasq = Spawn(_dnsmasqSays, Which("dnsmasq") ?? "dnsmasq", "--conf-file=" + path, "--keep-in-foreground");
         if (_dnsmasq is null)
         {
             Error = "dnsmasq did not start";
@@ -333,7 +336,7 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
             return true;
         }
 
-        Error = FirstFault(await ReadOutputAsync(_dnsmasq).ConfigureAwait(false), "dnsmasq stopped");
+        Error = FirstFault(await ReadOutputAsync(_dnsmasq, _dnsmasqSays).ConfigureAwait(false), "dnsmasq stopped");
         log.Error("hotspot", $"dnsmasq refused the subnet of the access point: {Error}");
         _dnsmasq = null;
         return false;
@@ -510,8 +513,14 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         return 0;
     }
 
+    // Without rfkill there is nothing to ask; a radio that is switched off makes hostapd say so itself.
     private static async Task<bool> RadioBlockedAsync(CancellationToken ct)
     {
+        if (Which("rfkill") is null)
+        {
+            return false;
+        }
+
         var list = await Shell.RunAsync("rfkill", ct, "list", "wifi").ConfigureAwait(false);
         return list.ExitCode == 0 && list.Output.Contains("blocked: yes", StringComparison.OrdinalIgnoreCase);
     }
@@ -563,7 +572,9 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         return null;
     }
 
-    private static Process? Spawn(string file, params string[] args)
+    // What a helper prints is read as it comes for as long as it runs: hostapd logs every station that comes and
+    // goes, and a pipe nobody empties would stop it mid-write with the point still up.
+    private static Process? Spawn(Tail says, string file, params string[] args)
     {
         var info = new ProcessStartInfo(file)
         {
@@ -576,12 +587,20 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
             info.ArgumentList.Add(arg);
         }
 
+        says.Clear();
+        var process = new Process { StartInfo = info };
+        process.OutputDataReceived += (_, received) => says.Add(received.Data);
+        process.ErrorDataReceived += (_, received) => says.Add(received.Data);
         try
         {
-            return Process.Start(info);
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            return process;
         }
         catch (Exception)
         {
+            process.Dispose();
             return null;
         }
     }
@@ -611,11 +630,19 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         }
     }
 
-    private static async Task<string> ReadOutputAsync(Process process)
+    // The wait returns once the readers took the last of the pipes, so the parting words are all in.
+    private static async Task<string> ReadOutputAsync(Process process, Tail says)
     {
-        var stdout = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-        var stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
-        return (stdout + stderr).Trim();
+        using var settle = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await process.WaitForExitAsync(settle.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        return says.Text;
     }
 
     // The line worth showing out of a helper's parting words.
@@ -625,5 +652,48 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .LastOrDefault(text => text.Length > 0);
         return line ?? fallback;
+    }
+
+    // The last lines a helper printed; the rest is let go as it comes.
+    private sealed class Tail
+    {
+        private const int Kept = 20;
+        private readonly Queue<string> _lines = new();
+
+        public string Text
+        {
+            get
+            {
+                lock (_lines)
+                {
+                    return string.Join('\n', _lines).Trim();
+                }
+            }
+        }
+
+        public void Add(string? line)
+        {
+            if (line is null)
+            {
+                return;
+            }
+
+            lock (_lines)
+            {
+                _lines.Enqueue(line);
+                while (_lines.Count > Kept)
+                {
+                    _lines.Dequeue();
+                }
+            }
+        }
+
+        public void Clear()
+        {
+            lock (_lines)
+            {
+                _lines.Clear();
+            }
+        }
     }
 }

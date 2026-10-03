@@ -15,6 +15,8 @@ public sealed class NameUpstreamTests
     private static readonly byte[] _answer = [0x00, 0x02];
     // A reply header with the refused response code, as a filter on port 53 answers in place of the resolver.
     private static readonly byte[] _refusal = [0x00, 0x01, 0x81, 0x85, 0, 1, 0, 0, 0, 0, 0, 0];
+    // A reply header with the truncation bit, as a resolver answers what does not fit a datagram.
+    private static readonly byte[] _cut = [0x00, 0x01, 0x83, 0x80, 0, 1, 0, 0, 0, 0, 0, 0];
 
     [Fact]
     public async Task PlainOnly_NeverReachesForTheOtherTransports()
@@ -186,5 +188,54 @@ public sealed class NameUpstreamTests
         Assert.Equal(_answer, await upstream.AskAsync(_query));
         Assert.Equal(NameUpstream.OnEncrypted, upstream.Carrying);
         Assert.Contains($"{NameUpstream.OnStream} connection reset", upstream.State, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ACutAnswerAskedWhole_IsAskedAgainOverTheFramedTransport_AndPlainStaysInForce()
+    {
+        var upstream = new NameUpstream(DnsTransports.Auto,
+            (_, _) => Task.FromResult(_cut),
+            (_, _) => Task.FromResult(_answer),
+            (_, _) => Task.FromResult(_refusal));
+
+        Assert.Equal(_answer, await upstream.AskWholeAsync(_query));
+        Assert.Equal(NameUpstream.OnPlain, upstream.Carrying);
+    }
+
+    [Fact]
+    public async Task ACutAnswerForADatagram_StaysCutForTheClientToAskAgain()
+    {
+        var reached = 0;
+        var upstream = new NameUpstream(DnsTransports.Auto,
+            (_, _) => Task.FromResult(_cut),
+            (_, _) => { reached++; return Task.FromResult(_answer); },
+            (_, _) => { reached++; return Task.FromResult(_answer); });
+
+        Assert.Equal(_cut, await upstream.AskAsync(_query));
+        Assert.Equal(0, reached);
+    }
+
+    [Fact]
+    public async Task ACutAnswerAskedWhole_WhereTheFramedTransportFails_ComesOverTheEncryptedOne()
+    {
+        var upstream = new NameUpstream(DnsTransports.Auto,
+            (_, _) => Task.FromResult(_cut),
+            (_, _) => throw new IOException("connection reset"),
+            (_, _) => Task.FromResult(_answer));
+
+        Assert.Equal(_answer, await upstream.AskWholeAsync(_query));
+    }
+
+    [Fact]
+    public async Task PlainOnly_AsksAWholeAnswerOnPort53Alone()
+    {
+        var encrypted = 0;
+        var upstream = new NameUpstream(DnsTransports.Plain,
+            (_, _) => Task.FromResult(_cut),
+            (_, _) => throw new IOException("connection reset"),
+            (_, _) => { encrypted++; return Task.FromResult(_answer); });
+
+        Assert.Equal(_cut, await upstream.AskWholeAsync(_query));
+        Assert.Equal(0, encrypted);
     }
 }

@@ -61,4 +61,10 @@ public interface IRouteApplier
     /// Deletes host filters in one batch.
     /// </summary>
     void DeleteFilters(IReadOnlyList<(ulong Out, ulong In)> filters, int generation);
+
+    /// <summary>
+    /// Whether a filter outlives the generation it was laid under. A filter set rebuilt whole takes the filters of
+    /// the older generation with it; filters laid one by one, as routes, stay until they are deleted.
+    /// </summary>
+    bool FiltersOutliveRearm => false;
 }

@@ -16,9 +16,8 @@ public sealed class StatusPipeClient
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     // Serializes the request->ack cycle: only one command may be in flight at a time.
     private readonly SemaphoreSlim _commandLock = new(1, 1);
-    private readonly Lock _ackGate = new();
+    private readonly AckTurns _turns = new();
     private StreamWriter? _writer;
-    private TaskCompletionSource<IpcAck>? _pendingAck;
 
     /// <summary>
     /// Raised when the client connects to the agent.
@@ -102,12 +101,7 @@ public sealed class StatusPipeClient
         await _commandLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var tcs = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
-            lock (_ackGate)
-            {
-                _pendingAck = tcs;
-            }
-
+            var tcs = _turns.Expect();
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -115,7 +109,7 @@ public sealed class StatusPipeClient
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException)
             {
-                ClearPendingAck(tcs);
+                _turns.Withdraw(tcs);
                 return new IpcAck(false, $"send failed: {ex.Message}");
             }
             finally
@@ -132,26 +126,16 @@ public sealed class StatusPipeClient
                 }
                 catch (OperationCanceledException)
                 {
-                    ClearPendingAck(tcs);
-                    return new IpcAck(false, "command timed out");
+                    // The agent still answers in its turn; that ack must not become the reply to the next command.
+                    return _turns.Abandon(tcs)
+                        ? new IpcAck(false, "command timed out")
+                        : await tcs.Task.ConfigureAwait(false);
                 }
             }
         }
         finally
         {
             _commandLock.Release();
-        }
-    }
-
-    // Drops the pending ack slot if it still belongs to the given request.
-    private void ClearPendingAck(TaskCompletionSource<IpcAck> tcs)
-    {
-        lock (_ackGate)
-        {
-            if (ReferenceEquals(_pendingAck, tcs))
-            {
-                _pendingAck = null;
-            }
         }
     }
 
@@ -201,7 +185,7 @@ public sealed class StatusPipeClient
                 finally
                 {
                     _writer = null;
-                    FailPendingAck();
+                    _turns.Fail(new IpcAck(false, "disconnected"));
                 }
             }
         }
@@ -227,26 +211,7 @@ public sealed class StatusPipeClient
         }
         else if (envelope is { Type: IpcContract.AckType, Ack: not null })
         {
-            TaskCompletionSource<IpcAck>? pending;
-            lock (_ackGate)
-            {
-                pending = _pendingAck;
-                _pendingAck = null;
-            }
-
-            pending?.TrySetResult(envelope.Ack);
+            _turns.Deliver(envelope.Ack);
         }
-    }
-
-    private void FailPendingAck()
-    {
-        TaskCompletionSource<IpcAck>? pending;
-        lock (_ackGate)
-        {
-            pending = _pendingAck;
-            _pendingAck = null;
-        }
-
-        pending?.TrySetResult(new IpcAck(false, "disconnected"));
     }
 }

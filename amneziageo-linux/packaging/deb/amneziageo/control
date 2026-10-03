@@ -6,7 +6,7 @@ Section: net
 Priority: optional
 Homepage: https://github.com/bor-project/amneziageo
 Installed-Size: @SIZE@
-Depends: libc6, libgcc-s1, libstdc++6, ca-certificates, iproute2, systemd, @ICU@, libssl3t64 | libssl3 | libssl1.1
+Depends: libc6, libgcc-s1, libstdc++6, ca-certificates, iproute2, nftables, systemd, @ICU@, libssl3t64 | libssl3 | libssl1.1
 Suggests: amneziageo-gui
 Description: geo-aware VPN client - agent and console client
  AmneziaGeo sends only the traffic named by geo rules through an AmneziaWG

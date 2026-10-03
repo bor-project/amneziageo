@@ -318,6 +318,21 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
+    // Work a background loop does to the tunnel waits for the gate the commands hold: the controller carries one
+    // session, and a teardown or a redial must not cut through a connect or a routing edit half done.
+    private async Task GatedAsync(Func<Task> work, CancellationToken ct)
+    {
+        await _commandGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await work().ConfigureAwait(false);
+        }
+        finally
+        {
+            _commandGate.Release();
+        }
+    }
+
     /// <summary>
     /// Builds the current status snapshot.
     /// </summary>
@@ -359,6 +374,7 @@ internal sealed class LinuxAgent : IDisposable
             SurviveReboot: _surviveReboot,
             PeriodicReconnect: _periodicReconnect,
             PeriodicReconnectIntervalSeconds: _reconnectIntervalSeconds,
+            RouteTtlSeconds: _routeTtlSeconds,
             UpdateUrl: _updater.Url,
             UpdateAvailable: _updater.Available,
             UpdateVersion: _updater.Version,
@@ -576,17 +592,27 @@ internal sealed class LinuxAgent : IDisposable
             return;
         }
 
-        _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s, so the tunnel is taken down");
-        _handshakeDueUtc = DateTime.MaxValue;
-        _connectFailed = true;
-        _connectFailReason = ConnectFailureReason.NoHandshake.ToString();
-        _connectFailDetail = "no handshake";
-        _boundStatus = ConnectionStatus.Failed;
-        _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
-        StopLossProbe();
-        await _tunnel.DownAsync(ct).ConfigureAwait(false);
-        await PushAsync(ct).ConfigureAwait(false);
+        await GatedAsync(async () =>
+        {
+            // A connect that ran while this waited for the gate set its own deadline, or was already answered.
+            if (!_desiredConnected || !_tunnel.Running || _boundStatus != ConnectionStatus.Connecting
+                || DateTime.UtcNow < _handshakeDueUtc)
+            {
+                return;
+            }
+
+            _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s, so the tunnel is taken down");
+            _handshakeDueUtc = DateTime.MaxValue;
+            _connectFailed = true;
+            _connectFailReason = ConnectFailureReason.NoHandshake.ToString();
+            _connectFailDetail = "no handshake";
+            _boundStatus = ConnectionStatus.Failed;
+            _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
+            StopLossProbe();
+            await _tunnel.DownAsync(ct).ConfigureAwait(false);
+            await PushAsync(ct).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     // Repairs a tunnel that is up and no longer carrying. The counters alone never say it: a session that keeps
@@ -722,9 +748,6 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpEditConfig:
                 return await AskServersAsync(await EditConfigAsync(args, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
-
-            case IpcContract.OpAddConfig:
-                return await AskServersAsync(await AddConfigAsync(args, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
             case IpcContract.OpGetConfig:
                 return await GetConfigAsync(args, ct).ConfigureAwait(false);
@@ -1076,7 +1099,9 @@ internal sealed class LinuxAgent : IDisposable
                 foreach (var subscription in due)
                 {
                     var outcome = await service.RefreshAsync([subscription.Name], ct).ConfigureAwait(false);
-                    await FlagRewrittenAsync(outcome, ct).ConfigureAwait(false);
+                    // Taking the running tunnel down or dialling it again is the controller's work, done under the
+                    // gate the commands hold, as the re-read asked for by hand is.
+                    await GatedAsync(() => FlagRewrittenAsync(outcome, ct), ct).ConfigureAwait(false);
                     if (!outcome.Ack.Ok)
                     {
                         _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");
@@ -1256,17 +1281,6 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    private async Task<IpcAck> AddConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 2 || !File.Exists(args[1]))
-        {
-            return new IpcAck(false, args.Count < 2 ? "expected a name and a file path" : $"{args[1]} not found");
-        }
-
-        var text = await File.ReadAllTextAsync(args[1], ct).ConfigureAwait(false);
-        return await SaveConfigAsync([args[0], text], ct).ConfigureAwait(false);
-    }
-
     // Отбивает конфиг, который движок отверг бы при подъёме туннеля.
     private static IpcAck? RejectBadConfig(string text)
     {
@@ -1355,6 +1369,19 @@ internal sealed class LinuxAgent : IDisposable
 
         await _store.RenameConfigAsync(args[0], args[1], ct).ConfigureAwait(false);
         await ConfigRename.CarryAsync(_store, args[0], args[1], ct).ConfigureAwait(false);
+
+        // The live binding follows the rename too: under the old name the next connect, re-dial or routing edit
+        // would look for a configuration that is gone, and a subscription refresh would take the running one down.
+        if (string.Equals(_selectedTarget, args[0], StringComparison.Ordinal))
+        {
+            _selectedTarget = args[1];
+        }
+
+        if (string.Equals(_boundTarget, args[0], StringComparison.Ordinal))
+        {
+            _boundTarget = args[1];
+        }
+
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -2514,31 +2541,29 @@ internal sealed class LinuxAgent : IDisposable
         }
         finally
         {
-            ReleaseProbe(cache, address, held);
+            ReleaseProbe(cache, held);
         }
     }
 
     // Holds the address on the path asked for; auto holds nothing.
-    private static bool HoldProbe(RoutingCache? cache, System.Net.IPAddress? address, string path)
+    private static RoutingCache.Forced? HoldProbe(RoutingCache? cache, System.Net.IPAddress? address, string path)
     {
         if (cache is null || address is null || path == ProbePaths.Auto)
         {
-            return false;
+            return null;
         }
 
-        cache.Note(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
-        return true;
+        return cache.Force(address, path == ProbePaths.Tunnel ? RouteVerdict.Proxy : RouteVerdict.Direct);
     }
 
-    // Puts a held address back under the rules that own it.
-    private static void ReleaseProbe(RoutingCache? cache, System.Net.IPAddress? address, bool held)
+    // Puts a held address back where it stood before the run: asking the cache what the rules make of it would
+    // only hand back the verdict the hold forced.
+    private static void ReleaseProbe(RoutingCache? cache, RoutingCache.Forced? held)
     {
-        if (!held || cache is null || address is null)
+        if (held is not null)
         {
-            return;
+            cache?.Unforce(held);
         }
-
-        cache.Note(address, cache.Classify(address));
     }
 
     // Where the run went: the path forced, or - for auto - what the rules in force make of the address.

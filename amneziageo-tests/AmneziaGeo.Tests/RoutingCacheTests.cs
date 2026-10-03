@@ -45,6 +45,8 @@ public sealed class RoutingCacheTests
 
         public bool TunnelFails { get; set; }
 
+        public bool FiltersOutliveRearm { get; set; }
+
         private ulong _nextId = 1;
 
         public bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation)
@@ -1322,5 +1324,100 @@ public sealed class RoutingCacheTests
 
         Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
         Assert.Empty(applier.Added);
+    }
+
+    [Fact]
+    public void AForcedBypass_OfAnAddressNothingHeld_IsTakenBackWhole()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, hot: 8);
+
+        var forced = cache.Force(IPAddress.Parse("8.8.8.8"), RouteVerdict.Direct);
+        Assert.NotNull(forced);
+        Assert.Equal(new[] { "8.8.8.8" }, applier.Added);
+
+        cache.Unforce(forced);
+
+        Assert.Equal(new[] { "8.8.8.8" }, applier.Removed);
+        Assert.Empty(cache.Snapshot());
+        Assert.Empty(cache.Hot());
+        Assert.Equal(RouteVerdict.None, cache.Classify(IPAddress.Parse("8.8.8.8")));
+    }
+
+    [Fact]
+    public void AForcedVerdict_OnAnAddressANameDecided_GivesTheNameItsPathBack()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var address = IPAddress.Parse("8.8.8.8");
+        cache.Note(address, RouteVerdict.Proxy);
+
+        var forced = cache.Force(address, RouteVerdict.Direct);
+        Assert.Equal(new[] { "8.8.8.8" }, applier.Untunneled);
+        cache.Unforce(forced!);
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(RouteVerdict.Proxy, held.Verdict);
+        Assert.Equal(RoutePlan.Tunnel, held.Plan);
+        Assert.True(held.ByName);
+        Assert.Equal(new[] { "8.8.8.8", "8.8.8.8" }, applier.Tunneled);
+    }
+
+    [Fact]
+    public void AForcedVerdict_OnAnAddressTheRangesDecided_LeavesNoNameVerdictForTheNextSession()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, hot: 8);
+        var address = IPAddress.Parse("8.8.8.8");
+        cache.Note(address);
+
+        cache.Unforce(cache.Force(address, RouteVerdict.Direct)!);
+
+        var kept = Assert.Single(cache.Hot());
+        Assert.False(kept.ByName);
+        Assert.Equal(nameof(RouteVerdict.None), kept.Verdict);
+        Assert.Equal(applier.Added, applier.Removed);
+    }
+
+    [Fact]
+    public void ARuleEditWhileAVerdictIsForced_IsWhatTheAddressKeeps()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false);
+        var forced = cache.Force(IPAddress.Parse(YandexAddress), RouteVerdict.Direct);
+
+        cache.Rebuild([], [YandexRange], []);
+        cache.Unforce(forced!);
+
+        var held = Assert.Single(cache.Snapshot());
+        Assert.Equal(RouteVerdict.Direct, held.Verdict);
+        Assert.Empty(applier.Removed);
+    }
+
+    [Fact]
+    public void WhereFiltersOutliveARearm_ABlockLaidBeforeIt_GoesWithItsEntry()
+    {
+        var applier = new FakeApplier { Generation = 1, FiltersOutliveRearm = true };
+        var cache = Cache(applier, split: true, block: ["10.0.0.0/8"]);
+        cache.Note(IPAddress.Parse("10.1.2.3"));
+        Assert.Equal(new[] { Numeric("10.1.2.3") }, applier.Dropped);
+
+        applier.Generation = 2;
+        cache.RemoveAll();
+
+        Assert.Single(applier.Deleted);
+    }
+
+    [Fact]
+    public void WhereARearmRebuildsTheFilterSet_AFilterOfTheOlderGenerationIsNotDeletedAgain()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, block: ["10.0.0.0/8"]);
+        cache.Note(IPAddress.Parse("10.1.2.3"));
+
+        applier.Generation = 2;
+        cache.RemoveAll();
+
+        Assert.Empty(applier.Deleted);
     }
 }

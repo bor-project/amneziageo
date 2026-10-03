@@ -67,9 +67,11 @@ internal sealed class TunnelController : IDisposable
         _iface = interfaceName;
         _log = log;
         ResolvConf.RestoreAsync(interfaceName, log).GetAwaiter().GetResult();
-        // Drops the refusals and the routes past the tunnel a killed run left standing.
+        // Drops the refusals, the routes past the tunnel and the hold on inbound connections a killed run left
+        // standing: a session that lets the tunnel in lays no table of its own, so nothing else would lift that one.
         BlockFirewall.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
         DirectPath.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
+        InboundFirewall.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -245,72 +247,83 @@ internal sealed class TunnelController : IDisposable
             return Refused($"engine start failed: {ex.Message}");
         }
 
-        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport, underlay), ct).ConfigureAwait(false);
-        if (failure is not null)
+        // Past this point the engine and its routes stand: whatever fails takes them down with it, so a refused
+        // connect never leaves a tunnel that carries traffic under no rules.
+        try
         {
-            await DownAsync(ct).ConfigureAwait(false);
-            return Refused(failure);
+            var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport, underlay), ct).ConfigureAwait(false);
+            if (failure is not null)
+            {
+                await DownAsync(ct).ConfigureAwait(false);
+                return Refused(failure);
+            }
+
+            // Inbound access off holds the tunnel off this machine; with it on the ranges above carry it and no table stands.
+            _inboundBlocked = options.Transport?.AllowInbound != true
+                && await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
+
+            // In a container the connections that come in beside the tunnel are answered the way they came.
+            _returnRouted = ContainerHost.Detected && hop is ({ } via, { } dev)
+                && await ReturnPath.ApplyAsync(_iface, via, dev, _log, ct).ConfigureAwait(false);
+
+            Advertised = allowedIps;
+            _sessionConfig = configText;
+            Mode = split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
+            RoutingMode = Token(split, hasRules);
+            ListName = routing.ListName;
+            _split = split;
+            var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
+            _standingBasis = new StandingBasis(ownNetworks, resolverRanges, [.. resolverRoutes.Select(server => server.ToString())], applier);
+            _inboundRoutes = inboundRoutes;
+            _standing = standing;
+            _standingRoutes = [.. inboundRoutes, .. standing.All];
+            // All UDP belongs to a split: a full tunnel already carries every datagram.
+            var allUdp = split && routing.AllUdp;
+            // The ranges of the list take the mark in a split alone: a full tunnel already carries them.
+            var marked = split ? SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes) : null;
+            // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
+            // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
+            IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn];
+            var past = SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, endpointIp is null ? pinned : [.. pinned, endpointIp]);
+            _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
+                [.. routing.DirectRoutes, .. routing.BlockRoutes], marked, [], past, allUdp, endpointIp, _log, ct).ConfigureAwait(false);
+            _appRules = routing.TunnelApps;
+            _allUdp = allUdp && _apps is not null;
+            applier.Attach(_apps);
+            if (_apps is not null && !applier.CarryEverything())
+            {
+                _log.Warn("apps", "the peer would not take the whole range, so the applications reach only what the rules "
+                    + "already advertised");
+            }
+            // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
+            // In a split the far end of a connection this machine took in earns no route: its answers go back the way
+            // the connection came.
+            var cache = new RoutingCache(applier, new ProcNet(split), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), pinned, directStanding: !split);
+            _cache = cache;
+            applier.Follow(cache.Classify);
+            _peerAddress = endpointIp;
+            await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
+            // A split leaves the direct ranges on the path of the machine as it is.
+            _direct = !split && hop is ({ } gateway, { } device) ? new DirectPath(gateway, device, _log) : null;
+            await PassAsync(cache, routing, ct).ConfigureAwait(false);
+            if (_memory is { } memory)
+            {
+                cache.SetMemory(memory);
+            }
+
+            _sessionCts = new CancellationTokenSource();
+            _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
+            StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers, options.DnsTransport);
+            var ranges = cache.RangeCounts;
+            _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
+            return null;
         }
-
-        // Inbound access off holds the tunnel off this machine; with it on the ranges above carry it and no table stands.
-        _inboundBlocked = options.Transport?.AllowInbound != true
-            && await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
-
-        // In a container the connections that come in beside the tunnel are answered the way they came.
-        _returnRouted = ContainerHost.Detected && hop is ({ } via, { } dev)
-            && await ReturnPath.ApplyAsync(_iface, via, dev, _log, ct).ConfigureAwait(false);
-
-        Advertised = allowedIps;
-        _sessionConfig = configText;
-        Mode = split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
-        RoutingMode = Token(split, hasRules);
-        ListName = routing.ListName;
-        _split = split;
-        var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
-        _standingBasis = new StandingBasis(ownNetworks, resolverRanges, [.. resolverRoutes.Select(server => server.ToString())], applier);
-        _inboundRoutes = inboundRoutes;
-        _standing = standing;
-        _standingRoutes = [.. inboundRoutes, .. standing.All];
-        // All UDP belongs to a split: a full tunnel already carries every datagram.
-        var allUdp = split && routing.AllUdp;
-        // The ranges of the list take the mark in a split alone: a full tunnel already carries them.
-        var marked = split ? SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes) : null;
-        // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
-        // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
-        IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn];
-        var past = SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, endpointIp is null ? pinned : [.. pinned, endpointIp]);
-        _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
-            [.. routing.DirectRoutes, .. routing.BlockRoutes], marked, [], past, allUdp, endpointIp, _log, ct).ConfigureAwait(false);
-        _appRules = routing.TunnelApps;
-        _allUdp = allUdp && _apps is not null;
-        applier.Attach(_apps);
-        if (_apps is not null && !applier.CarryEverything())
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log.Warn("apps", "the peer would not take the whole range, so the applications reach only what the rules "
-                + "already advertised");
+            _log.Error("tunnel", "routing setup failed; the tunnel is taken down", ex);
+            await DownAsync(CancellationToken.None).ConfigureAwait(false);
+            return Refused($"routing setup failed: {ex.Message}");
         }
-        // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
-        // In a split the far end of a connection this machine took in earns no route: its answers go back the way
-        // the connection came.
-        var cache = new RoutingCache(applier, new ProcNet(split), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), pinned, directStanding: !split);
-        _cache = cache;
-        applier.Follow(cache.Classify);
-        _peerAddress = endpointIp;
-        await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
-        // A split leaves the direct ranges on the path of the machine as it is.
-        _direct = !split && hop is ({ } gateway, { } device) ? new DirectPath(gateway, device, _log) : null;
-        await PassAsync(cache, routing, ct).ConfigureAwait(false);
-        if (_memory is { } memory)
-        {
-            cache.SetMemory(memory);
-        }
-
-        _sessionCts = new CancellationTokenSource();
-        _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
-        StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers, options.DnsTransport);
-        var ranges = cache.RangeCounts;
-        _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
-        return null;
     }
 
     /// <summary>

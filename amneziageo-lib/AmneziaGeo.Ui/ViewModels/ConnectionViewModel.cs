@@ -177,10 +177,50 @@ internal partial class ConnectionViewModel : ViewModelBase
         try
         {
             NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+            WatchesNetwork = true;
         }
         catch (Exception)
         {
             // A platform that reports no network events leaves the button and the home screen as the triggers.
+        }
+    }
+
+    /// <summary>
+    /// Следит ли главный экран за сменой адресов сети.
+    /// </summary>
+    public bool WatchesNetwork { get; private set; }
+
+    /// <summary>
+    /// Включает и выключает слежение за сменой адресов сети; включённое заново, оно меряет серверы главного экрана.
+    /// </summary>
+    public void WatchNetwork(bool on)
+    {
+        if (on == WatchesNetwork)
+        {
+            return;
+        }
+
+        try
+        {
+            if (on)
+            {
+                NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+            }
+            else
+            {
+                NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+                _networkTimer.Stop();
+            }
+        }
+        catch (Exception ex) when (ex is PlatformNotSupportedException or NetworkInformationException)
+        {
+            return;
+        }
+
+        WatchesNetwork = on;
+        if (on && _host.IsHome)
+        {
+            ProbeOnHomeShown();
         }
     }
 

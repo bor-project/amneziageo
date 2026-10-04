@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
@@ -16,10 +16,11 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AmneziaGeo.Android.Ui.Services;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Ui.Services;
-using CommunityToolkit.Mvvm.ComponentModel;
+using AmneziaGeo.Ui.ViewModels;
 using Button = Avalonia.Controls.Button;
 using CheckBox = Avalonia.Controls.CheckBox;
 using InputMethod = Avalonia.Input.InputMethod;
@@ -755,59 +756,47 @@ internal sealed partial class MobileSelectHost : UserControl
 
     private Border? _appSplitOverlay;
 
-    // Full-screen app picker: a searchable checklist of launchable apps, pre-checked from the current selection.
-    // Enumerates via the launcher intent (no QUERY_ALL_PACKAGES), so only apps with a launcher icon are listed.
-    private void ShowAppPicker(IReadOnlyCollection<string> selected, Action<IReadOnlyCollection<string>> onPicked)
+    // Окно выбора приложений во весь экран: поиск, показ системных программ и список с отметками.
+    private void ShowAppPicker(IReadOnlyCollection<string> selected, Action<IReadOnlyCollection<string>, IReadOnlyCollection<string>> onPicked)
     {
         if (_appSplitOverlay is not null)
         {
             return;
         }
 
-        var chosen = new HashSet<string>(selected, StringComparer.Ordinal);
-
-        var pm = global::Android.App.Application.Context.PackageManager!;
-        var own = global::Android.App.Application.Context.PackageName;
-        var intent = new global::Android.Content.Intent(global::Android.Content.Intent.ActionMain);
-        intent.AddCategory(global::Android.Content.Intent.CategoryLauncher);
-        var apps = pm.QueryIntentActivities(intent, global::Android.Content.PM.PackageInfoFlags.MetaData)
-            .Where(ri => ri.ActivityInfo?.ApplicationInfo?.PackageName is not null
-                && ri.ActivityInfo.ApplicationInfo.PackageName != own)
-            .Select(ri =>
-            {
-                var ai = ri.ActivityInfo!.ApplicationInfo!;
-                return (Label: ri.LoadLabel(pm)?.ToString() ?? ai.PackageName!, Pkg: ai.PackageName!);
-            })
-            .GroupBy(a => a.Pkg, StringComparer.Ordinal)
-            .Select(g => g.First())
-            .OrderBy(a => a.Label, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-
-        var rows = apps
-            .Select(a => new AppRow(a.Label, a.Pkg, chosen.Contains(a.Pkg)))
-            .ToList();
-        var shown = new ObservableCollection<AppRow>(rows);
+        var picker = new AppPickerViewModel();
+        _ = FillAppsAsync(picker, selected);
 
         // Строки создаются по мере прокрутки: у телефона их сотни.
         var list = new ListBox
         {
-            ItemsSource = shown,
+            ItemsSource = picker.Shown,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             Margin = new Thickness(0, 8, 0, 0),
-            // Имя и отметка берутся привязками, без чтения самой строки. Имя в одну строку с многоточием: от равной
-            // высоты строк зависит счёт прокрутки, а перенос длинного имени оставлял пустую полосу под списком.
-            ItemTemplate = new FuncDataTemplate<AppRow>((_, _) =>
+            // Имя, пакет и отметка берутся привязками, без чтения самой строки.
+            ItemTemplate = new FuncDataTemplate<AppPickerRow>((_, _) =>
             {
                 var label = new TextBlock
                 {
                     TextWrapping = TextWrapping.NoWrap,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    VerticalAlignment = VerticalAlignment.Center,
                 };
-                label.Bind(TextBlock.TextProperty, new Binding(nameof(AppRow.Label)));
-                var check = new CheckBox { Content = label, VerticalContentAlignment = VerticalAlignment.Center };
-                check.Bind(Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty, new Binding(nameof(AppRow.Picked)) { Mode = BindingMode.TwoWay });
+                label.Bind(TextBlock.TextProperty, new Binding(nameof(AppPickerRow.Label)));
+                var package = new TextBlock
+                {
+                    FontSize = 11.5,
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                };
+                package.Classes.Add("muted");
+                package.Bind(TextBlock.TextProperty, new Binding(nameof(AppPickerRow.Package)));
+                var check = new CheckBox
+                {
+                    Content = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Children = { label, package } },
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                };
+                check.Bind(Avalonia.Controls.Primitives.ToggleButton.IsCheckedProperty, new Binding(nameof(AppPickerRow.Picked)) { Mode = BindingMode.TwoWay });
                 return check;
             }),
         };
@@ -821,28 +810,20 @@ internal sealed partial class MobileSelectHost : UserControl
             },
         });
 
-        var listScroll = list;
-
-        // Live match filter over the app list.
         var search = new TextBox { Watermark = Loc.Instance.Get("AppPicker_Search"), Margin = new Thickness(0, 8, 0, 0) };
         search.Classes.Add("field");
-        search.TextChanged += (_, _) =>
-        {
-            var query = search.Text?.Trim().ToLowerInvariant() ?? string.Empty;
-            shown.Clear();
-            foreach (var row in rows.Where(r => query.Length == 0 || r.Haystack.Contains(query, StringComparison.Ordinal)))
-            {
-                shown.Add(row);
-            }
-        };
+        search.TextChanged += (_, _) => picker.Query = search.Text ?? string.Empty;
+
+        var system = new SettingSwitchRow { Label = Loc.Instance.Get("AppPicker_System"), Margin = new Thickness(0, 6, 0, 0) };
+        system.Bind(SettingSwitchRow.IsCheckedProperty, new Binding(nameof(AppPickerViewModel.ShowSystem)) { Source = picker, Mode = BindingMode.TwoWay });
+        system.Bind(IsVisibleProperty, new Binding(nameof(AppPickerViewModel.HasSystem)) { Source = picker });
 
         var save = new Button { Content = Loc.Instance.Get("Main_SaveButton"), HorizontalAlignment = HorizontalAlignment.Stretch };
         save.Classes.Add("accent");
         save.Click += (_, _) =>
         {
-            var packages = rows.Where(r => r.Picked).Select(r => r.Package).ToList();
             CloseAppSplit();
-            onPicked(packages);
+            onPicked(picker.Offered, picker.Picked);
         };
 
         var cancel = new Button { Content = Loc.Instance.Get("Main_CancelButton"), HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -880,11 +861,13 @@ internal sealed partial class MobileSelectHost : UserControl
         var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(12) };
         DockPanel.SetDock(header, Dock.Top);
         DockPanel.SetDock(search, Dock.Top);
+        DockPanel.SetDock(system, Dock.Top);
         DockPanel.SetDock(actions, Dock.Bottom);
         panel.Children.Add(header);
         panel.Children.Add(search);
+        panel.Children.Add(system);
         panel.Children.Add(actions);
-        panel.Children.Add(listScroll);
+        panel.Children.Add(list);
 
         var overlay = new Border { Child = panel };
         _appSplitOverlay = overlay;
@@ -894,40 +877,20 @@ internal sealed partial class MobileSelectHost : UserControl
             : new SolidColorBrush(Color.FromRgb(0x1a, 0x1c, 0x20));
     }
 
-    // Строка списка приложений: имя, пакет и отметка.
-    private sealed partial class AppRow : ObservableObject
+    // Кладёт в окно выбора программы устройства с отметками выбранных.
+    private static async Task FillAppsAsync(AppPickerViewModel picker, IReadOnlyCollection<string> selected)
     {
-        /// <summary>
-        /// ctor
-        /// </summary>
-        public AppRow(string label, string package, bool picked)
+        var chosen = new HashSet<string>(selected, StringComparer.Ordinal);
+        var context = global::Android.App.Application.Context;
+        try
         {
-            Label = label;
-            Package = package;
-            Haystack = $"{label} {package}".ToLowerInvariant();
-            _picked = picked;
+            var apps = await Task.Run(() => AppCensus.List(context));
+            picker.Load(apps.Select(app => new AppPickerRow(app.Label, app.Package, app.IsSystem, chosen.Contains(app.Package))));
         }
-
-        /// <summary>
-        /// Имя приложения.
-        /// </summary>
-        public string Label { get; }
-
-        /// <summary>
-        /// Имя пакета.
-        /// </summary>
-        public string Package { get; }
-
-        /// <summary>
-        /// Строка для поиска.
-        /// </summary>
-        public string Haystack { get; }
-
-        /// <summary>
-        /// Отмечено ли приложение.
-        /// </summary>
-        [ObservableProperty]
-        private bool _picked;
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Error("AppPicker", ex.ToString());
+        }
     }
 
     private void CloseAppSplit()

@@ -292,6 +292,45 @@
   <data name="Theme_System" xml:space="preserve">
     <value>Системная</value>
   </data>
+  <data name="Background_Section" xml:space="preserve">
+    <value>Работа в фоне</value>
+  </data>
+  <data name="Background_Notifications" xml:space="preserve">
+    <value>Уведомления</value>
+  </data>
+  <data name="Background_NotificationsOn" xml:space="preserve">
+    <value>Включены</value>
+  </data>
+  <data name="Background_NotificationsOff" xml:space="preserve">
+    <value>Выключены</value>
+  </data>
+  <data name="Background_Battery" xml:space="preserve">
+    <value>Экономия батареи</value>
+  </data>
+  <data name="Background_BatteryFree" xml:space="preserve">
+    <value>Не ограничивает</value>
+  </data>
+  <data name="Background_BatteryLimits" xml:space="preserve">
+    <value>Ограничивает</value>
+  </data>
+  <data name="Background_Autostart" xml:space="preserve">
+    <value>Автозапуск</value>
+  </data>
+  <data name="Background_AutostartOn" xml:space="preserve">
+    <value>Включён</value>
+  </data>
+  <data name="Background_AutostartOff" xml:space="preserve">
+    <value>Выключен</value>
+  </data>
+  <data name="Background_Allow" xml:space="preserve">
+    <value>Разрешить</value>
+  </data>
+  <data name="Background_Configure" xml:space="preserve">
+    <value>Настроить</value>
+  </data>
+  <data name="Background_Open" xml:space="preserve">
+    <value>Открыть</value>
+  </data>
   <data name="About_Section" xml:space="preserve">
     <value>О приложении</value>
   </data>
@@ -852,6 +891,9 @@
   </data>
   <data name="AppPicker_Search" xml:space="preserve">
     <value>Поиск приложений</value>
+  </data>
+  <data name="AppPicker_System" xml:space="preserve">
+    <value>Системные</value>
   </data>
   <data name="AppPicker_Title" xml:space="preserve">
     <value>Приложения</value>
@@ -2377,6 +2419,9 @@
   </data>
   <data name="Check_Why_app" xml:space="preserve">
     <value>по приложению</value>
+  </data>
+  <data name="Check_Why_udp" xml:space="preserve">
+    <value>весь UDP</value>
   </data>
   <data name="Check_Why_resolved" xml:space="preserve">
     <value>адрес домена</value>

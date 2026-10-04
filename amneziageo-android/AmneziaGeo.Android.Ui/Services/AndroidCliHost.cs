@@ -4,6 +4,7 @@ using Android.Net;
 using AmneziaGeo.Android.Engine;
 using AmneziaGeo.Cli;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Ui.Services;
 
 namespace AmneziaGeo.Android.Ui.Services;
 
@@ -43,7 +44,13 @@ internal sealed class AndroidCliHost : ICliHost
             await Task.Delay(50, ct).ConfigureAwait(false);
         }
 
-        return agent.Latest is null ? null : new AndroidAgentLink(agent);
+        if (agent.Latest is null)
+        {
+            return null;
+        }
+
+        agent.CatchUp();
+        return new AndroidAgentLink(agent);
     }
 
     /// <inheritdoc/>
@@ -68,6 +75,24 @@ internal sealed class AndroidCliHost : ICliHost
             new("library", files.Length > 0 && Directory.Exists(files), files.Length > 0 ? files : "no files directory"),
             new("vpn consent", consented, consented ? "granted" : "not granted: open the app once and connect"),
             new("tunnel process", true, VpnBridge.IsRunning(context) ? "running" : "not running"),
+            .. AndroidBackgroundLimits.Read().Select(BackgroundCheck),
         ];
+    }
+
+    // Строка проверки по ограничению фона.
+    private static DoctorCheck BackgroundCheck(BackgroundLimit limit)
+    {
+        var limited = limit.State == BackgroundLimitState.Limited;
+        return limit.Kind switch
+        {
+            BackgroundLimitKind.Notifications => new("notifications", !limited, limited ? "off: the notice of the tunnel is not shown" : "on"),
+            BackgroundLimitKind.Battery => new("battery saver", !limited, limited ? "restricts the app in the background" : "does not restrict the app"),
+            _ => new("autostart", !limited, limit.State switch
+            {
+                BackgroundLimitState.Limited => "off: the system does not start the app by itself",
+                BackgroundLimitState.Free => "on",
+                _ => "the system does not tell",
+            }),
+        };
     }
 }

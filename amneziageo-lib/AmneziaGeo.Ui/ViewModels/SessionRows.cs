@@ -203,6 +203,7 @@ internal static class SessionRows
             LiveSession.ReasonRange => Loc.Instance.Get("Check_Why_range"),
             LiveSession.ReasonName => Loc.Instance.Get("Check_Why_name"),
             LiveSession.ReasonApp => Loc.Instance.Get("Check_Why_app"),
+            LiveSession.ReasonUdp => Loc.Instance.Get("Check_Why_udp"),
             LiveSession.ReasonResolved => Loc.Instance.Get("Check_Why_resolved"),
             LiveSession.ReasonService => Loc.Instance.Get("Check_Why_service"),
             LiveSession.ReasonConfig => Loc.Instance.Get("Check_Why_config"),

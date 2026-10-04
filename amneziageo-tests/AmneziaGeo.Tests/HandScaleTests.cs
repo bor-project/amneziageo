@@ -1,4 +1,5 @@
 using AmneziaGeo.Ui.Services;
+using Avalonia.Controls;
 using Xunit;
 
 namespace AmneziaGeo.Tests;
@@ -20,5 +21,32 @@ public sealed class HandScaleTests
     public void AnUnknownFontScale_KeepsTheScale()
     {
         Assert.Equal(1.15, UiPlatform.WithFontScale(1.15, 0), 6);
+    }
+
+    [Theory]
+    [InlineData(1.3)]
+    [InlineData(1.43)]
+    [InlineData(1.495)]
+    public void TheEnlargedHead_IsClippedByItsWrapper(double scale)
+    {
+        var view = new Border { ClipToBounds = true };
+
+        var head = HandFrame.Enlarged(view, scale);
+
+        var wrapper = Assert.IsType<LayoutTransformControl>(head);
+        Assert.Same(view, wrapper.Child);
+        Assert.True(wrapper.ClipToBounds);
+        Assert.False(view.ClipToBounds);
+    }
+
+    [Fact]
+    public void AtTheLaidOutSize_TheHeadClipsItself()
+    {
+        var view = new Border();
+
+        var head = HandFrame.Enlarged(view, 1);
+
+        Assert.Same(view, head);
+        Assert.True(view.ClipToBounds);
     }
 }

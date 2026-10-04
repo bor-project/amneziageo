@@ -292,6 +292,45 @@
   <data name="Theme_System" xml:space="preserve">
     <value>System</value>
   </data>
+  <data name="Background_Section" xml:space="preserve">
+    <value>Background activity</value>
+  </data>
+  <data name="Background_Notifications" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
+  <data name="Background_NotificationsOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Background_NotificationsOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Background_Battery" xml:space="preserve">
+    <value>Battery saver</value>
+  </data>
+  <data name="Background_BatteryFree" xml:space="preserve">
+    <value>Does not restrict</value>
+  </data>
+  <data name="Background_BatteryLimits" xml:space="preserve">
+    <value>Restricts</value>
+  </data>
+  <data name="Background_Autostart" xml:space="preserve">
+    <value>Autostart</value>
+  </data>
+  <data name="Background_AutostartOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Background_AutostartOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Background_Allow" xml:space="preserve">
+    <value>Allow</value>
+  </data>
+  <data name="Background_Configure" xml:space="preserve">
+    <value>Configure</value>
+  </data>
+  <data name="Background_Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
   <data name="About_Section" xml:space="preserve">
     <value>About</value>
   </data>
@@ -852,6 +891,9 @@
   </data>
   <data name="AppPicker_Search" xml:space="preserve">
     <value>Search apps</value>
+  </data>
+  <data name="AppPicker_System" xml:space="preserve">
+    <value>System</value>
   </data>
   <data name="AppPicker_Title" xml:space="preserve">
     <value>Applications</value>
@@ -2377,6 +2419,9 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Check_Why_app" xml:space="preserve">
     <value>by application</value>
+  </data>
+  <data name="Check_Why_udp" xml:space="preserve">
+    <value>all UDP</value>
   </data>
   <data name="Check_Why_resolved" xml:space="preserve">
     <value>address of a domain</value>

@@ -11,8 +11,16 @@ namespace AmneziaGeo.Geo;
 /// </summary>
 public static class LinkMtu
 {
-    // What each endpoint's link was last seen to carry; a status snapshot asks for every configuration it lists.
-    private static readonly ConcurrentDictionary<string, int> Readings = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Сколько живёт запомненный размер там, где о смене сети не сообщают.
+    /// </summary>
+    public const long MaxAgeMs = 60_000;
+
+    // What each endpoint's link was last seen to carry, and when; a status snapshot asks for every configuration it lists.
+    private static readonly ConcurrentDictionary<string, (int Mtu, long At)> Readings = new(StringComparer.OrdinalIgnoreCase);
+
+    // Сообщает ли платформа о смене сети сама.
+    private static readonly bool Told = !OperatingSystem.IsAndroid();
 
     // Endpoints a background reading is already running for.
     private static readonly ConcurrentDictionary<string, byte> Asking = new(StringComparer.OrdinalIgnoreCase);
@@ -22,6 +30,11 @@ public static class LinkMtu
     /// </summary>
     static LinkMtu()
     {
+        if (!Told)
+        {
+            return;
+        }
+
         try
         {
             NetworkChange.NetworkAddressChanged += (_, _) => Readings.Clear();
@@ -39,9 +52,14 @@ public static class LinkMtu
         var key = endpoint?.Trim() ?? string.Empty;
         var address = LocalAddress(key);
         var mtu = address is null ? 0 : MtuOf(address);
-        Readings[key] = mtu;
+        Readings[key] = (mtu, Environment.TickCount64);
         return mtu;
     }
+
+    /// <summary>
+    /// Годится ли запомненный размер: там, где о смене сети не сообщают, он живёт минуту.
+    /// </summary>
+    public static bool Fresh(long at, long now, bool timed) => !timed || now - at < MaxAgeMs;
 
     /// <summary>
     /// What the link towards this endpoint was last seen to carry, zero until it is known. Nothing is looked up
@@ -50,9 +68,10 @@ public static class LinkMtu
     public static int Learned(string endpoint)
     {
         var key = endpoint?.Trim() ?? string.Empty;
-        if (Readings.TryGetValue(key, out var mtu))
+        var known = Readings.TryGetValue(key, out var reading);
+        if (known && Fresh(reading.At, Environment.TickCount64, !Told))
         {
-            return mtu;
+            return reading.Mtu;
         }
 
         if (Asking.TryAdd(key, 0))
@@ -70,7 +89,7 @@ public static class LinkMtu
             });
         }
 
-        return 0;
+        return known ? reading.Mtu : 0;
     }
 
     // The address a datagram socket takes when it is pointed at the endpoint; nothing leaves the device for it.

@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="AmneziaGeo.Android.Ui.MobileSelectHost"
-             ClipToBounds="True">
+             x:Class="AmneziaGeo.Android.Ui.MobileSelectHost">
   <UserControl.Styles>
     <Style Selector="Button.mobile-select-option">
       <Setter Property="MinHeight" Value="48" />

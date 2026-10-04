@@ -47,6 +47,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     public static event Action? Resumed;
 
     /// <summary>
+    /// Raised when the window comes to the screen and when it leaves it.
+    /// </summary>
+    public static event Action<bool>? ShownChanged;
+
+    /// <summary>
     /// The foreground activity, used to launch the VpnService consent dialog.
     /// </summary>
     public static MainActivity? Current { get; private set; }
@@ -194,6 +199,7 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         base.OnStart();
         Shown = true;
         TunnelNotices.Cancel(this, TunnelNotices.StoppedId);
+        ShownChanged?.Invoke(true);
     }
 
     /// <inheritdoc/>
@@ -201,6 +207,7 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     {
         base.OnStop();
         Shown = false;
+        ShownChanged?.Invoke(false);
     }
 
     /// <inheritdoc/>

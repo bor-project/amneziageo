@@ -47,6 +47,36 @@
              </Grid>
            </StackPanel>
 
+           <!-- Работа в фоне: что система разрешает приложению без окна. -->
+           <StackPanel Spacing="12" IsVisible="{Binding Background.HasRows}">
+             <Border Classes="hairline" />
+             <TextBlock Text="{l:Tr Background_Section}" FontWeight="SemiBold" FontSize="15" />
+             <ItemsControl ItemsSource="{Binding Background.Rows}">
+               <ItemsControl.ItemsPanel>
+                 <ItemsPanelTemplate>
+                   <StackPanel Spacing="12" />
+                 </ItemsPanelTemplate>
+               </ItemsControl.ItemsPanel>
+               <ItemsControl.ItemTemplate>
+                 <DataTemplate x:DataType="vm:BackgroundLimitRow">
+                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                       <TextBlock Text="{Binding Name}" FontSize="13.5" TextWrapping="Wrap" />
+                       <Panel IsVisible="{Binding HasState}">
+                         <TextBlock Text="{Binding StateText}" Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                    IsVisible="{Binding !IsLimited}" />
+                         <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource AgWarnBrush}" FontSize="12.5"
+                                    TextWrapping="Wrap" IsVisible="{Binding IsLimited}" />
+                       </Panel>
+                     </StackPanel>
+                     <Button Grid.Column="1" Classes="softbtn" Padding="16,7" VerticalAlignment="Center"
+                             Content="{Binding ActionText}" Command="{Binding OpenCommand}" />
+                   </Grid>
+                 </DataTemplate>
+               </ItemsControl.ItemTemplate>
+             </ItemsControl>
+           </StackPanel>
+
            <!-- About: versions + app self-update. -->
            <StackPanel Spacing="12">
              <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->

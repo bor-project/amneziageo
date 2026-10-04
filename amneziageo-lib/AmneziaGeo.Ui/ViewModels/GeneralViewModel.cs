@@ -163,6 +163,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private bool _allowPrerelease;
 
     /// <summary>
+    /// Блок «Работа в фоне».
+    /// </summary>
+    public BackgroundLimitsViewModel Background { get; } = new(BackgroundLimitsBridge.Read, BackgroundLimitsBridge.Open);
+
+    /// <summary>
     /// Whether the network-repair action is offered (Windows only).
     /// </summary>
     public bool CanRepairNetwork => OperatingSystem.IsWindows();
@@ -1073,6 +1078,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         // Re-raise all computed labels on a language change.
         OnPropertyChanged(string.Empty);
+        Background.Relabel();
     }
 
     // Puts the saved choice back after a combo clears its selection.

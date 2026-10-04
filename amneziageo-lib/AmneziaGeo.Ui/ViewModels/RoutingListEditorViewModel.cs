@@ -1592,7 +1592,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         }
 
         var role = SelectedRole;
-        AppSplitBridge.Present(SelectedAppPackages(), packages => ApplyPickedApps(role, packages));
+        AppSplitBridge.Present(SelectedAppPackages(), (offered, picked) => ApplyPickedApps(role, offered, picked));
     }
 
     // The package names already in the active bucket as app:pkg rules, for pre-checking the picker.
@@ -1604,21 +1604,23 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             .Select(r => r[prefix.Length..])];
     }
 
-    // Replaces one bucket's app:pkg rules with the picked package set.
-    private void ApplyPickedApps(string role, IReadOnlyCollection<string> packages)
+    // Снимает из группы правила пакетов, с которых сняли отметку, и добавляет правила отмеченных.
+    internal void ApplyPickedApps(string role, IReadOnlyCollection<string> offered, IReadOnlyCollection<string> picked)
     {
         const string prefix = "app:pkg=";
         var bucket = BucketFor(role);
+        var marked = new HashSet<string>(picked, StringComparer.Ordinal);
+        var unmarked = new HashSet<string>(offered.Where(package => !marked.Contains(package)), StringComparer.Ordinal);
         for (var i = bucket.Count - 1; i >= 0; i--)
         {
-            if (bucket[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            if (bucket[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && unmarked.Contains(bucket[i][prefix.Length..]))
             {
                 _expandedRules.Remove(bucket[i]);
                 bucket.RemoveAt(i);
             }
         }
 
-        foreach (var package in packages)
+        foreach (var package in picked)
         {
             var token = prefix + package;
             if (!bucket.Contains(token))

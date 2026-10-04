@@ -590,6 +590,23 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshLogsActive();
     }
 
+    /// <summary>
+    /// Даёт окну отдыхать, пока его нет на экране, и возвращает его работу вместе с ним.
+    /// </summary>
+    public void WindowShown(bool shown)
+    {
+        Home.WatchNetwork(shown);
+        Diagnostics.Logs.Rest(!shown);
+        if (shown)
+        {
+            HiddenTimers.Resume();
+        }
+        else
+        {
+            HiddenTimers.Pause();
+        }
+    }
+
     // The logs viewer's heartbeat re-reads and its initial file listing run only while its content is actually
     // shown: its section is selected in settings, and in compact mode only once drilled into the detail (the
     // rail hides the content). Recompute after every entry that lands there, including those with no

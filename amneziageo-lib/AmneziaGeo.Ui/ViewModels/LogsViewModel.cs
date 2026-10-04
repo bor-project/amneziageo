@@ -106,6 +106,30 @@ internal partial class LogsViewModel : ViewModelBase
     /// </summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// Опрашивается ли журнал по таймеру.
+    /// </summary>
+    public bool Polls => _pollTimer.IsEnabled;
+
+    // Окна нет на экране: журнал не опрашивается.
+    private bool _resting;
+
+    /// <summary>
+    /// Останавливает опрос журнала, пока окна нет на экране, и возвращает его вместе с окном.
+    /// </summary>
+    public void Rest(bool on)
+    {
+        _resting = on;
+        if (on)
+        {
+            _pollTimer.Stop();
+        }
+        else if (IsActive)
+        {
+            _pollTimer.Start();
+        }
+    }
+
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
@@ -907,7 +931,10 @@ internal partial class LogsViewModel : ViewModelBase
         if (active)
         {
             ResetAndReload();
-            _pollTimer.Start();
+            if (!_resting)
+            {
+                _pollTimer.Start();
+            }
         }
         else
         {

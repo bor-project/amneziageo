@@ -4,7 +4,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Styling;
-using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Android.Ui.Services;
@@ -90,6 +89,9 @@ public sealed partial class App : Avalonia.Application
             // the tunnel goes on running in its own process.
             AppExitHost.Register(() => MainActivity.Current?.FinishAndRemoveTask());
 
+            // Name what the system lets the app do in the background.
+            AndroidBackgroundLimits.Register();
+
             var prefs = UiPreferences.Load();
             _preferences = prefs;
             RequestedThemeVariant = prefs.Theme switch
@@ -105,6 +107,8 @@ public sealed partial class App : Avalonia.Application
             var connection = AndroidAgentConnection.Current ?? new AndroidAgentConnection();
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection, prefs);
+            MainActivity.ShownChanged += viewModel.WindowShown;
+            MainActivity.Resumed += viewModel.General.Background.Reload;
             Stage("view models", clock);
 
             var mainView = new SharedMainView
@@ -113,7 +117,7 @@ public sealed partial class App : Avalonia.Application
             };
             Stage("views", clock);
 
-            singleView.MainView = Framed(Enlarged(new MobileSelectHost(mainView)));
+            singleView.MainView = Framed(HandFrame.Enlarged(new MobileSelectHost(mainView), UiPlatform.HandScale));
             Stage("host", clock);
 
             // Brings the agent up after the first frame: opening the stores and projecting the first snapshot
@@ -152,24 +156,6 @@ public sealed partial class App : Avalonia.Application
         };
 
         return frame;
-    }
-
-    // Draws the head at the hand scale, layout and all. A television keeps the size its own screen was laid out at.
-    private static Control Enlarged(Control view)
-    {
-        var scale = UiPlatform.HandScale;
-        if (scale == 1)
-        {
-            return view;
-        }
-
-        var scaled = new LayoutTransformControl
-        {
-            Child = view,
-            LayoutTransform = new ScaleTransform(scale, scale),
-        };
-
-        return scaled;
     }
 
     // How much over the laid-out size the head is drawn on this device.

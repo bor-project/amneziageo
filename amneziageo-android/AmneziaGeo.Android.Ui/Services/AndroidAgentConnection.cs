@@ -43,9 +43,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // How long after a refused switch the snapshot is told once more.
     private const int RetellMs = 100;
 
-    // How often the head looks whether the tunnel process is still there.
-    private const int TunnelWatchMs = 3_000;
-
     // Raises of a session that went with its process, and the time they are counted over.
     private const int GoneRaises = 3;
     private const int GoneWindowMs = 120_000;
@@ -94,6 +91,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private VpnBridge.Listener? _events;
     private readonly TunnelWatch _watch = new(GoneRaises, GoneWindowMs);
     private readonly Handler _ticks = new(Looper.MainLooper!);
+
+    // Когда голова собирала снимок по показанию связи.
+    private long _linkToldAt;
+
+    // Показание связи пришло без окна на экране и в снимок не попало.
+    private volatile bool _linkUntold;
 
     private string? _selectedTarget;
     private long? _selectedRoutingList;
@@ -231,11 +234,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _events = new VpnBridge.Listener { Handler = OnVpnEvent };
         VpnBridge.Listen(Application.Context, _events, VpnBridge.ActionEvent);
         MainActivity.Resumed += SyncTunnelState;
+        MainActivity.ShownChanged += PaceWatch;
         TakeTunnelStage();
         Connected?.Invoke();
         PushSnapshot();
         SyncTunnelState();
-        _ticks.PostDelayed(WatchTick, TunnelWatchMs);
+        _ticks.PostDelayed(WatchTick, HeadPace.WatchMs(MainActivity.Shown));
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
         _ = CheckGeoUpdatesAsync(_geoChecks.Token);
         _ = RefreshSubscriptionsAsync(_geoChecks.Token);
@@ -281,6 +285,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _disposed = true;
         _geoChecks.Cancel();
         MainActivity.Resumed -= SyncTunnelState;
+        MainActivity.ShownChanged -= PaceWatch;
         _ticks.RemoveCallbacksAndMessages(null);
         if (_events is not null)
         {
@@ -917,7 +922,44 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         LookAtTunnel();
-        _ticks.PostDelayed(WatchTick, TunnelWatchMs);
+        _ticks.PostDelayed(WatchTick, HeadPace.WatchMs(MainActivity.Shown));
+    }
+
+    // Ставит взгляды на процесс туннеля на темп окна, которое пришло на экран или ушло с него.
+    private void PaceWatch(bool shown)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _ticks.RemoveCallbacksAndMessages(null);
+        _ticks.PostDelayed(WatchTick, HeadPace.WatchMs(shown));
+    }
+
+    /// <summary>
+    /// Собирает снимок заново, если показание связи в него не попало.
+    /// </summary>
+    public void CatchUp()
+    {
+        if (_linkUntold)
+        {
+            PushSnapshot();
+        }
+    }
+
+    // Собирает снимок по показанию связи; без окна на экране делает это редко.
+    private void TellLink()
+    {
+        var now = System.Environment.TickCount64;
+        if (!HeadPace.TellsLink(MainActivity.Shown, now, _linkToldAt))
+        {
+            _linkUntold = true;
+            return;
+        }
+
+        _linkToldAt = now;
+        PushSnapshot();
     }
 
     // Takes a session whose tunnel process is gone: raised again while the window is on the screen, shown as down
@@ -1018,7 +1060,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 intent.GetIntExtra(VpnBridge.ExtraLossStreak, 0),
                 intent.GetIntExtra(VpnBridge.ExtraRekey, -1));
             LogLink(_link);
-            PushSnapshot();
+            TellLink();
             return;
         }
 
@@ -1227,6 +1269,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private void PushSnapshot()
     {
+        _linkUntold = false;
         if (!_active)
         {
             _ = RetellDownAsync();
@@ -3250,30 +3293,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // The applications carrying a launcher icon: what a per-app rule can name on this system.
+    // Программы устройства, которые может назвать правило по приложению.
     private static IpcAck ListProcesses()
     {
-        var context = Application.Context;
-        var manager = context.PackageManager;
-        if (manager is null)
-        {
-            return new IpcAck(true, string.Empty);
-        }
-
-        var own = context.PackageName;
-        var intent = new Intent(Intent.ActionMain);
-        intent.AddCategory(Intent.CategoryLauncher);
-        var rows = manager.QueryIntentActivities(intent, global::Android.Content.PM.PackageInfoFlags.MetaData)
-            .Where(entry => entry.ActivityInfo?.ApplicationInfo?.PackageName is { Length: > 0 } package
-                && !string.Equals(package, own, StringComparison.Ordinal))
-            .Select(entry =>
-            {
-                var info = entry.ActivityInfo!.ApplicationInfo!;
-                return (Label: entry.LoadLabel(manager)?.ToString() ?? info.PackageName!, Package: info.PackageName!);
-            })
-            .GroupBy(app => app.Package, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .OrderBy(app => app.Label, StringComparer.CurrentCultureIgnoreCase)
+        var rows = AppCensus.List(Application.Context)
             .Select(app => string.Join('\t', "app", app.Label, app.Package, $"app:pkg={app.Package}"));
         return new IpcAck(true, string.Join('\n', rows));
     }

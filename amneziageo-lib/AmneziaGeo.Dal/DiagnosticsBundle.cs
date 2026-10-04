@@ -195,6 +195,7 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
             var locked = offer.RoutingLocked;
             sb.AppendLine($"    routing:    {(locked ? "off (server)" : transport?.UseRouting != false ? "on" : "off")}");
             sb.AppendLine($"    inbound:    {(transport?.AllowInbound != true ? "off" : transport.InboundNetwork ? "tunnel network" : "server only")}");
+            sb.AppendLine($"    leak guard: {(transport?.LeakGuard == true ? "on" : "off")}");
 
             var geo = await store.GetTunnelGeoAsync(config, ct).ConfigureAwait(false);
             if (geo is not null)

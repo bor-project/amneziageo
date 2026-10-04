@@ -99,6 +99,46 @@ public static class AndroidNetworks
         }
     }
 
+    /// <summary>
+    /// The network the device would use without the tunnel; null when it sits on none.
+    /// </summary>
+    public static Network? Under(Context context)
+    {
+        try
+        {
+            if (context.GetSystemService(Context.ConnectivityService) is not ConnectivityManager manager)
+            {
+                return null;
+            }
+
+            var under = default(Network);
+            var underRank = int.MaxValue;
+            foreach (var network in manager.GetAllNetworks())
+            {
+                if (manager.GetNetworkCapabilities(network) is not { } capabilities
+                    || !capabilities.HasCapability(NetCapability.Internet)
+                    || capabilities.HasTransport(TransportType.Vpn))
+                {
+                    continue;
+                }
+
+                var rank = Rank(capabilities) + (capabilities.HasCapability(NetCapability.Validated) ? 0 : 10);
+                if (rank < underRank)
+                {
+                    underRank = rank;
+                    under = network;
+                }
+            }
+
+            return under;
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn(Tag, "reading the network under the tunnel failed: " + ex);
+            return null;
+        }
+    }
+
     // The network handle, its interface and its IPv4 addresses in one line.
     private static string Key(Network network, LinkProperties? link)
     {

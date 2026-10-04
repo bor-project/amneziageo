@@ -121,6 +121,11 @@
                                IsChecked="{Binding RoutingOn, Mode=TwoWay}" IsEnabled="{Binding RoutingOpen}"
                                HorizontalAlignment="Stretch" />
 
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
+    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_LeakGuardTitle}" Description="{l:Tr Main_LeakGuardHint}"
+                               IsChecked="{Binding LeakGuard, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
     <!-- Приём входящих по адресу этой машины в туннеле. -->
     <StackPanel Spacing="14" IsVisible="{Binding InboundAvailable}">
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

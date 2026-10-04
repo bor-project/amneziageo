@@ -33,6 +33,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
     private bool _baseUseRouting;
+    private bool _baseLeakGuard;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WebSocketOn))]
@@ -117,6 +118,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [NotifyPropertyChangedFor(nameof(RoutingOn))]
     private bool _useRouting = true;
 
+    [ObservableProperty]
+    private bool _leakGuard;
+
     /// <summary>
     /// Whether the server of the configuration leaves routing to this device.
     /// </summary>
@@ -186,7 +190,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool routingLocked = false, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool routingLocked = false, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool leakGuard = false)
     {
         _connection = connection;
         ConfigName = name;
@@ -199,6 +203,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _allowInbound = allowInbound;
         _inboundNetwork = inboundNetwork;
         _useRouting = useRouting;
+        _leakGuard = leakGuard;
         RoutingOpen = !routingLocked;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
@@ -316,6 +321,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnLeakGuardChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -344,7 +355,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || UseIpv6 != _baseUseIpv6
             || UseRouter != _baseUseRouter
             || AllowInbound != _baseAllowInbound
-            || UseRouting != _baseUseRouting;
+            || UseRouting != _baseUseRouting
+            || LeakGuard != _baseLeakGuard;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -368,6 +380,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
         _baseUseRouting = UseRouting;
+        _baseLeakGuard = LeakGuard;
         if (IsDirty)
         {
             IsDirty = false;
@@ -394,6 +407,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
             UseRouting = _baseUseRouting;
+            LeakGuard = _baseLeakGuard;
             StatusMessage = string.Empty;
         }
         finally
@@ -517,6 +531,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             if (ack.Ok)
             {
                 _inboundNetwork = network;
+            }
+
+            // The leak guard goes in a command of its own once it differs from the stored one.
+            if (ack.Ok && LeakGuard != _baseLeakGuard)
+            {
+                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetLeakGuard, [ConfigName, LeakGuard ? "on" : "off"]));
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).

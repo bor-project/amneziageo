@@ -50,6 +50,12 @@ public static class IpcContract
     public const string OpSetWebSocket = "set-websocket";
 
     /// <summary>
+    /// Command to set a config's leak guard. Args: name, on/off. On keeps a tunnel that has stood from being taken
+    /// down by anything but the user. Applies at once.
+    /// </summary>
+    public const string OpSetLeakGuard = "set-leak-guard";
+
+    /// <summary>
     /// Command to set a config's preferred DNS for local name resolution. Args: name, servers
     /// (comma/space-separated; empty clears it). Applies on the next connect.
     /// </summary>

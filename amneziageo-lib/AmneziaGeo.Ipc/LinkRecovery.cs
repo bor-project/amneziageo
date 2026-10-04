@@ -158,6 +158,17 @@ public sealed class LinkRecovery
     public bool GivenUp { get; private set; }
 
     /// <summary>
+    /// Whether the tunnel is kept standing: the ladder then goes round the rungs below
+    /// <see cref="RecoveryStep.Restart"/> and does not stand down.
+    /// </summary>
+    public bool Held { get; set; }
+
+    /// <summary>
+    /// Whether a held tunnel has been through every rung that leaves it standing and has not come back.
+    /// </summary>
+    public bool Stuck => Held && Repairing && Attempt > _steps.Count(step => step != RecoveryStep.Restart);
+
+    /// <summary>
     /// Folds one reading of the link into the ladder and returns the repair to perform now, or null to keep
     /// waiting.
     /// </summary>
@@ -336,7 +347,7 @@ public sealed class LinkRecovery
         {
             _repairingSinceMs = nowMs;
         }
-        else if (nowMs - _repairingSinceMs >= GiveUpSeconds * 1000L)
+        else if (!Held && nowMs - _repairingSinceMs >= GiveUpSeconds * 1000L)
         {
             GivenUp = true;
             return null;
@@ -349,10 +360,31 @@ public sealed class LinkRecovery
 
         // Each attempt climbs a rung and waits longer, the last rung and the last wait serving every attempt
         // past them: a server that is down is not brought back by dialling it faster.
-        _rung = Math.Min(_rung + 1, _steps.Length - 1);
+        var rung = Held ? Standing(_rung) : Math.Min(_rung + 1, _steps.Length - 1);
+        if (rung < 0)
+        {
+            return null;
+        }
+
+        _rung = rung;
         Attempt++;
         _nextActionMs = nowMs + Wait(Attempt);
         return _steps[_rung];
+    }
+
+    // The next rung that leaves the tunnel standing, going round them; -1 where the ladder has none.
+    private int Standing(int rung)
+    {
+        for (var step = 1; step <= _steps.Length; step++)
+        {
+            var next = (rung + step) % _steps.Length;
+            if (_steps[next] != RecoveryStep.Restart)
+            {
+                return next;
+            }
+        }
+
+        return -1;
     }
 
     private long Wait(int attempt)

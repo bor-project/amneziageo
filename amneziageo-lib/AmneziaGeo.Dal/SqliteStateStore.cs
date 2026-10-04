@@ -143,6 +143,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         allow_inbound INTEGER NOT NULL DEFAULT 0,
                         inbound_network INTEGER NOT NULL DEFAULT 0,
                         use_routing INTEGER NOT NULL DEFAULT 1,
+                        leak_guard INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
 
@@ -336,6 +337,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Routing per config, on by default.
             await AddColumnAsync(connection, schema, "config_transport", "use_routing", "INTEGER NOT NULL DEFAULT 1", ct).ConfigureAwait(false);
+
+            // Leak guard per config, off by default.
+            await AddColumnAsync(connection, schema, "config_transport", "leak_guard", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
             // Generation counter, bumped when the materialized set changes.
             await AddColumnAsync(connection, schema, "routing_lists", "generation", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
@@ -921,7 +925,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, ws_host, ws_port FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, ws_host, ws_port, leak_guard FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -932,7 +936,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9));
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9), reader.GetInt32(10) != 0);
                 }
             }
         }
@@ -951,8 +955,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, updated_at)
-                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $routing, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, leak_guard, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $routing, $guard, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
                         ws_host    = excluded.ws_host,
@@ -964,6 +968,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         allow_inbound = excluded.allow_inbound,
                         inbound_network = excluded.inbound_network,
                         use_routing = excluded.use_routing,
+                        leak_guard = excluded.leak_guard,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
@@ -977,6 +982,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$inbound", transport.AllowInbound ? 1 : 0);
                 command.Parameters.AddWithValue("$network", transport.InboundNetwork ? 1 : 0);
                 command.Parameters.AddWithValue("$routing", transport.UseRouting ? 1 : 0);
+                command.Parameters.AddWithValue("$guard", transport.LeakGuard ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

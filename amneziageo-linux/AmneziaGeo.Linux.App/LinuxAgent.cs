@@ -106,6 +106,10 @@ internal sealed class LinuxAgent : IDisposable
     private static readonly RecoveryStep[] _ladder = [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Restart];
     private readonly LinkRecovery _recovery = new(_ladder);
 
+    // Whether the tunnel is taken down by the user alone, and whether it stands held while it carries nothing.
+    private readonly LeakHold _hold = new();
+    private bool _heldUnanswered;
+
     // What the session went through since it came up, for the diagnostics archive.
     private readonly SessionMarks _session = new();
     private long _lastRxBytes = -1;
@@ -541,7 +545,7 @@ internal sealed class LinuxAgent : IDisposable
             await PushAsync(ct).ConfigureAwait(false);
         }
 
-        if (_desiredConnected && _tunnel.Running && _boundStatus == ConnectionStatus.Connecting)
+        if (_desiredConnected && _tunnel.Running && _boundStatus == ConnectionStatus.Connecting && !_hold.Down)
         {
             await SettleConnectingAsync(counters, ct).ConfigureAwait(false);
         }
@@ -559,11 +563,11 @@ internal sealed class LinuxAgent : IDisposable
             _connectFailDetail = "engine stopped";
             _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Failed;
-            _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
+            _nextRetryUtc = _hold.Active ? DateTime.UtcNow : DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
             await PushAsync(ct).ConfigureAwait(false);
         }
 
-        if (!_periodicReconnect || DateTime.UtcNow < _nextRetryUtc)
+        if ((!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc)
         {
             return;
         }
@@ -586,6 +590,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Connected;
+            Stood();
             _log.Info("agent", $"connected: {_boundTarget}");
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
             await PushAsync(ct).ConfigureAwait(false);
@@ -603,6 +608,20 @@ internal sealed class LinuxAgent : IDisposable
             if (!_desiredConnected || !_tunnel.Running || _boundStatus != ConnectionStatus.Connecting
                 || DateTime.UtcNow < _handshakeDueUtc)
             {
+                return;
+            }
+
+            if (_hold.Active)
+            {
+                _handshakeDueUtc = DateTime.UtcNow.AddSeconds(HandshakeWaitSeconds);
+                if (!_heldUnanswered)
+                {
+                    _heldUnanswered = true;
+                    _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s; the leak guard keeps the tunnel up, so what "
+                        + "the rules send through it does not leave directly, and the server is asked again");
+                }
+
+                await _tunnel.RepointAsync(ct, repin: true).ConfigureAwait(false);
                 return;
             }
 
@@ -636,7 +655,16 @@ internal sealed class LinuxAgent : IDisposable
         _lastTxBytes = peer.TxBytes;
 
         // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
-        if (peer.HandshakeUnix <= 0 || _recovery.Sample(moved, Environment.TickCount64) is not { } step)
+        var asked = peer.HandshakeUnix <= 0 ? null : _recovery.Sample(moved, Environment.TickCount64);
+        if (!_recovery.Repairing && _hold.Carries())
+        {
+            _boundStatus = ConnectionStatus.Connected;
+            _log.Info("agent", $"{_boundTarget} carries again");
+            _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
+            await PushAsync(ct).ConfigureAwait(false);
+        }
+
+        if (asked is not { } step)
         {
             if (_recovery.GivenUp && !_gaveUpLogged)
             {
@@ -648,12 +676,21 @@ internal sealed class LinuxAgent : IDisposable
             return;
         }
 
+        if (_recovery.Stuck && _hold.Stalled())
+        {
+            _boundStatus = ConnectionStatus.Connecting;
+            _log.Warn("agent", $"{_recovery.Reason}, and the repairs did not bring it back; the leak guard keeps the tunnel up, so what "
+                + "the rules send through it does not leave directly, and the repairs go on");
+            _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            await PushAsync(ct).ConfigureAwait(false);
+        }
+
         if (step != RecoveryStep.Restart)
         {
             _log.Warn("agent", $"{_recovery.Reason}; repairing the link without taking the tunnel down (attempt {_recovery.Attempt})");
             var repaired = step == RecoveryStep.Rebind
                 ? await _tunnel.RebindAsync(ct).ConfigureAwait(false)
-                : await _tunnel.RepointAsync(ct).ConfigureAwait(false);
+                : await _tunnel.RepointAsync(ct, _hold.Active).ConfigureAwait(false);
             if (repaired)
             {
                 _session.Repaired(step);
@@ -796,6 +833,9 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpSetWebSocket:
                 return await SetTransportAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpSetLeakGuard:
+                return await SetLeakGuardAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpSetConfigDns:
                 return await SetConfigDnsAsync(args, ct).ConfigureAwait(false);
@@ -949,6 +989,9 @@ internal sealed class LinuxAgent : IDisposable
     {
         if (desired == "disconnect")
         {
+            _hold.Released();
+            _recovery.Held = false;
+            _heldUnanswered = false;
             _desiredConnected = false;
             _restartRequired = false;
             _handshakeDueUtc = DateTime.MaxValue;
@@ -994,6 +1037,10 @@ internal sealed class LinuxAgent : IDisposable
         var routing = await TunnelRouting.LoadAsync(_store, configName, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
+        _hold.Set(configTransport?.LeakGuard ?? false);
+        _hold.Dialled();
+        _recovery.Held = _hold.Active;
+        _heldUnanswered = false;
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with { Offer = offer };
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
@@ -1012,6 +1059,7 @@ internal sealed class LinuxAgent : IDisposable
         if (await FirstHandshakeAsync(ct).ConfigureAwait(false))
         {
             _boundStatus = ConnectionStatus.Connected;
+            Stood();
             _log.Info("agent", $"connected: {_boundTarget}");
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
             await PushAsync(ct).ConfigureAwait(false);
@@ -1024,6 +1072,14 @@ internal sealed class LinuxAgent : IDisposable
         _log.Info("agent", $"{_boundTarget}: the interface is up, waiting for the server's first answer");
         await PushAsync(ct).ConfigureAwait(false);
         return new IpcAck(true, IpcMessage.Key("Agent_ConnectWaiting"));
+    }
+
+    // Notes a session that came up, for the leak guard and for the ladder.
+    private void Stood()
+    {
+        _hold.Raised();
+        _recovery.Held = _hold.Active;
+        _heldUnanswered = false;
     }
 
     // Waits out the peer's first answer while the connect still holds the floor: a server that is there answers
@@ -1548,7 +1604,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
         }
 
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.LeakGuard ?? false);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
@@ -1560,8 +1616,33 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    // Raises the reconnect banner for a running configuration; access from the tunnel is left out, it applies
-    // on the spot.
+    private async Task<IpcAck> SetLeakGuardAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return Fail();
+        }
+
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
+        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var guard = IsOn(args[1]);
+        await _store.SetConfigTransportAsync(stored with { LeakGuard = guard }, ct).ConfigureAwait(false);
+        if (string.Equals(args[0], _boundTarget, StringComparison.Ordinal))
+        {
+            _hold.Set(guard);
+            _recovery.Held = _hold.Active;
+        }
+
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
+    }
+
+    // Raises the reconnect banner for a running configuration; access from the tunnel and the leak guard are left
+    // out, they apply on the spot.
     private void FlagTransportRestart(string name, ConfigTransport? stored, ConfigTransport transport)
     {
         if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
@@ -1569,7 +1650,12 @@ internal sealed class LinuxAgent : IDisposable
             return;
         }
 
-        var carried = transport with { AllowInbound = stored?.AllowInbound ?? false, InboundNetwork = stored?.InboundNetwork ?? false };
+        var carried = transport with
+        {
+            AllowInbound = stored?.AllowInbound ?? false,
+            InboundNetwork = stored?.InboundNetwork ?? false,
+            LeakGuard = stored?.LeakGuard ?? false,
+        };
         if (carried == stored)
         {
             return;
@@ -2870,6 +2956,7 @@ internal sealed class LinuxAgent : IDisposable
         sb.AppendLine($"route ttl:       {_routeTtlSeconds}s");
         sb.AppendLine($"survive reboot:  {(_surviveReboot ? "on" : "off")}");
         sb.AppendLine($"reconnect:       {(_periodicReconnect ? $"every {_reconnectIntervalSeconds}s" : "off")}");
+        sb.AppendLine($"leak guard:      {(!_hold.Guard ? "off" : _hold.Down ? "on, the tunnel is kept up while it carries nothing" : "on")}");
         sb.AppendLine();
         sb.AppendLine("[state]");
         sb.AppendLine($"selected target: {_selectedTarget ?? "-"}");
@@ -2935,7 +3022,8 @@ internal sealed class LinuxAgent : IDisposable
             WsEndpoint.SourceOf(text, offer) == WsSource.Settings,
             member is not null && stale.Contains(member.Subscription),
             reading.Churning,
-            reading.LossStreak);
+            reading.LossStreak,
+            transport?.LeakGuard ?? false);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

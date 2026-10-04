@@ -538,6 +538,12 @@
   <data name="Main_UseRoutingHint" xml:space="preserve">
     <value>Использовать маршрутизацию, если она доступна</value>
   </data>
+  <data name="Main_LeakGuardTitle" xml:space="preserve">
+    <value>Защита от утечки</value>
+  </data>
+  <data name="Main_LeakGuardHint" xml:space="preserve">
+    <value>Пока туннель переподключается, выбранное не идёт напрямую</value>
+  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Версия движка Amnezia</value>
   </data>

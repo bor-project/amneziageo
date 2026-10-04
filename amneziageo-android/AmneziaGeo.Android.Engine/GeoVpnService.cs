@@ -141,6 +141,11 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraNotice = "notice";
 
+    /// <summary>
+    /// Whether a session that has stood is taken down by nothing but the user.
+    /// </summary>
+    public const string ExtraLeakGuard = "leak-guard";
+
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
@@ -263,6 +268,15 @@ public sealed class GeoVpnService : VpnService
     // Set while the session was raised or raised again with no head asking for it.
     private bool _unattended;
 
+    // Whether the session is taken down by the user alone, a second descriptor of the tun that keeps it on the
+    // device while no engine reads it, the parts that tun was built from, and whether this process is bound to
+    // the network under the device.
+    private readonly LeakHold _hold = new();
+    private readonly object _heldGate = new();
+    private ParcelFileDescriptor? _heldTun;
+    private string _heldParts = string.Empty;
+    private bool _boundPast;
+
     // One notification is posted at a time, and none of a stage once the tunnel has left its last word.
     private readonly object _noticeGate = new();
     private bool _noticeDown;
@@ -365,6 +379,11 @@ public sealed class GeoVpnService : VpnService
         // A request the system delivers again after the process died is not one the head has just made.
         var asked = carried is not null && (flags & StartCommandFlags.Redelivery) == 0;
         _unattended = !asked;
+        _hold.Set(request.LeakGuard);
+        if (_unattended)
+        {
+            _hold.Raised();
+        }
         _notice = request.Notice ?? NoticeWords.Plain;
         _noticeName = request.Name;
         _stageSince = Java.Lang.JavaSystem.CurrentTimeMillis();
@@ -402,6 +421,7 @@ public sealed class GeoVpnService : VpnService
         _guard.RemoveCallbacksAndMessages(null);
         Interlocked.Exchange(ref _dial, null)?.Cancel();
         Release();
+        Unhold();
 
         // A service stopped from outside says goodbye itself, or the head keeps showing a tunnel that is gone.
         if (_stage is VpnStage.Connecting or VpnStage.Connected)
@@ -726,12 +746,19 @@ public sealed class GeoVpnService : VpnService
             return;
         }
 
-        Release();
+        var held = _hold.Active;
+        if (!held)
+        {
+            Release();
+            Unhold();
+        }
+
         _retry = failures;
         Publish(VpnStage.Connecting, name);
         var cause = outcome.Detail.Length > 0 ? outcome.Detail : outcome.Reason.ToString();
         var when = delay > TimeSpan.Zero ? $"in {(int)delay.TotalSeconds} s" : "at once";
-        Tell($"could not reach the server of {name}: {cause}; trying again {when}, attempt {failures + 1}");
+        Tell($"could not reach the server of {name}: {cause}; trying again {when}, attempt {failures + 1}"
+            + (held ? "; the leak guard keeps the tun up meanwhile, so what it carries does not leave directly" : string.Empty));
     }
 
     // Waits the time out; a network under the device other than the one the wait began on ends it sooner.
@@ -818,6 +845,7 @@ public sealed class GeoVpnService : VpnService
         {
             // A connect on top of a live session takes the old one down first, or its relay and its sockets stay behind.
             Release();
+            Past(true);
             // Makes the peer answer on its own, so a quiet link is neither dropped by the provider nor mistaken
             // for a live one.
             var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
@@ -864,12 +892,15 @@ public sealed class GeoVpnService : VpnService
             var size = MtuPlan.ResolveForLink(MtuModes.From(mtuMode), mtu, underlay, carrier is not null);
             Report($"packets leave at {size} bytes ({MtuModes.Text(MtuModes.From(mtuMode))})");
             var excluded = _liveTun ? hot : [];
-            var pfd = BuildTunnel(resolved, name, appMode, appList, bypassApps, size, ipv6, rules.Tunneled, servers,
-                _proxyPort, excluded, out var establishError);
+            Past(false);
+            var pfd = TunFor(resolved, name, appMode, appList, bypassApps, size, ipv6, rules.Tunneled, servers,
+                _proxyPort, excluded, out var parts, out var establishError);
             if (pfd is null)
             {
                 return DialOutcome.Failed(ConnectFailureReason.TunnelSetupFailed, establishError ?? "establish failed");
             }
+
+            Keep(pfd, parts);
 
             // What this tun leaves outside itself, held for as long as it lives: its route list is fixed now and the
             // networks under it are not.
@@ -973,6 +1004,7 @@ public sealed class GeoVpnService : VpnService
                     + "session is reported as up on the handshake alone");
             _underKey = AndroidNetworks.Read(this).UnderKey;
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), name);
+            _hold.Raised();
             KeepMarks();
             Publish(VpnStage.Connected, name);
             PublishLink(handshake, LinkReading.Empty);
@@ -1004,6 +1036,159 @@ public sealed class GeoVpnService : VpnService
         {
             global::Android.Util.Log.Error("GeoVpnService", "bring-up failed: " + ex);
             return DialOutcome.Failed(ReasonFor(ex), NetworkFailure.Describe(ex) ?? ex.Message);
+        }
+        finally
+        {
+            Past(false);
+        }
+    }
+
+    // Hands out the tun the leak guard holds when the session needs the same one, and builds another otherwise.
+    private ParcelFileDescriptor? TunFor(
+        string config,
+        string name,
+        string? appMode,
+        string[]? appList,
+        string[]? bypassApps,
+        int mtu,
+        bool ipv6,
+        IReadOnlyList<string> routes,
+        IReadOnlyList<string> servers,
+        int proxyPort,
+        IReadOnlyList<string> excluded,
+        out string parts,
+        out string? error)
+    {
+        parts = Parts(config, name, appMode, appList, bypassApps, mtu, ipv6, routes, servers, proxyPort, excluded);
+        error = null;
+        return Held(parts)
+            ?? BuildTunnel(config, name, appMode, appList, bypassApps, mtu, ipv6, routes, servers, proxyPort, excluded, out error);
+    }
+
+    // Names the parts a tun is built from.
+    private static string Parts(
+        string config,
+        string name,
+        string? appMode,
+        string[]? appList,
+        string[]? bypassApps,
+        int mtu,
+        bool ipv6,
+        IReadOnlyList<string> routes,
+        IReadOnlyList<string> servers,
+        int proxyPort,
+        IReadOnlyList<string> excluded)
+    {
+        return string.Join('\n', name, appMode, string.Join(',', appList ?? []), string.Join(',', bypassApps ?? []), mtu, ipv6,
+            proxyPort > 0, string.Join(',', WgConfigEditor.GetAddresses(config)), string.Join(',', routes),
+            string.Join(',', servers), string.Join(',', excluded.OrderBy(address => address, StringComparer.Ordinal)));
+    }
+
+    // Takes a second descriptor of a fresh tun while the leak guard is on, and closes the one held before it.
+    private void Keep(ParcelFileDescriptor tun, string parts)
+    {
+        Hold(_hold.Guard ? Second(tun) : null, parts);
+    }
+
+    // Closes the tun held with no engine behind it.
+    private void Unhold()
+    {
+        Hold(null, string.Empty);
+    }
+
+    // Puts a tun in the place of the one held, and closes that one.
+    private void Hold(ParcelFileDescriptor? tun, string parts)
+    {
+        var before = default(ParcelFileDescriptor);
+        lock (_heldGate)
+        {
+            before = _heldTun;
+            _heldTun = tun;
+            _heldParts = tun is null ? string.Empty : parts;
+        }
+
+        Close(before);
+    }
+
+    // Another descriptor of the tun the leak guard holds, when that tun was built from the same parts.
+    private ParcelFileDescriptor? Held(string parts)
+    {
+        if (!_hold.Active)
+        {
+            return null;
+        }
+
+        var again = default(ParcelFileDescriptor);
+        lock (_heldGate)
+        {
+            if (_heldTun is null || !string.Equals(parts, _heldParts, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            again = Second(_heldTun);
+        }
+
+        if (again is not null)
+        {
+            Report("the session rises on the tun the leak guard kept, so the system puts no other in its place and "
+                + "nothing leaves beside it meanwhile");
+        }
+
+        return again;
+    }
+
+    private static ParcelFileDescriptor? Second(ParcelFileDescriptor tun)
+    {
+        try
+        {
+            return tun.Dup();
+        }
+        catch (Java.IO.IOException ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "the tun could not be held: " + ex);
+            return null;
+        }
+    }
+
+    private static void Close(ParcelFileDescriptor? tun)
+    {
+        try
+        {
+            tun?.Close();
+        }
+        catch (Java.IO.IOException ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "closing the held tun failed: " + ex);
+        }
+    }
+
+    // Sends the lookups and the sockets of this process past a tun that stands held with no engine behind it,
+    // and back into the tunnel once the dial has what it needs.
+    private void Past(bool on)
+    {
+        if (on == _boundPast || (on && _heldTun is null))
+        {
+            return;
+        }
+
+        try
+        {
+            var manager = (ConnectivityManager?)GetSystemService(ConnectivityService);
+            var under = on ? AndroidNetworks.Under(this) : null;
+            if (manager is null || (on && under is null))
+            {
+                return;
+            }
+
+            if (manager.BindProcessToNetwork(under))
+            {
+                _boundPast = on;
+            }
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "binding the process to the network under the tun failed: " + ex);
         }
     }
 
@@ -1686,12 +1871,16 @@ public sealed class GeoVpnService : VpnService
             return false;
         }
 
+        var second = _hold.Guard ? Second(pfd) : null;
         var tunFd = pfd.DetachFd();
         if (AwgEngine.SwapTun(handle, tunFd))
         {
+            Hold(second, Parts(shape.Config, shape.Name, shape.AppMode, shape.AppList, shape.BypassApps, shape.Mtu, shape.Ipv6,
+                shape.Routes, shape.Servers, shape.ProxyPort, excluded));
             return true;
         }
 
+        Close(second);
         AwgEngine.PrepareSwap(handle, false);
         ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
         error = "the engine refused the rebuilt tun";
@@ -2964,7 +3153,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetStringArrayExtra(ExtraBypassApps),
             intent.GetBooleanExtra(ExtraLocalInTunnel, false),
             intent.GetBooleanExtra(ExtraWsOffered, false),
-            Words(intent.GetStringExtra(ExtraNotice)));
+            Words(intent.GetStringExtra(ExtraNotice)),
+            intent.GetBooleanExtra(ExtraLeakGuard, false));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.
@@ -3000,6 +3190,8 @@ public sealed class GeoVpnService : VpnService
         _unvalidatedSince = 0;
         _unvalidatedNoted = false;
         Release();
+        _hold.Released();
+        Unhold();
         _session.Closed();
         KeepMarks();
         _guard.RemoveCallbacksAndMessages(null);

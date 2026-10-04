@@ -72,6 +72,27 @@ public sealed class SchemaMigrationTests
     }
 
     [Fact]
+    public async Task InitializeAsync_OnATransportFromBeforeTheLeakGuard_AddsItTurnedOff()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-guard-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteLegacyTransportAsync(path);
+
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+            await store.SetConfigTransportAsync(new ConfigTransport("office", false, LeakGuard: true));
+
+            Assert.Contains("leak_guard", await ColumnsAsync(path, "config_transport"));
+            Assert.True((await store.GetConfigTransportAsync("office"))?.LeakGuard);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
     public async Task InitializeAsync_OnAStoreOpenedAgain_KeepsTheAutoModeBesideAStoredSize()
     {
         var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-mode-{Guid.NewGuid():N}.db");

@@ -29,7 +29,8 @@ public sealed record VpnRequest(
     string[]? BypassApps = null,
     bool LocalInTunnel = false,
     bool WsOffered = false,
-    NoticeWords? Notice = null);
+    NoticeWords? Notice = null,
+    bool LeakGuard = false);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that

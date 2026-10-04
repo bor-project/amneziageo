@@ -61,6 +61,7 @@ internal static class StatusCommands
             ("names", NameLine(snapshot)),
             ("survive reboot", snapshot.SurviveReboot ? "on" : "off"),
             ("auto reconnect", Reconnect(snapshot)),
+            ("leak guard", Guard(snapshot)),
             ("log level", snapshot.LogLevel),
         };
 
@@ -83,6 +84,15 @@ internal static class StatusCommands
 
         Output.Line();
         Output.Table([" ", "CONFIG", "ENDPOINT", "STATE"], rows, "no configurations yet");
+    }
+
+    // The leak guard of the configuration the agent runs, or would run.
+    private static string Guard(StatusSnapshot snapshot)
+    {
+        var name = snapshot.BoundTarget ?? snapshot.SelectedTarget;
+        return snapshot.Configs.Any(config => config.LeakGuard && string.Equals(config.Name, name, StringComparison.Ordinal))
+            ? "on"
+            : "off";
     }
 
     /// <summary>

@@ -49,6 +49,7 @@ internal sealed class TunnelController : IDisposable
     private string? _peerAddress;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
+    private string? _pinnedHop;
     private string _sessionConfig = string.Empty;
     private bool _split;
     private bool _resolverApplied;
@@ -370,7 +371,7 @@ internal sealed class TunnelController : IDisposable
     /// Resolves the server's address again and hands it to the peer, for a server that has moved. A carried
     /// tunnel dials its carrier on loopback and is left to the carrier.
     /// </summary>
-    public async Task<bool> RepointAsync(CancellationToken ct)
+    public async Task<bool> RepointAsync(CancellationToken ct, bool repin = false)
     {
         if (_daemon is not { Running: true } daemon || _carrier is not null || _sessionConfig.Length == 0)
         {
@@ -389,6 +390,11 @@ internal sealed class TunnelController : IDisposable
         {
             await daemon.ConfigureAsync($"public_key={peer}\nendpoint={endpoint}", ct).ConfigureAwait(false);
             _log.Info("tunnel", $"{_iface} now dials {endpoint}");
+            if (repin)
+            {
+                await RepinAsync(endpointIp, ct).ConfigureAwait(false);
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -707,6 +713,7 @@ internal sealed class TunnelController : IDisposable
         if (_pinnedEndpoint is { } pinned)
         {
             _pinnedEndpoint = null;
+            _pinnedHop = null;
             await Shell.RunAsync("ip", ct, "route", "del", pinned).ConfigureAwait(false);
         }
 
@@ -1197,8 +1204,39 @@ internal sealed class TunnelController : IDisposable
         if (pinned.ExitCode == 0)
         {
             _pinnedEndpoint = endpointIp;
-            _log.Route($"{endpointIp} via {via} dev {dev}");
+            _pinnedHop = $"{endpointIp} via {via} dev {dev}";
+            _log.Route(_pinnedHop);
         }
+    }
+
+    // Pins the server's address to the hop the machine leaves through now, where it was pinned to another one.
+    private async Task RepinAsync(string endpointIp, CancellationToken ct)
+    {
+        if (_pinnedEndpoint is not { } pinned || await PhysicalHopAsync(ct).ConfigureAwait(false) is not ({ } via, { } dev))
+        {
+            return;
+        }
+
+        var hop = $"{endpointIp} via {via} dev {dev}";
+        if (string.Equals(hop, _pinnedHop, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var moved = await Shell.RunAsync("ip", ct, "route", "replace", endpointIp, "via", via, "dev", dev).ConfigureAwait(false);
+        if (moved.ExitCode != 0)
+        {
+            return;
+        }
+
+        if (!string.Equals(pinned, endpointIp, StringComparison.Ordinal))
+        {
+            await Shell.RunAsync("ip", ct, "route", "del", pinned).ConfigureAwait(false);
+        }
+
+        _pinnedEndpoint = endpointIp;
+        _pinnedHop = hop;
+        _log.Route(hop);
     }
 
     // The peer key in the form the engine's control channel takes.

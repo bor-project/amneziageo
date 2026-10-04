@@ -25,6 +25,7 @@ internal static class OpsCommands
         [IpcContract.OpSetConfigDns] = "config dns",
         [IpcContract.OpSetConfigExclusions] = "config exclusions",
         [IpcContract.OpSetWebSocket] = "config websocket",
+        [IpcContract.OpSetLeakGuard] = "config guard",
         [IpcContract.OpSetGeo] = "config geo",
         [IpcContract.OpAssignRouting] = "routing use",
         [IpcContract.OpSaveRoutingList] = "routing create / set / add",

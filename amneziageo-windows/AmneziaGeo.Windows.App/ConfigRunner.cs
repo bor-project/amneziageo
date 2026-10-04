@@ -65,6 +65,9 @@ internal sealed class ConfigRunner(
     private static readonly RecoveryStep[] _ladder = [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Restart];
     private LinkRecovery _recovery = new(_ladder);
 
+    // Whether the tunnel is taken down by the user alone, and whether it stands held while it carries nothing.
+    private readonly LeakHold _hold = new();
+
     // Launches that failed in a row. A busy machine misses the window once or twice; one that keeps missing it
     // has something wrong with the tunnel process itself, and the user hears that instead of dialling forever.
     private int _launchStreak;
@@ -214,6 +217,7 @@ internal sealed class ConfigRunner(
         _lastTxBytes = -1;
         _unreadable = 0;
         _recovery = new LinkRecovery(_ladder, _settings.DeadThresholdSeconds);
+        _hold.Raised();
         await StartLossProbeAsync(config, ct);
 
         try
@@ -226,9 +230,26 @@ internal sealed class ConfigRunner(
                     break;
                 }
 
-                if (Sample(config) is not { } repair)
+                await GuardAsync(config, ct);
+                var asked = Sample(config);
+                if (!_recovery.Repairing && _hold.Carries())
+                {
+                    logger.LogInformation("{Config}: the tunnel carries again", config);
+                    sessions.Of(config).Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), config);
+                    await SetStateAsync("connected");
+                }
+
+                if (asked is not { } repair)
                 {
                     continue;
+                }
+
+                if (_recovery.Stuck && _hold.Stalled())
+                {
+                    logger.LogWarning("{Config}: {Reason}, and the repairs did not bring it back; the leak guard keeps the tunnel up, so what the rules send through it does not leave directly, and the repairs go on",
+                        config, _recovery.Reason);
+                    sessions.Of(config).Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                    await ShowHeldAsync();
                 }
 
                 if (repair != RecoveryStep.Restart)
@@ -275,6 +296,7 @@ internal sealed class ConfigRunner(
                 await SetStateAsync("connected");
                 _lastRxBytes = -1;
                 _lastTxBytes = -1;
+                _hold.Raised();
 
                 // The session that follows is a new one: it is judged from the bottom of the ladder again.
                 _recovery.Reset();
@@ -289,11 +311,13 @@ internal sealed class ConfigRunner(
             // stuck teardown kept as connected); a re-run (reconfigure/re-dial) just drops to disconnected.
             if (!control.Running)
             {
+                _hold.Released();
                 await SetStateAsync("disconnecting");
                 await TeardownForDisconnectAsync(config);
             }
             else
             {
+                _hold.Dialled();
                 Stop(config);
                 await SetStateAsync("disconnected");
             }
@@ -491,6 +515,28 @@ internal sealed class ConfigRunner(
         try
         {
             await store.SaveTunnelStateAsync(new TunnelState(_config, status, DateTimeOffset.UtcNow));
+            control.SignalStatus();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "the connection state could not be saved; the app may show an out-of-date state until the next change");
+        }
+    }
+
+    // Reads the leak guard of the configuration into the hold and the ladder.
+    private async Task GuardAsync(string config, CancellationToken ct)
+    {
+        var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        _hold.Set(transport?.LeakGuard ?? false);
+        _recovery.Held = _hold.Active;
+    }
+
+    // Shows a held tunnel as connecting, while the set keeps counting it as standing.
+    private async Task ShowHeldAsync()
+    {
+        try
+        {
+            await store.SaveTunnelStateAsync(new TunnelState(_config, "connecting", DateTimeOffset.UtcNow));
             control.SignalStatus();
         }
         catch (Exception ex)

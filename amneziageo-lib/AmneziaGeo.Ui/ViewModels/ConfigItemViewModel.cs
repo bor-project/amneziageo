@@ -89,6 +89,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private bool _inboundNetwork;
 
     [ObservableProperty]
+    private bool _leakGuard;
+
+    [ObservableProperty]
     private string _address = string.Empty;
 
     // Вход WebSocket, куда идёт туннель: предложенный сервером, названный конфигурацией или из настроек; пустой,

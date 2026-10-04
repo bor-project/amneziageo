@@ -472,6 +472,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetWebSocket:
                 return await SetWebSocketAsync(args);
 
+            case IpcContract.OpSetLeakGuard:
+                return await SetLeakGuardAsync(args).ConfigureAwait(false);
+
             case IpcContract.OpSetGeo:
                 return await SetGeoAsync(args);
 
@@ -769,6 +772,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraMtu, transport.Mtu);
             intent.PutExtra(GeoVpnService.ExtraMtuMode, (int)transport.MtuMode);
             intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
+            intent.PutExtra(GeoVpnService.ExtraLeakGuard, transport.LeakGuard);
         }
 
         if (front is { } carried)
@@ -1411,6 +1415,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             HandshakesPerMinute: reading.HandshakesPerMinute,
             LinkChurning: reading.Churning,
             LossStreak: reading.LossStreak,
+            LeakGuard: transport?.LeakGuard ?? false,
             LossPercent: reading.LossPercent,
             RttMs: reading.RttMs,
             Subscription: member?.Subscription ?? string.Empty,
@@ -2166,7 +2171,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.UseRouter,
                         transport.AllowInbound,
                         transport.InboundNetwork,
-                        transport.UseRouting),
+                        transport.UseRouting,
+                        transport.LeakGuard),
                 null));
         }
 
@@ -2407,7 +2413,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.LeakGuard)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -2461,11 +2467,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
         }
 
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port)).ConfigureAwait(false);
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.LeakGuard ?? false)).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
         {
             _restartRequired = true;
             _log.Info("agent", "the routing switch applies on the next connect");
+        }
+
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return Ok();
+    }
+
+    private async Task<IpcAck> SetLeakGuardAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !_configs.ContainsKey(args[0]))
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var guard = IsOn(args[1]);
+        await _store.SetConfigTransportAsync(previous with { LeakGuard = guard }).ConfigureAwait(false);
+        if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && guard != previous.LeakGuard)
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the leak guard applies on the next connect");
         }
 
         await RefreshTransportsAsync().ConfigureAwait(false);

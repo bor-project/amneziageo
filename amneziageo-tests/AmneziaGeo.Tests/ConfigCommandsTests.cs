@@ -178,6 +178,42 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal("-", Cells(lines[3])[3]);
     }
 
+    [Fact]
+    public void TheHelp_NamesTheGuardCommand()
+    {
+        var usage = CliRunner.Usage(new Host());
+
+        Assert.Contains("config guard <name> on|off", usage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheTable_ShowsTheLeakGuardOfEveryConfiguration()
+    {
+        var link = new Link([
+            new ConfigEntry("plain", "10.9.1.1:51821", false, "idle", []),
+            new ConfigEntry("kept", "10.9.1.1:51821", false, "idle", [], LeakGuard: true),
+        ]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
+
+        var lines = _console.ToString().Split('\n');
+        Assert.Equal("GUARD", Cells(lines[0])[7]);
+        Assert.Equal("off", Cells(lines[1])[7]);
+        Assert.Equal("on", Cells(lines[2])[7]);
+    }
+
+    [Fact]
+    public async Task ConfigGuard_SendsTheSwitchInACommandOfItsOwn()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["guard", "office", "on"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["guard", "office", "maybe"]));
+
+        Assert.Equal([IpcContract.OpSetLeakGuard], link.Sent);
+        Assert.Equal(["office", "on"], link.Args[0]);
+    }
+
     // Splits one printed row into its cells, which stand at least two spaces apart.
     private static string[] Cells(string line) =>
         line.Split("  ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

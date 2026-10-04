@@ -10,6 +10,7 @@ using Avalonia.Media;
 using Avalonia.VisualTree;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
+using AmneziaGeo.Android.Engine;
 using AmneziaGeo.Android.Ui.Services;
 using AmneziaGeo.Ui.Services;
 
@@ -49,6 +50,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     /// The foreground activity, used to launch the VpnService consent dialog.
     /// </summary>
     public static MainActivity? Current { get; private set; }
+
+    /// <summary>
+    /// Whether the window is on the screen.
+    /// </summary>
+    public static bool Shown { get; private set; }
 
     /// <summary>
     /// Picks the drawing path, overridable by a `render` file holding software or vulkan next to the app data:
@@ -180,6 +186,21 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         // Avalonia is up by now, so the theme it opened with is the one the bars are painted in.
         AndroidSystemBars.Attach(this);
         App.Stage("activity", clock);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnStart()
+    {
+        base.OnStart();
+        Shown = true;
+        TunnelNotices.Cancel(this, TunnelNotices.StoppedId);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnStop()
+    {
+        base.OnStop();
+        Shown = false;
     }
 
     /// <inheritdoc/>

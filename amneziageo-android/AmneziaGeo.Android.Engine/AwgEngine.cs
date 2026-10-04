@@ -54,8 +54,7 @@ internal static partial class AwgEngine
     /// </summary>
     public static string? GetConfig(int handle)
     {
-        var ptr = GetConfigNative(handle);
-        return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
+        return Take(GetConfigNative(handle));
     }
 
     /// <summary>
@@ -119,8 +118,7 @@ internal static partial class AwgEngine
     /// </summary>
     public static string? LiveAddresses(int handle)
     {
-        var ptr = LiveAddressesNative(handle);
-        return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
+        return Take(LiveAddressesNative(handle));
     }
 
     /// <summary>
@@ -137,8 +135,42 @@ internal static partial class AwgEngine
     /// </summary>
     public static string? Stats(int handle)
     {
-        var ptr = StatsNative(handle);
-        return ptr == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(ptr);
+        return Take(StatsNative(handle));
+    }
+
+    /// <summary>
+    /// Reads what the runtime of the engine holds: bytes in use, held free, returned to the system and taken from
+    /// it, then its goroutines and collections.
+    /// </summary>
+    public static string? Memory()
+    {
+        return Take(MemoryNative());
+    }
+
+    /// <summary>
+    /// Makes the runtime of the engine collect and give its free memory back to the system.
+    /// </summary>
+    public static void ReturnMemory()
+    {
+        ReturnMemoryNative();
+    }
+
+    // Reads a text the engine allocated and frees it.
+    private static unsafe string? Take(IntPtr text)
+    {
+        if (text == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Marshal.PtrToStringUTF8(text);
+        }
+        finally
+        {
+            NativeMemory.Free((void*)text);
+        }
     }
 
     /// <summary>
@@ -276,6 +308,12 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgTunnelStats")]
     private static partial IntPtr StatsNative(int handle);
+
+    [LibraryImport(Lib, EntryPoint = "wgMemory")]
+    private static partial IntPtr MemoryNative();
+
+    [LibraryImport(Lib, EntryPoint = "wgReturnMemory")]
+    private static partial void ReturnMemoryNative();
 
     [LibraryImport(Lib, EntryPoint = "wgLiveAddresses")]
     private static partial IntPtr LiveAddressesNative(int handle);

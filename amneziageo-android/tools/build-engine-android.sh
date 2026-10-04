@@ -148,12 +148,17 @@ for abi in $ABIS; do
   out_dir="$OUT_ROOT/$abi"
   mkdir -p "$out_dir"
 
+  # Go on android keeps the memory it frees until the system takes it back; this makes it leave at once.
+  godebug="$(GOARCH="$(goarch_of "$abi")" "$go_bin" list -f '{{.DefaultGODEBUG}}' .)"
+  godebug="${godebug:+$godebug,}madvdontneed=1"
+
   echo "== building $abi/libamneziawg-go.so =="
   GOARCH="$(goarch_of "$abi")" \
   GOARM="$([ "$abi" = "armeabi-v7a" ] && echo 7 || echo '')" \
   CC="$NDK_BIN/$triple$API-clang" \
   CXX="$NDK_BIN/$triple$API-clang++" \
-    "$go_bin" build -buildmode c-shared -ldflags '-w -s' -trimpath -o "$out_dir/libamneziawg-go.so"
+    "$go_bin" build -buildmode c-shared -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath \
+      -o "$out_dir/libamneziawg-go.so"
 
   rm -f "$out_dir/libamneziawg-go.h"
 done
@@ -183,13 +188,19 @@ for abi in $ABIS; do
   missing=""
   for symbol in wgTurnOn wgTurnOff wgGetSocketV4 wgGetConfig wgSetConfig wgSetVerdicts wgPrepareSwap wgSwapTun \
     wgSetVerdictTtl wgTunnelStats wgSetProtector wgSetTcpDirect wgSetRelay wgLiveAddresses wgPreloadLive wgRebind \
-    wgProbe; do
+    wgProbe wgMemory wgReturnMemory; do
     grep -qa "$symbol" "$so" || missing="$missing $symbol"
   done
   if [ -n "$missing" ]; then
     printf '   exports           : MISSING%s\n' "$missing"
   else
     printf '   exports           : all present\n'
+  fi
+
+  if grep -qa "madvdontneed=1" "$so"; then
+    printf '   freed memory      : leaves the process at once\n'
+  else
+    printf '   freed memory      : STAYS until the system takes it back\n'
   fi
 done
 

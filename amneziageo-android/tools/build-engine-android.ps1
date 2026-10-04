@@ -108,8 +108,12 @@ try {
             New-Item -ItemType Directory -Force -Path $outDir | Out-Null
             $out = Join-Path $outDir 'libamneziawg-go.so'
 
+            # Go on android keeps the memory it frees until the system takes it back; this makes it leave at once.
+            $godebug = (& $goExe list -f '{{.DefaultGODEBUG}}' .)
+            $godebug = $(if ($godebug) { "$godebug,madvdontneed=1" } else { 'madvdontneed=1' })
+
             Write-Host "== building $a\libamneziawg-go.so =="
-            & $goExe build -buildmode c-shared -ldflags '-w -s' -trimpath -o $out
+            & $goExe build -buildmode c-shared -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath -o $out
             if ($LASTEXITCODE -ne 0) { throw "go build failed for $a ($LASTEXITCODE)" }
 
             $header = Join-Path $outDir 'libamneziawg-go.h'
@@ -146,7 +150,7 @@ Write-Host ''
 Write-Host '== result =='
 $exports = @('wgTurnOn', 'wgTurnOff', 'wgGetSocketV4', 'wgGetConfig', 'wgSetConfig', 'wgSetVerdicts',
     'wgPrepareSwap', 'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetProtector', 'wgSetTcpDirect',
-    'wgSetRelay', 'wgLiveAddresses', 'wgPreloadLive', 'wgRebind', 'wgProbe')
+    'wgSetRelay', 'wgLiveAddresses', 'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory')
 foreach ($a in $Abi) {
     $so = Join-Path $outRoot "$a\libamneziawg-go.so"
     $b = [IO.File]::ReadAllBytes($so)
@@ -157,6 +161,7 @@ foreach ($a in $Abi) {
     Write-Host ("   {0}  {1:N0} bytes  {2}" -f $so, $b.Length, $elf.Machine)
     Write-Host ("   max PT_LOAD align : {0} bytes{1}" -f $elf.Align, $(if ($elf.Align -lt 16384) { ' - NOT 16 KB page safe' } else { '' }))
     Write-Host ("   exports           : {0}" -f $(if ($missing) { "MISSING $($missing -join ', ')" } else { 'all present' }))
+    Write-Host ("   freed memory      : {0}" -f $(if ($text.Contains('madvdontneed=1')) { 'leaves the process at once' } else { 'STAYS until the system takes it back' }))
 }
 Write-Host ''
 Write-Host 'Now build the app - AmneziaGeo.Android.Engine.csproj picks these .so up automatically.'

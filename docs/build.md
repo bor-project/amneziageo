@@ -105,6 +105,8 @@ The engine is built with the Android NDK toolchain into `AmneziaGeo.Android.Engi
 
 Signing takes the SDK debug key unless `ANDROID_KEYSTORE` names a keystore, in which case `ANDROID_KEY_ALIAS`, `ANDROID_STORE_PASS` and `ANDROID_KEY_PASS` have to be set as well.
 
+The engine script links the library so that the memory its Go runtime frees leaves the process at once instead of staying with it until the system asks for it back; the `freed memory` line of its result says whether that went in.
+
 The same scripts exist for PowerShell on Windows: `build-engine-android.ps1` and `build-apk.ps1`.
 
 ## Tests

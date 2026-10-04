@@ -36,6 +36,10 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     private const int MaxEntries = 4096;
     private const int TopHosts = 6;
     private const int SessionRows = SessionReport.MaxRows;
+    private const int PumpBuffersKept = 32;
+
+    // Buffers of the streams in flight; no more than this many wait for the next stream.
+    private static readonly ArrayPool<byte> _pumpBuffers = ArrayPool<byte>.Create(BufferSize, PumpBuffersKept);
 
     private readonly DomainMatcher _proxyNames;
     private readonly DomainMatcher _directNames;
@@ -519,26 +523,10 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     // Copies one direction until end of stream and half-closes the far side.
     private async Task PumpAsync(Socket from, Socket to, Entry entry, CancellationToken ct)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
-        var carried = 0;
         try
         {
-            while (!ct.IsCancellationRequested)
-            {
-                var read = await from.ReceiveAsync(buffer.AsMemory(0, BufferSize), SocketFlags.None, ct).ConfigureAwait(false);
-                if (read <= 0)
-                {
-                    break;
-                }
-
-                await to.SendAsync(buffer.AsMemory(0, read), SocketFlags.None, ct).ConfigureAwait(false);
-                carried += read;
-                if (carried >= CountEvery)
-                {
-                    Count(entry, carried);
-                    carried = 0;
-                }
-            }
+            await StreamPump.RunAsync(from, to, BufferSize, CountEvery, carried => Count(entry, carried),
+                _pumpBuffers, ct).ConfigureAwait(false);
         }
         catch (System.OperationCanceledException)
         {
@@ -548,11 +536,6 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         }
         catch (ObjectDisposedException)
         {
-        }
-        finally
-        {
-            Count(entry, carried);
-            ArrayPool<byte>.Shared.Return(buffer);
         }
 
         try

@@ -2672,4 +2672,37 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_AdvancedSubtitleFull" xml:space="preserve">
     <value>Cache and export</value>
   </data>
+  <data name="Notice_Attempt" xml:space="preserve">
+    <value>attempt {0}</value>
+  </data>
+  <data name="Notice_Stopped" xml:space="preserve">
+    <value>The tunnel has stopped</value>
+  </data>
+  <data name="Notice_SpeedMbit" xml:space="preserve">
+    <value>↓ {0} ↑ {1} Mbit/s</value>
+  </data>
+  <data name="Notice_SpeedKbit" xml:space="preserve">
+    <value>↓ {0} ↑ {1} kbit/s</value>
+  </data>
+  <data name="Notice_Routing" xml:space="preserve">
+    <value>Routing: {0}</value>
+  </data>
+  <data name="Notice_RoutingOff" xml:space="preserve">
+    <value>Routing is off</value>
+  </data>
+  <data name="Notice_Disconnect" xml:space="preserve">
+    <value>Disconnect</value>
+  </data>
+  <data name="Notice_Connect" xml:space="preserve">
+    <value>Connect</value>
+  </data>
+  <data name="Notice_ListOff" xml:space="preserve">
+    <value>Turn the list off</value>
+  </data>
+  <data name="Notice_ListOn" xml:space="preserve">
+    <value>Turn the list on</value>
+  </data>
+  <data name="Notice_StoppedChannel" xml:space="preserve">
+    <value>Tunnel stopped</value>
+  </data>
 </root>

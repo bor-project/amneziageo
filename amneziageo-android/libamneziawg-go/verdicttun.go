@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
+	"github.com/bor-project/amneziageo/libamneziawg-go/owners"
 )
 
 // Окно простоя записи по умолчанию.
@@ -338,6 +339,8 @@ func (l *liveSet) snapshot(nanos int64) string {
 type verdictTun struct {
 	inner   atomic.Pointer[tun.Device]
 	events  chan tun.Event
+	passing sync.Mutex
+	ended   bool
 	pending atomic.Bool
 
 	mu    sync.RWMutex
@@ -351,8 +354,7 @@ type verdictTun struct {
 	relay   atomic.Int32
 	split   atomic.Bool
 	owner   atomic.Pointer[func(uint8, uint32, uint16, uint32, uint16) int]
-	owners  sync.Map
-	owned   atomic.Int64
+	owners  owners.Cache
 
 	stop chan struct{}
 	once sync.Once
@@ -428,11 +430,32 @@ func (d *verdictTun) relayEvents(from tun.Device) {
 				return
 			}
 
-			select {
-			case d.events <- event:
-			default:
-			}
+			d.pass(event)
 		}
+	}
+}
+
+// Отдаёт событие движку, пока канал открыт.
+func (d *verdictTun) pass(event tun.Event) {
+	d.passing.Lock()
+	defer d.passing.Unlock()
+	if d.ended {
+		return
+	}
+
+	select {
+	case d.events <- event:
+	default:
+	}
+}
+
+// Закрывает канал событий, чтобы движок перестал его читать.
+func (d *verdictTun) endEvents() {
+	d.passing.Lock()
+	defer d.passing.Unlock()
+	if !d.ended {
+		d.ended = true
+		close(d.events)
 	}
 }
 
@@ -505,22 +528,6 @@ func (d *verdictTun) setProtector(fn func(int) bool) {
 	d.protect.Store(&fn)
 }
 
-// Столько ответов о владельце держим разом.
-const ownerCacheMax = 8192
-
-// Пауза потока, после которой о владельце спрашиваем заново.
-const ownerHold = 3 * time.Second
-
-// Срок, через который ответ «чужой» у идущего потока сверяется снова.
-const ownerRecheck = 30 * time.Second
-
-// Владелец, каким его называет хост.
-const (
-	ownerOther = 0
-	ownerSelf  = 1
-	ownerNamed = 2
-)
-
 // Протоколы, о владельце которых спрашиваем.
 const (
 	protoTcp = 6
@@ -536,7 +543,6 @@ func (d *verdictTun) setRelay(port int, split bool, owner func(uint8, uint32, ui
 	d.relay.Store(int32(port))
 	d.split.Store(split)
 	d.owners.Clear()
-	d.owned.Store(0)
 	if fwd := d.tcp.Load(); fwd != nil {
 		fwd.setRelay(port)
 	}
@@ -549,7 +555,7 @@ func (d *verdictTun) datagram(packet []byte) bool {
 		return false
 	}
 
-	if d.whose(packet, protoUdp) == ownerOther {
+	if d.whose(packet, protoUdp) == owners.Other {
 		d.aside6.Add(1)
 		return true
 	}
@@ -574,83 +580,29 @@ func (d *verdictTun) stream(packet []byte) bool {
 
 // Наш ли процесс открыл поток.
 func (d *verdictTun) ours(packet []byte) bool {
-	return d.whose(packet, protoTcp) == ownerSelf
+	return d.whose(packet, protoTcp) == owners.Self
 }
 
-// Ответ хоста о владельце потока.
-type ownerHeld struct {
-	verdict int
-	// Когда спросить снова у идущего потока; ноль - не спрашивать, пока он идёт.
-	again int64
-	// Последний пакет потока.
-	last atomic.Int64
-}
-
-// Чьё это соединение, как его называет хост; ответ держится по протоколу и паре портов, пока поток идёт.
+// Чьё это соединение, как его называет хост; ответ держится по потоку, пока тот идёт.
 func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	head := int(packet[0]&0x0f) * 4
 	if head < 20 || len(packet) < head+4 {
-		return ownerOther
-	}
-
-	srcPort := binary.BigEndian.Uint16(packet[head : head+2])
-	dstPort := binary.BigEndian.Uint16(packet[head+2 : head+4])
-	key := uint64(proto)<<32 | uint64(srcPort)<<16 | uint64(dstPort)
-	nanos := time.Now().UnixNano()
-	foreign := false
-	if kept, ok := d.owners.Load(key); ok {
-		if held, fits := kept.(*ownerHeld); fits {
-			last := held.last.Load()
-			running := nanos-last < int64(ownerHold)
-			if running && (held.again == 0 || nanos < held.again) {
-				if nanos-last >= int64(time.Second) {
-					held.last.Store(nanos)
-				}
-
-				return held.verdict
-			}
-
-			foreign = running && held.verdict == ownerOther
-		}
+		return owners.Other
 	}
 
 	fn := d.owner.Load()
 	if fn == nil {
-		return ownerOther
+		return owners.Other
 	}
 
-	answer := (*fn)(proto, binary.BigEndian.Uint32(packet[12:16]), srcPort, binary.BigEndian.Uint32(packet[16:20]), dstPort)
-	if d.owned.Add(1) > ownerCacheMax {
-		d.forget(nanos)
+	flow := owners.Flow{
+		Proto:   proto,
+		Src:     binary.BigEndian.Uint32(packet[12:16]),
+		Dst:     binary.BigEndian.Uint32(packet[16:20]),
+		SrcPort: binary.BigEndian.Uint16(packet[head : head+2]),
+		DstPort: binary.BigEndian.Uint16(packet[head+2 : head+4]),
 	}
-
-	held := &ownerHeld{verdict: answer}
-	held.last.Store(nanos)
-	// «Чужой» сверяется снова: первый раз скоро, дальше редко.
-	if answer == ownerOther {
-		held.again = nanos + int64(ownerHold)
-		if foreign {
-			held.again = nanos + int64(ownerRecheck)
-		}
-	}
-
-	d.owners.Store(key, held)
-	return answer
-}
-
-// Убирает ответы потоков, которые встали.
-func (d *verdictTun) forget(nanos int64) {
-	left := int64(0)
-	d.owners.Range(func(key, kept any) bool {
-		if held, fits := kept.(*ownerHeld); fits && nanos-held.last.Load() < int64(ownerHold) {
-			left++
-		} else {
-			d.owners.Delete(key)
-		}
-
-		return true
-	})
-	d.owned.Store(left)
+	return d.owners.Whose(flow, time.Now().UnixNano(), *fn)
 }
 
 // Поднимает или гасит свой стек под потоки мимо туннеля.
@@ -802,6 +754,7 @@ func (d *verdictTun) Name() (string, error)    { return d.device().Name() }
 func (d *verdictTun) Events() <-chan tun.Event { return d.events }
 func (d *verdictTun) Close() error {
 	d.once.Do(func() { close(d.stop) })
+	d.endEvents()
 	if fwd := d.tcp.Swap(nil); fwd != nil {
 		fwd.close()
 	}

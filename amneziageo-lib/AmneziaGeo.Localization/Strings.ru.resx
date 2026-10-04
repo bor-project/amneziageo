@@ -2672,4 +2672,37 @@
   <data name="Main_AdvancedSubtitleFull" xml:space="preserve">
     <value>Кеш и экспорт</value>
   </data>
+  <data name="Notice_Attempt" xml:space="preserve">
+    <value>попытка {0}</value>
+  </data>
+  <data name="Notice_Stopped" xml:space="preserve">
+    <value>Туннель остановлен</value>
+  </data>
+  <data name="Notice_SpeedMbit" xml:space="preserve">
+    <value>↓ {0} ↑ {1} Мбит/с</value>
+  </data>
+  <data name="Notice_SpeedKbit" xml:space="preserve">
+    <value>↓ {0} ↑ {1} кбит/с</value>
+  </data>
+  <data name="Notice_Routing" xml:space="preserve">
+    <value>Маршрутизация: {0}</value>
+  </data>
+  <data name="Notice_RoutingOff" xml:space="preserve">
+    <value>Маршрутизация выключена</value>
+  </data>
+  <data name="Notice_Disconnect" xml:space="preserve">
+    <value>Отключить</value>
+  </data>
+  <data name="Notice_Connect" xml:space="preserve">
+    <value>Подключить</value>
+  </data>
+  <data name="Notice_ListOff" xml:space="preserve">
+    <value>Выключить список</value>
+  </data>
+  <data name="Notice_ListOn" xml:space="preserve">
+    <value>Включить список</value>
+  </data>
+  <data name="Notice_StoppedChannel" xml:space="preserve">
+    <value>Туннель остановлен</value>
+  </data>
 </root>

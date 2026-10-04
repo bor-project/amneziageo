@@ -72,7 +72,7 @@ public sealed class CliReceiver : BroadcastReceiver
         });
     }
 
-    private static async Task<(int Code, string Text)> RunAsync(string[] args)
+    internal static async Task<(int Code, string Text)> RunAsync(string[] args)
     {
         await _gate.WaitAsync().ConfigureAwait(false);
         var previous = Output.Sink;

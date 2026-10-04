@@ -28,6 +28,8 @@ import "C"
 
 import (
 	"fmt"
+	"runtime"
+	"runtime/debug"
 	"time"
 	"unsafe"
 
@@ -48,6 +50,7 @@ type tunnel struct {
 var (
 	tunnelHandles = make(map[int32]*tunnel)
 	nextHandle    int32
+	logTagText    = C.CString(logTag)
 )
 
 func androidLog(prio C.int, tag *C.char, message string) {
@@ -57,7 +60,7 @@ func androidLog(prio C.int, tag *C.char, message string) {
 }
 
 func newAndroidLogger(level int) *device.Logger {
-	tag := C.CString(logTag)
+	tag := logTagText
 	logger := &device.Logger{Verbosef: device.DiscardLogf, Errorf: device.DiscardLogf}
 	if level >= device.LogLevelVerbose {
 		logger.Verbosef = func(format string, args ...any) {
@@ -236,6 +239,23 @@ func wgTunnelStats(handle int32) *C.char {
 		return nil
 	}
 	return C.CString(t.tun.stats())
+}
+
+// Что держит рантайм движка: байты в работе, свободные при себе, отданные системе и взятые у неё, горутины и сборки.
+//
+//export wgMemory
+func wgMemory() *C.char {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return C.CString(fmt.Sprintf("%d %d %d %d %d %d",
+		m.HeapInuse, m.HeapIdle-m.HeapReleased, m.HeapReleased, m.Sys, runtime.NumGoroutine(), m.NumGC))
+}
+
+// Собирает мусор и отдаёт свободную память системе.
+//
+//export wgReturnMemory
+func wgReturnMemory() {
+	debug.FreeOSMemory()
 }
 
 //export wgSetProtector

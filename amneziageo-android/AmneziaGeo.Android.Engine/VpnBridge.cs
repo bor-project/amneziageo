@@ -28,7 +28,8 @@ public sealed record VpnRequest(
     bool ExcludeRoutes = false,
     string[]? BypassApps = null,
     bool LocalInTunnel = false,
-    bool WsOffered = false);
+    bool WsOffered = false,
+    NoticeWords? Notice = null);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that
@@ -491,6 +492,11 @@ public static class VpnBridge
             return null;
         }
     }
+
+    /// <summary>
+    /// Whether the session of the last connect still waits on disk: nobody has taken the tunnel down.
+    /// </summary>
+    public static bool HasRequest() => File.Exists(RequestPath());
 
     /// <summary>
     /// Drops the session, so a tunnel the user stopped stays down.

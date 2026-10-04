@@ -45,6 +45,11 @@ public enum VpnStage
 public sealed class GeoVpnService : VpnService
 {
     /// <summary>
+    /// Whether the service lives in this process.
+    /// </summary>
+    public static bool Alive { get; private set; }
+
+    /// <summary>
     /// Start action carrying the config text and session name.
     /// </summary>
     public const string ActionConnect = "org.amneziageo.android.CONNECT";
@@ -131,11 +136,20 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraExcludeRoutes = "exclude-routes";
 
-    private const string ChannelId = "amneziageo.vpn";
-    private const int NotificationId = 1001;
+    /// <summary>
+    /// The words of the notification in the language of the window, as JSON.
+    /// </summary>
+    public const string ExtraNotice = "notice";
+
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
+    // How many reports pass between two lines about the memory of the process.
+    private const int MemoryEveryReports = 4;
+    // How much free memory the engine may hold before it is told to give it back.
+    private const long EngineReturnBytes = 16L * 1024 * 1024;
+    // How many reports after a raise the engine is told to collect and give its memory back.
+    private const int EngineTrimReports = 3;
     private const int LinkIntervalMs = 5_000;
     // How long the tunnel may stay unvalidated before that is noted.
     private const int UnvalidatedNoteSeconds = 30;
@@ -173,8 +187,11 @@ public sealed class GeoVpnService : VpnService
     // head reads a live tunnel off the process list.
     private static readonly Handler _exit = new(Looper.MainLooper!);
 
+    // Pushes the alarm of the guard ahead while a session is wanted.
+    private readonly Handler _guard = new(Looper.MainLooper!);
+
     private readonly ConcurrentDictionary<int, string> _packages = new();
-    private readonly ConcurrentDictionary<ulong, (int Verdict, long Until)> _owners = new();
+    private readonly ConcurrentDictionary<(int Protocol, uint Source, ushort SourcePort, uint Destination, ushort DestinationPort), (int Verdict, long Until)> _owners = new();
     private readonly HashSet<string> _tunnelApps = new(StringComparer.Ordinal);
     private readonly HashSet<string> _refused = new(StringComparer.Ordinal);
     private string _verdicts = string.Empty;
@@ -234,6 +251,21 @@ public sealed class GeoVpnService : VpnService
     // Server names and the IPv4 addresses they resolved to last.
     private static readonly ConcurrentDictionary<string, string> _resolvedHosts = new(StringComparer.OrdinalIgnoreCase);
     private VpnStage _stage = VpnStage.Disconnected;
+
+    // What the notification says and of which configuration, the line it showed last and since when the stage stands.
+    private NoticeWords _notice = NoticeWords.Plain;
+    private string _noticeName = "AmneziaGeo";
+    private string _noticeText = string.Empty;
+    private long _stageSince;
+    private LinkReading _noticeReading = LinkReading.Empty;
+    private bool _screenOn = true;
+
+    // Set while the session was raised or raised again with no head asking for it.
+    private bool _unattended;
+
+    // One notification is posted at a time, and none of a stage once the tunnel has left its last word.
+    private readonly object _noticeGate = new();
+    private bool _noticeDown;
     private string? _detail;
     private string? _reason;
 
@@ -271,6 +303,8 @@ public sealed class GeoVpnService : VpnService
     public override void OnCreate()
     {
         base.OnCreate();
+        Alive = true;
+        _screenOn = (GetSystemService(PowerService) as PowerManager)?.IsInteractive ?? true;
         _queries = new VpnBridge.Listener { Handler = _ => Answer() };
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
         _stops = new VpnBridge.Listener { Handler = _ => Stop() };
@@ -328,7 +362,14 @@ public sealed class GeoVpnService : VpnService
             VpnBridge.WriteRequest(carried);
         }
 
-        if (!StartForegroundNotification(request.Name))
+        // A request the system delivers again after the process died is not one the head has just made.
+        var asked = carried is not null && (flags & StartCommandFlags.Redelivery) == 0;
+        _unattended = !asked;
+        _notice = request.Notice ?? NoticeWords.Plain;
+        _noticeName = request.Name;
+        _stageSince = Java.Lang.JavaSystem.CurrentTimeMillis();
+        TunnelNotices.Cancel(this, TunnelNotices.StoppedId);
+        if (!StartForegroundNotification())
         {
             Teardown(VpnStage.Failed, "foreground refused", nameof(ConnectFailureReason.ServiceStartFailed));
             return StartCommandResult.NotSticky;
@@ -341,6 +382,15 @@ public sealed class GeoVpnService : VpnService
 
         // A connect the user asked for is a fresh start, whatever the previous session was being repaired for.
         _recovery.Reset();
+
+        // A session the head asked for starts the count of the guard anew.
+        if (asked)
+        {
+            TunnelGuard.Stood(this);
+        }
+
+        _guard.RemoveCallbacksAndMessages(null);
+        PushGuard();
         Dial(VpnBridge.ReadPlan(), request, repair: false);
         return StartCommandResult.RedeliverIntent;
     }
@@ -348,6 +398,8 @@ public sealed class GeoVpnService : VpnService
     /// <inheritdoc/>
     public override void OnDestroy()
     {
+        Alive = false;
+        _guard.RemoveCallbacksAndMessages(null);
         Interlocked.Exchange(ref _dial, null)?.Cancel();
         Release();
 
@@ -605,6 +657,7 @@ public sealed class GeoVpnService : VpnService
 
         Report(why);
         Note("tunnel", why);
+        _unattended = true;
         _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         KeepMarks();
         Publish(VpnStage.Connecting, request.Name);
@@ -1415,6 +1468,12 @@ public sealed class GeoVpnService : VpnService
     // Reports a stage to the head and keeps it as the answer to a later query.
     private void Publish(VpnStage stage, string? detail, string? reason = null)
     {
+        if (stage != _stage)
+        {
+            _stageSince = Java.Lang.JavaSystem.CurrentTimeMillis();
+            _noticeReading = LinkReading.Empty;
+        }
+
         _stage = stage;
         _detail = detail;
         _reason = reason;
@@ -1424,6 +1483,12 @@ public sealed class GeoVpnService : VpnService
         }
 
         VpnBridge.WriteStage(stage, detail);
+        if (stage == VpnStage.Connected)
+        {
+            TunnelGuard.Stood(this);
+        }
+
+        ShowStage();
         // Only a running tunnel can be asked whether the system holds it as the always-on one.
         var alwaysOn = Build.VERSION.SdkInt >= BuildVersionCodes.Q && IsAlwaysOn;
         VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled, _retry);
@@ -1935,7 +2000,7 @@ public sealed class GeoVpnService : VpnService
     // table the system answers from, and the answer it earned stands in for it until the moment passes.
     private int Owner(int protocol, uint source, ushort sourcePort, uint destination, ushort destinationPort)
     {
-        var flow = ((ulong)(uint)protocol << 48) | ((ulong)sourcePort << 32) | destination;
+        var flow = (protocol, source, sourcePort, destination, destinationPort);
         var now = System.Environment.TickCount64;
         if (_owners.TryGetValue(flow, out var held) && held.Until > now)
         {
@@ -2013,6 +2078,7 @@ public sealed class GeoVpnService : VpnService
     // Logs what the tunnel carried and how the engine decided the packets; the relay adds its own share when it runs.
     private async Task ReportShareAsync(ProxyRelay? relay, CancellationToken ct)
     {
+        var reports = 0;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -2028,6 +2094,17 @@ public sealed class GeoVpnService : VpnService
             if (handle < 0)
             {
                 return;
+            }
+
+            // The dial has ended by the first report, so what it read to raise the session is garbage by now; the
+            // engine lets the buffers of the session before go over its next collections.
+            if (++reports == 1)
+            {
+                Trim();
+            }
+            else if (reports <= EngineTrimReports)
+            {
+                AwgEngine.ReturnMemory();
             }
 
             var tunnel = TunnelBytes(AwgEngine.GetConfig(handle));
@@ -2052,7 +2129,33 @@ public sealed class GeoVpnService : VpnService
             {
                 Report("verdicts: " + stats);
             }
+
+            if (reports % MemoryEveryReports == 0)
+            {
+                var engine = AwgEngine.Memory();
+                Report(Memory(engine));
+                if (MemoryReport.EngineHeldFree(engine) >= EngineReturnBytes)
+                {
+                    AwgEngine.ReturnMemory();
+                }
+            }
         }
+    }
+
+    // What this process holds in memory: its size as the system counts it, the managed heap and the engine.
+    private static string Memory(string? engine)
+    {
+        return MemoryReport.Compose(global::Android.OS.Debug.Pss * 1024, GC.GetTotalMemory(false),
+            GC.GetGCMemoryInfo().HeapSizeBytes, GC.CollectionCount(0), GC.CollectionCount(GC.MaxGeneration), engine);
+    }
+
+    // Collects what a raise left behind in both runtimes and gives the memory back to the system.
+    private static void Trim()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        AwgEngine.ReturnMemory();
     }
 
     // Waits for the first echo to come back through the tun; false when none does inside the window or the
@@ -2144,6 +2247,11 @@ public sealed class GeoVpnService : VpnService
             lastRx = rx;
             lastTx = tx;
             WatchNetworks(seen, reading);
+            _noticeReading = reading;
+            if (_screenOn)
+            {
+                ShowStage();
+            }
 
             // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
             if (seen > 0
@@ -2278,9 +2386,16 @@ public sealed class GeoVpnService : VpnService
     {
         if (intent.Action == Intent.ActionScreenOff)
         {
+            _screenOn = false;
             _screenOffElapsed = SystemClock.ElapsedRealtime();
             _screenOffUptime = SystemClock.UptimeMillis();
             return;
+        }
+
+        if (intent.Action == Intent.ActionScreenOn)
+        {
+            _screenOn = true;
+            ShowStage();
         }
 
         if (intent.Action != Intent.ActionScreenOn || _screenOffElapsed < 0)
@@ -2692,26 +2807,25 @@ public sealed class GeoVpnService : VpnService
         return int.TryParse(cidr[(slash + 1)..], out var prefix) ? (ip, prefix) : (ip, ip.Contains(':') ? 128 : 32);
     }
 
-    private bool StartForegroundNotification(string name)
+    private bool StartForegroundNotification()
     {
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
-        {
-            var manager = (NotificationManager?)GetSystemService(NotificationService);
-            var channel = new NotificationChannel(ChannelId, "VPN", NotificationImportance.Low);
-            manager?.CreateNotificationChannel(channel);
-        }
-
         // A start the system refuses ends the service within seconds; failing here names the cause instead.
         try
         {
-            var notification = BuildNotification(name);
+            lock (_noticeGate)
+            {
+                _noticeDown = false;
+                _noticeText = TunnelNotice.Text(_notice, NoticeStage.Connecting, 0, 0, 0);
+            }
+
+            var notification = TunnelNotices.Compose(this, _notice, _noticeName, NoticeStage.Connecting, 0, 0, 0, _stageSince);
             if (Build.VERSION.SdkInt >= BuildVersionCodes.UpsideDownCake)
             {
-                StartForeground(NotificationId, notification, ForegroundService.TypeSpecialUse);
+                StartForeground(TunnelNotices.TunnelId, notification, ForegroundService.TypeSpecialUse);
             }
             else
             {
-                StartForeground(NotificationId, notification);
+                StartForeground(TunnelNotices.TunnelId, notification);
             }
 
             return true;
@@ -2723,17 +2837,86 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    private Notification BuildNotification(string name)
+    // Puts the stage, the speed and the attempt on the notification; a line that says the same is not posted again.
+    private void ShowStage()
     {
-        var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O
-            ? new Notification.Builder(this, ChannelId)
-            : new Notification.Builder(this);
-        return builder
-            .SetContentTitle("AmneziaGeo")
-            .SetContentText(name)
-            .SetSmallIcon(global::Android.Resource.Drawable.IcDialogInfo)
-            .SetOngoing(true)
-            .Build();
+        lock (_noticeGate)
+        {
+            if (_noticeDown || _stage is not (VpnStage.Connecting or VpnStage.Connected))
+            {
+                return;
+            }
+
+            var stage = _stage == VpnStage.Connected ? NoticeStage.Connected : NoticeStage.Connecting;
+            var reading = _noticeReading;
+            var retry = _retry;
+            var text = TunnelNotice.Text(_notice, stage, retry, reading.RxBitsPerSecond, reading.TxBitsPerSecond);
+            if (string.Equals(text, _noticeText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _noticeText = text;
+            TunnelNotices.Post(this, TunnelNotices.TunnelId, TunnelNotices.Compose(this, _notice, _noticeName, stage, retry,
+                reading.RxBitsPerSecond, reading.TxBitsPerSecond, _stageSince));
+        }
+    }
+
+    // Leaves on the shade what the tunnel went down with: taken down by the user, or stopped on its own with
+    // nobody at the window to see it.
+    private void LeaveNotice(VpnStage stage)
+    {
+        lock (_noticeGate)
+        {
+            var now = Java.Lang.JavaSystem.CurrentTimeMillis();
+            _noticeDown = true;
+            _noticeText = string.Empty;
+            if (stage == VpnStage.Disconnected)
+            {
+                StopForeground(StopForegroundFlags.Detach);
+                TunnelNotices.Post(this, TunnelNotices.TunnelId,
+                    TunnelNotices.Compose(this, _notice, _noticeName, NoticeStage.Disconnected, 0, 0, 0, now));
+                return;
+            }
+
+            StopForeground(StopForegroundFlags.Remove);
+            if (_unattended)
+            {
+                TunnelNotices.Post(this, TunnelNotices.StoppedId,
+                    TunnelNotices.Compose(this, _notice, _noticeName, NoticeStage.Stopped, 0, 0, 0, now));
+            }
+        }
+    }
+
+    // Pushes the alarm of the guard ahead for as long as a session is wanted.
+    private void PushGuard()
+    {
+        if (_stage is not (VpnStage.Connecting or VpnStage.Connected))
+        {
+            return;
+        }
+
+        TunnelGuard.Arm(this);
+        _guard.PostDelayed(PushGuard, TunnelGuard.PushEveryMs);
+    }
+
+    // Reads the words of the notification the head sent along.
+    private static NoticeWords? Words(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<NoticeWords>(json);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "the words of the notification were not read: " + ex);
+            return null;
+        }
     }
 
     private static VpnRequest? FromIntent(Intent? intent)
@@ -2759,7 +2942,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetBooleanExtra(ExtraExcludeRoutes, false),
             intent.GetStringArrayExtra(ExtraBypassApps),
             intent.GetBooleanExtra(ExtraLocalInTunnel, false),
-            intent.GetBooleanExtra(ExtraWsOffered, false));
+            intent.GetBooleanExtra(ExtraWsOffered, false),
+            Words(intent.GetStringExtra(ExtraNotice)));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.
@@ -2797,8 +2981,10 @@ public sealed class GeoVpnService : VpnService
         Release();
         _session.Closed();
         KeepMarks();
+        _guard.RemoveCallbacksAndMessages(null);
+        TunnelGuard.Disarm(this);
+        LeaveNotice(stage);
         Publish(stage, detail, reason);
-        StopForeground(StopForegroundFlags.Remove);
         StopSelf();
     }
 

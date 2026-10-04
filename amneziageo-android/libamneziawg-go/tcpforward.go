@@ -12,7 +12,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -28,6 +27,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/waiter"
+
+	"github.com/bor-project/amneziageo/libamneziawg-go/pump"
 )
 
 // Столько ждём ответа той стороны.
@@ -150,7 +151,7 @@ func (f *tcpForwarder) serve(request *tcp.ForwarderRequest) {
 	request.Complete(false)
 	f.opened.Add(1)
 	f.live.Add(1)
-	go f.pump(gonet.NewTCPConn(&queue, endpoint), outbound)
+	go f.pump(gonet.NewTCPConn(&queue, endpoint), &queue, endpoint, outbound)
 }
 
 // Порт релея, который решает потоки; ноль уводит их прямо в сеть.
@@ -194,7 +195,7 @@ func (f *tcpForwarder) dial(target *net.TCPAddr) (net.Conn, error) {
 }
 
 // Стороны переливаются друг в друга, пока обе не закроются.
-func (f *tcpForwarder) pump(inbound *gonet.TCPConn, outbound net.Conn) {
+func (f *tcpForwarder) pump(inbound *gonet.TCPConn, queue *waiter.Queue, endpoint tcpip.Endpoint, outbound net.Conn) {
 	defer func() {
 		inbound.Close()
 		outbound.Close()
@@ -203,7 +204,7 @@ func (f *tcpForwarder) pump(inbound *gonet.TCPConn, outbound net.Conn) {
 
 	done := make(chan struct{})
 	go func() {
-		sent, _ := io.Copy(outbound, inbound)
+		sent := pump.Carry(outbound, inbound, func() bool { return f.awaitStack(queue, endpoint) })
 		f.up.Add(uint64(sent))
 		if half, ok := outbound.(interface{ CloseWrite() error }); ok {
 			half.CloseWrite()
@@ -211,10 +212,31 @@ func (f *tcpForwarder) pump(inbound *gonet.TCPConn, outbound net.Conn) {
 		close(done)
 	}()
 
-	received, _ := io.Copy(inbound, outbound)
+	received := pump.Carry(inbound, outbound, func() bool { return pump.AwaitSocket(outbound) })
 	f.down.Add(uint64(received))
 	inbound.CloseWrite()
 	<-done
+}
+
+// Ждёт байты или конец потока на стороне стека, не держа под них буфера; false, когда стек закрыт.
+func (f *tcpForwarder) awaitStack(queue *waiter.Queue, endpoint tcpip.Endpoint) bool {
+	const events = waiter.ReadableEvents | waiter.EventHUp | waiter.EventErr
+	if endpoint.Readiness(events) != 0 {
+		return true
+	}
+
+	entry, notify := waiter.NewChannelEntry(events)
+	queue.EventRegister(&entry)
+	defer queue.EventUnregister(&entry)
+	for endpoint.Readiness(events) == 0 {
+		select {
+		case <-notify:
+		case <-f.ctx.Done():
+			return false
+		}
+	}
+
+	return true
 }
 
 // Счётчики потоков мимо туннеля.

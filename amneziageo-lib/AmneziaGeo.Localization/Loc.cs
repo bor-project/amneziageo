@@ -26,6 +26,8 @@ public sealed class Loc : INotifyPropertyChanged
     /// </summary>
     public static Loc Instance { get; } = new();
 
+    private static readonly System.Resources.ResourceManager _resources = new(typeof(Strings));
+
     private readonly IStringLocalizer _localizer;
 
     private Loc()
@@ -63,6 +65,16 @@ public sealed class Loc : INotifyPropertyChanged
     /// Translates a formatted key with arguments.
     /// </summary>
     public string Get(string key, params object?[] args) => _localizer.GetString(key, (object[])args);
+
+    /// <summary>
+    /// Translates a key in the culture a saved language token names, whatever culture is active.
+    /// </summary>
+    public static string GetIn(string? token, string key) => _resources.GetString(key, Resolve(token)) ?? key;
+
+    /// <summary>
+    /// The culture a saved language token names.
+    /// </summary>
+    public static CultureInfo CultureOf(string? token) => Resolve(token);
 
     /// <summary>
     /// Resolves and applies the startup culture.

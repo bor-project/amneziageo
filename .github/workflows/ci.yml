@@ -1,17 +1,9 @@
-# Builds all three platforms on every branch push so a break surfaces before a tag, and runs the tests.
+# Builds all three platforms and runs the tests when started by hand, so a break surfaces before a tag.
 # Nothing is published: the packages are versioned 0.0.1.<commit count> and land as run artifacts.
 # The release pipeline (release.yml) is what a v* tag drives.
 name: build
 
 on:
-  push:
-    branches: ['**']
-    paths-ignore:
-      - 'README.md'
-      - 'README.ru.md'
-      - 'LICENSE'
-      - '.github/FUNDING.yml'
-      - '.github/CODEOWNERS'
   workflow_dispatch:
 
 concurrency:

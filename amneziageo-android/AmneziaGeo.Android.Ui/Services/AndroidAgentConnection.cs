@@ -43,6 +43,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // How long after a refused switch the snapshot is told once more.
     private const int RetellMs = 100;
 
+    // How often the head looks whether the tunnel process is still there.
+    private const int TunnelWatchMs = 3_000;
+
+    // Raises of a session that went with its process, and the time they are counted over.
+    private const int GoneRaises = 3;
+    private const int GoneWindowMs = 120_000;
+
     // Leaves the start-up rush to the interface before the first geo check goes out.
     private const int GeoStartDelaySeconds = 5;
     private const int GeoTickSeconds = 60;
@@ -85,9 +92,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private Task? _initTask;
     private Task? _geoFilesTask;
     private VpnBridge.Listener? _events;
+    private readonly TunnelWatch _watch = new(GoneRaises, GoneWindowMs);
+    private readonly Handler _ticks = new(Looper.MainLooper!);
 
     private string? _selectedTarget;
     private long? _selectedRoutingList;
+
+    // The routing list in use last, which the notification offers to turn on again.
+    private long _lastRoutingList;
+
+    // What the notification of a tunnel taken down was last told, so the same is not posted again.
+    private string _downNotice = string.Empty;
+
+    // Set while the tunnel process is gone and the session is to be raised again without the window.
+    private bool _raiseOwed;
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
     private long _handshakeUnix;
@@ -200,6 +218,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 PushSnapshot();
             }
 
+            // Looks at the tunnel process before a command reads the stage.
+            LookAtTunnel();
             return;
         }
 
@@ -215,6 +235,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         Connected?.Invoke();
         PushSnapshot();
         SyncTunnelState();
+        _ticks.PostDelayed(WatchTick, TunnelWatchMs);
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
         _ = CheckGeoUpdatesAsync(_geoChecks.Token);
         _ = RefreshSubscriptionsAsync(_geoChecks.Token);
@@ -260,6 +281,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _disposed = true;
         _geoChecks.Cancel();
         MainActivity.Resumed -= SyncTunnelState;
+        _ticks.RemoveCallbacksAndMessages(null);
         if (_events is not null)
         {
             Application.Context.UnregisterReceiver(_events);
@@ -546,6 +568,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (desired == "disconnect")
         {
             _dialWanted = false;
+            _raiseOwed = false;
+            _watch.Dropped();
             Save();
             _log.Info("agent", "disconnect requested");
 
@@ -556,6 +580,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
             else
             {
+                // The tunnel is not there to drop the session it left on the disk.
+                VpnBridge.ClearRequest();
                 OnVpnStateChanged(VpnStage.Disconnected, null);
             }
 
@@ -590,12 +616,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         // A tunnel connected on another configuration stays until the server of this one answers.
-        var standing = SwitchGuard.Standing(_active && VpnBridge.IsRunning(Application.Context), _boundStatus, _boundTarget, configName);
+        var live = _active && VpnBridge.IsRunning(Application.Context);
+        var standing = SwitchGuard.Standing(live, _boundStatus, _boundTarget, configName);
         var restart = _restartRequired;
+        _raiseOwed = false;
         ClearConnectFailure();
         _retryAttempt = 0;
         _restartRequired = false;
         _dialWanted = true;
+        _watch.Asked(live);
         Save();
         // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
         // then a snapshot would pull the card back to disconnected.
@@ -620,10 +649,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(session.Mode, session.Packages.Length)}"
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
+        var words = await NoticeWordsAsync().ConfigureAwait(false);
+        _downNotice = DownKey(configName, words);
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), Front(configName, configText), foreground: true, EngineLogLevel(_logLevel), _directTcp,
-            _excludeRoutes, session.Bypass, _localInTunnel);
+            _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words));
         return Ok();
     }
 
@@ -693,7 +724,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -723,6 +754,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         intent.PutExtra(GeoVpnService.ExtraDirectTcp, directTcp);
         intent.PutExtra(GeoVpnService.ExtraExcludeRoutes, excludeRoutes);
         intent.PutExtra(GeoVpnService.ExtraLocalInTunnel, localInTunnel);
+        if (notice is not null)
+        {
+            intent.PutExtra(GeoVpnService.ExtraNotice, notice);
+        }
 
         if (transport is not null)
         {
@@ -748,6 +783,82 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // The words of the tunnel notification in the language the window is set to, with the routing list in use
+    // and the one the notification offers to turn on.
+    private async Task<NoticeWords> NoticeWordsAsync()
+    {
+        var language = UiPreferences.Load().Language;
+        var takes = _selectedTarget is not { Length: > 0 } name
+            || ConfigRouting.Allowed(_transports.GetValueOrDefault(name), _offered.GetValueOrDefault(name));
+        var list = takes ? await ListNameAsync(_selectedRoutingList).ConfigureAwait(false) ?? string.Empty : string.Empty;
+        var offer = !takes ? 0 : list.Length > 0 ? _selectedRoutingList ?? 0 : await OfferedListAsync().ConfigureAwait(false);
+        return new NoticeWords(
+            Loc.GetIn(language, "Status_Connected"),
+            Loc.GetIn(language, "Status_Connecting"),
+            Loc.GetIn(language, "Notice_Attempt"),
+            Loc.GetIn(language, "Status_Disconnected"),
+            Loc.GetIn(language, "Notice_Stopped"),
+            Loc.GetIn(language, "Notice_SpeedMbit"),
+            Loc.GetIn(language, "Notice_SpeedKbit"),
+            Loc.GetIn(language, "Notice_Routing"),
+            Loc.GetIn(language, "Notice_RoutingOff"),
+            Loc.GetIn(language, "Notice_Disconnect"),
+            Loc.GetIn(language, "Notice_Connect"),
+            Loc.GetIn(language, "Notice_ListOff"),
+            Loc.GetIn(language, "Notice_ListOn"),
+            Loc.GetIn(language, "Notice_StoppedChannel"),
+            Loc.CultureOf(language).Name,
+            list,
+            offer);
+    }
+
+    // The list the notification offers to turn on: the one in use last, else the first there is, 0 without lists.
+    private async Task<long> OfferedListAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var lists = await _store.ListRoutingListsAsync().ConfigureAwait(false);
+        if (lists.Count == 0)
+        {
+            return 0;
+        }
+
+        return lists.Any(list => list.Id == _lastRoutingList) ? _lastRoutingList : lists[0].Id;
+    }
+
+    // What the notification of a tunnel taken down says of a configuration and its words.
+    private static string DownKey(string name, NoticeWords words) =>
+        string.Join('\n', name, words.List, words.Offer.ToString(CultureInfo.InvariantCulture), words.Culture);
+
+    // Keeps the notification a tunnel that is down left on the shade true to the configuration and the list chosen
+    // now; a tunnel whose process is gone and which is to be raised again shows as connecting.
+    private async Task RetellDownAsync()
+    {
+        try
+        {
+            var context = Application.Context;
+            if (_active || _selectedTarget is not { Length: > 0 } name || !TunnelNotices.Shown(context, TunnelNotices.TunnelId))
+            {
+                return;
+            }
+
+            var words = await NoticeWordsAsync().ConfigureAwait(false);
+            var owed = _raiseOwed;
+            var key = DownKey(name, words) + (owed ? "|raise" : string.Empty);
+            if (_active || string.Equals(key, _downNotice, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _downNotice = key;
+            TunnelNotices.Post(context, TunnelNotices.TunnelId, TunnelNotices.Compose(context, words, name,
+                owed ? NoticeStage.Connecting : NoticeStage.Disconnected, 0, 0, 0, Java.Lang.JavaSystem.CurrentTimeMillis()));
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("agent", "the notification of the tunnel was not brought up to date: " + ex);
+        }
+    }
+
     // Takes the stage the running tunnel wrote last, so the first snapshot shows what runs.
     private void TakeTunnelStage()
     {
@@ -758,6 +869,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _active = true;
+        _watch.Heard();
         _boundStatus = told.Stage == VpnStage.Connected ? ConnectionStatus.Connected : ConnectionStatus.Connecting;
         _boundTarget = told.Detail.Length > 0 ? told.Detail : _selectedTarget;
         global::Android.Util.Log.Info("AndroidAgent", $"the head comes up on the stage the tunnel wrote: {told.Stage} {_boundTarget}");
@@ -775,11 +887,99 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (VpnBridge.IsRunning(Application.Context))
         {
             VpnBridge.RequestState(Application.Context);
+            return;
         }
-        else if (_active)
+
+        if (LookAtTunnel())
+        {
+            return;
+        }
+
+        if (_active)
         {
             OnVpnStateChanged(VpnStage.Disconnected, null);
+            return;
         }
+
+        if (_watch.Due(_active, StillWanted(), System.Environment.TickCount64))
+        {
+            _log.Note("agent", "the window is back on the screen; the session that went with the tunnel process is raised again");
+            _ = SetConnectionAsync("connect");
+        }
+    }
+
+    // Looks at the tunnel process and comes back after the pause.
+    private void WatchTick()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        LookAtTunnel();
+        _ticks.PostDelayed(WatchTick, TunnelWatchMs);
+    }
+
+    // Takes a session whose tunnel process is gone: raised again while the window is on the screen, shown as down
+    // otherwise.
+    private bool LookAtTunnel()
+    {
+        var active = _active;
+        var step = _watch.Look(active, VpnBridge.IsRunning(Application.Context), active && StillWanted(), MainActivity.Shown,
+            System.Environment.TickCount64);
+        if (step is not { } taken)
+        {
+            return false;
+        }
+
+        _log.Note("agent", GoneNote(taken));
+        _raiseOwed = taken == TunnelGoneStep.Owed;
+        OnVpnStateChanged(VpnStage.Disconnected, null);
+        switch (taken)
+        {
+            case TunnelGoneStep.Raise:
+                _ = SetConnectionAsync("connect");
+                break;
+            case TunnelGoneStep.GiveUp:
+                SetConnectFailure(nameof(ConnectFailureReason.ServiceStartFailed), "the tunnel process keeps dying");
+                PushSnapshot();
+                break;
+        }
+
+        return true;
+    }
+
+    // Whether the session that stood is still asked for: nobody took it down and the tunnel did not close it itself.
+    private bool StillWanted() =>
+        _dialWanted && VpnBridge.HasRequest()
+        && VpnBridge.ReadStage() is { Stage: VpnStage.Connecting or VpnStage.Connected };
+
+    // The line of the journal about a session that went with its process.
+    private static string GoneNote(TunnelGoneStep step) => step switch
+    {
+        TunnelGoneStep.Raise => "the tunnel process is gone; the session is raised again",
+        TunnelGoneStep.Owed => "the tunnel process is gone while the window is off the screen; the guard of the tunnel raises the session, or the window once it is back",
+        TunnelGoneStep.GiveUp => $"the tunnel process is gone for the {GoneRaises + 1}th time in {GoneWindowMs / 1000} s; the session is not raised again",
+        _ => "the tunnel process is gone; nobody asked for the session any more",
+    };
+
+    // What a stage the tunnel told means for the head beyond the snapshot: a session taken down from the
+    // notification is no longer wanted, and a failure told to a window on the screen needs no notification.
+    private void Heard(VpnStage stage)
+    {
+        if (stage == VpnStage.Disconnected && _dialWanted && _boundStatus != ConnectionStatus.Connecting && !VpnBridge.HasRequest())
+        {
+            _dialWanted = false;
+            _watch.Dropped();
+            Save();
+        }
+
+        if (stage == VpnStage.Failed && MainActivity.Shown)
+        {
+            TunnelNotices.Cancel(Application.Context, TunnelNotices.StoppedId);
+        }
+
+        _raiseOwed = false;
     }
 
     // Takes what the tunnel process reports: a stage change or a line for the routing log.
@@ -825,8 +1025,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var stage = intent.GetIntExtra(VpnBridge.ExtraStage, -1);
         if (stage >= 0)
         {
+            if ((VpnStage)stage is VpnStage.Connecting or VpnStage.Connected)
+            {
+                _watch.Heard();
+            }
+
             _alwaysOn = intent.GetBooleanExtra(VpnBridge.ExtraAlwaysOn, false);
             _alwaysOnLockdown = intent.GetBooleanExtra(VpnBridge.ExtraLockdown, false);
+            Heard((VpnStage)stage);
             OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail),
                 intent.GetStringExtra(VpnBridge.ExtraReason), intent.GetIntExtra(VpnBridge.ExtraRetry, 0));
         }
@@ -1011,6 +1217,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private void PushSnapshot()
     {
+        if (!_active)
+        {
+            _ = RetellDownAsync();
+        }
+
         var configs = OrderedNames().Select(name => Entry(name, _configs[name])).ToList();
         var proxy = VpnBridge.ReadProxyState();
         var proxyAddresses = ProxyAddresses(_proxyOptions.Enabled);
@@ -2335,6 +2546,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             To: await ListNameAsync(picked).ConfigureAwait(false))).ConfigureAwait(false);
 
         Journal(SwitchLog.RoutingList(names.From, names.To));
+        if (_selectedRoutingList is { } used)
+        {
+            _lastRoutingList = used;
+        }
+
         _selectedRoutingList = picked;
         Save();
         PushSnapshot();
@@ -2573,6 +2789,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _selectedRoutingList = listId;
             }
 
+            if (document.RootElement.TryGetProperty("LastRouting", out var lastList)
+                && lastList.ValueKind == JsonValueKind.Number
+                && lastList.TryGetInt64(out var lastId))
+            {
+                _lastRoutingList = lastId;
+            }
+
             if (document.RootElement.TryGetProperty("LogLevel", out var level) && level.ValueKind == JsonValueKind.String)
             {
                 _logLevel = KnownLogLevel(level.GetString() ?? "info");
@@ -2752,6 +2975,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"DialWanted\":").Append(_dialWanted ? "true" : "false");
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
+            builder.Append(",\"LastRouting\":").Append(_lastRoutingList.ToString(CultureInfo.InvariantCulture));
             builder.Append('}');
             System.IO.File.WriteAllText(_storePath, builder.ToString());
         }

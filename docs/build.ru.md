@@ -105,6 +105,8 @@ amneziageo-android/tools/build-apk.sh --abi android-arm64
 
 Подпись берёт отладочный ключ SDK, если не задан `ANDROID_KEYSTORE`; вместе с ним нужны `ANDROID_KEY_ALIAS`, `ANDROID_STORE_PASS` и `ANDROID_KEY_PASS`.
 
+Скрипт движка собирает библиотеку так, что память, освобождённая её средой Go, уходит из процесса сразу, а не числится за ним, пока система не попросит её назад; строка `freed memory` в итоге скрипта говорит, вошло ли это в сборку.
+
 На Windows те же скрипты есть в варианте PowerShell: `build-engine-android.ps1` и `build-apk.ps1`.
 
 ## Тесты

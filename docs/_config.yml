@@ -1,0 +1,24 @@
+title: AmneziaGeo
+description: Cross-platform AmneziaWG VPN client with split tunneling and traffic routing for Windows, Linux and Android. Multiple simultaneous VPN connections on Windows.
+url: https://bor-project.github.io
+baseurl: /amneziageo
+repository: bor-project/amneziageo
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+plugins:
+  - jekyll-relative-links
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+      lang: en
+
+exclude:
+  - Gemfile
+  - Gemfile.lock

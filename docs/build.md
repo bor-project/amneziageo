@@ -1,3 +1,10 @@
+---
+title: Building from source
+lang: en
+section: build
+translation: /build.ru.html
+---
+
 # Building from source
 
 **English** | [Русский](build.ru.md)

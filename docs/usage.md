@@ -1,3 +1,10 @@
+---
+title: Configuration
+lang: en
+section: usage
+translation: /usage.ru.html
+---
+
 # Configuration
 
 **English** | [Русский](usage.ru.md)
@@ -10,6 +17,16 @@
 The mode belongs to the routing list, not to the configuration: the same list attaches to different servers.
 
 A fresh install starts with one list in use, Unavailable sites, in the language of the system: the services closed off in Russia and the ones that turn it away go through the VPN. It is put in once: a list removed stays removed, and an install that already held lists or configurations gets none.
+
+## Multiple VPN connections (Windows)
+
+Windows can keep several VPN tunnels connected at the same time. In the settings, enable the multiple-VPN option, then connect the required server configurations. Connecting another server adds a tunnel while the existing ones stay connected.
+
+- Choose a **main** server and the order of the **reserve** servers. A **neutral** server stays outside that reserve order and carries traffic explicitly assigned to it.
+- A routing rule can use **Auto**, **Best**, **Direct**, **Block**, or a named server. You can also select a fallback for that rule.
+- This combines split tunneling with several connections: for example, send a work subnet through the office VPN and selected sites through a different VPN, leaving the remaining traffic direct in split-tunnel mode.
+
+This mode is currently Windows-only. Linux and Android keep one active VPN connection. See the [command-line examples](cli.md#multiple-vpn-connections-windows).
 
 ## Rule lists
 
@@ -28,6 +45,8 @@ Every rule takes one of three roles: **proxy** - send through the tunnel, **dire
 Domain and country edits apply on the fly, with no reconnect.
 
 ## Application routing
+
+Application routing is experimental, and its UI controls are hidden by default. The `DEBUG` marker next to the UI state enables them after restarting the app; on Windows this is an empty file at `%LOCALAPPDATA%\AmneziaGeo\DEBUG`.
 
 Add a program - a browser, a game, a messenger - and only its traffic takes the tunnel, wherever it connects. The client follows the process and its child processes.
 

@@ -1,8 +1,15 @@
+---
+title: Командная строка
+lang: ru
+section: cli
+translation: /cli.html
+---
+
 # Командная строка
 
 [English](cli.md) | **Русский**
 
-Один набор команд на всех трёх платформах: общая сборка `AmneziaGeo.Cli`, а поверх неё тонкий хост под каждую систему. Всё идёт через агента по протоколу `IpcContract`, базу консоль не трогает - поэтому её правки сразу видят и агент, и интерфейс.
+Основной набор команд общий для всех трёх платформ: сборка `AmneziaGeo.Cli`, а поверх неё тонкий хост под каждую систему. Его дополняют команды отдельных платформ, например режим нескольких VPN на Windows. Всё идёт через агента по протоколу `IpcContract`, базу консоль не трогает - поэтому её правки сразу видят и агент, и интерфейс.
 
 | Платформа | Чем запускать |
 |---|---|
@@ -25,6 +32,34 @@ amneziageo tui                      # полноэкранная консоль 
 ```
 
 `amneziageo help` перечисляет все команды.
+
+## Несколько VPN одновременно (Windows)
+
+Используйте имена конфигураций, уже добавленных в клиент. Например, для `office` и `personal`:
+
+```powershell
+amneziageo settings set multi-server on
+amneziageo fleet up office
+amneziageo fleet up personal
+amneziageo fleet primary office
+amneziageo fleet role personal reserve
+amneziageo fleet status
+amneziageo fleet down personal
+```
+
+Чтобы выбрать сервер и запасной маршрут для существующего прокси-правила списка:
+
+```text
+amneziageo fleet target <id-или-имя-списка> <правило> <сервер-или-auto-best-direct-block> [запасной-маршрут]
+```
+
+Например, если правило `domain:example.com` уже добавлено в список `sites` с ролью «прокси»:
+
+```powershell
+amneziageo fleet target sites domain:example.com personal office
+```
+
+`fleet up` добавляет одно подключение, а `fleet down` отключает указанный сервер. Режим и команды `fleet` сейчас доступны только на Windows.
 
 ## Отладка
 

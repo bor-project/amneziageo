@@ -1,3 +1,10 @@
+---
+title: Installation
+lang: en
+section: install
+translation: /install.ru.html
+---
+
 # Installation
 
 **English** | [Русский](install.ru.md)
@@ -15,7 +22,7 @@ You need Windows 7, 10 or 11 (x64 or arm64) and administrator rights: the instal
 
 After that the app updates itself: it offers the new version, takes from the release only the files that changed against the installed copy, a changed file as a delta against its installed version where the release carries one, and runs the installer on them; where it cannot, it downloads the whole installer for its own architecture. A download that broke off carries on from where it stopped.
 
-The installers are not signed yet, so SmartScreen warns about an unknown publisher and Smart App Control on Windows 11 may block the launch. What to do about it: [CODE_SIGNING.md](../CODE_SIGNING.md).
+The installers are not signed yet, so SmartScreen warns about an unknown publisher and Smart App Control on Windows 11 may block the launch. What to do about it: [code signing policy](../CODE_SIGNING.md).
 
 ## Linux
 

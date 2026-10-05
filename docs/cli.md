@@ -1,8 +1,15 @@
+---
+title: Command line
+lang: en
+section: cli
+translation: /cli.ru.html
+---
+
 # Command line
 
 **English** | [Русский](cli.ru.md)
 
-One command set on all three platforms: the shared `AmneziaGeo.Cli` assembly with a thin host per system. Everything goes through the agent over the `IpcContract` protocol; the console never touches the database, so the agent and the UI see its edits at once.
+The core command set is shared across all three platforms: the `AmneziaGeo.Cli` assembly with a thin host per system. Platform-specific commands, such as the Windows multiple-VPN mode, extend it. Everything goes through the agent over the `IpcContract` protocol; the console never touches the database, so the agent and the UI see its edits at once.
 
 | Platform | How to run it |
 |---|---|
@@ -25,6 +32,34 @@ amneziageo tui                      # full-screen console over SSH
 ```
 
 `amneziageo help` lists every command.
+
+## Multiple VPN connections (Windows)
+
+Use the names of configurations already added to the client. For example, with `office` and `personal`:
+
+```powershell
+amneziageo settings set multi-server on
+amneziageo fleet up office
+amneziageo fleet up personal
+amneziageo fleet primary office
+amneziageo fleet role personal reserve
+amneziageo fleet status
+amneziageo fleet down personal
+```
+
+To select a server and fallback for an existing proxy rule in a routing list:
+
+```text
+amneziageo fleet target <list-id-or-name> <rule> <server-or-auto-best-direct-block> [fallback]
+```
+
+For example, after adding `domain:example.com` to the `sites` list with the proxy role:
+
+```powershell
+amneziageo fleet target sites domain:example.com personal office
+```
+
+`fleet up` adds one connection and `fleet down` removes the named connection. The mode and the `fleet` commands are currently available only on Windows.
 
 ## Debugging
 

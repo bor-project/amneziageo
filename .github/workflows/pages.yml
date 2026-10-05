@@ -1,0 +1,85 @@
+name: Documentation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - 'CODE_SIGNING.md'
+      - 'PRIVACY.md'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - 'CODE_SIGNING.md'
+      - 'PRIVACY.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Keep the original policy files in the repository root. Only documentation
+      # goes into the site; policy content is copied during the build, not maintained twice.
+      - name: Prepare documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _pages_source
+          cp -R docs/. _pages_source/
+          for document in CODE_SIGNING PRIVACY; do
+            if [ "$document" = CODE_SIGNING ]; then
+              title='Code signing policy'
+              section=signing
+            else
+              title='Privacy policy'
+              section=privacy
+            fi
+            {
+              printf '%s\n' '---' "title: $title" "section: $section" 'lang: en' '---' ''
+              cat "$document.md"
+            } > "_pages_source/$document.md"
+          done
+          # The site source is flat; links in the repository still point one level up.
+          sed -i 's|(../CODE_SIGNING.md)|(CODE_SIGNING.md)|g; s|(../PRIVACY.md)|(PRIVACY.md)|g' _pages_source/*.md
+          # The layout provides the language switch; retain it in the Markdown sources for GitHub readers.
+          sed -i '/^\*\*English\*\* | /d; /^\[English\].* | \*\*Русский\*\*$/d' _pages_source/*.md
+          sed -i 's|](.github/workflows/release.yml)|](https://github.com/bor-project/amneziageo/blob/master/.github/workflows/release.yml)|g' _pages_source/CODE_SIGNING.md
+
+      - name: Build documentation
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./_pages_source
+          destination: ./_site
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Publish documentation
+        id: deployment
+        uses: actions/deploy-pages@v4

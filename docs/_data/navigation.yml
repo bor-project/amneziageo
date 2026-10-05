@@ -1,0 +1,32 @@
+en:
+  - title: Overview
+    url: /
+    section: overview
+  - title: Installation
+    url: /install.html
+    section: install
+  - title: Configuration
+    url: /usage.html
+    section: usage
+  - title: Command line
+    url: /cli.html
+    section: cli
+  - title: Building from source
+    url: /build.html
+    section: build
+ru:
+  - title: О проекте
+    url: /index.ru.html
+    section: overview
+  - title: Установка
+    url: /install.ru.html
+    section: install
+  - title: Настройка
+    url: /usage.ru.html
+    section: usage
+  - title: Командная строка
+    url: /cli.ru.html
+    section: cli
+  - title: Сборка из исходников
+    url: /build.ru.html
+    section: build

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="{{ page.lang | default: 'en' }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.title | escape }} · {{ site.title | escape }}</title>
+    <meta name="description" content="{{ page.description | default: site.description | escape }}">
+    <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
+  </head>
+  <body>
+    {% if page.lang == 'ru' %}
+      {% assign home = '/index.ru.html' %}
+      {% assign docs_label = 'Документация' %}
+      {% assign download_label = 'Скачать' %}
+      {% assign skip_label = 'Перейти к содержимому' %}
+      {% assign privacy_label = 'Конфиденциальность (EN)' %}
+      {% assign signing_label = 'Подпись кода (EN)' %}
+    {% else %}
+      {% assign home = '/' %}
+      {% assign docs_label = 'Documentation' %}
+      {% assign download_label = 'Download' %}
+      {% assign skip_label = 'Skip to content' %}
+      {% assign privacy_label = 'Privacy' %}
+      {% assign signing_label = 'Code signing' %}
+    {% endif %}
+    <a class="skip-link" href="#content">{{ skip_label }}</a>
+    <header class="site-header">
+      <a class="brand" href="{{ home | relative_url }}">AmneziaGeo <span>{{ docs_label }}</span></a>
+      <nav class="header-links" aria-label="{% if page.lang == 'ru' %}Ссылки проекта{% else %}Project links{% endif %}">
+        <a href="https://github.com/bor-project/amneziageo/releases">{{ download_label }}</a>
+        <a href="https://github.com/bor-project/amneziageo">GitHub</a>
+        {% if page.lang == 'ru' %}
+          <a class="language" lang="en" hreflang="en" href="{{ page.translation | default: '/' | relative_url }}">English</a>
+        {% else %}
+          <a class="language" lang="ru" hreflang="ru" href="{{ page.translation | default: '/index.ru.html' | relative_url }}">Русский</a>
+        {% endif %}
+      </nav>
+    </header>
+    <div class="page-grid">
+      <aside class="sidebar">
+        <nav aria-label="{{ docs_label }}">
+          {% for item in site.data.navigation[page.lang] %}
+            <a href="{{ item.url | relative_url }}"{% if item.section == page.section %} aria-current="page"{% endif %}>{{ item.title }}</a>
+          {% endfor %}
+        </nav>
+        <div class="policy-links">
+          <a href="{{ '/PRIVACY.html' | relative_url }}"{% if page.section == 'privacy' %} aria-current="page"{% endif %}>{{ privacy_label }}</a>
+          <a href="{{ '/CODE_SIGNING.html' | relative_url }}"{% if page.section == 'signing' %} aria-current="page"{% endif %}>{{ signing_label }}</a>
+        </div>
+      </aside>
+      <main id="content" class="article" tabindex="-1">
+        {{ content }}
+        <footer class="article-footer">
+          <a href="https://github.com/bor-project/amneziageo/issues">{% if page.lang == 'ru' %}Сообщить о проблеме{% else %}Report an issue{% endif %}</a>
+          <a href="https://github.com/bor-project/amneziageo/blob/master/LICENSE">GPL-3.0</a>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

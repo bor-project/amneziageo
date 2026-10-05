@@ -1,3 +1,10 @@
+---
+title: Сборка из исходников
+lang: ru
+section: build
+translation: /build.html
+---
+
 # Сборка из исходников
 
 [English](build.md) | **Русский**

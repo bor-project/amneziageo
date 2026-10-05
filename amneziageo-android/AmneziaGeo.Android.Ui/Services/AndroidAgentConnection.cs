@@ -2590,7 +2590,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
         catch (Exception ex)
         {
-            _log.Warn("geo", "the sources the server handed out were not fetched: " + ex.Message);
+            _log.Error("geo", "the sources the server handed out were not fetched", ex);
         }
     }
 

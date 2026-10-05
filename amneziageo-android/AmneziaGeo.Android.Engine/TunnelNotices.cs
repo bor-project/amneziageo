@@ -37,22 +37,7 @@ public static class TunnelNotices
     public const string ActionConnect = "org.amneziageo.android.NOTICE_CONNECT";
 
     /// <summary>
-    /// Action of the head: turn the routing list named by the extra on.
-    /// </summary>
-    public const string ActionListOn = "org.amneziageo.android.NOTICE_LIST_ON";
-
-    /// <summary>
-    /// Action of the head: turn the routing list off.
-    /// </summary>
-    public const string ActionListOff = "org.amneziageo.android.NOTICE_LIST_OFF";
-
-    /// <summary>
-    /// Extra carrying the id of the routing list to turn on.
-    /// </summary>
-    public const string ExtraList = "list";
-
-    /// <summary>
-    /// Class of the receiver in the process of the window that carries the actions out.
+    /// Class of the receiver in the process of the window that carries the action out.
     /// </summary>
     public const string ReceiverName = "org.amneziageo.android.NoticeReceiver";
 
@@ -60,14 +45,13 @@ public static class TunnelNotices
     private const int OpenCode = 1;
     private const int DisconnectCode = 2;
     private const int ConnectCode = 3;
-    private const int ListCode = 4;
 
     // The name the categories were last created under in this process.
     private static string? _channelsNamed;
 
     /// <summary>
     /// Composes the notification of a stage: the name of the configuration, the stage line, the routing list and
-    /// the actions the stage allows.
+    /// the action the stage allows.
     /// </summary>
     public static Notification Compose(Context context, NoticeWords words, string name, NoticeStage stage, int retry,
         long rxBitsPerSecond, long txBitsPerSecond, long since)
@@ -95,14 +79,7 @@ public static class TunnelNotices
 
         builder.AddAction(running
             ? Action(words.Disconnect, Service(context))
-            : Action(words.Connect, Head(context, ActionConnect, ConnectCode, 0)));
-        if (!stopped && TunnelNotice.ListAction(words) is { } label)
-        {
-            builder.AddAction(Action(label, words.List.Length > 0
-                ? Head(context, ActionListOff, ListCode, 0)
-                : Head(context, ActionListOn, ListCode, words.Offer)));
-        }
-
+            : Action(words.Connect, Head(context, ActionConnect, ConnectCode)));
         return builder.Build();
     }
 
@@ -197,11 +174,10 @@ public static class TunnelNotices
     }
 
     // Hands an action to the head, which lives in the process of the window.
-    private static PendingIntent? Head(Context context, string action, int code, long list)
+    private static PendingIntent? Head(Context context, string action, int code)
     {
         var intent = new Intent(action);
         intent.SetClassName(context.PackageName ?? string.Empty, ReceiverName);
-        intent.PutExtra(ExtraList, list);
         return PendingIntent.GetBroadcast(context, code, intent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
     }
 }

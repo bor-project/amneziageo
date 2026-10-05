@@ -139,6 +139,26 @@ public static class AndroidNetworks
         }
     }
 
+    /// <summary>
+    /// What a read takes from the abilities of a network, folded into a number.
+    /// </summary>
+    public static int Mark(NetworkCapabilities capabilities)
+    {
+        return (capabilities.HasCapability(NetCapability.Internet) ? 1 : 0)
+            | (capabilities.HasCapability(NetCapability.Validated) ? 2 : 0)
+            | (capabilities.HasTransport(TransportType.Vpn) ? 4 : 0)
+            | (Rank(capabilities) << 3);
+    }
+
+    /// <summary>
+    /// What a read takes from the link of a network, folded into a number.
+    /// </summary>
+    public static int Mark(Network network, LinkProperties link)
+    {
+        var (host, active) = PrivateDns(link);
+        return HashCode.Combine(Key(network, link), host, active);
+    }
+
     // The network handle, its interface and its IPv4 addresses in one line.
     private static string Key(Network network, LinkProperties? link)
     {

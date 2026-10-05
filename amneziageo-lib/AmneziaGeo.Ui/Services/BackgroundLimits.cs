@@ -26,7 +26,21 @@ internal enum BackgroundLimitState
 /// <summary>
 /// Ограничение фона и его состояние.
 /// </summary>
-internal readonly record struct BackgroundLimit(BackgroundLimitKind Kind, BackgroundLimitState State);
+internal readonly record struct BackgroundLimit(BackgroundLimitKind Kind, BackgroundLimitState State)
+{
+    /// <summary>
+    /// Экономия батареи по списку исключений системы и по тому, чей экран о нём спрашивает.
+    /// </summary>
+    public static BackgroundLimit Battery(bool exempt, bool vendorScreen)
+    {
+        return new(BackgroundLimitKind.Battery, (exempt, vendorScreen) switch
+        {
+            (true, _) => BackgroundLimitState.Free,
+            (false, true) => BackgroundLimitState.Unknown,
+            _ => BackgroundLimitState.Limited,
+        });
+    }
+}
 
 /// <summary>
 /// Hook for the background limits of the platform. The host (Android) registers a reader of the limits the device

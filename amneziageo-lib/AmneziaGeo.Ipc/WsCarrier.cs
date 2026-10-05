@@ -45,7 +45,8 @@ public enum WsFrontOutcome
 /// Carries a tunnel's UDP inside a websocket to a wstunnel front, so a network that passes nothing but web
 /// traffic still carries the tunnel. The engine dials the loopback port this binds, and every datagram travels
 /// as one websocket message. The carrier opens on the first datagram and reopens itself after a drop, which
-/// costs nothing extra: the engine repeats an unanswered handshake on its own.
+/// costs nothing extra: the engine repeats an unanswered handshake on its own. Each way has a thread of its own
+/// that waits on its socket, so a datagram wakes one thread.
 /// </summary>
 public sealed class WsCarrier : IDisposable
 {
@@ -70,6 +71,9 @@ public sealed class WsCarrier : IDisposable
     private const int ConnectTimeoutMs = 8000;
     private const int RetryGapMs = 1000;
     private const int LoopbackProbeMs = 300;
+
+    // How long one write to the front may take before the websocket counts as gone.
+    private const int WriteTimeoutMs = 15000;
 
     // How long the front may say nothing at all before the websocket counts as gone: it pings on its own every
     // half minute, so silence this long is a connection that stands in name only.
@@ -96,7 +100,7 @@ public sealed class WsCarrier : IDisposable
     private readonly byte[] _outgoing = new byte[MaxDatagram + FrameOverhead];
     private readonly SocketAddress _from = new(AddressFamily.InterNetwork);
     private readonly CancellationTokenSource _cts = new();
-    private readonly SemaphoreSlim _sending = new(1, 1);
+    private readonly Lock _sending = new();
     private Stream? _stream;
     private SocketAddress? _engine;
     private long _attempted;
@@ -134,7 +138,7 @@ public sealed class WsCarrier : IDisposable
         WsEndpoint front, IPAddress address, int targetPort, Func<string>? token, Func<Socket, bool>? bypass, Action<string, Exception?>? note)
     {
         var carrier = new WsCarrier(front, address, targetPort, token, bypass, note);
-        _ = Task.Run(() => carrier.PumpAsync(carrier._cts.Token));
+        Run(carrier.Pump, "ws carrier out");
         return carrier;
     }
 
@@ -223,16 +227,22 @@ public sealed class WsCarrier : IDisposable
         return header + payload.Length;
     }
 
-    // Datagrams from the engine, each one a message on the front.
-    private async Task PumpAsync(CancellationToken ct)
+    // Starts a thread of the carrier's own under the name given.
+    private static void Run(ThreadStart body, string name)
     {
-        while (!ct.IsCancellationRequested)
+        new Thread(body) { IsBackground = true, Name = name }.Start();
+    }
+
+    // Datagrams from the engine, each one a message on the front.
+    private void Pump()
+    {
+        while (!_disposed)
         {
             var stream = default(Stream);
             try
             {
-                var used = await FillAsync(ct).ConfigureAwait(false);
-                stream = await ReadyAsync(ct).ConfigureAwait(false);
+                var used = Fill();
+                stream = Ready();
                 if (stream is null)
                 {
                     continue;
@@ -245,13 +255,9 @@ public sealed class WsCarrier : IDisposable
                     continue;
                 }
 
-                await SendAsync(stream, _outgoing.AsMemory(0, used), ct).ConfigureAwait(false);
+                Send(stream, _outgoing.AsSpan(0, used));
             }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (ObjectDisposedException) when (_disposed)
+            catch (Exception) when (_disposed)
             {
                 return;
             }
@@ -265,23 +271,21 @@ public sealed class WsCarrier : IDisposable
                 }
 
                 Drop(stream, ex);
-                await PauseAsync(ct).ConfigureAwait(false);
+                Pause();
             }
         }
     }
 
     // Frames what the loopback holds into one buffer: the first datagram is waited for and the rest are taken while
     // they still fit, so a burst leaves as one write instead of one write a packet.
-    private async Task<int> FillAsync(CancellationToken ct)
+    private int Fill()
     {
-        var received = await _local.ReceiveFromAsync(_outgoing.AsMemory(FrameOverhead), SocketFlags.None, _from, ct)
-            .ConfigureAwait(false);
+        var received = _local.ReceiveFrom(_outgoing.AsSpan(FrameOverhead), SocketFlags.None, _from);
         Remember();
         var used = Frame(_outgoing, 0, received);
         for (var waiting = Waiting(); waiting > 0 && used + FrameOverhead + waiting <= _outgoing.Length; waiting = Waiting())
         {
-            var more = await _local.ReceiveFromAsync(_outgoing.AsMemory(used + FrameOverhead), SocketFlags.None, _from, ct)
-                .ConfigureAwait(false);
+            var more = _local.ReceiveFrom(_outgoing.AsSpan(used + FrameOverhead), SocketFlags.None, _from);
             Remember();
             used = Frame(_outgoing, used, more);
         }
@@ -339,35 +343,30 @@ public sealed class WsCarrier : IDisposable
         _engine = copy;
     }
 
-    // One frame on the wire. Datagrams and the answers to the front's pings come from two loops, and the stream
+    // One frame on the wire. Datagrams and the answers to the front's pings come from two threads, and the stream
     // carries one write at a time.
-    private async Task SendAsync(Stream stream, ReadOnlyMemory<byte> frame, CancellationToken ct)
+    private void Send(Stream stream, ReadOnlySpan<byte> frame)
     {
-        await _sending.WaitAsync(ct).ConfigureAwait(false);
-        try
+        lock (_sending)
         {
-            await stream.WriteAsync(frame, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            _sending.Release();
+            stream.Write(frame);
         }
     }
 
-    // Waits out the retry gap without turning a carrier taken down into a failure.
-    private static async Task PauseAsync(CancellationToken ct)
+    // Waits out the retry gap, or less where the carrier is taken down meanwhile.
+    private void Pause()
     {
         try
         {
-            await Task.Delay(RetryGapMs, ct).ConfigureAwait(false);
+            _cts.Token.WaitHandle.WaitOne(RetryGapMs);
         }
-        catch (OperationCanceledException)
+        catch (ObjectDisposedException)
         {
         }
     }
 
     // The live websocket, opened on demand and no more often than the retry gap.
-    private async Task<Stream?> ReadyAsync(CancellationToken ct)
+    private Stream? Ready()
     {
         if (_stream is { } live)
         {
@@ -381,7 +380,7 @@ public sealed class WsCarrier : IDisposable
         }
 
         _attempted = now;
-        var opened = await OpenAsync(ct).ConfigureAwait(false);
+        var opened = Open();
         if (opened is null)
         {
             return null;
@@ -389,7 +388,7 @@ public sealed class WsCarrier : IDisposable
 
         Volatile.Write(ref _heard, Environment.TickCount64);
         _stream = opened;
-        _ = Task.Run(() => DeliverAsync(opened, ct));
+        Run(() => Deliver(opened), "ws carrier in");
         return opened;
     }
 
@@ -400,27 +399,25 @@ public sealed class WsCarrier : IDisposable
     public static async Task<(WsFrontOutcome Outcome, string Detail)> ProbeAsync(
         WsEndpoint front, IPAddress address, int targetPort, Func<string>? token, Func<Socket, bool>? bypass, CancellationToken ct)
     {
-        var dial = await DialAsync(front, address, targetPort, token, bypass, ct).ConfigureAwait(false);
-        if (dial.Stream is { } stream)
-        {
-            await stream.DisposeAsync().ConfigureAwait(false);
-        }
-
+        var dial = await Task.Run(() => Dial(front, address, targetPort, token, bypass, ct), CancellationToken.None).ConfigureAwait(false);
+        dial.Stream?.Dispose();
         return (dial.Outcome, dial.Detail);
     }
 
-    // One websocket to the front: a connect to the resolved address, TLS, the upgrade.
-    private static async Task<(Stream? Stream, WsFrontOutcome Outcome, string Detail, Exception? Error)> DialAsync(
+    // One websocket to the front: a connect to the resolved address, TLS, the upgrade. The socket is never asked
+    // for anything asynchronous, so a thread waiting on it is woken by the system itself.
+    private static (Stream? Stream, WsFrontOutcome Outcome, string Detail, Exception? Error) Dial(
         WsEndpoint front, IPAddress address, int targetPort, Func<string>? token, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         var authorization = token?.Invoke();
         var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(ConnectTimeoutMs);
+        using var late = deadline.Token.Register(socket.Dispose);
         try
         {
             bypass?.Invoke(socket);
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            deadline.CancelAfter(ConnectTimeoutMs);
-            await socket.ConnectAsync(new IPEndPoint(address, front.Port), deadline.Token).ConfigureAwait(false);
+            socket.Connect(new IPEndPoint(address, front.Port));
             var tls = new SslStream(new NetworkStream(socket, ownsSocket: true));
             var options = new SslClientAuthenticationOptions { TargetHost = front.Host };
             if (authorization is not null)
@@ -428,32 +425,28 @@ public sealed class WsCarrier : IDisposable
                 options.RemoteCertificateValidationCallback = Presented;
             }
 
-            await tls.AuthenticateAsClientAsync(options, deadline.Token).ConfigureAwait(false);
+            tls.AuthenticateAsClient(options);
             var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
-            await tls.WriteAsync(Encoding.ASCII.GetBytes(Handshake(front, targetPort, key, authorization)), deadline.Token).ConfigureAwait(false);
-            var answer = await HeaderAsync(tls, deadline.Token).ConfigureAwait(false);
+            tls.Write(Encoding.ASCII.GetBytes(Handshake(front, targetPort, key, authorization)));
+            var answer = Header(tls);
             if (!Accepted(answer, key))
             {
-                await tls.DisposeAsync().ConfigureAwait(false);
+                tls.Dispose();
                 return (null, WsFrontOutcome.Refused, FirstLine(answer), null);
             }
 
+            socket.SendTimeout = WriteTimeoutMs;
             return (tls, WsFrontOutcome.Ok, string.Empty, null);
         }
-        catch (OperationCanceledException)
-        {
-            socket.Dispose();
-            return (null, WsFrontOutcome.NoAnswer, string.Empty, null);
-        }
-        catch (AuthenticationException ex)
+        catch (AuthenticationException ex) when (!deadline.IsCancellationRequested)
         {
             socket.Dispose();
             return (null, WsFrontOutcome.Tls, ex.Message, ex);
         }
-        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+        catch (Exception ex) when (deadline.IsCancellationRequested || ex is SocketException or IOException or ObjectDisposedException)
         {
             socket.Dispose();
-            return (null, WsFrontOutcome.NoAnswer, string.Empty, ex);
+            return (null, WsFrontOutcome.NoAnswer, string.Empty, deadline.IsCancellationRequested ? null : ex);
         }
     }
 
@@ -462,9 +455,9 @@ public sealed class WsCarrier : IDisposable
         certificate is not null;
 
     // The carrier's own dial, with the outcome written to the log the way the tunnel reads it.
-    private async Task<Stream?> OpenAsync(CancellationToken ct)
+    private Stream? Open()
     {
-        var dial = await DialAsync(_front, _address, _targetPort, _token, _bypass, ct).ConfigureAwait(false);
+        var dial = Dial(_front, _address, _targetPort, _token, _bypass, _cts.Token);
         var front = $"{_front.Host}:{_front.Port}";
         switch (dial.Outcome)
         {
@@ -487,7 +480,7 @@ public sealed class WsCarrier : IDisposable
 
     // Messages from the front, each one a datagram back to the engine. One read fills the buffer and every frame
     // it holds is taken from there, so a datagram no longer costs a pair of reads through tls.
-    private async Task DeliverAsync(Stream stream, CancellationToken ct)
+    private void Deliver(Stream stream)
     {
         var frames = new Frames(stream);
         var control = new byte[ControlBytes + FrameOverhead];
@@ -495,23 +488,21 @@ public sealed class WsCarrier : IDisposable
         var message = new List<byte>();
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (!_disposed)
             {
-                var head = await frames.TakeAsync(2, ct).ConfigureAwait(false);
+                var head = frames.Take(2);
                 Volatile.Write(ref _heard, Environment.TickCount64);
-                var final = (head.Span[0] & FinalBit) != 0;
-                var opcode = (byte)(head.Span[0] & 0x0f);
-                var masked = (head.Span[1] & MaskBit) != 0;
-                var length = head.Span[1] & 0x7f;
+                var final = (head[0] & FinalBit) != 0;
+                var opcode = (byte)(head[0] & 0x0f);
+                var masked = (head[1] & MaskBit) != 0;
+                var length = head[1] & 0x7f;
                 if (length == 126)
                 {
-                    var wide = await frames.TakeAsync(2, ct).ConfigureAwait(false);
-                    length = BinaryPrimitives.ReadUInt16BigEndian(wide.Span);
+                    length = BinaryPrimitives.ReadUInt16BigEndian(frames.Take(2));
                 }
                 else if (length == 127)
                 {
-                    var wide = await frames.TakeAsync(8, ct).ConfigureAwait(false);
-                    var counted = BinaryPrimitives.ReadUInt64BigEndian(wide.Span);
+                    var counted = BinaryPrimitives.ReadUInt64BigEndian(frames.Take(8));
                     if (counted > MaxDatagram)
                     {
                         // Reading part of a frame leaves the rest of it to be read as the next one.
@@ -523,16 +514,15 @@ public sealed class WsCarrier : IDisposable
 
                 if (masked)
                 {
-                    var key = await frames.TakeAsync(4, ct).ConfigureAwait(false);
-                    key.Span.CopyTo(mask);
+                    frames.Take(4).CopyTo(mask);
                 }
 
-                var payload = await frames.TakeAsync(length, ct).ConfigureAwait(false);
+                var payload = frames.Take(length);
                 if (masked)
                 {
                     for (var index = 0; index < length; index++)
                     {
-                        payload.Span[index] ^= mask[index & 3];
+                        payload[index] ^= mask[index & 3];
                     }
                 }
 
@@ -546,8 +536,8 @@ public sealed class WsCarrier : IDisposable
                 {
                     if (length <= ControlBytes)
                     {
-                        var pong = Encode(control, payload.Span, OpPong);
-                        await SendAsync(stream, control.AsMemory(0, pong), ct).ConfigureAwait(false);
+                        var pong = Encode(control, payload, OpPong);
+                        Send(stream, control.AsSpan(0, pong));
                     }
 
                     continue;
@@ -561,27 +551,24 @@ public sealed class WsCarrier : IDisposable
                 // A front that splits one datagram over several frames is rare, but a half datagram is not a packet.
                 if (!final || message.Count > 0)
                 {
-                    message.AddRange(payload.Span);
+                    message.AddRange(payload);
                     if (!final)
                     {
                         continue;
                     }
                 }
 
-                ReadOnlyMemory<byte> datagram = message.Count > 0 ? message.ToArray() : payload;
-                message.Clear();
                 if (_engine is { } engine)
                 {
-                    await _local.SendToAsync(datagram, SocketFlags.None, engine, ct).ConfigureAwait(false);
+                    _local.SendTo(message.Count > 0 ? message.ToArray() : payload, SocketFlags.None, engine);
                 }
+
+                message.Clear();
             }
-        }
-        catch (OperationCanceledException)
-        {
         }
         catch (Exception ex)
         {
-            Drop(stream, ex);
+            Drop(stream, _disposed ? null : ex);
         }
     }
 
@@ -607,7 +594,7 @@ public sealed class WsCarrier : IDisposable
         /// <summary>
         /// The next bytes of the stream, held until the call after this one.
         /// </summary>
-        public async ValueTask<Memory<byte>> TakeAsync(int count, CancellationToken ct)
+        public Span<byte> Take(int count)
         {
             while (_end - _start < count)
             {
@@ -618,7 +605,7 @@ public sealed class WsCarrier : IDisposable
                     _start = 0;
                 }
 
-                var read = await _stream.ReadAsync(_buffer.AsMemory(_end), ct).ConfigureAwait(false);
+                var read = _stream.Read(_buffer.AsSpan(_end));
                 if (read <= 0)
                 {
                     throw new IOException("the websocket front closed the connection");
@@ -627,7 +614,7 @@ public sealed class WsCarrier : IDisposable
                 _end += read;
             }
 
-            var taken = _buffer.AsMemory(_start, count);
+            var taken = _buffer.AsSpan(_start, count);
             _start += count;
             if (_start == _end)
             {
@@ -639,30 +626,18 @@ public sealed class WsCarrier : IDisposable
         }
     }
 
-    // Fills the whole buffer; a front that stops mid-frame has ended the connection.
-    private static async Task ReadAsync(Stream stream, Memory<byte> buffer, CancellationToken ct)
+    // The upgrade answer, read a byte at a time so the frames behind it stay in the stream.
+    private static string Header(Stream stream)
     {
-        var filled = 0;
-        while (filled < buffer.Length)
+        var answer = new List<byte>();
+        Span<byte> one = stackalloc byte[1];
+        while (answer.Count < MaxHeaderBytes)
         {
-            var read = await stream.ReadAsync(buffer[filled..], ct).ConfigureAwait(false);
-            if (read <= 0)
+            if (stream.Read(one) <= 0)
             {
                 throw new IOException("the websocket front closed the connection");
             }
 
-            filled += read;
-        }
-    }
-
-    // The upgrade answer, read a byte at a time so the frames behind it stay in the stream.
-    private static async Task<string> HeaderAsync(Stream stream, CancellationToken ct)
-    {
-        var answer = new List<byte>();
-        var one = new byte[1];
-        while (answer.Count < MaxHeaderBytes)
-        {
-            await ReadAsync(stream, one, ct).ConfigureAwait(false);
             answer.Add(one[0]);
             if (answer.Count >= 4 && answer[^4] == '\r' && answer[^3] == '\n' && answer[^2] == '\r' && answer[^1] == '\n')
             {
@@ -721,6 +696,5 @@ public sealed class WsCarrier : IDisposable
         Drop(Volatile.Read(ref _stream), null);
         _local.Dispose();
         _cts.Dispose();
-        _sending.Dispose();
     }
 }

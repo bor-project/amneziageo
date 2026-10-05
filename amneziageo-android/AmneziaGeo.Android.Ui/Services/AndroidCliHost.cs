@@ -86,7 +86,12 @@ internal sealed class AndroidCliHost : ICliHost
         return limit.Kind switch
         {
             BackgroundLimitKind.Notifications => new("notifications", !limited, limited ? "off: the notice of the tunnel is not shown" : "on"),
-            BackgroundLimitKind.Battery => new("battery saver", !limited, limited ? "restricts the app in the background" : "does not restrict the app"),
+            BackgroundLimitKind.Battery => new("battery saver", !limited, limit.State switch
+            {
+                BackgroundLimitState.Limited => "restricts the app in the background",
+                BackgroundLimitState.Free => "does not restrict the app",
+                _ => "Android has no exemption for the app, the setting of MIUI is not readable",
+            }),
             _ => new("autostart", !limited, limit.State switch
             {
                 BackgroundLimitState.Limited => "off: the system does not start the app by itself",

@@ -1,19 +1,23 @@
 using Android.App;
 using Android.Content;
 using Android.OS;
+using AmneziaGeo.Android.Engine;
 using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Android.Ui.Services;
 
 /// <summary>
-/// Возврат в приложение после замены пакета: открывает окно, когда установку запускал пользователь,
-/// и оставляет уведомление, когда система не дала открыть его из фона.
+/// Возврат в приложение после замены пакета: зовёт сторожа туннеля, открывает окно, когда установку запускал
+/// пользователь, и оставляет уведомление, когда система не дала открыть его из фона.
 /// </summary>
 internal static class UpdateReopen
 {
     private const string ChannelId = "amneziageo-update";
     private const int NotificationId = 0x7A20;
     private const string MarkerName = "update-reopen";
+
+    // Сторож туннеля в этом процессе уже позван.
+    private static int _called;
 
     /// <summary>
     /// Метка, которую обновлятель кладёт перед установкой из окна: переживает смерть процесса.
@@ -30,10 +34,16 @@ internal static class UpdateReopen
     }
 
     /// <summary>
-    /// Возвращает окно по сигналу приёмника; метка снимается, поэтому возврат случается один раз.
+    /// Зовёт сторожа туннеля и возвращает окно по сигналу приёмника; метка снимается, поэтому окно возвращается
+    /// один раз.
     /// </summary>
     public static void Run(BroadcastReceiver receiver, Context context)
     {
+        if (Interlocked.Exchange(ref _called, 1) == 0)
+        {
+            TunnelGuard.Ring(context);
+        }
+
         if (!TakeMarker(context))
         {
             return;

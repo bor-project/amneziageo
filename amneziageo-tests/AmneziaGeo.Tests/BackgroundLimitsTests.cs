@@ -120,6 +120,38 @@ public sealed class BackgroundLimitsTests
         Assert.Equal(Loc.Instance.Get(actionKey), row.ActionText);
     }
 
+    [Theory]
+    [InlineData(true, false, "Free")]
+    [InlineData(true, true, "Free")]
+    [InlineData(false, false, "Limited")]
+    [InlineData(false, true, "Unknown")]
+    public void TheBatterySaver_IsNotCalledLimitingWhereAVendorScreenTakesTheQuestion(bool exempt, bool vendorScreen, string state)
+    {
+        var limit = BackgroundLimit.Battery(exempt, vendorScreen);
+
+        Assert.Equal(BackgroundLimitKind.Battery, limit.Kind);
+        Assert.Equal(Enum.Parse<BackgroundLimitState>(state), limit.State);
+    }
+
+    [Fact]
+    public void TheBatteryRowOfAVendorScreen_SaysNothingUntilTheSystemExemptsTheApp()
+    {
+        var platform = new Platform(BackgroundLimit.Battery(false, true));
+        var block = platform.Block();
+        var row = Assert.Single(block.Rows);
+
+        Assert.False(row.HasState);
+        Assert.False(row.IsLimited);
+        Assert.Equal(string.Empty, row.StateText);
+        Assert.Equal(Loc.Instance.Get("Background_Configure"), row.ActionText);
+
+        platform.Limits = [BackgroundLimit.Battery(true, true)];
+        block.Reload();
+
+        Assert.True(row.HasState);
+        Assert.Equal(Loc.Instance.Get("Background_BatteryFree"), row.StateText);
+    }
+
     [Fact]
     public void TheButtonOfARow_OpensTheScreenOfItsLimit()
     {

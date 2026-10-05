@@ -2747,12 +2747,6 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Notice_Connect" xml:space="preserve">
     <value>Connect</value>
   </data>
-  <data name="Notice_ListOff" xml:space="preserve">
-    <value>Turn the list off</value>
-  </data>
-  <data name="Notice_ListOn" xml:space="preserve">
-    <value>Turn the list on</value>
-  </data>
   <data name="Notice_StoppedChannel" xml:space="preserve">
     <value>Tunnel stopped</value>
   </data>

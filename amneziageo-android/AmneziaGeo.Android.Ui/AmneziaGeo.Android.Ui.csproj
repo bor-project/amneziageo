@@ -61,6 +61,11 @@
     <TrimmerRootAssembly Include="AmneziaGeo.Localization" RootMode="All" />
   </ItemGroup>
 
+  <!-- Leaves an idle worker of the thread pool waiting instead of spinning. -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.UnfairSemaphoreSpinLimit" Value="0" Trim="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.17" />
     <PackageReference Include="Avalonia.Android" Version="11.3.17" />

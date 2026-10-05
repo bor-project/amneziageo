@@ -1,4 +1,3 @@
-using System.Globalization;
 using Android.App;
 using Android.Content;
 using AmneziaGeo.Android.Engine;
@@ -6,8 +5,7 @@ using AmneziaGeo.Android.Engine;
 namespace AmneziaGeo.Android.Ui;
 
 /// <summary>
-/// Carries out what the buttons of the tunnel notification ask of the head: raise the selected configuration,
-/// turn the routing list on or off.
+/// Carries out what the button of the tunnel notification asks of the head: raise the selected configuration.
 /// </summary>
 [BroadcastReceiver(Name = TunnelNotices.ReceiverName, Exported = false, Enabled = true)]
 public sealed class NoticeReceiver : BroadcastReceiver
@@ -55,13 +53,6 @@ public sealed class NoticeReceiver : BroadcastReceiver
     // The console command an action of the notification stands for; nothing for an action it does not know.
     private static string[]? Arguments(Intent? intent)
     {
-        var list = intent?.GetLongExtra(TunnelNotices.ExtraList, 0) ?? 0;
-        return intent?.Action switch
-        {
-            TunnelNotices.ActionConnect => ["up"],
-            TunnelNotices.ActionListOff => ["routing", "use", "none"],
-            TunnelNotices.ActionListOn when list > 0 => ["routing", "use", list.ToString(CultureInfo.InvariantCulture)],
-            _ => null,
-        };
+        return intent?.Action == TunnelNotices.ActionConnect ? ["up"] : null;
     }
 }

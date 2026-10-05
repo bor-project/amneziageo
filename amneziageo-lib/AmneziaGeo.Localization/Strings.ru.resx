@@ -2747,12 +2747,6 @@
   <data name="Notice_Connect" xml:space="preserve">
     <value>Подключить</value>
   </data>
-  <data name="Notice_ListOff" xml:space="preserve">
-    <value>Выключить список</value>
-  </data>
-  <data name="Notice_ListOn" xml:space="preserve">
-    <value>Включить список</value>
-  </data>
   <data name="Notice_StoppedChannel" xml:space="preserve">
     <value>Туннель остановлен</value>
   </data>

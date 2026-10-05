@@ -9,7 +9,7 @@ namespace AmneziaGeo.Android.Engine;
 /// Raises a tunnel whose process the system killed. While a session is wanted the service keeps pushing an alarm
 /// of the system ahead of itself; once the process is gone the alarm comes due, the system starts this receiver in
 /// a new tunnel process, and the receiver starts the service on the session the disk holds. A tunnel that keeps
-/// dying is given up, and a notification says it has stopped.
+/// dying is given up, and a notification says it has stopped. A package that was replaced calls the guard at once.
 /// </summary>
 [BroadcastReceiver(Name = "org.amneziageo.android.TunnelGuard", Exported = false, Enabled = true, Process = ":vpn")]
 public sealed class TunnelGuard : BroadcastReceiver
@@ -20,6 +20,7 @@ public sealed class TunnelGuard : BroadcastReceiver
     public const int PushEveryMs = 60_000;
 
     private const string Action = "org.amneziageo.android.GUARD";
+    private const string ReplacedAction = "org.amneziageo.android.GUARD_REPLACED";
     private const string TallyFile = "guard.txt";
     private const int Code = 5;
     private const long AheadMs = 120_000;
@@ -78,6 +79,23 @@ public sealed class TunnelGuard : BroadcastReceiver
         }
     }
 
+    /// <summary>
+    /// Calls the guard at once: the package was replaced, and the tunnel process went with the old one.
+    /// </summary>
+    public static void Ring(Context context)
+    {
+        try
+        {
+            var intent = new Intent(context, typeof(TunnelGuard));
+            intent.SetAction(ReplacedAction);
+            context.SendBroadcast(intent);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("TunnelGuard", "the guard was not called: " + ex);
+        }
+    }
+
     /// <inheritdoc/>
     public override void OnReceive(Context? context, Intent? intent)
     {
@@ -121,7 +139,9 @@ public sealed class TunnelGuard : BroadcastReceiver
                 context.StartService(start);
             }
 
-            Note(context, "the tunnel process was gone with a session wanted, the session is raised again");
+            Note(context, intent?.Action == ReplacedAction
+                ? "the package was replaced with a session wanted, the session is raised again"
+                : "the tunnel process was gone with a session wanted, the session is raised again");
             Arm(context);
         }
         catch (Exception ex)

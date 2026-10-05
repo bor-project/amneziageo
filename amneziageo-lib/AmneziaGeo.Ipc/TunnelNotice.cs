@@ -43,12 +43,10 @@ public enum NoticeStage
 /// <param name="RoutingOff">What is said when no list is in use.</param>
 /// <param name="Disconnect">Label of the action that takes the tunnel down.</param>
 /// <param name="Connect">Label of the action that raises it.</param>
-/// <param name="ListOff">Label of the action that turns the routing list off.</param>
-/// <param name="ListOn">Label of the action that turns a routing list on.</param>
 /// <param name="StoppedChannel">Name of the notification category of a stopped tunnel.</param>
 /// <param name="Culture">Name of the culture the numbers are written in.</param>
 /// <param name="List">Name of the routing list in use, empty when none is.</param>
-/// <param name="Offer">Id of the list the action turns on, 0 when there is no list to turn on.</param>
+/// <param name="Lists">Whether there is a routing list the configuration could route by.</param>
 public sealed record NoticeWords(
     string Connected,
     string Connecting,
@@ -61,20 +59,17 @@ public sealed record NoticeWords(
     string RoutingOff,
     string Disconnect,
     string Connect,
-    string ListOff,
-    string ListOn,
     string StoppedChannel,
     string Culture,
     string List = "",
-    long Offer = 0)
+    bool Lists = false)
 {
     /// <summary>
     /// The words a tunnel raised without a head falls back to.
     /// </summary>
     public static NoticeWords Plain { get; } = new(
         "Connected", "Connecting", "attempt {0}", "Disconnected", "The tunnel has stopped", "↓ {0} ↑ {1} Mbit/s",
-        "↓ {0} ↑ {1} kbit/s", "Routing: {0}", "Routing is off", "Disconnect", "Connect", "Turn the list off",
-        "Turn the list on", "Tunnel stopped", string.Empty);
+        "↓ {0} ↑ {1} kbit/s", "Routing: {0}", "Routing is off", "Disconnect", "Connect", "Tunnel stopped", string.Empty);
 }
 
 /// <summary>
@@ -111,20 +106,7 @@ public static class TunnelNotice
             return Fill(words, words.Routing, words.List);
         }
 
-        return words.Offer != 0 ? words.RoutingOff : null;
-    }
-
-    /// <summary>
-    /// The label of the routing action; nothing when there is no list to turn on or off.
-    /// </summary>
-    public static string? ListAction(NoticeWords words)
-    {
-        if (words.List.Length > 0)
-        {
-            return words.ListOff;
-        }
-
-        return words.Offer != 0 ? words.ListOn : null;
+        return words.Lists ? words.RoutingOff : null;
     }
 
     // Both directions in the unit the faster of the two calls for.

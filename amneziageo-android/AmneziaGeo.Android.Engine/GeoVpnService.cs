@@ -225,6 +225,10 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _stops;
     private ConnectivityManager.NetworkCallback? _underlay;
 
+    // The watch of every network of the device, and the looks at which they are read.
+    private ConnectivityManager.NetworkCallback? _networks;
+    private readonly NetworkLooks _networkLooks = new();
+
     // The network under the tunnel the session stands on.
     private string? _underKey;
     private List<string> _carved = [];
@@ -507,6 +511,12 @@ public sealed class GeoVpnService : VpnService
             var watch = new UnderlayWatch { Changed = OnUnderlayChanged };
             manager.RegisterDefaultNetworkCallback(watch);
             _underlay = watch;
+            var every = new NetworkWatch { Looks = _networkLooks };
+            if (new NetworkRequest.Builder().RemoveCapability(NetCapability.NotVpn)?.Build() is { } request)
+            {
+                manager.RegisterNetworkCallback(request, every);
+                _networks = every;
+            }
         }
         catch (Java.Lang.Exception ex)
         {
@@ -516,21 +526,25 @@ public sealed class GeoVpnService : VpnService
 
     private void DropUnderlayWatch()
     {
-        if (_underlay is null)
+        foreach (var watch in new[] { _underlay, _networks })
         {
-            return;
-        }
+            if (watch is null)
+            {
+                continue;
+            }
 
-        try
-        {
-            ((ConnectivityManager?)GetSystemService(ConnectivityService))?.UnregisterNetworkCallback(_underlay);
-        }
-        catch (Java.Lang.Exception ex)
-        {
-            global::Android.Util.Log.Warn("GeoVpnService", "dropping the network watch failed: " + ex);
+            try
+            {
+                ((ConnectivityManager?)GetSystemService(ConnectivityService))?.UnregisterNetworkCallback(watch);
+            }
+            catch (Java.Lang.Exception ex)
+            {
+                global::Android.Util.Log.Warn("GeoVpnService", "dropping the network watch failed: " + ex);
+            }
         }
 
         _underlay = null;
+        _networks = null;
     }
 
     // Only a local network the tun swallows is worth acting on: a carve-out left over from the previous network costs
@@ -838,6 +852,35 @@ public sealed class GeoVpnService : VpnService
         public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Callback telling the looks what the system says of every network of the device.
+    /// </summary>
+    private sealed class NetworkWatch : ConnectivityManager.NetworkCallback
+    {
+        /// <summary>
+        /// The looks that are told.
+        /// </summary>
+        public NetworkLooks? Looks { get; set; }
+
+        /// <inheritdoc/>
+        public override void OnAvailable(Network network) => Looks?.Changed();
+
+        /// <inheritdoc/>
+        public override void OnLost(Network network) => Looks?.Gone(network.NetworkHandle);
+
+        /// <inheritdoc/>
+        public override void OnCapabilitiesChanged(Network network, NetworkCapabilities networkCapabilities)
+        {
+            Looks?.Noted(network.NetworkHandle, false, AndroidNetworks.Mark(networkCapabilities));
+        }
+
+        /// <inheritdoc/>
+        public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties)
+        {
+            Looks?.Noted(network.NetworkHandle, true, AndroidNetworks.Mark(network, linkProperties));
+        }
+    }
+
     // Raises the session once and tells what the attempt ended with.
     private async Task<DialOutcome> BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, bool repair, CancellationToken ct)
     {
@@ -894,7 +937,7 @@ public sealed class GeoVpnService : VpnService
             var excluded = _liveTun ? hot : [];
             Past(false);
             var pfd = TunFor(resolved, name, appMode, appList, bypassApps, size, ipv6, rules.Tunneled, servers,
-                _proxyPort, excluded, out var parts, out var establishError);
+                _proxyPort, ref excluded, out var parts, out var establishError);
             if (pfd is null)
             {
                 return DialOutcome.Failed(ConnectFailureReason.TunnelSetupFailed, establishError ?? "establish failed");
@@ -1020,7 +1063,12 @@ public sealed class GeoVpnService : VpnService
             var reports = new CancellationTokenSource();
             _reports = reports;
             _ = Task.Run(() => ReportShareAsync(relay, reports.Token));
-            if (_liveTun)
+            if (_liveTun && _hold.Guard)
+            {
+                Report("the leak guard keeps this tun in its place, so a destination decided direct leaves through "
+                    + "the shim and gets its exclusion at the next connect");
+            }
+            else if (_liveTun)
             {
                 Report("a destination decided direct leaves this tun on its own exclusion, and comes back to it "
                     + "when the cache releases it");
@@ -1043,7 +1091,8 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // Hands out the tun the leak guard holds when the session needs the same one, and builds another otherwise.
+    // Hands out the tun the leak guard holds when the session needs the same one or one that differs in the
+    // addresses it leaves out alone, and builds another otherwise.
     private ParcelFileDescriptor? TunFor(
         string config,
         string name,
@@ -1055,14 +1104,28 @@ public sealed class GeoVpnService : VpnService
         IReadOnlyList<string> routes,
         IReadOnlyList<string> servers,
         int proxyPort,
-        IReadOnlyList<string> excluded,
+        ref IReadOnlyList<string> excluded,
         out string parts,
         out string? error)
     {
         parts = Parts(config, name, appMode, appList, bypassApps, mtu, ipv6, routes, servers, proxyPort, excluded);
         error = null;
-        return Held(parts)
-            ?? BuildTunnel(config, name, appMode, appList, bypassApps, mtu, ipv6, routes, servers, proxyPort, excluded, out error);
+        if (Held(parts) is { } same)
+        {
+            return same;
+        }
+
+        var bare = Parts(config, name, appMode, appList, bypassApps, mtu, ipv6, routes, servers, proxyPort, []);
+        if (HeldAround(bare, out var held, out var left) is { } kept)
+        {
+            Report($"the session rises on the tun the leak guard kept, which leaves {left.Count} address(es) out; the "
+                + $"{excluded.Count} decided direct by now get their exclusion at the next connect");
+            parts = held;
+            excluded = left;
+            return kept;
+        }
+
+        return BuildTunnel(config, name, appMode, appList, bypassApps, mtu, ipv6, routes, servers, proxyPort, excluded, out error);
     }
 
     // Names the parts a tun is built from.
@@ -1136,6 +1199,30 @@ public sealed class GeoVpnService : VpnService
         }
 
         return again;
+    }
+
+    // Another descriptor of the tun the leak guard holds, when that tun differs from the parts given in the
+    // addresses it leaves out alone.
+    private ParcelFileDescriptor? HeldAround(string bare, out string parts, out IReadOnlyList<string> excluded)
+    {
+        parts = string.Empty;
+        excluded = [];
+        if (!_hold.Active)
+        {
+            return null;
+        }
+
+        lock (_heldGate)
+        {
+            if (_heldTun is null || !_heldParts.StartsWith(bare, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            parts = _heldParts;
+            excluded = _heldParts[bare.Length..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+            return Second(_heldTun);
+        }
     }
 
     private static ParcelFileDescriptor? Second(ParcelFileDescriptor tun)
@@ -2530,6 +2617,13 @@ public sealed class GeoVpnService : VpnService
     // and whether the system still reaches the internet through the tunnel.
     private void WatchNetworks(long handshake, LinkReading reading)
     {
+        // Without the watch every look reads; with it, a look after a change, while the tunnel waits to be validated,
+        // and one in twelve.
+        if (_networks is not null && !_networkLooks.Due(_unvalidatedSince != 0))
+        {
+            return;
+        }
+
         var view = AndroidNetworks.Read(this);
         if (view.Under.Length > 0)
         {

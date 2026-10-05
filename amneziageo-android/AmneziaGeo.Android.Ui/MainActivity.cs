@@ -190,6 +190,7 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
 
         // Avalonia is up by now, so the theme it opened with is the one the bars are painted in.
         AndroidSystemBars.Attach(this);
+        FrameRest.Attach();
         App.Stage("activity", clock);
     }
 
@@ -225,6 +226,27 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             _notificationRequested = true;
             _ = RequestNotificationPermissionAsync();
         }
+    }
+
+    /// <inheritdoc/>
+    public override bool DispatchTouchEvent(global::Android.Views.MotionEvent? ev)
+    {
+        FrameRest.Wake();
+        return base.DispatchTouchEvent(ev);
+    }
+
+    /// <inheritdoc/>
+    public override bool DispatchKeyEvent(global::Android.Views.KeyEvent? e)
+    {
+        FrameRest.Wake();
+        return base.DispatchKeyEvent(e);
+    }
+
+    /// <inheritdoc/>
+    public override bool DispatchGenericMotionEvent(global::Android.Views.MotionEvent? ev)
+    {
+        FrameRest.Wake();
+        return base.DispatchGenericMotionEvent(ev);
     }
 
     /// <inheritdoc/>

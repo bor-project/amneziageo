@@ -19,7 +19,8 @@ internal static class AndroidBackgroundLimits
     // Операция автозапуска в учёте разрешений MIUI.
     private const int AutostartOp = 10008;
 
-    private const string AutostartPackage = "com.miui.securitycenter";
+    // Приложение MIUI с экранами автозапуска и экономии батареи.
+    private const string SecurityCenter = "com.miui.securitycenter";
 
     private const string AutostartScreen = "com.miui.permcenter.autostart.AutoStartManagementActivity";
 
@@ -27,6 +28,9 @@ internal static class AndroidBackgroundLimits
     private static bool? _television;
     private static bool? _hasBatteryScreen;
     private static bool? _hasAutostartScreen;
+
+    // Вопрос об экономии батареи принимает экран MIUI.
+    private static bool? _batteryByVendor;
 
     // Система не отдала состояние автозапуска.
     private static bool _autostartUnread;
@@ -51,7 +55,8 @@ internal static class AndroidBackgroundLimits
 
         if (_hasBatteryScreen ??= phone && Resolves(context, BatteryRequest(context)))
         {
-            limits.Add(new(BackgroundLimitKind.Battery, Told(BatteryFree(context))));
+            _batteryByVendor ??= Screen(context, BatteryRequest(context))?.PackageName == SecurityCenter;
+            limits.Add(BackgroundLimit.Battery(BatteryFree(context), _batteryByVendor == true));
         }
 
         if (_hasAutostartScreen ??= Resolves(context, AutostartIntent()))
@@ -195,7 +200,7 @@ internal static class AndroidBackgroundLimits
     private static Intent AutostartIntent()
     {
         var intent = new Intent();
-        intent.SetComponent(new ComponentName(AutostartPackage, AutostartScreen));
+        intent.SetComponent(new ComponentName(SecurityCenter, AutostartScreen));
         return intent;
     }
 
@@ -207,15 +212,21 @@ internal static class AndroidBackgroundLimits
     // Есть ли на устройстве экран, который откроет это намерение.
     private static bool Resolves(Context context, Intent intent)
     {
+        return Screen(context, intent) is not null;
+    }
+
+    // Экран, который откроет это намерение.
+    private static ActivityInfo? Screen(Context context, Intent intent)
+    {
         if (context.PackageManager is not { } manager)
         {
-            return false;
+            return null;
         }
 
         var found = OperatingSystem.IsAndroidVersionAtLeast(33)
             ? manager.ResolveActivity(intent, PackageManager.ResolveInfoFlags.Of((long)PackageInfoFlags.MatchDefaultOnly))
             : manager.ResolveActivity(intent, PackageInfoFlags.MatchDefaultOnly);
-        return found?.ActivityInfo is { Exported: true };
+        return found?.ActivityInfo is { Exported: true } screen ? screen : null;
     }
 
     // Открывает экран поверх окна, а без окна отдельной задачей.

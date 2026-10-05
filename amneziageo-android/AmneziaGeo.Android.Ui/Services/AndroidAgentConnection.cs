@@ -101,9 +101,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string? _selectedTarget;
     private long? _selectedRoutingList;
 
-    // The routing list in use last, which the notification offers to turn on again.
-    private long _lastRoutingList;
-
     // What the notification of a tunnel taken down was last told, so the same is not posted again.
     private string _downNotice = string.Empty;
 
@@ -663,7 +660,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), Front(configName, configText), foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words));
-        return Ok();
+        return new IpcAck(true, "connecting");
     }
 
     // Hands the server of a configuration to the tunnel, which dials it past itself, and waits for its word; a
@@ -792,15 +789,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // The words of the tunnel notification in the language the window is set to, with the routing list in use
-    // and the one the notification offers to turn on.
+    // The words of the tunnel notification in the language the window is set to, with the routing list in use.
     private async Task<NoticeWords> NoticeWordsAsync()
     {
         var language = UiPreferences.Load().Language;
         var takes = _selectedTarget is not { Length: > 0 } name
             || ConfigRouting.Allowed(_transports.GetValueOrDefault(name), _offered.GetValueOrDefault(name));
         var list = takes ? await ListNameAsync(_selectedRoutingList).ConfigureAwait(false) ?? string.Empty : string.Empty;
-        var offer = !takes ? 0 : list.Length > 0 ? _selectedRoutingList ?? 0 : await OfferedListAsync().ConfigureAwait(false);
+        var lists = takes && (list.Length > 0 || await AnyListAsync().ConfigureAwait(false));
         return new NoticeWords(
             Loc.GetIn(language, "Status_Connected"),
             Loc.GetIn(language, "Status_Connecting"),
@@ -813,30 +809,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             Loc.GetIn(language, "Notice_RoutingOff"),
             Loc.GetIn(language, "Notice_Disconnect"),
             Loc.GetIn(language, "Notice_Connect"),
-            Loc.GetIn(language, "Notice_ListOff"),
-            Loc.GetIn(language, "Notice_ListOn"),
             Loc.GetIn(language, "Notice_StoppedChannel"),
             Loc.CultureOf(language).Name,
             list,
-            offer);
+            lists);
     }
 
-    // The list the notification offers to turn on: the one in use last, else the first there is, 0 without lists.
-    private async Task<long> OfferedListAsync()
+    // Whether there is a routing list at all.
+    private async Task<bool> AnyListAsync()
     {
         await EnsureInitAsync().ConfigureAwait(false);
-        var lists = await _store.ListRoutingListsAsync().ConfigureAwait(false);
-        if (lists.Count == 0)
-        {
-            return 0;
-        }
-
-        return lists.Any(list => list.Id == _lastRoutingList) ? _lastRoutingList : lists[0].Id;
+        return (await _store.ListRoutingListsAsync().ConfigureAwait(false)).Count > 0;
     }
 
     // What the notification of a tunnel taken down says of a configuration and its words.
     private static string DownKey(string name, NoticeWords words) =>
-        string.Join('\n', name, words.List, words.Offer.ToString(CultureInfo.InvariantCulture), words.Culture);
+        string.Join('\n', name, words.List, words.Lists ? "1" : "0", words.Culture);
 
     // Keeps the notification a tunnel that is down left on the shade true to the configuration and the list chosen
     // now; a tunnel whose process is gone and which is to be raised again shows as connecting.
@@ -2689,11 +2677,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // gap where its traffic goes past it; a pending edit still asks for the fresh tunnel it needs.
         var same = picked == _selectedRoutingList && !_restartRequired;
         Journal(SwitchLog.RoutingList(names.From, names.To));
-        if (_selectedRoutingList is { } used)
-        {
-            _lastRoutingList = used;
-        }
-
         _selectedRoutingList = picked;
         Save();
         PushSnapshot();
@@ -2932,13 +2915,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _selectedRoutingList = listId;
             }
 
-            if (document.RootElement.TryGetProperty("LastRouting", out var lastList)
-                && lastList.ValueKind == JsonValueKind.Number
-                && lastList.TryGetInt64(out var lastId))
-            {
-                _lastRoutingList = lastId;
-            }
-
             if (document.RootElement.TryGetProperty("LogLevel", out var level) && level.ValueKind == JsonValueKind.String)
             {
                 _logLevel = KnownLogLevel(level.GetString() ?? "info");
@@ -3118,7 +3094,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"DialWanted\":").Append(_dialWanted ? "true" : "false");
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
-            builder.Append(",\"LastRouting\":").Append(_lastRoutingList.ToString(CultureInfo.InvariantCulture));
             builder.Append('}');
             System.IO.File.WriteAllText(_storePath, builder.ToString());
         }

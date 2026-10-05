@@ -13,6 +13,11 @@ namespace AmneziaGeo.Geo;
 public readonly record struct GeoDownload(int Percent, long Read, long Total);
 
 /// <summary>
+/// Загруженная и ещё не записанная база: источник, прежние сведения о его файле и содержимое (null, когда файл не менялся).
+/// </summary>
+public sealed record GeoFetch(GeoSource Source, GeoFileMetadata? Existing, byte[]? Data, string ETag, string LastModified, int Count);
+
+/// <summary>
 /// Downloads geo source files and records their update metadata.
 /// </summary>
 public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStore files)
@@ -22,21 +27,40 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
     /// </summary>
     public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<GeoDownload>? progress = null, CancellationToken ct = default)
     {
+        var fetched = await FetchAsync(source, progress, ct).ConfigureAwait(false);
+        return await StoreAsync(fetched, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Downloads a source file and checks what came; nothing is written.
+    /// </summary>
+    public async Task<GeoFetch> FetchAsync(GeoSource source, IProgress<GeoDownload>? progress = null, CancellationToken ct = default)
+    {
         var existing = await store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
         var fresh = await DownloadAsync(source.Url, existing, progress, ct).ConfigureAwait(false);
         if (fresh is null)
         {
-            return existing!;
+            return new GeoFetch(source, existing, null, string.Empty, string.Empty, 0);
         }
 
         var (data, etag, lastModified) = fresh.Value;
+        return new GeoFetch(source, existing, data, etag, lastModified, CountEntries(source, data));
+    }
 
-        var count = CountEntries(source, data);
+    /// <summary>
+    /// Writes a downloaded file and records its metadata; a file that did not change keeps what was recorded.
+    /// </summary>
+    public async Task<GeoFileMetadata> StoreAsync(GeoFetch fetched, CancellationToken ct = default)
+    {
+        if (fetched.Data is null)
+        {
+            return fetched.Existing!;
+        }
 
-        await files.WriteAsync(source.Name, data, ct).ConfigureAwait(false);
+        await files.WriteAsync(fetched.Source.Name, fetched.Data, ct).ConfigureAwait(false);
 
-        var sha = Convert.ToHexStringLower(SHA256.HashData(data));
-        var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count, etag, lastModified);
+        var sha = Convert.ToHexStringLower(SHA256.HashData(fetched.Data));
+        var metadata = new GeoFileMetadata(fetched.Source.Name, fetched.Source.Url, DateTimeOffset.UtcNow, sha, fetched.Count, fetched.ETag, fetched.LastModified);
         await store.SaveGeoFileAsync(metadata, ct).ConfigureAwait(false);
         return metadata;
     }

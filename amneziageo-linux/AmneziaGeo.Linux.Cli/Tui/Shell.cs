@@ -61,6 +61,7 @@ internal sealed class Shell : Window
         // Arrows the rail has no use for stay in it rather than wander into the panel as Tab would.
         _rail.KeyDownNotHandled += (_, key) => key.Handled |= Arrow(key);
         _content.KeyDown += (_, key) => Steer(key);
+        KeyDown += (_, key) => Leave(key);
         Add(_state, _rail, _content, hint);
 
         _agent.SnapshotReceived += OnSnapshot;
@@ -80,6 +81,20 @@ internal sealed class Shell : Window
     }
 
     private static string Localized(string key) => Loc.Instance.Get(key);
+
+    // Closes the console on F10 and takes Escape, the key Terminal.Gui quits on, so that it closes nothing here.
+    private static void Leave(Key key)
+    {
+        if (key == Key.F10)
+        {
+            Application.RequestStop();
+            key.Handled = true;
+        }
+        else if (key == Key.Esc)
+        {
+            key.Handled = true;
+        }
+    }
 
     // Tab, Right and Enter from the rail enter the panel at its first control and Shift+Tab at its last; left to
     // itself the panel would come back to the control it was left from, and Tab would only swing between that one

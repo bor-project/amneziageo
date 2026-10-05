@@ -953,7 +953,7 @@ public sealed class GeoVpnService : VpnService
             _excluded = excluded;
 
             var tunFd = pfd.DetachFd();
-            var handle = AwgEngine.TurnOn(Restrict(uapi, rules.Allowed), tunFd, engineLog);
+            var handle = AwgEngine.TurnOn(Restrict(uapi, rules.Allowed), tunFd, engineLog, Protect);
             if (handle < 0)
             {
                 ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
@@ -961,15 +961,6 @@ public sealed class GeoVpnService : VpnService
             }
 
             _handle = handle;
-            var socket = AwgEngine.GetSocketV4(handle);
-            if (socket >= 0)
-            {
-                Protect(socket);
-            }
-
-            // The protector goes in before the ranges: a direct datagram sent on an unprotected socket comes
-            // straight back into the tun.
-            AwgEngine.SetProtector(handle, Protect);
             _verdicts = rules.Verdicts;
             var decided = rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts);
             if (decided)

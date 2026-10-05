@@ -34,11 +34,13 @@ internal static partial class AwgEngine
     public const int LogVerbose = 2;
 
     /// <summary>
-    /// Starts the tunnel on an established tun fd; returns an engine handle.
+    /// Starts the tunnel on an established tun fd with the call that excuses a socket from the tunnel; returns an
+    /// engine handle.
     /// </summary>
-    public static int TurnOn(string settings, int tunFd, int logLevel)
+    public static unsafe int TurnOn(string settings, int tunFd, int logLevel, Func<int, bool> protect)
     {
-        return TurnOnNative(settings, tunFd, logLevel);
+        _protect = protect;
+        return TurnOnNative(settings, tunFd, logLevel, &ProtectNative);
     }
 
     /// <summary>
@@ -55,14 +57,6 @@ internal static partial class AwgEngine
     public static string? GetConfig(int handle)
     {
         return Take(GetConfigNative(handle));
-    }
-
-    /// <summary>
-    /// Returns the IPv4 handshake socket to protect from the tunnel.
-    /// </summary>
-    public static int GetSocketV4(int handle)
-    {
-        return GetSocketV4Native(handle);
     }
 
     /// <summary>
@@ -182,15 +176,6 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
-    /// Gives the shim the call that excuses a socket from the tunnel.
-    /// </summary>
-    public static unsafe bool SetProtector(int handle, Func<int, bool> protect)
-    {
-        _protect = protect;
-        return SetProtectorNative(handle, &ProtectNative) == 0;
-    }
-
-    /// <summary>
     /// Points the shim at the relay that decides streams, with the call that tells whose connection it is: 1 for
     /// this process, 2 for an application the rules name, 0 for the rest. A split list also decides datagrams by
     /// that answer.
@@ -274,16 +259,13 @@ internal static partial class AwgEngine
     }
 
     [LibraryImport(Lib, EntryPoint = "wgTurnOn", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int TurnOnNative(string settings, int tunFd, int logLevel);
+    private static unsafe partial int TurnOnNative(string settings, int tunFd, int logLevel, delegate* unmanaged<int, int> protect);
 
     [LibraryImport(Lib, EntryPoint = "wgTurnOff")]
     private static partial void TurnOffNative(int handle);
 
     [LibraryImport(Lib, EntryPoint = "wgGetConfig")]
     private static partial IntPtr GetConfigNative(int handle);
-
-    [LibraryImport(Lib, EntryPoint = "wgGetSocketV4")]
-    private static partial int GetSocketV4Native(int handle);
 
     [LibraryImport(Lib, EntryPoint = "wgSetConfig", StringMarshalling = StringMarshalling.Utf8)]
     private static partial int SetConfigNative(int handle, string settings);
@@ -320,9 +302,6 @@ internal static partial class AwgEngine
 
     [LibraryImport(Lib, EntryPoint = "wgPreloadLive", StringMarshalling = StringMarshalling.Utf8)]
     private static partial int PreloadLiveNative(int handle, string text);
-
-    [LibraryImport(Lib, EntryPoint = "wgSetProtector")]
-    private static unsafe partial int SetProtectorNative(int handle, delegate* unmanaged<int, int> protect);
 
     [LibraryImport(Lib, EntryPoint = "wgSetRelay")]
     private static unsafe partial int SetRelayNative(int handle, int port, int split, delegate* unmanaged<int, uint, ushort, uint, ushort, int> owner);

@@ -60,6 +60,9 @@ internal sealed class LinuxAgent : IDisposable
     private readonly LinuxUpdater _updater;
     private readonly AgentLog _log;
     private readonly SemaphoreSlim _commandGate = new(1, 1);
+
+    // One download of rule databases at a time among those that do not hold the gate of the commands.
+    private readonly SemaphoreSlim _sourcesGate = new(1, 1);
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
 
@@ -169,7 +172,7 @@ internal sealed class LinuxAgent : IDisposable
         _logLevel = settings.TryGetValue(LogLevelKey, out var level) ? KnownLogLevel(level) : "error";
         _routeLog = settings.TryGetValue(RouteLogKey, out var route) && IsOn(route);
         _surviveReboot = settings.TryGetValue(SurviveRebootKey, out var survive) && IsOn(survive);
-        _periodicReconnect = settings.TryGetValue(PeriodicReconnectKey, out var periodic) && IsOn(periodic);
+        _periodicReconnect = !settings.TryGetValue(PeriodicReconnectKey, out var periodic) || IsOn(periodic);
         _reconnectIntervalSeconds = ReconnectInterval(settings.TryGetValue(ReconnectIntervalKey, out var interval) ? interval : null);
         _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
         _dnsTransport = DnsTransports.Of(settings.TryGetValue(SettingKeys.DnsTransport, out var names) ? names : null);
@@ -307,10 +310,11 @@ internal sealed class LinuxAgent : IDisposable
     /// </summary>
     public async Task<IpcAck> DispatchAsync(IpcCommand command, CancellationToken ct)
     {
-        await _commandGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            return await RunAsync(command, ct).ConfigureAwait(false);
+            return DownloadsSources(command.Op)
+                ? await RefreshSourcesAsync(SourceNamed(command), ct).ConfigureAwait(false)
+                : await GatedAsync(() => RunAsync(command, ct), ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -321,11 +325,15 @@ internal sealed class LinuxAgent : IDisposable
             _log.Error("agent", $"command '{command.Op}' failed", ex);
             return new IpcAck(false, $"{command.Op} failed: {ex.Message}");
         }
-        finally
-        {
-            _commandGate.Release();
-        }
     }
+
+    // A command that only downloads rule databases.
+    private static bool DownloadsSources(string op) =>
+        op is IpcContract.OpUpdateSource or IpcContract.OpUpdateSources or IpcContract.OpDownloadGeo;
+
+    // The source a download command names; null stands for every source.
+    private static string? SourceNamed(IpcCommand command) =>
+        command.Op == IpcContract.OpUpdateSource && command.Args.Count > 0 ? command.Args[0] : null;
 
     // Work a background loop does to the tunnel waits for the gate the commands hold: the controller carries one
     // session, and a teardown or a redial must not cut through a connect or a routing edit half done.
@@ -335,6 +343,20 @@ internal sealed class LinuxAgent : IDisposable
         try
         {
             await work().ConfigureAwait(false);
+        }
+        finally
+        {
+            _commandGate.Release();
+        }
+    }
+
+    // The same for work that answers.
+    private async Task<T> GatedAsync<T>(Func<Task<T>> work, CancellationToken ct)
+    {
+        await _commandGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await work().ConfigureAwait(false);
         }
         finally
         {
@@ -526,7 +548,10 @@ internal sealed class LinuxAgent : IDisposable
                 : -1;
             reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0);
             LogLink(reading);
-            await RepairAsync(peer, reading, ct).ConfigureAwait(false);
+            if (await RepairAsync(peer, reading, ct).ConfigureAwait(false))
+            {
+                return;
+            }
         }
         else
         {
@@ -547,7 +572,7 @@ internal sealed class LinuxAgent : IDisposable
 
         if (_desiredConnected && _tunnel.Running && _boundStatus == ConnectionStatus.Connecting && !_hold.Down)
         {
-            await SettleConnectingAsync(counters, ct).ConfigureAwait(false);
+            await GatedAsync(() => SettleConnectingAsync(ct), ct).ConfigureAwait(false);
         }
 
         if (!_desiredConnected || _tunnel.Running)
@@ -557,17 +582,10 @@ internal sealed class LinuxAgent : IDisposable
 
         if (_boundStatus is ConnectionStatus.Connected or ConnectionStatus.Connecting)
         {
-            _log.Warn("agent", "the tunnel went down outside the agent");
-            _connectFailed = true;
-            _connectFailReason = ConnectFailureReason.Unknown.ToString();
-            _connectFailDetail = "engine stopped";
-            _handshakeDueUtc = DateTime.MaxValue;
-            _boundStatus = ConnectionStatus.Failed;
-            _nextRetryUtc = _hold.Active ? DateTime.UtcNow : DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
-            await PushAsync(ct).ConfigureAwait(false);
+            await GatedAsync(() => FellAsync(ct), ct).ConfigureAwait(false);
         }
 
-        if ((!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc)
+        if (!_desiredConnected || _tunnel.Running || (!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc)
         {
             return;
         }
@@ -581,12 +599,37 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
+    // Marks as failed a tunnel that went down under the agent; runs under the gate, so a command that was still
+    // bringing the tunnel up has finished by then.
+    private async Task FellAsync(CancellationToken ct)
+    {
+        if (!_desiredConnected || _tunnel.Running || _boundStatus is not (ConnectionStatus.Connected or ConnectionStatus.Connecting))
+        {
+            return;
+        }
+
+        _log.Warn("agent", "the tunnel went down outside the agent");
+        _connectFailed = true;
+        _connectFailReason = ConnectFailureReason.Unknown.ToString();
+        _connectFailDetail = "engine stopped";
+        _handshakeDueUtc = DateTime.MaxValue;
+        _boundStatus = ConnectionStatus.Failed;
+        _nextRetryUtc = _hold.Active ? DateTime.UtcNow : DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
+        await PushAsync(ct).ConfigureAwait(false);
+    }
+
     // Decides a connect that is still waiting: the interface is up from the moment the engine starts, and only
     // the peer's first answer says the tunnel carries anything. A server that never answers takes the tunnel
-    // down with it, so a machine is not left with its traffic in a tunnel that leads nowhere.
-    private async Task SettleConnectingAsync(PeerCounters? counters, CancellationToken ct)
+    // down with it, so a machine is not left with its traffic in a tunnel that leads nowhere. Runs under the gate
+    // and reads the counters there, so it judges the session that stands now.
+    private async Task SettleConnectingAsync(CancellationToken ct)
     {
-        if (counters is { HandshakeUnix: > 0 })
+        if (!_desiredConnected || !_tunnel.Running || _boundStatus != ConnectionStatus.Connecting || _hold.Down)
+        {
+            return;
+        }
+
+        if (await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) is { HandshakeUnix: > 0 })
         {
             _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Connected;
@@ -602,46 +645,37 @@ internal sealed class LinuxAgent : IDisposable
             return;
         }
 
-        await GatedAsync(async () =>
+        if (_hold.Active)
         {
-            // A connect that ran while this waited for the gate set its own deadline, or was already answered.
-            if (!_desiredConnected || !_tunnel.Running || _boundStatus != ConnectionStatus.Connecting
-                || DateTime.UtcNow < _handshakeDueUtc)
+            _handshakeDueUtc = DateTime.UtcNow.AddSeconds(HandshakeWaitSeconds);
+            if (!_heldUnanswered)
             {
-                return;
+                _heldUnanswered = true;
+                _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s; the leak guard keeps the tunnel up, so what "
+                    + "the rules send through it does not leave directly, and the server is asked again");
             }
 
-            if (_hold.Active)
-            {
-                _handshakeDueUtc = DateTime.UtcNow.AddSeconds(HandshakeWaitSeconds);
-                if (!_heldUnanswered)
-                {
-                    _heldUnanswered = true;
-                    _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s; the leak guard keeps the tunnel up, so what "
-                        + "the rules send through it does not leave directly, and the server is asked again");
-                }
+            await _tunnel.RepointAsync(ct, repin: true).ConfigureAwait(false);
+            return;
+        }
 
-                await _tunnel.RepointAsync(ct, repin: true).ConfigureAwait(false);
-                return;
-            }
-
-            _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s, so the tunnel is taken down");
-            _handshakeDueUtc = DateTime.MaxValue;
-            _connectFailed = true;
-            _connectFailReason = ConnectFailureReason.NoHandshake.ToString();
-            _connectFailDetail = "no handshake";
-            _boundStatus = ConnectionStatus.Failed;
-            _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-            _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
-            StopLossProbe();
-            await _tunnel.DownAsync(ct).ConfigureAwait(false);
-            await PushAsync(ct).ConfigureAwait(false);
-        }, ct).ConfigureAwait(false);
+        _log.Warn("agent", $"the server did not answer in {HandshakeWaitSeconds} s, so the tunnel is taken down");
+        _handshakeDueUtc = DateTime.MaxValue;
+        _connectFailed = true;
+        _connectFailReason = ConnectFailureReason.NoHandshake.ToString();
+        _connectFailDetail = "no handshake";
+        _boundStatus = ConnectionStatus.Failed;
+        _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _nextRetryUtc = DateTime.UtcNow.AddSeconds(_reconnectIntervalSeconds);
+        StopLossProbe();
+        await _tunnel.DownAsync(ct).ConfigureAwait(false);
+        await PushAsync(ct).ConfigureAwait(false);
     }
 
     // Repairs a tunnel that is up and no longer carrying. The counters alone never say it: a session that keeps
-    // being re-established holds a young handshake while nothing crosses it.
-    private async Task RepairAsync(PeerCounters peer, LinkReading reading, CancellationToken ct)
+    // being re-established holds a young handshake while nothing crosses it. Tells whether the session was raised
+    // again: the counters the tick read belong to the one before.
+    private async Task<bool> RepairAsync(PeerCounters peer, LinkReading reading, CancellationToken ct)
     {
         var moved = new LinkSample(
             peer.TxBytes > _lastTxBytes,
@@ -673,7 +707,7 @@ internal sealed class LinuxAgent : IDisposable
                     + "nothing further is tried until you connect again");
             }
 
-            return;
+            return false;
         }
 
         if (_recovery.Stuck && _hold.Stalled())
@@ -696,7 +730,7 @@ internal sealed class LinuxAgent : IDisposable
                 _session.Repaired(step);
             }
 
-            return;
+            return false;
         }
 
         _log.Warn("agent", $"{_recovery.Reason}, and the repairs that keep the tunnel standing did not bring it back; "
@@ -706,11 +740,12 @@ internal sealed class LinuxAgent : IDisposable
         if (!ack.Ok)
         {
             _log.Warn("agent", $"raising the session again failed: {ack.Message}");
-            return;
+            return true;
         }
 
         _lastRxBytes = -1;
         _lastTxBytes = -1;
+        return true;
     }
 
     // Writes the link to the journal: a line a minute while it runs, and a warning when it starts or stops
@@ -881,13 +916,6 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpRemoveSource:
                 return await RemoveSourceAsync(args, ct).ConfigureAwait(false);
-
-            case IpcContract.OpUpdateSource:
-                return await UpdateSourcesAsync(args.Count > 0 ? args[0] : null, ct).ConfigureAwait(false);
-
-            case IpcContract.OpUpdateSources:
-            case IpcContract.OpDownloadGeo:
-                return await UpdateSourcesAsync(null, ct).ConfigureAwait(false);
 
             case IpcContract.OpCheckSource:
                 return await CheckSourceAsync(args, ct).ConfigureAwait(false);
@@ -1911,7 +1939,7 @@ internal sealed class LinuxAgent : IDisposable
         var name = GeoSourceNames.Free(sources, args[0], position);
         await _store.SaveGeoSourceAsync(new GeoSource(name, args[0], args[1], position), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
-        return await UpdateSourcesAsync(name, ct).ConfigureAwait(false);
+        return await UpdateSourcesAsync(name, true, ct).ConfigureAwait(false);
     }
 
     private async Task<IpcAck> EditSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1930,7 +1958,7 @@ internal sealed class LinuxAgent : IDisposable
 
         await _store.SaveGeoSourceAsync(new GeoSource(existing.Name, args[1], args[2], existing.Position), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
-        return await UpdateSourcesAsync(existing.Name, ct).ConfigureAwait(false);
+        return await UpdateSourcesAsync(existing.Name, true, ct).ConfigureAwait(false);
     }
 
     private async Task<IpcAck> RemoveSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1947,52 +1975,129 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     // Downloads one source, or every source when no name is given, re-materializes the routing lists and hands a base
-    // that changed to the running tunnel.
-    private async Task<IpcAck> UpdateSourcesAsync(string? name, CancellationToken ct)
+    // that changed to the running tunnel. For a caller that does not hold the gate of the commands the gate is taken
+    // only around what touches the state, so no command waits for the network.
+    private async Task<IpcAck> UpdateSourcesAsync(string? name, bool held, CancellationToken ct)
     {
-        var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
-        var targets = name is null ? sources : sources.Where(s => string.Equals(s.Name, name, StringComparison.Ordinal)).ToList();
+        var targets = await UnderGateAsync(held, () => MarkSourcesAsync(name, ct), ct).ConfigureAwait(false);
         if (targets.Count == 0)
         {
             return new IpcAck(false, name is null ? "no geo sources configured" : $"'{name}' not found");
         }
 
         var failures = new List<string>();
+        var changed = false;
+        using var pump = new CancellationTokenSource();
+        var ticker = ProgressPumpAsync(pump.Token);
+        foreach (var source in targets)
+        {
+            var fetched = await FetchSourceAsync(source, ct).ConfigureAwait(false);
+            var stored = await UnderGateAsync(held, () => StoreSourceAsync(fetched, ct), CancellationToken.None).ConfigureAwait(false);
+            changed |= stored.Changed;
+            if (stored.Failure is not null)
+            {
+                failures.Add(stored.Failure);
+            }
+        }
+
+        pump.Cancel();
+        await ticker.ConfigureAwait(false);
+        return await UnderGateAsync(held, () => SettleSourcesAsync(targets.Count, changed, failures, ct), CancellationToken.None).ConfigureAwait(false);
+    }
+
+    // The same for a caller that does not hold the gate of the commands, one such download at a time.
+    private async Task<IpcAck> RefreshSourcesAsync(string? name, CancellationToken ct)
+    {
+        await _sourcesGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await UpdateSourcesAsync(name, false, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _sourcesGate.Release();
+        }
+    }
+
+    // Runs the work under the gate of the commands: at once for a caller that holds it.
+    private Task<T> UnderGateAsync<T>(bool held, Func<Task<T>> work, CancellationToken ct) => held ? work() : GatedAsync(work, ct);
+
+    // The sources an update names, marked as being updated.
+    private async Task<List<GeoSource>> MarkSourcesAsync(string? name, CancellationToken ct)
+    {
+        var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
+        var targets = sources.Where(source => name is null || string.Equals(source.Name, name, StringComparison.Ordinal)).ToList();
+        if (targets.Count == 0)
+        {
+            return targets;
+        }
+
         foreach (var source in targets)
         {
             _updatingSources.Add(source.Name);
         }
 
         await PushAsync(ct).ConfigureAwait(false);
-        var pump = new CancellationTokenSource();
-        var ticker = ProgressPumpAsync(pump.Token);
-        var changed = false;
-        foreach (var source in targets)
-        {
-            try
-            {
-                var before = await _store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
-                var meta = await _geoUpdater.UpdateAsync(source, new SourceProgress(_sourceProgress, source.Name), ct).ConfigureAwait(false);
-                changed |= !string.Equals(before?.Sha256, meta.Sha256, StringComparison.Ordinal);
-                _sourceErrors[source.Name] = null;
-                _log.Info("geo", $"{source.Name}: {meta.CategoryCount} categories");
-            }
-            catch (Exception ex)
-            {
-                _sourceErrors[source.Name] = ex.Message;
-                failures.Add($"{source.Name}: {ex.Message}");
-                _log.Error("geo", $"{source.Name} download failed", ex);
-            }
-            finally
-            {
-                _updatingSources.Remove(source.Name);
-                _sourceProgress.TryRemove(source.Name, out _);
-            }
-        }
+        return targets;
+    }
 
-        pump.Cancel();
-        await ticker.ConfigureAwait(false);
-        pump.Dispose();
+    // Downloads one source; nothing is written.
+    private async Task<SourceFetch> FetchSourceAsync(GeoSource source, CancellationToken ct)
+    {
+        try
+        {
+            var fetched = await _geoUpdater.FetchAsync(source, new SourceProgress(_sourceProgress, source.Name), ct).ConfigureAwait(false);
+            return new SourceFetch(source, fetched, null);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("geo", $"{source.Name} download failed", ex);
+            return new SourceFetch(source, null, ex.Message);
+        }
+        finally
+        {
+            _sourceProgress.TryRemove(source.Name, out _);
+        }
+    }
+
+    // Stores one download and takes the mark off its source; tells whether the base changed and what went wrong.
+    private async Task<(bool Changed, string? Failure)> StoreSourceAsync(SourceFetch one, CancellationToken ct)
+    {
+        var name = one.Source.Name;
+        _updatingSources.Remove(name);
+        try
+        {
+            // A source removed or pointed elsewhere while its file was coming keeps nothing of that file.
+            var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
+            if (!sources.Any(source => string.Equals(source.Name, name, StringComparison.Ordinal)
+                && string.Equals(source.Url, one.Source.Url, StringComparison.Ordinal)
+                && string.Equals(source.Kind, one.Source.Kind, StringComparison.Ordinal)))
+            {
+                return (false, null);
+            }
+
+            if (one.Fetched is null)
+            {
+                _sourceErrors[name] = one.Error;
+                return (false, $"{name}: {one.Error}");
+            }
+
+            var meta = await _geoUpdater.StoreAsync(one.Fetched, ct).ConfigureAwait(false);
+            _sourceErrors[name] = null;
+            _log.Info("geo", $"{name}: {meta.CategoryCount} categories");
+            return (!string.Equals(one.Fetched.Existing?.Sha256, meta.Sha256, StringComparison.Ordinal), null);
+        }
+        catch (Exception ex)
+        {
+            _sourceErrors[name] = ex.Message;
+            _log.Error("geo", $"{name} was not stored", ex);
+            return (false, $"{name}: {ex.Message}");
+        }
+    }
+
+    // Re-materializes the routing lists after an update and hands a base that changed to the running tunnel.
+    private async Task<IpcAck> SettleSourcesAsync(int count, bool changed, IReadOnlyList<string> failures, CancellationToken ct)
+    {
         await _geo.RematerializeAllRoutingListsAsync(ct).ConfigureAwait(false);
 
         // A base that changed reaches the running tunnel at once and without a reconnect: a list that sends a
@@ -2004,9 +2109,12 @@ internal sealed class LinuxAgent : IDisposable
 
         await PushAsync(ct).ConfigureAwait(false);
         return failures.Count == 0
-            ? new IpcAck(true, $"{targets.Count} source(s) updated")
+            ? new IpcAck(true, $"{count} source(s) updated")
             : new IpcAck(false, string.Join('\n', failures));
     }
+
+    // What the download of one source ended with: the file that came, or why none did.
+    private sealed record SourceFetch(GeoSource Source, GeoFetch? Fetched, string? Error);
 
     private async Task<IpcAck> SetSettingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -2847,19 +2955,14 @@ internal sealed class LinuxAgent : IDisposable
     {
         try
         {
-            await GatedAsync(
-                async () =>
+            foreach (var source in sources)
+            {
+                var ack = await RefreshSourcesAsync(source.Name, CancellationToken.None).ConfigureAwait(false);
+                if (!ack.Ok)
                 {
-                    foreach (var source in sources)
-                    {
-                        var ack = await UpdateSourcesAsync(source.Name, CancellationToken.None).ConfigureAwait(false);
-                        if (!ack.Ok)
-                        {
-                            _log.Warn("geo", $"{source.Name}: the source the server handed out was not fetched: {ack.Message}");
-                        }
-                    }
-                },
-                CancellationToken.None).ConfigureAwait(false);
+                    _log.Warn("geo", $"{source.Name}: the source the server handed out was not fetched: {ack.Message}");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -3182,6 +3285,7 @@ internal sealed class LinuxAgent : IDisposable
         _geoHttp.Dispose();
         _httpClient.Dispose();
         _commandGate.Dispose();
+        _sourcesGate.Dispose();
         _store.ClearPool();
     }
 }

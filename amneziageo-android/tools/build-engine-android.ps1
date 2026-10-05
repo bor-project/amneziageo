@@ -148,9 +148,9 @@ function Get-ElfInfo($b) {
 
 Write-Host ''
 Write-Host '== result =='
-$exports = @('wgTurnOn', 'wgTurnOff', 'wgGetSocketV4', 'wgGetConfig', 'wgSetConfig', 'wgSetVerdicts',
-    'wgPrepareSwap', 'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetProtector', 'wgSetTcpDirect',
-    'wgSetRelay', 'wgLiveAddresses', 'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory')
+$exports = @('wgTurnOn', 'wgTurnOff', 'wgGetConfig', 'wgSetConfig', 'wgSetVerdicts', 'wgPrepareSwap',
+    'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetTcpDirect', 'wgSetRelay', 'wgLiveAddresses',
+    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory')
 foreach ($a in $Abi) {
     $so = Join-Path $outRoot "$a\libamneziawg-go.so"
     $b = [IO.File]::ReadAllBytes($so)

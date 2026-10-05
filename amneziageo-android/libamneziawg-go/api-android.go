@@ -37,14 +37,16 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"github.com/bor-project/amneziageo/libamneziawg-go/probe"
+	"github.com/bor-project/amneziageo/libamneziawg-go/protect"
 )
 
 const logTag = "amneziawg-go"
 
-// Движок вместе со слоем вердиктов, который стоит под ним.
+// Движок, слой вердиктов под ним и привязка его сокетов.
 type tunnel struct {
-	dev *device.Device
-	tun *verdictTun
+	dev  *device.Device
+	tun  *verdictTun
+	bind *protect.Bind
 }
 
 var (
@@ -76,7 +78,7 @@ func newAndroidLogger(level int) *device.Logger {
 }
 
 //export wgTurnOn
-func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
+func wgTurnOn(settings *C.char, tunFd int32, logLevel int32, fn C.ag_protect_fn) int32 {
 	logger := newAndroidLogger(int(logLevel))
 
 	tunDevice, _, err := tun.CreateUnmonitoredTUNFromFD(int(tunFd))
@@ -85,8 +87,13 @@ func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
 		return -1
 	}
 
+	excuse := func(fd int) bool {
+		return C.ag_call_protect(fn, C.int(fd)) != 0
+	}
 	verdictDevice := newVerdictTun(tunDevice, defaultVerdictTtl)
-	dev := device.NewDevice(verdictDevice, conn.NewDefaultBind(), logger)
+	verdictDevice.setProtector(excuse)
+	bind := protect.New(conn.NewDefaultBind(), excuse)
+	dev := device.NewDevice(verdictDevice, bind, logger)
 
 	if err := dev.IpcSet(C.GoString(settings)); err != nil {
 		logger.Errorf("Failed to apply UAPI settings: %v", err)
@@ -100,9 +107,13 @@ func wgTurnOn(settings *C.char, tunFd int32, logLevel int32) int32 {
 		return -1
 	}
 
+	if !bind.Protected() {
+		logger.Errorf("The host did not excuse the sockets of the engine from the tunnel")
+	}
+
 	handle := nextHandle
 	nextHandle++
-	tunnelHandles[handle] = &tunnel{dev: dev, tun: verdictDevice}
+	tunnelHandles[handle] = &tunnel{dev: dev, tun: verdictDevice, bind: bind}
 	logger.Verbosef("Tunnel %d started", handle)
 	return handle
 }
@@ -115,23 +126,6 @@ func wgTurnOff(handle int32) {
 	}
 	delete(tunnelHandles, handle)
 	t.dev.Close()
-}
-
-//export wgGetSocketV4
-func wgGetSocketV4(handle int32) int32 {
-	t, ok := tunnelHandles[handle]
-	if !ok {
-		return -1
-	}
-	bind, ok := t.dev.Bind().(*conn.StdNetBind)
-	if !ok {
-		return -1
-	}
-	fd, err := bind.PeekLookAtSocketFd4()
-	if err != nil {
-		return -1
-	}
-	return int32(fd)
 }
 
 //export wgGetConfig
@@ -170,15 +164,7 @@ func wgRebind(handle int32) int32 {
 	if err := t.dev.IpcSet("listen_port=0\n"); err != nil {
 		return -1
 	}
-	bind, ok := t.dev.Bind().(*conn.StdNetBind)
-	if !ok {
-		return -1
-	}
-	fd, err := bind.PeekLookAtSocketFd4()
-	if err != nil {
-		return -1
-	}
-	if fn := t.tun.protect.Load(); fn == nil || !(*fn)(fd) {
+	if !t.bind.Protected() {
 		return -1
 	}
 	t.dev.SendKeepalivesToPeersWithCurrentKeypair()
@@ -256,18 +242,6 @@ func wgMemory() *C.char {
 //export wgReturnMemory
 func wgReturnMemory() {
 	debug.FreeOSMemory()
-}
-
-//export wgSetProtector
-func wgSetProtector(handle int32, fn C.ag_protect_fn) int32 {
-	t, ok := tunnelHandles[handle]
-	if !ok {
-		return -1
-	}
-	t.tun.setProtector(func(fd int) bool {
-		return C.ag_call_protect(fn, C.int(fd)) != 0
-	})
-	return 0
 }
 
 //export wgSetRelay

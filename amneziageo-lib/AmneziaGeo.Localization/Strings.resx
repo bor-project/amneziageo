@@ -538,12 +538,6 @@
   <data name="Main_UseRoutingHint" xml:space="preserve">
     <value>Use routing where it is available</value>
   </data>
-  <data name="Main_LeakGuardTitle" xml:space="preserve">
-    <value>Leak protection</value>
-  </data>
-  <data name="Main_LeakGuardHint" xml:space="preserve">
-    <value>While the tunnel reconnects, what is selected does not go directly</value>
-  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Amnezia engine version</value>
   </data>

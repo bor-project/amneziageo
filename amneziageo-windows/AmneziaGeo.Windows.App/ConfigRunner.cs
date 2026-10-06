@@ -230,7 +230,7 @@ internal sealed class ConfigRunner(
                     break;
                 }
 
-                await GuardAsync(config, ct);
+                _recovery.Held = _hold.Active;
                 var asked = Sample(config);
                 if (!_recovery.Repairing && _hold.Carries())
                 {
@@ -521,14 +521,6 @@ internal sealed class ConfigRunner(
         {
             logger.LogWarning(ex, "the connection state could not be saved; the app may show an out-of-date state until the next change");
         }
-    }
-
-    // Reads the leak guard of the configuration into the hold and the ladder.
-    private async Task GuardAsync(string config, CancellationToken ct)
-    {
-        var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        _hold.Set(transport?.LeakGuard ?? false);
-        _recovery.Held = _hold.Active;
     }
 
     // Shows a held tunnel as connecting, while the set keeps counting it as standing.

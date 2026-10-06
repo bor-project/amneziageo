@@ -658,7 +658,7 @@ internal sealed class Cli(
         }
 
         var on = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
-        await store.SetConfigTransportAsync(new ConfigTransport(name, on, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto, current?.UseRouter ?? true, current?.AllowInbound ?? false, current?.InboundNetwork ?? false, current?.UseRouting ?? true, host, port, current?.LeakGuard ?? false));
+        await store.SetConfigTransportAsync(new ConfigTransport(name, on, current?.Mtu ?? 1420, current?.UseIpv6 ?? false, current?.MtuMode ?? MtuMode.Auto, current?.UseRouter ?? true, current?.AllowInbound ?? false, current?.InboundNetwork ?? false, current?.UseRouting ?? true, host, port));
         Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}, port={port}, host={(host.Length == 0 ? "(default)" : host)}");
         return 0;
     }

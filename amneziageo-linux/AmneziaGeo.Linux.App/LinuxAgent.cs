@@ -869,9 +869,6 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpSetWebSocket:
                 return await SetTransportAsync(args, ct).ConfigureAwait(false);
 
-            case IpcContract.OpSetLeakGuard:
-                return await SetLeakGuardAsync(args, ct).ConfigureAwait(false);
-
             case IpcContract.OpSetConfigDns:
                 return await SetConfigDnsAsync(args, ct).ConfigureAwait(false);
 
@@ -1065,7 +1062,6 @@ internal sealed class LinuxAgent : IDisposable
         var routing = await TunnelRouting.LoadAsync(_store, configName, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
-        _hold.Set(configTransport?.LeakGuard ?? false);
         _hold.Dialled();
         _recovery.Held = _hold.Active;
         _heldUnanswered = false;
@@ -1632,7 +1628,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
         }
 
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.LeakGuard ?? false);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
@@ -1644,33 +1640,8 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    private async Task<IpcAck> SetLeakGuardAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 2)
-        {
-            return Fail();
-        }
-
-        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
-        {
-            return NotFound(args[0]);
-        }
-
-        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
-        var guard = IsOn(args[1]);
-        await _store.SetConfigTransportAsync(stored with { LeakGuard = guard }, ct).ConfigureAwait(false);
-        if (string.Equals(args[0], _boundTarget, StringComparison.Ordinal))
-        {
-            _hold.Set(guard);
-            _recovery.Held = _hold.Active;
-        }
-
-        await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
-    }
-
-    // Raises the reconnect banner for a running configuration; access from the tunnel and the leak guard are left
-    // out, they apply on the spot.
+    // Raises the reconnect banner for a running configuration; access from the tunnel is left out, it applies on
+    // the spot.
     private void FlagTransportRestart(string name, ConfigTransport? stored, ConfigTransport transport)
     {
         if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
@@ -1682,7 +1653,6 @@ internal sealed class LinuxAgent : IDisposable
         {
             AllowInbound = stored?.AllowInbound ?? false,
             InboundNetwork = stored?.InboundNetwork ?? false,
-            LeakGuard = stored?.LeakGuard ?? false,
         };
         if (carried == stored)
         {
@@ -3059,12 +3029,12 @@ internal sealed class LinuxAgent : IDisposable
         sb.AppendLine($"route ttl:       {_routeTtlSeconds}s");
         sb.AppendLine($"survive reboot:  {(_surviveReboot ? "on" : "off")}");
         sb.AppendLine($"reconnect:       {(_periodicReconnect ? $"every {_reconnectIntervalSeconds}s" : "off")}");
-        sb.AppendLine($"leak guard:      {(!_hold.Guard ? "off" : _hold.Down ? "on, the tunnel is kept up while it carries nothing" : "on")}");
         sb.AppendLine();
         sb.AppendLine("[state]");
         sb.AppendLine($"selected target: {_selectedTarget ?? "-"}");
         sb.AppendLine($"bound target:    {_boundTarget ?? "-"}");
         sb.AppendLine($"status:          {_boundStatus}");
+        sb.AppendLine($"held:            {(_hold.Down ? "yes, the tunnel is kept up while it carries nothing" : "no")}");
         sb.AppendLine($"connect failed:  {_connectFailed}");
         sb.AppendLine();
         foreach (var line in _session.Lines(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Sessions()))
@@ -3125,8 +3095,7 @@ internal sealed class LinuxAgent : IDisposable
             WsEndpoint.SourceOf(text, offer) == WsSource.Settings,
             member is not null && stale.Contains(member.Subscription),
             reading.Churning,
-            reading.LossStreak,
-            transport?.LeakGuard ?? false);
+            reading.LossStreak);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

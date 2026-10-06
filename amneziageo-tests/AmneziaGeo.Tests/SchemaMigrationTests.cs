@@ -72,19 +72,38 @@ public sealed class SchemaMigrationTests
     }
 
     [Fact]
-    public async Task InitializeAsync_OnATransportFromBeforeTheLeakGuard_AddsItTurnedOff()
+    public async Task InitializeAsync_OnANewDatabase_AddsNoLeakGuardColumn()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-guard-{Guid.NewGuid():N}.db");
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-plain-{Guid.NewGuid():N}.db");
         try
         {
-            await WriteLegacyTransportAsync(path);
+            await new SqliteStateStore(path).InitializeAsync();
+
+            Assert.DoesNotContain("leak_guard", await ColumnsAsync(path, "config_transport"));
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task SetConfigTransportAsync_OnADatabaseThatStillCarriesTheLeakGuard_KeepsTheTransport()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-guarded-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteGuardedTransportAsync(path, "office");
 
             var store = new SqliteStateStore(path);
             await store.InitializeAsync();
-            await store.SetConfigTransportAsync(new ConfigTransport("office", false, LeakGuard: true));
+            await store.SetConfigTransportAsync(new ConfigTransport("office", true, 1380, MtuMode: MtuMode.Custom));
+            await store.SetConfigTransportAsync(new ConfigTransport("home", false));
 
-            Assert.Contains("leak_guard", await ColumnsAsync(path, "config_transport"));
-            Assert.True((await store.GetConfigTransportAsync("office"))?.LeakGuard);
+            var office = await store.GetConfigTransportAsync("office");
+            Assert.True(office?.UseWebSocket);
+            Assert.Equal(1380, office?.Mtu);
+            Assert.NotNull(await store.GetConfigTransportAsync("home"));
         }
         finally
         {
@@ -203,6 +222,38 @@ public sealed class SchemaMigrationTests
                     """;
                 command.Parameters.AddWithValue("$name", name);
                 command.Parameters.AddWithValue("$mtu", mtu);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        ClearPool(path);
+    }
+
+    // A config_transport that still carries the switch of the leak guard, with one row that has it on.
+    private static async Task WriteGuardedTransportAsync(string path, string name)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    CREATE TABLE config_transport (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name       TEXT NOT NULL UNIQUE,
+                        use_ws     INTEGER NOT NULL DEFAULT 0,
+                        ws_port    INTEGER NOT NULL DEFAULT 443,
+                        leak_guard INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL
+                    );
+                    INSERT INTO config_transport (name, leak_guard, updated_at) VALUES ($name, 1, '2026-01-01T00:00:00Z');
+                    PRAGMA user_version = 1;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
                 await command.ExecuteNonQueryAsync();
             }
         }

@@ -188,6 +188,23 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheSummary_HasNoLeakGuardRow()
+    {
+        await _store.SaveConfigAsync("srv", "[Interface]\nPrivateKey = topSecretKey\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.1:51820\n");
+        await _store.SetConfigTransportAsync(new ConfigTransport("srv", true));
+
+        var bundle = new DiagnosticsBundle(_store, _logs);
+        var path = await bundle.WriteAsync(Path.Combine(_root, "out"), "header\n", row => row.Message);
+
+        using var zip = ZipFile.OpenRead(path);
+        using var reader = new StreamReader(zip.GetEntry("summary.txt")!.Open());
+        var summary = await reader.ReadToEndAsync();
+
+        Assert.Contains("inbound:    off", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("leak guard", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task KeysInTheLogRows_AreMaskedInsideTheArchive()
     {
         _logs.AppendAgent(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), 5, "agent", "PrivateKey = topSecretKey");

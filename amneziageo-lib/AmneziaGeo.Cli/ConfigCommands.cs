@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|mtu|inbound|routing|guard|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|mtu|inbound|routing|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -45,7 +45,6 @@ internal static class ConfigCommands
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
             "inbound" => await InboundAsync(agent, rest).ConfigureAwait(false),
             "routing" => await RoutingAsync(agent, rest).ConfigureAwait(false),
-            "guard" => await GuardAsync(agent, rest).ConfigureAwait(false),
             "geo" => await GeoAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown config command '{args[0]}'"),
         };
@@ -70,12 +69,11 @@ internal static class ConfigCommands
                 config.Dns.Length > 0 ? config.Dns : "-",
                 Inbound(config),
                 Routing(config),
-                config.LeakGuard ? "on" : "off",
                 config.Status,
             ])
             .ToList();
 
-        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "GUARD", "STATE"], rows, "no configurations yet");
+        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "STATE"], rows, "no configurations yet");
         return Exit.Ok;
     }
 
@@ -367,16 +365,6 @@ internal static class ConfigCommands
             stored.AllowInbound ? "on" : "off",
             stored.InboundNetwork ? "on" : "off",
             Toggle.Text(on)).ConfigureAwait(false));
-    }
-
-    private static async Task<int> GuardAsync(IAgentLink agent, IReadOnlyList<string> args)
-    {
-        if (args.Count != 2 || !Toggle.TryParse(args[1], out var on))
-        {
-            return Reply.Usage("usage: amneziageo config guard <name> on|off");
-        }
-
-        return Reply.Report(await agent.SendAsync(IpcContract.OpSetLeakGuard, args[0], Toggle.Text(on)).ConfigureAwait(false));
     }
 
     // What the word stands for: no access, the server alone, or every device of the tunnel network.

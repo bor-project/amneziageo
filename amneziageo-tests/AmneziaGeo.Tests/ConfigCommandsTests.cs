@@ -179,39 +179,41 @@ public sealed class ConfigCommandsTests : IDisposable
     }
 
     [Fact]
-    public void TheHelp_NamesTheGuardCommand()
+    public void TheHelp_NamesNoGuardCommand()
     {
         var usage = CliRunner.Usage(new Host());
 
-        Assert.Contains("config guard <name> on|off", usage, StringComparison.Ordinal);
+        Assert.DoesNotContain("config guard", usage, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task TheTable_ShowsTheLeakGuardOfEveryConfiguration()
+    public async Task TheTable_HasNoGuardColumn()
     {
-        var link = new Link([
-            new ConfigEntry("plain", "10.9.1.1:51821", false, "idle", []),
-            new ConfigEntry("kept", "10.9.1.1:51821", false, "idle", [], LeakGuard: true),
-        ]);
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
 
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal("GUARD", Cells(lines[0])[7]);
-        Assert.Equal("off", Cells(lines[1])[7]);
-        Assert.Equal("on", Cells(lines[2])[7]);
+        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "STATE"], Cells(lines[0]));
+        Assert.Equal(8, Cells(lines[1]).Length);
     }
 
     [Fact]
-    public async Task ConfigGuard_SendsTheSwitchInACommandOfItsOwn()
+    public async Task ConfigGuard_IsNoCommand()
     {
         var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
 
-        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["guard", "office", "on"]));
-        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["guard", "office", "maybe"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["guard", "office", "on"]));
 
-        Assert.Equal([IpcContract.OpSetLeakGuard], link.Sent);
-        Assert.Equal(["office", "on"], link.Args[0]);
+        Assert.Empty(link.Sent);
+    }
+
+    [Fact]
+    public void TheStatus_HasNoLeakGuardRow()
+    {
+        StatusCommands.Print(new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]).Snapshot);
+
+        Assert.DoesNotContain("leak guard", _console.ToString(), StringComparison.Ordinal);
     }
 
     // Splits one printed row into its cells, which stand at least two spaces apart.

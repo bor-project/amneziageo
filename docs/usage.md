@@ -74,13 +74,13 @@ The application asks an AmneziaGeo server what it offers a configuration: when t
 
 ## Leak protection
 
-A tunnel whose server stops answering is taken down and raised again, and while it is down what the rules send through it leaves by the physical path. The "Leak protection" switch in the settings of a configuration keeps such a tunnel up instead: while it reconnects on its own, what the rules send through it is held back, and what the rules send directly keeps going. The state reads "connecting" until the server answers again, however long that takes. It is off by default. From the console: `amneziageo config guard <name> on|off`; `config list` shows it in the GUARD column and `status` in the `leak guard` row.
+A tunnel whose server stops answering is not taken down: it stays up while it reconnects on its own, what the rules send through it is held back instead of leaving by the physical path, and what the rules send directly keeps going. The state reads "connecting" until the server answers again, however long that takes. The protection is always on and has no switch.
 
-- A disconnect of yours (the button, the menu of the tray or of the notification, the console) takes the tunnel down as before, and so does a switch to another configuration on Linux and Windows.
-- The protection covers a tunnel the server answered at least once after you connected. A connect the server never answered is given up as before.
+- A disconnect of yours (the button, the menu of the tray or of the notification, the console) takes the tunnel down, and so does a switch to another configuration on Linux and Windows.
+- The protection covers a tunnel the server answered at least once after you connected. A connect the server never answered is given up.
 - A tunnel whose engine or tunnel service died is raised again at once, and for that moment there is no tunnel. On Android the system setting "Block connections without VPN" closes it.
 - On Android the protection keeps the tunnel interface in place for as long as the session runs: an address the rules send directly keeps going through the application until the next connect instead of leaving the interface on its own. A change of the routing list or of the configuration still puts another interface in place, and for that moment a packet can leave by the physical path.
-- On Android names are resolved through the tunnel, so while it is held no name resolves; addresses the rules send directly keep working. A switch flipped while the tunnel is connected applies there from the next connect.
+- On Android names are resolved through the tunnel, so while it is held no name resolves; addresses the rules send directly keep working.
 - A failure another attempt does not get past ends the hold: the tunnel goes down and says why.
 - On Linux and Windows a tunnel that carries everything does not look the name of its server up again while it is held.
 

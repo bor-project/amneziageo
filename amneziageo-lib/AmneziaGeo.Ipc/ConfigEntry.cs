@@ -62,9 +62,7 @@ public sealed record ConfigEntry(
     // Whether the running tunnel keeps re-establishing its session while nothing comes back through it.
     bool LinkChurning = false,
     // Longest run of the running tunnel's echoes lost one after another; 0 on every config that is not running.
-    int LossStreak = 0,
-    // Whether a tunnel that has stood is taken down by nothing but the user.
-    bool LeakGuard = false);
+    int LossStreak = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

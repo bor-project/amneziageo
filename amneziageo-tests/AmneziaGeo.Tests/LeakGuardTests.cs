@@ -1,18 +1,16 @@
-using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
-using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 using Xunit;
 
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The leak guard of a configuration: a tunnel that has stood is taken down by the user alone, so the ladder that
-/// repairs it never raises the session again and never stands down; the flag is kept with the transport, travels to
-/// the agent in a command of its own and stays off until it is turned on.
+/// The leak guard: a tunnel that has stood is taken down by the user alone, so the ladder that repairs it never
+/// raises the session again and never stands down; it stands for every configuration and nothing switches it.
 /// </summary>
-public sealed class LeakGuardTests : IAsyncLifetime
+public sealed class LeakGuardTests
 {
     private static readonly RecoveryStep[] _ladder = [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Restart];
 
@@ -22,63 +20,19 @@ public sealed class LeakGuardTests : IAsyncLifetime
     // Traffic both ways, every echo answered.
     private static readonly LinkSample _carrying = new(true, true, 0, false, 20);
 
-    private readonly string _path = Path.Combine(Path.GetTempPath(), $"ageo-guard-{Guid.NewGuid():N}.db");
-    private SqliteStateStore _store = null!;
-
-    /// <inheritdoc />
-    public async Task InitializeAsync()
-    {
-        _store = new SqliteStateStore(_path);
-        await _store.InitializeAsync();
-    }
-
-    /// <inheritdoc />
-    public Task DisposeAsync()
-    {
-        _store.ClearPool();
-        foreach (var file in new[] { _path, _path + "-wal", _path + "-shm" })
-        {
-            try
-            {
-                File.Delete(file);
-            }
-            catch (IOException)
-            {
-            }
-        }
-
-        return Task.CompletedTask;
-    }
-
     [Fact]
-    public void AGuardThatIsOff_HoldsNoTunnel()
+    public void ATunnelThatNeverStood_IsNotHeld()
     {
         var hold = new LeakHold();
-
-        hold.Set(false);
-        hold.Raised();
-
-        Assert.False(hold.Active);
-        Assert.False(hold.Stalled());
-        Assert.False(hold.Down);
-    }
-
-    [Fact]
-    public void AGuardedTunnelThatNeverStood_IsNotHeld()
-    {
-        var hold = new LeakHold();
-
-        hold.Set(true);
 
         Assert.False(hold.Active);
         Assert.False(hold.Stalled());
     }
 
     [Fact]
-    public void AGuardedTunnelThatStood_IsHeldWhileItCarriesNothing()
+    public void ATunnelThatStood_IsHeldWhileItCarriesNothing()
     {
         var hold = new LeakHold();
-        hold.Set(true);
         hold.Raised();
 
         Assert.True(hold.Active);
@@ -95,7 +49,6 @@ public sealed class LeakGuardTests : IAsyncLifetime
     public void TheUserTakingTheTunnelDown_EndsTheHold()
     {
         var hold = new LeakHold();
-        hold.Set(true);
         hold.Raised();
         hold.Stalled();
 
@@ -103,22 +56,6 @@ public sealed class LeakGuardTests : IAsyncLifetime
 
         Assert.False(hold.Active);
         Assert.False(hold.Down);
-        Assert.True(hold.Guard);
-    }
-
-    [Fact]
-    public void TheGuardTurnedOff_EndsTheHold()
-    {
-        var hold = new LeakHold();
-        hold.Set(true);
-        hold.Raised();
-        hold.Stalled();
-
-        hold.Set(false);
-
-        Assert.False(hold.Active);
-        Assert.False(hold.Down);
-        Assert.True(hold.Stood);
     }
 
     [Fact]
@@ -192,73 +129,50 @@ public sealed class LeakGuardTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheTransport_KeepsTheLeakGuardAndLeavesItOffUntilItIsTurnedOn()
+    public void NothingCarriesASwitchOfTheGuard()
     {
-        await _store.SetConfigTransportAsync(new ConfigTransport("kept", false, LeakGuard: true));
-        await _store.SetConfigTransportAsync(new ConfigTransport("plain", true, 1380, true, MtuMode.Custom));
-
-        var kept = await _store.GetConfigTransportAsync("kept");
-        var plain = await _store.GetConfigTransportAsync("plain");
-
-        Assert.True(kept!.LeakGuard);
-        Assert.False(plain!.LeakGuard);
-
-        await _store.SetConfigTransportAsync(kept with { LeakGuard = false });
-
-        Assert.False((await _store.GetConfigTransportAsync("kept"))!.LeakGuard);
+        Assert.Null(typeof(ConfigTransport).GetProperty("LeakGuard"));
+        Assert.Null(typeof(ConfigEntry).GetProperty("LeakGuard"));
+        Assert.Null(typeof(PortableBundle.TransportBlock).GetProperty("LeakGuard"));
+        Assert.Null(typeof(ConfigTransportViewModel).GetProperty("LeakGuard"));
+        Assert.Null(typeof(ConfigItemViewModel).GetProperty("LeakGuard"));
+        Assert.Null(typeof(IpcContract).GetField("OpSetLeakGuard"));
     }
 
     [Fact]
-    public async Task TheGuardTurnedOnInTheWindow_GoesToTheAgentInACommandOfItsOwn()
+    public void ABundle_NamesNoSwitchOfTheGuard()
     {
-        var agent = new Commands();
-        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false);
+        var bundle = new PortableBundle.Bundle(
+            PortableBundle.FormatTag,
+            PortableBundle.CurrentVersion,
+            [new PortableBundle.ConfigBlock("office", "[Interface]\n", new PortableBundle.TransportBlock(true, string.Empty, 0, 1380), null)],
+            []);
 
-        transport.LeakGuard = true;
-        Assert.True(transport.IsDirty);
-        await transport.CommitAsync();
-
-        Assert.Equal([IpcContract.OpSetWebSocket, IpcContract.OpSetLeakGuard], agent.Sent.Select(command => command.Op));
-        Assert.Equal(["e2e", "on"], agent.Sent[1].Args);
+        Assert.DoesNotContain("LeakGuard", PortableBundle.Serialize(bundle), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task TheGuardTurnedOffInTheWindow_IsSentAsOff()
+    public void ABundleThatStillNamesTheSwitch_IsRead()
     {
-        var agent = new Commands();
-        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, leakGuard: true);
+        const string json = """
+            {
+              "Format": "amneziageo-bundle",
+              "Version": 2,
+              "Configs": [
+                {
+                  "Name": "office",
+                  "ConfigText": "[Interface]\n",
+                  "Transport": { "UseWebSocket": true, "Host": "", "Port": 0, "Mtu": 1380, "LeakGuard": true }
+                }
+              ],
+              "RoutingLists": []
+            }
+            """;
 
-        transport.LeakGuard = false;
-        await transport.CommitAsync();
+        var transport = PortableBundle.Deserialize(json)?.Configs[0].Transport;
 
-        Assert.Equal(["e2e", "off"], agent.Sent[^1].Args);
-        Assert.Equal(IpcContract.OpSetLeakGuard, agent.Sent[^1].Op);
-    }
-
-    [Fact]
-    public async Task ASaveOfAnotherSetting_SendsNoGuardCommand()
-    {
-        var agent = new Commands();
-        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, leakGuard: true);
-
-        Assert.True(transport.LeakGuard);
-        Assert.False(transport.IsDirty);
-        transport.UseIpv6 = true;
-        await transport.CommitAsync();
-
-        Assert.Equal([IpcContract.OpSetWebSocket], agent.Sent.Select(command => command.Op));
-    }
-
-    [Fact]
-    public void AGuardTakenBack_LeavesNothingToSave()
-    {
-        var transport = new ConfigTransportViewModel(new Commands(), "e2e", false, 1420, false);
-
-        transport.LeakGuard = true;
-        transport.Revert();
-
-        Assert.False(transport.LeakGuard);
-        Assert.False(transport.IsDirty);
+        Assert.True(transport?.UseWebSocket);
+        Assert.Equal(1380, transport?.Mtu);
     }
 
     // Reads the link once a second from the moment given and returns the steps asked for.
@@ -274,45 +188,5 @@ public sealed class LeakGuardTests : IAsyncLifetime
         }
 
         return steps;
-    }
-
-    // Keeps every command the window sends instead of an agent.
-    private sealed class Commands : IAgentConnection
-    {
-        public List<IpcCommand> Sent { get; } = [];
-
-        public event Action? Connected
-        {
-            add { }
-            remove { }
-        }
-
-        public event Action? Disconnected
-        {
-            add { }
-            remove { }
-        }
-
-        public event Action<StatusSnapshot>? SnapshotReceived
-        {
-            add { }
-            remove { }
-        }
-
-        public void Start()
-        {
-        }
-
-        public Task<IpcAck> SendCommandAsync(IpcCommand command)
-        {
-            Sent.Add(command);
-            return Task.FromResult(new IpcAck(true, string.Empty));
-        }
-
-        public Task<IpcAck> SendCommandRawAsync(IpcCommand command) => SendCommandAsync(command);
-
-        public void Dispose()
-        {
-        }
     }
 }

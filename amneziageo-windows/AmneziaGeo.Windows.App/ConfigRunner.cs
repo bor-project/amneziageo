@@ -891,10 +891,16 @@ internal sealed class ConfigRunner(
 
     // Repairs the link without taking the session down: another source port for a NAT that has dropped the
     // mapping, the endpoint resolved again for a server that has moved. A carried tunnel dials its carrier on
-    // loopback, and the address in its config belongs to the carrier - re-pointing the peer at it would take the
-    // tunnel off the carrier, so that one is left to the carrier's own watchdog.
+    // loopback, so neither reaches the network, and its repair is left to the carrier's own watchdog.
     private async Task<bool> RepairAsync(string config, RecoveryStep step, CancellationToken ct)
     {
+        if (Carried(config))
+        {
+            logger.LogWarning("{Config}: {Reason}; the tunnel is carried inside a websocket, so its port and address stay as they are and the carrier is re-dialled by its own watchdog (attempt {Attempt})",
+                config, _recovery.Reason, _recovery.Attempt);
+            return false;
+        }
+
         if (step == RecoveryStep.Rebind)
         {
             var rebound = uapi.Rebind(config);
@@ -911,7 +917,7 @@ internal sealed class ConfigRunner(
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var declared = WgConfigEditor.GetEndpoint(text);
         var key = WgConfigEditor.GetPeerPublicKey(text);
-        if (string.IsNullOrEmpty(declared) || string.IsNullOrEmpty(key) || Carried(config))
+        if (string.IsNullOrEmpty(declared) || string.IsNullOrEmpty(key))
         {
             return false;
         }

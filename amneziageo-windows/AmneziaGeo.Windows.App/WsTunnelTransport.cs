@@ -37,7 +37,22 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     // How often the headers are written anew, well inside the window the server takes a token in.
     private static readonly TimeSpan HeadersRefresh = TimeSpan.FromSeconds(30);
 
+    // How long a carrier started beside the present one may take to listen, and then to carry.
+    private static readonly TimeSpan HandoverListen = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan HandoverCarry = TimeSpan.FromSeconds(8);
+
+    // How long the carrier that gave the tunnel over is still heard.
+    private static readonly TimeSpan HandoverSettle = TimeSpan.FromMilliseconds(500);
+
+    // Silence of the present carrier past which it no longer counts as carrying.
+    private const int CarriesMs = 3000;
+
+    // Life of a carrier under which its fall counts as a failed start.
+    private const int FailedStartMs = 10_000;
+
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
+    private readonly CarrierPort _port; // the port the tunnel dials in front of the carrier
+    private volatile int _carrierPort;  // loopback UDP port the carrier process listens on
     private readonly string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
     private readonly string _credentials; // optional basic-auth "user[:pass]"
     private readonly Func<string>? _header; // the token header the front of a server of ours asks for
@@ -49,12 +64,16 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private readonly object _exitLock = new();
     private (int Code, string Stderr)? _lastExit;
     private Process? _process;
+    private Process? _leaving;
     private Task? _supervisor;
     private Task? _refresher;
+    private Task? _handover;
     private int _rejectionReported;
     private int _redials;
+    private int _handing;
+    private long _startedAtMs;
 
-    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, int localPort, Action<string>? onRejected, ILogger logger)
+    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, int carrierPort, Action<string>? onRejected, ILogger logger)
     {
         _serverHost = serverHost;
         _wsPort = wsPort;
@@ -63,7 +82,9 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         _credentials = credentials;
         _header = header;
         _headersFile = headersFile;
-        LocalPort = localPort;
+        _carrierPort = carrierPort;
+        _port = new CarrierPort(carrierPort, logger);
+        LocalPort = _port.Port;
         _onRejected = onRejected;
         _logger = logger;
     }
@@ -79,19 +100,116 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     public int Redials => Volatile.Read(ref _redials);
 
     /// <summary>
-    /// Drops the carrier process; the supervisor dials a fresh websocket on the same local port a second later.
-    /// The WG engine keeps its session: it goes on addressing the same loopback port throughout.
+    /// Starts a fresh carrier beside the present one and hands the tunnel over once it carries.
     /// </summary>
     public void Redial(string reason)
     {
-        var process = _process;
-        if (process is null)
+        if (_process is null || Interlocked.CompareExchange(ref _handing, 1, 0) != 0)
         {
             return;
         }
 
         Interlocked.Increment(ref _redials);
-        _logger.LogWarning("the websocket carrier is being re-dialled ({Reason}); the tunnel keeps its session and traffic resumes once the new carrier is up", reason);
+        _logger.LogWarning("the websocket carrier is being re-dialled ({Reason}); a fresh one is started beside it and takes the tunnel over once it carries, so the tunnel keeps its session and its traffic", reason);
+        _handover = Task.Run(() => HandOverAsync(_cts.Token));
+    }
+
+    // Hands the tunnel over to a carrier started beside the present one.
+    private async Task HandOverAsync(CancellationToken ct)
+    {
+        var started = Stopwatch.StartNew();
+        var old = _process;
+        var (fresh, port) = LaunchBeside();
+        var adopted = false;
+        try
+        {
+            if (fresh is null || !await WaitUntilListeningAsync(port, HandoverListen, ct).ConfigureAwait(false))
+            {
+                _logger.LogWarning("a fresh websocket carrier did not start beside the present one, so the present one is stopped and started again in its place");
+                Stop(old);
+                return;
+            }
+
+            _port.Offer(port);
+            var taken = await TakenAsync(old, ct).ConfigureAwait(false);
+            if (!taken && Running(old) && _port.QuietMs < CarriesMs)
+            {
+                _port.Withdraw();
+                _logger.LogWarning("the fresh websocket carrier carried nothing in {Seconds} s while the present one still does, so the present one stays", (int)HandoverCarry.TotalSeconds);
+                return;
+            }
+
+            _port.Switch();
+            _carrierPort = port;
+            _leaving = old;
+            _process = fresh;
+            Volatile.Write(ref _startedAtMs, Environment.TickCount64);
+            adopted = true;
+            _logger.LogInformation("the fresh websocket carrier (process {Pid}) has the tunnel after {Elapsed} ms{Outcome}; the one before is stopped",
+                fresh.Id, started.ElapsedMilliseconds, taken ? string.Empty : ", though nothing has come through it yet");
+            await Task.Delay(HandoverSettle, ct).ConfigureAwait(false);
+            Stop(old);
+            _port.Forget();
+            _leaving = null;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or SocketException or System.ComponentModel.Win32Exception)
+        {
+            _logger.LogWarning(ex, "handing the tunnel over to a fresh websocket carrier failed");
+        }
+        finally
+        {
+            if (!adopted)
+            {
+                Stop(fresh);
+                fresh?.Dispose();
+            }
+
+            Volatile.Write(ref _handing, 0);
+        }
+    }
+
+    // Starts a carrier on a port of its own; no process when it does not start.
+    private (Process? Process, int Port) LaunchBeside()
+    {
+        try
+        {
+            var port = FreeUdpPort();
+            return (Launch(port), port);
+        }
+        catch (SocketException ex)
+        {
+            _logger.LogWarning(ex, "the loopback gave no port for a fresh websocket carrier");
+            return (null, 0);
+        }
+    }
+
+    // Waits until the carrier offered answers, the present one exits or the time is up.
+    private async Task<bool> TakenAsync(Process? present, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow + HandoverCarry;
+        while (!_port.Taken && Running(present) && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(20, ct).ConfigureAwait(false);
+        }
+
+        return _port.Taken;
+    }
+
+    private static bool Running(Process? process)
+    {
+        return process is not null && TryGetPid(process) != 0;
+    }
+
+    // Stops a carrier process.
+    private void Stop(Process? process)
+    {
+        if (process is null)
+        {
+            return;
+        }
 
         try
         {
@@ -102,7 +220,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            _logger.LogWarning(ex, "the websocket carrier would not stop for a re-dial, so the stalled one stays in place");
+            _logger.LogWarning(ex, "a websocket carrier process would not stop");
         }
     }
 
@@ -251,28 +369,50 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, FreeUdpPort(), onRejected, logger);
+        var transport = Create(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, onRejected, logger);
+        if (transport is null)
+        {
+            return null;
+        }
+
         transport.WriteHeaders();
         transport.Spawn();
         transport._supervisor = Task.Run(() => transport.SuperviseAsync(transport._cts.Token));
         transport._refresher = Task.Run(() => transport.RefreshAsync(transport._cts.Token));
 
-        if (await transport.WaitUntilListeningAsync(TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
+        if (await WaitUntilListeningAsync(transport._carrierPort, TimeSpan.FromSeconds(8), ct).ConfigureAwait(false))
         {
             return transport;
         }
 
         if (transport.LastExit() is { } exit)
         {
-            logger.LogError("the websocket carrier exited with code 0x{Code:X8} before it listened on port {Port}, so the tunnel has nothing to dial; the connect is aborted. Its stderr: {Stderr}", exit.Code, transport.LocalPort, exit.Stderr);
+            logger.LogError("the websocket carrier exited with code 0x{Code:X8} before it listened on port {Port}, so the tunnel has nothing to dial; the connect is aborted. Its stderr: {Stderr}", exit.Code, transport._carrierPort, exit.Stderr);
         }
         else
         {
-            logger.LogError("the websocket carrier never started listening on port {Port}, so the tunnel has nothing to dial; the connect is aborted", transport.LocalPort);
+            logger.LogError("the websocket carrier never started listening on port {Port}, so the tunnel has nothing to dial; the connect is aborted", transport._carrierPort);
         }
 
         await transport.DisposeAsync().ConfigureAwait(false);
         return null;
+    }
+
+    // Makes the transport with the port the tunnel dials; null when the loopback gives none.
+    private static WsTunnelTransport? Create(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, Action<string>? onRejected, ILogger logger)
+    {
+        try
+        {
+            // The port of the carrier stays taken until the port in front of it is bound.
+            using var held = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            held.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            return new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, ((IPEndPoint)held.LocalEndPoint!).Port, onRejected, logger);
+        }
+        catch (SocketException ex)
+        {
+            logger.LogError(ex, "the loopback gave no port for the tunnel to dial its websocket carrier at, so the connection cannot start");
+            return null;
+        }
     }
 
     // How the last carrier process ended and what it wrote to stderr; null while none has exited.
@@ -304,7 +444,14 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     private void Spawn()
     {
-        // -L udp://<localPort>:127.0.0.1:<targetPort> forwards to the AmneziaWG interface on the server;
+        _process = Launch(_carrierPort);
+        Volatile.Write(ref _startedAtMs, Environment.TickCount64);
+    }
+
+    // Starts a carrier process that listens on the loopback port given; null when it does not start.
+    private Process? Launch(int port)
+    {
+        // -L udp://<port>:127.0.0.1:<targetPort> forwards to the AmneziaWG interface on the server;
         // timeout_sec=0 keeps the UDP association alive. The token in the headers file proves the keys of the
         // configuration, so the certificate is taken as it stands; without a token it is verified. Optional -P path
         // token and basic-auth credentials.
@@ -321,7 +468,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             auth += $" --http-upgrade-credentials \"{_credentials}\"";
         }
 
-        var args = $"client{auth} -L \"udp://{LocalPort}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
+        var args = $"client{auth} -L \"udp://{port}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
         var info = new ProcessStartInfo(TunnelPaths.WsTunnelExe(), args)
         {
             UseShellExecute = false,
@@ -343,14 +490,13 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "the websocket carrier could not be launched; this connection cannot be disguised as web traffic and will not come up");
-            _process = null;
-            return;
+            return null;
         }
 
         if (process is null)
         {
             _logger.LogError("the websocket carrier did not start and reported no reason; this connection will not come up");
-            return;
+            return null;
         }
 
         process.OutputDataReceived += (_, e) => Trace(e.Data);
@@ -361,10 +507,10 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        _process = process;
         _logger.LogInformation(
             "the websocket carrier is running (process {Pid}): it takes the tunnel from local port {Local}, wraps it in an encrypted web connection to {Host}:{Ws}, and the server hands it to port {Target}",
-            process.Id, LocalPort, _serverHost, _wsPort, _targetPort);
+            process.Id, port, _serverHost, _wsPort, _targetPort);
+        return process;
     }
 
     // wstunnel carries its own level in every line; keep that level instead of burying the whole stream at Debug,
@@ -465,26 +611,54 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
                 return;
             }
 
-            var code = process.ExitCode;
-            lock (_exitLock)
-            {
-                _lastExit = (code, _stderr.Count == 0 ? "(empty)" : string.Join(Environment.NewLine, _stderr));
-            }
-
-            _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, in a second", code, LocalPort);
-            process.Dispose();
-            _process = null;
-
+            // Waits out a handover and holds off another one while the carrier is started again.
             try
             {
-                await Task.Delay(1000, ct).ConfigureAwait(false);
+                while (Interlocked.CompareExchange(ref _handing, 1, 0) != 0)
+                {
+                    await Task.Delay(50, ct).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException)
             {
                 return;
             }
 
-            Spawn();
+            try
+            {
+                // A carrier that gave the tunnel over has nothing to start again.
+                if (!ReferenceEquals(process, _process))
+                {
+                    process.Dispose();
+                    continue;
+                }
+
+                var code = process.ExitCode;
+                lock (_exitLock)
+                {
+                    _lastExit = (code, _stderr.Count == 0 ? "(empty)" : string.Join(Environment.NewLine, _stderr));
+                }
+
+                var failed = Environment.TickCount64 - Volatile.Read(ref _startedAtMs) < FailedStartMs;
+                _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, {When}", code, _carrierPort, failed ? "in a second" : "at once");
+                process.Dispose();
+                _process = null;
+
+                try
+                {
+                    await Task.Delay(failed ? 1000 : 0, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                Spawn();
+            }
+            finally
+            {
+                Volatile.Write(ref _handing, 0);
+            }
         }
     }
 
@@ -524,7 +698,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
     }
 
-    private async Task<bool> WaitUntilListeningAsync(TimeSpan timeout, CancellationToken ct)
+    private static async Task<bool> WaitUntilListeningAsync(int port, TimeSpan timeout, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
@@ -538,7 +712,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
             foreach (var endpoint in listeners)
             {
-                if (endpoint.Port == LocalPort && (IPAddress.IsLoopback(endpoint.Address) || endpoint.Address.Equals(IPAddress.Any)))
+                if (endpoint.Port == port && (IPAddress.IsLoopback(endpoint.Address) || endpoint.Address.Equals(IPAddress.Any)))
                 {
                     return true;
                 }
@@ -546,7 +720,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
             try
             {
-                await Task.Delay(150, ct).ConfigureAwait(false);
+                await Task.Delay(50, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -585,6 +759,19 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             await _refresher.ConfigureAwait(false);
         }
 
+        if (_handover is not null)
+        {
+            await _handover.ConfigureAwait(false);
+        }
+
+        var leaving = _leaving;
+        if (leaving is not null)
+        {
+            Stop(leaving);
+            leaving.Dispose();
+            _leaving = null;
+        }
+
         var process = _process;
         if (process is not null)
         {
@@ -603,6 +790,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             _process = null;
         }
 
+        _port.Dispose();
         _cts.Dispose();
         if (_header is not null)
         {

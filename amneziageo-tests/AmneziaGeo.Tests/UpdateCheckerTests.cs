@@ -91,6 +91,71 @@ public sealed class UpdateCheckerTests
         Assert.True(UpdateFeed.IsUpdate("nightly", "1.2.7.3"));
     }
 
+    [Fact]
+    public void OffersNothingWhenTheReleaseCarriesNoInstallerOfTheBuild()
+    {
+        var info = UpdateChecker.BuildInfo(
+            Manifest("1.10.2.0", "AmneziaGeo-1.10.2.0-win-x64.exe", "AmneziaGeo-1.10.2.0-win-arm64-fdd.exe"),
+            new Uri("https://example.test/v1.10.2.0-beta.1/update.json"),
+            "1.10.1.0",
+            "win-x64-fdd");
+
+        Assert.NotNull(info);
+        Assert.False(info.Available);
+        Assert.Equal("1.10.2.0", info.Version);
+        Assert.Null(info.Asset);
+    }
+
+    [Fact]
+    public void OffersTheUpdateWhoseReleaseCarriesTheInstallerOfTheBuild()
+    {
+        var info = UpdateChecker.BuildInfo(
+            Manifest("1.10.2.0", "AmneziaGeo-1.10.2.0-win-x64.exe", "AmneziaGeo-1.10.2.0-win-x64-fdd.exe"),
+            new Uri("https://example.test/v1.10.2.0-beta.1/update.json"),
+            "1.10.1.0",
+            "win-x64-fdd");
+
+        Assert.NotNull(info);
+        Assert.True(info.Available);
+        Assert.Equal("https://example.test/v1.10.2.0-beta.1/AmneziaGeo-1.10.2.0-win-x64-fdd.exe", info.SetupUrl);
+        Assert.Equal("AmneziaGeo-1.10.2.0-win-x64-fdd.exe", info.Asset?.Name);
+    }
+
+    [Fact]
+    public void OffersTheUpdateOfAManifestThatListsNoInstallers()
+    {
+        var info = UpdateChecker.BuildInfo(
+            "{\"version\":\"1.10.2.0\",\"setup\":\"AmneziaGeoSetup.exe\"}",
+            new Uri("https://example.test/v1.10.2.0/update.json"),
+            "1.10.1.0",
+            "win-x64-fdd");
+
+        Assert.NotNull(info);
+        Assert.True(info.Available);
+        Assert.Equal("https://example.test/v1.10.2.0/AmneziaGeo-1.10.2.0-win-x64-fdd.exe", info.SetupUrl);
+    }
+
+    [Fact]
+    public void SaysNothingAboutTheSameVersionWhateverTheReleaseCarries()
+    {
+        var info = UpdateChecker.BuildInfo(
+            Manifest("1.10.2.0", "AmneziaGeo-1.10.2.0-win-x64-fdd.exe"),
+            new Uri("https://example.test/v1.10.2.0/update.json"),
+            "1.10.2.0",
+            "win-x64-fdd");
+
+        Assert.NotNull(info);
+        Assert.False(info.Available);
+    }
+
+    // A manifest of a release that lists the installers named.
+    private static string Manifest(string version, params string[] installers)
+    {
+        var listed = installers.Select(name => $"{{\"name\":\"{name}\",\"platform\":\"windows\",\"sha256\":\"ab\"}}");
+
+        return $"{{\"version\":\"{version}\",\"setup\":\"{installers[0]}\",\"installers\":[{string.Join(",", listed)}]}}";
+    }
+
     private static string Releases(params string[] releases)
     {
         return $"[{string.Join(",", releases)}]";

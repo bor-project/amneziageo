@@ -6,7 +6,8 @@
 # Beside every installer and package lie its files packed one by one and their list: the app's update fetches from
 # there only the files the installed copy lacks, and a changed file as a delta from its version in the Latest release
 # or one of the two newest when the copy holds that version (job deltas).
-# Every job is its own runner with fail-fast off, so a broken target still ships the ones that build.
+# Every job is its own runner with fail-fast off, so a target that failed is rerun alone. The release is published
+# only when every target built: one that lacks a target offers its users an update they cannot take.
 # Bundles are UNSIGNED. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID variable +
 # SIGNPATH_API_TOKEN secret) the sign job submits them to SignPath and the release ships signed; until
 # then the release is unsigned. The signing key never lives in the repo or on the runner
@@ -26,7 +27,7 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
-      fail-fast: false   # a broken arch (e.g. arm64) must not block the arches that do build
+      fail-fast: false   # an arch that failed is rerun alone while the others keep what they built
       matrix:
         include:
           - { arch: x64,   variant: fdd }
@@ -286,7 +287,7 @@ jobs:
   deltas:
     needs: [build, build-linux]
     runs-on: ubuntu-latest
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -353,9 +354,12 @@ jobs:
   publish:
     needs: [build, build-linux, build-android, sign, deltas]
     runs-on: ubuntu-latest
-    # always() + tag: publish whatever built even if some target failed or the sign job was skipped. It does
-    # NOT gate on needs.*.result, so a partial matrix (e.g. x64 ok, arm64 broken) still ships.
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    # Publishes on a tag once every build job succeeded; "Re-run failed jobs" brings a failed one back and the
+    # release then goes out whole. The sign job may be skipped, and a failure of the deltas only leaves them out.
+    if: >-
+      ${{ !cancelled() && startsWith(github.ref, 'refs/tags/')
+      && needs.build.result == 'success' && needs.build-linux.result == 'success'
+      && needs.build-android.result == 'success' }}
     steps:
       # Grab every artifact of this run into artifacts/<name>/. Downloading by a specific name would fail
       # when that target did not build, so download all and pick below.
@@ -385,12 +389,9 @@ jobs:
           # Legacy fallback entry point = x64 framework-dependent. New clients ignore update.json.setup and
           # build their own per-build installer name; setup only serves clients with no baked build target.
           # Matched through globs, not `ls`: nullglob drops an unmatched pattern, and a bare `ls` would then
-          # list the work directory and hand its first entry over as the installer.
+          # list the work directory and hand its first entry over as the installer. No other installer stands
+          # in for it: one of another architecture would not run.
           setups=(release/AmneziaGeo-*-win-x64-fdd.exe)
-          if [ ${#setups[@]} -eq 0 ]; then
-            setups=(release/*.exe)
-            echo "WARNING: x64-fdd absent; auto-update entry = ${setups[0]:-none}"
-          fi
           SETUP_NAME=''
           if [ ${#setups[@]} -gt 0 ]; then SETUP_NAME=$(basename "${setups[0]}"); fi
           # Self-describing manifest: version + channel (stable vs prerelease from the tag) + an installers

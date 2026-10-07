@@ -55,6 +55,8 @@ internal sealed class TunnelController : IDisposable
     private bool _resolverApplied;
     private bool _inboundBlocked;
     private IReadOnlyList<string> _inboundRoutes = [];
+    private SignalPlace? _signal;
+    private IReadOnlyList<string> _signalRoutes = [];
     private IReadOnlyList<string> _standingRoutes = [];
     private bool _returnRouted;
     private bool _disposed;
@@ -74,6 +76,11 @@ internal sealed class TunnelController : IDisposable
         DirectPath.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
         InboundFirewall.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// What takes the session down when its server asks for it; the token is the one of the session asked.
+    /// </summary>
+    public Func<CancellationToken, Task>? ServerAskedDown { get; set; }
 
     /// <summary>
     /// Whether the tunnel interface is up.
@@ -187,6 +194,18 @@ internal sealed class TunnelController : IDisposable
             }
         }
 
+        // The server takes the tunnel down by a signal from its own address inside it: the way back to that
+        // address stands from the start.
+        var signal = TunnelSignal.Of(options.Offer, resolved, options.Transport?.UseIpv6 == true);
+        IReadOnlyList<string> signalRoutes = signal?.Routes ?? [];
+        foreach (var route in signalRoutes)
+        {
+            if (!startupRoutes.Contains(route))
+            {
+                startupRoutes.Add(route);
+            }
+        }
+
         // The ranges the list keeps on the interface beside the resolvers and the inbound access: the way back for
         // access from the tunnel, the ranges its rules name outright and the networks the configuration reaches.
         var infrastructure = new HashSet<string>(startupRoutes, StringComparer.Ordinal);
@@ -261,7 +280,7 @@ internal sealed class TunnelController : IDisposable
 
             // Inbound access off holds the tunnel off this machine; with it on the ranges above carry it and no table stands.
             _inboundBlocked = options.Transport?.AllowInbound != true
-                && await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
+                && await InboundFirewall.ApplyAsync(_iface, signal, _log, ct).ConfigureAwait(false);
 
             // In a container the connections that come in beside the tunnel are answered the way they came.
             _returnRouted = ContainerHost.Detected && hop is ({ } via, { } dev)
@@ -276,15 +295,17 @@ internal sealed class TunnelController : IDisposable
             var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
             _standingBasis = new StandingBasis(ownNetworks, resolverRanges, [.. resolverRoutes.Select(server => server.ToString())], applier);
             _inboundRoutes = inboundRoutes;
+            _signal = signal;
+            _signalRoutes = signalRoutes;
             _standing = standing;
-            _standingRoutes = [.. inboundRoutes, .. standing.All];
+            _standingRoutes = [.. inboundRoutes, .. signalRoutes, .. standing.All];
             // All UDP belongs to a split: a full tunnel already carries every datagram.
             var allUdp = split && routing.AllUdp;
             // The ranges of the list take the mark in a split alone: a full tunnel already carries them.
             var marked = split ? SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes) : null;
             // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
             // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
-            IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. inboundReturn];
+            IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. signalRoutes, .. inboundReturn];
             var past = SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, endpointIp is null ? pinned : [.. pinned, endpointIp]);
             _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
                 [.. routing.DirectRoutes, .. routing.BlockRoutes], marked, [], past, allUdp, endpointIp, _log, ct).ConfigureAwait(false);
@@ -315,6 +336,12 @@ internal sealed class TunnelController : IDisposable
 
             _sessionCts = new CancellationTokenSource();
             _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
+            if (signal is not null)
+            {
+                var session = _sessionCts.Token;
+                _ = Task.Run(() => ServerSignal.ListenAsync(signal, () => AskedDownAsync(session), Note, session));
+            }
+
             StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers, options.DnsTransport);
             var ranges = cache.RangeCounts;
             _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
@@ -591,7 +618,7 @@ internal sealed class TunnelController : IDisposable
 
         if (block)
         {
-            _inboundBlocked = await InboundFirewall.ApplyAsync(_iface, _log, ct).ConfigureAwait(false);
+            _inboundBlocked = await InboundFirewall.ApplyAsync(_iface, _signal, _log, ct).ConfigureAwait(false);
             return;
         }
 
@@ -630,10 +657,10 @@ internal sealed class TunnelController : IDisposable
             return;
         }
 
-        var infrastructure = new HashSet<string>([.. basis.ResolverRoutes, .. _inboundRoutes], StringComparer.Ordinal);
+        var infrastructure = new HashSet<string>([.. basis.ResolverRoutes, .. _inboundRoutes, .. _signalRoutes], StringComparer.Ordinal);
         var standing = StandingRanges.Of(routing.ProxyRoutes, routing.Rules, _split, _inboundRoutes.Count > 0, basis.OwnNetworks, infrastructure);
-        cache.Pin([.. basis.Resolvers, .. _inboundRoutes, .. standing.Return]);
-        IReadOnlyList<string> fresh = [.. _inboundRoutes, .. standing.All];
+        cache.Pin([.. basis.Resolvers, .. _inboundRoutes, .. _signalRoutes, .. standing.Return]);
+        IReadOnlyList<string> fresh = [.. _inboundRoutes, .. _signalRoutes, .. standing.All];
         if (_split)
         {
             var (added, removed) = StandingRanges.Diff(_standingRoutes, fresh);
@@ -736,6 +763,8 @@ internal sealed class TunnelController : IDisposable
         Advertised = [];
         _split = false;
         _inboundRoutes = [];
+        _signal = null;
+        _signalRoutes = [];
         _standingRoutes = [];
     }
 
@@ -1001,7 +1030,11 @@ internal sealed class TunnelController : IDisposable
         return (carrier, address.ToString(), null);
     }
 
-    // What the carrier has to say, at the level its news deserves.
+    // Hands the signal of the server on to whoever takes the session down.
+    private Task AskedDownAsync(CancellationToken session) =>
+        ServerAskedDown?.Invoke(session) ?? Task.CompletedTask;
+
+    // What the carrier and the listener of the signal have to say, at the level their news deserves.
     private void Note(string message, Exception? ex)
     {
         if (ex is null)

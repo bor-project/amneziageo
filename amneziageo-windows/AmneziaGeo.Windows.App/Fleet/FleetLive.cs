@@ -193,6 +193,20 @@ internal sealed class FleetLive
     }
 
     /// <summary>
+    /// Whether a tunnel of the set holds saved settings it takes on a reconnect.
+    /// </summary>
+    public bool RestartRequired
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _up.Values.Any(control => control.RestartRequired);
+            }
+        }
+    }
+
+    /// <summary>
     /// The state of one tunnel of the set, or null while it is not up.
     /// </summary>
     public AgentControl? Of(string name)

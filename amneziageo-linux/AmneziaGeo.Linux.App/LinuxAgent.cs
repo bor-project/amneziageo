@@ -141,7 +141,7 @@ internal sealed class LinuxAgent : IDisposable
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, _geoFiles);
         _diagnostics = new DiagnosticsBundle(_store, log.Store);
         _geo = new GeoConfigurator(_store, _geoFiles);
-        _tunnel = new TunnelController(enginePath, interfaceName, log);
+        _tunnel = new TunnelController(enginePath, interfaceName, log) { ServerAskedDown = ServerAskedDownAsync };
         _bundles = new BundleCommands(_store, _geo);
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
@@ -1096,6 +1096,23 @@ internal sealed class LinuxAgent : IDisposable
         _log.Info("agent", $"{_boundTarget}: the interface is up, waiting for the server's first answer");
         await PushAsync(ct).ConfigureAwait(false);
         return new IpcAck(true, IpcMessage.Key("Agent_ConnectWaiting"));
+    }
+
+    // Takes the session down on the signal of its server, the way the command of the user does.
+    private Task ServerAskedDownAsync(CancellationToken session)
+    {
+        return GatedAsync(
+            async () =>
+            {
+                if (session.IsCancellationRequested || !_tunnel.Running)
+                {
+                    return;
+                }
+
+                _log.Info("agent", $"{_boundTarget}: disconnecting on the signal of the server");
+                await SetConnectionAsync("disconnect", CancellationToken.None).ConfigureAwait(false);
+            },
+            CancellationToken.None);
     }
 
     // Notes a session that came up, for the leak guard and for the ladder.

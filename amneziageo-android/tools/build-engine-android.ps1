@@ -148,7 +148,7 @@ function Get-ElfInfo($b) {
 
 Write-Host ''
 Write-Host '== result =='
-$exports = @('wgTurnOn', 'wgTurnOff', 'wgGetConfig', 'wgSetConfig', 'wgSetVerdicts', 'wgPrepareSwap',
+$exports = @('wgTurnOn', 'wgTurnOff', 'wgGetConfig', 'wgRenew', 'wgSetVerdicts', 'wgPrepareSwap',
     'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetTcpDirect', 'wgSetRelay', 'wgLiveAddresses',
     'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory')
 foreach ($a in $Abi) {

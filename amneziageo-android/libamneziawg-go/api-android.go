@@ -38,15 +38,17 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"github.com/bor-project/amneziageo/libamneziawg-go/probe"
 	"github.com/bor-project/amneziageo/libamneziawg-go/protect"
+	"github.com/bor-project/amneziageo/libamneziawg-go/renew"
 )
 
 const logTag = "amneziawg-go"
 
-// Движок, слой вердиктов под ним и привязка его сокетов.
+// Движок, слой вердиктов под ним, привязка его сокетов и ключи его пиров.
 type tunnel struct {
-	dev  *device.Device
-	tun  *verdictTun
-	bind *protect.Bind
+	dev   *device.Device
+	tun   *verdictTun
+	bind  *protect.Bind
+	peers []device.NoisePublicKey
 }
 
 var (
@@ -95,7 +97,8 @@ func wgTurnOn(settings *C.char, tunFd int32, logLevel int32, fn C.ag_protect_fn)
 	bind := protect.New(conn.NewDefaultBind(), excuse)
 	dev := device.NewDevice(verdictDevice, bind, logger)
 
-	if err := dev.IpcSet(C.GoString(settings)); err != nil {
+	text := C.GoString(settings)
+	if err := dev.IpcSet(text); err != nil {
 		logger.Errorf("Failed to apply UAPI settings: %v", err)
 		dev.Close()
 		return -1
@@ -113,7 +116,7 @@ func wgTurnOn(settings *C.char, tunFd int32, logLevel int32, fn C.ag_protect_fn)
 
 	handle := nextHandle
 	nextHandle++
-	tunnelHandles[handle] = &tunnel{dev: dev, tun: verdictDevice, bind: bind}
+	tunnelHandles[handle] = &tunnel{dev: dev, tun: verdictDevice, bind: bind, peers: renew.Peers(text)}
 	logger.Verbosef("Tunnel %d started", handle)
 	return handle
 }
@@ -141,16 +144,15 @@ func wgGetConfig(handle int32) *C.char {
 	return C.CString(settings)
 }
 
-//export wgSetConfig
-func wgSetConfig(handle int32, settings *C.char) int32 {
+// Сбрасывает ключи сеанса пиров и говорит, скольких движок знает.
+//
+//export wgRenew
+func wgRenew(handle int32) int32 {
 	t, ok := tunnelHandles[handle]
 	if !ok {
 		return -1
 	}
-	if err := t.dev.IpcSet(C.GoString(settings)); err != nil {
-		return -1
-	}
-	return 0
+	return int32(renew.Sessions(t.dev, t.peers))
 }
 
 // Переводит сокет движка на другой порт источника и отпускает его мимо туннеля.

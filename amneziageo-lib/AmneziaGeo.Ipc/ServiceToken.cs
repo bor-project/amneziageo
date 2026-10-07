@@ -31,6 +31,11 @@ public static class ServiceToken
     public const string ReplyContext = "amneziageo-reply";
 
     /// <summary>
+    /// What the key of a signal and of its answer is bound to.
+    /// </summary>
+    public const string SignalContext = "amneziageo-signal";
+
+    /// <summary>
     /// The scheme a token travels under in the header of a websocket.
     /// </summary>
     public const string Scheme = "AmneziaGeo";
@@ -39,6 +44,11 @@ public static class ServiceToken
     /// How many bytes the nonce of a token carries.
     /// </summary>
     public const int NonceBytes = 16;
+
+    /// <summary>
+    /// How many bytes the nonce of the cipher carries.
+    /// </summary>
+    public const int IvBytes = 12;
 
     /// <summary>
     /// How many bytes the tag of a sealed answer carries.
@@ -98,9 +108,10 @@ public static class ServiceToken
             : null;
 
     /// <summary>
-    /// Opens an answer sealed for a token, or returns null when it was not sealed under its keys and nonce.
+    /// Opens an answer sealed for a token, or returns null when it was not sealed under its keys, its nonce and
+    /// what the key is bound to.
     /// </summary>
-    public static byte[]? Open(string privateKey, string serverKey, string nonce, string iv, string data)
+    public static byte[]? Open(string privateKey, string serverKey, string nonce, string iv, string data, string context = ReplyContext)
     {
         try
         {
@@ -111,9 +122,8 @@ public static class ServiceToken
                 return null;
             }
 
-            var key = HKDF.DeriveKey(HashAlgorithmName.SHA256, Shared(privateKey, serverKey), 32, Convert.FromBase64String(nonce), Encoding.UTF8.GetBytes(ReplyContext));
             var body = new byte[sealedBytes.Length - TagBytes];
-            using var cipher = new AesGcm(key, TagBytes);
+            using var cipher = new AesGcm(SealKey(privateKey, serverKey, nonce, context), TagBytes);
             cipher.Decrypt(vector, sealedBytes.AsSpan(0, body.Length), sealedBytes.AsSpan(body.Length), body);
 
             return body;
@@ -123,6 +133,23 @@ public static class ServiceToken
             return null;
         }
     }
+
+    /// <summary>
+    /// Seals a body under the keys of a config, a nonce and what the key is bound to; returns the nonce of the
+    /// cipher and the sealed bytes with the tag after them, in base64.
+    /// </summary>
+    public static (string Iv, string Data) Seal(string privateKey, string serverKey, string nonce, ReadOnlySpan<byte> body, string context)
+    {
+        var iv = RandomNumberGenerator.GetBytes(IvBytes);
+        var output = new byte[body.Length + TagBytes];
+        using var cipher = new AesGcm(SealKey(privateKey, serverKey, nonce, context), TagBytes);
+        cipher.Encrypt(iv, body, output.AsSpan(0, body.Length), output.AsSpan(body.Length));
+
+        return (Convert.ToBase64String(iv), Convert.ToBase64String(output));
+    }
+
+    private static byte[] SealKey(string privateKey, string serverKey, string nonce, string context) =>
+        HKDF.DeriveKey(HashAlgorithmName.SHA256, Shared(privateKey, serverKey), 32, Convert.FromBase64String(nonce), Encoding.UTF8.GetBytes(context));
 
     private static byte[] Shared(string privateKey, string serverKey) =>
         Curve25519.Product(Curve25519.Bytes(privateKey), Curve25519.Bytes(serverKey));

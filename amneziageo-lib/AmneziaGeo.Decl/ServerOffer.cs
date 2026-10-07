@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -76,6 +77,16 @@ public sealed class ServerOffer
     /// The feature that names the routing lists the client holds.
     /// </summary>
     public const string PresetsFeature = "presets";
+
+    /// <summary>
+    /// The feature that names where the device takes the signal to disconnect.
+    /// </summary>
+    public const string DisconnectFeature = "disconnect";
+
+    /// <summary>
+    /// The most addresses the signal to disconnect is taken from.
+    /// </summary>
+    public const int MaxSignalSources = 8;
 
     /// <summary>
     /// The most geo sources one answer is taken for.
@@ -179,6 +190,19 @@ public sealed class ServerOffer
         && allowed.ValueKind == JsonValueKind.False;
 
     /// <summary>
+    /// The TCP port the device takes the signal to disconnect on, at its address inside the tunnel; zero when the
+    /// server sends none.
+    /// </summary>
+    public int SignalPort =>
+        Arguments(DisconnectFeature) is { } arguments
+        && arguments.TryGetProperty("port", out var port)
+        && port.ValueKind == JsonValueKind.Number
+        && port.TryGetInt32(out var number)
+        && number is >= 1 and <= 65535
+            ? number
+            : 0;
+
+    /// <summary>
     /// When the pass of the speed feature stops answering; the start of time when the server does not measure.
     /// </summary>
     public DateTimeOffset SpeedExpires =>
@@ -211,6 +235,33 @@ public sealed class ServerOffer
         var up = Text(leg, "up");
 
         return down.Length > 0 && up.Length > 0 ? new SpeedLeg(down, up) : null;
+    }
+
+    /// <summary>
+    /// Returns the addresses the signal to disconnect comes from; none when the server names none.
+    /// </summary>
+    public IReadOnlyList<string> SignalSources()
+    {
+        if (Arguments(DisconnectFeature) is not { } arguments
+            || !arguments.TryGetProperty("from", out var from)
+            || from.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var sources = new List<string>();
+        foreach (var item in from.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String
+                && IPAddress.TryParse(item.GetString()!.Trim(), out var address)
+                && !sources.Contains(address.ToString())
+                && sources.Count < MaxSignalSources)
+            {
+                sources.Add(address.ToString());
+            }
+        }
+
+        return sources;
     }
 
     /// <summary>

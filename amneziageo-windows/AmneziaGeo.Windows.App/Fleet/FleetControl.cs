@@ -200,6 +200,13 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
         return true;
     }
 
+    /// <inheritdoc/>
+    public override bool ServerAskedDown(string name)
+    {
+        TakeAllDown();
+        return true;
+    }
+
     /// <summary>
     /// Raises the set the machine last stood on and answers what it asks for. A set nothing is remembered for
     /// stands up on the name given instead, so the machine still comes up on something.

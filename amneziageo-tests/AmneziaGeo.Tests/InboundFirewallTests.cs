@@ -21,6 +21,18 @@ public sealed class InboundFirewallTests
     }
 
     [Fact]
+    public void TheRuleOfTheSignal_OpensOnePortToTheServerAlone()
+    {
+        var rule = InboundFirewall.SignalRule("home", "10.8.2.12", "10.8.2.1", 28561);
+
+        Assert.Contains("name=\"AmneziaGeo signal: home\"", rule, StringComparison.Ordinal);
+        Assert.Contains("dir=in action=allow protocol=TCP localport=28561", rule, StringComparison.Ordinal);
+        Assert.Contains("localip=10.8.2.12", rule, StringComparison.Ordinal);
+        Assert.Contains("remoteip=10.8.2.1 ", rule, StringComparison.Ordinal);
+        Assert.DoesNotContain("remoteip=any", rule, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void TheRule_CarriesTheNameOfTheTunnelItBelongsTo()
     {
         Assert.Contains("name=\"AmneziaGeo inbound: home\"", InboundFirewall.Rule("home", "10.8.2.12/32", "10.8.2.0/24"),

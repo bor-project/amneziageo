@@ -337,6 +337,19 @@ internal sealed class TunnelRunner(
             }
         }
 
+        // The server takes the tunnel down by a signal from its own address inside it: the way back to that
+        // address rides along with the resolver infrastructure, so the signal is answered through the tunnel.
+        var signal = TunnelSignal.Of(offer, config, !stripV6);
+        IReadOnlyList<string> signalRoutes = signal?.Routes ?? [];
+        foreach (var route in signalRoutes)
+        {
+            resolverRoutes.Add(route);
+            if (!geoRoutes.Contains(route))
+            {
+                geoRoutes.Add(route);
+            }
+        }
+
         // The private networks the configuration itself reaches, less the ones this machine stands in.
         var ownNetworks = geoSplit ? PrivateNetworks.ForTunnel(config, routes.LocalSubnets()) : [];
         // The ranges the list keeps on the adapter beside the infrastructure.
@@ -577,6 +590,7 @@ internal sealed class TunnelRunner(
         // otherwise pull the answers onto the physical path.
         var pinnedRoutes = new List<string>(routedResolvers);
         pinnedRoutes.AddRange(inboundRoutes);
+        pinnedRoutes.AddRange(signalRoutes);
         // The server and the own network's resolvers keep the routes set up for them.
         var bypassed = new List<string>(lanResolverRoutes);
         if (underlayProbe is { AddressFamily: AddressFamily.InterNetwork } serverAddress)
@@ -918,9 +932,12 @@ internal sealed class TunnelRunner(
         var inboundOpened = InboundFirewall.Allow(name, inboundAddresses,
             [.. inboundRoutes.Concat(inboundReturn).Distinct(StringComparer.OrdinalIgnoreCase)], logger);
 
+        // The signal of the server reaches the port the agent listens on, from the server alone.
+        var signalOpened = signal is not null && InboundFirewall.AllowSignal(name, signal, logger);
+
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, transport?.AllowInbound != true, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, transport?.AllowInbound != true, signal, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -1060,6 +1077,11 @@ internal sealed class TunnelRunner(
             if (inboundOpened)
             {
                 InboundFirewall.Remove(name, logger);
+            }
+
+            if (signalOpened)
+            {
+                InboundFirewall.RemoveSignal(name, logger);
             }
         }
     }
@@ -2115,7 +2137,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, IPAddress? endpoint, RoutingCache? routing, bool blockInbound, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, IPAddress? endpoint, RoutingCache? routing, bool blockInbound, SignalPlace? signal, CancellationToken ct)
     {
         try
         {
@@ -2156,7 +2178,7 @@ internal sealed class TunnelRunner(
 
             // Soft block only where a verdict is still coming: without the cache nothing would ever unblock the retry.
             var (armed, attempts) = await ArmRetry.RunAsync(
-                () => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, routing is not null, endpoint, blockInbound, ct),
+                () => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, routing is not null, endpoint, blockInbound, signal, ct),
                 FirewallArmAttempts,
                 FirewallArmRetryDelay,
                 attempt => logger.LogWarning("the leak protection did not take on attempt {Attempt}, usually because a previous session is still letting go of it; retrying in {Delay}s", attempt, FirewallArmRetryDelay.TotalSeconds),
@@ -2189,10 +2211,10 @@ internal sealed class TunnelRunner(
 
     // Installs the filters and returns whether they survived. The session cancels before the teardown disables,
     // so a set that lands after it undoes itself here.
-    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<uint> alongside, bool softBlock, IPAddress? endpoint, bool blockInbound, CancellationToken ct)
+    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<uint> alongside, bool softBlock, IPAddress? endpoint, bool blockInbound, SignalPlace? signal, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, softBlock, endpoint, blockInbound);
+        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, alongside, softBlock, endpoint, blockInbound, signal);
         if (ct.IsCancellationRequested)
         {
             firewall.Disable();

@@ -19,6 +19,15 @@ internal class TunnelDutyRoster
     }
 
     /// <summary>
+    /// Takes down what the machine stands on when the server of the named tunnel asks for it; false where the
+    /// tunnel is the only one and its own supervisor takes it down.
+    /// </summary>
+    public virtual bool ServerAskedDown(string name)
+    {
+        return false;
+    }
+
+    /// <summary>
     /// The tunnels a sweep must leave standing alongside the named one.
     /// </summary>
     public virtual IReadOnlyCollection<string> Standing(string name)

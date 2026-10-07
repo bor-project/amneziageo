@@ -60,11 +60,11 @@ internal static partial class AwgEngine
     }
 
     /// <summary>
-    /// Replaces the running configuration over UAPI.
+    /// Drops the session keys of the peers, so the next packet opens a handshake.
     /// </summary>
-    public static bool SetConfig(int handle, string settings)
+    public static bool Renew(int handle)
     {
-        return SetConfigNative(handle, settings) == 0;
+        return RenewNative(handle) > 0;
     }
 
     /// <summary>
@@ -267,8 +267,8 @@ internal static partial class AwgEngine
     [LibraryImport(Lib, EntryPoint = "wgGetConfig")]
     private static partial IntPtr GetConfigNative(int handle);
 
-    [LibraryImport(Lib, EntryPoint = "wgSetConfig", StringMarshalling = StringMarshalling.Utf8)]
-    private static partial int SetConfigNative(int handle, string settings);
+    [LibraryImport(Lib, EntryPoint = "wgRenew")]
+    private static partial int RenewNative(int handle);
 
     [LibraryImport(Lib, EntryPoint = "wgRebind")]
     private static partial int RebindNative(int handle);

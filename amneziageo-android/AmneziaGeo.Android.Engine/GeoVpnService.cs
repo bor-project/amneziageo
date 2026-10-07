@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Text;
 using Android.App;
 using Android.Content;
@@ -261,7 +260,7 @@ public sealed class GeoVpnService : VpnService
     private string _noticeText = string.Empty;
     private long _stageSince;
     private LinkReading _noticeReading = LinkReading.Empty;
-    private bool _screenOn = true;
+    private volatile bool _screenOn = true;
 
     // Set while the session was raised or raised again with no head asking for it.
     private bool _unattended;
@@ -311,6 +310,9 @@ public sealed class GeoVpnService : VpnService
     private long _screenOffUptime;
     private VpnBridge.Listener? _screen;
 
+    // The thread the screen broadcasts are taken on.
+    private HandlerThread? _side;
+
     /// <inheritdoc/>
     public override void OnCreate()
     {
@@ -333,8 +335,12 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _switches, VpnBridge.ActionSwitch);
         WatchUnderlay();
         _screen = new VpnBridge.Listener { Handler = OnScreen };
-        VpnBridge.Listen(this, _screen, Intent.ActionScreenOff);
-        VpnBridge.Listen(this, _screen, Intent.ActionScreenOn);
+        var side = new HandlerThread("ageo-screen");
+        side.Start();
+        _side = side;
+        var screens = new Handler(side.Looper!);
+        VpnBridge.Listen(this, _screen, Intent.ActionScreenOff, screens);
+        VpnBridge.Listen(this, _screen, Intent.ActionScreenOn, screens);
     }
 
     /// <inheritdoc/>
@@ -475,6 +481,9 @@ public sealed class GeoVpnService : VpnService
             UnregisterReceiver(_screen);
             _screen = null;
         }
+
+        _side?.QuitSafely();
+        _side = null;
 
         DropUnderlayWatch();
 
@@ -2613,8 +2622,7 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // Remembers when the screen went off and, once it comes back after a while, tells how long the device slept and
-    // what the session looked like on waking.
+    // Remembers when the screen went off and, once it comes back, hands the look at the session to a worker.
     private void OnScreen(Intent intent)
     {
         if (intent.Action == Intent.ActionScreenOff)
@@ -2625,32 +2633,43 @@ public sealed class GeoVpnService : VpnService
             return;
         }
 
-        if (intent.Action == Intent.ActionScreenOn)
-        {
-            _screenOn = true;
-            ShowStage();
-        }
-
-        if (intent.Action != Intent.ActionScreenOn || _screenOffElapsed < 0)
+        if (intent.Action != Intent.ActionScreenOn)
         {
             return;
         }
 
-        var off = SystemClock.ElapsedRealtime() - _screenOffElapsed;
-        var asleep = Math.Max(0, off - (SystemClock.UptimeMillis() - _screenOffUptime));
+        _screenOn = true;
+        var since = _screenOffElapsed;
+        var off = since < 0 ? -1 : SystemClock.ElapsedRealtime() - since;
+        var asleep = since < 0 ? 0 : Math.Max(0, off - (SystemClock.UptimeMillis() - _screenOffUptime));
         _screenOffElapsed = -1;
-        var handle = _handle;
-        if (off < WakeNoteMs || _stage != VpnStage.Connected || handle < 0)
-        {
-            return;
-        }
+        _ = Task.Run(() => Woke(off, asleep));
+    }
 
-        var uapi = AwgEngine.GetConfig(handle);
-        var (rx, _) = PeerBytes(uapi);
-        Note("sleep", $"the screen came on after {Span(off)} off, {Span(asleep)} of it asleep; the peer last answered "
-            + Age(PeerHandshake(uapi)));
-        RenewAfterSleep(handle, uapi);
-        _ = Task.Run(() => FollowWakeAsync(handle, rx));
+    // Puts the stage back on the notification and, after a while off, tells how long the device slept and what the
+    // session looked like on waking.
+    private void Woke(long off, long asleep)
+    {
+        try
+        {
+            ShowStage();
+            var handle = _handle;
+            if (off < WakeNoteMs || _stage != VpnStage.Connected || handle < 0)
+            {
+                return;
+            }
+
+            var uapi = AwgEngine.GetConfig(handle);
+            var (rx, _) = PeerBytes(uapi);
+            Note("sleep", $"the screen came on after {Span(off)} off, {Span(asleep)} of it asleep; the peer last answered "
+                + Age(PeerHandshake(uapi)));
+            RenewAfterSleep(handle, uapi);
+            _ = Task.Run(() => FollowWakeAsync(handle, rx));
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "the look at the session after the screen came on failed: " + ex);
+        }
     }
 
     // Tells whether the session carried again shortly after waking.
@@ -2686,7 +2705,7 @@ public sealed class GeoVpnService : VpnService
             _sleepSeen = sleep;
             var age = seen > 0 ? DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen : -1;
             var slept = sleep - _sleepAtAnswer;
-            if (seen == _renewedAfter || !HandshakeAge.OutlivedBySleep(age, slept, _rekeySeconds) || !Renew(handle, uapi))
+            if (seen == _renewedAfter || !HandshakeAge.OutlivedBySleep(age, slept, _rekeySeconds) || !AwgEngine.Renew(handle))
             {
                 return;
             }
@@ -2708,19 +2727,6 @@ public sealed class GeoVpnService : VpnService
         {
             return seen == _renewedAfter && System.Environment.TickCount64 < _renewUntil ? 0 : seen;
         }
-    }
-
-    // Sets a stray private key and the own one back, which drops the session keys of every peer.
-    private static bool Renew(int handle, string? uapi)
-    {
-        var own = (uapi ?? string.Empty).Split('\n').FirstOrDefault(line => line.StartsWith("private_key=", StringComparison.Ordinal));
-        if (own is null)
-        {
-            return false;
-        }
-
-        var stray = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        return AwgEngine.SetConfig(handle, $"private_key={stray}\n{own}\n");
     }
 
     // A stretch of time in the unit it reads best in.

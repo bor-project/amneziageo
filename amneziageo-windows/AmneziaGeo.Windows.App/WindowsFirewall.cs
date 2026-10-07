@@ -2,6 +2,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -86,10 +87,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// Arms the kill-switch; permits before block. Block-list destinations are dropped per address on contact,
     /// not materialized here. With <paramref name="softBlock"/> the outbound v4 block drops packets instead of
     /// refusing connect, so a program retries into the verdict rather than failing on it. With
-    /// <paramref name="blockInbound"/> nothing inside the tunnel may open a connection to this machine.
+    /// <paramref name="blockInbound"/> nothing inside the tunnel may open a connection to this machine but the
+    /// <paramref name="signal"/> of its server to disconnect.
     /// Returns false on failure.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null, bool softBlock = false, IPAddress? underlayEndpoint = null, bool blockInbound = false)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<uint>? alsoPermit = null, bool softBlock = false, IPAddress? underlayEndpoint = null, bool blockInbound = false, SignalPlace? signal = null)
     {
         lock (_gate)
         {
@@ -163,7 +165,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     BlockAll(engine);
                 }
 
-                var inboundHeld = blockInbound && BlockInbound(engine, luid, killSwitch);
+                var inboundHeld = blockInbound && BlockInbound(engine, luid, killSwitch, signal);
 
                 if (batched)
                 {
@@ -618,11 +620,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // Connections opened from the tunnel towards this machine. The ALE accept layer sees the first packet of an
     // inbound flow only, so what this machine opened itself keeps answering; ICMP stays blocked at echo alone, which
     // leaves discovery and the errors a live flow needs.
-    private bool BlockInbound(IntPtr engine, ulong luid, bool shared)
+    private bool BlockInbound(IntPtr engine, ulong luid, bool shared, SignalPlace? signal)
     {
         if (shared)
         {
-            if (TryBlockInbound(engine, luid, SublayerKey, out var wrongSession))
+            if (TryBlockInbound(engine, luid, SublayerKey, signal, out var wrongSession))
             {
                 return true;
             }
@@ -640,10 +642,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             return false;
         }
 
-        return TryBlockInbound(engine, luid, key, out _);
+        return TryBlockInbound(engine, luid, key, signal, out _);
     }
 
-    private bool TryBlockInbound(IntPtr engine, ulong luid, Guid sublayer, out bool wrongSession)
+    private bool TryBlockInbound(IntPtr engine, ulong luid, Guid sublayer, SignalPlace? signal, out bool wrongSession)
     {
         wrongSession = false;
         var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
@@ -676,6 +678,12 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 logger.LogWarning("part of the tunnel traffic towards this machine is not held off (0x{Code:X8}); the address inside the tunnel stays reachable over what is missing", rest);
             }
 
+            var passed = PermitSignal(engine, luidPtr, sublayer, signal);
+            if (passed != 0)
+            {
+                logger.LogWarning("the signal of the server to disconnect is not let through the hold on connections from the tunnel (0x{Code:X8}); the server cannot take this tunnel down", passed);
+            }
+
             return true;
         }
         finally
@@ -698,6 +706,47 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
 
         return AddRaw(engine, sublayer, layer, WeightInbound, ActionBlock, 0, [.. cond], $"Block inbound {what} from the tunnel", out _);
+    }
+
+    // The signal of the server to disconnect is the one connection the tunnel may open towards this machine: a
+    // permit that names the port and the server beside what the block names outranks it at the same weight.
+    private uint PermitSignal(IntPtr engine, IntPtr luidPtr, Guid sublayer, SignalPlace? signal)
+    {
+        var failed = 0u;
+        foreach (var source in signal?.From ?? [])
+        {
+            var six = source.AddressFamily == AddressFamily.InterNetworkV6;
+            var bytes = source.GetAddressBytes();
+            var maskPtr = Marshal.AllocHGlobal(six ? 17 : 2 * sizeof(uint));
+            try
+            {
+                if (six)
+                {
+                    Marshal.Copy(bytes, 0, maskPtr, 16);
+                    Marshal.WriteByte(maskPtr, 16, 128);
+                }
+                else
+                {
+                    Marshal.WriteInt32(maskPtr, 0, (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
+                    Marshal.WriteInt32(maskPtr, sizeof(uint), -1);
+                }
+
+                FWPM_FILTER_CONDITION0[] cond =
+                [
+                    Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
+                    Condition(CondIpProtocol, MatchEqual, FwpUint8, ProtocolTcp),
+                    Condition(CondIpLocalPort, MatchEqual, FwpUint16, (ushort)signal!.Port),
+                    Condition(CondIpRemoteAddress, MatchEqual, six ? FwpV6AddrMask : FwpV4AddrMask, (ulong)maskPtr),
+                ];
+                failed |= AddRaw(engine, sublayer, six ? LayerAleAuthRecvAcceptV6 : LayerAleAuthRecvAcceptV4, WeightInbound, ActionPermit, 0, cond, "Permit the signal of the server to disconnect", out _);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(maskPtr);
+            }
+        }
+
+        return failed;
     }
 
     // Own group per tunnel adapter, so two tunnels never reach into each other's session.

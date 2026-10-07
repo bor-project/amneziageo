@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Net.Sockets;
 using System.Text;
+using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -18,24 +20,14 @@ internal static class InboundFirewall
 
     /// <summary>
     /// Drops what the tunnel opens towards this machine and returns whether the table stands; the flows this
-    /// machine opened itself keep answering.
+    /// machine opened itself keep answering, and the signal of the server to disconnect is let in.
     /// </summary>
-    public static async Task<bool> ApplyAsync(string iface, AgentLog log, CancellationToken ct)
+    public static async Task<bool> ApplyAsync(string iface, SignalPlace? signal, AgentLog log, CancellationToken ct)
     {
-        var rules = new StringBuilder();
-        rules.Append(CultureInfo.InvariantCulture, $"table inet {Table} {{\n");
-        rules.Append("  chain input {\n");
-        rules.Append("    type filter hook input priority filter; policy accept;\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" ct state established,related accept\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" icmpv6 type {KeepIcmpV6} accept\n");
-        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" drop\n");
-        rules.Append("  }\n");
-        rules.Append("}\n");
-
         var path = Path.Combine(AgentPaths.Root, "inbound.nft");
         try
         {
-            await File.WriteAllTextAsync(path, rules.ToString(), ct).ConfigureAwait(false);
+            await File.WriteAllTextAsync(path, Rules(iface, signal), ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -51,8 +43,32 @@ internal static class InboundFirewall
             return false;
         }
 
-        log.Info("tunnel", $"nothing inside the tunnel can open a connection to this machine over {iface}");
+        log.Info("tunnel", signal is null
+            ? $"nothing inside the tunnel can open a connection to this machine over {iface}"
+            : $"nothing inside the tunnel can open a connection to this machine over {iface} but its server, on port {signal.Port} alone");
         return true;
+    }
+
+    // The table: what the tunnel opens is dropped but the signal of the server to disconnect.
+    internal static string Rules(string iface, SignalPlace? signal)
+    {
+        var rules = new StringBuilder();
+        rules.Append(CultureInfo.InvariantCulture, $"table inet {Table} {{\n");
+        rules.Append("  chain input {\n");
+        rules.Append("    type filter hook input priority filter; policy accept;\n");
+        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" ct state established,related accept\n");
+        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" icmpv6 type {KeepIcmpV6} accept\n");
+        foreach (var source in signal?.From ?? [])
+        {
+            var family = source.AddressFamily == AddressFamily.InterNetworkV6 ? "ip6" : "ip";
+            rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" {family} saddr {source} tcp dport {signal!.Port} accept\n");
+        }
+
+        rules.Append(CultureInfo.InvariantCulture, $"    iifname \"{iface}\" drop\n");
+        rules.Append("  }\n");
+        rules.Append("}\n");
+
+        return rules.ToString();
     }
 
     /// <summary>

@@ -353,18 +353,18 @@ public static class VpnBridge
     }
 
     /// <summary>
-    /// Subscribes a receiver to one action inside the application.
+    /// Subscribes a receiver to one action inside the application; a handler names the thread it is called on.
     /// </summary>
-    public static void Listen(Context context, BroadcastReceiver receiver, string action)
+    public static void Listen(Context context, BroadcastReceiver receiver, string action, Handler? handler = null)
     {
         var filter = new IntentFilter(action);
         if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu)
         {
-            context.RegisterReceiver(receiver, filter, ReceiverFlags.NotExported);
+            context.RegisterReceiver(receiver, filter, null, handler, ReceiverFlags.NotExported);
         }
         else
         {
-            context.RegisterReceiver(receiver, filter);
+            context.RegisterReceiver(receiver, filter, null, handler);
         }
     }
 

@@ -86,6 +86,9 @@ internal sealed class ConfigRunner(
     // packet that never arrived.
     private LinkLossProbe? _loss;
 
+    // The listener the server of the session takes the tunnel down through.
+    private CancellationTokenSource? _signalRun;
+
     /// <summary>
     /// Runs sessions per target change.
     /// </summary>
@@ -219,6 +222,7 @@ internal sealed class ConfigRunner(
         _recovery = new LinkRecovery(_ladder, _settings.DeadThresholdSeconds);
         _hold.Raised();
         await StartLossProbeAsync(config, ct);
+        await StartSignalAsync(config, ct);
 
         try
         {
@@ -297,6 +301,7 @@ internal sealed class ConfigRunner(
                 _lastRxBytes = -1;
                 _lastTxBytes = -1;
                 _hold.Raised();
+                await StartSignalAsync(config, ct);
 
                 // The session that follows is a new one: it is judged from the bottom of the ladder again.
                 _recovery.Reset();
@@ -305,6 +310,7 @@ internal sealed class ConfigRunner(
         }
         finally
         {
+            StopSignal();
             sessions.Of(config).Closed();
 
             // A user disconnect announces "disconnecting", then tears down and reports the outcome (clean, or a
@@ -1007,6 +1013,52 @@ internal sealed class ConfigRunner(
         var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetDns(text)));
         _loss = probe;
         _ = Task.Run(() => probe.RunAsync(ct), ct);
+    }
+
+    // Listens for the signal of the server of this session to disconnect, at the addresses the tunnel gave the
+    // machine.
+    private async Task StartSignalAsync(string config, CancellationToken ct)
+    {
+        StopSignal();
+        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var offer = await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false);
+        var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        if (TunnelSignal.Of(offer, text, transport?.UseIpv6 ?? false) is not { } place)
+        {
+            return;
+        }
+
+        var run = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var session = run.Token;
+        _signalRun = run;
+        _ = Task.Run(
+            () => ServerSignal.ListenAsync(place, () => ServerAskedDownAsync(config, session), (message, ex) => OfferNote($"{config}: {message}", ex), session),
+            CancellationToken.None);
+    }
+
+    // Ends the listener with the session it stood for.
+    private void StopSignal()
+    {
+        _signalRun?.Cancel();
+        _signalRun?.Dispose();
+        _signalRun = null;
+    }
+
+    // Takes the machine off the tunnel on the signal of its server, the way its user does.
+    private Task ServerAskedDownAsync(string config, CancellationToken session)
+    {
+        if (session.IsCancellationRequested || !control.Running)
+        {
+            return Task.CompletedTask;
+        }
+
+        logger.LogInformation("{Config}: disconnecting on the signal of the server", config);
+        if (!roster.ServerAskedDown(config))
+        {
+            control.SetRunning(false);
+        }
+
+        return Task.CompletedTask;
     }
 
     private void ReapForeignTunnels(IReadOnlyCollection<string> keep)

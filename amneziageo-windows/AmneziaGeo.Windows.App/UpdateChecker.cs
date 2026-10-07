@@ -63,7 +63,7 @@ internal sealed class UpdateChecker(HttpClient http)
     // Release picking lives in the shared feed; both agents order the same way.
     internal static string? SelectManifestUrl(string releasesJson) => UpdateFeed.SelectManifestUrl(releasesJson);
 
-    private static UpdateInfo? BuildInfo(string json, Uri baseUrl, string currentVersion, string buildTarget)
+    internal static UpdateInfo? BuildInfo(string json, Uri baseUrl, string currentVersion, string buildTarget)
     {
         var meta = UpdateFeed.ParseManifest(json);
         if (meta is null)
@@ -76,13 +76,16 @@ internal sealed class UpdateChecker(HttpClient http)
         var setupUrl = new Uri(baseUrl, setup).ToString();
         // The setup's published SHA-256, matched by installer name; empty on a legacy manifest without hashes.
         var sha256 = UpdateFeed.Sha256Of(meta, setup);
+        var asset = UpdateFeed.AssetNamed(meta, setup);
+        // A release that lists its installers without the one of this build has nothing to update it with.
+        var carried = asset is not null || meta.Installers is not { Count: > 0 };
         return new UpdateInfo(
-            UpdateFeed.IsUpdate(version, currentVersion),
+            carried && UpdateFeed.IsUpdate(version, currentVersion),
             version,
             setupUrl,
             meta.Description ?? string.Empty,
             sha256,
-            UpdateFeed.AssetNamed(meta, setup));
+            asset);
     }
 
     // The per-build installer name (AmneziaGeo-<version>-<target>.exe) so each arch/payload gets its own file;

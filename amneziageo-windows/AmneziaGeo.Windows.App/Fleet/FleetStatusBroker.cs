@@ -107,7 +107,8 @@ internal sealed class FleetStatusBroker(
             // "connecting" for as long as the set is up.
             BoundStatus = SetStatus(states),
             Active = fleet.Wanted.Count > 0,
-            RestartRequired = standing?.RestartRequired ?? false,
+            // The mark of a pending reconnect reads every tunnel of the set.
+            RestartRequired = live.RestartRequired,
             ConnectFailed = standing?.ConnectFailed ?? false,
             ConnectFailReason = standing?.ConnectFailed == true ? standing.ConnectFailReason.ToString() : string.Empty,
             ConnectFailDetail = standing?.ConnectFailed == true ? (standing.ConnectFailDetail ?? string.Empty) : string.Empty,

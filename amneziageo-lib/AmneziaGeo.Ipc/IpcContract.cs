@@ -106,6 +106,11 @@ public static class IpcContract
     public const string OpRemoveRoutingList = "remove-routing-list";
 
     /// <summary>
+    /// Command to replace a routing list with the newer version its server handed out. Args: id.
+    /// </summary>
+    public const string OpUpdateRoutingList = "update-routing-list";
+
+    /// <summary>
     /// Command to set the order the routing lists are listed in. Args: the names, in the order they are shown.
     /// </summary>
     public const string OpReorderRoutingLists = "reorder-routing-lists";

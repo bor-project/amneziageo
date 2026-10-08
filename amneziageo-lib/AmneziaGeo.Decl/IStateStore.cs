@@ -267,6 +267,21 @@ public interface IStateStore
     Task RemoveRoutingListAsync(long id, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns where the routing lists taken from servers came from.
+    /// </summary>
+    Task<IReadOnlyList<RoutingListOrigin>> ListRoutingListOriginsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns where a routing list came from, or null for a list made on the device.
+    /// </summary>
+    Task<RoutingListOrigin?> GetRoutingListOriginAsync(long listId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores where a routing list came from.
+    /// </summary>
+    Task SetRoutingListOriginAsync(RoutingListOrigin origin, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns the current materialized set and generation of the routing list projected onto a tunnel, or null when none.
     /// </summary>
     Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default);

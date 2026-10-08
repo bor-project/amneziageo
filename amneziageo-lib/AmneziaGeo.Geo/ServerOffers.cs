@@ -19,6 +19,7 @@ public sealed class ServerOffers
     private readonly IStateStore _store;
     private readonly GeoConfigurator? _geo;
     private readonly Action<IReadOnlyList<GeoSource>>? _fetch;
+    private readonly Action? _rerouted;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
@@ -34,7 +35,8 @@ public sealed class ServerOffers
         Func<ServiceTarget, CancellationToken, Task<HelloReply>>? ask = null,
         TimeProvider? time = null,
         GeoConfigurator? geo = null,
-        Action<IReadOnlyList<GeoSource>>? fetch = null)
+        Action<IReadOnlyList<GeoSource>>? fetch = null,
+        Action? rerouted = null)
     {
         _store = store;
         _note = note;
@@ -42,6 +44,7 @@ public sealed class ServerOffers
         _time = time ?? TimeProvider.System;
         _geo = geo;
         _fetch = fetch;
+        _rerouted = rerouted;
     }
 
     /// <summary>
@@ -198,8 +201,8 @@ public sealed class ServerOffers
         return (offer, bound || listed);
     }
 
-    // Adds the geo sources and the routing lists the server hands out that the store holds none of, and has the files
-    // of the new sources fetched. Without the geo of the device it leaves both as they are.
+    // Takes the geo sources and the routing lists the server hands out and has the files of the sources that came or
+    // moved fetched. Without the geo of the device it leaves both as they are.
     private async Task<bool> ListAsync(string config, ServerOffer offer, CancellationToken ct)
     {
         var sources = offer.Sources();
@@ -212,20 +215,35 @@ public sealed class ServerOffers
         await _listing.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var added = await OfferedLists.AddSourcesAsync(_store, sources, ct).ConfigureAwait(false);
-            if (added.Count > 0)
+            var taken = await OfferedLists.TakeSourcesAsync(_store, sources, ct).ConfigureAwait(false);
+            if (taken.Added.Count > 0)
             {
-                _note?.Invoke($"{config}: the server added the geo sources {string.Join(", ", added.Select(source => source.Name))}", null);
-                _fetch?.Invoke(added);
+                _note?.Invoke($"{config}: the server added the geo sources {string.Join(", ", taken.Added.Select(source => source.Name))}", null);
             }
 
-            var lists = await OfferedLists.AddPresetsAsync(_store, _geo, presets, ct).ConfigureAwait(false);
-            if (lists > 0)
+            if (taken.Moved.Count > 0)
             {
-                _note?.Invoke($"{config}: the server added {lists} routing list(s)", null);
+                _note?.Invoke($"{config}: the geo sources {string.Join(", ", taken.Moved.Select(source => source.Name))} took the addresses the server names", null);
             }
 
-            return added.Count > 0 || lists > 0;
+            if (taken.Any)
+            {
+                _fetch?.Invoke(taken.Fetch);
+            }
+
+            var lists = await OfferedLists.TakePresetsAsync(_store, _geo, config, presets, ct).ConfigureAwait(false);
+            if (lists.Any)
+            {
+                var use = lists.InUse is null ? string.Empty : "; a list the server marks default was put in use";
+                _note?.Invoke($"{config}: of the routing lists of the server {lists.Added} added, {lists.Bound} tied to a list held, {lists.Waiting} with a newer version{use}", null);
+            }
+
+            if (lists.InUse is not null)
+            {
+                _rerouted?.Invoke();
+            }
+
+            return taken.Any || lists.Any;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

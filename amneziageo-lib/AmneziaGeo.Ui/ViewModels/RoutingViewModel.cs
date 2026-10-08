@@ -343,6 +343,11 @@ internal partial class RoutingViewModel : ViewModelBase
         && (IsSectionImport ? IsImportDraft : EditRoutingList is not null);
 
     /// <summary>
+    /// Стоит ли у заголовка раздела плашка новой версии открытого списка.
+    /// </summary>
+    public bool ShowListUpdate => !IsCreatingSectionRouting && !SectionLoading && EditRoutingList is { HasUpdate: true };
+
+    /// <summary>
     /// Стоит ли у списка переключатель всего UDP.
     /// </summary>
     public bool ShowAllUdp => RoutingSettings is { UseGlobalProxy: false };
@@ -501,6 +506,7 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowImportMethods));
         OnPropertyChanged(nameof(ShowImportFrame));
         OnPropertyChanged(nameof(ShowListMode));
+        OnPropertyChanged(nameof(ShowListUpdate));
         OnPropertyChanged(nameof(ShowImportPresets));
         OnPropertyChanged(nameof(ShowImportRegions));
         OnPropertyChanged(nameof(ShowPresetLoader));
@@ -699,6 +705,37 @@ internal partial class RoutingViewModel : ViewModelBase
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
         {
             return false;
+        }
+    }
+
+    // Плашка обновления на карточке списка: агент берёт версию, которую отдал сервер.
+    private async Task UpdateRoutingListAsync(RoutingListSummaryViewModel item)
+    {
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpUpdateRoutingList,
+                [item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Берёт новую версию открытого списка и перечитывает его правила и настройки.
+    /// </summary>
+    [RelayCommand]
+    private async Task UpdateOpenListAsync()
+    {
+        if (EditRoutingList is not { HasUpdate: true } open)
+        {
+            return;
+        }
+
+        await UpdateRoutingListAsync(open);
+        if (ReferenceEquals(EditRoutingList, open) && RoutingEditor is { IsNew: false } editor && RoutingSettings is { } settings)
+        {
+            await LoadSectionAsync(editor, settings);
         }
     }
 
@@ -1186,7 +1223,12 @@ internal partial class RoutingViewModel : ViewModelBase
             var existing = RoutingLists.FirstOrDefault(r => r.Id == entry.Id);
             if (existing is null)
             {
-                existing = new RoutingListSummaryViewModel { Id = entry.Id, SaveSettings = SaveRoutingSettingsAsync };
+                existing = new RoutingListSummaryViewModel
+                {
+                    Id = entry.Id,
+                    SaveSettings = SaveRoutingSettingsAsync,
+                    TakeUpdate = UpdateRoutingListAsync,
+                };
                 RoutingLists.Insert(Math.Min(i, RoutingLists.Count), existing);
             }
             else
@@ -1207,6 +1249,8 @@ internal partial class RoutingViewModel : ViewModelBase
             existing.BlockRuleCount = entry.BlockRuleCount;
             existing.UseGlobalProxy = entry.UseGlobalProxy;
             existing.AllUdp = entry.AllUdp;
+            existing.Source = entry.Source;
+            existing.HasUpdate = entry.HasUpdate;
         }
 
         // Reconcile the selected list: if removed elsewhere drop the editor; if its instance was replaced by a
@@ -1240,6 +1284,13 @@ internal partial class RoutingViewModel : ViewModelBase
             }
         }
 
+        // Открытый список переименован вне редактора: редактор берёт новое имя.
+        if (EditRoutingList is { } open && RoutingEditor is { } editor && editor.Id == open.Id)
+        {
+            editor.TakeName(open.Name);
+        }
+
+        OnPropertyChanged(nameof(ShowListUpdate));
         MarkSelectedList();
     }
 

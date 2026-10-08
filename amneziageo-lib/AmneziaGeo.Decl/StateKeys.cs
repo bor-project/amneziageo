@@ -14,4 +14,9 @@ public static class StateKeys
     /// Id of the globally selected routing list; empty turns routing off and leaves the config's own AllowedIPs.
     /// </summary>
     public const string SelectedRoutingList = "selected-routing-list";
+
+    /// <summary>
+    /// The addresses the geo sources took from servers, a source name and an address per line.
+    /// </summary>
+    public const string OfferedSourceAddresses = "geo-offered-urls";
 }

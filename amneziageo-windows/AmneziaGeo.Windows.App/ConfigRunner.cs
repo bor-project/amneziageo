@@ -21,6 +21,8 @@ internal sealed class ConfigRunner(
     ActiveTunnelScope activeScope,
     TunnelDutyRoster roster,
     GeoConfigurator geo,
+    IGeoFileStore geoFiles,
+    AgentStatusBroker broker,
     RouteManager routes,
     SessionBook sessions,
     ILogger<ConfigRunner> logger)
@@ -498,7 +500,13 @@ internal sealed class ConfigRunner(
     private async Task ProjectRoutingAsync(string config, CancellationToken ct)
     {
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false);
-        await new ServerOffers(store, OfferNote).BeforeConnectAsync(config, text, null, ct).ConfigureAwait(false);
+        var offers = new ServerOffers(
+            store,
+            OfferNote,
+            geo: new GeoConfigurator(store, geoFiles),
+            fetch: broker.FetchOffered,
+            rerouted: () => broker.RerouteOthers(config));
+        await offers.BeforeConnectAsync(config, text, null, ct).ConfigureAwait(false);
         await RoutingProjection.ProjectAsync(store, geo, roster, config, logger, ct).ConfigureAwait(false);
     }
 

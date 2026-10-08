@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -32,6 +33,22 @@ public sealed record SignalPlace(IReadOnlyList<IPAddress> At, int Port, IReadOnl
     /// Returns the addresses of the device the signal is taken at as text.
     /// </summary>
     public IReadOnlyList<string> Hosts => [.. At.Select(address => address.ToString())];
+
+    /// <summary>
+    /// Tells whether a TCP packet is an answer of the listener to the server, by the port it leaves and its IPv4
+    /// ends as numbers in the order they are written.
+    /// </summary>
+    public bool Answers(uint source, int sourcePort, uint destination) =>
+        sourcePort == Port && At.Any(address => Is(address, source)) && From.Any(address => Is(address, destination));
+
+    private static bool Is(IPAddress address, uint number)
+    {
+        Span<byte> bytes = stackalloc byte[4];
+
+        return address.AddressFamily == AddressFamily.InterNetwork
+            && address.TryWriteBytes(bytes, out _)
+            && BinaryPrimitives.ReadUInt32BigEndian(bytes) == number;
+    }
 }
 
 /// <summary>

@@ -125,16 +125,20 @@
             <ItemsControl ItemsSource="{Binding ProxyEndpoints}" IsVisible="{Binding HasProxyEndpoints}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ProxyEndpointRow">
-                  <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
-                    <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="muted" FontSize="12"
-                               VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12.5"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                            Click="OnCopyProxyEndpoint" ToolTip.Tip="{l:Tr General_ProxyCopyTooltip}">
-                      <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
-                    </Button>
-                  </Grid>
+                  <StackPanel>
+                    <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11.5" Margin="0,6,0,2"
+                               IsVisible="{Binding HasCaption}" />
+                    <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
+                      <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="muted" FontSize="12"
+                                 VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12.5"
+                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
+                              Click="OnCopyProxyEndpoint" ToolTip.Tip="{l:Tr General_ProxyCopyTooltip}">
+                        <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                      </Button>
+                    </Grid>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

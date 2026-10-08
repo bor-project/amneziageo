@@ -267,6 +267,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         use_global_proxy INTEGER NOT NULL DEFAULT 0,
                         updated_at       TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS routing_list_origins (
+                        list_id    INTEGER PRIMARY KEY,
+                        preset_id  TEXT NOT NULL UNIQUE,
+                        source     TEXT NOT NULL DEFAULT '',
+                        updated    TEXT NOT NULL DEFAULT '',
+                        pending    TEXT NOT NULL DEFAULT '',
+                        updated_at TEXT NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -2564,9 +2573,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                            (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id AND r.role = 'Direct'),
                            (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id AND r.role = 'Block'),
                            COALESCE(rs.all_udp, 0),
-                           COALESCE(rs.use_global_proxy, 0)
+                           COALESCE(rs.use_global_proxy, 0),
+                           COALESCE(o.source, ''),
+                           CASE WHEN COALESCE(o.pending, '') <> '' THEN 1 ELSE 0 END
                     FROM routing_lists rl
                     LEFT JOIN routing_settings rs ON rs.list_id = rl.id
+                    LEFT JOIN routing_list_origins o ON o.list_id = rl.id
                     ORDER BY rl.sort_order, rl.name;
                     """;
 
@@ -2585,7 +2597,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                             reader.GetInt32(6),
                             reader.GetInt32(7),
                             reader.GetInt32(8) != 0,
-                            reader.GetInt32(9) != 0));
+                            reader.GetInt32(9) != 0,
+                            reader.GetString(10),
+                            reader.GetInt32(11) != 0));
                     }
                 }
             }
@@ -2674,6 +2688,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await deleteResolutions.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
+                var deleteOrigin = connection.CreateCommand();
+                await using (deleteOrigin.ConfigureAwait(false))
+                {
+                    deleteOrigin.Transaction = transaction;
+                    deleteOrigin.CommandText = "DELETE FROM routing_list_origins WHERE list_id = $id;";
+                    deleteOrigin.Parameters.AddWithValue("$id", id);
+                    await deleteOrigin.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
                 var deleteList = connection.CreateCommand();
                 await using (deleteList.ConfigureAwait(false))
                 {
@@ -2686,6 +2709,107 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RoutingListOrigin>> ListRoutingListOriginsAsync(CancellationToken ct = default)
+    {
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            return await ReadOriginsAsync(lease.Connection, null, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoutingListOrigin?> GetRoutingListOriginAsync(long listId, CancellationToken ct = default)
+    {
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var found = await ReadOriginsAsync(lease.Connection, listId, ct).ConfigureAwait(false);
+
+            return found.Count > 0 ? found[0] : null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetRoutingListOriginAsync(RoutingListOrigin origin, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var connection = lease.Connection;
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                var command = connection.CreateCommand();
+                await using (command.ConfigureAwait(false))
+                {
+                    command.Transaction = transaction;
+                    command.CommandText =
+                        """
+                        DELETE FROM routing_list_origins WHERE preset_id = $preset AND list_id <> $list;
+                        INSERT INTO routing_list_origins (list_id, preset_id, source, updated, pending, updated_at)
+                        VALUES ($list, $preset, $source, $when, $pending, $updated)
+                        ON CONFLICT(list_id) DO UPDATE SET
+                            preset_id  = excluded.preset_id,
+                            source     = excluded.source,
+                            updated    = excluded.updated,
+                            pending    = excluded.pending,
+                            updated_at = excluded.updated_at;
+                        """;
+                    command.Parameters.AddWithValue("$list", origin.ListId);
+                    command.Parameters.AddWithValue("$preset", origin.PresetId);
+                    command.Parameters.AddWithValue("$source", origin.Source);
+                    command.Parameters.AddWithValue("$when", origin.Updated.ToString("O", CultureInfo.InvariantCulture));
+                    command.Parameters.AddWithValue("$pending", origin.Pending?.ToPayload() ?? string.Empty);
+                    command.Parameters.AddWithValue("$updated", Timestamp());
+                    await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // Reads where the routing lists that still stand came from: every one, or the one under the number.
+    private static async Task<List<RoutingListOrigin>> ReadOriginsAsync(SqliteConnection connection, long? listId, CancellationToken ct)
+    {
+        var origins = new List<RoutingListOrigin>();
+
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText =
+                """
+                SELECT o.list_id, o.preset_id, o.source, o.updated, o.pending
+                FROM routing_list_origins o
+                JOIN routing_lists rl ON rl.id = o.list_id
+                WHERE $id IS NULL OR o.list_id = $id
+                ORDER BY o.list_id;
+                """;
+            command.Parameters.AddWithValue("$id", listId is { } id ? id : DBNull.Value);
+
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    origins.Add(new RoutingListOrigin(
+                        reader.GetInt64(0),
+                        reader.GetString(1),
+                        reader.GetString(2),
+                        ReadMoment(reader.GetString(3)) ?? DateTimeOffset.MinValue,
+                        OfferedPreset.Parse(reader.GetString(4))));
+                }
+            }
+        }
+
+        return origins;
     }
 
     /// <inheritdoc/>

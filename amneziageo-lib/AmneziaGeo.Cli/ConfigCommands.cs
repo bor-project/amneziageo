@@ -85,9 +85,8 @@ internal static class ConfigCommands
     private static string Inbound(ConfigEntry config) =>
         !config.AllowInbound ? "off" : config.InboundNetwork ? "network" : "host";
 
-    // Names the routing switch, or the ban of the server that overrides it.
-    private static string Routing(ConfigEntry config) =>
-        config.RoutingLocked ? "locked" : config.UseRouting ? "on" : "off";
+    // Names the routing switch.
+    private static string Routing(ConfigEntry config) => config.UseRouting ? "on" : "off";
 
     private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {

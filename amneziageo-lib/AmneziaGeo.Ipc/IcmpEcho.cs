@@ -36,6 +36,70 @@ public static class IcmpEcho
             : SocketAsync(address, timeoutMs, payloadBytes, dontFragment, bypass, ct);
     }
 
+    /// <summary>
+    /// Round trip in milliseconds of an echo from a socket the caller confines to one path before anything is
+    /// sent; -1 when nothing came back before the timeout or no socket was confined.
+    /// </summary>
+    public static async Task<int> ConfinedAsync(IPAddress address, int timeoutMs, Func<Socket, bool> confine, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+        {
+            return -1;
+        }
+
+        var socket = Open(address, SocketType.Dgram) ?? Open(address, SocketType.Raw);
+        if (socket is null)
+        {
+            return -1;
+        }
+
+        using (socket)
+        using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            deadline.CancelAfter(timeoutMs);
+            var v6 = address.AddressFamily == AddressFamily.InterNetworkV6;
+            var raw = socket.SocketType == SocketType.Raw;
+            var request = Request(v6, DefaultPayload);
+            var reply = new byte[request.Length + 128];
+            try
+            {
+                if (!confine(socket))
+                {
+                    return -1;
+                }
+
+                socket.Connect(new IPEndPoint(address, 0));
+                var clock = Stopwatch.StartNew();
+                await socket.SendAsync(request, SocketFlags.None, deadline.Token).ConfigureAwait(false);
+                while (true)
+                {
+                    var received = await socket.ReceiveAsync(reply, SocketFlags.None, deadline.Token).ConfigureAwait(false);
+                    if (raw ? Mine(reply.AsSpan(0, received), v6) : received > 0)
+                    {
+                        return (int)clock.ElapsedMilliseconds;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
+        }
+    }
+
+    // A socket for echoes of the kind given; null where the system hands out none.
+    private static Socket? Open(IPAddress address, SocketType kind)
+    {
+        try
+        {
+            return new Socket(address.AddressFamily, kind, address.AddressFamily == AddressFamily.InterNetworkV6 ? ProtocolType.IcmpV6 : ProtocolType.Icmp);
+        }
+        catch (SocketException)
+        {
+            return null;
+        }
+    }
+
     // Windows: эхо по сырому сокету, потому что системный помощник интерфейс выбрать не умеет. Ответ приходит с
     // IP-заголовком и от кого угодно, поэтому сверяется метка запроса.
     private static async Task<int> RawAsync(IPAddress address, int timeoutMs, int payloadBytes, bool dontFragment, Func<Socket, bool> bypass, CancellationToken ct)

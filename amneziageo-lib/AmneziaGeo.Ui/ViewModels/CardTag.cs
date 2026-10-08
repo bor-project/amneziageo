@@ -28,10 +28,13 @@ internal sealed partial class CardTag : ObservableObject
     [ObservableProperty]
     private string? _hint;
 
+    [ObservableProperty]
+    private bool _warn;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null)
+    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null, bool warn = false)
     {
         _text = text;
         _on = on;
@@ -39,6 +42,7 @@ internal sealed partial class CardTag : ObservableObject
         _bad = bad;
         _busy = busy;
         _hint = hint;
+        _warn = warn;
     }
 
     /// <summary>
@@ -79,5 +83,6 @@ internal sealed partial class CardTag : ObservableObject
         Bad = other.Bad;
         Busy = other.Busy;
         Hint = other.Hint;
+        Warn = other.Warn;
     }
 }

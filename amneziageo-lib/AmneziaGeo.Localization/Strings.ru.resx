@@ -148,6 +148,12 @@
   <data name="General_ProxyCopyTooltip" xml:space="preserve">
     <value>Скопировать адрес</value>
   </data>
+  <data name="General_ProxyPlaceServed" xml:space="preserve">
+    <value>Раздача этого телефона</value>
+  </data>
+  <data name="General_ProxyPlaceWifi" xml:space="preserve">
+    <value>Сеть Wi-Fi</value>
+  </data>
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Показать пароль</value>
   </data>
@@ -2230,6 +2236,12 @@
   </data>
   <data name="Main_CardTagSubscription" xml:space="preserve">
     <value>{0}</value>
+  </data>
+  <data name="Main_CardTagUpdate" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="Main_CardSourceLocal" xml:space="preserve">
+    <value>Локальный</value>
   </data>
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Подписки</value>

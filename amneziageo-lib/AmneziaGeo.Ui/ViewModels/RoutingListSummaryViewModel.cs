@@ -17,6 +17,8 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     private AsyncRelayCommand? _toggleUdp;
 
+    private AsyncRelayCommand? _update;
+
     [ObservableProperty]
     private long _id;
 
@@ -57,6 +59,16 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _allUdp;
 
+    // The configuration the list arrived with, empty for a list made on the device.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SourceText))]
+    private string _source = string.Empty;
+
+    // Whether the server of the list holds a newer version.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _hasUpdate;
+
     [ObservableProperty]
     private bool _isSelected;
 
@@ -96,9 +108,25 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string BlockRulesText => Loc.Instance.Get("Main_CardRulesBlock", BlockRuleCount);
 
     /// <summary>
+    /// Откуда список: имя конфигурации, с которой он приехал, или пометка локального.
+    /// </summary>
+    public string SourceText => Source.Length > 0 ? Source : Loc.Instance.Get("Main_CardSourceLocal");
+
+    /// <summary>
     /// Сохранение настроек списка: ставит владелец каталога, своей связи с агентом у строки нет.
     /// </summary>
     public Func<RoutingListSummaryViewModel, Task<bool>>? SaveSettings { get; set; }
+
+    /// <summary>
+    /// Приём новой версии списка с сервера: ставит владелец каталога.
+    /// </summary>
+    public Func<RoutingListSummaryViewModel, Task>? TakeUpdate { get; set; }
+
+    /// <summary>
+    /// Берёт новую версию списка с плашки карточки.
+    /// </summary>
+    public IAsyncRelayCommand UpdateCommand =>
+        _update ??= new AsyncRelayCommand(() => TakeUpdate?.Invoke(this) ?? Task.CompletedTask);
 
     /// <summary>
     /// Переключает весь UDP с плашки карточки.
@@ -107,15 +135,25 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         _toggleUdp ??= new AsyncRelayCommand(() => ToggleAsync(() => AllUdp = !AllUdp));
 
     /// <summary>
-    /// Плашки карточки: весь UDP у списка, который несёт только выбранное.
+    /// Плашки карточки: весь UDP у списка, который несёт только выбранное, и обновление, когда сервер отдал новую
+    /// версию.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
         get
         {
-            CardTag.Sync(_tags, UseGlobalProxy
-                ? []
-                : [new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand)]);
+            var wanted = new List<CardTag>();
+            if (!UseGlobalProxy)
+            {
+                wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand));
+            }
+
+            if (HasUpdate)
+            {
+                wanted.Add(new(Loc.Instance.Get("Main_CardTagUpdate"), true, UpdateCommand, warn: true));
+            }
+
+            CardTag.Sync(_tags, wanted);
             return _tags;
         }
     }
@@ -161,6 +199,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         OnPropertyChanged(nameof(ProxyRulesText));
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));
+        OnPropertyChanged(nameof(SourceText));
         OnPropertyChanged(nameof(Tags));
     }
 }

@@ -162,10 +162,6 @@ internal sealed class LinuxAgent : IDisposable
         await _store.InitializeAsync(ct).ConfigureAwait(false);
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, ct).ConfigureAwait(false);
         await _geo.RematerializeIfStaleAsync(ct).ConfigureAwait(false);
-        if (await RoutingSeed.SeedAsync(_store, _geo, RoutingDefaults.UnavailableName(SystemLanguage()), ct).ConfigureAwait(false))
-        {
-            _log.Info("agent", "a fresh install routes the unavailable sites through the tunnel; the list is the owner's to change");
-        }
 
         var settings = await _store.GetSettingsAsync(ct).ConfigureAwait(false);
         _selectedTarget = settings.TryGetValue(StateKeys.SelectedTarget, out var target) && target.Length > 0 ? target : null;
@@ -379,7 +375,7 @@ internal sealed class LinuxAgent : IDisposable
 
         var routingLists = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
             .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount,
-                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy))
+                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate))
             .ToList();
 
         return new StatusSnapshot(
@@ -774,7 +770,13 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _linkLoggedAt = now;
-        _log.Info("link", reading.Describe(_meter.ChurnPerMinute));
+        _log.Info("link", reading.Describe(_meter.ChurnPerMinute) + Echoed(reading));
+    }
+
+    // Names the address a known loss was measured at.
+    private string Echoed(LinkReading reading)
+    {
+        return LinkHealth.LossKnown(reading.LossPercent) && _loss?.Target is { } target ? $" echoing {target}" : string.Empty;
     }
 
     // Starts this connection's loss probe: a target inside the tunnel is echoed every few seconds, and what fails to
@@ -788,7 +790,7 @@ internal sealed class LinuxAgent : IDisposable
         // The config's own rekey schedule sets the handshake rate its session is judged by.
         _meter.ChurnPerMinute = LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(config));
         var run = new CancellationTokenSource();
-        var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), WgConfigEditor.GetDns(config)));
+        var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), WgConfigEditor.GetDns(config)), echo: TunnelEcho.Through(_tunnel.Device));
         _loss = probe;
         _lossRun = run;
         _ = Task.Run(() => probe.RunAsync(run.Token));
@@ -895,6 +897,9 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpUpdateRoutingList:
+                return await UpdateRoutingListAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpReorderRoutingLists:
                 return await ReorderRoutingListsAsync(args, ct).ConfigureAwait(false);
@@ -1871,6 +1876,27 @@ internal sealed class LinuxAgent : IDisposable
         await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    // Takes the newer version the server handed out for a list, by the commands that save a list and its settings.
+    private async Task<IpcAck> UpdateRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1
+            || !long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
+            || await OfferedLists.WaitingAsync(_store, id, ct).ConfigureAwait(false) is not { } waiting)
+        {
+            return Fail();
+        }
+
+        var saved = await SaveRoutingListAsync(waiting.SaveArgs, ct).ConfigureAwait(false);
+        if (!saved.Ok)
+        {
+            return saved;
+        }
+
+        await OfferedLists.SettleAsync(_store, id, ct).ConfigureAwait(false);
+
+        return await SetRoutingSettingsAsync(waiting.SettingsArgs, ct).ConfigureAwait(false);
     }
 
     private async Task<IpcAck> GetRoutingSettingsAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2931,10 +2957,6 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    // The language of the system the service runs under, as the locale systemd hands it says.
-    private static string? SystemLanguage() =>
-        new[] { "LC_ALL", "LC_MESSAGES", "LANG" }.Select(Environment.GetEnvironmentVariable).FirstOrDefault(value => !string.IsNullOrEmpty(value));
-
     // The files of the geo sources a server handed out are fetched in the background, after the command that asked.
     private void FetchOffered(IReadOnlyList<GeoSource> sources) => _ = Task.Run(() => FetchOfferedAsync(sources));
 
@@ -3106,7 +3128,6 @@ internal sealed class LinuxAgent : IDisposable
             string.Join(", ", WgConfigEditor.GetAddresses(text)),
             WsEndpoint.Of(text, offer, transport)?.Display() ?? string.Empty,
             transport?.UseRouting ?? true,
-            offer.RoutingLocked,
             transport?.WebSocketHost ?? string.Empty,
             transport?.WebSocketPort ?? 0,
             WsEndpoint.SourceOf(text, offer) == WsSource.Settings,

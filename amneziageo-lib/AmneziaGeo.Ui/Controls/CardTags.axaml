@@ -18,7 +18,7 @@
         <Button Classes="cardtagbtn" Command="{Binding Command}" IsHitTestVisible="{Binding Interactive}"
                 ToolTip.Tip="{Binding Hint}">
           <Border Classes="cardchip cardtag" Classes.off="{Binding !On}" Classes.bad="{Binding Bad}"
-                  Classes.busy="{Binding Busy}">
+                  Classes.busy="{Binding Busy}" Classes.warn="{Binding Warn}">
             <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" />
           </Border>
         </Button>

@@ -32,6 +32,13 @@
                      IsVisible="{Binding UseGlobalProxy}" />
         </Panel>
       </Border>
+      <!-- Новая версия открытого списка с сервера. -->
+      <Button Classes="cardtagbtn" VerticalAlignment="Center" IsVisible="{Binding ShowListUpdate}"
+              Command="{Binding UpdateOpenListCommand}">
+        <Border Classes="cardchip cardtag warn">
+          <TextBlock Text="{l:Tr Main_CardTagUpdate}" FontSize="12" FontWeight="SemiBold" />
+        </Border>
+      </Button>
     </WrapPanel>
 
     <!-- Шапка каталога: добавление списка маршрутизации. Способ выбирается плитками на экране ниже. -->

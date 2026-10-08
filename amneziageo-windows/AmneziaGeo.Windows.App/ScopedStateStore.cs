@@ -17,6 +17,7 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
         {
             "geo-last-refresh",
             "geo-resolve-epoch",
+            StateKeys.OfferedSourceAddresses,
             "last-owner-root",
             "last-owner-target",
         };
@@ -249,6 +250,15 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
 
     /// <inheritdoc/>
     public Task RemoveRoutingListAsync(long id, CancellationToken ct = default) => user.RemoveRoutingListAsync(id, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<RoutingListOrigin>> ListRoutingListOriginsAsync(CancellationToken ct = default) => user.ListRoutingListOriginsAsync(ct);
+
+    /// <inheritdoc/>
+    public Task<RoutingListOrigin?> GetRoutingListOriginAsync(long listId, CancellationToken ct = default) => user.GetRoutingListOriginAsync(listId, ct);
+
+    /// <inheritdoc/>
+    public Task SetRoutingListOriginAsync(RoutingListOrigin origin, CancellationToken ct = default) => user.SetRoutingListOriginAsync(origin, ct);
 
     /// <inheritdoc/>
     public Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default)

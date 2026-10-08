@@ -67,6 +67,28 @@ public sealed class MultiUserStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TheOriginOfARoutingList_LivesWithTheUser()
+    {
+        var list = await _scoped.SaveRoutingListAsync(new RoutingList(0, "Unblock", [], [], [], [], [], [], [], [], []));
+
+        await _scoped.SetRoutingListOriginAsync(new RoutingListOrigin(list, "0f8fad5b-d9cb-469f-a165-70867728950e", "vpn-awg1-office", DateTimeOffset.UnixEpoch));
+
+        Assert.Equal("vpn-awg1-office", Assert.Single(await _user.ListRoutingListOriginsAsync()).Source);
+        Assert.Equal("vpn-awg1-office", (await _scoped.GetRoutingListOriginAsync(list))!.Source);
+        Assert.Equal("vpn-awg1-office", Assert.Single(await _scoped.ListRoutingListSummariesAsync()).Source);
+        Assert.Empty(await _machine.ListRoutingListOriginsAsync());
+    }
+
+    [Fact]
+    public async Task TheAddressesTheSourcesTookFromServers_LiveWithTheMachine()
+    {
+        await _scoped.SetSettingAsync(StateKeys.OfferedSourceAddresses, "amneziageo\thttps://geo.example/geoip.dat");
+
+        Assert.Equal("amneziageo\thttps://geo.example/geoip.dat", await _machine.GetSettingAsync(StateKeys.OfferedSourceAddresses));
+        Assert.Null(await _user.GetSettingAsync(StateKeys.OfferedSourceAddresses));
+    }
+
+    [Fact]
     public async Task GetSettings_MergesMachineAndUser()
     {
         await _scoped.SetSettingAsync("log-level", "trace");

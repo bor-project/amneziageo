@@ -41,6 +41,9 @@ public static class AndroidNetworks
 {
     private const string Tag = "AndroidNetworks";
 
+    // RouteInfo.RTN_UNICAST.
+    private const int UnicastRoute = 1;
+
     /// <summary>
     /// The networks right now; a view with nothing read when the service does not answer.
     /// </summary>
@@ -140,6 +143,69 @@ public static class AndroidNetworks
     }
 
     /// <summary>
+    /// The network the system keeps for the tunnel holding one of the addresses given; null when it shows none.
+    /// </summary>
+    public static Network? Tunnel(Context context, IReadOnlyCollection<System.Net.IPAddress> addresses)
+    {
+        try
+        {
+            if (context.GetSystemService(Context.ConnectivityService) is not ConnectivityManager manager)
+            {
+                return null;
+            }
+
+            foreach (var network in manager.GetAllNetworks())
+            {
+                if (manager.GetNetworkCapabilities(network) is { } capabilities
+                    && capabilities.HasTransport(TransportType.Vpn)
+                    && Holds(manager.GetLinkProperties(network), addresses))
+                {
+                    return network;
+                }
+            }
+
+            return null;
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn(Tag, "reading the network of the tunnel failed: " + ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether the routes of the network lead the address into it; null when the network is gone.
+    /// </summary>
+    public static bool? Carries(Context context, Network network, System.Net.IPAddress address)
+    {
+        try
+        {
+            if (context.GetSystemService(Context.ConnectivityService) is not ConnectivityManager manager
+                || manager.GetLinkProperties(network) is not { } link)
+            {
+                return null;
+            }
+
+            var target = Java.Net.InetAddress.GetByAddress(address.GetAddressBytes());
+            var best = default(RouteInfo);
+            foreach (var route in link.Routes)
+            {
+                if (route.Matches(target) && Length(route) > Length(best))
+                {
+                    best = route;
+                }
+            }
+
+            return best is not null && Leads(best);
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn(Tag, "reading the routes of the tunnel failed: " + ex);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// What a read takes from the abilities of a network, folded into a number.
     /// </summary>
     public static int Mark(NetworkCapabilities capabilities)
@@ -168,6 +234,30 @@ public static class AndroidNetworks
             .Select(address => address.HostAddress ?? string.Empty)
             .Order(StringComparer.Ordinal);
         return $"{network.NetworkHandle}|{link?.InterfaceName}|{string.Join(",", addresses)}";
+    }
+
+    // Whether a link holds one of the addresses.
+    private static bool Holds(LinkProperties? link, IReadOnlyCollection<System.Net.IPAddress> addresses)
+    {
+        foreach (var entry in link?.LinkAddresses ?? [])
+        {
+            if (System.Net.IPAddress.TryParse(entry.Address?.HostAddress ?? string.Empty, out var address)
+                && addresses.Contains(address))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The length of the prefix a route matches by; -1 for no route.
+    private static int Length(RouteInfo? route) => route?.Destination?.PrefixLength ?? -1;
+
+    // Whether a route carries what it matches, where the system tells a carrying route from the others.
+    private static bool Leads(RouteInfo route)
+    {
+        return !OperatingSystem.IsAndroidVersionAtLeast(33) || (int)route.Type == UnicastRoute;
     }
 
     // The strict host and whether private DNS is in use on one link.

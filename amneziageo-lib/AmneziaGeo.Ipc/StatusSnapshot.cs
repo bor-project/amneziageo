@@ -103,6 +103,8 @@ public sealed record StatusSnapshot(
     string ProxyError = "",
     // Addresses other machines reach the proxy at, the ones on a routed link first; empty while it is not listening.
     IReadOnlyList<string>? ProxyAddresses = null,
+    // What the network of each of those addresses is, in the same order; empty where the agent does not tell.
+    IReadOnlyList<string>? ProxyPlaces = null,
     // Clients holding a connection to the local proxy right now.
     IReadOnlyList<ProxyClientEntry>? ProxyClients = null,
     // Whether names on this machine are resolved past the tunnel's name proxy.

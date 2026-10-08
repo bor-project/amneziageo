@@ -117,7 +117,6 @@ public sealed class ServerOfferTests : IAsyncLifetime
         Assert.Equal("0.0.1.0", offer.Version);
         Assert.Equal("sticky", offer.Client);
         Assert.Equal(8446, offer.WebSocketPort);
-        Assert.True(offer.RoutingLocked);
         Assert.Equal("https://10.9.1.1:8446/api/speed/down?ticket=t", offer.Speed(true)!.Down);
         Assert.Equal("https://vpn.example:8446/api/speed/up?ticket=t", offer.Speed(false)!.Up);
         Assert.Equal(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero), offer.SpeedExpires);
@@ -223,7 +222,7 @@ public sealed class ServerOfferTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheRoutingOfAStoredConfig_FollowsTheBanItsServerOffers()
+    public async Task TheRoutingOfAStoredConfig_StaysItsOwnUnderTheBanOfAnOlderServer()
     {
         const string text = "[Interface]\nPrivateKey = a\n\n[Peer]\nPublicKey = b\nEndpoint = vpn.example:51820\n";
         await _store.SaveConfigAsync("office", text);
@@ -232,7 +231,7 @@ public sealed class ServerOfferTests : IAsyncLifetime
 
         await ServerOfferStore.WriteAsync(_store, "office", ConfigServices.Target(text)!, ServerOffer.Parse(Answer), DateTimeOffset.UtcNow);
 
-        Assert.False(await ConfigRouting.AllowedAsync(_store, "office"));
+        Assert.True(await ConfigRouting.AllowedAsync(_store, "office"));
     }
 
     private static (string Private, string Public) Pair()

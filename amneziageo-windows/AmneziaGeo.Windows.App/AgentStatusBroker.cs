@@ -41,7 +41,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             var scopeStore = storeFactory.For(root);
             var scopeGeo = new GeoConfigurator(scopeStore, geoFiles);
-            var offers = new ServerOffers(scopeStore, OfferNote, geo: scopeGeo, fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false));
+            var offers = new ServerOffers(
+                scopeStore,
+                OfferNote,
+                geo: scopeGeo,
+                fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false),
+                rerouted: () => MarkRestartRequired());
             return new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), scopeGeo, offers);
         });
         if (sid is not null)
@@ -49,30 +54,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             scope.Sid = sid;
         }
 
-        if (scope.FirstUse())
-        {
-            _ = SeedRoutingAsync(scope);
-        }
-
         return scope;
-    }
-
-    // A library new to the device starts with the list of unavailable sites, once: a list the owner removes stays
-    // removed.
-    private async Task SeedRoutingAsync(BrokerScope scope)
-    {
-        try
-        {
-            if (await RoutingSeed.SeedAsync(scope.Store, scope.Geo, RoutingDefaults.UnavailableName(SystemLanguage.Letters()), CancellationToken.None).ConfigureAwait(false))
-            {
-                logger.LogInformation("the library under {Root} routes the unavailable sites through the tunnel; the list is the owner's to change", scope.UserRoot);
-                await BroadcastIfChangedAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "the list of unavailable sites could not be put in the library under {Root}", scope.UserRoot);
-        }
     }
 
     // The connecting client's user scope, or the default scope when the identity cannot be resolved.
@@ -271,6 +253,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpListProcesses => ListProcesses(),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
+                IpcContract.OpUpdateRoutingList => await UpdateRoutingListAsync(command.Args, ct),
                 IpcContract.OpReorderRoutingLists => await ReorderRoutingListsAsync(command.Args, ct),
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
                 IpcContract.OpCountRoutes => await CountRoutesAsync(command.Args, ct),
@@ -1357,6 +1340,25 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     }
 
     /// <summary>
+    /// Asks for a reconnect every tunnel that is up but the one of the configuration named.
+    /// </summary>
+    public void RerouteOthers(string config)
+    {
+        foreach (var name in RunningMembers())
+        {
+            if (!string.Equals(name, config, StringComparison.Ordinal))
+            {
+                MarkRestartRequired(name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fetches the files of the geo sources a server handed out.
+    /// </summary>
+    public void FetchOffered(IReadOnlyList<GeoSource> sources) => EnqueueGeoRefresh(sources, forceResolve: false);
+
+    /// <summary>
     /// Takes up what a subscription refresh changed: a rewritten text rebuilds the session, a config that is gone drops it.
     /// </summary>
     protected virtual void TakeRefreshed(SubscriptionOutcome outcome)
@@ -1742,6 +1744,30 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         await KeepAddressesAsync(id, new HashSet<string>(StringComparer.Ordinal), ct).ConfigureAwait(false);
         logger.LogInformation("removed routing list {Id}", id);
         return new IpcAck(true, $"removed routing list {id}");
+    }
+
+    // Takes the newer version the server handed out for a list, by the commands that save a list and its settings.
+    private async Task<IpcAck> UpdateRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || !long.TryParse(args[0], out var id) || id <= 0)
+        {
+            return new IpcAck(false, "update-routing-list requires a positive id");
+        }
+
+        if (await OfferedLists.WaitingAsync(store, id, ct).ConfigureAwait(false) is not { } waiting)
+        {
+            return new IpcAck(false, $"routing list {id} holds the newest version of its server");
+        }
+
+        var saved = await SaveRoutingListAsync(waiting.SaveArgs, ct);
+        if (!saved.Ok)
+        {
+            return saved;
+        }
+
+        await OfferedLists.SettleAsync(store, id, ct).ConfigureAwait(false);
+
+        return await SetRoutingSettingsAsync(waiting.SettingsArgs, ct);
     }
 
     private async Task<IpcAck> GetRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2993,7 +3019,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var reading = bound ? link : LinkReading.Empty;
             var member = members.GetValueOrDefault(name);
             var offer = await scope.Offers.OfferAsync(name, configText, ct).ConfigureAwait(false);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, offer.RoutingLocked, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, reading.LossStreak));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, reading.LossStreak));
         }
 
         var routingLists = new List<RoutingListEntry>();
@@ -3001,7 +3027,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             routingLists.Add(new RoutingListEntry(summary.Id, summary.Name, summary.RuleCount, summary.RouteCount,
                 summary.DomainCount, summary.ProxyRuleCount, summary.DirectRuleCount, summary.BlockRuleCount,
-                summary.AllUdp, summary.UseGlobalProxy));
+                summary.AllUdp, summary.UseGlobalProxy, summary.Source, summary.HasUpdate));
         }
 
         var settings = await settingsStore.LoadAsync(ct);

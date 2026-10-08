@@ -105,19 +105,26 @@ public sealed class CarrierPortTests : IDisposable
     public void AnAnswerToATunnelPortThatClosed_LeavesThePortCarrying()
     {
         using var port = Open();
+        using var witness = Bound();
         Send(_tunnel, port.Port, "one");
         var first = Take(_carrier);
+        port.Offer(PortOf(witness));
 
         _tunnel.Dispose();
         _carrier.SendTo(Encoding.ASCII.GetBytes("late"), first.From);
         _carrier.SendTo(Encoding.ASCII.GetBytes("late"), first.From);
+
+        // The answer of the carrier offered tells that the port has passed the late ones.
+        witness.SendTo(Encoding.ASCII.GetBytes("late"), first.From);
+        var passed = SpinWait.SpinUntil(() => port.Taken, WaitMs);
         _tunnel = Bound();
 
         var heard = Until(_carrier, "two", () => Send(_tunnel, port.Port, "two"));
         _carrier.SendTo(Encoding.ASCII.GetBytes("back"), heard.From);
 
+        Assert.True(passed, "the port did not pass the late answers in time");
         Assert.Equal("two", heard.Said);
-        Assert.Equal("back", Take(_tunnel).Said);
+        Assert.Equal("back", TakeNamed(_tunnel, "back").Said);
     }
 
     [WindowsFact("a datagram to a port nobody holds resets its sender there")]

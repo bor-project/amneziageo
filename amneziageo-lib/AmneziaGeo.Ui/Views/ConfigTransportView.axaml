@@ -118,7 +118,7 @@
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseRoutingTitle}" Description="{l:Tr Main_UseRoutingHint}"
-                               IsChecked="{Binding RoutingOn, Mode=TwoWay}" IsEnabled="{Binding RoutingOpen}"
+                               IsChecked="{Binding UseRouting, Mode=TwoWay}"
                                HorizontalAlignment="Stretch" />
 
     <!-- Приём входящих по адресу этой машины в туннеле. -->

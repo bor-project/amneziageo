@@ -33,6 +33,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Age past which the tunnel's own snapshot of what it carries is no longer an answer about what runs now.
     private const int SessionWindowSeconds = 60;
 
+    // What the system broadcasts when this device starts or stops sharing its network.
+    private const string TetherChanged = "android.net.conn.TETHER_STATE_CHANGED";
+
+    // How long after that broadcast the links are read once more.
+    private const int TetherSettleMs = 2000;
+
+    // How long a burst of changes in the networks is waited out before the links are read.
+    private const int LinkSettleMs = 300;
+
     // How long a probe handed to the tunnel is waited for, and how often its result is looked for.
     private const int ProbeWaitMs = 40_000;
     private const int ProbePollMs = 250;
@@ -89,6 +98,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private Task? _initTask;
     private Task? _geoFilesTask;
     private VpnBridge.Listener? _events;
+    private readonly object _linkGate = new();
+    private VpnBridge.Listener? _tether;
+    private LinkWatch? _links;
+    private int _linksDue;
     private readonly TunnelWatch _watch = new(GoneRaises, GoneWindowMs);
     private readonly Handler _ticks = new(Looper.MainLooper!);
 
@@ -232,6 +245,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         VpnBridge.Listen(Application.Context, _events, VpnBridge.ActionEvent);
         MainActivity.Resumed += SyncTunnelState;
         MainActivity.ShownChanged += PaceWatch;
+        MainActivity.ShownChanged += WatchLinks;
+        WatchLinks(MainActivity.Shown);
         TakeTunnelStage();
         Connected?.Invoke();
         PushSnapshot();
@@ -283,6 +298,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geoChecks.Cancel();
         MainActivity.Resumed -= SyncTunnelState;
         MainActivity.ShownChanged -= PaceWatch;
+        MainActivity.ShownChanged -= WatchLinks;
+        WatchLinks(false);
         _ticks.RemoveCallbacksAndMessages(null);
         if (_events is not null)
         {
@@ -456,6 +473,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpRemoveRoutingList:
                 return await Task.Run(() => RemoveRoutingListAsync(args)).ConfigureAwait(false);
+
+            case IpcContract.OpUpdateRoutingList:
+                return await Task.Run(() => UpdateRoutingListAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpReorderRoutingLists:
                 return await Task.Run(() => ReorderRoutingListsAsync(args)).ConfigureAwait(false);
@@ -636,8 +656,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         PushSnapshot();
 
         // The server is asked what it offers before the plan and the tunnel take its word.
-        await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
+        var offer = await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
         await RefreshOffersAsync().ConfigureAwait(false);
+
+        // A list the server put in use joins the plan of this connect, and the lists it handed out show at once.
+        if (await TakeStorePickAsync().ConfigureAwait(false))
+        {
+            _restartRequired = false;
+        }
+
+        await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        await RefreshGeoSourcesAsync().ConfigureAwait(false);
         if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText).ConfigureAwait(false)))
         {
             return Kept(configName, standing, restart);
@@ -656,7 +685,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), Front(configName, configText), foreground: true, EngineLogLevel(_logLevel), _directTcp,
-            _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words));
+            _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
+            TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true));
         return new IpcAck(true, "connecting");
     }
 
@@ -726,7 +756,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -761,6 +791,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraNotice, notice);
         }
 
+        if (signal is not null)
+        {
+            intent.PutExtra(GeoVpnService.ExtraSignalPort, signal.Port);
+            intent.PutExtra(GeoVpnService.ExtraSignalFrom, [.. signal.Sources]);
+        }
+
         if (transport is not null)
         {
             intent.PutExtra(GeoVpnService.ExtraMtu, transport.Mtu);
@@ -790,7 +826,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         var language = UiPreferences.Load().Language;
         var takes = _selectedTarget is not { Length: > 0 } name
-            || ConfigRouting.Allowed(_transports.GetValueOrDefault(name), _offered.GetValueOrDefault(name));
+            || ConfigRouting.Allowed(_transports.GetValueOrDefault(name));
         var list = takes ? await ListNameAsync(_selectedRoutingList).ConfigureAwait(false) ?? string.Empty : string.Empty;
         var lists = takes && (list.Length > 0 || await AnyListAsync().ConfigureAwait(false));
         return new NoticeWords(
@@ -926,11 +962,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     /// <summary>
-    /// Собирает снимок заново, если показание связи в него не попало.
+    /// Собирает снимок заново, если показание связи в него не попало или включён прокси.
     /// </summary>
     public void CatchUp()
     {
-        if (_linkUntold)
+        if (_linkUntold || _proxyOptions.Enabled)
         {
             PushSnapshot();
         }
@@ -1265,8 +1301,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         var configs = OrderedNames().Select(name => Entry(name, _configs[name])).ToList();
         var proxy = VpnBridge.ReadProxyState();
-        var proxyAddresses = ProxyAddresses(_proxyOptions.Enabled);
-        LogProxyOffer(proxy.Running, proxyAddresses);
+        var reach = ProxyReach(_proxyOptions.Enabled);
+        LogProxyOffer(proxy.Running, reach);
 
         Latest = new StatusSnapshot(
             AgentVersion: AppVersion,
@@ -1318,47 +1354,149 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyCredentials: _proxyOptions.Credentials,
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
-            ProxyAddresses: proxyAddresses);
+            ProxyAddresses: reach.Addresses,
+            ProxyPlaces: reach.Places);
 
         SnapshotReceived?.Invoke(Latest);
     }
 
-    // Addresses the proxy answers on. Named from the moment it is switched on: the screen that offers it is where
-    // the user reads what to point a client at, and here it only listens while the tunnel stands.
-    private static IReadOnlyList<string> ProxyAddresses(bool enabled)
+    // Where the proxy answers. Named from the moment it is switched on: the screen that offers it is where the
+    // user reads what to point a client at, and here it only listens while the tunnel stands.
+    private static LocalProxyServer.Reach ProxyReach(bool enabled)
     {
-        return enabled ? GeoVpnService.ReachableAddresses() : [];
+        return enabled ? GeoVpnService.ProxyReach() : new LocalProxyServer.Reach([], string.Empty, []);
     }
 
-    // Writes where the proxy is offered, and the links behind the answer when it is offered nowhere.
-    private void LogProxyOffer(bool running, IReadOnlyList<string> addresses)
+    // Writes where the proxy is offered and the links the answer was picked from.
+    private void LogProxyOffer(bool running, LocalProxyServer.Reach reach)
     {
-        var line = (running ? "up" : "down") + " " + (addresses.Count > 0 ? string.Join(", ", addresses) : "nowhere");
-        if (string.Equals(line, _proxyOfferLine, StringComparison.Ordinal))
+        var line = (running ? "up" : "down") + " "
+            + (reach.Addresses.Count > 0 ? string.Join(", ", reach.Addresses) : "nowhere");
+        var told = line + "\n" + reach.Links;
+        if (string.Equals(told, _proxyOfferLine, StringComparison.Ordinal))
         {
             return;
         }
 
-        _proxyOfferLine = line;
+        _proxyOfferLine = told;
         global::Android.Util.Log.Info("AmneziaGeo", "proxy offered " + line);
-        if (!running || addresses.Count > 0)
+        if (reach.Links.Length > 0)
         {
-            return;
+            global::Android.Util.Log.Info("AmneziaGeo", "proxy links " + reach.Links);
         }
+    }
 
+    // Watches the networks and the sharing of this device while the window is on the screen.
+    private void WatchLinks(bool shown)
+    {
+        lock (_linkGate)
+        {
+            DropLinkWatch();
+            if (!shown || _disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                var context = Application.Context;
+                var tether = new VpnBridge.Listener { Handler = _ => OnTetherChanged() };
+                var filter = new IntentFilter(TetherChanged);
+                if (OperatingSystem.IsAndroidVersionAtLeast(33))
+                {
+                    context.RegisterReceiver(tether, filter, ReceiverFlags.Exported);
+                }
+                else
+                {
+                    context.RegisterReceiver(tether, filter);
+                }
+
+                _tether = tether;
+                if (context.GetSystemService(Context.ConnectivityService) is ConnectivityManager manager
+                    && new NetworkRequest.Builder().Build() is { } request)
+                {
+                    var links = new LinkWatch { Changed = OnLinksChanged };
+                    manager.RegisterNetworkCallback(request, links);
+                    _links = links;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("agent", "the networks of this device are not watched: " + ex);
+            }
+        }
+    }
+
+    // Drops the watch of the networks and of the sharing; the caller holds the gate.
+    private void DropLinkWatch()
+    {
         try
         {
-            foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            if (_tether is not null)
             {
-                var found = adapter.GetIPProperties().UnicastAddresses.Select(a => a.Address.ToString());
-                global::Android.Util.Log.Info("AmneziaGeo",
-                    $"link {adapter.Name} {adapter.NetworkInterfaceType} {adapter.OperationalStatus} {string.Join(" ", found)}");
+                Application.Context.UnregisterReceiver(_tether);
+            }
+
+            if (_links is not null
+                && Application.Context.GetSystemService(Context.ConnectivityService) is ConnectivityManager manager)
+            {
+                manager.UnregisterNetworkCallback(_links);
             }
         }
         catch (Exception ex)
         {
-            global::Android.Util.Log.Warn("AmneziaGeo", "listing links failed: " + ex);
+            _log.Warn("agent", "the watch of the networks was not dropped: " + ex);
         }
+
+        _tether = null;
+        _links = null;
+    }
+
+    // Reads the links once for a burst of changes in the networks.
+    private void OnLinksChanged()
+    {
+        if (Interlocked.Exchange(ref _linksDue, 1) == 0)
+        {
+            _ = Task.Delay(LinkSettleMs).ContinueWith(_ =>
+            {
+                Interlocked.Exchange(ref _linksDue, 0);
+                RetellReach();
+            }, TaskScheduler.Default);
+        }
+    }
+
+    // Reads the links when the sharing changed, and once more when the address of the shared network settled.
+    private void OnTetherChanged()
+    {
+        OnLinksChanged();
+        _ = Task.Delay(TetherSettleMs).ContinueWith(_ => RetellReach(), TaskScheduler.Default);
+    }
+
+    // Brings the addresses of the proxy in the snapshot up to date.
+    private void RetellReach()
+    {
+        if (!_disposed && _proxyOptions.Enabled)
+        {
+            PushSnapshot();
+        }
+    }
+
+    // Tells when a network of this device came, went or changed its addresses.
+    private sealed class LinkWatch : ConnectivityManager.NetworkCallback
+    {
+        /// <summary>
+        /// Called on each change.
+        /// </summary>
+        public Action? Changed { get; set; }
+
+        /// <inheritdoc/>
+        public override void OnAvailable(Network network) => Changed?.Invoke();
+
+        /// <inheritdoc/>
+        public override void OnLost(Network network) => Changed?.Invoke();
+
+        /// <inheritdoc/>
+        public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
     // The names in the order the user set, with anything it does not name after them.
@@ -1389,7 +1527,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             Address: string.Join(", ", WgConfigEditor.GetAddresses(config)),
             WebSocketFront: WsEndpoint.Of(config, offer, transport)?.Display() ?? string.Empty,
             UseRouting: transport?.UseRouting ?? true,
-            RoutingLocked: offer?.RoutingLocked ?? false,
             WebSocketHost: transport?.WebSocketHost ?? string.Empty,
             WebSocketPort: transport?.WebSocketPort ?? 0,
             WebSocketManual: WsEndpoint.SourceOf(config, offer) == WsSource.Settings,
@@ -1429,12 +1566,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.InitializeAsync().ConfigureAwait(false);
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
-        // The configurations live in the agent's own file, not in the store, so the seed hears of them from here.
-        if (await RoutingSeed.SeedAsync(_store, _geo, Loc.Instance.Get("Preset_ClosedName"), CancellationToken.None, inUse: _configs.Count > 0).ConfigureAwait(false))
-        {
-            _log.Info("agent", "a fresh install routes the unavailable sites through the tunnel; the list is the owner's to change");
-        }
-
         await TakeStorePickAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
@@ -1796,7 +1927,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var summaries = await _store.ListRoutingListSummariesAsync().ConfigureAwait(false);
         _routingSummaries = summaries
             .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount,
-                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy))
+                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate))
             .ToList();
     }
 
@@ -2068,6 +2199,31 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             useGlobalProxy = settings?.UseGlobalProxy ?? false,
         });
         return new IpcAck(true, json);
+    }
+
+    // Takes the newer version the server handed out for a list, by the commands that save a list and its settings.
+    private async Task<IpcAck> UpdateRoutingListAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || !long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        if (await OfferedLists.WaitingAsync(_store, id, CancellationToken.None).ConfigureAwait(false) is not { } waiting)
+        {
+            return Fail();
+        }
+
+        var saved = await SaveRoutingListAsync(waiting.SaveArgs).ConfigureAwait(false);
+        if (!saved.Ok)
+        {
+            return saved;
+        }
+
+        await OfferedLists.SettleAsync(_store, id, CancellationToken.None).ConfigureAwait(false);
+
+        return await SetRoutingSettingsAsync(waiting.SettingsArgs).ConfigureAwait(false);
     }
 
     private async Task<IpcAck> SetRoutingSettingsAsync(IReadOnlyList<string> args)
@@ -2531,20 +2687,25 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // A list the store side puts in picks itself in the store, where this agent keeps no pick: it takes the pick over
     // while it has none of its own, and clears it there either way, so a pick the owner drops does not come back.
-    private async Task TakeStorePickAsync()
+    // Returns whether it took the pick over.
+    private async Task<bool> TakeStorePickAsync()
     {
         if (await _store.GetSelectedRoutingListAsync().ConfigureAwait(false) is not { } picked)
         {
-            return;
+            return false;
         }
 
         await _store.SetSelectedRoutingListAsync(null).ConfigureAwait(false);
-        if (_selectedRoutingList is null && (await _store.ListRoutingListsAsync().ConfigureAwait(false)).Any(list => list.Id == picked))
+        if (_selectedRoutingList is not null || !(await _store.ListRoutingListsAsync().ConfigureAwait(false)).Any(list => list.Id == picked))
         {
-            _selectedRoutingList = picked;
-            Save();
-            MarkRoutingChanged(picked);
+            return false;
         }
+
+        _selectedRoutingList = picked;
+        Save();
+        MarkRoutingChanged(picked);
+
+        return true;
     }
 
     // The files of the geo sources a server handed out are fetched in the background, then the lists take them.
@@ -2686,7 +2847,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Выбранный список, если выбранная конфигурация его берёт.
     private long? RoutedList =>
         _selectedTarget is { Length: > 0 } name
-        && !ConfigRouting.Allowed(_transports.GetValueOrDefault(name), _offered.GetValueOrDefault(name))
+        && !ConfigRouting.Allowed(_transports.GetValueOrDefault(name))
             ? null
             : _selectedRoutingList;
 

@@ -1123,6 +1123,20 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         MarkDirty();
     }
 
+    /// <summary>
+    /// Takes the name the list got outside the editor, unless the name is being edited here.
+    /// </summary>
+    public void TakeName(string name)
+    {
+        if (IsNew || !string.Equals(Name, _baseName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _baseName = name;
+        Name = name;
+    }
+
     /// <inheritdoc />
     public virtual void Revert()
     {

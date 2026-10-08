@@ -38,27 +38,33 @@
             </Button>
           </Grid>
 
-          <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
-          <WrapPanel Grid.Row="1" Classes="cardinfo" ItemSpacing="10" LineSpacing="4" VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowProxyRules}">
-              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                       Fill="{DynamicResource AgAccentBrush}" />
-              <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"
-                         VerticalAlignment="Center" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="5">
-              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                       Fill="{DynamicResource AgMutedBrush}" />
-              <TextBlock Text="{Binding DirectRulesText}" FontSize="12" Classes="muted"
-                         VerticalAlignment="Center" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="5">
-              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                       Fill="{DynamicResource AgDownBrush}" />
-              <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
-                         VerticalAlignment="Center" />
-            </StackPanel>
-          </WrapPanel>
+          <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит; справа, под
+               тумблером, откуда список: когда в строку состава он не помещается, встаёт строкой ниже. -->
+          <controls:TailWrapRow Grid.Row="1" Classes="cardinfo" Spacing="10">
+            <WrapPanel ItemSpacing="10" LineSpacing="4" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowProxyRules}">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                         Fill="{DynamicResource AgAccentBrush}" />
+                <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                         Fill="{DynamicResource AgMutedBrush}" />
+                <TextBlock Text="{Binding DirectRulesText}" FontSize="12" Classes="muted"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                         Fill="{DynamicResource AgDownBrush}" />
+                <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+            </WrapPanel>
+            <TextBlock x:Name="SourcePart" Text="{Binding SourceText}" FontSize="12" Classes="muted"
+                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                       ToolTip.Tip="{Binding SourceText}" />
+          </controls:TailWrapRow>
         </Grid>
 
         <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->

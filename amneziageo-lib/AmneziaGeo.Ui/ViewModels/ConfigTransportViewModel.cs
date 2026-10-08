@@ -114,28 +114,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _allowInbound;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RoutingOn))]
     private bool _useRouting = true;
-
-    /// <summary>
-    /// Whether the server of the configuration leaves routing to this device.
-    /// </summary>
-    public bool RoutingOpen { get; }
-
-    /// <summary>
-    /// Whether the configuration takes the routing list; off wherever its server bans routing.
-    /// </summary>
-    public bool RoutingOn
-    {
-        get => UseRouting && RoutingOpen;
-        set
-        {
-            if (RoutingOpen)
-            {
-                UseRouting = value;
-            }
-        }
-    }
 
     // The reach of the access the agent holds: the whole tunnel network or the server alone.
     private bool _inboundNetwork;
@@ -186,7 +165,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool routingLocked = false, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0)
     {
         _connection = connection;
         ConfigName = name;
@@ -199,7 +178,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _allowInbound = allowInbound;
         _inboundNetwork = inboundNetwork;
         _useRouting = useRouting;
-        RoutingOpen = !routingLocked;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 

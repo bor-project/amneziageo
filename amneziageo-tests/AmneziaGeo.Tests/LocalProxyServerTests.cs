@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Routing;
 using Xunit;
@@ -199,6 +201,95 @@ public sealed class LocalProxyServerTests : IDisposable
     }
 
     [Fact]
+    public async Task ADestinationThatDoesNotOpen_IsToldWithTheClientThatAskedForIt()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Failed), options);
+
+        Assert.Equal(1, await AskAsync(options.SocksPort, "149.154.167.51", 443));
+
+        Assert.Single(said, line => Regex.IsMatch(line, @"^proxy: 127\.0\.0\.1 asked for 149\.154\.167\.51:443, which did not open in \d+ ms$"));
+    }
+
+    [Fact]
+    public async Task ADestinationAskedForAgainWithinTheMinute_IsToldOnce()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Failed), options);
+
+        await AskAsync(options.SocksPort, "149.154.167.51", 443);
+        await AskAsync(options.SocksPort, "149.154.167.51", 443);
+        await AskAsync(options.SocksPort, "149.154.167.51", 80);
+
+        Assert.Equal(2, said.Count(line => line.Contains("did not open", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task ADestinationOfIPv6_IsToldInBrackets()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Failed), options);
+
+        await AskAsync(options.SocksPort, "2001:67c:4e8:f002::a", 443);
+
+        Assert.Single(said, line => line.Contains("asked for [2001:67c:4e8:f002::a]:443,", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnHttpClient_IsToldOfTheSameWay()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Failed), options);
+
+        var http = await DialAsync(options.HttpPort);
+        await SendTextAsync(http, "CONNECT silent.test:443 HTTP/1.1\r\nHost: silent.test:443\r\n\r\n");
+        Assert.Contains("502", Encoding.ASCII.GetString(await ReadAsync(http, 24)), StringComparison.Ordinal);
+
+        Assert.Single(said, line => line.Contains("127.0.0.1 asked for silent.test:443, which did not open", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ABlockedDestination_IsNotToldAsOneThatDidNotOpen()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Blocked), options);
+
+        Assert.Equal(2, await AskAsync(options.SocksPort, "blocked.test", 443));
+
+        Assert.DoesNotContain(said, line => line.Contains("did not open", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ANamedSession_IsNotTold()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Failed), options);
+        var client = await DialAsync(options.SocksPort);
+
+        await client.SendAsync(Named("10.1.2.3", 51234, "93.184.216.34", 443), SocketFlags.None);
+        await client.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None);
+        await ReadAsync(client, 2);
+        await client.SendAsync(Request("93.184.216.34", 443), SocketFlags.None);
+        Assert.Equal(1, (await ReadAsync(client, 10))[1]);
+
+        Assert.DoesNotContain(said, line => line.Contains("did not open", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task NoMoreThanTwentyDestinationsAMinute_AreTold()
+    {
+        var options = Options();
+        var said = Heard(new TestOutbound(_destination, ProxyOutcome.Failed), options);
+
+        for (var i = 0; i < 25; i++)
+        {
+            await AskAsync(options.SocksPort, $"silent{i}.test", 443);
+        }
+
+        Assert.Equal(20, said.Count(line => line.Contains("did not open", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Socks5_WithSeveralAccounts_TakesEveryOneOfThem()
     {
         var options = Secured("bor:secret\nguest:letmein");
@@ -295,6 +386,193 @@ public sealed class LocalProxyServerTests : IDisposable
     }
 
     [Fact]
+    public void AHotspotTheSystemDoesNotName_IsOfferedAndTheMobileLinkIsNot()
+    {
+        // The phone is on mobile data and shares it over Wi-Fi: the system names the modem and says nothing of the
+        // hotspot, which the device reads among its own interfaces.
+        var mobile = Network("rmnet_data2", LocalProxyServer.LinkPlace.Apart, "10.87.12.3");
+        var modem = Interface("rmnet_data2", NetworkInterfaceType.Tunnel, "10.87.12.3");
+        var hotspot = Interface("wlan1", NetworkInterfaceType.Ethernet, "192.168.43.1");
+
+        var reach = LocalProxyServer.Reachable([mobile], [modem, hotspot]);
+
+        Assert.Equal(["192.168.43.1"], reach.Addresses);
+    }
+
+    [Fact]
+    public void AHotspotTheSystemNames_IsOfferedThoughItHasNoGateway()
+    {
+        var mobile = Network("eth0", LocalProxyServer.LinkPlace.Apart, "10.0.2.15");
+        var hotspot = Network("wlan0", LocalProxyServer.LinkPlace.Served, "10.200.111.242");
+
+        var reach = LocalProxyServer.Reachable([mobile, hotspot],
+            [Interface("eth0", NetworkInterfaceType.Ethernet, "10.0.2.15"), Interface("wlan0", NetworkInterfaceType.Ethernet, "10.200.111.242")]);
+
+        Assert.Equal(["10.200.111.242"], reach.Addresses);
+    }
+
+    [Fact]
+    public void TheNetworkServedAndTheNetworkJoined_AreBothOffered_TheServedFirst()
+    {
+        var wifi = Network("wlan0", LocalProxyServer.LinkPlace.Joined, "192.168.1.91");
+
+        var reach = LocalProxyServer.Reachable([wifi],
+            [Interface("wlan0", NetworkInterfaceType.Ethernet, "192.168.1.91"), Interface("ap0", NetworkInterfaceType.Ethernet, "192.168.230.1")]);
+
+        Assert.Equal(["192.168.230.1", "192.168.1.91"], reach.Addresses);
+    }
+
+    [Fact]
+    public void TheNetworkServedAndTheWifiJoined_AreNamedForWhatTheyAre()
+    {
+        var reach = LocalProxyServer.Reachable(
+            [Wifi("wlan0", "192.168.1.91"), Network("wlan2", LocalProxyServer.LinkPlace.Served, "10.147.73.185")],
+            [Interface("wlan0", NetworkInterfaceType.Ethernet, "192.168.1.91"), Interface("wlan2", NetworkInterfaceType.Ethernet, "10.147.73.185")]);
+
+        Assert.Equal(["10.147.73.185", "192.168.1.91"], reach.Addresses);
+        Assert.Equal([ProxyPlaces.Served, ProxyPlaces.Wifi], reach.Places);
+    }
+
+    [Fact]
+    public void AWireTheDeviceJoined_IsLeftUnnamed()
+    {
+        var reach = LocalProxyServer.Reachable([Network("eth0", LocalProxyServer.LinkPlace.Joined, "192.168.1.60")], []);
+
+        Assert.Equal(["192.168.1.60"], reach.Addresses);
+        Assert.Equal([ProxyPlaces.Unnamed], reach.Places);
+    }
+
+    [Fact]
+    public void AHotspotTheSystemDoesNotName_IsNamedServed()
+    {
+        var reach = LocalProxyServer.Reachable([], [Interface("wlan0", NetworkInterfaceType.Ethernet, "192.168.43.1")]);
+
+        Assert.Equal(["192.168.43.1"], reach.Addresses);
+        Assert.Equal([ProxyPlaces.Served], reach.Places);
+    }
+
+    [Fact]
+    public void EveryAddressOffered_HasItsPlace()
+    {
+        var reach = LocalProxyServer.Reachable(
+            [Wifi("wlan0", "192.168.1.91", "8.8.8.8", "fd00::1"), Network("tun0", LocalProxyServer.LinkPlace.Apart, "10.8.0.2"),
+                Network("wlan2", LocalProxyServer.LinkPlace.Served, "10.147.73.185", "192.168.1.91")],
+            [Interface("ap0", NetworkInterfaceType.Ethernet, "192.168.230.1")]);
+
+        Assert.Equal(["10.147.73.185", "192.168.1.91", "192.168.230.1"], reach.Addresses);
+        Assert.Equal([ProxyPlaces.Served, ProxyPlaces.Served, ProxyPlaces.Served], reach.Places);
+    }
+
+    [Fact]
+    public void ATunnel_IsOfferedUnderNoName()
+    {
+        // The tunnel the system names, and one raised a moment ago that it does not name yet.
+        var tunnel = Network("tun0", LocalProxyServer.LinkPlace.Apart, "10.8.1.2");
+        var wifi = Network("wlan0", LocalProxyServer.LinkPlace.Joined, "192.168.1.91");
+
+        var reach = LocalProxyServer.Reachable([tunnel, wifi],
+            [
+                Interface("tun0", NetworkInterfaceType.Tunnel, "10.8.1.2"),
+                Interface("tun1", NetworkInterfaceType.Tunnel, "10.9.0.2"),
+                Interface("wlan0", NetworkInterfaceType.Ethernet, "192.168.1.91"),
+            ]);
+
+        Assert.Equal(["192.168.1.91"], reach.Addresses);
+    }
+
+    [Fact]
+    public void AnAddressOfALinkSetApart_DoesNotComeBackUnderAnotherName()
+    {
+        var mobile = Network("rmnet_data1", LocalProxyServer.LinkPlace.Apart, "10.64.1.9");
+
+        var reach = LocalProxyServer.Reachable([mobile], [Interface("bridge0", NetworkInterfaceType.Ethernet, "10.64.1.9")]);
+
+        Assert.Empty(reach.Addresses);
+    }
+
+    [Fact]
+    public void WithNoLinkNamed_WhatTheDeviceReadsItselfIsOffered()
+    {
+        var reach = LocalProxyServer.Reachable([], [Interface("wlan0", NetworkInterfaceType.Ethernet, "192.168.1.91")]);
+
+        Assert.Equal(["192.168.1.91"], reach.Addresses);
+    }
+
+    [Fact]
+    public void APublicAddressOfANamedLink_IsNotOffered()
+    {
+        var wifi = Network("wlan0", LocalProxyServer.LinkPlace.Joined, "203.0.113.5", "fd00::5");
+        var hotspot = Network("wlan1", LocalProxyServer.LinkPlace.Served, "198.51.100.1");
+
+        Assert.Empty(LocalProxyServer.Reachable([wifi, hotspot], []).Addresses);
+    }
+
+    [Theory]
+    [InlineData("tun0")]
+    [InlineData("ppp0")]
+    [InlineData("dummy0")]
+    [InlineData("ipsec3")]
+    [InlineData("rmnet_data0")]
+    [InlineData("r_rmnet_data0")]
+    [InlineData("ccmni1")]
+    [InlineData("wwan0")]
+    [InlineData("pdp_ip0")]
+    [InlineData("seth_lte0")]
+    public void ATunnelOrAModemOfAndroid_IsToldByItsName(string name)
+    {
+        Assert.Equal(NetworkInterfaceType.Tunnel, LocalProxyServer.KindOf(name));
+    }
+
+    [Theory]
+    [InlineData("wlan0")]
+    [InlineData("wlan1")]
+    [InlineData("ap0")]
+    [InlineData("swlan0")]
+    [InlineData("softap0")]
+    [InlineData("rndis0")]
+    [InlineData("usb0")]
+    [InlineData("bt-pan")]
+    [InlineData("eth0")]
+    [InlineData("p2p-wlan0-0")]
+    public void ARadioOrAWireOfAndroid_IsALinkOfItsOwn(string name)
+    {
+        Assert.Equal(NetworkInterfaceType.Ethernet, LocalProxyServer.KindOf(name));
+    }
+
+    [Fact]
+    public void TheLinksRead_AreToldWithoutTheAddressesNobodyIsGiven()
+    {
+        var mobile = Network("rmnet_data2", LocalProxyServer.LinkPlace.Apart, "10.87.12.3");
+        var wifi = Network("wlan0", LocalProxyServer.LinkPlace.Joined, "192.168.1.91", "2001:db8::5");
+
+        var reach = LocalProxyServer.Reachable([mobile, wifi],
+            [
+                Interface("rmnet_data2", NetworkInterfaceType.Tunnel, "10.87.12.3"),
+                Interface("wlan0", NetworkInterfaceType.Ethernet, "192.168.1.91"),
+                Interface("wlan1", NetworkInterfaceType.Ethernet, "192.168.43.1"),
+                Interface("v4-rmnet_data2", NetworkInterfaceType.Ethernet, "192.0.0.4"),
+            ]);
+
+        Assert.Equal("named rmnet_data2 apart, wlan0 joined 192.168.1.91; read rmnet_data2, wlan0, wlan1 192.168.43.1, v4-rmnet_data2",
+            reach.Links);
+    }
+
+    private static LocalProxyServer.NamedLink Network(string name, LocalProxyServer.LinkPlace place, params string[] addresses)
+    {
+        return new LocalProxyServer.NamedLink(name, place, [.. addresses.Select(IPAddress.Parse)]);
+    }
+
+    private static LocalProxyServer.NamedLink Wifi(string name, params string[] addresses)
+    {
+        return new LocalProxyServer.NamedLink(name, LocalProxyServer.LinkPlace.Joined, [.. addresses.Select(IPAddress.Parse)], true);
+    }
+
+    private static LocalProxyServer.AdapterView Interface(string name, NetworkInterfaceType type, params string[] addresses)
+    {
+        return new LocalProxyServer.AdapterView(type, false, [.. addresses.Select(IPAddress.Parse)], name);
+    }
+
+    [Fact]
     public void AccountsSurviveTheTextTheyAreStoredIn()
     {
         var accounts = new[] { new ProxyAccount("bor", "se:cret"), new ProxyAccount(" guest ", "letmein") };
@@ -388,6 +666,26 @@ public sealed class LocalProxyServerTests : IDisposable
         Assert.True(server.Apply(options));
         Assert.True(server.Running);
         return server;
+    }
+
+    // The listener with what it says to the journal kept.
+    private ConcurrentQueue<string> Heard(IProxyOutbound outbound, LocalProxyOptions options)
+    {
+        var said = new ConcurrentQueue<string>();
+        var server = new LocalProxyServer(outbound, said.Enqueue);
+        _servers.Add(server);
+        Assert.True(server.Apply(options));
+        return said;
+    }
+
+    // Asks the SOCKS5 front for one destination and returns the code of its reply.
+    private async Task<byte> AskAsync(int port, string host, int destinationPort)
+    {
+        var client = await DialAsync(port);
+        await client.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None);
+        await ReadAsync(client, 2);
+        await client.SendAsync(Request(host, destinationPort), SocketFlags.None);
+        return (await ReadAsync(client, 10))[1];
     }
 
     private LocalProxyOptions Options()

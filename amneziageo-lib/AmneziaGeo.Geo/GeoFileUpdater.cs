@@ -37,7 +37,8 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
     public async Task<GeoFetch> FetchAsync(GeoSource source, IProgress<GeoDownload>? progress = null, CancellationToken ct = default)
     {
         var existing = await store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
-        var fresh = await DownloadAsync(source.Url, existing, progress, ct).ConfigureAwait(false);
+        var held = existing is not null && string.Equals(existing.SourceUrl, source.Url, StringComparison.OrdinalIgnoreCase) ? existing : null;
+        var fresh = await DownloadAsync(source.Url, held, progress, ct).ConfigureAwait(false);
         if (fresh is null)
         {
             return new GeoFetch(source, existing, null, string.Empty, string.Empty, 0);

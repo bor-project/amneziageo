@@ -77,11 +77,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useRouting = true;
 
-    // Запрещает ли сервер конфигурации маршрутизацию на устройстве.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Tags))]
-    private bool _routingLocked;
-
     [ObservableProperty]
     private bool _allowInbound;
 

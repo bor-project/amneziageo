@@ -16,7 +16,7 @@ translation: /usage.ru.html
 
 The mode belongs to the routing list, not to the configuration: the same list attaches to different servers.
 
-A fresh install starts with one list in use, Unavailable sites, in the language of the system: the services closed off in Russia and the ones that turn it away go through the VPN. It is put in once: a list removed stays removed, and an install that already held lists or configurations gets none.
+A fresh install holds no list, and everything goes through the VPN until one is in use: a list the owner adds, or a list a server hands out, see [What the server offers](#what-the-server-offers).
 
 ## Multiple VPN connections (Windows)
 
@@ -70,7 +70,7 @@ For any other server the front is set in the settings: an address and a port, an
 
 ## What the server offers
 
-The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, after a subscription or a bundle brings a configuration whose server was not asked yet, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front, whether routing on the client is allowed (a ban of the server turns the Routing on the client switch off) and where the speed is measured. The answer also hands out the geo sources of the server and the routing lists the template of the client names. The application adds a source it holds none of at that address and a list it holds none of under that name, and fetches the new sources at once; a source or a list the owner removed comes back with the next answer, a list the owner changed stays as it is. None of these lists is put in use by itself: the list in force stays the one the owner picked, and with none picked everything keeps going through the tunnel. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
+The application asks an AmneziaGeo server what it offers a configuration: when the window opens, after a configuration is added or edited, after a subscription or a bundle brings a configuration whose server was not asked yet, and before every connect. The question goes over TCP to the host of the Endpoint at the port of the services; the application proves the keys of the configuration, and the answer is sealed for it alone. The answer is kept per configuration: the WebSocket front and where the speed is measured. The answer also hands out the geo sources of the server and the routing lists the template of the client names. The application adds a source it holds none of at that address, moves a source it holds under the same name to the address of the server, once per address, and fetches these sources at once; a source the owner removed comes back with the next answer. A list of the server is known by its identifier. One the application holds none of is added, and put in use when the server marks it on by default and no list is in use. One it holds stays as it is; when the server changed it since, its card and the title of the open list show Update, and pressing it takes the name, the rules and the traffic switches of the server in place of what the list held, in use or not as it was. A list the owner removed comes back with the next answer. The card of a list names where it came from: the configuration it arrived with, or Local for a list made on the device. A server older than the identifiers has its lists added by name and none of them put in use. A server of another kind, or a silent one, changes nothing: a server that did not answer the last question as an AmneziaGeo server is asked in the background before a connect, and the connect does not wait for it.
 
 ## Leak protection
 
@@ -127,6 +127,10 @@ The app runs SOCKS5 and HTTP proxies that let devices without their own client u
 - Allowing connections from the LAN opens the proxy to the rest of the network; otherwise it serves this machine only.
 - Access is by account, or password-free if that suits you better.
 - Connected clients and the number of connections they hold are listed.
+
+On Android the list also holds the phone's address on the network it shares itself: a Wi-Fi hotspot, USB or Bluetooth tethering. A device joined to that network takes this address and the HTTP port as the proxy in its Wi-Fi settings: without root Android keeps tethered traffic out of the VPN, and through the proxy it rides the tunnel. The address of the mobile network is not listed: it has no neighbours.
+
+A proxy set in the network settings is followed by the browser and by programs that reach the network through the system. Telegram on a phone is not one of them: the phone's address and the SOCKS5 port go into Telegram itself (Settings - Data and Storage - Proxy Settings, type SOCKS5). The proxy carries TCP connections; datagrams (UDP) of neighbouring devices do not pass through it.
 
 Traffic reaches the tunnel only while the tunnel is up.
 

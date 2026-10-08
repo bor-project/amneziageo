@@ -148,6 +148,12 @@
   <data name="General_ProxyCopyTooltip" xml:space="preserve">
     <value>Copy the address</value>
   </data>
+  <data name="General_ProxyPlaceServed" xml:space="preserve">
+    <value>This phone's hotspot</value>
+  </data>
+  <data name="General_ProxyPlaceWifi" xml:space="preserve">
+    <value>Wi-Fi network</value>
+  </data>
   <data name="General_ProxyRevealTooltip" xml:space="preserve">
     <value>Show the password</value>
   </data>
@@ -2230,6 +2236,12 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Main_CardTagSubscription" xml:space="preserve">
     <value>{0}</value>
+  </data>
+  <data name="Main_CardTagUpdate" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="Main_CardSourceLocal" xml:space="preserve">
+    <value>Local</value>
   </data>
   <data name="Main_SubscriptionsTitle" xml:space="preserve">
     <value>Subscriptions</value>

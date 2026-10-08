@@ -50,9 +50,8 @@ public sealed record ConfigEntry(
     // Websocket front the tunnel is carried to, as host and port: the one the server offers, else the one the
     // config names, else the one of the settings; empty when a server of ours offers none.
     string WebSocketFront = "",
-    // Whether the config takes the routing list, and whether its server bans routing on the device.
+    // Whether the config takes the routing list.
     bool UseRouting = true,
-    bool RoutingLocked = false,
     // Websocket front of the settings, and whether the tunnel takes it: neither the server nor the config names one.
     string WebSocketHost = "",
     int WebSocketPort = 0,

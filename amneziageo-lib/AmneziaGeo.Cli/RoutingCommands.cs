@@ -16,7 +16,7 @@ internal static class RoutingCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|delete-rule|remove|order|settings|configure>");
+            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|delete-rule|remove|update|order|settings|configure>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -30,6 +30,7 @@ internal static class RoutingCommands
             "add" => await AmendAsync(agent, rest, add: true).ConfigureAwait(false),
             "delete-rule" => await AmendAsync(agent, rest, add: false).ConfigureAwait(false),
             "remove" => await RemoveAsync(agent, rest).ConfigureAwait(false),
+            "update" => await UpdateAsync(agent, rest).ConfigureAwait(false),
             "order" => rest.Count > 0
                 ? Reply.Report(await agent.SendAsync(IpcContract.OpReorderRoutingLists, [.. rest]).ConfigureAwait(false), "order saved")
                 : Reply.Usage("usage: amneziageo routing order <name> [<name>...]"),
@@ -59,6 +60,24 @@ internal static class RoutingCommands
         }
 
         return Reply.Report(await agent.SendAsync(IpcContract.OpAssignRouting, listId).ConfigureAwait(false));
+    }
+
+    // Takes the newer version the server handed out for a list.
+    private static async Task<int> UpdateAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
+        {
+            return Reply.Usage("usage: amneziageo routing update <id|name>");
+        }
+
+        if (!list.HasUpdate)
+        {
+            return Reply.Usage($"routing list '{list.Name}' holds the newest version of its server");
+        }
+
+        return Reply.Report(
+            await agent.SendAsync(IpcContract.OpUpdateRoutingList, list.Id.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false),
+            "updated");
     }
 
     /// <summary>
@@ -96,10 +115,12 @@ internal static class RoutingCommands
                 list.RuleCount.ToString(CultureInfo.InvariantCulture),
                 list.RouteCount.ToString(CultureInfo.InvariantCulture),
                 list.DomainCount.ToString(CultureInfo.InvariantCulture),
+                list.Source.Length > 0 ? list.Source : "local",
+                list.HasUpdate ? "yes" : "-",
             ])
             .ToList();
 
-        Output.Table(["ID", "NAME", "RULES", "ROUTES", "DOMAINS"], rows, "no routing lists yet");
+        Output.Table(["ID", "NAME", "RULES", "ROUTES", "DOMAINS", "SOURCE", "UPDATE"], rows, "no routing lists yet");
         return Exit.Ok;
     }
 

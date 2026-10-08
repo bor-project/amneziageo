@@ -94,6 +94,19 @@ public sealed class GeoFileUpdaterTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ASourceThatMoved_IsFetchedWhateverItsOldAddressSaid()
+    {
+        _feed.Body = GeoIp("TT");
+        _feed.Tag = Tag;
+        await _updater.UpdateAsync(_source);
+        _feed.Body = GeoIp("UU");
+
+        var fetched = await _updater.FetchAsync(_source with { Url = "http://mirror.test/geoip.dat" });
+
+        Assert.Equal(_feed.Body, fetched.Data);
+    }
+
+    [Fact]
     public async Task AFileWithoutACategory_FailsAtTheFetch()
     {
         _feed.Body = [];

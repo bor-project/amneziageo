@@ -126,6 +126,7 @@ public static class CliRunner
               routing add <id|name> <rule...>       append rules; a listed token takes the new role
               routing delete-rule <id|name> <rule...>
               routing remove <id|name>
+              routing update <id|name>              take the newer version its server handed out
               routing order <name> [<name>...]      the order they are listed in
               routing settings <id|name>
               routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>]

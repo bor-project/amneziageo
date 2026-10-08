@@ -752,20 +752,33 @@ internal partial class ConnectionsViewModel : ViewModelBase
         if (snapshot.ProxyEnabled && snapshot.ProxyError.Length == 0)
         {
             var hosts = snapshot.ProxyAddresses ?? [];
+            var places = snapshot.ProxyPlaces ?? [];
             if (hosts.Count == 0)
             {
                 hosts = ["127.0.0.1"];
             }
 
-            foreach (var host in hosts)
+            for (var i = 0; i < hosts.Count; i++)
             {
-                rows.Add(new ProxyEndpointRow("SOCKS5", $"{host}:{snapshot.ProxySocksPort}"));
-                rows.Add(new ProxyEndpointRow("HTTP", $"{host}:{snapshot.ProxyHttpPort}"));
+                var caption = hosts.Count > 1 && i < places.Count ? PlaceCaption(places[i]) : string.Empty;
+                rows.Add(new ProxyEndpointRow("SOCKS5", $"{hosts[i]}:{snapshot.ProxySocksPort}", caption));
+                rows.Add(new ProxyEndpointRow("HTTP", $"{hosts[i]}:{snapshot.ProxyHttpPort}"));
             }
         }
 
         HasProxyEndpoints = rows.Count > 0;
         Sync(ProxyEndpoints, rows);
+    }
+
+    // The caption of a network the proxy answers in; empty for one nothing is told of.
+    private static string PlaceCaption(string place)
+    {
+        return place switch
+        {
+            ProxyPlaces.Served => Loc.Instance.Get("General_ProxyPlaceServed"),
+            ProxyPlaces.Wifi => Loc.Instance.Get("General_ProxyPlaceWifi"),
+            _ => string.Empty,
+        };
     }
 
     private void ApplyProxyClients(StatusSnapshot snapshot)

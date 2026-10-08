@@ -762,7 +762,6 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.UseIpv6 = entry.UseIpv6;
             existing.UseRouter = entry.UseRouter;
             existing.UseRouting = entry.UseRouting;
-            existing.RoutingLocked = entry.RoutingLocked;
             existing.AllowInbound = entry.AllowInbound;
             existing.InboundNetwork = entry.InboundNetwork;
             existing.Address = entry.Address;
@@ -1108,7 +1107,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.RoutingLocked ?? false, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0);
         RefreshEditBar();
     }
 

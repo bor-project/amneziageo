@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// The routing list a fresh install starts with, shared by the agent that puts it in and the window that offers it.
+/// The geo keys of the routing lists the window offers to start a list from.
 /// </summary>
 public static class RoutingDefaults
 {
@@ -26,13 +26,4 @@ public static class RoutingDefaults
         "geosite:telegram",
         "geoip:telegram",
     ];
-
-    /// <summary>
-    /// Returns the name of the list of unavailable sites in a language given by its letters. The agents read no
-    /// translations, so the name stands here the way the window shows it (Preset_ClosedName).
-    /// </summary>
-    public static string UnavailableName(string? language) =>
-        language is not null && language.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
-            ? "Недоступные сайты"
-            : "Unavailable sites";
 }

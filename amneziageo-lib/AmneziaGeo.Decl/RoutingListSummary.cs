@@ -2,7 +2,8 @@ namespace AmneziaGeo.Decl;
 
 /// <summary>
 /// A routing list as the catalogue shows it: its name, how many rules each bucket holds, the totals of the
-/// materialized routes and domains, and the traffic policy the list carries.
+/// materialized routes and domains, the traffic policy the list carries, the configuration it arrived with (empty for
+/// a list made on the device) and whether its server holds a newer version.
 /// </summary>
 public sealed record RoutingListSummary(
     long Id,
@@ -14,4 +15,6 @@ public sealed record RoutingListSummary(
     int DirectRuleCount,
     int BlockRuleCount,
     bool AllUdp,
-    bool UseGlobalProxy);
+    bool UseGlobalProxy,
+    string Source = "",
+    bool HasUpdate = false);

@@ -96,28 +96,13 @@ public sealed class ConfigTransportViewModelTests
         var agent = new Recorder();
         var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false);
 
-        transport.RoutingOn = false;
+        transport.UseRouting = false;
         await transport.CommitAsync();
 
-        Assert.True(transport.RoutingOpen);
         Assert.False(transport.UseRouting);
         Assert.Equal("off", agent.Args[8]);
     }
 
-    [Fact]
-    public async Task ARoutingBannedByTheServer_ShowsOffAndKeepsTheStoredSwitch()
-    {
-        var agent = new Recorder();
-        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, useRouting: true, routingLocked: true);
-
-        transport.RoutingOn = false;
-        await transport.CommitAsync();
-
-        Assert.False(transport.RoutingOpen);
-        Assert.False(transport.RoutingOn);
-        Assert.True(transport.UseRouting);
-        Assert.Equal("on", agent.Args[8]);
-    }
 
     [Fact]
     public void TheFieldsOfTheSettings_ShowTheEndpointWhenNeitherTheServerNorTheConfigNamesAFront()

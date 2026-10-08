@@ -62,6 +62,44 @@ public sealed class ServerSignalTests
     }
 
     [Fact]
+    public void ThePlace_IsTheSameFromThePortAndTheSourcesAlone()
+    {
+        var keys = Keys();
+        var config = Config(keys, "10.8.0.2/32, fd00::2/128");
+
+        var place = TunnelSignal.Of(28561, ["10.8.0.1", "fd00::1"], config);
+        var withoutSix = TunnelSignal.Of(28561, ["10.8.0.1", "fd00::1"], config, false);
+
+        Assert.NotNull(place);
+        Assert.Equal(["10.8.0.2", "fd00::2"], place.Hosts);
+        Assert.Equal(["10.8.0.1", "fd00::1"], place.Sources);
+        Assert.Equal(28561, place.Port);
+        Assert.Equal(keys.ClientPrivate, place.PrivateKey);
+        Assert.Equal(keys.ServerPublic, place.ServerKey);
+        Assert.Equal(["10.8.0.2"], withoutSix!.Hosts);
+        Assert.Equal(["10.8.0.1"], withoutSix.Sources);
+        Assert.Null(TunnelSignal.Of(0, ["10.8.0.1"], config));
+        Assert.Null(TunnelSignal.Of(28561, [], config));
+        Assert.Null(TunnelSignal.Of(28561, ["not an address"], config));
+        Assert.Null(TunnelSignal.Of(28561, ["10.8.0.1"], "[Interface]\nAddress = 10.8.0.2/32\n"));
+    }
+
+    [Fact]
+    public void ThePlace_KnowsTheAnswersOfItsListenerByTheirEnds()
+    {
+        var keys = Keys();
+        var place = TunnelSignal.Of(28561, ["10.8.0.1", "fd00::1"], Config(keys, "10.8.0.2/32, fd00::2/128"))!;
+        var device = 0x0A080002u;
+        var server = 0x0A080001u;
+
+        Assert.True(place.Answers(device, 28561, server));
+        Assert.False(place.Answers(device, 28562, server));
+        Assert.False(place.Answers(device, 28561, 0x0A080003u));
+        Assert.False(place.Answers(0x0A080009u, 28561, server));
+        Assert.False(place.Answers(server, 28561, device));
+    }
+
+    [Fact]
     public async Task ASignalSealedUnderTheKeysOfTheConfig_IsTakenAndAnswered()
     {
         var keys = Keys();

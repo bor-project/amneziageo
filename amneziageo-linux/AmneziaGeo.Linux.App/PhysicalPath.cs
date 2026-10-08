@@ -1,5 +1,4 @@
 using System.Net.Sockets;
-using System.Text;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -9,9 +8,6 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal static class PhysicalPath
 {
-    private const int SolSocket = 1;
-    private const int SoBindToDevice = 25;
-
     /// <summary>
     /// Сажает сокет на устройство; null, когда устройства нет или система привязку не даёт.
     /// </summary>
@@ -22,20 +18,7 @@ internal static class PhysicalPath
             return null;
         }
 
-        return socket => Apply(socket, device);
-    }
-
-    private static bool Apply(Socket socket, string device)
-    {
-        try
-        {
-            socket.SetRawSocketOption(SolSocket, SoBindToDevice, Encoding.ASCII.GetBytes(device + "\0"));
-            return true;
-        }
-        catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-        {
-            return false;
-        }
+        return socket => DeviceSocket.Bind(socket, device);
     }
 
     // Привязка к устройству требует прав; без них замер мимо туннеля не уйдёт, и лучше знать это заранее.
@@ -44,7 +27,7 @@ internal static class PhysicalPath
         try
         {
             using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            return Apply(socket, device);
+            return DeviceSocket.Bind(socket, device);
         }
         catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException)
         {

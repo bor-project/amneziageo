@@ -83,6 +83,11 @@ internal sealed class TunnelController : IDisposable
     public Func<CancellationToken, Task>? ServerAskedDown { get; set; }
 
     /// <summary>
+    /// The device the tunnel stands on.
+    /// </summary>
+    public string Device => _iface;
+
+    /// <summary>
     /// Whether the tunnel interface is up.
     /// </summary>
     public bool Running => _daemon is { Running: true };

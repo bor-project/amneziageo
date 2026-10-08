@@ -70,7 +70,6 @@ public sealed class ConfigCommandsTests : IDisposable
         var link = new Link([
             new ConfigEntry("taken", "10.9.1.1:51821", false, "idle", []),
             new ConfigEntry("kept", "10.9.1.1:51821", false, "idle", [], UseRouting: false),
-            new ConfigEntry("banned", "10.9.1.1:51821", false, "idle", [], RoutingLocked: true),
         ]);
 
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
@@ -79,7 +78,6 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal("ROUTING", Cells(lines[0])[6]);
         Assert.Equal("on", Cells(lines[1])[6]);
         Assert.Equal("off", Cells(lines[2])[6]);
-        Assert.Equal("locked", Cells(lines[3])[6]);
     }
 
     [Fact]

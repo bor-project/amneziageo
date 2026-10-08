@@ -38,15 +38,19 @@ public sealed class LocalProxyServer : IDisposable
     private const byte ReplyFailure = 0x01;
     private const byte ReplyDenied = 0x02;
     private const byte ReplyNoCommand = 0x07;
+    private const int MissedEveryMs = 60_000;
+    private const int MissedAMinute = 20;
 
-    // Link names android gives to what carries an address of somebody else's network.
-    private static readonly string[] ForeignLinks = ["tun", "ppp", "sit", "ip6tnl", "dummy"];
+    // Link names android gives to what carries an address of somebody else's network: a tunnel, a modem.
+    private static readonly string[] ForeignLinks =
+        ["tun", "ppp", "sit", "ip6tnl", "dummy", "ipsec", "rmnet", "r_rmnet", "ccmni", "wwan", "pdp", "seth"];
 
     private readonly IProxyOutbound _outbound;
     private readonly IDatagramOutbound? _datagrams;
     private readonly Action<string> _log;
     private readonly ConcurrentDictionary<Socket, byte> _open = new();
     private readonly ConcurrentDictionary<Socket, ProxyPeer> _clients = new();
+    private readonly HashSet<string> _missed = new(StringComparer.Ordinal);
     private readonly object _sync = new();
     private readonly List<Socket> _listeners = [];
     private CancellationTokenSource? _cts;
@@ -56,6 +60,7 @@ public sealed class LocalProxyServer : IDisposable
     private long _refused;
     private long _blocked;
     private long _bytes;
+    private long _missedSince;
     private bool _disposed;
 
     /// <summary>
@@ -142,7 +147,47 @@ public sealed class LocalProxyServer : IDisposable
     /// <param name="Type">What the link is.</param>
     /// <param name="HasGateway">Whether the link has a gateway.</param>
     /// <param name="Addresses">The addresses it carries.</param>
-    public sealed record AdapterView(NetworkInterfaceType Type, bool HasGateway, IReadOnlyList<IPAddress> Addresses);
+    /// <param name="Name">What the system calls it.</param>
+    public sealed record AdapterView(NetworkInterfaceType Type, bool HasGateway, IReadOnlyList<IPAddress> Addresses,
+        string Name = "");
+
+    /// <summary>
+    /// What a link the system names is to the neighbours of the device.
+    /// </summary>
+    public enum LinkPlace
+    {
+        /// <summary>
+        /// A network the device joined.
+        /// </summary>
+        Joined,
+
+        /// <summary>
+        /// A network the device serves itself, as its hotspot is.
+        /// </summary>
+        Served,
+
+        /// <summary>
+        /// A link no neighbour dials: a tunnel, a mobile network.
+        /// </summary>
+        Apart,
+    }
+
+    /// <summary>
+    /// One link as the system of the device names it.
+    /// </summary>
+    /// <param name="Name">What the system calls the interface.</param>
+    /// <param name="Place">What the link is to the neighbours.</param>
+    /// <param name="Addresses">The addresses it carries.</param>
+    /// <param name="Wifi">Whether the link is a Wi-Fi radio.</param>
+    public sealed record NamedLink(string Name, LinkPlace Place, IReadOnlyList<IPAddress> Addresses, bool Wifi = false);
+
+    /// <summary>
+    /// The addresses a device is reached at and the links they were picked from.
+    /// </summary>
+    /// <param name="Addresses">What a neighbour dials.</param>
+    /// <param name="Links">The links read, as one line of a log.</param>
+    /// <param name="Places">What the network of each address is, in the same order.</param>
+    public sealed record Reach(IReadOnlyList<string> Addresses, string Links, IReadOnlyList<string> Places);
 
     /// <summary>
     /// Addresses of this machine a client elsewhere can point at. Only a link of this machine's own is taken:
@@ -150,6 +195,14 @@ public sealed class LocalProxyServer : IDisposable
     /// unreachable for the neighbour asked to use it.
     /// </summary>
     public static IReadOnlyList<string> UsableAddresses()
+    {
+        return Usable(Adapters());
+    }
+
+    /// <summary>
+    /// The adapters of this machine that are up and carry an IPv4 address.
+    /// </summary>
+    public static IReadOnlyList<AdapterView> Adapters()
     {
         var adapters = new List<AdapterView>();
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
@@ -169,10 +222,10 @@ public sealed class LocalProxyServer : IDisposable
                 continue;
             }
 
-            adapters.Add(new AdapterView(Kind(adapter), HasGateway(properties), addresses));
+            adapters.Add(new AdapterView(Kind(adapter), HasGateway(properties), addresses, adapter.Name));
         }
 
-        return Usable(adapters);
+        return adapters;
     }
 
     /// <summary>
@@ -207,6 +260,44 @@ public sealed class LocalProxyServer : IDisposable
         // list goes out rather than nothing at all.
         var offered = routed.Count > 0 ? routed : rest;
         return [.. offered.Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Picks the reachable addresses of a device whose system names its links: those of the networks the device
+    /// serves, then those of the networks it joined. An interface the device reads itself and the system does not
+    /// name counts as a network it serves; a link set apart gives no address under any name.
+    /// </summary>
+    public static Reach Reachable(IEnumerable<NamedLink> named, IEnumerable<AdapterView> read)
+    {
+        var links = named.ToList();
+        var names = links.Select(link => link.Name).ToHashSet(StringComparer.Ordinal);
+        var taken = links.SelectMany(link => link.Addresses).ToHashSet();
+        var served = links.Where(link => link.Place == LinkPlace.Served)
+            .SelectMany(link => link.Addresses.Select(address => (Address: address, Place: ProxyPlaces.Served)))
+            .ToList();
+        var seen = new List<string>();
+        foreach (var adapter in read)
+        {
+            var own = adapter.Addresses
+                .Where(address => IsOwnLink(adapter.Type) && !names.Contains(adapter.Name)
+                    && Offered(address) && !taken.Contains(address))
+                .ToList();
+            served.AddRange(own.Select(address => (Address: address, Place: ProxyPlaces.Served)));
+            seen.Add(Told(adapter.Name, own));
+        }
+
+        var joined = links.Where(link => link.Place == LinkPlace.Joined)
+            .SelectMany(link => link.Addresses.Select(address => (Address: address, Place: link.Wifi ? ProxyPlaces.Wifi : ProxyPlaces.Unnamed)));
+        var said = links.Select(link => Told($"{link.Name} {Word(link.Place)}",
+            link.Addresses.Where(address => link.Place != LinkPlace.Apart && Offered(address))));
+        var picked = served.Concat(joined)
+            .Where(pair => Offered(pair.Address))
+            .DistinctBy(pair => pair.Address.ToString(), StringComparer.Ordinal)
+            .ToList();
+        return new Reach(
+            [.. picked.Select(pair => pair.Address.ToString())],
+            $"named {Listed(said)}; read {Listed(seen)}",
+            [.. picked.Select(pair => pair.Place)]);
     }
 
     /// <summary>
@@ -433,10 +524,16 @@ public sealed class LocalProxyServer : IDisposable
             return;
         }
 
+        var asked = Environment.TickCount64;
         var (link, outcome) = await _outbound.ConnectAsync(host, port, source, ct).ConfigureAwait(false);
         if (link is null)
         {
             Count(outcome);
+            if (source is null)
+            {
+                Missed(client, host, port, outcome, asked);
+            }
+
             await SendAsync(client, Reply(outcome == ProxyOutcome.Blocked ? ReplyDenied : ReplyFailure), ct)
                 .ConfigureAwait(false);
             return;
@@ -693,10 +790,12 @@ public sealed class LocalProxyServer : IDisposable
                 return;
             }
 
+            var asked = Environment.TickCount64;
             var (link, outcome) = await _outbound.ConnectAsync(request.Host, request.Port, ct).ConfigureAwait(false);
             if (link is null)
             {
                 Count(outcome);
+                Missed(client, request.Host, request.Port, outcome, asked);
                 await SendTextAsync(client, outcome == ProxyOutcome.Blocked
                     ? "HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"
                     : "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n", ct).ConfigureAwait(false);
@@ -862,12 +961,13 @@ public sealed class LocalProxyServer : IDisposable
     // What the link is - android names no kind either, so the name tells a tunnel from a radio.
     private static NetworkInterfaceType Kind(NetworkInterface adapter)
     {
-        if (!OperatingSystem.IsAndroid())
-        {
-            return adapter.NetworkInterfaceType;
-        }
+        return OperatingSystem.IsAndroid() ? KindOf(adapter.Name) : adapter.NetworkInterfaceType;
+    }
 
-        return ForeignLinks.Any(name => adapter.Name.StartsWith(name, StringComparison.Ordinal))
+    // What a link of android is by its name.
+    internal static NetworkInterfaceType KindOf(string name)
+    {
+        return ForeignLinks.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal))
             ? NetworkInterfaceType.Tunnel
             : NetworkInterfaceType.Ethernet;
     }
@@ -885,6 +985,37 @@ public sealed class LocalProxyServer : IDisposable
             or NetworkInterfaceType.Wman
             or NetworkInterfaceType.Wwanpp
             or NetworkInterfaceType.Wwanpp2;
+    }
+
+    // An address a neighbour is given: IPv4 of a private range.
+    private static bool Offered(IPAddress address)
+    {
+        return address.AddressFamily == AddressFamily.InterNetwork && IsPrivate(address);
+    }
+
+    // One link of the log line: what it is called and the addresses taken from it.
+    private static string Told(string name, IEnumerable<IPAddress> addresses)
+    {
+        var text = string.Join(" ", addresses.Select(address => address.ToString()));
+        return text.Length > 0 ? $"{name} {text}" : name;
+    }
+
+    // The links of one kind as the log line names them.
+    private static string Listed(IEnumerable<string> links)
+    {
+        var text = string.Join(", ", links);
+        return text.Length > 0 ? text : "nothing";
+    }
+
+    // The place of a link as the log line names it.
+    private static string Word(LinkPlace place)
+    {
+        return place switch
+        {
+            LinkPlace.Joined => "joined",
+            LinkPlace.Served => "served",
+            _ => "apart",
+        };
     }
 
     // Only the private ranges are let in: on a public network an open port is an open proxy.
@@ -933,6 +1064,34 @@ public sealed class LocalProxyServer : IDisposable
         }
 
         Interlocked.Increment(ref _refused);
+    }
+
+    // Tells the journal which client asked for a destination that did not open, each pair once a minute.
+    private void Missed(Socket client, string host, int port, ProxyOutcome outcome, long asked)
+    {
+        if (outcome != ProxyOutcome.Failed)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        var who = _clients.TryGetValue(client, out var peer) ? peer.Address : "a client";
+        var target = host.Contains(':', StringComparison.Ordinal) ? $"[{host}]:{port}" : $"{host}:{port}";
+        lock (_missed)
+        {
+            if (now - _missedSince >= MissedEveryMs)
+            {
+                _missedSince = now;
+                _missed.Clear();
+            }
+
+            if (_missed.Count >= MissedAMinute || !_missed.Add($"{who} {target}"))
+            {
+                return;
+            }
+        }
+
+        _log($"proxy: {who} asked for {target}, which did not open in {now - asked} ms");
     }
 
     private static byte[] Reply(byte code)

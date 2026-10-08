@@ -15,23 +15,37 @@ public static class TunnelSignal
     /// of a family the signal comes over, IPv4 alone for a tunnel that carries no IPv6; null when the server sends
     /// none or the text names no keys.
     /// </summary>
-    public static SignalPlace? Of(ServerOffer? offer, string? configText, bool ipv6 = true)
+    public static SignalPlace? Of(ServerOffer? offer, string? configText, bool ipv6 = true) =>
+        offer is { SignalPort: > 0 } ? Of(offer.SignalPort, offer.SignalSources(), configText, ipv6) : null;
+
+    /// <summary>
+    /// Returns where the device takes the signal that comes to the port from the addresses named; null when no
+    /// address of the device answers them or the text names no keys.
+    /// </summary>
+    public static SignalPlace? Of(int port, IReadOnlyList<string> sources, string? configText, bool ipv6 = true)
     {
-        if (offer is not { SignalPort: > 0 } || ConfigServices.Target(configText) is not { } keys)
+        ArgumentNullException.ThrowIfNull(sources);
+
+        if (port <= 0 || ConfigServices.Target(configText) is not { } keys)
         {
             return null;
         }
 
-        var sources = offer.SignalSources()
-            .Select(IPAddress.Parse)
-            .Where(source => ipv6 || source.AddressFamily == AddressFamily.InterNetwork)
-            .ToList();
+        var named = new List<IPAddress>();
+        foreach (var source in sources)
+        {
+            if (IPAddress.TryParse(source, out var address) && (ipv6 || address.AddressFamily == AddressFamily.InterNetwork))
+            {
+                named.Add(address);
+            }
+        }
+
         var at = TunnelInbound.Hosts(WgConfigEditor.GetAddresses(configText ?? string.Empty))
             .Select(IPAddress.Parse)
-            .Where(address => sources.Exists(source => source.AddressFamily == address.AddressFamily))
+            .Where(address => named.Exists(source => source.AddressFamily == address.AddressFamily))
             .ToList();
-        var from = sources.Where(source => at.Exists(address => address.AddressFamily == source.AddressFamily)).ToList();
+        var from = named.Where(source => at.Exists(address => address.AddressFamily == source.AddressFamily)).ToList();
 
-        return at.Count == 0 ? null : new SignalPlace(at, offer.SignalPort, from, keys.PrivateKey, keys.ServerKey);
+        return at.Count == 0 ? null : new SignalPlace(at, port, from, keys.PrivateKey, keys.ServerKey);
     }
 }

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
+	"github.com/bor-project/amneziageo/libamneziawg-go/datagram"
 	"github.com/bor-project/amneziageo/libamneziawg-go/owners"
 )
 
@@ -347,7 +348,7 @@ type verdictTun struct {
 	table *verdictTable
 
 	live *liveSet
-	fwd  *forwarder
+	fwd  *datagram.Forwarder
 	tcp  atomic.Pointer[tcpForwarder]
 
 	protect atomic.Pointer[func(int) bool]
@@ -648,7 +649,7 @@ func (d *verdictTun) aside(packet []byte) bool {
 		return false
 	}
 
-	return d.fwd.send(packet)
+	return d.fwd.Send(packet)
 }
 
 // Счётчики слоя вердиктов, форвардера и стека потоков.
@@ -662,8 +663,8 @@ func (d *verdictTun) stats() string {
 		"named %d, blocked %d, direct %d, not carried %d, sent %d, answered %d, dropped %d, refused %d, "+
 			"%d flow(s), %d live; datagram(s) %d off the tunnel by owner, %d kept on it; %s",
 		d.seen.Load(), d.blocked.Load(), d.passed.Load(), d.unsent.Load(),
-		d.fwd.sent.Load(), d.fwd.back.Load(), d.fwd.dropped.Load(), d.fwd.refused.Load(),
-		d.fwd.count(), d.live.size(), d.aside6.Load(), d.kept6.Load(), streams)
+		d.fwd.Sent.Load(), d.fwd.Back.Load(), d.fwd.Dropped.Load(), d.fwd.Refused.Load(),
+		d.fwd.Count(), d.live.size(), d.aside6.Load(), d.kept6.Load(), streams)
 }
 
 // Что реально используется прямо сейчас.
@@ -759,7 +760,7 @@ func (d *verdictTun) Close() error {
 		fwd.close()
 	}
 
-	d.fwd.close()
+	d.fwd.Close()
 	return d.device().Close()
 }
 func (d *verdictTun) BatchSize() int { return d.device().BatchSize() }

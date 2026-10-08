@@ -2525,9 +2525,21 @@ public sealed class GeoVpnService : VpnService
             return Reraise($"{_recovery.Reason}; raising the session again (attempt {_recovery.Attempt})");
         }
 
-        // A carried tunnel dials its carrier on the loopback, where another port changes nothing.
-        if (_carrier is not null)
+        // A carried tunnel dials its carrier on the loopback, where another port changes nothing: its carrier opens
+        // another websocket beside the one in use instead.
+        if (_carrier is { } carrier)
         {
+            var renewed = carrier.Renew();
+            var said = $"{_recovery.Reason}; opening another websocket beside the one in use (attempt {_recovery.Attempt})"
+                + (renewed ? string.Empty : " - the carrier has none in use, or is trying another already");
+            Report(said);
+            Note("tunnel", said);
+            if (renewed)
+            {
+                _session.Repaired(RecoveryStep.Carrier);
+                KeepMarks();
+            }
+
             return false;
         }
 

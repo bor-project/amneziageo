@@ -371,14 +371,30 @@ internal sealed class TunnelController : IDisposable
     public void SetRouteMemory(IRouteMemory memory) => _memory = memory;
 
     /// <summary>
+    /// Whether the tunnel is carried inside a websocket.
+    /// </summary>
+    public bool Carried => _carrier is not null;
+
+    /// <summary>
     /// Binds the tunnel socket to another source port, leaving the session, its routes and its DNS standing. A
-    /// NAT that has dropped the mapping keeps discarding what the old port sends.
+    /// NAT that has dropped the mapping keeps discarding what the old port sends. A carried tunnel dials its
+    /// carrier on the loopback, where another port changes nothing: its carrier opens another websocket beside
+    /// the one in use instead.
     /// </summary>
     public async Task<bool> RebindAsync(CancellationToken ct)
     {
         if (_daemon is not { Running: true } daemon)
         {
             return false;
+        }
+
+        if (_carrier is { } carrier)
+        {
+            var renewed = carrier.Renew();
+            _log.Info("tunnel", renewed
+                ? $"{_iface} is carried inside a websocket, so another one is opened beside the one in use"
+                : $"{_iface} is carried inside a websocket, and its carrier has none in use, or is trying another already");
+            return renewed;
         }
 
         try

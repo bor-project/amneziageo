@@ -39,11 +39,18 @@ public sealed class LinkLossProbe
     // Targets tried; more than a few would only spend the first minute looking for a responder.
     private const int MaxTargets = 3;
 
+    // Echoes the first target is given after another one was settled on.
+    private const int SecondLooks = 3;
+
     private readonly IPAddress[] _targets;
     private readonly Queue<(long Tick, int Rtt)> _window = new();
     private readonly object _lock = new();
     private readonly int _intervalMs;
     private readonly Func<long> _clock;
+    private readonly Func<IPAddress, int, CancellationToken, Task<int>> _echo;
+
+    // Whether the echoes leave through the tunnel alone, so what answers them was carried by it.
+    private readonly bool _confined;
     private IPAddress? _chosen;
 
     // Whether this session has been answered. Its window starts there: the seconds a fresh tunnel spends
@@ -52,6 +59,7 @@ public sealed class LinkLossProbe
     private bool _answered;
 
     private int _attempts;
+    private int _looks;
     private int _percent = LinkHealth.LossUnknown;
     private int _recentPercent = LinkHealth.LossUnknown;
     private int _streak;
@@ -60,10 +68,12 @@ public sealed class LinkLossProbe
     /// <summary>
     /// ctor
     /// </summary>
-    public LinkLossProbe(IReadOnlyList<string> targets, int intervalMs = IntervalMs, Func<long>? clock = null)
+    public LinkLossProbe(IReadOnlyList<string> targets, int intervalMs = IntervalMs, Func<long>? clock = null, Func<IPAddress, int, CancellationToken, Task<int>>? echo = null)
     {
         _intervalMs = intervalMs > 0 ? intervalMs : IntervalMs;
         _clock = clock ?? (() => Environment.TickCount64);
+        _echo = echo ?? IcmpEcho.RoundTripAsync;
+        _confined = echo is not null;
         var parsed = new List<IPAddress>();
         foreach (var target in targets)
         {
@@ -106,6 +116,11 @@ public sealed class LinkLossProbe
     public bool Answering => Volatile.Read(ref _chosen) is not null;
 
     /// <summary>
+    /// The address the echoes are measured at; null while none has answered.
+    /// </summary>
+    public string? Target => Volatile.Read(ref _chosen)?.ToString();
+
+    /// <summary>
     /// Echoes sent since the session started.
     /// </summary>
     public int Attempts => Volatile.Read(ref _attempts);
@@ -135,7 +150,7 @@ public sealed class LinkLossProbe
             }
 
             var target = _chosen ?? _targets[attempt++ % _targets.Length];
-            var trip = await IcmpEcho.RoundTripAsync(target, TimeoutMs, ct).ConfigureAwait(false);
+            var trip = await _echo(target, TimeoutMs, ct).ConfigureAwait(false);
             Interlocked.Increment(ref _attempts);
 
             // The first target that answers is the one measured from here on: alternating between them would fold
@@ -150,7 +165,30 @@ public sealed class LinkLossProbe
             {
                 Record(trip);
             }
+
+            await LookAgainAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    // Echoes the first target again after a later one was settled on, and moves the measurement to it once it answers.
+    private async Task LookAgainAsync(CancellationToken ct)
+    {
+        if (!_confined || _chosen is not { } chosen || chosen.Equals(_targets[0]) || _looks >= SecondLooks)
+        {
+            return;
+        }
+
+        _looks++;
+        var trip = await _echo(_targets[0], TimeoutMs, ct).ConfigureAwait(false);
+        if (trip < 0)
+        {
+            return;
+        }
+
+        _chosen = _targets[0];
+        Reset();
+        _answered = true;
+        Record(trip);
     }
 
     /// <summary>

@@ -1016,7 +1016,7 @@ internal sealed class ConfigRunner(
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         // The config's own rekey schedule sets the handshake rate its session is judged by.
         _meter.ChurnPerMinute = LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(text));
-        var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetDns(text)));
+        var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetDns(text)), echo: TunnelEcho.From(WgConfigEditor.GetAddresses(text)));
         _loss = probe;
         _ = Task.Run(() => probe.RunAsync(ct), ct);
     }

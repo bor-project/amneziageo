@@ -727,7 +727,7 @@ internal sealed class LinuxAgent : IDisposable
                 : await _tunnel.RepointAsync(ct, _hold.Active).ConfigureAwait(false);
             if (repaired)
             {
-                _session.Repaired(step);
+                _session.Repaired(step == RecoveryStep.Rebind && _tunnel.Carried ? RecoveryStep.Carrier : step);
             }
 
             return false;

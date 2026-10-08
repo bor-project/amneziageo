@@ -45,8 +45,10 @@ public enum WsFrontOutcome
 /// Carries a tunnel's UDP inside a websocket to a wstunnel front, so a network that passes nothing but web
 /// traffic still carries the tunnel. The engine dials the loopback port this binds, and every datagram travels
 /// as one websocket message. The carrier opens on the first datagram and reopens itself after a drop, which
-/// costs nothing extra: the engine repeats an unanswered handshake on its own. Each way has a thread of its own
-/// that waits on its socket, so a datagram wakes one thread.
+/// costs nothing extra: the engine repeats an unanswered handshake on its own. A websocket that went silent is
+/// not closed first: another one is opened beside it and the tunnel moves once the server answers through it.
+/// The carrier does that on its own where the server was answering steadily and stopped while the tunnel keeps
+/// sending. Each way has a thread of its own that waits on its socket, so a datagram wakes one thread.
 /// </summary>
 public sealed class WsCarrier : IDisposable
 {
@@ -79,6 +81,19 @@ public sealed class WsCarrier : IDisposable
     // half minute, so silence this long is a connection that stands in name only.
     private const int SilenceMs = 75000;
 
+    // How long a write to a websocket may stand before it counts as taking no more data, while one is on trial
+    // beside the one in use.
+    private const int BlockedMs = 500;
+
+    // How often a trial looks at the two websockets.
+    private const int TrialStepMs = 50;
+
+    // How many times the tunnel sends into the silence of a websocket before the carrier looks how long it lasts.
+    private const int QuietSent = 20;
+
+    // The longest pause between two datagrams of the server that still counts as answering steadily.
+    private const int SteadyGapMs = 1000;
+
     private const byte OpBinary = 0x2;
     private const byte OpClose = 0x8;
     private const byte OpPing = 0x9;
@@ -101,11 +116,21 @@ public sealed class WsCarrier : IDisposable
     private readonly SocketAddress _from = new(AddressFamily.InterNetwork);
     private readonly CancellationTokenSource _cts = new();
     private readonly Lock _sending = new();
+    private readonly Lock _gate = new();
     private Stream? _stream;
+    private Stream? _spare;
+    private Stream? _retiring;
     private SocketAddress? _engine;
     private long _attempted;
     private long _heard;
-    private bool _disposed;
+    private long _answered;
+    private long _steadySince;
+    private long _watched;
+    private long _writing;
+    private long _offering;
+    private int _unanswered;
+    private int _renewing;
+    private volatile bool _disposed;
 
     /// <summary>
     /// ctor
@@ -128,6 +153,37 @@ public sealed class WsCarrier : IDisposable
     /// Loopback port the engine dials instead of the endpoint the network refuses to carry.
     /// </summary>
     public int LocalPort { get; }
+
+    /// <summary>
+    /// Milliseconds a websocket opened beside the one in use is tried before the choice between the two is made.
+    /// </summary>
+    internal int TrialMs { get; set; } = 8000;
+
+    /// <summary>
+    /// Milliseconds a websocket the tunnel has left is still heard, so what was on its way through it arrives.
+    /// </summary>
+    internal int RetireMs { get; set; } = 2000;
+
+    /// <summary>
+    /// Milliseconds a websocket that was answering steadily may bring nothing, while the tunnel keeps sending,
+    /// before the carrier opens another one beside it.
+    /// </summary>
+    internal int QuietMs { get; set; } = 2000;
+
+    /// <summary>
+    /// Milliseconds the server has to answer without a pause for a websocket to count as answering steadily.
+    /// </summary>
+    internal int SteadyMs { get; set; } = 3000;
+
+    /// <summary>
+    /// Milliseconds before the carrier opens another websocket on its own again.
+    /// </summary>
+    internal int QuietHoldMs { get; set; } = 30000;
+
+    /// <summary>
+    /// Milliseconds before the carrier tries again where no other websocket could be opened.
+    /// </summary>
+    internal int QuietRetryMs { get; set; } = 3000;
 
     /// <summary>
     /// Binds the loopback port and starts carrying datagrams. The front is dialled at an address resolved by the
@@ -255,7 +311,16 @@ public sealed class WsCarrier : IDisposable
                     continue;
                 }
 
-                Send(stream, _outgoing.AsSpan(0, used));
+                var frame = _outgoing.AsSpan(0, used);
+                if (Volatile.Read(ref _spare) is { } spare)
+                {
+                    Offer(spare, frame);
+                }
+
+                Volatile.Write(ref _writing, Environment.TickCount64);
+                Send(stream, frame);
+                Volatile.Write(ref _writing, 0);
+                Watch();
             }
             catch (Exception) when (_disposed)
             {
@@ -265,14 +330,57 @@ public sealed class WsCarrier : IDisposable
             {
                 // Whatever ends one websocket, the carrier holds its port and opens another one on the next
                 // datagram; only a carrier taken down stops the pump.
+                Volatile.Write(ref _writing, 0);
                 if (stream is null)
                 {
                     _note?.Invoke($"the carrier's own port {LocalPort} refused a datagram", ex);
                 }
 
                 Drop(stream, ex);
-                Pause();
+                if (stream is null || Volatile.Read(ref _stream) is null)
+                {
+                    Pause();
+                }
             }
+        }
+    }
+
+    // Opens another websocket beside the one in use where that one was answering steadily and has brought nothing
+    // since, while the tunnel keeps sending.
+    private void Watch()
+    {
+        if (Interlocked.Increment(ref _unanswered) < QuietSent)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        var answered = Volatile.Read(ref _answered);
+        if (now - answered < QuietMs
+            || answered - Volatile.Read(ref _steadySince) < SteadyMs
+            || now - Volatile.Read(ref _watched) < QuietHoldMs
+            || !Renew())
+        {
+            return;
+        }
+
+        Volatile.Write(ref _watched, now);
+        _note?.Invoke($"the server was answering through the websocket to {_front.Host}:{_front.Port} and has brought nothing for {now - answered} ms while the tunnel kept sending, so another one is opened beside it", null);
+    }
+
+    // Copies what leaves on the websocket in use to the one on trial, so the server can answer through it.
+    private void Offer(Stream spare, ReadOnlySpan<byte> frame)
+    {
+        try
+        {
+            Volatile.Write(ref _offering, Environment.TickCount64);
+            Send(spare, frame);
+            Volatile.Write(ref _offering, 0);
+        }
+        catch (Exception ex) when (!_disposed)
+        {
+            Volatile.Write(ref _offering, 0);
+            Drop(spare, ex);
         }
     }
 
@@ -368,7 +476,7 @@ public sealed class WsCarrier : IDisposable
     // The live websocket, opened on demand and no more often than the retry gap.
     private Stream? Ready()
     {
-        if (_stream is { } live)
+        if (Volatile.Read(ref _stream) is { } live)
         {
             return live;
         }
@@ -380,16 +488,313 @@ public sealed class WsCarrier : IDisposable
         }
 
         _attempted = now;
-        var opened = Open();
+        var opened = Open(false);
         if (opened is null)
         {
             return null;
         }
 
-        Volatile.Write(ref _heard, Environment.TickCount64);
-        _stream = opened;
+        // A websocket opened beside the one that ended has taken its place meanwhile.
+        var standing = Install(opened);
+        if (!ReferenceEquals(standing, opened))
+        {
+            opened.Dispose();
+            return standing;
+        }
+
         Run(() => Deliver(opened), "ws carrier in");
         return opened;
+    }
+
+    // Puts a websocket just opened in use where none is, and says which one is in use after that.
+    private Stream? Install(Stream opened)
+    {
+        lock (_gate)
+        {
+            if (!_disposed && _stream is null)
+            {
+                _stream = opened;
+                Fresh();
+            }
+
+            return _stream;
+        }
+    }
+
+    /// <summary>
+    /// Opens another websocket beside the one in use and moves the tunnel to it once the server answers through
+    /// it, so a connection that went silent costs the tunnel no gap. False where no websocket is in use, or
+    /// another one is being tried already.
+    /// </summary>
+    public bool Renew()
+    {
+        if (_disposed || Volatile.Read(ref _stream) is not { } inUse || Interlocked.CompareExchange(ref _renewing, 1, 0) != 0)
+        {
+            return false;
+        }
+
+        Run(() => Beside(inUse), "ws carrier beside");
+        return true;
+    }
+
+    // Dials a websocket beside the one in use and tries it; after that another one may be asked for.
+    private void Beside(Stream inUse)
+    {
+        try
+        {
+            var opened = Open(true);
+            if (opened is null)
+            {
+                Volatile.Write(ref _watched, Environment.TickCount64 - QuietHoldMs + QuietRetryMs);
+                _note?.Invoke("no other websocket could be opened, so the tunnel stays on the one in use", null);
+                return;
+            }
+
+            var since = Environment.TickCount64;
+            if (Stand(opened, inUse))
+            {
+                Try(opened, since);
+            }
+        }
+        catch (Exception) when (_disposed)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _note?.Invoke($"trying another websocket to {_front.Host}:{_front.Port} failed", ex);
+        }
+        finally
+        {
+            Volatile.Write(ref _renewing, 0);
+        }
+    }
+
+    // Puts a websocket just opened beside the one in use and says whether it is on trial. Where the one in use
+    // ended meanwhile, the new one takes its place; where another has taken it already, the new one is closed.
+    private bool Stand(Stream opened, Stream inUse)
+    {
+        var (trial, taken) = Place(opened, inUse);
+        if (!trial && !taken)
+        {
+            opened.Dispose();
+            return false;
+        }
+
+        var front = $"{_front.Host}:{_front.Port}";
+        _note?.Invoke(trial
+            ? $"another websocket to {front} stands beside the one in use, and both carry what the tunnel sends"
+            : $"the websocket in use ended meanwhile, so the tunnel is on the one just opened to {front}", null);
+        Run(() => Deliver(opened), "ws carrier in");
+        return trial;
+    }
+
+    // Finds the place of a websocket just opened: on trial beside the one in use, or in use where none is left.
+    private (bool Trial, bool Taken) Place(Stream opened, Stream inUse)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return (false, false);
+            }
+
+            if (ReferenceEquals(_stream, inUse))
+            {
+                _spare = opened;
+                return (true, false);
+            }
+
+            if (_stream is not null)
+            {
+                return (false, false);
+            }
+
+            _stream = opened;
+            Fresh();
+            return (false, true);
+        }
+    }
+
+    // Starts the clocks of a websocket that has just taken the tunnel.
+    private void Fresh()
+    {
+        var now = Environment.TickCount64;
+        Volatile.Write(ref _heard, now);
+        Volatile.Write(ref _answered, now);
+        Volatile.Write(ref _steadySince, now);
+        Volatile.Write(ref _unanswered, 0);
+    }
+
+    // Waits for the websocket on trial to prove itself and settles which of the two the tunnel is left on.
+    private void Try(Stream opened, long since)
+    {
+        while (Wait(TrialStepMs))
+        {
+            if (ReferenceEquals(Volatile.Read(ref _stream), opened))
+            {
+                Retire();
+                return;
+            }
+
+            if (!ReferenceEquals(Volatile.Read(ref _spare), opened))
+            {
+                return;
+            }
+
+            var now = Environment.TickCount64;
+            var offering = Volatile.Read(ref _offering);
+            if (offering > 0 && now - offering >= BlockedMs)
+            {
+                if (Dismiss(opened))
+                {
+                    _note?.Invoke($"the websocket opened beside the one in use has taken no data for {now - offering} ms, so it is closed", null);
+                }
+
+                return;
+            }
+
+            var writing = Volatile.Read(ref _writing);
+            if (writing > 0 && now - writing >= BlockedMs)
+            {
+                Promote(opened, $"the websocket in use has taken no data for {now - writing} ms, so the tunnel moves to the one opened beside it", false);
+                return;
+            }
+
+            if (now - since < TrialMs)
+            {
+                continue;
+            }
+
+            if (Volatile.Read(ref _answered) < since)
+            {
+                Promote(opened, $"neither websocket brought an answer of the server in {TrialMs / 1000} s, so the tunnel moves to the fresh one", false);
+                return;
+            }
+
+            if (Dismiss(opened))
+            {
+                _note?.Invoke($"the websocket in use still carries and the one opened beside it brought nothing in {TrialMs / 1000} s, so it is closed", null);
+            }
+
+            return;
+        }
+    }
+
+    // Moves the tunnel to the websocket on trial. The one it leaves is closed at once, or kept to be heard out.
+    private bool Promote(Stream spare, string said, bool linger)
+    {
+        var (moved, left) = Swap(spare, linger);
+        if (!moved)
+        {
+            return false;
+        }
+
+        if (!linger)
+        {
+            left?.Dispose();
+        }
+
+        _note?.Invoke(said, null);
+        return true;
+    }
+
+    // Puts the websocket on trial in use where it is still on trial, and hands back the one it replaced.
+    private (bool Moved, Stream? Left) Swap(Stream spare, bool linger)
+    {
+        lock (_gate)
+        {
+            if (_disposed || !ReferenceEquals(_spare, spare))
+            {
+                return (false, null);
+            }
+
+            var left = _stream;
+            _stream = spare;
+            _spare = null;
+            if (linger)
+            {
+                _retiring = left;
+            }
+
+            Fresh();
+            return (true, left);
+        }
+    }
+
+    // Closes the websocket on trial where it is still that.
+    private bool Dismiss(Stream spare)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_spare, spare))
+            {
+                return false;
+            }
+
+            _spare = null;
+        }
+
+        spare.Dispose();
+        return true;
+    }
+
+    // Lets what was on its way through the websocket the tunnel left arrive, then closes it.
+    private void Retire()
+    {
+        if (Interlocked.Exchange(ref _retiring, null) is not { } left)
+        {
+            return;
+        }
+
+        Wait(RetireMs);
+        left.Dispose();
+    }
+
+    // Waits the time given; false where the carrier is taken down meanwhile.
+    private bool Wait(int ms)
+    {
+        try
+        {
+            return !_cts.Token.WaitHandle.WaitOne(ms) && !_disposed;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    // Notes that the front spoke on the websocket in use.
+    private void Heard(Stream stream)
+    {
+        if (ReferenceEquals(Volatile.Read(ref _stream), stream))
+        {
+            Volatile.Write(ref _heard, Environment.TickCount64);
+        }
+    }
+
+    // Notes a datagram of the server: one that came through the websocket on trial moves the tunnel to it.
+    private void Answered(Stream stream, long opened)
+    {
+        if (ReferenceEquals(Volatile.Read(ref _spare), stream))
+        {
+            Promote(stream, $"the server answered through the websocket opened beside the one in use {Environment.TickCount64 - opened} ms after it stood, so the tunnel moves to it", true);
+            return;
+        }
+
+        if (!ReferenceEquals(Volatile.Read(ref _stream), stream))
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (now - Volatile.Read(ref _answered) > SteadyGapMs)
+        {
+            Volatile.Write(ref _steadySince, now);
+        }
+
+        Volatile.Write(ref _answered, now);
+        Volatile.Write(ref _unanswered, 0);
     }
 
     /// <summary>
@@ -455,14 +860,18 @@ public sealed class WsCarrier : IDisposable
         certificate is not null;
 
     // The carrier's own dial, with the outcome written to the log the way the tunnel reads it.
-    private Stream? Open()
+    private Stream? Open(bool beside)
     {
         var dial = Dial(_front, _address, _targetPort, _token, _bypass, _cts.Token);
         var front = $"{_front.Host}:{_front.Port}";
         switch (dial.Outcome)
         {
             case WsFrontOutcome.Ok:
-                _note?.Invoke($"the tunnel is carried inside a websocket to {front} and handed to port {_targetPort} on the server", null);
+                if (!beside)
+                {
+                    _note?.Invoke($"the tunnel is carried inside a websocket to {front} and handed to port {_targetPort} on the server", null);
+                }
+
                 return dial.Stream;
             case WsFrontOutcome.Refused:
                 _note?.Invoke($"the websocket front at {front} refused to carry the tunnel: {dial.Detail}", null);
@@ -486,12 +895,13 @@ public sealed class WsCarrier : IDisposable
         var control = new byte[ControlBytes + FrameOverhead];
         var mask = new byte[4];
         var message = new List<byte>();
+        var opened = Environment.TickCount64;
         try
         {
             while (!_disposed)
             {
                 var head = frames.Take(2);
-                Volatile.Write(ref _heard, Environment.TickCount64);
+                Heard(stream);
                 var final = (head[0] & FinalBit) != 0;
                 var opcode = (byte)(head[0] & 0x0f);
                 var masked = (head[1] & MaskBit) != 0;
@@ -558,6 +968,7 @@ public sealed class WsCarrier : IDisposable
                     }
                 }
 
+                Answered(stream, opened);
                 if (_engine is { } engine)
                 {
                     _local.SendTo(message.Count > 0 ? message.ToArray() : payload, SocketFlags.None, engine);
@@ -666,20 +1077,61 @@ public sealed class WsCarrier : IDisposable
         return line > 0 ? answer[..line] : answer.Trim();
     }
 
-    // Ends one websocket; the next datagram opens another. A stream already replaced is left where it is, or a
-    // loop ending late would take down the connection that replaced it.
+    // Ends one websocket. The one in use hands the tunnel to the one on trial, else the next datagram opens another.
+    // A stream already replaced is only closed, or a loop ending late would take down the connection that replaced
+    // it.
     private void Drop(Stream? ended, Exception? ex)
     {
-        if (ended is null || Interlocked.CompareExchange(ref _stream, null, ended) != ended)
+        if (ended is null)
         {
-            ended?.Dispose();
             return;
         }
 
+        var (inUse, onTrial, heir) = Unseat(ended);
         ended.Dispose();
-        if (!_disposed)
+        if (_disposed)
         {
-            _note?.Invoke($"the websocket to {_front.Host}:{_front.Port} ended; the tunnel opens another one on its next packet", ex);
+            return;
+        }
+
+        var front = $"{_front.Host}:{_front.Port}";
+        if (inUse)
+        {
+            _note?.Invoke(heir is null
+                ? $"the websocket to {front} ended; the tunnel opens another one on its next packet"
+                : $"the websocket to {front} ended; the tunnel moves to the one opened beside it", ex);
+        }
+        else if (onTrial)
+        {
+            _note?.Invoke($"the websocket opened beside the one in use to {front} ended", ex);
+        }
+    }
+
+    // Takes an ended websocket out of the place it stood in and says which place that was.
+    private (bool InUse, bool OnTrial, Stream? Heir) Unseat(Stream ended)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(_stream, ended))
+            {
+                var heir = _spare;
+                _stream = heir;
+                _spare = null;
+                if (heir is not null)
+                {
+                    Fresh();
+                }
+
+                return (true, false, heir);
+            }
+
+            if (ReferenceEquals(_spare, ended))
+            {
+                _spare = null;
+                return (false, true, null);
+            }
+
+            return (false, false, null);
         }
     }
 
@@ -693,8 +1145,25 @@ public sealed class WsCarrier : IDisposable
 
         _disposed = true;
         _cts.Cancel();
-        Drop(Volatile.Read(ref _stream), null);
+        foreach (var stream in Release())
+        {
+            stream?.Dispose();
+        }
+
         _local.Dispose();
         _cts.Dispose();
+    }
+
+    // Takes every websocket the carrier holds out of its hands.
+    private Stream?[] Release()
+    {
+        lock (_gate)
+        {
+            var held = new[] { _stream, _spare, _retiring };
+            _stream = null;
+            _spare = null;
+            _retiring = null;
+            return held;
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Net;
 using AmneziaGeo.Ipc;
 using Xunit;
 
@@ -255,6 +256,84 @@ public sealed class LinkLossProbeTests
 
         Assert.True(quick.DiffersFrom(quick with { RttMs = 90 }));
         Assert.False(quick.DiffersFrom(quick with { RttMs = 42 }));
+    }
+
+    [Fact]
+    public async Task TheFarEndThatAnswers_IsTheOneMeasured()
+    {
+        var (probe, echoed) = await RunAsync(["10.0.0.1", "1.1.1.1"], (_, _) => true, 8);
+
+        Assert.Equal("10.0.0.1", probe.Target);
+        Assert.DoesNotContain("1.1.1.1", echoed);
+    }
+
+    [Fact]
+    public async Task AResolverThatAnsweredFirst_GivesWayToTheFarEndOnceItAnswers()
+    {
+        var (probe, echoed) = await RunAsync(["10.0.0.1", "1.1.1.1"], (target, nth) => target == "1.1.1.1" || nth > 1, 10);
+
+        Assert.Equal("10.0.0.1", probe.Target);
+        Assert.Equal("10.0.0.1", echoed[^1]);
+    }
+
+    [Fact]
+    public async Task AFarEndThatStaysSilent_IsGivenAFewEchoesAndLeftAlone()
+    {
+        var (probe, echoed) = await RunAsync(["10.0.0.1", "1.1.1.1"], (target, _) => target == "1.1.1.1", 14);
+
+        Assert.Equal("1.1.1.1", probe.Target);
+        Assert.Equal(4, echoed.Count(one => one == "10.0.0.1"));
+    }
+
+    [Fact]
+    public async Task WhatAResolverLostBeforeTheFarEndAnswered_IsNotCountedAgainstTheChannel()
+    {
+        var (probe, _) = await RunAsync(["10.0.0.1", "1.1.1.1"], (target, nth) => target == "1.1.1.1" ? nth == 1 : nth > 2, 14);
+
+        Assert.Equal("10.0.0.1", probe.Target);
+        Assert.Equal(0, probe.Percent);
+    }
+
+    [Fact]
+    public async Task TargetsNothingAnswersAt_LeaveTheShareUnknown()
+    {
+        var (probe, _) = await RunAsync(["10.0.0.1", "1.1.1.1"], (_, _) => false, 12);
+
+        Assert.False(probe.Answering);
+        Assert.Null(probe.Target);
+        Assert.Equal(LinkHealth.LossUnknown, probe.Percent);
+    }
+
+    [Fact]
+    public async Task EchoesLostBeforeTheFirstAnswer_AreNotCountedAgainstTheChannel()
+    {
+        var (probe, _) = await RunAsync(["10.0.0.1"], (_, nth) => nth > 3, 10);
+
+        Assert.Equal("10.0.0.1", probe.Target);
+        Assert.Equal(0, probe.Percent);
+    }
+
+    // Runs the probe over echoes of its own answered as told, each target counting its echoes, until that many were sent.
+    private static async Task<(LinkLossProbe Probe, List<string> Echoed)> RunAsync(string[] targets, Func<string, int, bool> answers, int echoes)
+    {
+        var echoed = new List<string>();
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var probe = new LinkLossProbe(targets, intervalMs: 1, echo: (target, _, _) =>
+        {
+            var name = target.ToString();
+            lock (echoed)
+            {
+                echoed.Add(name);
+                if (echoed.Count >= echoes)
+                {
+                    stop.Cancel();
+                }
+
+                return Task.FromResult(answers(name, echoed.Count(one => one == name)) ? 1 : -1);
+            }
+        });
+        await probe.RunAsync(stop.Token);
+        return (probe, echoed);
     }
 
     private LinkLossProbe Probe()

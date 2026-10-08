@@ -133,8 +133,8 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
 
         _tracedAt = now;
         var sessions = carrier.Sessions();
-        logger.LogInformation("{Name}: the carrier holds {Established} of {Total} connection(s), has been re-dialled {Redials} time(s) and repeats {Retrans}% of what it sends; the tunnel received {Rx} B, sent {Tx} B, loses {Loss}% at {Rtt} ms",
-            tunnelName, sessions.Established, sessions.Total, carrier.Redials, _health.RetransPercent, status.RxBytes, status.TxBytes, probe.Percent, probe.RttMs);
+        logger.LogInformation("{Name}: the carrier holds {Established} of {Total} connection(s), has been re-dialled {Redials} time(s) and repeats {Retrans}% of what it sends; the tunnel received {Rx} B, sent {Tx} B, loses {Loss}% at {Rtt} ms echoing {Target}",
+            tunnelName, sessions.Established, sessions.Total, carrier.Redials, _health.RetransPercent, status.RxBytes, status.TxBytes, probe.Percent, probe.RttMs, probe.Target ?? "nothing that answers");
     }
 
     private void LogCrossing(bool degraded)

@@ -22,6 +22,7 @@ public static class RoutingDefaults
         "geosite:whatsapp",
         "geosite:twitter",
         "geosite:discord",
+        "geoip:ag-discord-voice",
         "geosite:openai",
         "geosite:telegram",
         "geoip:telegram",

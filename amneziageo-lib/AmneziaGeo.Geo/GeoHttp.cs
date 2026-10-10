@@ -13,14 +13,24 @@ namespace AmneziaGeo.Geo;
 /// HTTP for geo sources. A request the machine refuses over its certificate is repeated without verifying
 /// the server, so a host whose certificate store or clock is out of date still receives the rule databases.
 /// A subscription is not such a source: it carries private keys, so it goes through <see cref="SendVerifiedAsync"/>
-/// and a rejected certificate stays an error there. Downloads of the application setup deliberately do not go
-/// through here either.
+/// and a certificate neither the machine nor a root the client carries proves stays an error there. Downloads of
+/// the application setup deliberately do not go through here either.
 /// </summary>
-public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposable
+/// <param name="http">The client of the head.</param>
+/// <param name="logger">Where a rejected certificate of a geo source is told.</param>
+/// <param name="connect">How the connections of the proven requests are opened; the client of the head sends them when null.</param>
+/// <param name="roots">The roots a proven request is taken under beside the store of the machine; the ones the client carries when null.</param>
+public sealed class GeoHttp(
+    HttpClient http,
+    ILogger<GeoHttp> logger,
+    Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>? connect = null,
+    X509Certificate2Collection? roots = null) : IDisposable
 {
+    private readonly Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>? _connect = connect;
+    private readonly X509Certificate2Collection _roots = roots ?? CarriedRoots.Isrg;
     private readonly Lazy<HttpClient> _unverified = new(CreateUnverified);
     private readonly ConcurrentDictionary<string, byte> _reported = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, HttpClient> _pinned = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, HttpClient> _proven = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Sends a request, repeating it unverified when the certificate is rejected.
@@ -39,11 +49,24 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
     }
 
     /// <summary>
-    /// Sends a request whose answer has to be proven: a rejected certificate stays an error.
+    /// Sends a request whose answer has to be proven: a certificate neither the machine nor a root the client carries
+    /// proves stays an error.
     /// </summary>
-    public Task<HttpResponseMessage> SendVerifiedAsync(HttpRequestMessage request, HttpCompletionOption completion, CancellationToken ct)
+    public async Task<HttpResponseMessage> SendVerifiedAsync(HttpRequestMessage request, HttpCompletionOption completion, CancellationToken ct)
     {
-        return http.SendAsync(request, completion, ct);
+        if (_connect is not null)
+        {
+            return await Proven(string.Empty).SendAsync(request, completion, ct).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await http.SendAsync(request, completion, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (IsCertificateFailure(ex))
+        {
+            return await Proven(string.Empty).SendAsync(Clone(request), completion, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -56,7 +79,7 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
             return SendVerifiedAsync(request, completion, ct);
         }
 
-        return _pinned.GetOrAdd(pin, CreatePinned).SendAsync(request, completion, ct);
+        return Proven(pin).SendAsync(request, completion, ct);
     }
 
     /// <summary>
@@ -83,7 +106,7 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
             _unverified.Value.Dispose();
         }
 
-        foreach (var client in _pinned.Values)
+        foreach (var client in _proven.Values)
         {
             client.Dispose();
         }
@@ -106,12 +129,23 @@ public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposa
         return new HttpClient(handler);
     }
 
-    // Takes a certificate the machine proves, or the one whose SHA-256 the server of the config named.
-    private static HttpClient CreatePinned(string pin)
+    // The client of the proven requests under a pin, or under none.
+    private HttpClient Proven(string pin) => _proven.GetOrAdd(pin, CreateProven);
+
+    // Takes a certificate the machine proves, one that chains to a root the client carries, or the one whose SHA-256
+    // the server of the config named.
+    private HttpClient CreateProven(string pin)
     {
         var handler = new SocketsHttpHandler { UseProxy = false };
-        handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
-            errors == SslPolicyErrors.None || (certificate is not null && Pinned(certificate, pin));
+        if (_connect is not null)
+        {
+            handler.ConnectCallback = _connect;
+        }
+
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
+            errors == SslPolicyErrors.None
+            || (pin.Length > 0 && certificate is not null && Pinned(certificate, pin))
+            || CarriedRoots.Prove(certificate, chain, errors, _roots);
 
         return new HttpClient(handler);
     }

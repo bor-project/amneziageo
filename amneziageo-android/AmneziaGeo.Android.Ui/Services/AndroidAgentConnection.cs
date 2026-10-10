@@ -132,6 +132,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Просил ли пользователь быть подключённым: держится через падения связи и гаснет только по отбою.
     private bool _dialWanted;
 
+    // The websocket front the dial that stands was handed, and whether it was handed one yet.
+    private WsEndpoint? _handedFront;
+    private bool _frontHanded;
+
     // Сколько ждать остановки туннеля перед подъёмом заново.
     private const int RestartTickMs = 100;
     private const int RestartWaitTicks = 50;
@@ -203,14 +207,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var geoFiles = new AndroidGeoFileStore(System.IO.Path.Combine(dir, "geo"));
         _geoFiles = geoFiles;
         _store = new SqliteStateStore(System.IO.Path.Combine(dir, "state.db"));
-        _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance);
+        _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance, PastTunnel.ConnectAsync);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, geoFiles);
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
         _log.Context = NetworkContext;
         _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
-        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)));
+        _offers = new ServerOffers(
+            _store,
+            OfferNote,
+            (point, ct) => ServerHello.AskAsync(point, PastTunnel.ConnectAsync, ct),
+            geo: _geo,
+            fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)));
         Current = this;
     }
 
@@ -590,6 +599,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (desired == "disconnect")
         {
             _dialWanted = false;
+            _frontHanded = false;
             _raiseOwed = false;
             _watch.Dropped();
             Save();
@@ -646,6 +656,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _retryAttempt = 0;
         _restartRequired = false;
         _dialWanted = true;
+        _frontHanded = false;
         _watch.Asked(live);
         Save();
         // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
@@ -682,9 +693,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         var words = await NoticeWordsAsync().ConfigureAwait(false);
         _downNotice = DownKey(configName, words);
+        var front = Front(configName, configText);
+        _handedFront = front;
+        _frontHanded = true;
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
-            _transports.GetValueOrDefault(configName), Front(configName, configText), foreground: true, EngineLogLevel(_logLevel), _directTcp,
+            _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
             TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true));
         return new IpcAck(true, "connecting");
@@ -1108,6 +1122,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         // The session name comes back from the tunnel, so a head that started after it still names what runs.
         var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
+        var again = stage == VpnStage.Connecting && retry > _retryAttempt;
         _retryAttempt = stage == VpnStage.Connecting ? retry : 0;
         switch (stage)
         {
@@ -1147,6 +1162,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         LogVpnStage(stage, detail);
         PushSnapshot();
+        if (again)
+        {
+            AskDialed(session);
+        }
+    }
+
+    // A dial inside a websocket that goes on to another attempt has the server of its configuration asked again.
+    private void AskDialed(string? config)
+    {
+        if (config is { Length: > 0 } && _frontHanded && _configs.TryGetValue(config, out var text)
+            && _transports.GetValueOrDefault(config) is { UseWebSocket: true })
+        {
+            _offers.Warm([(config, text)], OfferChangedAsync);
+        }
     }
 
     // Opens the system screen carrying the always-on switch; no application may set always-on for itself.
@@ -2674,7 +2703,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return ack;
     }
 
-    // A server that offers the tunnel something else now shows it in the next snapshot.
+    // A server that offers the tunnel something else now shows it in the next snapshot, and a tunnel dialing
+    // another websocket front than it names is dialed again.
     private async Task OfferChangedAsync(string config)
     {
         await RefreshOffersAsync().ConfigureAwait(false);
@@ -2683,6 +2713,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
+        RedialForFront(config);
+    }
+
+    // Dials the tunnel again when it stands dialing a websocket front the server of its configuration no longer names.
+    private void RedialForFront(string config)
+    {
+        var dialing = _frontHanded && _dialWanted && _active && _boundStatus == ConnectionStatus.Connecting
+            && string.Equals(_boundTarget, config, StringComparison.Ordinal);
+        if (!_configs.TryGetValue(config, out var text) || !FrontRedial.Wanted(dialing, _handedFront, Front(config, text)))
+        {
+            return;
+        }
+
+        _frontHanded = false;
+        _log.Info("agent", $"{config}: its server names another websocket front than the one the tunnel dials; the tunnel is dialed again");
+        _ = RestartTunnelAsync();
     }
 
     // A list the store side puts in picks itself in the store, where this agent keeps no pick: it takes the pick over

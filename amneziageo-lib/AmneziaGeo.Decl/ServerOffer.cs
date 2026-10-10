@@ -572,7 +572,9 @@ public sealed class ServerOffer
 /// </summary>
 /// <param name="Offer">What the server offered, none when it is not a server of ours or did not answer.</param>
 /// <param name="Asked">When the server was asked.</param>
-public sealed record KeptOffer(ServerOffer Offer, DateTimeOffset Asked);
+/// <param name="Heard">Whether the services ever answered anything at all.</param>
+/// <param name="Waits">How many connects waited in vain for services that never answered.</param>
+public sealed record KeptOffer(ServerOffer Offer, DateTimeOffset Asked, bool Heard = true, int Waits = 0);
 
 /// <summary>
 /// Keeps what the servers of the configs offer in the settings of the store, one entry per config.
@@ -642,8 +644,12 @@ public static class ServerOfferStore
             var asked = root.TryGetProperty("asked", out var when) && when.TryGetInt64(out var seconds)
                 ? DateTimeOffset.FromUnixTimeSeconds(seconds)
                 : DateTimeOffset.MinValue;
+            var heard = !root.TryGetProperty("heard", out var answered) || answered.ValueKind != JsonValueKind.False;
+            var waits = root.TryGetProperty("waits", out var waited) && waited.ValueKind == JsonValueKind.Number && waited.TryGetInt32(out var count)
+                ? Math.Max(count, 0)
+                : 0;
 
-            return new KeptOffer(offer, asked);
+            return new KeptOffer(offer, asked, heard, waits);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentOutOfRangeException)
         {
@@ -654,7 +660,13 @@ public static class ServerOfferStore
     /// <summary>
     /// Keeps what the services of a config offered.
     /// </summary>
-    public static Task WriteAsync(IStateStore store, string config, ServiceTarget point, ServerOffer offer, DateTimeOffset asked, CancellationToken ct = default)
+    public static Task WriteAsync(IStateStore store, string config, ServiceTarget point, ServerOffer offer, DateTimeOffset asked, CancellationToken ct = default) =>
+        WriteAsync(store, config, point, offer, asked, true, 0, ct);
+
+    /// <summary>
+    /// Keeps what the services of a config offered, or that they never answered and how many connects waited for them.
+    /// </summary>
+    public static Task WriteAsync(IStateStore store, string config, ServiceTarget point, ServerOffer offer, DateTimeOffset asked, bool heard, int waits, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(point);
@@ -666,6 +678,12 @@ public static class ServerOfferStore
             writer.WriteStartObject();
             writer.WriteString("mark", point.Mark());
             writer.WriteNumber("asked", asked.ToUnixTimeSeconds());
+            if (!heard)
+            {
+                writer.WriteBoolean("heard", false);
+                writer.WriteNumber("waits", waits);
+            }
+
             writer.WritePropertyName("offer");
             if (offer.Ours)
             {

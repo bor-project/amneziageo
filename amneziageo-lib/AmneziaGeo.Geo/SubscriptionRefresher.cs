@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Security.Authentication;
 
 using AmneziaGeo.Decl;
 
@@ -130,10 +131,11 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or TimeoutException or UriFormatException or InvalidOperationException)
         {
+            var reason = Reason(ex);
             await store.SaveSubscriptionAsync(
-                subscription with { CheckedAt = DateTimeOffset.UtcNow, LastError = ex.Message },
+                subscription with { CheckedAt = DateTimeOffset.UtcNow, LastError = reason },
                 ct).ConfigureAwait(false);
-            return new SubscriptionResult(0, 0, 0, [], ex.Message);
+            return new SubscriptionResult(0, 0, 0, [], reason);
         }
 
         var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
@@ -231,6 +233,12 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
 
         return texts;
     }
+
+    // Почему подписка не прочитана, словами для её строки.
+    private static string Reason(Exception ex) =>
+        ex is HttpRequestException { InnerException: AuthenticationException }
+            ? "the certificate of the server is not trusted by this device"
+            : ex.Message;
 
     private static string? Header(HttpResponseMessage response, string name)
     {

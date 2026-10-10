@@ -320,6 +320,120 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AServerThatNeverAnswered_IsWaitedForAtTheNextConnect()
+    {
+        var replies = new Queue<HelloReply>([new HelloReply(null, false), new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        var offer = await offers.BeforeConnectAsync("office", Text, null, CancellationToken.None);
+
+        Assert.Equal(8446, offer.WebSocketPort);
+    }
+
+    [Fact]
+    public async Task AServerThatKeepsSilent_IsWaitedForThroughAFewConnectsAndAskedBehindTheRest()
+    {
+        var gates = Enumerable.Range(0, ServerOffers.SilentWaits + 1)
+            .Select(_ => new TaskCompletionSource<HelloReply>(TaskCreationOptions.RunContinuationsAsynchronously))
+            .ToArray();
+        var asked = -1;
+        var offers = new ServerOffers(_store, ask: (_, _) => gates[Interlocked.Increment(ref asked)].Task);
+
+        for (var connect = 0; connect < ServerOffers.SilentWaits; connect++)
+        {
+            var waiting = offers.BeforeConnectAsync("office", Text, null, CancellationToken.None);
+            await Task.WhenAny(waiting, Task.Delay(300));
+
+            Assert.False(waiting.IsCompleted);
+            gates[connect].SetResult(new HelloReply(null, false));
+            Assert.False((await waiting).Ours);
+        }
+
+        var behind = offers.BeforeConnectAsync("office", Text, null, CancellationToken.None);
+
+        Assert.Same(behind, await Task.WhenAny(behind, Task.Delay(TimeSpan.FromSeconds(10))));
+        Assert.False((await behind).Ours);
+        gates[ServerOffers.SilentWaits].SetResult(new HelloReply(null, false));
+    }
+
+    [Fact]
+    public async Task ASilenceBehindTheConnects_IsNotCountedAsAWait()
+    {
+        var held = new TaskCompletionSource<HelloReply>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var asked = 0;
+        var offers = new ServerOffers(_store, ask: (_, _) =>
+            Interlocked.Increment(ref asked) <= ServerOffers.SilentWaits + 2 ? Task.FromResult(new HelloReply(null, false)) : held.Task);
+
+        for (var question = 0; question < ServerOffers.SilentWaits + 2; question++)
+        {
+            await offers.AskAsync("office", Text, CancellationToken.None);
+        }
+
+        var waiting = offers.BeforeConnectAsync("office", Text, null, CancellationToken.None);
+        await Task.WhenAny(waiting, Task.Delay(300));
+
+        Assert.False(waiting.IsCompleted);
+        held.SetResult(new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true));
+        Assert.Equal(8446, (await waiting).WebSocketPort);
+    }
+
+    [Fact]
+    public async Task ASilenceAfterAnAnswerOfAnotherKind_LeavesTheServerAskedBehindTheConnect()
+    {
+        var held = new TaskCompletionSource<HelloReply>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var asked = 0;
+        var offers = new ServerOffers(_store, ask: (_, _) => Interlocked.Increment(ref asked) switch
+        {
+            1 => Task.FromResult(new HelloReply(null, true)),
+            2 => Task.FromResult(new HelloReply(null, false)),
+            _ => held.Task,
+        });
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        var connect = offers.BeforeConnectAsync("office", Text, null, CancellationToken.None);
+
+        Assert.Same(connect, await Task.WhenAny(connect, Task.Delay(TimeSpan.FromSeconds(10))));
+        Assert.False((await connect).Ours);
+        held.SetResult(new HelloReply(null, true));
+    }
+
+    [Fact]
+    public async Task AConfigWhoseServerNeverAnswered_IsAskedAgainInTheBackground()
+    {
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replies = new Queue<HelloReply>([new HelloReply(null, false), new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        var asked = await offers.WarmUnaskedAsync(
+            [("office", Text)],
+            config =>
+            {
+                changed.TrySetResult(config);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["office"], asked);
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(8446, (await offers.OfferAsync("office", Text, CancellationToken.None)).WebSocketPort);
+    }
+
+    [Fact]
+    public async Task TheFirstSilenceOfAServer_IsNotedOnce()
+    {
+        var notes = new ConcurrentQueue<string>();
+        var offers = new ServerOffers(_store, (message, _) => notes.Enqueue(message), (_, _) => Task.FromResult(new HelloReply(null, false)));
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        await offers.AskAsync("office", Text, CancellationToken.None);
+
+        Assert.Equal(["office: the services at vpn.example:51820 did not answer; they are asked again before the next connects"], notes.ToArray());
+    }
+
+    [Fact]
     public void TheUpload_GoesToTheServerOfTheConfigUnlessAnotherIsChosen()
     {
         var offer = Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5));

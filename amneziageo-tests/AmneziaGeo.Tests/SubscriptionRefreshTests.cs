@@ -276,6 +276,20 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
         Assert.Equal(result.Error, (await Stored()).LastError);
     }
 
+    [Fact]
+    public async Task PanelWhoseCertificateNothingProves_LeavesThatReason()
+    {
+        using var panel = new TlsPanel();
+        using var http = new GeoHttp(new HttpClient(), NullLogger<GeoHttp>.Instance, roots: []);
+        var refresher = new SubscriptionRefresher(http, _store, _library);
+
+        var result = await refresher.RefreshAsync(Fresh() with { Url = panel.Url("/sub/abc") }, default);
+
+        Assert.Equal("the certificate of the server is not trusted by this device", result.Error);
+        Assert.Equal(result.Error, (await Stored()).LastError);
+        Assert.Empty(_library.Names);
+    }
+
     private async Task<Subscription> Stored()
     {
         return (await _store.ListSubscriptionsAsync())[0];

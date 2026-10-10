@@ -32,7 +32,15 @@ public static class ServerHello
     /// Asks the services of a config what they offer it; a clock the server holds too far off is taken from its
     /// answer and the hello is asked once more.
     /// </summary>
-    public static async Task<HelloReply> AskAsync(ServiceTarget point, CancellationToken ct)
+    public static Task<HelloReply> AskAsync(ServiceTarget point, CancellationToken ct) => AskAsync(point, null, ct);
+
+    /// <summary>
+    /// Asks the services of a config what they offer it, over connections opened the way given.
+    /// </summary>
+    public static async Task<HelloReply> AskAsync(
+        ServiceTarget point,
+        Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>? connect,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(point);
 
@@ -42,6 +50,11 @@ public static class ServerHello
         }
 
         using var handler = new SocketsHttpHandler { ConnectTimeout = _timeout, UseProxy = false };
+        if (connect is not null)
+        {
+            handler.ConnectCallback = connect;
+        }
+
         handler.SslOptions.RemoteCertificateValidationCallback = Presented;
         using var client = new HttpClient(handler) { Timeout = _timeout };
         var heard = false;

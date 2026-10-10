@@ -234,6 +234,33 @@ public sealed class ServerOfferTests : IAsyncLifetime
         Assert.True(await ConfigRouting.AllowedAsync(_store, "office"));
     }
 
+    [Fact]
+    public async Task ServicesThatNeverAnswered_AreKeptAsSilentWithTheConnectsThatWaited()
+    {
+        const string text = "[Interface]\nPrivateKey = a\n\n[Peer]\nPublicKey = b\nEndpoint = vpn.example:51820\n";
+
+        await ServerOfferStore.WriteAsync(_store, "office", ConfigServices.Target(text)!, ServerOffer.None, DateTimeOffset.UtcNow, false, 2);
+        var kept = await ServerOfferStore.KeptAsync(_store, "office", text);
+
+        Assert.NotNull(kept);
+        Assert.False(kept!.Heard);
+        Assert.Equal(2, kept.Waits);
+        Assert.False(kept.Offer.Ours);
+    }
+
+    [Fact]
+    public async Task AnAnswerKept_ReadsAsHeardWithNoWaits()
+    {
+        const string text = "[Interface]\nPrivateKey = a\n\n[Peer]\nPublicKey = b\nEndpoint = vpn.example:51820\n";
+
+        await ServerOfferStore.WriteAsync(_store, "office", ConfigServices.Target(text)!, ServerOffer.None, DateTimeOffset.UtcNow);
+        var kept = await ServerOfferStore.KeptAsync(_store, "office", text);
+
+        Assert.NotNull(kept);
+        Assert.True(kept!.Heard);
+        Assert.Equal(0, kept.Waits);
+    }
+
     private static (string Private, string Public) Pair()
     {
         var privateKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));

@@ -536,6 +536,7 @@ internal sealed class FleetStatusBroker(
         }
 
         var link = standing.Link;
+        var now = standing.Now;
         return entry with
         {
             Status = DisplayStatus(Status(entry.Name, states) ?? ConnectionStatus.Connecting),
@@ -544,9 +545,9 @@ internal sealed class FleetStatusBroker(
             TxBitsPerSecond = link.TxBitsPerSecond,
             HandshakesPerMinute = link.HandshakesPerMinute,
             LinkChurning = link.Churning,
-            LossStreak = link.LossStreak,
-            LossPercent = link.LossPercent,
-            RttMs = link.RttMs,
+            LossStreak = now.LossStreak,
+            LossPercent = now.LossPercent,
+            RttMs = now.RttMs,
         };
     }
 

@@ -174,6 +174,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the file a tunnel holds while it adds or removes the routes the tunnels of the machine share.
+    /// </summary>
+    public static string RoutesTurnFile()
+    {
+        return Path.Combine(MachineRoot(), "routes-turn.lock");
+    }
+
+    /// <summary>
     /// Path to a tunnel's persisted LAN-bypass exclusion routes.
     /// </summary>
     public static string LanStateFile(string name)

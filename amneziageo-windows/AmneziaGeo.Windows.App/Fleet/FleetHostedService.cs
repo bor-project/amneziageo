@@ -244,6 +244,12 @@ internal sealed class FleetHostedService(
             await SquarePeersAsync(ct);
         }
 
+        // Leaves a set that moved meanwhile to the pass that follows.
+        if (change.IsCancellationRequested)
+        {
+            return;
+        }
+
         // A tunnel reads its duties at bring-up, so one that has gained or lost the default route - the tunnel
         // ahead of it left the set - is dialled again; readdressed rules it takes up while it runs.
         // Every such tunnel is down before any comes back, so the one taking the lookups over finds them let go.
@@ -256,6 +262,11 @@ internal sealed class FleetHostedService(
 
         foreach (var name in redialled)
         {
+            if (change.IsCancellationRequested)
+            {
+                return;
+            }
+
             Start(name, ct);
             await SettleAsync(name, change);
         }

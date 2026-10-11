@@ -11,7 +11,7 @@ namespace AmneziaGeo.Ui.Fleet;
 internal sealed partial class FleetRoutingRuleItemViewModel : RoutingRuleItemViewModel
 {
     private readonly FleetRoutingListEditorViewModel _editor;
-    private readonly bool _seeded;
+    private bool _seeded;
 
     /// <summary>
     /// ctor
@@ -58,6 +58,17 @@ internal sealed partial class FleetRoutingRuleItemViewModel : RoutingRuleItemVie
 
     [ObservableProperty]
     private RuleTargetChoice? _fallback;
+
+    /// <summary>
+    /// Показывает адрес правила, не отдавая его редактору.
+    /// </summary>
+    public void Show(RuleRoute route)
+    {
+        _seeded = false;
+        Route = Pick(_editor.RouteChoices, route.Target);
+        Fallback = Pick(_editor.FallbackChoices, route.Fallback);
+        _seeded = true;
+    }
 
     partial void OnRouteChanged(RuleTargetChoice? value)
     {

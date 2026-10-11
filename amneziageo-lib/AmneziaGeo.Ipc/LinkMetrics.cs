@@ -113,6 +113,59 @@ public static class LinkHealth
 }
 
 /// <summary>
+/// What the screen shows of a running tunnel: the share of its latest echoes lost, the best round trip of the
+/// latest ones and the longest run lost, all counted over the outage that is on, or over the link since it came
+/// back from the last one.
+/// </summary>
+public sealed record LinkNow(int LossPercent = LinkHealth.LossUnknown, int RttMs = -1, int LossStreak = 0)
+{
+    /// <summary>
+    /// A link nothing has been measured on.
+    /// </summary>
+    public static readonly LinkNow Unknown = new();
+
+    /// <summary>
+    /// Renders the reading of one tunnel as a protocol row.
+    /// </summary>
+    public string ToRow(string config)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"link\t{config}\tloss={LossPercent}\trtt={RttMs}\trun={LossStreak}");
+    }
+
+    /// <summary>
+    /// Reads a tunnel and its reading back from a protocol row; null for a row of another kind.
+    /// </summary>
+    public static (string Config, LinkNow Now)? TryParse(string row)
+    {
+        var parts = row.Split('\t');
+        if (parts.Length < 2 || parts[0] != "link" || parts[1].Length == 0)
+        {
+            return null;
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var field in parts.Skip(2))
+        {
+            var split = field.IndexOf('=');
+            if (split > 0)
+            {
+                values[field[..split]] = field[(split + 1)..];
+            }
+        }
+
+        return (parts[1], new LinkNow(Number(values, "loss", LinkHealth.LossUnknown), Number(values, "rtt", -1), Number(values, "run", 0)));
+    }
+
+    // The number a row carries under a key, or what stands for its absence.
+    private static int Number(Dictionary<string, string> values, string key, int missing)
+    {
+        return values.TryGetValue(key, out var text) && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
+            ? number
+            : missing;
+    }
+}
+
+/// <summary>
 /// What the peer counters said over the last interval, and what the tunnel lost while they said it.
 /// </summary>
 public sealed record LinkReading(
@@ -134,6 +187,11 @@ public sealed record LinkReading(
     /// A link that has carried nothing yet.
     /// </summary>
     public static readonly LinkReading Empty = new(0, 0, 0);
+
+    /// <summary>
+    /// What the screen shows of the link.
+    /// </summary>
+    public LinkNow Now { get; init; } = LinkNow.Unknown;
 
     /// <summary>
     /// The link in one line of the journal, in English.
@@ -166,6 +224,9 @@ public sealed record LinkReading(
             || LossStreak != other.LossStreak
             || LossPercent != other.LossPercent
             || Math.Abs(RttMs - other.RttMs) >= RttResolution
+            || Now.LossStreak != other.Now.LossStreak
+            || Now.LossPercent != other.Now.LossPercent
+            || Math.Abs(Now.RttMs - other.Now.RttMs) >= RttResolution
             || Math.Abs(RxBitsPerSecond - other.RxBitsPerSecond) >= Resolution
             || Math.Abs(TxBitsPerSecond - other.TxBitsPerSecond) >= Resolution;
     }
@@ -205,9 +266,9 @@ public sealed class LinkMeter
 
     /// <summary>
     /// Folds one peer reading into the rates and returns the result. The loss share comes from the probe, the
-    /// counters carrying no trace of what never arrived.
+    /// counters carrying no trace of what never arrived, and so does what the screen is shown.
     /// </summary>
-    public LinkReading Sample(long rxBytes, long txBytes, long handshakeUnix, int lossPercent = LinkHealth.LossUnknown, int rttMs = -1, int lossStreak = 0)
+    public LinkReading Sample(long rxBytes, long txBytes, long handshakeUnix, int lossPercent = LinkHealth.LossUnknown, int rttMs = -1, int lossStreak = 0, LinkNow? shown = null)
     {
         var now = _clock();
         if (handshakeUnix > _handshakeUnix)
@@ -246,7 +307,10 @@ public sealed class LinkMeter
         _rxBytes = rxBytes;
         _txBytes = txBytes;
         _tick = now;
-        Reading = new LinkReading(rx, tx, perMinute, lossPercent, rttMs, LinkHealth.Churning(perMinute, ChurnPerMinute, heard, lossPercent), lossStreak, _rekeySeconds);
+        Reading = new LinkReading(rx, tx, perMinute, lossPercent, rttMs, LinkHealth.Churning(perMinute, ChurnPerMinute, heard, lossPercent), lossStreak, _rekeySeconds)
+        {
+            Now = shown ?? LinkNow.Unknown,
+        };
         return Reading;
     }
 

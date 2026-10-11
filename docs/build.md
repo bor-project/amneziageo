@@ -59,7 +59,7 @@ dotnet build amneziageo-windows\AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.cspr
 amneziageo-windows\installer\AmneziaGeo.Windows.Installer.Bundle\build-installer.ps1
 ```
 
-Beside every installer the builder puts the pack of its update layout and the list of its files (`.pack`, `.files`): the app's update fetches from them only the files the installed copy lacks. The release adds the deltas of the changed files from their versions in the Latest release and the two newest ones (`.deltas`, `.deltapack`, made by `amneziageo-lib/AmneziaGeo.Deltas`), from which the update makes a changed file out of the installed one.
+Given the installers of the release before (`-b, -Earlier <folder>`), the builder puts beside every installer its patch (`.patch`, made by `amneziageo-lib/AmneziaGeo.Deltas`): the files of that release are taken out of its installer, and the patch carries what a machine with it lacks, a changed file as a delta from the installed one. The app's update on a machine with that release fetches the patch instead of the installer; any other machine downloads the installer whole. A release builds its patches from the release before it: the newest one for a prerelease, the previous stable one for a stable release.
 
 By default one variant is built: `x64`, framework-dependent - the target machine needs the .NET 10 Desktop Runtime installed. Builder options, each with a short alias, `-h` lists them all:
 
@@ -68,6 +68,7 @@ By default one variant is built: `x64`, framework-dependent - the target machine
 - `-p, -Payload fdd,scd` - payload kind: `fdd` needs the runtime installed and is lighter, `scd` bundles the runtime;
 - `-c, -Configuration Debug|Release`;
 - `-pre, -Prerelease` - bake in the beta update channel;
+- `-b, -Earlier <folder>` - installers of the release before, each variant gets its patch from them;
 - `-r, -Rebuild` - clean before building;
 - `-l, -ListOnly` - print the build matrix and exit.
 
@@ -88,7 +89,7 @@ git submodule update --init --recursive
 amneziageo-linux/tools/build-deb.sh --arch amd64,arm64
 ```
 
-Building needs the .NET SDK and Go; the target machine needs neither, the packages are self-contained. They land in `dist/`, each with the pack of its files and their list (`.pack`, `.files`), from which the agent's update fetches only the files a machine lacks; the release adds the deltas of the changed files beside them, as for the installers. Options: `--version N.N.N.N` (otherwise `0.0.1.<commit count>`), `--arch amd64,arm64`, `--out <dir>`, `--no-gui`, `--debug`.
+Building needs the .NET SDK and Go; the target machine needs neither, the packages are self-contained. They land in `dist/`; with `--earlier <dir>`, a folder with the packages of the release before, each gets its patch (`.patch`) beside it, which the agent's update fetches instead of the package on a machine with that release, as for the installers. Options: `--version N.N.N.N` (otherwise `0.0.1.<commit count>`), `--arch amd64,arm64`, `--out <dir>`, `--no-gui`, `--debug`.
 
 The `libicu` alternatives in the script name the ICU packages a target distribution may carry, so a new distribution release adds one entry there.
 

@@ -6,9 +6,10 @@
     4. generates a PayloadGroup over the BA publish folder (Burn does not auto-harvest it),
     5. builds the Burn bundle that hosts the BA and chains the MSI,
     6. builds the update layout - the same MSI with its files beside it and a bundle that takes them from there -
-       and packs it file by file, so the app's update fetches only the files the installed copy lacks,
-  then copies the signed bundle into dist\ under an arch/payload-tagged name, with the pack and its list beside it
-  (AmneziaGeo-<version>-win-<arch>-<payload>.pack and .files).
+       and, given the installers of the release before (-Earlier), the patch that makes this layout out of the
+       files a machine with that release holds, so the app's update fetches the patch instead of the installer,
+  then copies the signed bundle into dist\ under an arch/payload-tagged name, with the patch beside it
+  (AmneziaGeo-<version>-win-<arch>-<payload>.patch).
 
   BUILD MATRIX (#49) - which variants to build is the cross product of two axes, both spelled the way
   the output file is tagged (AmneziaGeo-<version>-win-<arch>-<payload>.exe):
@@ -23,6 +24,7 @@
     -pre, -Prerelease         bake allowPrerelease=1 (beta channel) regardless of the config value
     -u,   -UpdateUrl <url>    bake this update manifest regardless of the config value
     -nu,  -NoUpdates          bake no update manifest, so the build never offers an update
+    -b,   -Earlier <folder>   folder with the installers of the release before; each variant gets its patch
     -l,   -ListOnly           print the resolved matrix and exit (build nothing)
   With no flags and no config, the default is a single x64 fdd build (the prior behaviour).
 
@@ -65,6 +67,8 @@ param(
     [string]$UpdateUrl,
     [Alias('nu')]
     [switch]$NoUpdates,
+    [Alias('b')]
+    [string]$Earlier,
     [Alias('s', 'SigningCert')]
     [string]$Sign,
     [Alias('sp')]
@@ -91,6 +95,7 @@ if ($Help) {
         '  -pre, -Prerelease         bake the beta update channel',
         '  -u,   -UpdateUrl <url>    update manifest the build checks against',
         '  -nu,  -NoUpdates          build without updates',
+        '  -b,   -Earlier <folder>   installers of the release before; each variant gets its patch from them',
         '  -s,   -Sign <path>        sign with this certificate file (.pfx); omitted = unsigned',
         '  -sp,  -SignPassword       password for the -Sign certificate',
         '  -r,   -Rebuild            clean before building',
@@ -116,11 +121,13 @@ $cliProj    = Join-Path $win 'tools\AmneziaGeo.Windows.Cli\AmneziaGeo.Windows.Cl
 $baProj     = Join-Path $instDir 'AmneziaGeo.Windows.Installer\AmneziaGeo.Windows.Installer.csproj'
 $msiProj    = Join-Path $instDir 'AmneziaGeo.Windows.Installer.Package\AmneziaGeo.Windows.Installer.Package.wixproj'
 $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
+$deltasProj = Join-Path (Split-Path $win -Parent) 'amneziageo-lib\AmneziaGeo.Deltas\AmneziaGeo.Deltas.csproj'
 
 $stage     = Join-Path $bundleDir 'stage'
 $baPublish = Join-Path $bundleDir 'ba-publish'
 $layoutMsi = Join-Path $bundleDir 'layout-msi'
 $layout    = Join-Path $bundleDir 'layout'
+$earlierDir = Join-Path $bundleDir 'earlier'
 $genWxs    = Join-Path $bundleDir 'BaPayloads.generated.wxs'
 $dist      = Join-Path $bundleDir 'dist'
 $baExeName = 'AmneziaGeo.Windows.Installer.exe'
@@ -316,35 +323,52 @@ function Invoke-SignBundle([string]$bundle) {
     Invoke-Sign $bundle
 }
 
-# Packs every file of the update layout on its own, one after another, into <base>.pack and lists them in
-# <base>.files: digest, mode, size, place and length in the pack, path in the layout.
-function Write-Pack([string]$dir, [string]$base) {
-    $prefix = $dir.TrimEnd('\') + '\'
-    $names = [string[]]@(Get-ChildItem -Recurse -File $dir | Where-Object { $_.Extension -ne '.wixpdb' } |
-                         ForEach-Object { $_.FullName.Substring($prefix.Length).Replace('\', '/') })
-    [Array]::Sort($names, [StringComparer]::Ordinal)
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add('# amneziageo files 1')
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $pack = [System.IO.File]::Create("$base.pack")
+# wix.exe: the one on PATH, else the one the WiX SDK package brought into the NuGet cache.
+function Get-WixExe {
+    $onPath = Get-Command wix -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+    $packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
+    $host64 = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+    $found = Get-ChildItem (Join-Path $packages 'wixtoolset.sdk') -Recurse -Filter wix.exe -ErrorAction SilentlyContinue |
+             Where-Object { $_.Directory.Name -eq $host64 } | Sort-Object FullName -Descending | Select-Object -First 1
+    if (-not $found) { throw 'wix.exe is neither on PATH nor in the NuGet cache of WixToolset.Sdk' }
+    return $found.FullName
+}
+
+# Makes <base>.patch beside the installer: the files of the release before are taken out of its installer, and the
+# patch turns what a machine with that release holds into the update layout. Without that installer, or when the
+# patch does not come out, the installer goes without one.
+function Write-Patch([string]$dir, [string]$base, [string]$target) {
+    if (-not $Earlier) { return }
+    $was = Get-ChildItem $Earlier -File -Filter "AmneziaGeo-*-$target.exe" -ErrorAction SilentlyContinue |
+           Sort-Object Name | Select-Object -Last 1
+    if (-not $was) {
+        Write-Host "   no earlier installer for $target under $Earlier - no patch"
+        return
+    }
+
+    $patch = "$base.patch"
     try {
-        foreach ($name in $names) {
-            $data = [System.IO.File]::ReadAllBytes((Join-Path $dir $name))
-            $packed = [System.IO.MemoryStream]::new()
-            $gzip = [System.IO.Compression.GZipStream]::new($packed, [System.IO.Compression.CompressionLevel]::Optimal, $true)
-            $gzip.Write($data, 0, $data.Length)
-            $gzip.Dispose()
-            $digest = ([System.BitConverter]::ToString($sha.ComputeHash($data)) -replace '-', '').ToLowerInvariant()
-            $lines.Add(('{0} 644 {1} {2} {3} {4}' -f $digest, $data.Length, $pack.Position, $packed.Length, $name))
-            $packed.WriteTo($pack)
-        }
+        if (Test-Path $earlierDir) { Remove-Item -Recurse -Force $earlierDir }
+        & (Get-WixExe) burn extract $was.FullName -o (Join-Path $earlierDir 'bundle') -oba (Join-Path $earlierDir 'ba') | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "wix burn extract failed ($LASTEXITCODE)" }
+        $wasMsi = Get-ChildItem (Join-Path $earlierDir 'bundle') -Recurse -File -Filter *.msi | Select-Object -First 1
+        if (-not $wasMsi) { throw "no MSI in $($was.Name)" }
+        $tree = Join-Path $earlierDir 'tree'
+        $run = Start-Process msiexec.exe -ArgumentList @('/a', "`"$($wasMsi.FullName)`"", '/qn', "TARGETDIR=`"$tree`"") -Wait -PassThru
+        if ($run.ExitCode -ne 0) { throw "msiexec /a failed ($($run.ExitCode))" }
+        Get-ChildItem -Recurse -File $dir -Filter *.wixpdb | Remove-Item -Force
+        dotnet run -c Release --project $deltasProj -- --tree $dir --earlier $tree --held PFiles64 --asset "$base.exe" --out $patch
+        if ($LASTEXITCODE -ne 0) { throw "the patch tool failed ($LASTEXITCODE)" }
+        if (Test-Path $patch) { Write-Host "   -> dist\$(Split-Path $patch -Leaf) (from $($was.Name))" }
+    }
+    catch {
+        Write-Warning "no patch for $target - $_"
+        if (Test-Path $patch) { Remove-Item -Force $patch }
     }
     finally {
-        $pack.Dispose()
-        $sha.Dispose()
+        if (Test-Path $earlierDir) { Remove-Item -Recurse -Force $earlierDir }
     }
-    [System.IO.File]::WriteAllText("$base.files", ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
-    Write-Host "   -> $(Split-Path "$base.pack" -Leaf), $($names.Count) files"
 }
 
 # Build one matrix variant end-to-end (steps 1-6) and drop the signed bundle into dist\.
@@ -466,7 +490,7 @@ function Build-Variant {
     Invoke-SignBundle $setupExe.FullName
 
     # ---- 6. the update layout: the MSI built again with its files beside it, a bundle that takes it from there, and
-    # the layout packed file by file ----
+    # the patch that makes the layout out of the release before ----
     Write-Host '== build update layout =='
     foreach ($d in @($layoutMsi, $layout)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
     dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:Version=$version -p:StageDir=$stage "-p:HasIcon=$hasIcon" -p:Compressed=no "-p:OutputPath=$layoutMsi\" "-p:IntermediateOutputPath=obj\$Arch\layout\"
@@ -485,7 +509,7 @@ function Build-Variant {
     $distName = "AmneziaGeo-$version-$buildTarget.exe"
     Copy-Item -Force $setupExe.FullName (Join-Path $dist $distName)
     Write-Host "   -> dist\$distName"
-    Write-Pack $layout (Join-Path $dist "AmneziaGeo-$version-$buildTarget")
+    Write-Patch $layout (Join-Path $dist "AmneziaGeo-$version-$buildTarget") $buildTarget
 }
 
 Assert-SigningCert

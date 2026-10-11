@@ -15,7 +15,11 @@ internal sealed partial class RouteManager
     private const ushort AfInet6 = 23;
     private const uint NoError = 0;
     private const uint ErrorObjectAlreadyExists = 5010;
+    private const uint ErrorNotFound = 1168;
     private const uint MibIpProtoNetMgmt = 3; // RouteProtocolNetMgmt
+
+    // What the route log says of a route that is not the client's to take back.
+    private const string StoodBefore = "it stood there before the tunnel, so it stays when the tunnel goes";
 
     // Connected subnets change only with the host's network configuration, while the enumeration behind them costs
     // hundreds of milliseconds on an adapter- and route-heavy host - and the status snapshot asks every 2 seconds.
@@ -87,6 +91,7 @@ internal sealed partial class RouteManager
     /// </summary>
     public bool AddEndpointExclusion(string name, IPAddress endpoint)
     {
+        using var turn = TakeRoutesTurn();
         var (gateway, interfaceIndex) = FindPhysicalGateway(endpoint);
         if (gateway is null)
         {
@@ -97,14 +102,15 @@ internal sealed partial class RouteManager
         var row = NewRow(endpoint, 32, interfaceIndex, gateway);
         var result = CreateIpForwardEntry2(ref row);
         var ok = result is NoError or ErrorObjectAlreadyExists;
-        RouteLog.Write("endpoint-excl", $"{endpoint}/32", $"{gateway} if{interfaceIndex}", ok);
-        if (ok)
+        var record = RouteStateFile.Through(endpoint.ToString(), interfaceIndex, gateway.ToString());
+        var ours = Ours(result, new Lazy<RouteStateFile.Held>(() => RouteStateFile.Recorded(TunnelPaths.RouteStateFiles())), record);
+        RouteLog.Write("endpoint-excl", $"{endpoint}/32", $"{gateway} if{interfaceIndex}", ok, ok && !ours ? StoodBefore : null);
+        if (ours)
         {
-            PersistStateAdds(TunnelPaths.RouteStateFile(name), [endpoint.ToString()]);
-            return true;
+            PersistStateAdds(TunnelPaths.RouteStateFile(name), [record]);
         }
 
-        return false;
+        return ok;
     }
 
     /// <summary>
@@ -112,9 +118,24 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RemoveEndpointExclusion(string name, IPAddress endpoint)
     {
-        DeleteManagedRoutes(endpoint, ifIndex: null);
-        UpdateState(name, endpoint.ToString(), add: false);
-        RouteLog.Write("rm endpoint", $"{endpoint}/32", "physical", ok: true);
+        using var turn = TakeRoutesTurn();
+        var path = TunnelPaths.RouteStateFile(name);
+        var held = RouteStateFile.HeldElsewhere(path, TunnelPaths.RouteStateFiles());
+        var entry = endpoint.ToString();
+        foreach (var record in RouteStateFile.Read(path).Where(line => RouteStateFile.Entry(line) == entry))
+        {
+            if (held.Holds(record))
+            {
+                RouteLog.Write("keep endpoint", $"{endpoint}/32", HopOf(record), ok: true, "another tunnel stands on it");
+            }
+            else
+            {
+                var result = DeleteRecorded(record);
+                RouteLog.Write("rm endpoint", $"{endpoint}/32", HopOf(record), result is NoError or ErrorNotFound, Said(result));
+            }
+
+            UpdateState(name, record, add: false);
+        }
     }
 
     /// <summary>
@@ -122,6 +143,7 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RemoveEndpointExclusions(string name)
     {
+        using var turn = TakeRoutesTurn();
         RestoreExclusionFile(TunnelPaths.RouteStateFile(name));
     }
 
@@ -132,6 +154,7 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RestoreSavedExclusions(Func<bool>? abortIf = null, IEnumerable<string>? keep = null)
     {
+        using var turn = TakeRoutesTurn();
         var owned = TunnelPaths.Owned(keep, TunnelPaths.RouteStateFile);
         foreach (var file in TunnelPaths.RouteStateFiles())
         {
@@ -149,14 +172,15 @@ internal sealed partial class RouteManager
         }
     }
 
-    // Reverts one endpoint-exclusion record and drops it.
+    // Reverts one endpoint-exclusion record and drops it; a route another tunnel records stays.
     private static void RestoreExclusionFile(string path)
     {
-        foreach (var endpoint in ReadStateFile(path))
+        var held = RouteStateFile.HeldElsewhere(path, TunnelPaths.RouteStateFiles());
+        foreach (var record in RouteStateFile.Read(path))
         {
-            if (IPAddress.TryParse(endpoint, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+            if (!held.Holds(record))
             {
-                DeleteManagedRoutes(ip, ifIndex: null);
+                DeleteRecorded(record);
             }
         }
 
@@ -168,8 +192,10 @@ internal sealed partial class RouteManager
     /// </summary>
     public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs)
     {
+        using var turn = TakeRoutesTurn();
         var any = false;
         var added = new List<string>();
+        var recorded = new Lazy<RouteStateFile.Held>(() => RouteStateFile.Recorded(TunnelPaths.LanStateFiles()));
 
         // IPv4 bypass CIDRs routed out the physical gateway.
         foreach (var cidr in extraCidrs)
@@ -192,12 +218,15 @@ internal sealed partial class RouteManager
             var row = NewRow(dest, prefix, interfaceIndex, gateway);
             var result = CreateIpForwardEntry2(ref row);
             var ok = result is NoError or ErrorObjectAlreadyExists;
-            RouteLog.Write("lan-excl", $"{dest}/{prefix}", $"{gateway} if{interfaceIndex}", ok);
-            if (ok)
+            var record = RouteStateFile.Through($"{dest}/{prefix}", interfaceIndex, gateway.ToString());
+            var ours = Ours(result, recorded, record);
+            RouteLog.Write("lan-excl", $"{dest}/{prefix}", $"{gateway} if{interfaceIndex}", ok, ok && !ours ? StoodBefore : null);
+            if (ours)
             {
-                added.Add($"{dest}/{prefix}");
-                any = true;
+                added.Add(record);
             }
+
+            any |= ok;
         }
 
         // v6 LAN exclusion on a dual-stack tunnel: the unique-local subnets this host sits on, not the range
@@ -214,12 +243,15 @@ internal sealed partial class RouteManager
                 var row = NewRowV6(dest, prefix, best.InterfaceIndex, best.NextHop);
                 var result = CreateIpForwardEntry2(ref row);
                 var ok = result is NoError or ErrorObjectAlreadyExists;
-                RouteLog.Write("lan-excl6", $"{dest}/{prefix}", $"if{best.InterfaceIndex}", ok);
-                if (ok)
+                var record = RouteStateFile.Through($"{dest}/{prefix}", best.InterfaceIndex, ToAddress(best.NextHop).ToString());
+                var ours = Ours(result, recorded, record);
+                RouteLog.Write("lan-excl6", $"{dest}/{prefix}", $"if{best.InterfaceIndex}", ok, ok && !ours ? StoodBefore : null);
+                if (ours)
                 {
-                    added.Add($"{dest}/{prefix}");
-                    any = true;
+                    added.Add(record);
                 }
+
+                any |= ok;
             }
         }
 
@@ -819,14 +851,8 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RemoveLanExclusions(string name)
     {
-        var path = TunnelPaths.LanStateFile(name);
-        foreach (var cidr in ReadStateFile(path))
-        {
-            DeleteCidrRoute(cidr);
-            RouteLog.Write("rm lan-excl", cidr, "physical", ok: true);
-        }
-
-        TryDelete(path);
+        using var turn = TakeRoutesTurn();
+        RestoreLanFile(TunnelPaths.LanStateFile(name));
     }
 
     /// <summary>
@@ -836,6 +862,7 @@ internal sealed partial class RouteManager
     /// </summary>
     public void RestoreSavedLanExclusions(Func<bool>? abortIf = null, IEnumerable<string>? keep = null)
     {
+        using var turn = TakeRoutesTurn();
         var owned = TunnelPaths.Owned(keep, TunnelPaths.LanStateFile);
         foreach (var file in TunnelPaths.LanStateFiles())
         {
@@ -849,13 +876,105 @@ internal sealed partial class RouteManager
                 continue;
             }
 
-            foreach (var cidr in ReadStateFile(file))
+            RestoreLanFile(file);
+        }
+    }
+
+    // Reverts one LAN-bypass record and drops it; a route another tunnel records stays.
+    private static void RestoreLanFile(string path)
+    {
+        var held = RouteStateFile.HeldElsewhere(path, TunnelPaths.LanStateFiles());
+        var kept = 0;
+        foreach (var record in RouteStateFile.Read(path))
+        {
+            if (held.Holds(record))
             {
-                DeleteCidrRoute(cidr);
+                kept++;
+                continue;
             }
 
-            TryDelete(file);
+            var result = DeleteRecorded(record);
+            RouteLog.Write("rm lan-excl", RouteStateFile.Entry(record), HopOf(record), result is NoError or ErrorNotFound, Said(result));
         }
+
+        if (kept > 0)
+        {
+            RouteLog.Write("keep lan-excl", $"{kept} route(s)", "physical", ok: true, "another tunnel stands on them");
+        }
+
+        TryDelete(path);
+    }
+
+    /// <summary>
+    /// Whether a route asked for is the client's to take back: one it put, or one already there that a tunnel of
+    /// the client records.
+    /// </summary>
+    internal static bool Ours(uint result, Lazy<RouteStateFile.Held> recorded, string record)
+    {
+        return result == NoError || (result == ErrorObjectAlreadyExists && recorded.Value.Holds(record));
+    }
+
+    // Takes back the route a record names.
+    private static uint DeleteRecorded(string record)
+    {
+        var entry = RouteStateFile.Entry(record);
+        if (RouteStateFile.Hop(record) is not { } through || !IPAddress.TryParse(through.Hop, out var hop))
+        {
+            DeleteCidrRoute(entry);
+            return NoError;
+        }
+
+        var slash = entry.IndexOf('/');
+        if (!IPAddress.TryParse(slash >= 0 ? entry[..slash] : entry, out var ip) || ip.AddressFamily != hop.AddressFamily)
+        {
+            return ErrorNotFound;
+        }
+
+        var v6 = ip.AddressFamily == AddressFamily.InterNetworkV6;
+        var prefix = slash >= 0 && byte.TryParse(entry[(slash + 1)..], out var p) ? p : (byte)(v6 ? 128 : 32);
+        var row = v6 ? NewRowV6(ip, prefix, through.Interface, ToHop(hop)) : NewRow(ip, prefix, through.Interface, hop);
+        return DeleteIpForwardEntry2(ref row);
+    }
+
+    // The hop of a record as the route log words it.
+    private static string HopOf(string record)
+    {
+        return RouteStateFile.Hop(record) is { } through ? $"{through.Hop} if{through.Interface}" : "physical";
+    }
+
+    // What the route log adds about a route that was not taken back.
+    private static string? Said(uint result)
+    {
+        return result switch
+        {
+            NoError => null,
+            ErrorNotFound => "it was gone already",
+            _ => $"error {result}",
+        };
+    }
+
+    // The hop of a record as the routing calls take it.
+    private static SOCKADDR_INET ToHop(IPAddress hop)
+    {
+        var address = ToSockaddr(hop);
+        address.sin6_scope_id = (uint)hop.ScopeId;
+        return address;
+    }
+
+    // The address the routing calls gave.
+    private static IPAddress ToAddress(SOCKADDR_INET address)
+    {
+        if (address.si_family == AfInet)
+        {
+            return new IPAddress(BitConverter.GetBytes(address.sin_addr));
+        }
+
+        var bytes = new byte[16];
+        BitConverter.TryWriteBytes(bytes.AsSpan(0), address.sin6_addr_0);
+        BitConverter.TryWriteBytes(bytes.AsSpan(4), address.sin6_addr_1);
+        BitConverter.TryWriteBytes(bytes.AsSpan(8), address.sin6_addr_2);
+        BitConverter.TryWriteBytes(bytes.AsSpan(12), address.sin6_addr_3);
+        return new IPAddress(bytes, address.sin6_scope_id);
     }
 
     private static void DeleteCidrRoute(string cidr)
@@ -1364,52 +1483,23 @@ internal sealed partial class RouteManager
 
     private static void UpdateState(string name, string endpoint, bool add)
     {
-        UpdateStateFile(TunnelPaths.RouteStateFile(name), endpoint, add);
+        RouteStateFile.Update(TunnelPaths.RouteStateFile(name), endpoint, add);
     }
 
-    private static void UpdateStateFile(string path, string entry, bool add)
+    // How long a tunnel waits for another one to finish with the routes they share.
+    private static readonly TimeSpan RoutesTurnBudget = TimeSpan.FromSeconds(15);
+
+    // Takes the turn at the routes the tunnels of the machine share.
+    private static TunnelTurn TakeRoutesTurn()
     {
-        var saved = ReadStateFile(path);
-        if (add)
+        var path = TunnelPaths.RoutesTurnFile();
+        var turn = TunnelTurn.TakeAsync(path, RoutesTurnBudget).GetAwaiter().GetResult();
+        if (!turn.Held)
         {
-            if (!saved.Contains(entry))
-            {
-                saved.Add(entry);
-            }
-        }
-        else
-        {
-            saved.Remove(entry);
+            RouteLog.Write("routes-turn", path, "not waited for", ok: false, "another tunnel has held the shared routes too long");
         }
 
-        if (saved.Count == 0)
-        {
-            TryDelete(path);
-            return;
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllLines(path, saved);
-    }
-
-    private static List<string> ReadStateFile(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return [];
-        }
-
-        var saved = new List<string>();
-        foreach (var line in File.ReadAllLines(path))
-        {
-            var endpoint = line.Trim();
-            if (endpoint.Length > 0 && !saved.Contains(endpoint))
-            {
-                saved.Add(endpoint);
-            }
-        }
-
-        return saved;
+        return turn;
     }
 
     private const int StateWriteBudgetMs = 2000;
@@ -1417,49 +1507,15 @@ internal sealed partial class RouteManager
     // Persists added exclusions to the state file off the connect thread, blocking it only a short bound.
     private static void PersistStateAdds(string path, IReadOnlyCollection<string> entries)
     {
-        if (entries.Count == 0)
-        {
-            return;
-        }
-
-        var write = Task.Run(() => AddEntriesToStateFile(path, entries));
-        if (write.Wait(StateWriteBudgetMs))
-        {
-            return;
-        }
-
-        _ = write.ContinueWith(
-            faulted => RouteLog.Write("state-add", path, "deferred persist", ok: false, faulted.Exception!.GetBaseException().Message),
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+        RouteStateFile.Add(path, entries, StateWriteBudgetMs, late => RouteLog.Write("state-add", path, "deferred persist", ok: false, late.Message));
     }
 
-    private static void AddEntriesToStateFile(string path, IReadOnlyCollection<string> entries)
-    {
-        var saved = ReadStateFile(path);
-        var changed = false;
-        foreach (var entry in entries)
-        {
-            if (!saved.Contains(entry))
-            {
-                saved.Add(entry);
-                changed = true;
-            }
-        }
-
-        if (!changed)
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllLines(path, saved);
-    }
-
+    // Removes a state file.
     private static void TryDelete(string path)
     {
-        if (File.Exists(path))
+        if (!RouteStateFile.Delete(path))
         {
-            File.Delete(path);
+            RouteLog.Write("state-del", path, "held by another process", ok: false, "left to the next cleanup");
         }
     }
 

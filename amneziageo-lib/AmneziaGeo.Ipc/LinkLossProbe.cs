@@ -19,6 +19,31 @@ public sealed class LinkLossProbe
     /// </summary>
     public const int IntervalMs = 5_000;
 
+    /// <summary>
+    /// Pause between echoes while the screen shows the link.
+    /// </summary>
+    public const int WatchedIntervalMs = 1_000;
+
+    /// <summary>
+    /// How long one look at the link keeps its echoes at the watched pace.
+    /// </summary>
+    public const int WatchMs = 5_000;
+
+    /// <summary>
+    /// Silence from which echoes lost one after another make an outage.
+    /// </summary>
+    public const int OutageMs = 7_000;
+
+    /// <summary>
+    /// Echoes lost one after another an outage takes at the least.
+    /// </summary>
+    public const int OutageEchoes = 2;
+
+    /// <summary>
+    /// Echoes answered one after another that end an outage.
+    /// </summary>
+    public const int BackEchoes = 3;
+
     private const int TimeoutMs = 1_500;
 
     // Pause between echoes while no target has answered yet.
@@ -42,12 +67,17 @@ public sealed class LinkLossProbe
     // Echoes the first target is given after another one was settled on.
     private const int SecondLooks = 3;
 
+    // Echoes the share the screen shows is taken over, and echoes the time it shows is the best of.
+    private const int ShownEchoes = 30;
+    private const int ShownTimed = 10;
+
     private readonly IPAddress[] _targets;
     private readonly Queue<(long Tick, int Rtt)> _window = new();
     private readonly object _lock = new();
     private readonly int _intervalMs;
     private readonly Func<long> _clock;
     private readonly Func<IPAddress, int, CancellationToken, Task<int>> _echo;
+    private readonly Func<int, CancellationToken, Task> _rest;
 
     // Whether the echoes leave through the tunnel alone, so what answers them was carried by it.
     private readonly bool _confined;
@@ -65,14 +95,33 @@ public sealed class LinkLossProbe
     private int _streak;
     private int _rttMs = -1;
 
+    // What the screen is shown, and the outages it is counted between.
+    private LinkNow _now = LinkNow.Unknown;
+    private long _heardAt;
+    private int _lostRun;
+    private int _backRun;
+    private bool _out;
+    private int _skip;
+    private bool _cut;
+
+    // Until when the echoes go at the watched pace, and the handle a long pause is cut short by.
+    private long _watchedUntil;
+    private CancellationTokenSource? _wake;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public LinkLossProbe(IReadOnlyList<string> targets, int intervalMs = IntervalMs, Func<long>? clock = null, Func<IPAddress, int, CancellationToken, Task<int>>? echo = null)
+    public LinkLossProbe(
+        IReadOnlyList<string> targets,
+        int intervalMs = IntervalMs,
+        Func<long>? clock = null,
+        Func<IPAddress, int, CancellationToken, Task<int>>? echo = null,
+        Func<int, CancellationToken, Task>? rest = null)
     {
         _intervalMs = intervalMs > 0 ? intervalMs : IntervalMs;
         _clock = clock ?? (() => Environment.TickCount64);
         _echo = echo ?? IcmpEcho.RoundTripAsync;
+        _rest = rest ?? Task.Delay;
         _confined = echo is not null;
         var parsed = new List<IPAddress>();
         foreach (var target in targets)
@@ -109,6 +158,17 @@ public sealed class LinkLossProbe
     public int RttMs => Volatile.Read(ref _rttMs);
 
     /// <summary>
+    /// What the screen shows of the link: the share lost over the last thirty echoes, the best time of the last ten
+    /// and the longest run lost, all counted over the outage that is on, or over the link since it came back.
+    /// </summary>
+    public LinkNow Now => Volatile.Read(ref _now);
+
+    /// <summary>
+    /// Whether the echoes go at the watched pace.
+    /// </summary>
+    public bool Watched => _clock() < Interlocked.Read(ref _watchedUntil);
+
+    /// <summary>
     /// Whether any target has answered. Nothing here separates a target the tunnel does not carry from one that
     /// simply never replies, and both leave the share unknown for the whole session - a state worth reading,
     /// because an unknown share is not a healthy one.
@@ -127,7 +187,7 @@ public sealed class LinkLossProbe
 
     /// <summary>
     /// Echoes the target for as long as the session runs: every second until one answers, then at the probe's own
-    /// pace.
+    /// pace, and every second again while the screen shows the link.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -139,10 +199,9 @@ public sealed class LinkLossProbe
         var attempt = 0;
         while (!ct.IsCancellationRequested)
         {
-            var pause = _chosen is null && attempt < SearchAttempts ? Math.Min(SearchIntervalMs, _intervalMs) : _intervalMs;
             try
             {
-                await Task.Delay(pause, ct).ConfigureAwait(false);
+                await RestAsync(attempt, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -167,6 +226,66 @@ public sealed class LinkLossProbe
             }
 
             await LookAgainAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Keeps the echoes at the watched pace for a while from now; the screen calls it for as long as it shows the link.
+    /// </summary>
+    public void Watch()
+    {
+        var watched = Watched;
+        Interlocked.Exchange(ref _watchedUntil, _clock() + WatchMs);
+        if (watched)
+        {
+            return;
+        }
+
+        try
+        {
+            Volatile.Read(ref _wake)?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    // The pause before the next echo: a second while a target is looked for or the screen shows the link, else the probe's own.
+    private int Pause(int attempt)
+    {
+        if (_chosen is null && attempt < SearchAttempts)
+        {
+            return Math.Min(SearchIntervalMs, _intervalMs);
+        }
+
+        return Watched ? Math.Min(WatchedIntervalMs, _intervalMs) : _intervalMs;
+    }
+
+    // Waits out the pause before the next echo, cut short by a look at the link.
+    private async Task RestAsync(int attempt, CancellationToken ct)
+    {
+        var started = _clock();
+        while (true)
+        {
+            using var wake = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Volatile.Write(ref _wake, wake);
+            try
+            {
+                var left = Pause(attempt) - (_clock() - started);
+                if (left <= 0)
+                {
+                    return;
+                }
+
+                await _rest((int)left, wake.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                Volatile.Write(ref _wake, null);
+            }
         }
     }
 
@@ -205,6 +324,13 @@ public sealed class LinkLossProbe
             Volatile.Write(ref _recentPercent, LinkHealth.LossUnknown);
             Volatile.Write(ref _streak, 0);
             Volatile.Write(ref _rttMs, -1);
+            _heardAt = 0;
+            _lostRun = 0;
+            _backRun = 0;
+            _out = false;
+            _skip = 0;
+            _cut = false;
+            Volatile.Write(ref _now, LinkNow.Unknown);
         }
     }
 
@@ -220,6 +346,7 @@ public sealed class LinkLossProbe
             while (now - _window.Peek().Tick >= WindowMs)
             {
                 _window.Dequeue();
+                _skip = Math.Max(0, _skip - 1);
             }
 
             var answered = 0;
@@ -257,13 +384,94 @@ public sealed class LinkLossProbe
                 Volatile.Write(ref _recentPercent, (recent - recentAnswered) * 100 / recent);
             }
 
-            if (_window.Count < MinAttempts)
+            if (_window.Count >= MinAttempts)
             {
-                return;
+                Volatile.Write(ref _percent, (_window.Count - answered) * 100 / _window.Count);
             }
 
-            Volatile.Write(ref _percent, (_window.Count - answered) * 100 / _window.Count);
+            Follow(rttMs, now);
+            Volatile.Write(ref _now, Shown(now));
         }
+    }
+
+    // Follows the outages: a long enough silence begins one and echoes answered in a row end it.
+    private void Follow(int rttMs, long now)
+    {
+        if (rttMs < 0)
+        {
+            _backRun = 0;
+            _lostRun++;
+            if (!_out && _lostRun >= OutageEchoes && now - _heardAt >= OutageMs)
+            {
+                _out = true;
+                Cut(_lostRun);
+            }
+
+            return;
+        }
+
+        _heardAt = now;
+        _lostRun = 0;
+        if (!_out)
+        {
+            return;
+        }
+
+        _backRun++;
+        if (_backRun < BackEchoes)
+        {
+            return;
+        }
+
+        _out = false;
+        _backRun = 0;
+        Cut(BackEchoes);
+    }
+
+    // Starts what the screen is shown over from the latest echoes.
+    private void Cut(int echoes)
+    {
+        _cut = true;
+        _skip = Math.Max(0, _window.Count - echoes);
+    }
+
+    // Counts what the screen is shown over the echoes of the outage that is on or of the link since it came back.
+    private LinkNow Shown(long now)
+    {
+        var from = Math.Max(_skip, _window.Count - ShownEchoes);
+        var timed = Math.Max(_skip, _window.Count - ShownTimed);
+        var at = 0;
+        var seen = 0;
+        var lost = 0;
+        var run = 0;
+        var streak = 0;
+        var best = int.MaxValue;
+        foreach (var (tick, one) in _window)
+        {
+            var index = at++;
+            if (index < from)
+            {
+                continue;
+            }
+
+            seen++;
+            if (one < 0)
+            {
+                lost++;
+                run++;
+                streak = Math.Max(streak, run);
+                continue;
+            }
+
+            run = 0;
+            if (index >= timed && now - tick < RecentMs)
+            {
+                best = Math.Min(best, one);
+            }
+        }
+
+        var counted = seen >= MinAttempts || (_cut && seen > 0);
+        return new LinkNow(counted ? lost * 100 / seen : _now.LossPercent, best < int.MaxValue ? best : -1, streak);
     }
 
     /// <summary>

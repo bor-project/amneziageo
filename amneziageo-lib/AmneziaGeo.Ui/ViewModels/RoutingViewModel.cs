@@ -256,12 +256,12 @@ internal partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && IsNarrowPane;
+    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && PaneWidth > 0 && IsNarrowPane;
 
     /// <summary>
     /// Замощают ли карточки пану.
     /// </summary>
-    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsNarrowPane;
+    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && PaneWidth > 0 && !IsNarrowPane;
 
     /// <summary>
     /// Delete-card prompt naming the open list.

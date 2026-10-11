@@ -157,295 +157,298 @@
 
     <!-- Config section: active trigger + name + editable .conf text + proxy + export + delete. Edits held for the
          footer Save. -->
-    <StackPanel x:Name="SettingsSection" Grid.Row="2" Margin="0,14,0,0"
-                IsVisible="{Binding IsSectionConfig}">
-      <!-- One frame around the whole settings block; below the card width it goes and the hairlines carry the boundaries. -->
-      <Border Classes="sect">
-        <StackPanel Spacing="14">
-          <!-- Используется ли конфигурация: тумблер делает её целью, ссылка рядом поднимает туннель. -->
-          <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
-            <TextBlock Grid.Column="0" Text="{l:Tr Main_InUseToggle}" FontWeight="SemiBold" FontSize="15"
-                       TextWrapping="Wrap" VerticalAlignment="Center" />
-            <!-- Узкому телефону ссылка встаёт под заголовок. -->
-            <Button Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
-                    Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                    Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                    Padding="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=linkUnder}"
-                    HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowConnectOpenConfig}"
-                    Command="{Binding ConnectOpenConfigCommand}">
-              <TextBlock Text="{l:Tr Main_ConnectNowLink}" />
-            </Button>
-            <ToggleSwitch Grid.Column="2" Grid.RowSpan="2" MinWidth="0" VerticalAlignment="Center"
-                          IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
-          </Grid>
-
-          <Border Classes="hairline" />
-
-          <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
-          <StackPanel Spacing="2">
-            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-              <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15"
-                         VerticalAlignment="Center" />
-              <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
-              <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
-                      IsVisible="{Binding HasOpenConfigSubscription}"
-                      IsEnabled="{Binding !OpenConfigSubscription.Busy}"
-                      Command="{Binding OpenConfigSubscription.RefreshCommand}"
-                      ToolTip.Tip="{Binding OpenConfigSubscription.Caption}">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <PathIcon Classes.spin="{Binding OpenConfigSubscription.Busy}"
-                            Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
-                  <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
-                </StackPanel>
-              </Button>
-            </Grid>
-            <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
-                     Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
-            <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
-                       Text="{l:Tr Main_RequiredEmptyWarning}" />
-
-            <!-- Конфигурация из подписки: когда подписку читали и чем она ответила в прошлый раз. -->
-            <StackPanel Spacing="6" Margin="0,6,0,0" IsVisible="{Binding HasOpenConfigSubscription}">
-              <StackPanel Spacing="6" DataContext="{Binding OpenConfigSubscription}"
-                          x:DataType="vm:SubscriptionItemViewModel">
-                <TextBlock Text="{Binding Updated}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                           HorizontalAlignment="Right" />
-                <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
-                           IsVisible="{Binding HasError}" />
-              </StackPanel>
-            </StackPanel>
-            <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                       IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          </StackPanel>
-
-          <Border Classes="hairline" />
-
-          <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
-               until asked for - it carries the private key - and hidden again on every entry into the section. -->
-          <StackPanel Spacing="2">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigTextLabel}" FontWeight="SemiBold" FontSize="15"
+    <controls:Later IsVisible="{Binding IsSectionConfig}" Grid.Row="2">
+      <StackPanel x:Name="SettingsSection" Margin="0,14,0,0">
+        <!-- One frame around the whole settings block; below the card width it goes and the hairlines carry the boundaries. -->
+        <Border Classes="sect">
+          <StackPanel Spacing="14">
+            <!-- Используется ли конфигурация: тумблер делает её целью, ссылка рядом поднимает туннель. -->
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_InUseToggle}" FontWeight="SemiBold" FontSize="15"
                          TextWrapping="Wrap" VerticalAlignment="Center" />
-              <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ToggleConfigTextCommand}"
-                      VerticalAlignment="Top" HorizontalAlignment="Right">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14" />
-                  <!-- Both captions share one cell so the link keeps its width across the toggle. -->
-                  <Panel>
-                    <TextBlock Text="{l:Tr Main_ShowButton}" IsVisible="{Binding !ShowConfigText}" />
-                    <TextBlock Text="{l:Tr Main_HideButton}" IsVisible="{Binding ShowConfigText}" />
-                  </Panel>
-                </StackPanel>
+              <!-- Узкому телефону ссылка встаёт под заголовок. -->
+              <Button Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
+                      Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                      Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                      Padding="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=linkUnder}"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowConnectOpenConfig}"
+                      Command="{Binding ConnectOpenConfigCommand}">
+                <TextBlock Text="{l:Tr Main_ConnectNowLink}" />
               </Button>
+              <ToggleSwitch Grid.Column="2" Grid.RowSpan="2" MinWidth="0" VerticalAlignment="Center"
+                            IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
             </Grid>
-            <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                    CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
-                    IsVisible="{Binding ShowConfigText}"
-                    IsEnabled="{Binding ConfigExport.IsReady}">
-              <TextBox Classes="secondtap" Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
-                       AcceptsReturn="True" TextWrapping="NoWrap"
-                       VerticalContentAlignment="Top" Height="240"
-                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                       ScrollViewer.VerticalScrollBarVisibility="Auto"
-                       BorderThickness="0" Background="Transparent"
-                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
-            </Border>
-            <TextBlock Text="{Binding ConfigExport.StatusMessage}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                       IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          </StackPanel>
 
-          <Border Classes="hairline" />
+            <Border Classes="hairline" />
 
-          <!-- Proxy (WebSocket). -->
-          <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
+            <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
+            <StackPanel Spacing="2">
+              <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15"
+                           VerticalAlignment="Center" />
+                <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
+                <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
+                        IsVisible="{Binding HasOpenConfigSubscription}"
+                        IsEnabled="{Binding !OpenConfigSubscription.Busy}"
+                        Command="{Binding OpenConfigSubscription.RefreshCommand}"
+                        ToolTip.Tip="{Binding OpenConfigSubscription.Caption}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <PathIcon Classes.spin="{Binding OpenConfigSubscription.Busy}"
+                              Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
+                    <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+              <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
+                       Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
+              <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
+                         Text="{l:Tr Main_RequiredEmptyWarning}" />
 
-          <Border Classes="hairline" IsVisible="{Binding IsFieldRowNarrow}" />
-
-          <!-- Экспорт: способ - экран QR, ссылка в буфер или файл - выпадает списком у кнопки, а на телефоне
-               приходит шторкой снизу. -->
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" VerticalAlignment="Center">
-              <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-            </StackPanel>
-            <Button Grid.Row="1" Grid.Column="0" Classes="methodpick" VerticalAlignment="Center"
-                    Click="OnExportOptions"
-                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
-                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-              <StackPanel Orientation="Horizontal" Spacing="6"
-                          HorizontalAlignment="Center" VerticalAlignment="Center">
-                <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
-                <TextBlock Text="{l:Tr Main_ExportTab}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <!-- Конфигурация из подписки: когда подписку читали и чем она ответила в прошлый раз. -->
+              <StackPanel Spacing="6" Margin="0,6,0,0" IsVisible="{Binding HasOpenConfigSubscription}">
+                <StackPanel Spacing="6" DataContext="{Binding OpenConfigSubscription}"
+                            x:DataType="vm:SubscriptionItemViewModel">
+                  <TextBlock Text="{Binding Updated}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                             HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
+                             IsVisible="{Binding HasError}" />
+                </StackPanel>
               </StackPanel>
-            </Button>
-          </Grid>
+              <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                         IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
 
-          <Border Classes="hairline" IsVisible="{Binding IsFieldRowNarrow}" />
+            <Border Classes="hairline" />
 
-          <!-- Delete: description left, delete trigger right. When armed, the trigger is replaced in place by
-               the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-          <StackPanel Spacing="10">
-            <!-- The trigger stands under the description. -->
+            <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
+                 until asked for - it carries the private key - and hidden again on every entry into the section. -->
+            <StackPanel Spacing="2">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigTextLabel}" FontWeight="SemiBold" FontSize="15"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ToggleConfigTextCommand}"
+                        VerticalAlignment="Top" HorizontalAlignment="Right">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14" />
+                    <!-- Both captions share one cell so the link keeps its width across the toggle. -->
+                    <Panel>
+                      <TextBlock Text="{l:Tr Main_ShowButton}" IsVisible="{Binding !ShowConfigText}" />
+                      <TextBlock Text="{l:Tr Main_HideButton}" IsVisible="{Binding ShowConfigText}" />
+                    </Panel>
+                  </StackPanel>
+                </Button>
+              </Grid>
+              <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                      CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                      IsVisible="{Binding ShowConfigText}"
+                      IsEnabled="{Binding ConfigExport.IsReady}">
+                <TextBox Classes="secondtap" Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
+                         AcceptsReturn="True" TextWrapping="NoWrap"
+                         VerticalContentAlignment="Top" Height="240"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         BorderThickness="0" Background="Transparent"
+                         FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+              </Border>
+              <TextBlock Text="{Binding ConfigExport.StatusMessage}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                         IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+
+            <Border Classes="hairline" />
+
+            <!-- Proxy (WebSocket). -->
+            <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
+
+            <Border Classes="hairline" IsVisible="{Binding IsFieldRowNarrow}" />
+
+            <!-- Экспорт: способ - экран QR, ссылка в буфер или файл - выпадает списком у кнопки, а на телефоне
+                 приходит шторкой снизу. -->
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
               <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" VerticalAlignment="Center">
-                <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding DeleteConfigPrompt}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
               </StackPanel>
-              <Grid Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
-                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
-                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
-                    ColumnDefinitions="*,*" ColumnSpacing="8">
-                <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
-                        Content="{l:Tr Main_DeleteConfigButton}"
-                        IsVisible="{Binding !ConfigDeletePending}"
-                        Command="{Binding RequestDeleteOpenConfigCommand}" />
-                <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
-                        Content="{l:Tr Main_ConfirmDeleteButton}"
-                        IsVisible="{Binding ConfigDeletePending}"
-                        Command="{Binding ConfirmDeleteOpenConfigCommand}" />
-                <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
-                        Content="{l:Tr Main_CancelButton}"
-                        IsVisible="{Binding ConfigDeletePending}"
-                        Command="{Binding CancelDeleteConfigCommand}" />
-              </Grid>
+              <Button Grid.Row="1" Grid.Column="0" Classes="methodpick" VerticalAlignment="Center"
+                      Click="OnExportOptions"
+                      Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+                <StackPanel Orientation="Horizontal" Spacing="6"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+                  <TextBlock Text="{l:Tr Main_ExportTab}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
             </Grid>
-            <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
-                       IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <Border Classes="hairline" IsVisible="{Binding IsFieldRowNarrow}" />
+
+            <!-- Delete: description left, delete trigger right. When armed, the trigger is replaced in place by
+                 the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
+            <StackPanel Spacing="10">
+              <!-- The trigger stands under the description. -->
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+                <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding DeleteConfigPrompt}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                </StackPanel>
+                <Grid Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
+                      Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                      ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                          Content="{l:Tr Main_DeleteConfigButton}"
+                          IsVisible="{Binding !ConfigDeletePending}"
+                          Command="{Binding RequestDeleteOpenConfigCommand}" />
+                  <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                          Content="{l:Tr Main_ConfirmDeleteButton}"
+                          IsVisible="{Binding ConfigDeletePending}"
+                          Command="{Binding ConfirmDeleteOpenConfigCommand}" />
+                  <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                          Content="{l:Tr Main_CancelButton}"
+                          IsVisible="{Binding ConfigDeletePending}"
+                          Command="{Binding CancelDeleteConfigCommand}" />
+                </Grid>
+              </Grid>
+              <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                         IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
           </StackPanel>
-        </StackPanel>
-      </Border>
-    </StackPanel>
+        </Border>
+      </StackPanel>
+    </controls:Later>
 
     <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
          Imported with the footer Save once text parses + name is set (#143). -->
-    <Border x:Name="ImportSection" Grid.Row="2" Margin="0,12,0,0" Classes="sect"
-            IsVisible="{Binding IsSectionImport}">
-      <DockPanel LastChildFill="True">
-        <StackPanel DockPanel.Dock="Top" Spacing="6">
-          <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
-          <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
-                   Text="{Binding SectionConfigName, Mode=TwoWay}"
-                   Watermark="{l:Tr Main_ConfigNameWatermark}" />
-          <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
-                     Text="{l:Tr Main_RequiredEmptyWarning}" />
-        </StackPanel>
-        <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
-              configuration. Shown beside the text, where there is something to apply them to. -->
-        <Border DockPanel.Dock="Bottom" Margin="0,14,0,0"
-                IsVisible="{Binding ShowSectionTransport}">
-          <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
-        </Border>
-
-        <!-- В поле лежит адрес подписки: сохранение заведёт её, а конфигурации она принесёт сама. -->
-        <TextBlock DockPanel.Dock="Bottom" Text="{l:Tr Main_SubscriptionHint}" Classes="muted"
-                   FontSize="11.5" TextWrapping="Wrap" Margin="0,10,0,0"
-                   IsVisible="{Binding SectionIsSubscription}" />
-
-        <!-- Адрес без TLS: ключи подписки приедут открытым текстом. -->
-        <TextBlock DockPanel.Dock="Bottom" Text="{l:Tr Main_SubscriptionInsecure}" Classes="fieldwarn"
-                   FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0"
-                   IsVisible="{Binding SectionSubscriptionInsecure}" />
-
-        <!-- Источник: набранный текст либо живой сканер. -->
-        <Panel MinHeight="220" Margin="0,12,0,0">
-
-          <Border IsVisible="{Binding IsImportManual}"
-                  BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
-            <TextBox Classes="secondtap" Text="{Binding SectionConfigText, Mode=TwoWay}"
-                     AcceptsReturn="True" TextWrapping="NoWrap"
-                     VerticalContentAlignment="Top" MinHeight="200"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     BorderThickness="0" Background="Transparent"
-                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
-                     Watermark="[Interface]&#x0a;PrivateKey = ...&#x0a;Address = ...&#x0a;&#x0a;[Peer]&#x0a;PublicKey = ...&#x0a;Endpoint = host:port" />
+    <controls:Later IsVisible="{Binding IsSectionImport}" Grid.Row="2">
+      <Border x:Name="ImportSection" Margin="0,12,0,0" Classes="sect">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Top" Spacing="6">
+            <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+            <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
+                     Text="{Binding SectionConfigName, Mode=TwoWay}"
+                     Watermark="{l:Tr Main_ConfigNameWatermark}" />
+            <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
+                       Text="{l:Tr Main_RequiredEmptyWarning}" />
+          </StackPanel>
+          <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
+                configuration. Shown beside the text, where there is something to apply them to. -->
+          <Border DockPanel.Dock="Bottom" Margin="0,14,0,0"
+                  IsVisible="{Binding ShowSectionTransport}">
+            <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
           </Border>
 
-          <Panel IsVisible="{Binding IsImportCamera}">
-            <views:ScanView DataContext="{Binding SectionScan}" />
-          </Panel>
+          <!-- В поле лежит адрес подписки: сохранение заведёт её, а конфигурации она принесёт сама. -->
+          <TextBlock DockPanel.Dock="Bottom" Text="{l:Tr Main_SubscriptionHint}" Classes="muted"
+                     FontSize="11.5" TextWrapping="Wrap" Margin="0,10,0,0"
+                     IsVisible="{Binding SectionIsSubscription}" />
 
-        </Panel>
-      </DockPanel>
-    </Border>
+          <!-- Адрес без TLS: ключи подписки приедут открытым текстом. -->
+          <TextBlock DockPanel.Dock="Bottom" Text="{l:Tr Main_SubscriptionInsecure}" Classes="fieldwarn"
+                     FontSize="11.5" TextWrapping="Wrap" Margin="0,6,0,0"
+                     IsVisible="{Binding SectionSubscriptionInsecure}" />
+
+          <!-- Источник: набранный текст либо живой сканер. -->
+          <Panel MinHeight="220" Margin="0,12,0,0">
+
+            <Border IsVisible="{Binding IsImportManual}"
+                    BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                    CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+              <TextBox Classes="secondtap" Text="{Binding SectionConfigText, Mode=TwoWay}"
+                       AcceptsReturn="True" TextWrapping="NoWrap"
+                       VerticalContentAlignment="Top" MinHeight="200"
+                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                       ScrollViewer.VerticalScrollBarVisibility="Auto"
+                       BorderThickness="0" Background="Transparent"
+                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
+                       Watermark="[Interface]&#x0a;PrivateKey = ...&#x0a;Address = ...&#x0a;&#x0a;[Peer]&#x0a;PublicKey = ...&#x0a;Endpoint = host:port" />
+            </Border>
+
+            <Panel IsVisible="{Binding IsImportCamera}">
+              <views:ScanView DataContext="{Binding SectionScan}" />
+            </Panel>
+
+          </Panel>
+        </DockPanel>
+      </Border>
+    </controls:Later>
 
     <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
-    <StackPanel x:Name="ExportSection" Grid.Row="2" Margin="0,12,0,0"
-                IsVisible="{Binding IsSectionExport}" Spacing="12">
-      <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
-      <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"
-                 TextWrapping="Wrap" VerticalAlignment="Center" />
+    <controls:Later IsVisible="{Binding IsSectionExport}" Grid.Row="2">
+      <StackPanel x:Name="ExportSection" Margin="0,12,0,0" Spacing="12">
+        <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
+        <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"
+                   TextWrapping="Wrap" VerticalAlignment="Center" />
 
-      <Border Classes="sect">
-        <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
-          <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-          <!-- Способ экспорта списком; строка подписки только у конфигурации с подпиской. -->
-          <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding ModeIndex, Mode=TwoWay}"
-              Width="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-              HorizontalAlignment="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-            <!-- Стопка строк без виртуализации. -->
-            <controls:AdaptiveComboBox.ItemsPanel>
-              <ItemsPanelTemplate>
-                <StackPanel />
-              </ItemsPanelTemplate>
-            </controls:AdaptiveComboBox.ItemsPanel>
-            <ComboBoxItem Content="{l:Tr Main_QrConfTabShort}" />
-            <ComboBoxItem Content="{l:Tr Main_QrLinkTabShort}" />
-            <ComboBoxItem Content="{l:Tr Main_QrSubscriptionTabShort}"
-                          IsVisible="{Binding CanExportSubscription}" IsEnabled="{Binding CanExportSubscription}" />
-          </controls:AdaptiveComboBox>
-          <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
-                  IsVisible="{Binding ShowQr}">
-            <Image Source="{Binding QrImage}" Width="220" Height="220" />
-          </Border>
-          <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                  CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
-            <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
-                       Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
-          </Border>
-          <!-- vpn:// link under its QR: read-only, borderless, selectable to copy. -->
-          <TextBox Text="{Binding LinkText}" IsReadOnly="True" IsVisible="{Binding ShowLinkText}"
-                   TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0"
-                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11.5" />
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" MaxWidth="480" HorizontalAlignment="Center">
-            <PathIcon Grid.Column="0" Data="{StaticResource AgLockGeometry}" Width="13" Height="13"
-                      Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Top" Margin="0,2,0,0" />
-            <TextBlock Grid.Column="1" Text="{l:Tr Main_QrPrivateKeyWarning}" Classes="muted" FontSize="12"
-                       TextWrapping="Wrap" VerticalAlignment="Center" />
-          </Grid>
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     HorizontalAlignment="Center" TextAlignment="Center" />
-          <!-- Buttons at their own width: a narrow card carries them onto the next line instead of
-               squeezing them. -->
-          <WrapPanel HorizontalAlignment="Center" MaxWidth="520">
-            <Button Classes="methodpick" Margin="4" Padding="16,6"
-                    Click="OnCopyExport" IsEnabled="{Binding IsReady}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_CopyContentButtonShort}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="accent" Margin="4" Padding="16,6"
-                    Click="OnDownloadQr" IsVisible="{Binding ShowQr}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_DownloadQrButton}" />
-              </StackPanel>
-            </Button>
-            <!-- Sending the QR on: shows up where the platform hands a file to another application. -->
-            <Button Classes="methodpick" Margin="4" Padding="16,6" Click="OnSendQr"
-                    IsVisible="{Binding CanSendExport}" IsEnabled="{Binding ShowQr}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_SendToAppButton}" />
-              </StackPanel>
-            </Button>
-          </WrapPanel>
-        </StackPanel>
-      </Border>
-    </StackPanel>
+        <Border Classes="sect">
+          <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
+            <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            <!-- Способ экспорта списком; строка подписки только у конфигурации с подпиской. -->
+            <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding ModeIndex, Mode=TwoWay}"
+                Width="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                HorizontalAlignment="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+              <!-- Стопка строк без виртуализации. -->
+              <controls:AdaptiveComboBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel />
+                </ItemsPanelTemplate>
+              </controls:AdaptiveComboBox.ItemsPanel>
+              <ComboBoxItem Content="{l:Tr Main_QrConfTabShort}" />
+              <ComboBoxItem Content="{l:Tr Main_QrLinkTabShort}" />
+              <ComboBoxItem Content="{l:Tr Main_QrSubscriptionTabShort}"
+                            IsVisible="{Binding CanExportSubscription}" IsEnabled="{Binding CanExportSubscription}" />
+            </controls:AdaptiveComboBox>
+            <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+                    IsVisible="{Binding ShowQr}">
+              <Image Source="{Binding QrImage}" Width="220" Height="220" />
+            </Border>
+            <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
+              <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
+                         Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
+            </Border>
+            <!-- vpn:// link under its QR: read-only, borderless, selectable to copy. -->
+            <TextBox Text="{Binding LinkText}" IsReadOnly="True" IsVisible="{Binding ShowLinkText}"
+                     TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0"
+                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11.5" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" MaxWidth="480" HorizontalAlignment="Center">
+              <PathIcon Grid.Column="0" Data="{StaticResource AgLockGeometry}" Width="13" Height="13"
+                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Top" Margin="0,2,0,0" />
+              <TextBlock Grid.Column="1" Text="{l:Tr Main_QrPrivateKeyWarning}" Classes="muted" FontSize="12"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
+            <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       HorizontalAlignment="Center" TextAlignment="Center" />
+            <!-- Buttons at their own width: a narrow card carries them onto the next line instead of
+                 squeezing them. -->
+            <WrapPanel HorizontalAlignment="Center" MaxWidth="520">
+              <Button Classes="methodpick" Margin="4" Padding="16,6"
+                      Click="OnCopyExport" IsEnabled="{Binding IsReady}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_CopyContentButtonShort}" />
+                </StackPanel>
+              </Button>
+              <Button Classes="accent" Margin="4" Padding="16,6"
+                      Click="OnDownloadQr" IsVisible="{Binding ShowQr}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_DownloadQrButton}" />
+                </StackPanel>
+              </Button>
+              <!-- Sending the QR on: shows up where the platform hands a file to another application. -->
+              <Button Classes="methodpick" Margin="4" Padding="16,6" Click="OnSendQr"
+                      IsVisible="{Binding CanSendExport}" IsEnabled="{Binding ShowQr}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_SendToAppButton}" />
+                </StackPanel>
+              </Button>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </controls:Later>
   </Grid>
 </UserControl>

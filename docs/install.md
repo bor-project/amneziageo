@@ -20,7 +20,7 @@ You need Windows 7, 10 or 11 (x64 or arm64) and administrator rights: the instal
 3. Open AmneziaGeo and import a configuration - a `.conf` file, a QR code or a shared settings file.
 4. Pick a rule list or the full tunnel and connect.
 
-After that the app updates itself: it offers the new version, takes from the release only the files that changed against the installed copy, a changed file as a delta against its installed version where the release carries one, and runs the installer on them; where it cannot, it downloads the whole installer for its own architecture. A download that broke off carries on from where it stopped.
+After that the app updates itself: it offers the new version and, when the installed copy is the release before it, fetches one patch with the files that changed against that copy, a changed file as a delta from the installed one, and runs the installer on them; from an older version, or where the patch does not fit, it downloads the whole installer for its own architecture. A download that broke off carries on from where it stopped.
 
 The installers are not signed yet, so SmartScreen warns about an unknown publisher and Smart App Control on Windows 11 may block the launch. What to do about it: [code signing policy](../CODE_SIGNING.md).
 
@@ -86,7 +86,7 @@ Whether the agent starts at boot follows `survive-reboot`: the agent enables or 
 
 ### Update
 
-A packaged build carries the release manifest it checks against, so the app updates itself: the window offers the new version, the agent takes exactly the packages this machine has installed for its own architecture and lets apt install them from a transient unit that outlives the agent restart. It fetches only the files that changed against the installed ones, a changed file as a delta against its installed version where the release carries one, checks each against its published SHA-256 and builds the package again; where it cannot, it downloads the whole package, checks it against the published SHA-256 and carries on after a break. `amneziageo update check` reports the same from the console. Restart the window afterwards to run the new interface too.
+A packaged build carries the release manifest it checks against, so the app updates itself: the window offers the new version, the agent takes exactly the packages this machine has installed for its own architecture and lets apt install them from a transient unit that outlives the agent restart. When the installed packages are the release before, it fetches one patch per package with the files that changed against the installed ones, a changed file as a delta from the installed one, checks the patch against its published SHA-256 and builds the package again; from an older version, or where the patch does not fit, it downloads the whole package, checks it against the published SHA-256 and carries on after a break. `amneziageo update check` reports the same from the console. Restart the window afterwards to run the new interface too.
 
 ### Docker
 

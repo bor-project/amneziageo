@@ -1022,66 +1022,76 @@ internal sealed class TunnelRunner(
         finally
         {
             logger.LogInformation("{Name}: the session ended after {Elapsed} ms; removing its routes, firewall rules and DNS changes", name, connectSw.ElapsedMilliseconds);
-            proxy?.MarkEnding();
-            // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
-            sessionCts.Cancel();
-            session.Clear();
-            _appGateway?.Dispose();
-            _appGateway = null;
-            _appMatcher = null;
-            _processImages = null;
+            var cleanup = new SessionCleanup(logger, name);
+            cleanup.Run("the state of the session", () =>
+            {
+                proxy?.MarkEnding();
+                // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
+                sessionCts.Cancel();
+                session.Clear();
+                _appGateway?.Dispose();
+                _appGateway = null;
+                _appMatcher = null;
+                _processImages = null;
+            });
             if (routing is not null)
             {
                 // Written out before the entries go, so the next session starts from the destinations this one used.
-                await routing.PersistAsync(CancellationToken.None);
+                await cleanup.RunAsync("the saved destinations of the routing list", () => routing.PersistAsync(CancellationToken.None));
             }
 
-            // Before the engine closes, so the host routes go away with their permits still known.
-            routing?.RemoveAll();
-            // The queued withdrawals go with the device, which closed with the service.
-            uapi.DropWithdrawals();
-            firewall.Disable();
+            cleanup.Run("the routes of the routing list", () =>
+            {
+                // Before the engine closes, so the host routes go away with their permits still known.
+                routing?.RemoveAll();
+                // The queued withdrawals go with the device, which closed with the service.
+                uapi.DropWithdrawals();
+            });
+            cleanup.Run("the firewall protection", firewall.Disable);
 
             if (wsTransport is not null)
             {
-                await wsTransport.DisposeAsync();
+                await cleanup.RunAsync("the websocket carrier", async () => await wsTransport.DisposeAsync());
             }
 
             if (applied)
             {
-                // Let a deferred apply that is mid-flight finish (or observe the cancel) before reverting, so it
-                // cannot re-point DNS after the restore. Restore is a no-op when the handshake never landed.
-                try
+                await cleanup.RunAsync("the DNS changes", async () =>
                 {
-                    await dnsApplyTask;
-                }
-                catch (OperationCanceledException)
-                {
-                }
+                    // Let a deferred apply that is mid-flight finish (or observe the cancel) before reverting, so it
+                    // cannot re-point DNS after the restore. Restore is a no-op when the handshake never landed.
+                    try
+                    {
+                        await dnsApplyTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
 
-                dns.Restore(name);
-                // Flush so cached tunnel-routed IPs don't outlive the tunnel.
-                dns.FlushCache();
+                    dns.Restore(name);
+                    // Flush so cached tunnel-routed IPs don't outlive the tunnel.
+                    dns.FlushCache();
+                });
             }
 
             if (excluded)
             {
-                routes.RemoveEndpointExclusion(name, endpoint!);
+                cleanup.Run("the route to the server", () => routes.RemoveEndpointExclusion(name, endpoint!));
             }
 
             if (lanExcluded)
             {
-                routes.RemoveLanExclusions(name);
+                cleanup.Run("the routes kept out of the tunnel", () => routes.RemoveLanExclusions(name));
             }
 
             if (inboundOpened)
             {
-                InboundFirewall.Remove(name, logger);
+                cleanup.Run("the inbound firewall rule", () => InboundFirewall.Remove(name, logger));
             }
 
             if (signalOpened)
             {
-                InboundFirewall.RemoveSignal(name, logger);
+                cleanup.Run("the firewall rule of the disconnect signal", () => InboundFirewall.RemoveSignal(name, logger));
             }
         }
     }

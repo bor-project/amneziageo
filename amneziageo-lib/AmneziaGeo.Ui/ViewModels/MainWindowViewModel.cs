@@ -596,6 +596,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public void WindowShown(bool shown)
     {
         Home.WatchNetwork(shown);
+        Home.Seen(shown);
         Diagnostics.Logs.Rest(!shown);
         if (shown)
         {
@@ -604,6 +605,25 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         else
         {
             HiddenTimers.Pause();
+        }
+    }
+
+    /// <summary>
+    /// Writes a line of the window into the journal of the agent.
+    /// </summary>
+    public void Note(string message)
+    {
+        _ = NoteAsync(message);
+    }
+
+    private async Task NoteAsync(string message)
+    {
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [message])).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
         }
     }
 

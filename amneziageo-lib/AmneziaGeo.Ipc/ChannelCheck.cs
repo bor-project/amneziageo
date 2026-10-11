@@ -496,7 +496,8 @@ public sealed record CheckLeg(
     long TxBytes = -1,
     string Note = "",
     int RekeySeconds = -1,
-    TunnelTrace? Trace = null)
+    TunnelTrace? Trace = null,
+    int BestMs = -1)
 {
     /// <summary>
     /// Renders the leg as one protocol row.

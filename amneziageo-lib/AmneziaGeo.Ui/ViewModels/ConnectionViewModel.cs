@@ -20,6 +20,12 @@ internal partial class ConnectionViewModel : ViewModelBase
     private readonly UiPreferences _prefs;
     private readonly DispatcherTimer _noticeTimer;
     private readonly DispatcherTimer _networkTimer;
+    private readonly DispatcherTimer _linkTimer;
+
+    // Whether the window is on the screen, a look at the link is in flight, and the agent refused the question.
+    private bool _seen = true;
+    private bool _looking;
+    private bool _lookRefused;
 
     // Пока команда кнопки в полёте, состояние ведёт она, а не снимок.
     protected bool ToggleInFlight { get; set; }
@@ -168,6 +174,8 @@ internal partial class ConnectionViewModel : ViewModelBase
             _noticeTimer.Stop();
             NoticeVisible = false;
         };
+        _linkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(LinkLossProbe.WatchedIntervalMs) };
+        _linkTimer.Tick += (_, _) => _ = LookAsync();
         _networkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _networkTimer.Tick += (_, _) =>
         {
@@ -182,6 +190,120 @@ internal partial class ConnectionViewModel : ViewModelBase
         catch (Exception)
         {
             // A platform that reports no network events leaves the button and the home screen as the triggers.
+        }
+    }
+
+    /// <summary>
+    /// Whether the agent is asked every second what the running tunnel shows.
+    /// </summary>
+    public bool LinkWatched => _linkTimer.IsEnabled;
+
+    /// <summary>
+    /// Tells whether the window is on the screen; the running tunnel is asked about only while it is.
+    /// </summary>
+    public void Seen(bool seen)
+    {
+        _seen = seen;
+        WatchLink();
+    }
+
+    /// <summary>
+    /// Asks the agent what the running tunnels show right now and puts the answer on their rows.
+    /// </summary>
+    internal async Task LookAsync()
+    {
+        if (_looking)
+        {
+            return;
+        }
+
+        _looking = true;
+        try
+        {
+            if (await SendLookAsync() is not { } ack)
+            {
+                return;
+            }
+
+            if (!ack.Ok)
+            {
+                _lookRefused = true;
+                WatchLink();
+                return;
+            }
+
+            if (Put(ack.Message))
+            {
+                OnPropertyChanged(nameof(CardProbeText));
+                OnPropertyChanged(nameof(CardProbeBrush));
+                OnPropertyChanged(nameof(CardLossText));
+                OnPropertyChanged(nameof(CardLossBrush));
+                OnPropertyChanged(nameof(LinkLossText));
+            }
+        }
+        finally
+        {
+            _looking = false;
+        }
+    }
+
+    // Starts and stops the asking: a window on the screen, a tunnel up and an agent that knows the question.
+    private void WatchLink()
+    {
+        var on = _seen && IsConnected && IsTunnelActive && !_lookRefused;
+        if (on == _linkTimer.IsEnabled)
+        {
+            return;
+        }
+
+        if (!on)
+        {
+            _linkTimer.Stop();
+            return;
+        }
+
+        _linkTimer.Start();
+        _ = LookAsync();
+    }
+
+    // Puts the rows of an answer on the configurations they name and tells whether the row of the tunnel moved.
+    private bool Put(string rows)
+    {
+        var bound = BoundRow;
+        var moved = false;
+        foreach (var line in rows.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (LinkNow.TryParse(line.TrimEnd('\r')) is not { } read)
+            {
+                continue;
+            }
+
+            var row = _host.Config.Configs.FirstOrDefault(config => string.Equals(config.Name, read.Config, StringComparison.Ordinal));
+            var now = read.Now;
+            if (row is null || (row.LinkLossPercent == now.LossPercent && row.LinkLossStreak == now.LossStreak && row.LinkRttMs == now.RttMs))
+            {
+                continue;
+            }
+
+            row.LinkLossPercent = now.LossPercent;
+            row.LinkLossStreak = now.LossStreak;
+            row.LinkRttMs = now.RttMs;
+            moved |= ReferenceEquals(row, bound);
+        }
+
+        return moved;
+    }
+
+    // Sends the question about the link; a broken pipe leaves it unanswered.
+    private async Task<IpcAck?> SendLookAsync()
+    {
+        try
+        {
+            return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLinkNow, []));
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
+        {
+            return null;
         }
     }
 
@@ -700,6 +822,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     // туннеле, возвращается к цели, как только он лёг: она снова показывает, что поднимет подключение.
     partial void OnIsTunnelActiveChanged(bool value)
     {
+        WatchLink();
         _host.Config.NotifyActiveConfigChanged();
         PushCardPower();
         if (!value)
@@ -710,6 +833,8 @@ internal partial class ConnectionViewModel : ViewModelBase
 
     partial void OnIsConnectedChanged(bool value)
     {
+        _lookRefused &= !value;
+        WatchLink();
         _host.Config.NotifyActiveConfigChanged();
     }
 

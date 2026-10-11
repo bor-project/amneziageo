@@ -1,9 +1,11 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
@@ -15,12 +17,44 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class RoutingEditorView : UserControl
 {
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly RowPace _pace;
+    private bool _feeding;
+
     /// <summary>
     /// ctor
     /// </summary>
     public RoutingEditorView()
     {
+        _pace = new RowPace(() => _clock.ElapsedMilliseconds);
         InitializeComponent();
+    }
+
+    // The open editor while rules of its shown bucket wait for their rows and it stands on screen.
+    private RoutingListEditorViewModel? Opening =>
+        (DataContext as RoutingViewModel)?.RoutingEditor is { RowsPending: true } editor && IsEffectivelyVisible ? editor : null;
+
+    // Asks for the next rows of a long bucket once the ones before are laid out.
+    private void OnEditorLaidOut(object? sender, EventArgs e)
+    {
+        _pace.Laid();
+        if (_feeding || Opening is null)
+        {
+            return;
+        }
+
+        _feeding = true;
+        Dispatcher.UIThread.Post(FeedRows, DispatcherPriority.Background);
+    }
+
+    // Builds the next portion of the rows.
+    private void FeedRows()
+    {
+        _feeding = false;
+        if (Opening is { } editor)
+        {
+            _pace.Feed(editor.ShowMoreRows);
+        }
     }
 
     // Copies everything the expanded rule covers to the clipboard.

@@ -18,6 +18,8 @@ WITH_GUI="yes"
 # Release manifest the packaged agent checks itself against; empty leaves the update section hidden.
 UPDATE_URL="https://github.com/bor-project/amneziageo/releases/latest/download/update.json"
 PRERELEASE=""
+# Folder with the packages of the release before; empty builds no patch.
+EARLIER=""
 
 usage() {
   cat <<EOF
@@ -30,6 +32,8 @@ usage: build-deb.sh [options]
   --no-gui            skip the amneziageo-gui package
   --update-url <url>  update manifest the agent checks against (empty turns the check off)
   --prerelease        keep the build on the prerelease channel
+  --earlier <dir>     folder with the packages of the release before: beside every package lands its patch,
+                      which the agent's update fetches instead of the package on a machine with that release
   --help              this help
 
 One build gives two packages per architecture: amneziageo (agent, engine, console client and the
@@ -50,6 +54,7 @@ while [ $# -gt 0 ]; do
     --no-gui) WITH_GUI="no"; shift ;;
     --update-url) UPDATE_URL="$2"; shift 2 ;;
     --prerelease) PRERELEASE="1"; shift ;;
+    --earlier) EARLIER="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
@@ -186,40 +191,38 @@ normalize() {
   fi
 }
 
-# Packs every file of the package tree on its own, one after another, into <base>.pack and lists them in
-# <base>.files with the folders and links of the tree, so the agent's update fetches only the files a machine lacks
-# and builds the package again.
-pack_files() {
-  local tree="$1" base="$2" piece="$STAGE/piece" entry offset=0 length target
+# Makes <base>.patch beside the package: it turns the files a machine holds of the package of the release before,
+# found under $EARLIER, into the package tree, so the agent's update fetches the patch and builds the package again.
+# Without that earlier package, or when the patch does not come out, the package goes without one.
+patch_from() {
+  local package="$1" arch="$2" tree="$3" base="$4" was before
+  [ -n "$EARLIER" ] || return 0
   if [ -n "$(find "$tree" ! -type f ! -type d ! -type l -print -quit)" ]; then
     echo "the package tree holds more than files, folders and links" >&2
     exit 1
   fi
 
-  : > "$base.pack"
-  echo '# amneziageo files 1' > "$base.files"
-  while IFS= read -r -d '' entry; do
-    if [ -L "$tree/$entry" ]; then
-      target="$(readlink "$tree/$entry")"
-      case "$target" in
-        ''|/*|*[[:space:]]*) echo "the link $entry points at '$target', which the list cannot carry" >&2; exit 1 ;;
-      esac
-      printf 'l %s %s\n' "$target" "$entry" >> "$base.files"
-    elif [ -d "$tree/$entry" ]; then
-      printf 'd %s %s\n' "$(stat -c %a "$tree/$entry")" "$entry" >> "$base.files"
-    else
-      gzip -9nc "$tree/$entry" > "$piece"
-      length="$(stat -c %s "$piece")"
-      cat "$piece" >> "$base.pack"
-      printf '%s %s %s %s %s %s\n' "$(sha256sum "$tree/$entry" | cut -c1-64)" "$(stat -c %a "$tree/$entry")" \
-        "$(stat -c %s "$tree/$entry")" "$offset" "$length" "$entry" >> "$base.files"
-      offset=$((offset + length))
-    fi
-  done < <(cd "$tree" && find . -mindepth 1 -printf '%P\0' | LC_ALL=C sort -z)
-  rm -f "$piece"
+  was="$(find "$EARLIER" -maxdepth 1 -name "${package}_*_${arch}.deb" | LC_ALL=C sort | tail -1)"
+  if [ -z "$was" ]; then
+    echo "   no earlier $package for $arch under $EARLIER: no patch"
+    return 0
+  fi
+
+  before="$STAGE/earlier-$package-$arch"
+  rm -rf "$before"
+  if dpkg-deb -R "$was" "$before" \
+    && dotnet run -c Release --project "$ROOT/amneziageo-lib/AmneziaGeo.Deltas" -- \
+         --tree "$tree" --earlier "$before" --held "usr/lib/$package" --asset "$base.deb" --out "$base.patch"; then
+    [ ! -f "$base.patch" ] || echo "   $base.patch (from $(basename "$was"))"
+  else
+    echo "   the patch of $package for $arch was not made" >&2
+    rm -f "$base.patch"
+  fi
+
+  rm -rf "$before"
 }
 
-# Control files, checksums, the pack of the files and the package itself.
+# Control files, checksums, the package itself and its patch from the release before.
 pack() {
   local package="$1" arch="$2" tree="$3"
   local source="$PACKAGING/deb/$package"
@@ -245,9 +248,9 @@ pack() {
   ( cd "$tree" && find . -type f ! -path './DEBIAN/*' -printf '%P\0' | sort -z | xargs -0 -r md5sum > DEBIAN/md5sums )
   chmod 0644 "$tree/DEBIAN/md5sums"
 
-  pack_files "$tree" "$OUT/${package}_${VERSION}_${arch}"
   dpkg-deb --root-owner-group --build "$tree" "$OUT/${package}_${VERSION}_${arch}.deb" >/dev/null
   echo "   $OUT/${package}_${VERSION}_${arch}.deb"
+  patch_from "$package" "$arch" "$tree" "$OUT/${package}_${VERSION}_${arch}"
 }
 
 mkdir -p "$OUT"

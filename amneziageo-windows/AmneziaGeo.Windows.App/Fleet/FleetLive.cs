@@ -207,6 +207,17 @@ internal sealed class FleetLive
     }
 
     /// <summary>
+    /// The tunnels on the list with their states.
+    /// </summary>
+    public IReadOnlyList<KeyValuePair<string, AgentControl>> All()
+    {
+        lock (_gate)
+        {
+            return [.. _up];
+        }
+    }
+
+    /// <summary>
     /// The state of one tunnel of the set, or null while it is not up.
     /// </summary>
     public AgentControl? Of(string name)

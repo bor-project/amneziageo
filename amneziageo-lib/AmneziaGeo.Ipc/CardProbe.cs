@@ -47,6 +47,14 @@ public static class CardProbe
             ? await ChannelProbe.ConnectLegAsync(server.Name, server.Address, server.CarrierPort, bypass, ct).ConfigureAwait(false)
             : await ChannelProbe.EchoLegAsync(server.Name, server.Address, bypass, measureSize: false, ct).ConfigureAwait(false);
 
-        return new SweepRow(server.Name, leg.State, leg.RttMs, leg.JitterMs, leg.LossPercent, server.Live);
+        return Row(server, leg);
+    }
+
+    /// <summary>
+    /// Строка карточки по замеренной ноге: время на карточке - самое быстрое эхо залпа.
+    /// </summary>
+    internal static SweepRow Row(SweepServer server, CheckLeg leg)
+    {
+        return new SweepRow(server.Name, leg.State, leg.BestMs >= 0 ? leg.BestMs : leg.RttMs, leg.JitterMs, leg.LossPercent, server.Live);
     }
 }

@@ -18,6 +18,7 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
     private readonly Dictionary<string, RuleRoute> _held = new(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, string> _targets = FleetTargets.Unaddressed;
     private string _shown = string.Empty;
+    private string _served = string.Empty;
 
     /// <summary>
     /// ctor
@@ -61,12 +62,27 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
 
         _shown = stamp;
         _targets = targets;
-        RouteChoices = Choices(servers, false);
-        FallbackChoices = Choices(servers, true);
+        var served = string.Join('\n', servers);
+        var rerowed = !string.Equals(served, _served, StringComparison.Ordinal);
+        var role = SelectedRole;
+        if (rerowed)
+        {
+            _served = served;
+            RouteChoices = Choices(servers, false);
+            FallbackChoices = Choices(servers, true);
+        }
+
         OnPropertyChanged(nameof(CanAddSubnets));
         RefreshProxyBucket();
         DropSettled();
-        RebuildRuleItems();
+        if (!rerowed)
+        {
+            Readdress();
+        }
+        else if (string.Equals(role, SelectedRole, StringComparison.Ordinal))
+        {
+            RebuildRuleItems();
+        }
     }
 
     /// <summary>
@@ -164,6 +180,15 @@ internal sealed class FleetRoutingListEditorViewModel : RoutingListEditorViewMod
 
         Hold(token, new RuleRoute(new RuleTarget(RuleTarget.Server, config), new RuleTarget(RuleTarget.Direct)));
         return true;
+    }
+
+    /// <inheritdoc/>
+    protected override void Readdress()
+    {
+        foreach (var row in RuleItems.OfType<FleetRoutingRuleItemViewModel>())
+        {
+            row.Show(RouteOf(row.Token));
+        }
     }
 
     /// <inheritdoc/>

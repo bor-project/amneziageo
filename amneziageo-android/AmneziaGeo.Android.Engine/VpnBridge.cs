@@ -186,6 +186,26 @@ public static class VpnBridge
     /// </summary>
     public const string ActionSwitch = "org.amneziageo.android.VPN_SWITCH";
 
+    /// <summary>
+    /// Broadcast that keeps the echoes of a running tunnel at the watched pace and makes it say what the link shows.
+    /// </summary>
+    public const string ActionWatch = "org.amneziageo.android.VPN_WATCH";
+
+    /// <summary>
+    /// Shown loss extra: share of the tunnel's latest echoes lost since the link last came back.
+    /// </summary>
+    public const string ExtraNowLoss = "nowloss";
+
+    /// <summary>
+    /// Shown round trip extra: the best of the tunnel's latest echoes, in milliseconds.
+    /// </summary>
+    public const string ExtraNowRtt = "nowrtt";
+
+    /// <summary>
+    /// Shown loss run extra: the longest run of those echoes lost one after another.
+    /// </summary>
+    public const string ExtraNowRun = "nowrun";
+
     private const string PlanFile = "plan.json";
     private const string PlanStampFile = "plan-stamp.txt";
     private const string ProxyFile = "proxy.json";
@@ -252,7 +272,36 @@ public static class VpnBridge
         intent.PutExtra(ExtraChurning, reading.Churning);
         intent.PutExtra(ExtraLossStreak, reading.LossStreak);
         intent.PutExtra(ExtraRekey, reading.RekeySeconds);
+        PutNow(intent, reading.Now);
         context.SendBroadcast(intent);
+    }
+
+    /// <summary>
+    /// Reports to the head what the link shows right now.
+    /// </summary>
+    public static void PublishNow(Context context, LinkNow now)
+    {
+        var intent = Broadcast(context, ActionEvent);
+        PutNow(intent, now);
+        context.SendBroadcast(intent);
+    }
+
+    /// <summary>
+    /// Reads what the link shows out of an event of the tunnel; null where the event carries none.
+    /// </summary>
+    public static LinkNow? ReadNow(Intent intent)
+    {
+        return intent.HasExtra(ExtraNowLoss)
+            ? new LinkNow(intent.GetIntExtra(ExtraNowLoss, LinkHealth.LossUnknown), intent.GetIntExtra(ExtraNowRtt, -1), intent.GetIntExtra(ExtraNowRun, 0))
+            : null;
+    }
+
+    // Puts what the link shows into an event of the tunnel.
+    private static void PutNow(Intent intent, LinkNow now)
+    {
+        intent.PutExtra(ExtraNowLoss, now.LossPercent);
+        intent.PutExtra(ExtraNowRtt, now.RttMs);
+        intent.PutExtra(ExtraNowRun, now.LossStreak);
     }
 
     /// <summary>
@@ -980,6 +1029,11 @@ public static class VpnBridge
     /// Просит поднятый туннель померить серверы карточек, оставленные головой.
     /// </summary>
     public static void RequestCards(Context context) => context.SendBroadcast(Broadcast(context, ActionCards));
+
+    /// <summary>
+    /// Asks a running tunnel to keep its echoes at the watched pace and to say what the link shows.
+    /// </summary>
+    public static void RequestWatch(Context context) => context.SendBroadcast(Broadcast(context, ActionWatch));
 
     /// <summary>
     /// Leaves the configuration to move to for the tunnel to ask its server.

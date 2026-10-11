@@ -280,12 +280,12 @@ internal partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowCardStack => IsSectionCatalogue && HasConfigs && IsNarrowPane;
+    public bool ShowCardStack => IsSectionCatalogue && HasConfigs && PaneWidth > 0 && IsNarrowPane;
 
     /// <summary>
     /// Замощают ли карточки пану.
     /// </summary>
-    public bool ShowCardGrid => IsSectionCatalogue && HasConfigs && !IsNarrowPane;
+    public bool ShowCardGrid => IsSectionCatalogue && HasConfigs && PaneWidth > 0 && !IsNarrowPane;
 
     /// <summary>
     /// Есть ли что экспортировать.

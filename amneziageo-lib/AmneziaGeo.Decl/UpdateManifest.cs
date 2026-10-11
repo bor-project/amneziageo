@@ -13,11 +13,8 @@ namespace AmneziaGeo.Decl;
 /// <param name="Variant">The kind of the file for its platform.</param>
 /// <param name="Sha256">The digest of the file, empty on a legacy manifest.</param>
 /// <param name="Size">The size of the file in bytes, 0 where the manifest names none.</param>
-/// <param name="Files">The list of the files the file installs, null where the release carries none.</param>
-/// <param name="Pack">Those files packed one by one, null where the release carries none.</param>
-/// <param name="Deltas">The list of the deltas of those files from their versions in earlier releases, null where the
-/// release carries none.</param>
-/// <param name="DeltaPack">Those deltas one after another, null where the release carries none.</param>
+/// <param name="Patch">The patch that makes the file on a machine with the release before, null where the release
+/// carries none.</param>
 public sealed record UpdateAsset(
     [property: JsonPropertyName("name")] string? Name,
     [property: JsonPropertyName("platform")] string? Platform,
@@ -25,22 +22,21 @@ public sealed record UpdateAsset(
     [property: JsonPropertyName("variant")] string? Variant,
     [property: JsonPropertyName("sha256")] string? Sha256,
     [property: JsonPropertyName("size")] long Size = 0,
-    [property: JsonPropertyName("files")] UpdateFile? Files = null,
-    [property: JsonPropertyName("pack")] UpdateFile? Pack = null,
-    [property: JsonPropertyName("deltas")] UpdateFile? Deltas = null,
-    [property: JsonPropertyName("deltapack")] UpdateFile? DeltaPack = null);
+    [property: JsonPropertyName("patch")] UpdatePatchFile? Patch = null);
 
 /// <summary>
-/// A file of a release that goes with a published file: a list of the files it installs or of their deltas, or a pack
-/// of them.
+/// The patch beside a published file: it makes the files the published file installs out of the files of one earlier
+/// version.
 /// </summary>
 /// <param name="Name">The file among the files of the release.</param>
 /// <param name="Size">The size of the file, in bytes.</param>
-/// <param name="Sha256">The digest of the file, null where the manifest names none.</param>
-public sealed record UpdateFile(
+/// <param name="Sha256">The digest of the file.</param>
+/// <param name="From">The version the patch starts from.</param>
+public sealed record UpdatePatchFile(
     [property: JsonPropertyName("name")] string? Name,
     [property: JsonPropertyName("size")] long Size,
-    [property: JsonPropertyName("sha256")] string? Sha256 = null);
+    [property: JsonPropertyName("sha256")] string? Sha256,
+    [property: JsonPropertyName("from")] string? From);
 
 /// <summary>
 /// Update metadata published next to a release.
@@ -168,6 +164,20 @@ public static class UpdateFeed
     }
 
     /// <summary>
+    /// The patch of an asset for a machine with the version given; null where the asset carries none or its patch
+    /// starts from another version.
+    /// </summary>
+    public static UpdatePatchFile? PatchFor(UpdateAsset? asset, string installed)
+    {
+        return asset?.Patch is { Name.Length: > 0, Size: > 0, Sha256.Length: > 0, From: { } from } patch
+            && Version.TryParse(from, out var start)
+            && Version.TryParse(installed, out var held)
+            && Four(start).Equals(Four(held))
+                ? patch
+                : null;
+    }
+
+    /// <summary>
     /// Whether a remote version is newer than the installed one.
     /// </summary>
     public static bool IsUpdate(string remote, string current)
@@ -180,6 +190,10 @@ public static class UpdateFeed
 
         return !string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase);
     }
+
+    // A version with every one of its four numbers set.
+    private static Version Four(Version version) =>
+        new(version.Major, version.Minor, Math.Max(version.Build, 0), Math.Max(version.Revision, 0));
 
     // Reads the numeric part of a release tag (v1.2.3.4-beta -> 1.2.3.4); an unparsable tag sorts lowest.
     private static Version TagVersion(string? tag)

@@ -3,9 +3,9 @@
 # Linux:   the amneziageo and amneziageo-gui Debian packages for amd64 and arm64.
 # Android: one APK carrying arm64-v8a, armeabi-v7a and x86_64, and one APK per ABI that the app's own update
 #          fetches.
-# Beside every installer and package lie its files packed one by one and their list: the app's update fetches from
-# there only the files the installed copy lacks, and a changed file as a delta from its version in the Latest release
-# or one of the two newest when the copy holds that version (job deltas).
+# Beside every installer and package lies its patch from the release before (job earlier picks that release): the
+# app's update on a machine with that release fetches the patch and makes the installer or the package out of it and
+# the installed files; any other machine downloads the whole file.
 # Every job is its own runner with fail-fast off, so a target that failed is rerun alone. The release is published
 # only when every target built: one that lacks a target offers its users an update they cannot take.
 # Bundles are UNSIGNED. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID variable +
@@ -24,7 +24,35 @@ permissions:
   contents: write   # attach the installers to the GitHub Release
 
 jobs:
+  # The release the patches of this one start from: the highest version below this tag, among the stable releases for
+  # a stable tag and among all of them for a prerelease one. Off a tag, or with no such release, the output is empty
+  # and the release goes out without patches.
+  earlier:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+    steps:
+      - name: Pick the release before
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          tag=''
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
+            kinds='.[] | select(.draft | not)'
+            if [[ "$GITHUB_REF_NAME" != *-* ]]; then kinds="$kinds | select(.prerelease | not)"; fi
+            tag=$( { gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "$kinds | .tag_name" \
+                       | while read -r t; do v="${t#v}"; v="${v%%-*}"; [ "$v" = "$VER" ] || printf '%s %s\n' "$v" "$t"; done
+                     printf '%s @\n' "$VER"; } | sort -V -s -k1,1 | awk '$2 == "@" { print last; exit } { last = $2 }' ) || tag=''
+          fi
+          echo "the release before: ${tag:-none}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: earlier
     runs-on: windows-latest
     strategy:
       fail-fast: false   # an arch that failed is rerun alone while the others keep what they built
@@ -67,13 +95,26 @@ jobs:
       # WiX v4/v5 is restored as an MSBuild SDK via the .wixproj PackageReferences during `dotnet build`.
       # If a real run reports a missing extension, add: `dotnet tool install --global wix` here.
 
+      - name: Download the installer of the release before
+        if: ${{ needs.earlier.outputs.tag != '' }}
+        continue-on-error: true   # without it the installer goes out with no patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $suffix = if ('${{ matrix.variant }}' -eq 'fdd') { '-fdd' } else { '' }
+          gh release download '${{ needs.earlier.outputs.tag }}' -R $env:GITHUB_REPOSITORY -D earlier -p "AmneziaGeo-*-win-${{ matrix.arch }}$suffix.exe"
+
       - name: Build installer (unsigned)
         shell: pwsh
         # `ci` selects installer.config.ci.json (signingCert = null) so the local signtool path is skipped.
         # On a tag push the version comes from the tag (v1.2.3.4 -> 1.2.3.4; use a 4-field tag); otherwise
-        # build-installer falls back to 1.0.1.<commit-count>.
+        # build-installer falls back to 1.0.1.<commit-count>. The installer of the release before, when it was
+        # downloaded, gives the patch beside the new one.
         run: |
           $script = 'amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1'
+          $earlier = @{}
+          if (Test-Path earlier) { $earlier = @{ Earlier = (Resolve-Path earlier).Path } }
           if ("$env:GITHUB_REF" -like 'refs/tags/v*') {
             # Strip the leading v and any prerelease suffix (v1.2.3.4-beta.1 -> 1.2.3.4): the installer needs a
             # numeric N.N.N.N version; the -beta marker lives on the tag/release, not in the binaries.
@@ -81,7 +122,7 @@ jobs:
             # A prerelease tag (v1.2.3.4-beta.1) bakes allowPrerelease=1 so the beta build stays on the beta
             # channel instead of offering a downgrade to the stable latest.
             $pre = [bool]("$env:GITHUB_REF_NAME" -match '-')
-            & $script ci -Version $ver -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }} -Prerelease:$pre
+            & $script ci -Version $ver -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }} -Prerelease:$pre @earlier
           } else {
             & $script ci -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }}
           }
@@ -93,21 +134,20 @@ jobs:
           path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
           if-no-files-found: error
 
-      - name: Upload the update pack
-        # The update layout packed file by file with its list; kept apart from the installer the sign job takes.
+      - name: Upload the patch
+        # The patch from the release before; kept apart from the installer the sign job takes.
         uses: actions/upload-artifact@v4
         with:
-          name: update-pack-${{ matrix.arch }}-${{ matrix.variant }}
-          path: |
-            amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.pack
-            amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.files
-          if-no-files-found: error
+          name: update-patch-${{ matrix.arch }}-${{ matrix.variant }}
+          path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.patch
+          if-no-files-found: ignore
 
   # Debian packages: amneziageo (agent, engine, console client, systemd unit) and amneziageo-gui.
   # Both are self-contained, so the target machine needs neither the .NET runtime nor Go. The arm64
   # package is cross-built on the x64 runner: `dotnet publish -r linux-arm64` and a CGO-free `go build`
   # both cross-compile, and dpkg-deb only writes the archive.
   build-linux:
+    needs: earlier
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -136,11 +176,20 @@ jobs:
         # it for the package architecture.
         run: amneziageo-linux/tools/build-engine-linux.sh
 
+      - name: Download the packages of the release before
+        if: ${{ needs.earlier.outputs.tag != '' }}
+        continue-on-error: true   # without them the packages go out with no patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download '${{ needs.earlier.outputs.tag }}' -R "$GITHUB_REPOSITORY" -D earlier -p '*_${{ matrix.arch }}.deb'
+
       - name: Build the Debian packages
         shell: bash
         run: |
           set -euo pipefail
           args=(--arch ${{ matrix.arch }})
+          # The packages of the release before, when they were downloaded, give the patches beside the new ones.
+          if [ -d earlier ]; then args+=(--earlier "$PWD/earlier"); fi
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
             args+=(--version "$ver")
@@ -155,8 +204,7 @@ jobs:
           name: deb-${{ matrix.arch }}
           path: |
             dist/*.deb
-            dist/*.pack
-            dist/*.files
+            dist/*.patch
           if-no-files-found: error
 
   # One APK for all three ABIs and one per ABI, a third of the size, that the app's own update fetches. Release is
@@ -280,82 +328,18 @@ jobs:
           path: signed/*.exe
           if-no-files-found: error
 
-  # Deltas of the changed files of every installer and package from their versions in the Latest release and the two
-  # newest ones, this tag aside: an app that holds such a version downloads the delta and makes the file from its own.
-  # Beside the list of files and the pack of an asset lie the list of its deltas (.deltas) and their pack (.deltapack).
-  # An earlier release without the list of an asset gives it no delta; a failure here only leaves the deltas out.
-  deltas:
-    needs: [build, build-linux]
-    runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Download the lists and packs of the installers
-        uses: actions/download-artifact@v4
-        with:
-          pattern: update-pack-*
-          path: packs
-          merge-multiple: true
-
-      - name: Download the lists and packs of the packages
-        uses: actions/download-artifact@v4
-        with:
-          pattern: deb-*
-          path: packs
-          merge-multiple: true
-
-      - name: Make the deltas
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          lists=(packs/*.files)
-          [ ${#lists[@]} -gt 0 ] || { echo "no list of files built"; exit 0; }
-          VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
-          newest=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=20" \
-                     --jq '[.[] | select(.draft | not)] | sort_by(.published_at) | reverse | .[].tag_name' || true)
-          others=$(printf '%s\n' $newest | { grep -vxF -e "$GITHUB_REF_NAME" -e "${latest:-none}" || true; } | head -2)
-          bases=()
-          for tag in $latest $others; do
-            [ "$tag" != "$GITHUB_REF_NAME" ] || continue
-            v="${tag#v}"; v="${v%%-*}"
-            bases+=(--base "$v" "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/")
-            echo "earlier release: $tag"
-          done
-          [ ${#bases[@]} -gt 0 ] || { echo "no earlier release"; exit 0; }
-          dotnet run -c Release --project amneziageo-lib/AmneziaGeo.Deltas -- --version "$VER" --out deltas "${bases[@]}" "${lists[@]}"
-
-      - name: Upload the deltas
-        uses: actions/upload-artifact@v4
-        with:
-          name: deltas
-          path: |
-            deltas/*.deltas
-            deltas/*.deltapack
-          if-no-files-found: ignore
-
   # Publishes the GitHub Release that the app's auto-update reads. update.json + the installers, packages
-  # and the APKs, with the packs, lists and deltas beside them, are attached as assets. A stable client polls
+  # and the APKs, with the patches beside them, are attached as assets. A stable client polls
   # https://github.com/<repo>/releases/latest/download/update.json; a prerelease (allowPrerelease) client
   # finds the newest release via the releases API. Either way the client builds its own installer name
   # (AmneziaGeo-<version>-<its build target>.exe) from the manifest version, so each arch/payload downloads
   # its own file; `setup` stays as a legacy fallback. Runs on a tag push whether or not signing ran,
   # preferring signed installers and falling back to the unsigned ones.
   publish:
-    needs: [build, build-linux, build-android, sign, deltas]
+    needs: [earlier, build, build-linux, build-android, sign]
     runs-on: ubuntu-latest
     # Publishes on a tag once every build job succeeded; "Re-run failed jobs" brings a failed one back and the
-    # release then goes out whole. The sign job may be skipped, and a failure of the deltas only leaves them out.
+    # release then goes out whole. The sign job may be skipped, and a patch that did not come out is only left out.
     if: >-
       ${{ !cancelled() && startsWith(github.ref, 'refs/tags/')
       && needs.build.result == 'success' && needs.build-linux.result == 'success'
@@ -376,9 +360,8 @@ jobs:
           mkdir -p release
           # Prefer signed over unsigned when both exist (signed dirs are globbed first; dedup by basename).
           for f in artifacts/installer-signed-*/*.exe artifacts/installer-unsigned-*/*.exe \
-                   artifacts/update-pack-*/*.pack artifacts/update-pack-*/*.files \
-                   artifacts/deb-*/*.deb artifacts/deb-*/*.pack artifacts/deb-*/*.files artifacts/apk*/*.apk \
-                   artifacts/deltas/*.deltas artifacts/deltas/*.deltapack; do
+                   artifacts/update-patch-*/*.patch \
+                   artifacts/deb-*/*.deb artifacts/deb-*/*.patch artifacts/apk*/*.apk; do
             b=$(basename "$f")
             if [ ! -e "release/$b" ]; then cp "$f" "release/$b"; echo "asset: $b"; fi
           done
@@ -400,27 +383,21 @@ jobs:
           CHANNEL=stable
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then CHANNEL=prerelease; fi
           # SHA-256 lets the client verify the downloaded file before it runs it. Beside a Windows installer or a
-          # Debian package lie its files packed one by one and their list, which the app's update fetches instead of
-          # the whole file, and the deltas of its changed files with their list; the asset's own sha256 stays ahead of
-          # them, as install.sh takes the first one after the name.
+          # Debian package lies its patch from the release before, which the app's update on a machine with that
+          # release fetches instead of the whole file; the asset's own sha256 stays ahead of the patch, as install.sh
+          # takes the first one after the name. A patch is named in the manifest with the version it starts from.
+          EARLIER="${{ needs.earlier.outputs.tag }}"; FROM="${EARLIER#v}"; FROM="${FROM%%-*}"
+          if [ -z "$FROM" ]; then rm -f release/*.patch; fi
           asset() {
             local f=$1 base=${1%.*} json
             json=$(jq -n --arg name "$(basename "$f")" --arg platform "$2" --arg arch "$3" --arg variant "$4" \
                      --arg sha256 "$(sha256sum "$f" | cut -d' ' -f1)" --argjson size "$(stat -c %s "$f")" \
                      '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256, size:$size}')
-            if [ -f "$base.files" ] && [ -f "$base.pack" ]; then
-              json=$(jq --arg list "$(basename "$base.files")" --argjson listSize "$(stat -c %s "$base.files")" \
-                        --arg listSha256 "$(sha256sum "$base.files" | cut -d' ' -f1)" \
-                        --arg pack "$(basename "$base.pack")" --argjson packSize "$(stat -c %s "$base.pack")" \
-                        '. + {files: {name: $list, size: $listSize, sha256: $listSha256}, pack: {name: $pack, size: $packSize}}' \
+            if [ -f "$base.patch" ]; then
+              json=$(jq --arg patch "$(basename "$base.patch")" --argjson patchSize "$(stat -c %s "$base.patch")" \
+                        --arg patchSha256 "$(sha256sum "$base.patch" | cut -d' ' -f1)" --arg from "$FROM" \
+                        '. + {patch: {name: $patch, size: $patchSize, sha256: $patchSha256, from: $from}}' \
                         <<< "$json")
-              if [ -f "$base.deltas" ] && [ -f "$base.deltapack" ]; then
-                json=$(jq --arg list "$(basename "$base.deltas")" --argjson listSize "$(stat -c %s "$base.deltas")" \
-                          --arg listSha256 "$(sha256sum "$base.deltas" | cut -d' ' -f1)" \
-                          --arg pack "$(basename "$base.deltapack")" --argjson packSize "$(stat -c %s "$base.deltapack")" \
-                          '. + {deltas: {name: $list, size: $listSize, sha256: $listSha256}, deltapack: {name: $pack, size: $packSize}}' \
-                          <<< "$json")
-              fi
             fi
             printf '%s\n' "$json"
           }

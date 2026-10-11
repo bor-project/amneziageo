@@ -1162,8 +1162,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     private static string SetupName(string url) => Path.GetFileName(new Uri(url).LocalPath);
 
-    // Downloads the setup into the downloads folder, reporting integer percent. Where the release carries the pack of
-    // the setup, the update layout is put together from the installed copy and the files it lacks; otherwise, or
+    // Downloads the setup into the downloads folder, reporting integer percent. Where the release carries a patch from
+    // the version running, the update layout is put together from the installed copy and that patch; otherwise, or
     // when the layout does not come together, the whole setup is downloaded, carrying on from its partial.
     private static async Task<string> DownloadSetupAsync(
         string url,
@@ -1187,22 +1187,23 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             }
         }
 
-        if (asset is { Files: not null, Pack: not null })
+        var running = typeof(GeneralViewModel).Assembly.GetName().Version?.ToString() ?? string.Empty;
+        if (UpdateFeed.PatchFor(asset, running) is { } patch)
         {
             try
             {
                 var (layout, count) = await SetupDownloads
-                    .StageAsync(http, address, asset, [AppContext.BaseDirectory], folder, Report, ct)
+                    .StageAsync(http, address, patch, [AppContext.BaseDirectory], folder, Report, ct)
                     .ConfigureAwait(false);
                 var deltas = count.Deltas > 0 ? $" ({count.Deltas} of them as deltas of the installed ones)" : string.Empty;
-                await note($"update: fetched {count.Fetched} of the {count.Files} files{deltas}, {Megabytes(count.Bytes)} of the "
-                    + $"{Megabytes(asset.Size)} setup, the others came from the installed copy").ConfigureAwait(false);
+                await note($"update: the patch from {patch.From} carried {count.Carried} of the {count.Files} files{deltas}, {Megabytes(count.Bytes)} "
+                    + $"instead of the {Megabytes(asset?.Size ?? 0)} setup, the others came from the installed copy").ConfigureAwait(false);
                 return layout;
             }
             catch (Exception ex) when (ex is InvalidDataException or IOException or HttpRequestException or UnauthorizedAccessException
                 || (ex is OperationCanceledException && !ct.IsCancellationRequested))
             {
-                await note($"update: the changed files were not fetched apart, the whole setup is downloaded: {ex.Message}").ConfigureAwait(false);
+                await note($"update: the patch from {patch.From} did not make the setup, the whole setup is downloaded: {ex.Message}").ConfigureAwait(false);
             }
         }
 
@@ -1213,7 +1214,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     private static string Megabytes(long bytes) =>
-        (bytes / (1024.0 * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " MB";
+        (bytes / (1024.0 * 1024)).ToString("0.0#", CultureInfo.InvariantCulture) + " MB";
 
     // Drops a half-written or corrupt setup after a cancelled, failed, or unverified download.
     private static void TryDeletePartial(string path)

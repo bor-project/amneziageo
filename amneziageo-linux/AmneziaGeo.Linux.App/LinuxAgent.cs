@@ -308,6 +308,11 @@ internal sealed class LinuxAgent : IDisposable
     {
         try
         {
+            if (command.Op == IpcContract.OpLinkNow)
+            {
+                return LookAtLink();
+            }
+
             return DownloadsSources(command.Op)
                 ? await RefreshSourcesAsync(SourceNamed(command), ct).ConfigureAwait(false)
                 : await GatedAsync(() => RunAsync(command, ct), ct).ConfigureAwait(false);
@@ -321,6 +326,18 @@ internal sealed class LinuxAgent : IDisposable
             _log.Error("agent", $"command '{command.Op}' failed", ex);
             return new IpcAck(false, $"{command.Op} failed: {ex.Message}");
         }
+    }
+
+    // Says what the running tunnel shows right now and keeps its echoes at the watched pace.
+    private IpcAck LookAtLink()
+    {
+        if (_loss is not { } probe || !_tunnel.Running || _boundTarget is not { Length: > 0 } name)
+        {
+            return new IpcAck(true, string.Empty);
+        }
+
+        probe.Watch();
+        return new IpcAck(true, probe.Now.ToRow(name));
     }
 
     // A command that only downloads rule databases.
@@ -542,7 +559,7 @@ internal sealed class LinuxAgent : IDisposable
             age = peer.HandshakeUnix > 0
                 ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix))
                 : -1;
-            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0);
+            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0, _loss?.Now);
             LogLink(reading);
             if (await RepairAsync(peer, reading, ct).ConfigureAwait(false))
             {
@@ -3100,6 +3117,7 @@ internal sealed class LinuxAgent : IDisposable
         var bound = string.Equals(name, _boundTarget, StringComparison.Ordinal);
         var handshake = bound ? _handshakeAge : -1;
         var reading = bound ? _link : LinkReading.Empty;
+        var shown = bound ? (_loss?.Now ?? LinkNow.Unknown) : LinkNow.Unknown;
         return new ConfigEntry(
             name,
             WgConfigEditor.GetEndpoint(text) ?? string.Empty,
@@ -3115,8 +3133,8 @@ internal sealed class LinuxAgent : IDisposable
             reading.RxBitsPerSecond,
             reading.TxBitsPerSecond,
             reading.HandshakesPerMinute,
-            reading.LossPercent,
-            reading.RttMs,
+            shown.LossPercent,
+            shown.RttMs,
             member?.Subscription ?? string.Empty,
             member is { Present: false },
             WgConfigEditor.GetMtu(text),
@@ -3133,7 +3151,7 @@ internal sealed class LinuxAgent : IDisposable
             WsEndpoint.SourceOf(text, offer) == WsSource.Settings,
             member is not null && stale.Contains(member.Subscription),
             reading.Churning,
-            reading.LossStreak);
+            shown.LossStreak);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

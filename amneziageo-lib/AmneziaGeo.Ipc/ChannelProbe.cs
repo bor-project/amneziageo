@@ -204,7 +204,7 @@ public static class ChannelProbe
         var average = (int)times.Average();
         var jitter = times.Count > 1 ? (int)times.Select(one => Math.Abs(one - average)).Average() : 0;
         var loss = lost * 100 / (times.Count + lost);
-        return new CheckLeg(name, ChannelVerdict.StateFor(loss), average, jitter, loss, Note: $"{address}:{port} inside a websocket");
+        return new CheckLeg(name, ChannelVerdict.StateFor(loss), average, jitter, loss, Note: $"{address}:{port} inside a websocket", BestMs: times.Min());
     }
 
     // One timed connect to the carrier; a refused or unanswered port counts as a loss.
@@ -363,14 +363,14 @@ public static class ChannelProbe
             return new CheckLeg(name, LegState.Unknown, Note: target is { Length: > 0 } ? "not an address" : "no address to probe");
         }
 
-        var (rtt, jitter, loss) = await EchoAsync(address, bypass, ct).ConfigureAwait(false);
+        var (rtt, jitter, loss, best) = await EchoAsync(address, bypass, ct).ConfigureAwait(false);
         if (loss >= 100)
         {
             return new CheckLeg(name, LegState.Unknown, LossPercent: LinkHealth.LossUnknown, Note: $"{address} never answered");
         }
 
         var size = measureSize ? await LargestAsync(address, bypass, ct).ConfigureAwait(false) : 0;
-        return new CheckLeg(name, ChannelVerdict.StateFor(loss), rtt, jitter, loss, MaxPacketBytes: size, Note: address.ToString());
+        return new CheckLeg(name, ChannelVerdict.StateFor(loss), rtt, jitter, loss, MaxPacketBytes: size, Note: address.ToString(), BestMs: best);
     }
 
     // The session itself: nothing is sent, the engine's own counters are read.
@@ -408,7 +408,7 @@ public static class ChannelProbe
             }
 
             first ??= address;
-            var (rtt, jitter, loss) = await EchoAsync(address, null, ct).ConfigureAwait(false);
+            var (rtt, jitter, loss, _) = await EchoAsync(address, null, ct).ConfigureAwait(false);
             if (loss < 100)
             {
                 return new CheckLeg(name, ChannelVerdict.StateFor(loss), rtt, jitter, loss, Note: address.ToString());
@@ -469,8 +469,8 @@ public static class ChannelProbe
         return TunnelTrace.Between(before, after, TraceProbes, TracePayloadBytes, TunnelTrace.Heard(idle, before));
     }
 
-    // Round trip, jitter and loss over one burst; a target silent from the start is abandoned early.
-    private static async Task<(int Rtt, int Jitter, int Loss)> EchoAsync(IPAddress address, Func<Socket, bool>? bypass, CancellationToken ct)
+    // Round trip, jitter, loss and the quickest echo over one burst; a target silent from the start is abandoned early.
+    private static async Task<(int Rtt, int Jitter, int Loss, int Best)> EchoAsync(IPAddress address, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         var times = new List<int>();
         var sent = 0;
@@ -489,7 +489,7 @@ public static class ChannelProbe
                 lost++;
                 if (lost >= DeadAfter && times.Count == 0)
                 {
-                    return (-1, -1, 100);
+                    return (-1, -1, 100, -1);
                 }
 
                 continue;
@@ -500,12 +500,12 @@ public static class ChannelProbe
 
         if (times.Count == 0)
         {
-            return (-1, -1, 100);
+            return (-1, -1, 100, -1);
         }
 
         var average = (int)times.Average();
         var jitter = times.Count > 1 ? (int)times.Select(one => Math.Abs(one - average)).Average() : 0;
-        return (average, jitter, lost * 100 / sent);
+        return (average, jitter, lost * 100 / sent, times.Min());
     }
 
     // The largest payload the path carries whole: sizes are tried largest first with fragmentation refused,

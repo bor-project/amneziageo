@@ -44,315 +44,323 @@
         <Border Classes="rowsep" IsVisible="{Binding HasConnectionTabs}" />
 
         <!-- Tunnel: what the agent does with the connection itself (#196, #199). -->
-        <StackPanel Spacing="12" IsVisible="{Binding IsTunnelTab}">
-          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ShowNotifications}"
-                                     Description="{l:Tr General_ShowNotificationsHint}"
-                                     IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
-
-          <Border Classes="rowsep" />
-
-          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_SurviveReboot}"
-                                     Description="{l:Tr General_SurviveRebootHint}"
-                                     IsChecked="{Binding SurviveReboot, Mode=TwoWay}" />
-
-          <Border Classes="rowsep" />
-
-          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_PeriodicReconnect}"
-                                     Description="{l:Tr General_PeriodicReconnectHint}"
-                                     IsChecked="{Binding PeriodicReconnect, Mode=TwoWay}" />
-
-          <Border Classes="rowsep" />
-
-          <!-- The interval keeps its own line under the label: the number alone does not say what repeats. -->
-          <StackPanel Spacing="8" IsEnabled="{Binding PeriodicReconnectIntervalEnabled}">
-            <StackPanel Spacing="2">
-              <TextBlock Text="{l:Tr General_ReconnectInterval}" FontWeight="SemiBold" FontSize="15"
-                         TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr General_ReconnectIntervalHint}" Classes="muted" FontSize="11.5"
-                         TextWrapping="Wrap" />
-            </StackPanel>
-            <!-- The unit sits inside the box: beside it every language gives it a width of its own and
-                 pushes the boxes out of line with each other. -->
-            <TextBox Classes="field" Width="132" HorizontalAlignment="Left"
-                     controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="86400"
-                     Text="{Binding ReconnectIntervalSeconds, Mode=TwoWay}">
-              <TextBox.InnerRightContent>
-                <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" Margin="6,0,10,0"
-                           VerticalAlignment="Center" IsHitTestVisible="False" />
-              </TextBox.InnerRightContent>
-            </TextBox>
-          </StackPanel>
-
-          <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
-               относятся. -->
-          <StackPanel Spacing="12" IsVisible="{Binding MultiServerOffered}">
-            <Border Classes="rowsep" />
-
-            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_MultiServer}"
-                                       Description="{l:Tr General_MultiServerHint}"
-                                       IsChecked="{Binding MultiServer, Mode=TwoWay}" />
-
-            <!-- Место режима: числа набора стоят на месте и при выключенном режиме, только погашены. -->
-            <ContentControl Content="{Binding TunnelExtras}" IsEnabled="{Binding MultiServer}">
-              <ContentControl.DataTemplates>
-                <DataTemplate DataType="fleet:FleetConnectionsViewModel" x:DataType="fleet:FleetConnectionsViewModel">
-                  <fleet:FleetBalanceStrip />
-                </DataTemplate>
-              </ContentControl.DataTemplates>
-            </ContentControl>
-          </StackPanel>
-        </StackPanel>
-
-        <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->
-        <StackPanel Spacing="12" IsVisible="{Binding IsProxyTab}">
-          <StackPanel Spacing="4">
-            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ProxyEnabled}"
-                                       Description="{l:Tr General_ProxyEnabledHint}"
-                                       IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
-            <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                       IsVisible="{Binding ProxyNeedsTunnel}" />
-          </StackPanel>
-
-          <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
-                     Foreground="{DynamicResource AgWarnBrush}"
-                     IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-          <Border Classes="rowsep" />
-
-          <StackPanel Spacing="12" IsEnabled="{Binding ProxyEnabled}">
-            <!-- Every address a client can be pointed at, each one copyable; the tunnel's own address is not
-                 among them - a neighbour told to use it reaches nobody. -->
-            <ItemsControl ItemsSource="{Binding ProxyEndpoints}" IsVisible="{Binding HasProxyEndpoints}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:ProxyEndpointRow">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11.5" Margin="0,6,0,2"
-                               IsVisible="{Binding HasCaption}" />
-                    <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
-                      <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="muted" FontSize="12"
-                                 VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12.5"
-                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                      <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                              Click="OnCopyProxyEndpoint" ToolTip.Tip="{l:Tr General_ProxyCopyTooltip}">
-                        <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
-                      </Button>
-                    </Grid>
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <Border Classes="rowsep" IsVisible="{Binding HasProxyEndpoints}" />
-
-            <!-- Each port box stands under its label, left-aligned. -->
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr General_ProxySocksPort}" FontWeight="SemiBold" FontSize="15" />
-              <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
-                       Text="{Binding ProxySocksPort, Mode=TwoWay}" />
-            </StackPanel>
+        <controls:Later IsVisible="{Binding IsTunnelTab}">
+          <StackPanel Spacing="12">
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ShowNotifications}"
+                                       Description="{l:Tr General_ShowNotificationsHint}"
+                                       IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
 
             <Border Classes="rowsep" />
 
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontWeight="SemiBold" FontSize="15" />
-              <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
-                       Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
-            </StackPanel>
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_SurviveReboot}"
+                                       Description="{l:Tr General_SurviveRebootHint}"
+                                       IsChecked="{Binding SurviveReboot, Mode=TwoWay}" />
 
             <Border Classes="rowsep" />
 
-            <!-- Clients: the count first, and who holds them under the arrow. -->
-            <StackPanel Spacing="6">
-              <Grid ColumnDefinitions="Auto,Auto,*">
-                <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyClients}" FontWeight="SemiBold" FontSize="15"
-                           VerticalAlignment="Center" />
-                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                        Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding ProxyClientCount}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-                </Border>
-                <Button Grid.Column="2" Classes="icon" HorizontalAlignment="Left" Margin="2,0,0,0"
-                        VerticalAlignment="Center" IsVisible="{Binding HasProxyClients}"
-                        Command="{Binding ToggleProxyClientsCommand}" ToolTip.Tip="{l:Tr General_ProxyClientsTooltip}">
-                  <TextBlock Text="{Binding ProxyClientsGlyph}" RenderTransform="scale(1.5)" />
-                </Button>
-              </Grid>
-              <TextBlock Text="{l:Tr General_ProxyNoClients}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                         IsVisible="{Binding !HasProxyClients}" />
-              <Border IsVisible="{Binding IsProxyClientsExpanded}" Padding="10,7"
-                      Background="{DynamicResource AgInsetBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
-                      BorderThickness="1" CornerRadius="8">
-                <ItemsControl ItemsSource="{Binding ProxyClients}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ProxyClientRow">
-                      <Grid ColumnDefinitions="Auto,*" Margin="0,1">
-                        <TextBlock Grid.Column="0" Text="{Binding Address}" Classes="mono" FontSize="12.5"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="12"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </Border>
-            </StackPanel>
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_PeriodicReconnect}"
+                                       Description="{l:Tr General_PeriodicReconnectHint}"
+                                       IsChecked="{Binding PeriodicReconnect, Mode=TwoWay}" />
 
             <Border Classes="rowsep" />
 
-            <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
-            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ProxyAnonymous}"
-                                       Description="{l:Tr General_ProxyAnonymousHint}"
-                                       IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
-
-            <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
-            <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
-
-            <Border Classes="rowsep" />
-
-            <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
-            <StackPanel Spacing="6">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                  <TextBlock Text="{l:Tr General_ProxyAccounts}" FontWeight="SemiBold" FontSize="15" />
-                  <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                </StackPanel>
-                <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
-                        Command="{Binding AddProxyAccountCommand}">
-                  <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="{l:Tr Main_AddButton}" />
-                  </StackPanel>
-                </Button>
-              </Grid>
-              <ItemsControl ItemsSource="{Binding ProxyAccounts}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:ProxyAccountViewModel">
-                    <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
-                      <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
-                               Watermark="{l:Tr General_ProxyUser}" />
-                      <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
-                               PasswordChar="●" RevealPassword="{Binding IsRevealed}"
-                               Watermark="{l:Tr General_ProxyPassword}" />
-                      <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
-                              Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
-                        <Panel>
-                          <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
-                                    IsVisible="{Binding !IsRevealed}" />
-                          <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
-                                    IsVisible="{Binding IsRevealed}" />
-                        </Panel>
-                      </Button>
-                      <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center"
-                              Command="{Binding $parent[ItemsControl].((vm:ConnectionsViewModel)DataContext).RemoveProxyAccountCommand}"
-                              CommandParameter="{Binding}">
-                        <PathIcon Data="{StaticResource AgCloseGeometry}" Width="14" Height="14" />
-                      </Button>
-                    </Grid>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </StackPanel>
-        </StackPanel>
-
-        <!-- Own access point: the network a device joins without being set up at all. -->
-        <StackPanel Spacing="12" IsVisible="{Binding IsWifiTab}">
-          <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_HotspotEnabled}"
-                                     Description="{l:Tr General_HotspotEnabledHint}"
-                                     IsChecked="{Binding HotspotEnabled, Mode=TwoWay}"
-                                     IsEnabled="{Binding HotspotSupported}" />
-
-          <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
-                     Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
-
-          <Border Classes="rowsep" />
-
-          <StackPanel Spacing="12" IsEnabled="{Binding HotspotSettingsEnabled}">
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr General_HotspotSsid}" FontWeight="SemiBold" FontSize="15" />
-              <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
-            </StackPanel>
-
-            <Border Classes="rowsep" />
-
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr General_HotspotPassword}" FontWeight="SemiBold" FontSize="15" />
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <TextBox Grid.Column="0" Classes="field" MaxLength="63" PasswordChar="●"
-                         RevealPassword="{Binding IsHotspotPasswordRevealed}"
-                         Text="{Binding HotspotPassword, Mode=TwoWay}" />
-                <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
-                        Command="{Binding ToggleHotspotRevealCommand}" ToolTip.Tip="{l:Tr General_HotspotRevealTooltip}">
-                  <Panel>
-                    <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
-                              IsVisible="{Binding !IsHotspotPasswordRevealed}" />
-                    <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
-                              IsVisible="{Binding IsHotspotPasswordRevealed}" />
-                  </Panel>
-                </Button>
-              </Grid>
-            </StackPanel>
-
-            <Border Classes="rowsep" />
-
-            <!-- Band: the list under its title, what the pick means under the list. -->
-            <StackPanel Spacing="8">
-              <TextBlock Text="{l:Tr General_HotspotBand}" FontWeight="SemiBold" FontSize="15" />
-              <controls:AdaptiveComboBox Classes="field"
-                        Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
-                        ItemsSource="{Binding BandOptions}"
-                        SelectedIndex="{Binding SelectedBandIndex, Mode=TwoWay}" />
-              <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                         Margin="0,-2,0,0"
-                         IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            </StackPanel>
-
-            <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AgWarnBrush}"
-                       IsVisible="{Binding HotspotErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-            <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding HotspotRunning}">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontWeight="SemiBold" FontSize="15"
-                         VerticalAlignment="Center" />
-              <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                      Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="{Binding HotspotClientsText}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-              </Border>
-            </Grid>
-          </StackPanel>
-        </StackPanel>
-
-        <Border Classes="rowsep" IsVisible="{Binding ShowSubscriptions}" />
-
-        <!-- Подписки стоят на вкладке туннеля, а где её нет - на той, что несёт раздел. -->
-        <StackPanel Spacing="12" IsVisible="{Binding ShowSubscriptions}">
-            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_SubscriptionAutoRefresh}"
-                                       Description="{l:Tr General_SubscriptionAutoRefreshHint}"
-                                       IsChecked="{Binding SubscriptionAutoRefresh, Mode=TwoWay}" />
-
-            <Border Classes="rowsep" />
-
-            <!-- Срок сервера главнее: поле стоит там, где панель своего не назвала. -->
-            <StackPanel Spacing="8" IsEnabled="{Binding SubscriptionIntervalEnabled}">
+            <!-- The interval keeps its own line under the label: the number alone does not say what repeats. -->
+            <StackPanel Spacing="8" IsEnabled="{Binding PeriodicReconnectIntervalEnabled}">
               <StackPanel Spacing="2">
-                <TextBlock Text="{l:Tr General_SubscriptionInterval}" FontWeight="SemiBold" FontSize="15"
+                <TextBlock Text="{l:Tr General_ReconnectInterval}" FontWeight="SemiBold" FontSize="15"
                            TextWrapping="Wrap" />
-                <TextBlock Text="{l:Tr General_SubscriptionIntervalHint}" Classes="muted" FontSize="11.5"
+                <TextBlock Text="{l:Tr General_ReconnectIntervalHint}" Classes="muted" FontSize="11.5"
                            TextWrapping="Wrap" />
               </StackPanel>
+              <!-- The unit sits inside the box: beside it every language gives it a width of its own and
+                   pushes the boxes out of line with each other. -->
               <TextBox Classes="field" Width="132" HorizontalAlignment="Left"
-                       controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="168"
-                       Text="{Binding SubscriptionIntervalHours, Mode=TwoWay}">
+                       controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="86400"
+                       Text="{Binding ReconnectIntervalSeconds, Mode=TwoWay}">
                 <TextBox.InnerRightContent>
-                  <TextBlock Text="{l:Tr General_Hours}" Classes="muted" FontSize="12.5" Margin="6,0,10,0"
+                  <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" Margin="6,0,10,0"
                              VerticalAlignment="Center" IsHitTestVisible="False" />
                 </TextBox.InnerRightContent>
               </TextBox>
             </StackPanel>
-        </StackPanel>
+
+            <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
+                 относятся. -->
+            <StackPanel Spacing="12" IsVisible="{Binding MultiServerOffered}">
+              <Border Classes="rowsep" />
+
+              <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_MultiServer}"
+                                         Description="{l:Tr General_MultiServerHint}"
+                                         IsChecked="{Binding MultiServer, Mode=TwoWay}" />
+
+              <!-- Место режима: числа набора стоят на месте и при выключенном режиме, только погашены. -->
+              <ContentControl Content="{Binding TunnelExtras}" IsEnabled="{Binding MultiServer}">
+                <ContentControl.DataTemplates>
+                  <DataTemplate DataType="fleet:FleetConnectionsViewModel" x:DataType="fleet:FleetConnectionsViewModel">
+                    <fleet:FleetBalanceStrip />
+                  </DataTemplate>
+                </ContentControl.DataTemplates>
+              </ContentControl>
+            </StackPanel>
+          </StackPanel>
+        </controls:Later>
+
+        <!-- Proxy: the address a device on the network this machine is already in is pointed at. -->
+        <controls:Later IsVisible="{Binding IsProxyTab}">
+          <StackPanel Spacing="12">
+            <StackPanel Spacing="4">
+              <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ProxyEnabled}"
+                                         Description="{l:Tr General_ProxyEnabledHint}"
+                                         IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
+              <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                         IsVisible="{Binding ProxyNeedsTunnel}" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AgWarnBrush}"
+                       IsVisible="{Binding ProxyErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <Border Classes="rowsep" />
+
+            <StackPanel Spacing="12" IsEnabled="{Binding ProxyEnabled}">
+              <!-- Every address a client can be pointed at, each one copyable; the tunnel's own address is not
+                   among them - a neighbour told to use it reaches nobody. -->
+              <ItemsControl ItemsSource="{Binding ProxyEndpoints}" IsVisible="{Binding HasProxyEndpoints}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ProxyEndpointRow">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11.5" Margin="0,6,0,2"
+                                 IsVisible="{Binding HasCaption}" />
+                      <Grid ColumnDefinitions="62,*,Auto" Margin="0,1">
+                        <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="muted" FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" Classes="mono" FontSize="12.5"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
+                                Click="OnCopyProxyEndpoint" ToolTip.Tip="{l:Tr General_ProxyCopyTooltip}">
+                          <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                        </Button>
+                      </Grid>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <Border Classes="rowsep" IsVisible="{Binding HasProxyEndpoints}" />
+
+              <!-- Each port box stands under its label, left-aligned. -->
+              <StackPanel Spacing="8">
+                <TextBlock Text="{l:Tr General_ProxySocksPort}" FontWeight="SemiBold" FontSize="15" />
+                <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
+                         Text="{Binding ProxySocksPort, Mode=TwoWay}" />
+              </StackPanel>
+
+              <Border Classes="rowsep" />
+
+              <StackPanel Spacing="8">
+                <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontWeight="SemiBold" FontSize="15" />
+                <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
+                         Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
+              </StackPanel>
+
+              <Border Classes="rowsep" />
+
+              <!-- Clients: the count first, and who holds them under the arrow. -->
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="Auto,Auto,*">
+                  <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyClients}" FontWeight="SemiBold" FontSize="15"
+                             VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                          Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ProxyClientCount}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+                  </Border>
+                  <Button Grid.Column="2" Classes="icon" HorizontalAlignment="Left" Margin="2,0,0,0"
+                          VerticalAlignment="Center" IsVisible="{Binding HasProxyClients}"
+                          Command="{Binding ToggleProxyClientsCommand}" ToolTip.Tip="{l:Tr General_ProxyClientsTooltip}">
+                    <TextBlock Text="{Binding ProxyClientsGlyph}" RenderTransform="scale(1.5)" />
+                  </Button>
+                </Grid>
+                <TextBlock Text="{l:Tr General_ProxyNoClients}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                           IsVisible="{Binding !HasProxyClients}" />
+                <Border IsVisible="{Binding IsProxyClientsExpanded}" Padding="10,7"
+                        Background="{DynamicResource AgInsetBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
+                        BorderThickness="1" CornerRadius="8">
+                  <ItemsControl ItemsSource="{Binding ProxyClients}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ProxyClientRow">
+                        <Grid ColumnDefinitions="Auto,*" Margin="0,1">
+                          <TextBlock Grid.Column="0" Text="{Binding Address}" Classes="mono" FontSize="12.5"
+                                     VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="1" Text="{Binding Detail}" Classes="muted" FontSize="12"
+                                     Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Border>
+              </StackPanel>
+
+              <Border Classes="rowsep" />
+
+              <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
+              <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_ProxyAnonymous}"
+                                         Description="{l:Tr General_ProxyAnonymousHint}"
+                                         IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
+
+              <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
+                         Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
+              <TextBlock Text="{l:Tr General_ProxyNoAccountWarning}" FontSize="12" TextWrapping="Wrap"
+                         Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAdmitsNobody}" />
+
+              <Border Classes="rowsep" />
+
+              <!-- Accounts: a client sends one of these pairs, and the password shows only when it is asked for. -->
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{l:Tr General_ProxyAccounts}" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
+                          Command="{Binding AddProxyAccountCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="+" />
+                      <TextBlock Text="{l:Tr Main_AddButton}" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <ItemsControl ItemsSource="{Binding ProxyAccounts}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProxyAccountViewModel">
+                      <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
+                        <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
+                                 Watermark="{l:Tr General_ProxyUser}" />
+                        <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
+                                 PasswordChar="●" RevealPassword="{Binding IsRevealed}"
+                                 Watermark="{l:Tr General_ProxyPassword}" />
+                        <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
+                                Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
+                          <Panel>
+                            <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
+                                      IsVisible="{Binding !IsRevealed}" />
+                            <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
+                                      IsVisible="{Binding IsRevealed}" />
+                          </Panel>
+                        </Button>
+                        <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center"
+                                Command="{Binding $parent[ItemsControl].((vm:ConnectionsViewModel)DataContext).RemoveProxyAccountCommand}"
+                                CommandParameter="{Binding}">
+                          <PathIcon Data="{StaticResource AgCloseGeometry}" Width="14" Height="14" />
+                        </Button>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </controls:Later>
+
+        <!-- Own access point: the network a device joins without being set up at all. -->
+        <controls:Later IsVisible="{Binding IsWifiTab}">
+          <StackPanel Spacing="12">
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_HotspotEnabled}"
+                                       Description="{l:Tr General_HotspotEnabledHint}"
+                                       IsChecked="{Binding HotspotEnabled, Mode=TwoWay}"
+                                       IsEnabled="{Binding HotspotSupported}" />
+
+            <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
+
+            <Border Classes="rowsep" />
+
+            <StackPanel Spacing="12" IsEnabled="{Binding HotspotSettingsEnabled}">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{l:Tr General_HotspotSsid}" FontWeight="SemiBold" FontSize="15" />
+                <TextBox Classes="field" MaxLength="32" Text="{Binding HotspotSsid, Mode=TwoWay}" />
+              </StackPanel>
+
+              <Border Classes="rowsep" />
+
+              <StackPanel Spacing="8">
+                <TextBlock Text="{l:Tr General_HotspotPassword}" FontWeight="SemiBold" FontSize="15" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBox Grid.Column="0" Classes="field" MaxLength="63" PasswordChar="●"
+                           RevealPassword="{Binding IsHotspotPasswordRevealed}"
+                           Text="{Binding HotspotPassword, Mode=TwoWay}" />
+                  <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
+                          Command="{Binding ToggleHotspotRevealCommand}" ToolTip.Tip="{l:Tr General_HotspotRevealTooltip}">
+                    <Panel>
+                      <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14"
+                                IsVisible="{Binding !IsHotspotPasswordRevealed}" />
+                      <PathIcon Data="{StaticResource AgEyeOffGeometry}" Width="14" Height="14"
+                                IsVisible="{Binding IsHotspotPasswordRevealed}" />
+                    </Panel>
+                  </Button>
+                </Grid>
+              </StackPanel>
+
+              <Border Classes="rowsep" />
+
+              <!-- Band: the list under its title, what the pick means under the list. -->
+              <StackPanel Spacing="8">
+                <TextBlock Text="{l:Tr General_HotspotBand}" FontWeight="SemiBold" FontSize="15" />
+                <controls:AdaptiveComboBox Classes="field"
+                          Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                          ItemsSource="{Binding BandOptions}"
+                          SelectedIndex="{Binding SelectedBandIndex, Mode=TwoWay}" />
+                <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                           Margin="0,-2,0,0"
+                           IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+
+              <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
+                         Foreground="{DynamicResource AgWarnBrush}"
+                         IsVisible="{Binding HotspotErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+              <Grid ColumnDefinitions="Auto,Auto,*" IsVisible="{Binding HotspotRunning}">
+                <TextBlock Grid.Column="0" Text="{l:Tr General_HotspotClients}" FontWeight="SemiBold" FontSize="15"
+                           VerticalAlignment="Center" />
+                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                        Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding HotspotClientsText}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+                </Border>
+              </Grid>
+            </StackPanel>
+          </StackPanel>
+        </controls:Later>
+
+        <Border Classes="rowsep" IsVisible="{Binding ShowSubscriptions}" />
+
+        <!-- Подписки стоят на вкладке туннеля, а где её нет - на той, что несёт раздел. -->
+        <controls:Later IsVisible="{Binding ShowSubscriptions}">
+          <StackPanel Spacing="12">
+              <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_SubscriptionAutoRefresh}"
+                                         Description="{l:Tr General_SubscriptionAutoRefreshHint}"
+                                         IsChecked="{Binding SubscriptionAutoRefresh, Mode=TwoWay}" />
+
+              <Border Classes="rowsep" />
+
+              <!-- Срок сервера главнее: поле стоит там, где панель своего не назвала. -->
+              <StackPanel Spacing="8" IsEnabled="{Binding SubscriptionIntervalEnabled}">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{l:Tr General_SubscriptionInterval}" FontWeight="SemiBold" FontSize="15"
+                             TextWrapping="Wrap" />
+                  <TextBlock Text="{l:Tr General_SubscriptionIntervalHint}" Classes="muted" FontSize="11.5"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBox Classes="field" Width="132" HorizontalAlignment="Left"
+                         controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="168"
+                         Text="{Binding SubscriptionIntervalHours, Mode=TwoWay}">
+                  <TextBox.InnerRightContent>
+                    <TextBlock Text="{l:Tr General_Hours}" Classes="muted" FontSize="12.5" Margin="6,0,10,0"
+                               VerticalAlignment="Center" IsHitTestVisible="False" />
+                  </TextBox.InnerRightContent>
+                </TextBox>
+              </StackPanel>
+          </StackPanel>
+        </controls:Later>
       </StackPanel>
     </Border>
   </StackPanel>

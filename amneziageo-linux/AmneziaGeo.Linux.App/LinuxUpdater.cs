@@ -9,8 +9,8 @@ namespace AmneziaGeo.Linux.App;
 
 /// <summary>
 /// Application update for the Debian packages: reads the release manifest, puts the packages this machine carries
-/// together from their installed files and the changed files of the release pack or downloads them whole, and hands
-/// them to apt in a transient unit that outlives the agent restart the install triggers.
+/// together from their installed files and the patch of the release or downloads them whole, and hands them to apt in
+/// a transient unit that outlives the agent restart the install triggers.
 /// </summary>
 internal sealed class LinuxUpdater : IDisposable
 {
@@ -28,7 +28,7 @@ internal sealed class LinuxUpdater : IDisposable
     private readonly string _directory = Path.Combine(AgentPaths.Root, "updates");
     private readonly Lock _gate = new();
 
-    // Digest of every package this agent built from pieces, by its path.
+    // Digest of every package this agent built from a patch, by its path.
     private readonly ConcurrentDictionary<string, string> _built = new(StringComparer.Ordinal);
 
     private IReadOnlyList<PendingAsset> _assets = [];
@@ -443,26 +443,27 @@ internal sealed class LinuxUpdater : IDisposable
         }
     }
 
-    // The package put together from the installed files and the changed ones of the release pack and built again;
-    // the whole package, carrying on from its partial, where the release carries no pack or the pieces do not come
-    // together.
+    // The package put together from the installed files and the patch of the release and built again; the whole
+    // package, carrying on from its partial, where the release carries no patch from the installed version or the
+    // patch does not make the package.
     private async Task FetchAsync(PendingAsset asset, Action<long, long> progress, CancellationToken ct)
     {
         _built.TryRemove(asset.Path, out _);
-        if (asset.Published is { Files: not null, Pack: not null } published)
+        if (UpdateFeed.PatchFor(asset.Published, AgentBuild.Version) is { } patch)
         {
             try
             {
-                var count = await BuildAsync(asset, published, progress, ct).ConfigureAwait(false);
+                var count = await BuildAsync(asset, patch, progress, ct).ConfigureAwait(false);
+                Remove(asset.Path + ".part");
                 var deltas = count.Deltas > 0 ? $" ({count.Deltas} of them as deltas of the installed ones)" : string.Empty;
-                _log.Info("update", $"{asset.Name}: fetched {count.Fetched} of the {count.Files} files{deltas}, {Megabytes(count.Bytes)} of "
-                    + $"the {Megabytes(published.Size)} package, the others came from the installed one");
+                _log.Info("update", $"{asset.Name}: the patch from {patch.From} carried {count.Carried} of the {count.Files} files{deltas}, "
+                    + $"{Megabytes(count.Bytes)} instead of the {Megabytes(asset.Published.Size)} package, the others came from the installed one");
                 return;
             }
             catch (Exception ex) when (ex is InvalidDataException or IOException or HttpRequestException or UnauthorizedAccessException
                 or InvalidOperationException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
             {
-                _log.Warn("update", $"{asset.Name}: the changed files were not fetched apart, the whole package is downloaded: {ex.Message}");
+                _log.Warn("update", $"{asset.Name}: the patch from {patch.From} did not make the package, the whole package is downloaded: {ex.Message}");
             }
         }
 
@@ -470,12 +471,12 @@ internal sealed class LinuxUpdater : IDisposable
         RemoveTree(asset);
     }
 
-    // Stages the tree of the package from pieces and builds the package from it with dpkg-deb.
-    private async Task<UpdatePieceCount> BuildAsync(PendingAsset asset, UpdateAsset published, Action<long, long> progress, CancellationToken ct)
+    // Stages the tree of the package from the patch and builds the package from it with dpkg-deb.
+    private async Task<UpdatePatchCount> BuildAsync(PendingAsset asset, UpdatePatchFile patch, Action<long, long> progress, CancellationToken ct)
     {
         var tree = TreeOf(asset);
-        var count = await new UpdatePieces(_http)
-            .StageAsync(new Uri(asset.Url), published, [Path.Combine("/usr/lib", asset.Package)], tree, progress, ct)
+        var count = await UpdatePatch
+            .FetchAsync(_http, new Uri(new Uri(asset.Url), patch.Name!), patch, [Path.Combine("/usr/lib", asset.Package)], tree, progress, ct)
             .ConfigureAwait(false);
         var (code, output) = await TryRunAsync("dpkg-deb", ct, "--root-owner-group", "-Zgzip", "-z1", "--build", tree, asset.Path)
             .ConfigureAwait(false);
@@ -496,7 +497,7 @@ internal sealed class LinuxUpdater : IDisposable
     private string TreeOf(PendingAsset asset) => Path.Combine(_directory, Path.GetFileNameWithoutExtension(asset.Name));
 
     private static string Megabytes(long bytes) =>
-        (bytes / (1024.0 * 1024)).ToString("0.0", CultureInfo.InvariantCulture) + " MB";
+        (bytes / (1024.0 * 1024)).ToString("0.0#", CultureInfo.InvariantCulture) + " MB";
 
     // Holds the shown percent below 100 until every package is on disk and verified.
     private void Report(int percent)
@@ -511,7 +512,7 @@ internal sealed class LinuxUpdater : IDisposable
         _ = _push(CancellationToken.None);
     }
 
-    // A package built from pieces is checked against the digest taken when it was built, a downloaded one against
+    // A package built from a patch is checked against the digest taken when it was built, a downloaded one against
     // the published digest.
     private async Task<bool> VerifyAsync(PendingAsset asset, CancellationToken ct)
     {
@@ -679,7 +680,8 @@ internal sealed class LinuxUpdater : IDisposable
     private void RemoveTree(PendingAsset asset)
     {
         var tree = TreeOf(asset);
-        Remove(tree + ".files");
+        Remove(tree + UpdatePatch.Extension);
+        Remove(tree + UpdatePatch.Extension + ".part");
         try
         {
             if (System.IO.Directory.Exists(tree))

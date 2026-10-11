@@ -222,6 +222,8 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _probes;
     private VpnBridge.Listener? _cards;
     private VpnBridge.Listener? _switches;
+    private VpnBridge.Listener? _watches;
+    private volatile LinkLossProbe? _loss;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
 
@@ -346,6 +348,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _cards, VpnBridge.ActionCards);
         _switches = new VpnBridge.Listener { Handler = _ => RunSwitch() };
         VpnBridge.Listen(this, _switches, VpnBridge.ActionSwitch);
+        _watches = new VpnBridge.Listener { Handler = _ => Watch() };
+        VpnBridge.Listen(this, _watches, VpnBridge.ActionWatch);
         WatchUnderlay();
         _screen = new VpnBridge.Listener { Handler = OnScreen };
         var side = new HandlerThread("ageo-screen");
@@ -481,6 +485,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_cards);
             _cards = null;
+        }
+
+        if (_watches is not null)
+        {
+            UnregisterReceiver(_watches);
+            _watches = null;
         }
 
         if (_switches is not null)
@@ -1045,6 +1055,7 @@ public sealed class GeoVpnService : VpnService
             var targets = LinkLossProbe.Targets(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetDns(resolved));
             var echo = new TunnelEcho(this, WgConfigEditor.GetAddresses(resolved), Report);
             var loss = new LinkLossProbe(targets, echo: echo.RoundTripAsync);
+            _loss = loss;
             _ = Task.Run(() => loss.RunAsync(keepalive.Token));
 
             // The handshake proves the channel, not the path to it: the system takes a fresh network into use a
@@ -2534,6 +2545,18 @@ public sealed class GeoVpnService : VpnService
         return 0;
     }
 
+    // Keeps the echoes of the tunnel at the watched pace and tells the head what the link shows right now.
+    private void Watch()
+    {
+        if (_loss is not { } loss)
+        {
+            return;
+        }
+
+        loss.Watch();
+        VpnBridge.PublishNow(this, loss.Now);
+    }
+
     // Tells the head when the peer last answered, what the link carries, and how often the session is
     // re-established, so a tunnel that is up but dead shows as such there.
     private async Task ReportLinkAsync(LinkLossProbe loss, int churnPerMinute, CancellationToken ct)
@@ -2572,7 +2595,7 @@ public sealed class GeoVpnService : VpnService
             RenewAfterSleep(handle, uapi);
             var seen = PeerHandshake(uapi);
             var (rx, tx) = PeerBytes(uapi);
-            var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs, loss.Streak);
+            var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs, loss.Streak, loss.Now);
             if (loss.Target is { } target && !string.Equals(target, echoed, StringComparison.Ordinal))
             {
                 echoed = target;
@@ -3490,6 +3513,7 @@ public sealed class GeoVpnService : VpnService
             _keepalive?.Cancel();
             _keepalive?.Dispose();
             _keepalive = null;
+            _loss = null;
             _relay?.Dispose();
             _relay = null;
             _proxy?.Dispose();

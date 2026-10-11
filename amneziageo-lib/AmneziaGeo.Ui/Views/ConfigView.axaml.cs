@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -133,7 +134,11 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
-        SectionConfigNameBox.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
+        // Экран черновика строится при первом показе, поэтому поле имени ищется после раскладки.
+        Dispatcher.UIThread.Post(
+            () => this.GetVisualDescendants().OfType<TextBox>().FirstOrDefault(box => box.Name == "SectionConfigNameBox")
+                ?.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified),
+            DispatcherPriority.Loaded);
     }
 
     // Способы экспорта: экран QR, ссылка в буфер и файл конфигурации.

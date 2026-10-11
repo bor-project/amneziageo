@@ -27,11 +27,15 @@ public sealed partial class MainView : UserControl
     // Кто открыл шторку: ему возвращается фокус, когда она уходит.
     private Control? _sheetOrigin;
 
+    // Замер пауз окна после ввода.
+    private readonly StallWatch _stalls;
+
     /// <summary>
     /// ctor
     /// </summary>
     public MainView()
     {
+        _stalls = new StallWatch(() => Environment.TickCount64, Later, () => _vm?.CurrentView ?? string.Empty, message => _vm?.Note(message));
         InitializeComponent();
         HomeRestartHint.FocusFallback = HomePowerButton;
         DataContextChanged += OnDataContextChanged;
@@ -146,6 +150,9 @@ public sealed partial class MainView : UserControl
             _topLevel.BackRequested += OnBackRequested;
             _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
             _topLevel.AddHandler(KeyDownEvent, OnSeatKeyDown, RoutingStrategies.Tunnel);
+            _topLevel.AddHandler(KeyDownEvent, OnWatchedKey, RoutingStrategies.Tunnel, handledEventsToo: true);
+            _topLevel.AddHandler(PointerPressedEvent, OnWatchedPress, RoutingStrategies.Tunnel, handledEventsToo: true);
+            _topLevel.PropertyChanged += OnWindowChanged;
         }
 
         FocusCurrentScreen();
@@ -159,10 +166,46 @@ public sealed partial class MainView : UserControl
             _topLevel.BackRequested -= OnBackRequested;
             _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
             _topLevel.RemoveHandler(KeyDownEvent, OnSeatKeyDown);
+            _topLevel.RemoveHandler(KeyDownEvent, OnWatchedKey);
+            _topLevel.RemoveHandler(PointerPressedEvent, OnWatchedPress);
+            _topLevel.PropertyChanged -= OnWindowChanged;
             _topLevel = null;
         }
 
         base.OnDetachedFromVisualTree(e);
+    }
+
+    // Свёрнутое окно о туннеле не спрашивает.
+    private void OnWindowChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == Window.WindowStateProperty && sender is Window window)
+        {
+            _vm?.Home.Seen(window.WindowState != WindowState.Minimized);
+        }
+    }
+
+    // Нажатие клавиши начинает замер пауз окна.
+    private void OnWatchedKey(object? sender, KeyEventArgs e)
+    {
+        _stalls.Input("a key press");
+    }
+
+    // Касание и щелчок начинают замер пауз окна.
+    private void OnWatchedPress(object? sender, PointerPressedEventArgs e)
+    {
+        _stalls.Input("a tap");
+    }
+
+    // Ставит шаг замера в очередь окна ниже ввода и отрисовки.
+    private static void Later(Action step, int delayMs)
+    {
+        if (delayMs <= 0)
+        {
+            Dispatcher.UIThread.Post(step, DispatcherPriority.Background);
+            return;
+        }
+
+        DispatcherTimer.RunOnce(step, TimeSpan.FromMilliseconds(delayMs), DispatcherPriority.Background);
     }
 
     // Escape is taken at the top level: with nothing focused the key event never routes through this view.

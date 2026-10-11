@@ -162,8 +162,8 @@ public sealed record StatusSnapshot(
     string LocalDoh = "",
 
     /// <summary>
-    /// The setup the release publishes for this build target, with the list and the pack of its files; null where
-    /// the release names none.
+    /// The setup the release publishes for this build target, with the patch beside it; null where the release names
+    /// none.
     /// </summary>
     AmneziaGeo.Decl.UpdateAsset? UpdateSetupAsset = null,
 

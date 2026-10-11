@@ -123,6 +123,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _boundStatus = ConnectionStatus.Disconnected;
     private long _handshakeUnix;
     private LinkReading _link = LinkReading.Empty;
+    private volatile LinkNow _linkNow = LinkNow.Unknown;
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
     private DateTimeOffset _churnSince;
@@ -560,6 +561,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, CancellationToken.None).ConfigureAwait(false);
 
+            case IpcContract.OpLinkNow:
+                return LookAtLink();
+
             case IpcContract.OpProbeServers:
                 return await ProbeServersAsync(CancellationToken.None).ConfigureAwait(false);
 
@@ -986,6 +990,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Asks the tunnel to keep its echoes at the watched pace and answers with what it showed last.
+    private IpcAck LookAtLink()
+    {
+        if (!_active || _boundTarget is not { Length: > 0 } name)
+        {
+            return new IpcAck(true, string.Empty);
+        }
+
+        VpnBridge.RequestWatch(Application.Context);
+        return new IpcAck(true, _linkNow.ToRow(name));
+    }
+
     // Собирает снимок по показанию связи; без окна на экране делает это редко.
     private void TellLink()
     {
@@ -1096,9 +1112,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 intent.GetIntExtra(VpnBridge.ExtraRtt, -1),
                 intent.GetBooleanExtra(VpnBridge.ExtraChurning, false),
                 intent.GetIntExtra(VpnBridge.ExtraLossStreak, 0),
-                intent.GetIntExtra(VpnBridge.ExtraRekey, -1));
+                intent.GetIntExtra(VpnBridge.ExtraRekey, -1))
+            {
+                Now = VpnBridge.ReadNow(intent) ?? LinkNow.Unknown,
+            };
+            _linkNow = _link.Now;
             LogLink(_link);
             TellLink();
+            return;
+        }
+
+        if (VpnBridge.ReadNow(intent) is { } shown)
+        {
+            _linkNow = shown;
             return;
         }
 
@@ -1211,6 +1237,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _link = LinkReading.Empty;
+        _linkNow = LinkNow.Unknown;
         _churnLogged = false;
     }
 
@@ -1545,6 +1572,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : -1;
         var reading = bound ? _link : LinkReading.Empty;
         var member = _members.GetValueOrDefault(name);
+        var shown = bound ? _linkNow : LinkNow.Unknown;
         var offer = _offered.GetValueOrDefault(name);
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
@@ -1564,9 +1592,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             TxBitsPerSecond: reading.TxBitsPerSecond,
             HandshakesPerMinute: reading.HandshakesPerMinute,
             LinkChurning: reading.Churning,
-            LossStreak: reading.LossStreak,
-            LossPercent: reading.LossPercent,
-            RttMs: reading.RttMs,
+            LossStreak: shown.LossStreak,
+            LossPercent: shown.LossPercent,
+            RttMs: shown.RttMs,
             Subscription: member?.Subscription ?? string.Empty,
             SubscriptionGone: member is { Present: false },
             SubscriptionStale: member is not null && _stale.Contains(member.Subscription),

@@ -128,6 +128,28 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     }
 
     /// <summary>
+    /// Says what the running tunnels show right now, a row each, and keeps their echoes at the watched pace.
+    /// </summary>
+    public IpcAck LookAtLink()
+    {
+        var rows = new List<string>();
+        foreach (var (name, member) in live.All())
+        {
+            if (member.Watch() is { } shown)
+            {
+                rows.Add(shown.ToRow(name));
+            }
+        }
+
+        if (rows.Count == 0 && control.Running && (control.RunningTarget ?? control.Target) is { Length: > 0 } bound && control.Watch() is { } now)
+        {
+            rows.Add(now.ToRow(bound));
+        }
+
+        return new IpcAck(true, string.Join('\n', rows));
+    }
+
+    /// <summary>
     /// Says why one address, name, application or category goes where it goes.
     /// </summary>
     public async Task<IpcAck> TargetAsync(IStateStore store, string config, string target, CancellationToken ct)

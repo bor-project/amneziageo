@@ -27,6 +27,7 @@ internal sealed class AgentControl
     private volatile int _retryAttempt;
     private volatile int _handshakeAge = -1;
     private volatile LinkReading _link = LinkReading.Empty;
+    private volatile LinkLossProbe? _probe;
     private volatile bool _awaitingRetry;
     private volatile bool _dnsUnreachable;
     private volatile bool _wakePending;
@@ -80,6 +81,34 @@ internal sealed class AgentControl
         var previous = _link;
         _link = reading;
         return reading.DiffersFrom(previous);
+    }
+
+    /// <summary>
+    /// What the screen shows of the running tunnel right now.
+    /// </summary>
+    public LinkNow Now => _probe?.Now ?? LinkNow.Unknown;
+
+    /// <summary>
+    /// Hands over the probe the running tunnel is measured by; null once the session is over.
+    /// </summary>
+    public void SetProbe(LinkLossProbe? probe)
+    {
+        _probe = probe;
+    }
+
+    /// <summary>
+    /// Keeps the echoes of the running tunnel at the watched pace and says what the screen shows of it; null while
+    /// nothing measures it.
+    /// </summary>
+    public LinkNow? Watch()
+    {
+        if (_probe is not { } probe)
+        {
+            return null;
+        }
+
+        probe.Watch();
+        return probe.Now;
     }
 
     /// <summary>

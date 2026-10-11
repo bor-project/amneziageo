@@ -420,6 +420,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkLossText))]
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
+    [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(CardLossText))]
     [NotifyPropertyChangedFor(nameof(CardLossBrush))]
@@ -519,6 +520,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
     // маршрутов, и потери тех секунд к серверу отношения не имеют.
     private bool LinkSteady => LinkKnown && !Transitioning;
 
+    // Идёт обрыв: эхо работающего туннеля перестало возвращаться.
+    private bool LinkOut => TunnelLossKnown && LinkLossPercent >= AllLost;
+
     /// <summary>
     /// Whether the running tunnel has heard nothing from this server for longer than a rekey window.
     /// </summary>
@@ -573,12 +577,12 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private int ProbeRoundTrip => LinkTimed ? LinkRttMs : ProbeMilliseconds;
 
     // Есть ли что показать: идущий замер и молчащий туннель времени не дают.
-    private bool HasProbeTime => !Probing && !LinkSilent && (LinkTimed || ProbeState == ProbeOutcome.Alive);
+    private bool HasProbeTime => !Probing && !LinkSilent && !LinkOut && (LinkTimed || ProbeState == ProbeOutcome.Alive);
 
     // Связь потеряна на самом деле: туннель замолчал либо эхо к серверу осталось без ответа. Отсутствие
     // замера - другое состояние и красным не показывается.
     private bool ProbeUnreachable => !Transitioning
-        && (LinkSilent || (!LinkKnown && ProbeState is ProbeOutcome.NoAnswer or ProbeOutcome.NoAddress));
+        && (LinkSilent || LinkOut || (!LinkKnown && ProbeState is ProbeOutcome.NoAnswer or ProbeOutcome.NoAddress));
 
     // Отклик, который уже чувствуется: потери или время сверх границы.
     private bool ProbeSlow => ProbeLossy || ProbeRoundTrip > SteadyMs;
@@ -591,6 +595,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
 
     // Граница оценки отклика.
     private const int SteadyMs = 200;
+
+    // Доля потерь туннеля, при которой его эхо не возвращается вовсе.
+    private const int AllLost = 100;
 
     // Loss at which a server that still answers is no better than one that does not.
     private const int LossyPercent = 40;

@@ -362,6 +362,15 @@ public static class IpcContract
     public const string OpProbeServers = "probe-servers";
 
     /// <summary>
+    /// Command to say what the running tunnels show right now: the share of their latest echoes lost, the best
+    /// round trip of the latest ones and the longest run lost, counted over the outage that is on, or over the
+    /// link since it came back. No args. The ack message holds one tab-separated "link" row per running tunnel.
+    /// Asking keeps their echoes at the pace of a watched link for a few seconds, so the window asks for as long as
+    /// it is on the screen.
+    /// </summary>
+    public const string OpLinkNow = "link-now";
+
+    /// <summary>
     /// Command to check one destination: args are a target token - a domain, an address, "app:pkg=..." /
     /// "app:path=..." or a geo rule ("geosite:telegram"). The ack message holds tab-separated "fact" rows and a
     /// closing "verdict" row saying why that traffic goes where it goes. Stored in the check journal too.

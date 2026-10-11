@@ -206,26 +206,30 @@
      </StackPanel>
 
      <!-- BUNDLE EXPORT sub-view. -->
-     <StackPanel IsVisible="{Binding IsBundleExport}" Spacing="14">
-       <StackPanel Orientation="Horizontal" Spacing="8">
-         <Button Classes="icon" Padding="6,4" Command="{Binding CloseBundleCommand}">
-           <PathIcon Data="{StaticResource AgBackGeometry}" Width="18" Height="18" Foreground="{DynamicResource AgMutedBrush}" />
-         </Button>
-         <TextBlock Classes="section" Text="{l:Tr BundleExport_WindowTitle}" VerticalAlignment="Center" />
+     <controls:Later IsVisible="{Binding IsBundleExport}">
+       <StackPanel Spacing="14">
+         <StackPanel Orientation="Horizontal" Spacing="8">
+           <Button Classes="icon" Padding="6,4" Command="{Binding CloseBundleCommand}">
+             <PathIcon Data="{StaticResource AgBackGeometry}" Width="18" Height="18" Foreground="{DynamicResource AgMutedBrush}" />
+           </Button>
+           <TextBlock Classes="section" Text="{l:Tr BundleExport_WindowTitle}" VerticalAlignment="Center" />
+         </StackPanel>
+         <views:BundleExportView DataContext="{Binding BundleExport}" />
        </StackPanel>
-       <views:BundleExportView DataContext="{Binding BundleExport}" />
-     </StackPanel>
+     </controls:Later>
 
      <!-- BUNDLE IMPORT sub-view. -->
-     <StackPanel IsVisible="{Binding IsBundleImport}" Spacing="14">
-       <StackPanel Orientation="Horizontal" Spacing="8">
-         <Button Classes="icon" Padding="6,4" Command="{Binding CloseBundleCommand}">
-           <PathIcon Data="{StaticResource AgBackGeometry}" Width="18" Height="18" Foreground="{DynamicResource AgMutedBrush}" />
-         </Button>
-         <TextBlock Classes="section" Text="{l:Tr BundleImport_WindowTitle}" VerticalAlignment="Center" />
+     <controls:Later IsVisible="{Binding IsBundleImport}">
+       <StackPanel Spacing="14">
+         <StackPanel Orientation="Horizontal" Spacing="8">
+           <Button Classes="icon" Padding="6,4" Command="{Binding CloseBundleCommand}">
+             <PathIcon Data="{StaticResource AgBackGeometry}" Width="18" Height="18" Foreground="{DynamicResource AgMutedBrush}" />
+           </Button>
+           <TextBlock Classes="section" Text="{l:Tr BundleImport_WindowTitle}" VerticalAlignment="Center" />
+         </StackPanel>
+         <views:BundleImportView DataContext="{Binding BundleImport}" />
        </StackPanel>
-       <views:BundleImportView DataContext="{Binding BundleImport}" />
-     </StackPanel>
+     </controls:Later>
 
    </Panel>
 </UserControl>

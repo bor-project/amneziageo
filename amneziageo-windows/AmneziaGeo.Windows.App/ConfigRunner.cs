@@ -75,6 +75,9 @@ internal sealed class ConfigRunner(
     private int _launchStreak;
     private const int LaunchStreakLimit = 5;
 
+    // The member whose tunnel service an attempt started and no teardown has removed since.
+    private string _launched = string.Empty;
+
     // The service manager's own start deadline; the service is still coming up when it elapses.
     private const int ScStartTimeout = 1053;
 
@@ -95,6 +98,47 @@ internal sealed class ConfigRunner(
     /// Runs sessions per target change.
     /// </summary>
     public async Task RunAsync(string initial, CancellationToken ct)
+    {
+        try
+        {
+            await SuperviseAsync(initial, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await LeaveAsync().ConfigureAwait(false);
+        }
+    }
+
+    // Takes down the tunnel the supervisor leaves standing as it ends.
+    private async Task LeaveAsync()
+    {
+        var member = _launched;
+        if (member.Length == 0)
+        {
+            return;
+        }
+
+        logger.LogInformation("{Member}: its supervisor ended with the tunnel service still in place, so the tunnel is taken down", member);
+        try
+        {
+            if (control.Running)
+            {
+                Stop(member);
+                await SetStateAsync("disconnected").ConfigureAwait(false);
+                return;
+            }
+
+            await SetStateAsync("disconnecting").ConfigureAwait(false);
+            await TeardownForDisconnectAsync(member).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Member}: the tunnel its supervisor left could not be taken down; it stays until the next connect or the next start of the agent removes it", member);
+        }
+    }
+
+    // Runs a session, and another one after each change signal.
+    private async Task SuperviseAsync(string initial, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -313,6 +357,7 @@ internal sealed class ConfigRunner(
         finally
         {
             StopSignal();
+            control.SetProbe(null);
             sessions.Of(config).Closed();
 
             // A user disconnect announces "disconnecting", then tears down and reports the outcome (clean, or a
@@ -616,6 +661,7 @@ internal sealed class ConfigRunner(
         }
 
         logger.LogInformation("{Member}: starting the tunnel process", member);
+        _launched = member;
         var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
         var started = serviceManager.StartQuiet(member);
         var startFailed = created != 0 || started != 0;
@@ -870,7 +916,7 @@ internal sealed class ConfigRunner(
             control.SignalStatus();
         }
 
-        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0);
+        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1, _loss?.Streak ?? 0, _loss?.Now);
         LogLink(member, reading);
         if (control.SetLink(reading))
         {
@@ -1026,6 +1072,7 @@ internal sealed class ConfigRunner(
         _meter.ChurnPerMinute = LinkHealth.ChurnPerMinuteFor(WgConfigEditor.GetRekeyAfterSeconds(text));
         var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetDns(text)), echo: TunnelEcho.From(WgConfigEditor.GetAddresses(text)));
         _loss = probe;
+        control.SetProbe(probe);
         _ = Task.Run(() => probe.RunAsync(ct), ct);
     }
 
@@ -1101,6 +1148,10 @@ internal sealed class ConfigRunner(
         StopService(member);
         serviceManager.DeleteService(member);
         reconciler.Reconcile(member);
+        if (string.Equals(_launched, member, StringComparison.Ordinal))
+        {
+            _launched = string.Empty;
+        }
     }
 
     // Stops the tunnel and leaves the service installed for the next retry.

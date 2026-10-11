@@ -109,8 +109,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     {
         ClearPending = false;
 
-        // Массовая заливка и сортировка перестраивают проекцию один раз, после себя: иначе каждая запись
-        // пересобирает весь список, и вставка сотни правил встаёт в квадрат.
+        // Массовая заливка и сортировка строят проекцию один раз, после себя.
         if (_reordering || _seeding)
         {
             return;
@@ -118,7 +117,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 
         if (ReferenceEquals(sender, Rules))
         {
-            RebuildRuleItems();
+            SyncRuleItems();
         }
 
         _ = ApplySuggestionFilterAsync();
@@ -384,6 +383,19 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// </summary>
     public ObservableCollection<RoutingRuleItemViewModel> RuleItems { get; } = [];
 
+    /// <summary>
+    /// The rows a bucket opens with; the rows of a longer one follow in portions.
+    /// </summary>
+    public const int FirstRows = 30;
+
+    // Set while rules of the shown bucket have no row yet.
+    private bool _rowsPending;
+
+    /// <summary>
+    /// True while rules of the shown bucket wait for their rows.
+    /// </summary>
+    public bool RowsPending => _rowsPending && !_seeding;
+
     // Rules left expanded, kept across a projection rebuild.
     private readonly HashSet<string> _expandedRules = new(StringComparer.Ordinal);
 
@@ -420,30 +432,109 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         return new RoutingRuleItemViewModel(token);
     }
 
-    // Rebuilds the shown bucket's projection, carrying expansion state and already-fetched entries over.
+    // The row of a rule, carrying expansion state and already-fetched entries over.
+    private RoutingRuleItemViewModel RowOf(string token)
+    {
+        var item = NewRuleRow(token);
+        if (item.CanExpand && _expandedRules.Contains(token))
+        {
+            item.IsExpanded = true;
+            if (_detailCache.TryGetValue(token, out var cached))
+            {
+                item.ShowDetails(Summarize(cached.Total, cached.Entries.Count), cached.Entries);
+            }
+            else
+            {
+                _ = LoadRuleDetailsAsync(item);
+            }
+        }
+
+        return item;
+    }
+
+    // Rebuilds the shown bucket's projection: its first rows at once, the rest in portions.
     protected void RebuildRuleItems()
     {
         RuleItems.Clear();
-        foreach (var token in Rules)
+        _rowsPending = false;
+        SyncRuleItems();
+    }
+
+    // Brings the rows in line with the shown bucket, keeping the row of every rule that stayed.
+    private void SyncRuleItems()
+    {
+        var rules = Rules;
+        var whole = !_rowsPending;
+        var held = default(HashSet<string>);
+        var built = 0;
+        var at = 0;
+        while (at < rules.Count)
         {
-            var item = NewRuleRow(token);
-            if (item.CanExpand && _expandedRules.Contains(token))
+            if (at < RuleItems.Count)
             {
-                item.IsExpanded = true;
-                if (_detailCache.TryGetValue(token, out var cached))
+                var token = RuleItems[at].Token;
+                if (string.Equals(token, rules[at], StringComparison.Ordinal))
                 {
-                    item.ShowDetails(Summarize(cached.Total, cached.Entries.Count), cached.Entries);
+                    at++;
+                    continue;
                 }
-                else
+
+                held ??= new HashSet<string>(rules, StringComparer.Ordinal);
+                if (!held.Contains(token))
                 {
-                    _ = LoadRuleDetailsAsync(item);
+                    RuleItems.RemoveAt(at);
+                    continue;
                 }
             }
+            else if (!whole && at >= FirstRows)
+            {
+                break;
+            }
 
-            RuleItems.Add(item);
+            if (built == FirstRows)
+            {
+                break;
+            }
+
+            RuleItems.Insert(at, RowOf(rules[at]));
+            built++;
+            at++;
         }
 
+        if (at == 0 && RuleItems.Count > 0)
+        {
+            RuleItems.Clear();
+        }
+
+        while (RuleItems.Count > at)
+        {
+            RuleItems.RemoveAt(RuleItems.Count - 1);
+        }
+
+        _rowsPending = RuleItems.Count < rules.Count;
         RefreshCounts();
+    }
+
+    /// <summary>
+    /// Builds the rows of the next rules of the shown bucket and answers how many it built.
+    /// </summary>
+    public int ShowMoreRows(int count)
+    {
+        if (!RowsPending)
+        {
+            return 0;
+        }
+
+        var rules = Rules;
+        var from = RuleItems.Count;
+        var upTo = Math.Min(rules.Count, from + Math.Max(count, 1));
+        for (var at = from; at < upTo; at++)
+        {
+            RuleItems.Add(RowOf(rules[at]));
+        }
+
+        _rowsPending = RuleItems.Count < rules.Count;
+        return upTo - from;
     }
 
     /// <summary>
@@ -1156,7 +1247,8 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             _seeding = false;
         }
 
-        RebuildRuleItems();
+        SyncRuleItems();
+        Readdress();
         _ = ApplySuggestionFilterAsync();
         MarkDirty();
     }
@@ -1323,7 +1415,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 
             if (addressed > 0)
             {
-                RebuildRuleItems();
+                Readdress();
             }
 
             StatusMessage = tunnel
@@ -1353,6 +1445,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     protected virtual bool Address(string token, string config, bool present)
     {
         return false;
+    }
+
+    // Shows in the rows where their rules ride now.
+    protected virtual void Readdress()
+    {
     }
 
     // Splits a newline-separated subnet payload.

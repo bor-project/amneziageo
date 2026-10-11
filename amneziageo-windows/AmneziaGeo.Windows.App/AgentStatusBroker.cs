@@ -227,7 +227,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var ack = await ExecuteCommandAsync(envelope.Command, ct);
         var ackLine = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: ack), IpcJson.Options);
         await connection.SendAsync(ackLine, ct);
-        if (ack.Ok && envelope.Command.Op != IpcContract.OpLogClient)
+        if (ack.Ok && envelope.Command.Op is not (IpcContract.OpLogClient or IpcContract.OpLinkNow))
         {
             await BroadcastIfChangedAsync(ct);
         }
@@ -301,6 +301,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpProbeServers => await checks.ProbeServersAsync(store, ct),
+                IpcContract.OpLinkNow => LookAtLink(),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
@@ -2964,6 +2965,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             : new IpcAck(false, IpcMessage.Key("Agent_ListsDownloadedPartial", sources.Count - failed.Count, sources.Count, string.Join(", ", failed)));
     }
 
+    // Says what the running tunnels of the asking user show right now.
+    private IpcAck LookAtLink()
+    {
+        return activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid) ? checks.LookAtLink() : new IpcAck(true, string.Empty);
+    }
+
     private async Task<string> BuildJsonAsync(BrokerScope scope, CancellationToken ct)
     {
         var snapshot = await BuildSnapshotAsync(scope, ct);
@@ -2990,6 +2997,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // Keepalive view of the running tunnel: how long ago its peer last answered.
         var handshakeAge = boundState is not null ? control.HandshakeAge : -1;
         var link = boundState is not null ? control.Link : LinkReading.Empty;
+        var now = boundState is not null ? control.Now : LinkNow.Unknown;
 
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
@@ -3017,9 +3025,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var bound = string.Equals(name, boundConfig, StringComparison.Ordinal);
             var handshake = bound ? handshakeAge : -1;
             var reading = bound ? link : LinkReading.Empty;
+            var shown = bound ? now : LinkNow.Unknown;
             var member = members.GetValueOrDefault(name);
             var offer = await scope.Offers.OfferAsync(name, configText, ct).ConfigureAwait(false);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, reading.LossPercent, reading.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, reading.LossStreak));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak));
         }
 
         var routingLists = new List<RoutingListEntry>();

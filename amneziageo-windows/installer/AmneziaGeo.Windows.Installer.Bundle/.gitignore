@@ -6,6 +6,7 @@ stage/
 ba-publish/
 layout/
 layout-msi/
+earlier/
 dist/
 BaPayloads.generated.wxs
 *.wixpdb

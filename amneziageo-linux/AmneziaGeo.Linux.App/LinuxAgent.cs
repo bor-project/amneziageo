@@ -2751,7 +2751,7 @@ internal sealed class LinuxAgent : IDisposable
         var probes = new TargetProbes(
             Held,
             Trace: _tunnel.Running ? (address, token) => ChannelProbe.TraceAsync(address, _tunnel.TunnelCountersAsync, token) : null);
-        var report = await new TargetInspector(list, split)
+        var report = await new TargetInspector(list, split, directApps: !split)
             .InspectAsync(args[0], _selectedTarget ?? string.Empty, probes, ct)
             .ConfigureAwait(false);
 

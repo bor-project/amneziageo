@@ -126,6 +126,18 @@ public static class TargetVerdicts
     public const string AppBareIp = "Check_TargetAppBareIp";
 
     /// <summary>
+    /// A rule names the application, but the platform passes the applications of the direct bucket over in this
+    /// mode. Args: the rule.
+    /// </summary>
+    public const string AppIdle = "Check_TargetAppIdle";
+
+    /// <summary>
+    /// No rule covers the address, and an application the list keeps direct took it past the tunnel that carries
+    /// everything. Args: the address.
+    /// </summary>
+    public const string PassedByApp = "Check_TargetPassedByApp";
+
+    /// <summary>
     /// The tunnel carries only the named applications and this one is not among them, so no rule reaches it.
     /// Args: the application, how many applications are named.
     /// </summary>
@@ -185,7 +197,9 @@ public sealed record TargetFindings(
     string AppRule = "",
     AppScope Apps = AppScope.None,
     int AppCount = 0,
-    TunnelTrace? Trace = null);
+    TunnelTrace? Trace = null,
+    string IdleRule = "",
+    int Passed = 0);
 
 /// <summary>
 /// A finished targeted check: everything found about one address, name, application or category, and the phrase
@@ -304,6 +318,11 @@ public static class TargetVerdict
         var named = found.AppCount.ToString(CultureInfo.InvariantCulture);
         if (found.Kind == CheckTargetKind.App)
         {
+            if (found.IdleRule.Length > 0)
+            {
+                return (TargetVerdicts.AppIdle, [found.IdleRule]);
+            }
+
             if (found.AppRule.Length == 0)
             {
                 return found.Apps == AppScope.Exclusive
@@ -311,7 +330,7 @@ public static class TargetVerdict
                     : (TargetVerdicts.AppUnlisted, [target]);
             }
 
-            if (found.Unlisted > 0)
+            if (found.Unlisted > 0 && found.Role != RoleToken.Direct)
             {
                 return (TargetVerdicts.AppBareIp, [target, found.Unlisted.ToString(CultureInfo.InvariantCulture)]);
             }
@@ -338,6 +357,11 @@ public static class TargetVerdict
             return found.Apps == AppScope.Exclusive
                 ? (TargetVerdicts.ProxyAppsOnly, [found.MatchedRule, named])
                 : (TargetVerdicts.Proxy, [found.MatchedRule]);
+        }
+
+        if (!found.Split && found.Passed > 0)
+        {
+            return (TargetVerdicts.PassedByApp, [target]);
         }
 
         return found.Split ? (TargetVerdicts.UnlistedSplit, [target]) : (TargetVerdicts.UnlistedFull, [target]);
@@ -409,6 +433,8 @@ public static class TargetPhrase
             TargetVerdicts.UnreachableNotDelivered => $"in the tunnel by rule and nothing reaches the program from {Arg(args, 0)}, though the tunnel sent {Arg(args, 1)} and {Arg(args, 2)} of answers came back into it: the fault is on this device, something drops what the tunnel brings",
             TargetVerdicts.ProxyOffPath => $"in the tunnel by the rule \"{Arg(args, 0)}\" and still {Arg(args, 1)} of its address(es) leave beside it: the resolver answered with addresses no rule carries",
             TargetVerdicts.AppUnlisted => $"\"{Arg(args, 0)}\" is in no list, so its traffic follows the default route",
+            TargetVerdicts.AppIdle => $"the rule \"{Arg(args, 0)}\" keeps its application direct only under a tunnel that carries everything, so under this list its traffic goes where the other rules send it",
+            TargetVerdicts.PassedByApp => $"no rule covers \"{Arg(args, 0)}\", but an application the list keeps direct has opened it, so it leaves past the tunnel for every program until it is left unused",
             TargetVerdicts.AppOutside => $"\"{Arg(args, 0)}\" is named by no app rule, and the tunnel carries only the {Arg(args, 1)} application(s) that are: it leaves beside the tunnel, past every rule in the list",
             TargetVerdicts.ProxyAppsOnly => $"carried by the tunnel under the rule \"{Arg(args, 0)}\", but only for the {Arg(args, 1)} named application(s): every other application leaves beside the tunnel",
             TargetVerdicts.AppBareIp => $"\"{Arg(args, 0)}\" talks to {Arg(args, 1)} address(es) no rule covers: an app rule is reactive and never catches a bare address, so add a geoip rule for the service",

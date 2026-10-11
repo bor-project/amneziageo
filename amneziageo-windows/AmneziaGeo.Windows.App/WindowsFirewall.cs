@@ -19,6 +19,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const byte WeightLoopback = 8;
     private const byte WeightTun = 10;
     private const byte WeightApp = 14;
+    // A program the list keeps direct is refused the tunnel adapter above the permit of that adapter.
+    private const byte WeightOffTunnel = 12;
+    // What a rule or the connection itself sends through the tunnel stays open to such a program.
+    private const byte WeightThroughTunnel = 13;
     private const byte WeightHyperV = 14;
     // Block-list filters outrank every permit so a blocked destination is dropped regardless of LAN/tunnel/DHCP.
     private const byte WeightBlockList = 15;
@@ -62,6 +66,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private int _generation;
     // The tunnel adapters let through the block, and the filters holding each one open.
     private readonly Dictionary<uint, List<ulong>> _alongside = [];
+    // The filters that refuse the tunnel adapter to the programs a list keeps direct, and the adapter refused.
+    private readonly List<ulong> _offTunnel = [];
+    private ulong _tunnelLuid;
 
     /// <summary>
     /// True while the kill-switch filters are installed.
@@ -177,6 +184,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 }
 
                 _engine = engine;
+                _tunnelLuid = killSwitch ? luid : 0;
                 Interlocked.Increment(ref _generation);
                 if (killSwitch)
                 {
@@ -210,6 +218,101 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 FwpmEngineClose0(engine);
                 return false;
             }
+        }
+    }
+
+    /// <summary>
+    /// Refuses the tunnel adapter to the programs given, in place of the ones refused before: what one of them
+    /// opens there is dropped and reported, so nothing of theirs rides the tunnel but what goes to the ranges
+    /// given, which a rule or the connection itself sends through it. Returns how many programs are refused and
+    /// how many ranges stay open to them.
+    /// </summary>
+    public (int Programs, int Ranges) KeepOffTunnel(IReadOnlyCollection<string> images, IReadOnlyCollection<string> through)
+    {
+        lock (_gate)
+        {
+            if (_engine == IntPtr.Zero || _tunnelLuid == 0)
+            {
+                return (0, 0);
+            }
+
+            foreach (var id in _offTunnel)
+            {
+                FwpmFilterDeleteById0(_engine, id);
+            }
+
+            _offTunnel.Clear();
+            var kept = 0;
+            var open = 0;
+            var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
+            var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint));
+            try
+            {
+                Marshal.WriteInt64(luidPtr, (long)_tunnelLuid);
+                foreach (var image in images)
+                {
+                    if (FwpmGetAppIdFromFileName0(image, out var appId) != 0 || appId == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var cond = new[]
+                        {
+                            Condition(CondAleAppId, MatchEqual, FwpByteBlobType, (ulong)appId),
+                            Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
+                        };
+                        var before = _offTunnel.Count;
+                        foreach (var layer in new[] { LayerAleAuthConnectV4, LayerAleAuthConnectV6 })
+                        {
+                            if (AddRaw(_engine, layer, WeightOffTunnel, ActionBlock, 0, cond, "Keep a direct application off the tunnel", out var id) == 0)
+                            {
+                                _offTunnel.Add(id);
+                            }
+                        }
+
+                        kept += _offTunnel.Count > before ? 1 : 0;
+                    }
+                    finally
+                    {
+                        FwpmFreeMemory0(ref appId);
+                    }
+                }
+
+                if (kept == 0)
+                {
+                    return (0, 0);
+                }
+
+                foreach (var range in through)
+                {
+                    if (!TryParseV4Cidr(range.Contains('/') ? range : range + "/32", out var addr, out var mask))
+                    {
+                        continue;
+                    }
+
+                    Marshal.WriteInt32(maskPtr, 0, (int)addr);
+                    Marshal.WriteInt32(maskPtr, sizeof(uint), (int)mask);
+                    var reach = new[]
+                    {
+                        Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
+                        Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
+                    };
+                    if (AddRaw(_engine, LayerAleAuthConnectV4, WeightThroughTunnel, ActionPermit, 0, reach, "Leave a tunneled range open to direct applications", out var permit) == 0)
+                    {
+                        _offTunnel.Add(permit);
+                        open++;
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(maskPtr);
+                Marshal.FreeHGlobal(luidPtr);
+            }
+
+            return (kept, open);
         }
     }
 
@@ -462,6 +565,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         FwpmEngineClose0(_engine);
         _engine = IntPtr.Zero;
         _alongside.Clear();
+        _offTunnel.Clear();
+        _tunnelLuid = 0;
         logger.LogInformation("leak protection is off; traffic is no longer restricted to the tunnel");
     }
 

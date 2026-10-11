@@ -52,6 +52,12 @@ Add a program - a browser, a game, a messenger - and only its traffic takes the 
 
 Private addresses are never picked up by such a rule: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, CGNAT and link-local always stay off the tunnel. To send an application into a remote local network, use an address-range rule.
 
+In a full-tunnel list a program is added with the direct role: the tunnel carries the whole machine and the traffic of that program leaves past it. An address the list blocks or sends through the tunnel itself follows the rule of the list for that program too.
+
+- On Linux the program and its child processes leave past the tunnel. A connection opened before the tunnel came up stays silent under it until the program opens it again. An edit of the set of programs applies after a reconnect.
+- On Windows the way past the tunnel is given to the address the program reached for, not to the program. The first attempt at a new address is refused, and a second or two later the address has a route past the tunnel; while that route lives (`route-ttl-seconds` after its last use) every program of the machine reaches the address past the tunnel. A UDP socket connected to the address earlier has to be opened again. A program named by its name, package or service, and a child process whose file lies outside a named folder, reach a new address through the tunnel for the first second or two; then that connection is dropped and opens again past the tunnel. An edit of the set of programs applies without a reconnect.
+- On Android a program with the direct role stays out of the tunnel in either mode of the list.
+
 ## All UDP through the tunnel
 
 Calls and games usually learn their server addresses without DNS, so a domain rule never catches them. The toggle sends every outgoing UDP datagram into the tunnel, except the local network and the VPN server itself. A list set to "Everything except selected" has no toggle: UDP rides the tunnel there without it.

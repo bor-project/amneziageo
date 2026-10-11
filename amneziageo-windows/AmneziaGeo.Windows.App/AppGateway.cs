@@ -173,7 +173,7 @@ internal sealed class AppGateway : IDisposable
             info.ArgumentList.Add("--parent");
             info.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
 
-            var process = Process.Start(info);
+            var process = Process.Start(ChildOutput.Ours(info));
             if (process is null)
             {
                 return null;

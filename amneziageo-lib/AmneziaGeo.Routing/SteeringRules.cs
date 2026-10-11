@@ -44,6 +44,21 @@ public static class SteeringRules
     /// </summary>
     public const string MainTable = "main";
 
+    /// <summary>
+    /// The mark that selects the routing table of the applications a list keeps past the tunnel.
+    /// </summary>
+    public const string DirectMark = "0x51822";
+
+    /// <summary>
+    /// The table the applications a list keeps past the tunnel are marked in.
+    /// </summary>
+    public const string DirectTable = "amneziageo-direct";
+
+    /// <summary>
+    /// The cgroup the applications a list keeps past the tunnel live in.
+    /// </summary>
+    public const string DirectGroup = "amneziageo-direct";
+
     private const string Blocked = "blocked";
 
     /// <summary>
@@ -134,6 +149,38 @@ public static class SteeringRules
         text.Append("    type nat hook postrouting priority srcnat; policy accept;\n");
         text.Append("    meta mark ").Append(Mark).Append(" oifname \"").Append(iface).Append("\" masquerade\n");
         text.Append("  }\n");
+        text.Append("}\n");
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// The table that marks what the applications of a cgroup send, so it leaves past a tunnel that carries
+    /// everything, and rewrites its source on the devices it leaves by. Where a tunnel is named, the sixth family
+    /// that would leave by it is refused to them instead.
+    /// </summary>
+    public static string Passes(string cgroup, IReadOnlyList<string> devices, string? tunnel = null)
+    {
+        var text = new StringBuilder();
+        text.Append("table inet ").Append(DirectTable).Append(" {\n");
+        text.Append("  chain apps {\n");
+        text.Append("    type route hook output priority mangle; policy accept;\n");
+        text.Append("    socket cgroupv2 level 1 \"").Append(cgroup).Append("\" meta mark set ").Append(DirectMark).Append('\n');
+        text.Append("  }\n");
+        text.Append("  chain source {\n");
+        text.Append("    type nat hook postrouting priority srcnat; policy accept;\n");
+        text.Append("    meta mark ").Append(DirectMark).Append(" oifname { ");
+        text.Append(string.Join(", ", devices.Select(device => $"\"{device}\""))).Append(" } masquerade\n");
+        text.Append("  }\n");
+        if (tunnel is { Length: > 0 })
+        {
+            text.Append("  chain refuse {\n");
+            text.Append("    type filter hook output priority mangle - 1; policy accept;\n");
+            text.Append("    socket cgroupv2 level 1 \"").Append(cgroup).Append("\" meta nfproto ipv6 oifname \"").Append(tunnel);
+            text.Append("\" reject with icmpv6 type no-route\n");
+            text.Append("  }\n");
+        }
+
         text.Append("}\n");
 
         return text.ToString();

@@ -568,6 +568,122 @@ public sealed class RoutingCacheTests
     }
 
     [Fact]
+    public void UnderAFullTunnel_ADestinationOfAnApplicationKeptDirect_LeavesPastTheTunnel()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false);
+
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
+        Assert.Empty(applier.Tunneled);
+    }
+
+    [Fact]
+    public void UnderAFullTunnel_AnApplicationKeptDirectClaimsADestinationAlreadySeen_ItLeavesPastTheTunnelToo()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false);
+        cache.Note(Numeric(YandexAddress));
+
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
+    }
+
+    [Fact]
+    public void UnderAFullTunnel_ADestinationARuleSendsThroughTheTunnel_StaysThereForAnApplicationKeptDirect()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, proxy: [YandexRange]);
+
+        cache.Note(Numeric(YandexAddress), app: true);
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Empty(applier.Added);
+        Assert.Empty(applier.Permitted);
+    }
+
+    [Fact]
+    public void UnderAFullTunnel_ABlockedDestinationOfAnApplicationKeptDirect_IsStillDropped()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, block: [YandexRange]);
+
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Dropped);
+        Assert.Empty(applier.Added);
+    }
+
+    [Fact]
+    public void UnderAFullTunnel_ADestinationAnApplicationTookPastTheTunnel_IsReported()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: ["5.255.255.0/24"]);
+        var learned = new List<string>();
+        cache.AppDestination += address => learned.Add(address.ToString());
+
+        cache.Note(Numeric(YandexAddress), app: true);
+        cache.Note(Numeric("5.255.255.77"), app: true);
+
+        Assert.Equal(new[] { YandexAddress }, learned);
+    }
+
+    [Fact]
+    public void UnderAFullTunnel_AnIdleDestinationOfAnApplicationKeptDirect_GoesBackToTheTunnelWhateverTheHotCount()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, hot: 8);
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Single(applier.Removed);
+        Assert.Equal(0, cache.Size);
+    }
+
+    [Fact]
+    public void UnderAFullTunnel_ADestinationOfAnApplicationKeptDirectStillInUse_KeepsItsRoute()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, hot: 8);
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        cache.Sweep([Numeric(YandexAddress)], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Empty(applier.Removed);
+        Assert.Equal(1, cache.Size);
+    }
+
+    [Fact]
+    public void Hot_LeavesOutWhatAnApplicationTookPastTheTunnel()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, hot: 8);
+        cache.Note(Numeric(YandexAddress), app: true);
+        cache.Note(Numeric("77.88.55.243"));
+
+        Assert.Equal(new[] { "77.88.55.243" }, cache.Hot().Select(route => route.Address));
+    }
+
+    [Fact]
+    public void ReleasePassed_TakesBackWhatApplicationsTookPastTheTunnelAndNothingElse()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: ["5.255.255.0/24"]);
+        cache.Note(Numeric(YandexAddress), app: true);
+        cache.Note(Numeric("5.255.255.77"));
+
+        var released = cache.ReleasePassed();
+
+        Assert.Equal(1, released);
+        Assert.Single(applier.Removed);
+        Assert.Equal(1, cache.Size);
+    }
+
+    [Fact]
     public void ConfiguredTtl_HoldsAnEntryForItsOwnWindow()
     {
         var applier = new FakeApplier { Generation = 1 };

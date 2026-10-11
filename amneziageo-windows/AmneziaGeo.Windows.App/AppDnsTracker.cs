@@ -29,6 +29,8 @@ internal sealed class AppDnsTracker : IDisposable
     // ETW handler is single-threaded; no lock needed.
     private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
     private TraceEventSession? _session;
+    // The monitoring session of this tunnel.
+    private readonly string _sessionName;
 
     /// <summary>
     /// Raised the first time a name is marked app-tunneled, so the proxy can drop any pre-mark local answer.
@@ -38,10 +40,11 @@ internal sealed class AppDnsTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public AppDnsTracker(AppMatcher matcher, ILogger logger)
+    public AppDnsTracker(AppMatcher matcher, ILogger logger, string? sessionName = null)
     {
         _matcher = matcher;
         _logger = logger;
+        _sessionName = sessionName ?? WatchSession.Names;
     }
 
     /// <summary>
@@ -73,7 +76,7 @@ internal sealed class AppDnsTracker : IDisposable
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        var sessionName = "AmneziaGeoDns";
+        var sessionName = _sessionName;
         try
         {
             using (_session = new TraceEventSession(sessionName, TraceEventSessionOptions.Create))

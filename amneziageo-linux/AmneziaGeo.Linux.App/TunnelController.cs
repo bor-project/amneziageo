@@ -45,6 +45,8 @@ internal sealed class TunnelController : IDisposable
     private IRouteMemory? _memory;
     private AppTunnel? _apps;
     private DirectPath? _direct;
+    private AppBypass? _bypass;
+    private IReadOnlyList<string> _bypassRules = [];
     private bool _allUdp;
     private string? _peerAddress;
     private CancellationTokenSource? _sessionCts;
@@ -70,10 +72,12 @@ internal sealed class TunnelController : IDisposable
         _iface = interfaceName;
         _log = log;
         ResolvConf.RestoreAsync(interfaceName, log).GetAwaiter().GetResult();
-        // Drops the refusals, the routes past the tunnel and the hold on inbound connections a killed run left
-        // standing: a session that lets the tunnel in lays no table of its own, so nothing else would lift that one.
+        // Drops the refusals, the routes and the applications past the tunnel and the hold on inbound connections a
+        // killed run left standing: a session that lets the tunnel in lays no table of its own, so nothing else would
+        // lift that one.
         BlockFirewall.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
         DirectPath.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
+        AppBypass.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
         InboundFirewall.RemoveAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
@@ -334,6 +338,8 @@ internal sealed class TunnelController : IDisposable
             // A split leaves the direct ranges on the path of the machine as it is.
             _direct = !split && hop is ({ } gateway, { } device) ? new DirectPath(gateway, device, _log) : null;
             await PassAsync(cache, routing, ct).ConfigureAwait(false);
+            _bypass = await BypassAsync(routing, split, hop, ct).ConfigureAwait(false);
+            _bypassRules = split ? [] : routing.DirectApps;
             if (_memory is { } memory)
             {
                 cache.SetMemory(memory);
@@ -485,6 +491,13 @@ internal sealed class TunnelController : IDisposable
             return false;
         }
 
+        // The applications kept past the tunnel are placed with it too.
+        IReadOnlyList<string> kept = _split ? [] : routing.DirectApps;
+        if (!new HashSet<string>(_bypassRules, StringComparer.Ordinal).SetEquals(kept))
+        {
+            return false;
+        }
+
         var hasRules = routing.HasRules;
         routing = AroundLocal(routing);
         Restand(cache, routing);
@@ -588,6 +601,30 @@ internal sealed class TunnelController : IDisposable
 
         basis.Applier.Rearm();
         cache.Reinstall();
+    }
+
+    // Raises the path past the tunnel for the applications the list keeps direct; a split leaves them to its rules
+    // by address.
+    private async Task<AppBypass?> BypassAsync(TunnelRouting routing, bool split, (string? Via, string? Dev) hop, CancellationToken ct)
+    {
+        if (routing.DirectApps.Count == 0)
+        {
+            return null;
+        }
+
+        if (split)
+        {
+            _log.Info("apps", $"the {routing.DirectApps.Count} application(s) the list keeps direct follow its rules by address: only a tunnel that carries everything takes them aside");
+            return null;
+        }
+
+        if (hop is not ({ } via, { } device))
+        {
+            _log.Warn("apps", "the machine names no hop of its own to the internet, so the applications the list keeps direct ride the tunnel with everything else");
+            return null;
+        }
+
+        return await AppBypass.TryStartAsync(_iface, routing.DirectApps, via, device, _log, ct).ConfigureAwait(false);
     }
 
     // Refuses the ranges the list blocks, apart from what the connection itself stands on.
@@ -743,6 +780,15 @@ internal sealed class TunnelController : IDisposable
             _direct = null;
             await DirectPath.RemoveAsync(CancellationToken.None).ConfigureAwait(false);
         }
+
+        if (_bypass is { } bypass)
+        {
+            _bypass = null;
+            await bypass.StopAsync().ConfigureAwait(false);
+            bypass.Dispose();
+        }
+
+        _bypassRules = [];
 
         _peerAddress = null;
 

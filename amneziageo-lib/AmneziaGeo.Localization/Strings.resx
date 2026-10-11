@@ -2717,9 +2717,6 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_AppOnlyDirectHint" xml:space="preserve">
     <value>Apps are added under «Direct» only.</value>
   </data>
-  <data name="Main_AppSelectedModeHint" xml:space="preserve">
-    <value>Apps are added only in the «Only selected» mode.</value>
-  </data>
   <data name="Main_AdvancedTitle" xml:space="preserve">
     <value>Advanced</value>
   </data>

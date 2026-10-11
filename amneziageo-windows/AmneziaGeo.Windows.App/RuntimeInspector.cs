@@ -71,7 +71,9 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         Row(text, "resolution", "on demand (nothing materialized at connect)");
         Row(text, "route ttl", $"{session.Cache?.TtlSeconds ?? app.RouteTtlSeconds} s idle");
         Row(text, "cache", Held(config, applied));
-        Row(text, "apps", (geo?.Apps.Count ?? 0).ToString(CultureInfo.InvariantCulture));
+        Row(text, "apps", split
+            ? (geo?.Apps.Count ?? 0).ToString(CultureInfo.InvariantCulture)
+            : $"{(list?.DirectApps.Count ?? 0).ToString(CultureInfo.InvariantCulture)} kept direct");
         var exclusions = routing?.Exclusions ?? (await store.GetConfigExclusionsAsync(config, ct))?.Exclusions;
         Row(text, "exclusions", Oneline(exclusions));
 

@@ -25,13 +25,18 @@ internal sealed record TunnelRouting(
     public static TunnelRouting None { get; } = new(false, string.Empty, [], [], [], [], [], [], [], []);
 
     /// <summary>
+    /// The applications the list keeps past a tunnel that carries everything.
+    /// </summary>
+    public IReadOnlyList<string> DirectApps { get; init; } = [];
+
+    /// <summary>
     /// Whether any bucket carries a rule.
     /// </summary>
     public bool HasRules =>
         ProxyRoutes.Count > 0 || ProxyDomains.Count > 0
         || DirectRoutes.Count > 0 || DirectDomains.Count > 0
         || BlockRoutes.Count > 0 || BlockDomains.Count > 0
-        || TunnelApps.Count > 0;
+        || TunnelApps.Count > 0 || DirectApps.Count > 0;
 
     /// <summary>
     /// Reads the globally selected list and the mode it runs in; none for a config kept off routing.
@@ -68,6 +73,9 @@ internal sealed record TunnelRouting(
             list.BlockRoutes,
             list.BlockDomains,
             list.Apps,
-            settings?.AllUdp ?? false);
+            settings?.AllUdp ?? false)
+        {
+            DirectApps = list.DirectApps,
+        };
     }
 }

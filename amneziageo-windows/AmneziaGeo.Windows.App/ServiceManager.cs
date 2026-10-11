@@ -311,7 +311,7 @@ internal sealed class ServiceManager
             startInfo.ArgumentList.Add(argument);
         }
 
-        using (var process = Process.Start(startInfo)!)
+        using (var process = Process.Start(ChildOutput.OfSystem(startInfo))!)
         {
             var output = process.StandardOutput.ReadToEnd();
             var error = process.StandardError.ReadToEnd();

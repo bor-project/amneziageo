@@ -45,8 +45,17 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
         Reset(addresses, false, true);
     }
 
+    /// <summary>
+    /// Aborts every connection to these addresses that left through the tunnel and belongs to a process the test
+    /// names, the open ones included.
+    /// </summary>
+    public void AbortOwnedThroughTunnel(IReadOnlyCollection<IPAddress> addresses, Func<IReadOnlyCollection<uint>, HashSet<uint>> owned)
+    {
+        Reset(addresses, true, true, owned);
+    }
+
     // Aborts the connections to these addresses on the given side of the tunnel.
-    private void Reset(IReadOnlyCollection<IPAddress> addresses, bool established, bool throughTunnel)
+    private void Reset(IReadOnlyCollection<IPAddress> addresses, bool established, bool throughTunnel, Func<IReadOnlyCollection<uint>, HashSet<uint>>? owned = null)
     {
         if (addresses.Count == 0)
         {
@@ -69,7 +78,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
 
         try
         {
-            Sweep(wanted, established, throughTunnel);
+            Sweep(wanted, established, throughTunnel, owned);
         }
         catch (Exception ex)
         {
@@ -77,7 +86,7 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
         }
     }
 
-    private void Sweep(HashSet<uint> wanted, bool established, bool throughTunnel)
+    private void Sweep(HashSet<uint> wanted, bool established, bool throughTunnel, Func<IReadOnlyCollection<uint>, HashSet<uint>>? owned)
     {
         var mine = TunnelAddresses();
         var size = 0;
@@ -111,6 +120,12 @@ internal sealed class SynSentReset(string tunnelName, ILogger logger)
                 var localAddr = (uint)Marshal.ReadInt32(row, 4);
                 var remoteAddr = (uint)Marshal.ReadInt32(row, 12);
                 if (!wanted.Contains(remoteAddr) || mine.Contains(localAddr) != throughTunnel)
+                {
+                    continue;
+                }
+
+                var pid = (uint)Marshal.ReadInt32(row, 20);
+                if (owned is not null && !owned([pid]).Contains(pid))
                 {
                     continue;
                 }

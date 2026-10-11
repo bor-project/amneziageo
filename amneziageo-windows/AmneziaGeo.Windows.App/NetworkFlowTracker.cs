@@ -49,6 +49,10 @@ internal sealed class NetworkFlowTracker : IDisposable
     private readonly ProcessImages? _images;
     // Whether another program keeps an address on a host route of its own, the way a VPN pins its server.
     private readonly Func<IPAddress, bool>? _heldElsewhere;
+    // The tunnel of the set a rule sends an address through; null for an address no neighbour carries.
+    private readonly Func<IPAddress, string?>? _neighbour;
+    // The monitoring session of this tunnel.
+    private readonly string _sessionName;
     // Resolvers this process asks itself.
     private readonly HashSet<IPAddress> _ownResolvers;
     // Destinations a dropped datagram sent into the tunnel.
@@ -83,9 +87,11 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null, IEnumerable<IPAddress>? ownResolvers = null)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null, IEnumerable<IPAddress>? ownResolvers = null, string? sessionName = null, Func<IPAddress, string?>? neighbour = null)
     {
         _ownResolvers = [.. ownResolvers ?? []];
+        _sessionName = sessionName ?? WatchSession.Flows;
+        _neighbour = neighbour;
         _matcher = matcher;
         _tracker = tracker;
         _allUdp = allUdp;
@@ -126,7 +132,15 @@ internal sealed class NetworkFlowTracker : IDisposable
 
         if (LeftToItsOwnRoute(remote))
         {
-            _logger.LogInformation("{Remote}: a datagram to it was held back, and this address is held on a route of its own outside the tunnel, a VPN server or a site opened again by name, so all UDP leaves it there", remote);
+            if (_neighbour?.Invoke(remote) is { } carrier)
+            {
+                _logger.LogDebug("{Remote}: a datagram to it was held back, and a rule sends this address through {Tunnel}, another tunnel of the set, so all UDP leaves it there", remote, carrier);
+            }
+            else
+            {
+                _logger.LogInformation("{Remote}: a datagram to it was held back, and this address is held on a route of its own outside the tunnel, a VPN server or a site opened again by name, so all UDP leaves it there", remote);
+            }
+
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"udp blocked -> {remote} left to its own route");
@@ -187,7 +201,15 @@ internal sealed class NetworkFlowTracker : IDisposable
     // Writes down a destination the all-UDP rule leaves to another program's route.
     private void NoteLeft(IPAddress remote, uint pid)
     {
-        _logger.LogInformation("{Remote}: pid {Pid} sends here, and this address is held on a route of its own outside the tunnel, a VPN server or a site opened again by name, so all UDP leaves it there", remote, pid);
+        if (_neighbour?.Invoke(remote) is { } carrier)
+        {
+            _logger.LogDebug("{Remote}: pid {Pid} sends here, and a rule sends this address through {Tunnel}, another tunnel of the set, so all UDP leaves it there", remote, pid, carrier);
+        }
+        else
+        {
+            _logger.LogInformation("{Remote}: pid {Pid} sends here, and this address is held on a route of its own outside the tunnel, a VPN server or a site opened again by name, so all UDP leaves it there", remote, pid);
+        }
+
         if (RouteLog.Enabled)
         {
             RouteLog.Note($"udp request -> {remote} (pid {pid}) left to its own route");
@@ -196,9 +218,8 @@ internal sealed class NetworkFlowTracker : IDisposable
 
     public async Task RunAsync(CancellationToken ct)
     {
-        // Fixed name (a single agent is guaranteed by SoleAgentGuard): EnableProvider reclaims a session
-        // orphaned by a prior crash instead of leaking a new one per PID.
-        var sessionName = "AmneziaGeoFlow";
+        // The name stays the same for the tunnel, so EnableProvider reclaims a session a crash left behind.
+        var sessionName = _sessionName;
         try
         {
             using (_session = new TraceEventSession(sessionName, TraceEventSessionOptions.Create))
@@ -215,7 +236,7 @@ internal sealed class NetworkFlowTracker : IDisposable
                 EnableStarts();
 
                 _session.Source.AllEvents += evt => Handle(evt, ct);
-                _logger.LogInformation("watching app connections (session {Name}, IPv6 {V6}); connections of tunneled apps are routed as they appear", sessionName, _tunnelV6);
+                _logger.LogInformation("watching app connections (session {Name}, IPv6 {V6}); connections of the applications the rules name are routed as they appear", sessionName, _tunnelV6);
 
                 // Backstop scan for matched apps' SYN_SENT remotes; only meaningful with a TCP app matcher.
                 if (_matcher is not null)

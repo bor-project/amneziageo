@@ -819,7 +819,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// True while the application method is pickable: the Proxy bucket of a list that tunnels only what it names,
     /// the Direct bucket where an application can be kept out of the tunnel altogether.
     /// </summary>
-    public bool CanAddApps => (IsProxyRole && !GlobalProxyActive) || (IsDirectRole && OperatingSystem.IsAndroid());
+    public bool CanAddApps => (IsProxyRole && !GlobalProxyActive) || (IsDirectRole && (GlobalProxyActive || OperatingSystem.IsAndroid()));
 
     /// <summary>
     /// Application method caption, empty where the platform runs no app rules.
@@ -831,9 +831,8 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// </summary>
     public string AppBucketsHint => Loc.Instance.Get((OperatingSystem.IsAndroid(), GlobalProxyActive) switch
     {
-        (true, true) => "Main_AppOnlyDirectHint",
+        (_, true) => "Main_AppOnlyDirectHint",
         (true, false) => "Main_AppProxyDirectHint",
-        (false, true) => "Main_AppSelectedModeHint",
         _ => "Main_AppOnlyProxyHint",
     });
 

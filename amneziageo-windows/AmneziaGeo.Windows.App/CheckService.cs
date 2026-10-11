@@ -167,7 +167,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var probes = new TargetProbes(
             address => held.GetValueOrDefault(address.ToString()),
             Trace: Connected(config) ? (address, token) => TraceAsync(store, config, address, token) : null);
-        var report = await new TargetInspector(list, split, apps)
+        var report = await new TargetInspector(list, split, apps, directApps: !split)
             .InspectAsync(target, config, probes, ct)
             .ConfigureAwait(false);
 
@@ -425,7 +425,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var map = new Dictionary<string, HeldRoute>(StringComparer.Ordinal);
         foreach (var row in inspector.HeldSessions(config).Sessions)
         {
-            map[row.Host] = new HeldRoute(Role(row), row.Describe());
+            map[row.Host] = new HeldRoute(Role(row), row.Describe(), row.Reason == AmneziaGeo.Ipc.LiveSession.ReasonApp);
         }
 
         return map;

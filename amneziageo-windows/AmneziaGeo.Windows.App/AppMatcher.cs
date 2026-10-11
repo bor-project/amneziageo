@@ -15,6 +15,9 @@ internal sealed class AppMatcher
     private readonly ILogger _logger;
     private readonly ProcessImages? _images;
 
+    // Whether the rules keep their applications past the tunnel instead of carrying them through it.
+    private readonly bool _past;
+
     // The rules in force, parsed. Replaced whole on a reload, so a reader sees one set or the other.
     private volatile RuleSet _set;
 
@@ -37,10 +40,11 @@ internal sealed class AppMatcher
     /// <summary>
     /// ctor
     /// </summary>
-    public AppMatcher(IReadOnlyList<string> matchers, ILogger logger, ProcessImages? images = null)
+    public AppMatcher(IReadOnlyList<string> matchers, ILogger logger, ProcessImages? images = null, bool past = false)
     {
         _logger = logger;
         _images = images;
+        _past = past;
         _set = Parse(matchers, logger);
     }
 
@@ -106,7 +110,7 @@ internal sealed class AppMatcher
                     set.Packages.Add(value);
                     break;
                 default:
-                    logger.LogInformation("app rules of type '{Kind}' are not supported yet and are ignored; the programs they name will not be routed through the tunnel", kind);
+                    logger.LogInformation("app rules of type '{Kind}' are not supported yet and are ignored; the programs they name follow the rest of the list", kind);
                     break;
             }
         }
@@ -124,9 +128,17 @@ internal sealed class AppMatcher
         var installed = packages ?? InstalledPackages.Snapshot(AppRuleAudit.Publishers(rules), _logger);
         foreach (var note in AppRuleAudit.Check(rules, installed, DirectoryExists, FileExists, ServiceExists))
         {
-            if (note.Twin is null)
+            if (note.Twin is null && _past)
+            {
+                _logger.LogWarning("the app rule \"{Rule}\" names no program installed on this machine, so nothing leaves past the tunnel for it", note.Rule);
+            }
+            else if (note.Twin is null)
             {
                 _logger.LogWarning("the app rule \"{Rule}\" names no program installed on this machine, so nothing rides the tunnel for it", note.Rule);
+            }
+            else if (_past)
+            {
+                _logger.LogWarning("the app rule \"{Rule}\" and the installed package {Twin} run the same program, so if you use that one its traffic rides the tunnel until a rule names it too", note.Rule, note.Twin);
             }
             else
             {
@@ -307,6 +319,55 @@ internal sealed class AppMatcher
         }
 
         return map;
+    }
+
+    /// <summary>
+    /// The executables the rules name outright and the disk holds: the files of the path rules and the programs
+    /// under the folders of the folder rules, no more than the count given.
+    /// </summary>
+    public IReadOnlyList<string> Images(int most)
+    {
+        var set = _set;
+        var found = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in set.Paths.SelectMany(AmneziaGeo.Ipc.AppPathToken.Expand))
+        {
+            if (found.Count < most && File.Exists(path) && seen.Add(path))
+            {
+                found.Add(path);
+            }
+        }
+
+        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
+        foreach (var folder in set.Dirs.SelectMany(AmneziaGeo.Ipc.AppPathToken.Expand))
+        {
+            if (!Directory.Exists(folder))
+            {
+                continue;
+            }
+
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(folder, "*.exe", options))
+                {
+                    if (found.Count >= most)
+                    {
+                        return found;
+                    }
+
+                    if (seen.Add(file))
+                    {
+                        found.Add(file);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "the programs under {Folder} could not be listed", folder);
+            }
+        }
+
+        return found;
     }
 
     // Image-path match for path=/dir=/name=; svc= handled by PID.

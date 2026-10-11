@@ -324,8 +324,9 @@ public sealed class RoutingCache
     }
 
     /// <summary>
-    /// Raised when an app rule alone puts a destination in the tunnel - no range covers it. Nothing resolved to
-    /// such an address, so this is the only moment it can be learned.
+    /// Raised when an app rule alone decides where a destination goes, no range covering it: into the tunnel in a
+    /// split, past a tunnel that carries everything. Nothing resolved to such an address, so this is the only
+    /// moment it can be learned.
     /// </summary>
     public event Action<IPAddress>? AppDestination;
 
@@ -691,8 +692,9 @@ public sealed class RoutingCache
         var rows = new List<(long Touch, Entry Entry)>();
         foreach (var pair in _entries)
         {
-            // An adopted address belongs to the domain tracker, which persists its names itself.
-            if (pair.Value.Plan == RoutePlan.External)
+            // An adopted address belongs to the domain tracker, which persists its names itself; one an application
+            // took past the tunnel is earned again by its traffic.
+            if (pair.Value.Plan == RoutePlan.External || Passed(pair.Value))
             {
                 continue;
             }
@@ -1036,11 +1038,14 @@ public sealed class RoutingCache
         }
     }
 
-    // Moves an already-decided destination onto the tunnel once an app rule claims it: what the old plan installed
-    // is released first, so a permit out the physical path never outlives the decision that replaced it.
+    // Moves an already-decided destination onto the side an app rule claims it for, the tunnel in a split and the
+    // physical path under a tunnel that carries everything: what the old plan installed is released first, so a
+    // permit out the physical path never outlives the decision that replaced it.
     private void Promote(Entry entry, long now)
     {
-        if (CarriesEverything || entry.Plan is RoutePlan.Tunnel or RoutePlan.Drop or RoutePlan.External || entry.Verdict is RouteVerdict.Direct)
+        var wanted = CarriesEverything ? RoutePlan.Bypass : RoutePlan.Tunnel;
+        if (entry.Plan == wanted || entry.Plan is RoutePlan.Tunnel or RoutePlan.Drop or RoutePlan.External
+            || entry.Verdict is RouteVerdict.Direct || (CarriesEverything && entry.Verdict is RouteVerdict.Proxy))
         {
             if (!Installed(entry))
             {
@@ -1056,7 +1061,7 @@ public sealed class RoutingCache
         lock (entry)
         {
             Release(entry, generation, filters, withdrawn);
-            entry.Plan = RoutePlan.Tunnel;
+            entry.Plan = wanted;
             entry.ByApp = true;
         }
 
@@ -1201,6 +1206,43 @@ public sealed class RoutingCache
     }
 
     /// <summary>
+    /// Releases every destination an application took past the tunnel, as an edit of the application rules asks:
+    /// one still named earns its path again with its next packet. Returns how many were released.
+    /// </summary>
+    public int ReleasePassed()
+    {
+        var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
+        var generation = _applier.Generation;
+        var released = 0;
+        foreach (var pair in _entries)
+        {
+            if (!Passed(pair.Value) || !_entries.TryRemove(pair.Key, out var entry))
+            {
+                continue;
+            }
+
+            Interlocked.Decrement(ref _size);
+            lock (entry)
+            {
+                Release(entry, generation, filters, withdrawn);
+            }
+
+            released++;
+        }
+
+        _applier.RemoveTunnel(withdrawn);
+        _applier.DeleteFilters(filters, generation);
+        return released;
+    }
+
+    // Whether an application the list keeps direct took the destination past a tunnel that carries everything.
+    private static bool Passed(Entry entry)
+    {
+        return entry.ByApp && entry.Plan == RoutePlan.Bypass && entry.Verdict == RouteVerdict.None;
+    }
+
+    /// <summary>
     /// Adopts addresses the domain tracker installed: the cache records the contact but installs and reclaims
     /// nothing, so the two never fight over one address.
     /// </summary>
@@ -1305,7 +1347,7 @@ public sealed class RoutingCache
         }
     }
 
-    // Applies what the plan asks for; true when an app rule alone brought the destination into the tunnel.
+    // Applies what the plan asks for; true when an app rule alone decided where the destination goes.
     private bool Apply(Entry entry, long now)
     {
         lock (entry)
@@ -1359,15 +1401,16 @@ public sealed class RoutingCache
                 return false;
             }
 
-            if (_applier.TryAddRoute(entry.Address, out var index))
+            if (!_applier.TryAddRoute(entry.Address, out var index))
             {
-                entry.InterfaceIndex = index;
-                entry.Routed = true;
-                Interlocked.Increment(ref _applied);
-                Interlocked.Increment(ref _installed);
+                return false;
             }
 
-            return false;
+            entry.InterfaceIndex = index;
+            entry.Routed = true;
+            Interlocked.Increment(ref _applied);
+            Interlocked.Increment(ref _installed);
+            return Passed(entry);
         }
     }
 
@@ -1378,33 +1421,39 @@ public sealed class RoutingCache
     {
         // Below the hottest count nothing is reclaimed at all: the idle window only decides which of the entries
         // past it goes.
-        if (HotFloor() is not { } hot)
-        {
-            return;
-        }
-
+        var hot = HotFloor();
         var stale = new List<KeyValuePair<uint, Entry>>();
         var idleTtlMs = Volatile.Read(ref _idleTtlMs);
         foreach (var pair in _entries)
         {
             var touch = Volatile.Read(ref pair.Value.LastTouch);
-            if (now - touch <= idleTtlMs || touch >= hot)
+            if (now - touch <= idleTtlMs)
             {
                 continue;
             }
 
-            // An adopted address leaves with the name that resolved it; one whose name is already gone belongs to
-            // nobody and goes now, whatever installed it.
-            if (pair.Value.Plan == RoutePlan.External && Volatile.Read(ref _adopted) is { } adopted && adopted(pair.Value.Address))
+            // What an application took past the tunnel goes back with its last traffic, however few entries there
+            // are: its route holds for every program of the machine.
+            if (!Passed(pair.Value))
             {
-                continue;
-            }
+                if (hot is not { } floor || touch >= floor)
+                {
+                    continue;
+                }
 
-            // A destination an app rule claimed keeps its route: no name resolves it back into the tunnel, so the
-            // attempt that would earn the route again is the very attempt that loses its answer.
-            if (pair.Value.ByApp)
-            {
-                continue;
+                // An adopted address leaves with the name that resolved it; one whose name is already gone belongs
+                // to nobody and goes now, whatever installed it.
+                if (pair.Value.Plan == RoutePlan.External && Volatile.Read(ref _adopted) is { } adopted && adopted(pair.Value.Address))
+                {
+                    continue;
+                }
+
+                // A destination an app rule claimed for the tunnel keeps its route: no name resolves it back into
+                // the tunnel, so the attempt that would earn the route again is the very attempt that loses its answer.
+                if (pair.Value.ByApp)
+                {
+                    continue;
+                }
             }
 
             stale.Add(pair);
@@ -1605,7 +1654,8 @@ public sealed class RoutingCache
     // Split: nothing rides the tunnel until a destination earns it, and the physical path is blocked until a
     // verdict exists - so Proxy earns the tunnel, Block stays dropped, and everything else earns a permit.
     // app: claimed by an app rule. Block still wins, and so does an explicit Direct range - the user pinned that
-    // destination to the physical path on purpose.
+    // destination to the physical path on purpose. Under a tunnel that carries everything the claim is of an
+    // application the list keeps direct: its destination leaves past the tunnel unless a rule by address names it.
     private RoutePlan Decide(RuleSet rules, RouteVerdict verdict, uint address, bool app = false)
     {
         if (verdict == RouteVerdict.Block)
@@ -1627,7 +1677,12 @@ public sealed class RoutingCache
             }
 
             // The default belongs to another tunnel of the set, so what a rule names here takes a route of its own.
-            return !_carriesDefault && (verdict == RouteVerdict.Proxy || app) ? RoutePlan.Tunnel : RoutePlan.None;
+            if (!_carriesDefault)
+            {
+                return verdict == RouteVerdict.Proxy || app ? RoutePlan.Tunnel : RoutePlan.None;
+            }
+
+            return app && verdict == RouteVerdict.None ? RoutePlan.Bypass : RoutePlan.None;
         }
 
         if (verdict == RouteVerdict.Direct)

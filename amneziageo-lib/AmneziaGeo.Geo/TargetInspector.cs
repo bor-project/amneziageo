@@ -9,9 +9,10 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// What the running tunnel holds for one address: the role its path amounts to right now, and how it is held.
+/// What the running tunnel holds for one address: the role its path amounts to right now, how it is held, and
+/// whether a rule by application alone put it there.
 /// </summary>
-public sealed record HeldRoute(RoleToken Role, string Detail);
+public sealed record HeldRoute(RoleToken Role, string Detail, bool ByApp = false);
 
 /// <summary>
 /// What the platform lends the inspector: what its live tunnel holds for an address, which addresses an
@@ -26,8 +27,9 @@ public sealed record TargetProbes(
 /// <summary>
 /// Answers "why does this address, name, application or category go where it goes". The active list decides it,
 /// and the matchers here are the ones the tunnel itself routes by, so the answer is the routing, not a guess.
+/// Where the platform passes the applications of the direct bucket over in this mode, their rules name nothing.
 /// </summary>
-public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps = AppScope.None)
+public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps = AppScope.None, bool directApps = true)
 {
     // Port a reachability probe knocks on when the target names none.
     private const int ProbePort = 443;
@@ -148,9 +150,19 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
     private TargetFindings Application(string token, List<CheckFact> facts, TargetFindings findings, TargetProbes probes)
     {
         var value = Host(token);
-        var rule = AppRule(token);
-        facts.Add(new CheckFact("app", value, rule.Length > 0 ? "listed" : "unlisted",
-            rule.Length > 0 ? $"covered by \"{rule}\"" : "no app rule names it"));
+        var named = AppRule(token);
+        var idle = named is { Role: RouteRole.Direct } && !directApps;
+        var rule = named is null || idle ? string.Empty : GeoConfigurator.Format(named);
+        if (idle)
+        {
+            facts.Add(new CheckFact("app", value, "idle",
+                $"covered by \"{GeoConfigurator.Format(named!)}\", which keeps an application direct only under a tunnel that carries everything"));
+        }
+        else
+        {
+            facts.Add(new CheckFact("app", value, rule.Length > 0 ? "listed" : "unlisted",
+                rule.Length > 0 ? $"covered by \"{rule}\"" : "no app rule names it"));
+        }
 
         var live = probes.AppAddresses?.Invoke(value) ?? [];
         var unlisted = 0;
@@ -182,7 +194,8 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             MatchedRule = rule,
             Addresses = live.Count,
             Unlisted = unlisted,
-            Role = rule.Length > 0 ? RoleToken.Proxy : RoleToken.None,
+            Role = rule.Length > 0 ? Role(named!.Role) : RoleToken.None,
+            IdleRule = idle ? GeoConfigurator.Format(named!) : string.Empty,
         };
     }
 
@@ -235,6 +248,9 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
 
         // Addresses the running tunnel carries somewhere other than the tunnel.
         var offPath = 0;
+
+        // Addresses no rule covers that an application the list keeps direct took past a tunnel that carries everything.
+        var passed = 0;
         foreach (var address in addresses.Take(MaxAddresses))
         {
             var claim = ForAddress(address);
@@ -248,6 +264,11 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             if (claim.Role == RoleToken.None)
             {
                 unlisted++;
+                if (!split && held is { Role: RoleToken.Direct, ByApp: true })
+                {
+                    passed++;
+                }
+
                 continue;
             }
 
@@ -266,6 +287,7 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             Addresses = addresses.Count,
             Unlisted = unlisted,
             OffPath = offPath,
+            Passed = passed,
         };
     }
 
@@ -340,18 +362,18 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
         }
     }
 
-    // The app rule that names a package or an image, "" when none does.
-    private string AppRule(string token)
+    // The app rule that names a package or an image, null when none does.
+    private GeoRule? AppRule(string token)
     {
         foreach (var rule in list?.Rules ?? [])
         {
             if (rule.Kind == GeoRuleKind.App && AppRuleCover.Covers(rule.Value, token))
             {
-                return GeoConfigurator.Format(rule);
+                return rule;
             }
         }
 
-        return string.Empty;
+        return null;
     }
 
     private static string KindOf(string token)

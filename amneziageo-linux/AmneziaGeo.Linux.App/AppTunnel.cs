@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Net;
-using System.Text;
 using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Linux.App;
@@ -17,13 +16,11 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal sealed class AppTunnel : IDisposable
 {
-    private const string CgroupRoot = "/sys/fs/cgroup";
     private const string CgroupName = "amneziageo";
     private const string Table = "51820";
     private const string Mark = SteeringRules.Mark;
     private const string NftTable = SteeringRules.Table;
     private const int RulePriority = 5000;
-    private const int SyncIntervalMs = 3000;
 
     private readonly string _iface;
     private readonly AppImages _images;
@@ -33,13 +30,10 @@ internal sealed class AppTunnel : IDisposable
     private readonly bool _allUdp;
     private readonly string? _endpoint;
     private readonly AgentLog _log;
-    private readonly CancellationTokenSource _cts = new();
-    private readonly HashSet<int> _placed = [];
+    private readonly AppGroup _group;
     private readonly HashSet<uint> _spared = [];
     private GeoIpRanges _carried;
     private GeoIpRanges _passed;
-    private Task? _syncing;
-    private ProcEvents? _events;
     private bool _up;
     private bool _disposed;
 
@@ -60,12 +54,8 @@ internal sealed class AppTunnel : IDisposable
         _allUdp = allUdp;
         _endpoint = endpoint;
         _log = log;
+        _group = new AppGroup(CgroupName, images, "rides the tunnel from now on", log);
     }
-
-    /// <summary>
-    /// Path of the cgroup the carried processes live in.
-    /// </summary>
-    public static string CgroupPath => $"{CgroupRoot}/{CgroupName}";
 
     /// <summary>
     /// Raises the per-application path for the given rules, the path of the ranges a list sends through the tunnel
@@ -82,7 +72,7 @@ internal sealed class AppTunnel : IDisposable
             return null;
         }
 
-        if (!images.Empty && !File.Exists($"{CgroupRoot}/cgroup.controllers"))
+        if (!images.Empty && !AppGroup.Offered)
         {
             log.Warn("apps", "the kernel offers no unified cgroups here, so the applications keep the path of the machine");
             return null;
@@ -98,8 +88,7 @@ internal sealed class AppTunnel : IDisposable
         tunnel._up = true;
         if (!images.Empty)
         {
-            tunnel._syncing = Task.Run(() => tunnel.SyncingAsync(tunnel._cts.Token), CancellationToken.None);
-            tunnel._events = ProcEvents.TryListen(tunnel.Carry, log);
+            tunnel._group.Watch();
             log.Info("apps", $"{images.Count} application(s) ride {interfaceName} by cgroup, and their traffic alone");
         }
 
@@ -280,33 +269,13 @@ internal sealed class AppTunnel : IDisposable
     public async Task StopAsync()
     {
         _up = false;
-        _events?.Dispose();
-        _events = null;
-        await _cts.CancelAsync().ConfigureAwait(false);
-        if (_syncing is not null)
-        {
-            try
-            {
-                await _syncing.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
-        Release();
+        await _group.StopAsync().ConfigureAwait(false);
         await Shell.RunAsync("nft", CancellationToken.None, "delete", "table", "inet", NftTable).ConfigureAwait(false);
         await Shell.RunAsync("ip", CancellationToken.None, "rule", "del", "fwmark", Mark, "lookup", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", CancellationToken.None, "-6", "rule", "del", "fwmark", Mark, "lookup", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", CancellationToken.None, "route", "flush", "table", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", CancellationToken.None, "-6", "route", "flush", "table", Table).ConfigureAwait(false);
-        try
-        {
-            Directory.Delete(CgroupPath);
-        }
-        catch (Exception)
-        {
-        }
+        _group.Remove();
     }
 
     /// <inheritdoc/>
@@ -318,9 +287,7 @@ internal sealed class AppTunnel : IDisposable
         }
 
         _disposed = true;
-        _events?.Dispose();
-        _cts.Cancel();
-        _cts.Dispose();
+        _group.Dispose();
     }
 
     // The iproute2 words that put one destination into the application table.
@@ -344,17 +311,9 @@ internal sealed class AppTunnel : IDisposable
     // Builds the cgroup, the mark and the table the mark selects.
     private async Task<bool> RaiseAsync(CancellationToken ct)
     {
-        if (!_images.Empty)
+        if (!_images.Empty && !_group.Make())
         {
-            try
-            {
-                Directory.CreateDirectory(CgroupPath);
-            }
-            catch (Exception ex)
-            {
-                _log.Warn("apps", $"the cgroup could not be made: {ex.Message}");
-                return false;
-            }
+            return false;
         }
 
         // What a killed run left behind would send the mark at a table that routes nowhere.
@@ -558,123 +517,6 @@ internal sealed class AppTunnel : IDisposable
             args.Add("table");
             args.Add(Table);
             await Shell.RunAsync("ip", ct, [.. args]).ConfigureAwait(false);
-        }
-    }
-
-    // Keeps the cgroup filled with what the connector did not report: a process the pass finds is carried from then
-    // on, and its children come with it on their own.
-    private async Task SyncingAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                Fill();
-                await Task.Delay(SyncIntervalMs, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _log.Warn("apps", $"filling the cgroup failed: {ex.Message}");
-            }
-        }
-    }
-
-    // Puts every process the rules name into the cgroup.
-    private void Fill()
-    {
-        foreach (var entry in Directory.EnumerateDirectories("/proc"))
-        {
-            if (int.TryParse(Path.GetFileName(entry), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid))
-            {
-                Carry(pid);
-            }
-        }
-    }
-
-    // Puts one process into the cgroup when the rules name the image it runs.
-    private void Carry(int pid)
-    {
-        if (!_up)
-        {
-            return;
-        }
-
-        lock (_placed)
-        {
-            if (!_placed.Add(pid))
-            {
-                return;
-            }
-        }
-
-        var image = Image(pid);
-        if (image is not null && _images.Names(image) && Place(CgroupPath, pid))
-        {
-            _log.Info("apps", $"{image} rides the tunnel from now on");
-            return;
-        }
-
-        lock (_placed)
-        {
-            _placed.Remove(pid);
-        }
-    }
-
-    // The executable a pid runs, or null when it is gone or unreadable.
-    private static string? Image(int pid)
-    {
-        try
-        {
-            var link = new FileInfo($"/proc/{pid.ToString(CultureInfo.InvariantCulture)}/exe").LinkTarget;
-            return link is { Length: > 0 } ? link : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    // Moves one process into the cgroup; its threads and children follow it there. The file is opened as it stands:
-    // cgroupfs takes one line and refuses a write that asks to truncate it first.
-    private static bool Place(string cgroup, int pid)
-    {
-        try
-        {
-            using var stream = new FileStream($"{cgroup}/cgroup.procs", FileMode.Open, FileAccess.Write);
-            stream.Write(Encoding.ASCII.GetBytes(pid.ToString(CultureInfo.InvariantCulture) + "\n"));
-            stream.Flush();
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    // Hands the carried processes back to the root cgroup, so they keep running on the route of the machine.
-    private void Release()
-    {
-        try
-        {
-            foreach (var line in File.ReadLines($"{CgroupPath}/cgroup.procs"))
-            {
-                if (int.TryParse(line.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid))
-                {
-                    Place(CgroupRoot, pid);
-                }
-            }
-        }
-        catch (Exception)
-        {
-        }
-
-        lock (_placed)
-        {
-            _placed.Clear();
         }
     }
 }

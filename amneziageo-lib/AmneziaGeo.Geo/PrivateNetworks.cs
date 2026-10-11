@@ -146,6 +146,24 @@ public static class PrivateNetworks
     }
 
     /// <summary>
+    /// The addresses that lie inside a network this machine stands in.
+    /// </summary>
+    public static IReadOnlyList<string> InsideLocal(IEnumerable<string> addresses, IReadOnlyList<string> local)
+    {
+        var inside = new List<string>();
+        foreach (var address in addresses)
+        {
+            if (IPAddress.TryParse(address, out var parsed)
+                && AroundLocal([$"{parsed}/{(parsed.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32)}"], local).Left.Count > 0)
+            {
+                inside.Add(address);
+            }
+        }
+
+        return inside;
+    }
+
+    /// <summary>
     /// Returns the networks this machine stands in itself.
     /// </summary>
     public static IReadOnlyList<string> Local()

@@ -259,6 +259,42 @@ public sealed class RoutingListModeTests
     }
 
     [Fact]
+    public void TheDirectBucketOfAFullList_TakesApplications()
+    {
+        var editor = new RoutingListEditorViewModel(new Silent());
+
+        editor.GlobalProxyActive = true;
+        editor.AddMethodIndex = 1;
+
+        Assert.True(editor.IsDirectRole);
+        Assert.True(editor.CanAddApps);
+        Assert.True(editor.IsAppMethod);
+    }
+
+    [Fact]
+    public void TheBucketsOfAFullListThatTakeNoApplications_NameTheDirectOne()
+    {
+        var editor = new RoutingListEditorViewModel(new Silent());
+
+        editor.GlobalProxyActive = true;
+        editor.RoleIndex = 2;
+
+        Assert.False(editor.CanAddApps);
+        Assert.Equal(Loc.Instance.Get("Main_AppOnlyDirectHint"), editor.AppBucketsHint);
+    }
+
+    [Fact]
+    public void TheDirectBucketOfAListThatTunnelsWhatItNames_TakesApplicationsOnThePhoneAlone()
+    {
+        var editor = new RoutingListEditorViewModel(new Silent());
+
+        editor.RoleIndex = 1;
+
+        Assert.True(editor.IsDirectRole);
+        Assert.Equal(OperatingSystem.IsAndroid(), editor.CanAddApps);
+    }
+
+    [Fact]
     public void TheTunnelBucketOfAFullList_SaysItsRulesRideTheirRoutes()
     {
         var editor = new FleetRoutingListEditorViewModel(new Silent(), null);

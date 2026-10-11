@@ -39,13 +39,13 @@ internal static class EncryptedNames
     {
         try
         {
-            using var process = Process.Start(new ProcessStartInfo("netsh", arguments)
+            using var process = Process.Start(ChildOutput.OfSystem(new ProcessStartInfo("netsh", arguments)
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-            });
+            }));
             if (process is null)
             {
                 return string.Empty;

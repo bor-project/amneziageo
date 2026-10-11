@@ -24,9 +24,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
     private readonly UiPreferences _prefs;
 
-    private string _updateSetupUrl = string.Empty;
-    private string _expectedSha256 = string.Empty;
-    private UpdateAsset? _updateAsset;
+    private UpdateOffer _offer = UpdateOffer.None;
     private string? _bannerUpdateVersion;
     private string? _downloadedSetupPath;
     private string? _downloadedVersion;
@@ -255,6 +253,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public void SetPinnedDownloadRunner(Action runner) => _pinnedDownloadRunner = runner;
 
     /// <summary>
+    /// Downloads the setup of an offer and returns the file to run.
+    /// </summary>
+    internal Func<UpdateOffer, IProgress<int>, Func<string, Task>, CancellationToken, Task<string>> Fetch { get; set; } = DownloadSetupAsync;
+
+    /// <summary>
     /// Whether the last download was cancelled by a host relay (an exit), so a windowless worker exits rather
     /// than surfacing the window (#21).
     /// </summary>
@@ -309,12 +312,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             _ = SilentCheckUpdateAsync();
         }
 
+        _offer = UpdateOffer.Of(snapshot);
         UpdateAvailable = snapshot.UpdateAvailable;
         UpdateVersion = snapshot.UpdateVersion;
         UpdateDescription = snapshot.UpdateDescription;
-        _updateSetupUrl = snapshot.UpdateSetupUrl;
-        _expectedSha256 = snapshot.UpdateSetupSha256;
-        _updateAsset = snapshot.UpdateSetupAsset;
 
         if (_agentUpdates)
         {
@@ -590,12 +591,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // the next attempt.
     private async Task DownloadCoreAsync()
     {
-        if (string.IsNullOrEmpty(_updateSetupUrl) || UpdateDownloading || UpdateDownloaded)
+        if (_offer.Url.Length == 0 || UpdateDownloading || UpdateDownloaded)
         {
             return;
         }
-
-        var url = _updateSetupUrl;
 
         WasDownloadCancelledByHost = false;
         CancelUpToDateAutoHide();
@@ -604,19 +603,28 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
-        var version = UpdateVersion;
-        await ReportDownloadAsync("downloading", 0, string.Empty, version);
+        await ReportDownloadAsync("downloading", 0, string.Empty, _offer.Version);
+
+        // Takes the offer the whole download goes by.
+        var offer = _offer;
         try
         {
-            _downloadedSetupPath = await DownloadSetupAsync(url, _updateAsset, new Progress<int>(p => ReportDownloadProgress(p, version)), LogToAgentAsync, cts.Token);
-            _downloadedVersion = version;
+            if (!offer.Downloadable)
+            {
+                UpdateStatus = string.Empty;
+                await ReportDownloadAsync("idle", 0, string.Empty, string.Empty);
+                return;
+            }
+
+            _downloadedSetupPath = await Fetch(offer, new Progress<int>(p => ReportDownloadProgress(p, offer.Version)), LogToAgentAsync, cts.Token);
+            _downloadedVersion = offer.Version;
             UpdateDownloaded = true;
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateReadyToInstall");
-            await ReportDownloadAsync("downloaded", 100, _downloadedSetupPath, version);
+            await ReportDownloadAsync("downloaded", 100, _downloadedSetupPath, offer.Version);
         }
         catch (OperationCanceledException)
         {
-            SetupDownloads.Drop(SetupDownloads.Folder, SetupName(url));
+            SetupDownloads.Drop(SetupDownloads.Folder, SetupName(offer.Url));
             UpdateStatus = string.Empty;
             UpdateDownloadPercent = 0;
             await ReportDownloadAsync("idle", 0, string.Empty, string.Empty);
@@ -757,7 +765,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Verify integrity before running the installer; a mismatch drops the file and returns to the download
         // step. A manifest without a hash (legacy) verifies as trusted so the flow still works.
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateVerifying");
-        if (!await VerifySetupAsync(setupPath, SetupDownloads.DigestFor(setupPath, _updateAsset, _expectedSha256)))
+        var offer = _offer;
+        if (!await VerifySetupAsync(setupPath, SetupDownloads.DigestFor(setupPath, offer.Asset, offer.Sha256)))
         {
             _applying = false;
             UpdateInstalling = false;
@@ -856,12 +865,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // prior host cancel (#21).
         WasDownloadCancelledByHost = false;
 
-        for (var i = 0; i < 100 && (!UpdateAvailable || string.IsNullOrEmpty(_updateSetupUrl)); i++)
+        for (var i = 0; i < 100 && !_offer.Downloadable; i++)
         {
             await Task.Delay(200);
         }
 
-        if (!UpdateAvailable || string.IsNullOrEmpty(_updateSetupUrl))
+        if (!_offer.Downloadable)
         {
             return;
         }
@@ -1166,15 +1175,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // the version running, the update layout is put together from the installed copy and that patch; otherwise, or
     // when the layout does not come together, the whole setup is downloaded, carrying on from its partial.
     private static async Task<string> DownloadSetupAsync(
-        string url,
-        UpdateAsset? asset,
+        UpdateOffer offer,
         IProgress<int> progress,
         Func<string, Task> note,
         CancellationToken ct)
     {
         using var http = new HttpClient();
-        var address = new Uri(url);
-        var setup = SetupName(url);
+        var asset = offer.Asset;
+        var address = new Uri(offer.Url);
+        var setup = SetupName(offer.Url);
         var folder = SetupDownloads.Folder;
         Directory.CreateDirectory(folder);
         SetupDownloads.Sweep(folder, setup);

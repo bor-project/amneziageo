@@ -396,6 +396,56 @@ public sealed class TargetCheckTests
     }
 
     [Fact]
+    public async Task AnApplicationTheListKeepsDirect_IsKeptOutOfTheTunnelByItsRule()
+    {
+        var list = List(rules: [new GeoRule(GeoRuleKind.App, "path=/opt/bank/bank", RouteRole.Direct)]);
+        var probes = new TargetProbes(AppAddresses: _ => ["203.0.113.7"]);
+
+        var report = await new TargetInspector(list, split: false)
+            .InspectAsync("app:path=/opt/bank/bank", "srv", probes, CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.Direct, report.VerdictKey);
+        Assert.Equal("app:path=/opt/bank/bank", report.VerdictArgs[0]);
+    }
+
+    [Fact]
+    public async Task AnApplicationKeptDirectWhereTheModePassesItOver_IsSaidToFollowTheOtherRules()
+    {
+        var list = List(rules: [new GeoRule(GeoRuleKind.App, "path=/opt/bank/bank", RouteRole.Direct)]);
+
+        var report = await new TargetInspector(list, split: true, directApps: false)
+            .InspectAsync("app:path=/opt/bank/bank", "srv", new TargetProbes(), CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.AppIdle, report.VerdictKey);
+        Assert.Equal("app:path=/opt/bank/bank", report.VerdictArgs[0]);
+        Assert.Contains(report.Facts, fact => fact.Kind == "app" && fact.State == "idle");
+    }
+
+    [Fact]
+    public async Task AnAddressAnApplicationTookPastAFullTunnel_IsSaidToLeavePastIt()
+    {
+        var list = List(rules: [new GeoRule(GeoRuleKind.App, "path=/opt/bank/bank", RouteRole.Direct)]);
+        var probes = new TargetProbes(_ => new HeldRoute(RoleToken.Direct, "undecided, 0 B, idle 3 s", ByApp: true));
+
+        var report = await new TargetInspector(list, split: false)
+            .InspectAsync("203.0.113.7", "srv", probes, CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.PassedByApp, report.VerdictKey);
+        Assert.Equal("203.0.113.7", report.VerdictArgs[0]);
+    }
+
+    [Fact]
+    public async Task AnAddressHeldDirectForAnotherReason_KeepsTheAnswerOfTheRules()
+    {
+        var probes = new TargetProbes(_ => new HeldRoute(RoleToken.Direct, "direct, 0 B, idle 3 s"));
+
+        var report = await new TargetInspector(List(), split: false)
+            .InspectAsync("203.0.113.7", "srv", probes, CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.UnlistedFull, report.VerdictKey);
+    }
+
+    [Fact]
     public async Task AnAddressNoRuleCoversInSplit_LeavesThroughThePhysicalPath()
     {
         var report = await new TargetInspector(List(proxy: ["149.154.160.0/20"]), split: true)

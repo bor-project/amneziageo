@@ -271,6 +271,7 @@ internal sealed class FleetHostedService(
             await SettleAsync(name, change);
         }
 
+        var readdressed = false;
         foreach (var member in _members.Values.ToArray())
         {
             if (redialled.Contains(member.Name, StringComparer.Ordinal))
@@ -282,8 +283,24 @@ internal sealed class FleetHostedService(
             if (stamp != member.Stamp)
             {
                 await ReaddressAsync(member, stamp, ct);
+                readdressed = true;
             }
         }
+
+        // The tunnel that holds the lookups of the machine reads again which names the others carry.
+        foreach (var name in LentAudience(readdressed, _members.Keys))
+        {
+            _ = Task.Run(() => RuntimeSnapshotPipe.Send(name, RuntimeSnapshotPipe.OpLent, logger), CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// The tunnels told to read again which names the others carry: every standing one once a share of the rules
+    /// was taken up without reconnecting, none otherwise.
+    /// </summary>
+    internal static IReadOnlyList<string> LentAudience(bool readdressed, IEnumerable<string> standing)
+    {
+        return readdressed ? [.. standing] : [];
     }
 
     // The servers in the order of the chain: the carrier first, the reserve by place, and one the chain does

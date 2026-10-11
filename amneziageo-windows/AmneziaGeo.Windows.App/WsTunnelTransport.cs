@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -62,6 +63,8 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Queue<string> _stderr = new();
     private readonly object _exitLock = new();
+    private readonly ConditionalWeakTable<Process, CarrierRefusal> _readers = new();
+    private readonly RefusalPauses _pauses = new();
     private (int Code, string Stderr)? _lastExit;
     private Process? _process;
     private Process? _leaving;
@@ -131,7 +134,14 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             }
 
             _port.Offer(port);
-            var taken = await TakenAsync(old, ct).ConfigureAwait(false);
+            var taken = await TakenAsync(old, fresh, ct).ConfigureAwait(false);
+            if (RefusalOf(fresh) is { } said)
+            {
+                _port.Withdraw();
+                _logger.LogWarning("the front of the server at {Host}:{Port} refused the websocket of the fresh carrier ({Cause}), so the present one stays", _serverHost, _wsPort, Told(said));
+                return;
+            }
+
             if (!taken && Running(old) && _port.QuietMs < CarriesMs)
             {
                 _port.Withdraw();
@@ -186,11 +196,11 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
     }
 
-    // Waits until the carrier offered answers, the present one exits or the time is up.
-    private async Task<bool> TakenAsync(Process? present, CancellationToken ct)
+    // Waits until the carrier offered answers or its front refuses it, the present one exits or the time is up.
+    private async Task<bool> TakenAsync(Process? present, Process offered, CancellationToken ct)
     {
         var deadline = DateTimeOffset.UtcNow + HandoverCarry;
-        while (!_port.Taken && Running(present) && DateTimeOffset.UtcNow < deadline)
+        while (!_port.Taken && Running(present) && RefusalOf(offered) is null && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(20, ct).ConfigureAwait(false);
         }
@@ -448,27 +458,35 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         Volatile.Write(ref _startedAtMs, Environment.TickCount64);
     }
 
+    /// <summary>
+    /// Returns the arguments a carrier process is started with. -L udp://(port):127.0.0.1:(target port) forwards to
+    /// the AmneziaWG interface on the server; timeout_sec=0 keeps the UDP association alive. The token in the headers
+    /// file proves the keys of the configuration, so the certificate is taken as it stands; without a token it is
+    /// verified. Optional -P path token and basic-auth credentials.
+    /// </summary>
+    internal static string Arguments(bool token, string headersFile, string pathPrefix, string credentials, int port, int targetPort, string serverHost, int wsPort)
+    {
+        var auth = token
+            ? $" --http-headers-file \"{headersFile}\""
+            : " --tls-verify-certificate";
+        if (pathPrefix.Length > 0)
+        {
+            auth += $" -P \"{pathPrefix}\"";
+        }
+
+        if (credentials.Length > 0)
+        {
+            auth += $" --http-upgrade-credentials \"{credentials}\"";
+        }
+
+        // The lines of the carrier go to the journal, where colour codes are noise.
+        return $"--no-color true client{auth} -L \"udp://{port}:127.0.0.1:{targetPort}?timeout_sec=0\" \"wss://{serverHost}:{wsPort}\"";
+    }
+
     // Starts a carrier process that listens on the loopback port given; null when it does not start.
     private Process? Launch(int port)
     {
-        // -L udp://<port>:127.0.0.1:<targetPort> forwards to the AmneziaWG interface on the server;
-        // timeout_sec=0 keeps the UDP association alive. The token in the headers file proves the keys of the
-        // configuration, so the certificate is taken as it stands; without a token it is verified. Optional -P path
-        // token and basic-auth credentials.
-        var auth = _header is null
-            ? " --tls-verify-certificate"
-            : $" --http-headers-file \"{_headersFile}\"";
-        if (_pathPrefix.Length > 0)
-        {
-            auth += $" -P \"{_pathPrefix}\"";
-        }
-
-        if (_credentials.Length > 0)
-        {
-            auth += $" --http-upgrade-credentials \"{_credentials}\"";
-        }
-
-        var args = $"client{auth} -L \"udp://{port}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
+        var args = Arguments(_header is not null, _headersFile, _pathPrefix, _credentials, port, _targetPort, _serverHost, _wsPort);
         var info = new ProcessStartInfo(TunnelPaths.WsTunnelExe(), args)
         {
             UseShellExecute = false,
@@ -485,7 +503,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         Process? process;
         try
         {
-            process = Process.Start(info);
+            process = Process.Start(ChildOutput.Ours(info));
         }
         catch (Exception ex)
         {
@@ -499,11 +517,13 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        process.OutputDataReceived += (_, e) => Trace(e.Data);
+        var said = new CarrierRefusal();
+        _readers.Add(process, said);
+        process.OutputDataReceived += (_, e) => Trace(process, said, e.Data);
         process.ErrorDataReceived += (_, e) =>
         {
             Remember(e.Data);
-            Trace(e.Data);
+            Trace(process, said, e.Data);
         };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
@@ -515,9 +535,21 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     // wstunnel carries its own level in every line; keep that level instead of burying the whole stream at Debug,
     // where the cause of a refused carrier never reaches the journal.
-    private void Trace(string? line)
+    private void Trace(Process process, CarrierRefusal said, string? line)
     {
         if (line is null)
+        {
+            return;
+        }
+
+        var read = said.Take(line);
+        if (read == CarrierLine.Refused)
+        {
+            // Stops the carrier its front refused.
+            Stop(process);
+        }
+
+        if (read != CarrierLine.Plain)
         {
             return;
         }
@@ -575,6 +607,43 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         {
             _logger.LogWarning(ex, "the carrier's refusal could not be recorded, so this attempt may be reported as an unreachable server instead of naming the real cause");
         }
+    }
+
+    // Returns what a carrier process wrote of the refusal of its front, null where it was not refused.
+    private CarrierRefusal? RefusalOf(Process process)
+    {
+        return _readers.TryGetValue(process, out var said) && said.Refused ? said : null;
+    }
+
+    // Returns what the front answered, in words for the journal.
+    private static string Told(CarrierRefusal said)
+    {
+        return said.Cause.Length > 0 ? said.Cause : "no cause given";
+    }
+
+    // Writes the fall of a carrier down and returns the wait before it is started again.
+    private TimeSpan Fallen(int code)
+    {
+        var failed = Environment.TickCount64 - Volatile.Read(ref _startedAtMs) < FailedStartMs;
+        _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, {When}", code, _carrierPort, failed ? "in a second" : "at once");
+        return TimeSpan.FromMilliseconds(failed ? 1000 : 0);
+    }
+
+    // Counts a refusal of the front, writes it down and returns the wait before the carrier asks again.
+    private TimeSpan Refused(CarrierRefusal said)
+    {
+        var started = Volatile.Read(ref _startedAtMs);
+        var pause = _pauses.Next(_port.HeardAtMs > started, Environment.TickCount64 - started);
+        if (_pauses.InRow == 1)
+        {
+            _logger.LogError("the front of the server at {Host}:{Port} refused the websocket of the tunnel ({Cause}), so the tunnel carries nothing; the carrier is stopped and asks again in {Pause} s, after a longer wait each time it is refused", _serverHost, _wsPort, Told(said), (int)pause.TotalSeconds);
+        }
+        else
+        {
+            _logger.LogWarning("the front of the server at {Host}:{Port} refused the websocket again ({Cause}), {InRow} times in a row; the carrier asks again in {Pause} s", _serverHost, _wsPort, Told(said), _pauses.InRow, (int)pause.TotalSeconds);
+        }
+
+        return pause;
     }
 
     private async Task SuperviseAsync(CancellationToken ct)
@@ -639,14 +708,13 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
                     _lastExit = (code, _stderr.Count == 0 ? "(empty)" : string.Join(Environment.NewLine, _stderr));
                 }
 
-                var failed = Environment.TickCount64 - Volatile.Read(ref _startedAtMs) < FailedStartMs;
-                _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, {When}", code, _carrierPort, failed ? "in a second" : "at once");
+                var pause = RefusalOf(process) is { } said ? Refused(said) : Fallen(code);
                 process.Dispose();
                 _process = null;
 
                 try
                 {
-                    await Task.Delay(failed ? 1000 : 0, ct).ConfigureAwait(false);
+                    await Task.Delay(pause, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

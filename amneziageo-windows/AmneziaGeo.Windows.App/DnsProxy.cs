@@ -874,6 +874,19 @@ internal sealed class DnsProxy
         return answer;
     }
 
+    /// <summary>
+    /// The name a browser asks before it turns its own encrypted lookups on.
+    /// </summary>
+    public const string CanaryName = "use-application-dns.net";
+
+    /// <summary>
+    /// Whether a name is the one a browser asks before it turns its own encrypted lookups on.
+    /// </summary>
+    internal static bool IsCanary(string name)
+    {
+        return string.Equals(name.TrimEnd('.'), CanaryName, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task HandleAsync(Action<byte[]> respond, byte[] query, bool isClient)
     {
         try
@@ -888,6 +901,19 @@ internal sealed class DnsProxy
             {
                 var alive = type == TypeA ? DnsMessage.BuildAAnswer(query, [HealthAddress], 0) : DnsMessage.BuildNoData(query);
                 respond(alive);
+
+                return;
+            }
+
+            // A browser told that this name does not exist keeps asking the system, where the rules by name apply.
+            if (name is not null && IsCanary(name))
+            {
+                respond(DnsMessage.BuildNxDomain(query));
+                _logger.LogDebug("{Name} {Type}: a browser asks whether it may look names up past this machine; it is told the name does not exist, so it keeps asking here", name, TypeLabel(type));
+                if (RouteLog.Enabled)
+                {
+                    RouteLog.Note($"canary {name} {TypeLabel(type)} -> NXDOMAIN");
+                }
 
                 return;
             }

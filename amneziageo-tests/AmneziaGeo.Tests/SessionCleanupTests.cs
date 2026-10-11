@@ -41,7 +41,7 @@ public sealed class SessionCleanupTests
 
         cleanup.Run("the routes kept out of the tunnel", () => throw new UnauthorizedAccessException("Access to the path 'lan-state-dev-test-b.txt' is denied."));
 
-        var (level, text, error) = Assert.Single(log.Written);
+        var (level, text, error) = Assert.Single(log.Written, line => line.Level > LogLevel.Debug);
         Assert.Equal(LogLevel.Error, level);
         Assert.IsType<UnauthorizedAccessException>(error);
         Assert.Contains("dev-test-b", text);
@@ -63,11 +63,11 @@ public sealed class SessionCleanupTests
         });
 
         Assert.Equal(1, cleanup.Failed);
-        Assert.Contains("the websocket carrier", Assert.Single(log.Written).Text);
+        Assert.Contains("the websocket carrier", Assert.Single(log.Written, line => line.Level == LogLevel.Error).Text);
     }
 
     [Fact]
-    public void StepsThatTakeEverythingDown_WriteNothing()
+    public void StepsThatTakeEverythingDown_WriteNothingButTheirTimes()
     {
         var log = new Lines();
         var cleanup = new SessionCleanup(log, "dev-test-b");
@@ -75,8 +75,102 @@ public sealed class SessionCleanupTests
         cleanup.Run("the firewall protection", () => { });
         cleanup.Run("the routes kept out of the tunnel", () => { });
 
-        Assert.Empty(log.Written);
+        Assert.All(log.Written, line => Assert.Equal(LogLevel.Debug, line.Level));
         Assert.Equal(0, cleanup.Failed);
+    }
+
+    [Fact]
+    public async Task EveryStep_WritesHowLongItTook()
+    {
+        var log = new Lines();
+        var clock = new Clock();
+        var cleanup = new SessionCleanup(log, "dev-test-b", clock.Read);
+
+        cleanup.Run("the firewall protection", () => clock.Now += 12);
+        await cleanup.RunAsync("the websocket carrier", () =>
+        {
+            clock.Now += 3;
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal(
+            [
+                (LogLevel.Debug, "dev-test-b: taking down the firewall protection took 12 ms"),
+                (LogLevel.Debug, "dev-test-b: taking down the websocket carrier took 3 ms"),
+            ],
+            log.Written.Select(line => (line.Level, line.Text)).ToList());
+    }
+
+    [Fact]
+    public async Task AStepThatHoldsTheCleanup_IsNamedInAWarning()
+    {
+        var log = new Lines();
+        var clock = new Clock();
+        var cleanup = new SessionCleanup(log, "dev-test-b", clock.Read);
+
+        await cleanup.RunAsync("the DNS changes", () =>
+        {
+            clock.Now += 4900;
+            return Task.CompletedTask;
+        });
+
+        var (level, text, _) = Assert.Single(log.Written);
+        Assert.Equal(LogLevel.Warning, level);
+        Assert.Equal("dev-test-b: taking down the DNS changes took 4900 ms", text);
+    }
+
+    [Fact]
+    public void AStepThatFails_IsTimedToo()
+    {
+        var log = new Lines();
+        var clock = new Clock();
+        var cleanup = new SessionCleanup(log, "dev-test-b", clock.Read);
+
+        cleanup.Run("the route to the server", () =>
+        {
+            clock.Now += 40;
+            throw new InvalidOperationException("the route is not there");
+        });
+
+        Assert.Equal([LogLevel.Error, LogLevel.Debug], log.Written.Select(line => line.Level).ToList());
+        Assert.Equal("dev-test-b: taking down the route to the server took 40 ms", log.Written[1].Text);
+    }
+
+    [Fact]
+    public void TheEndOfTheCleanup_NamesItsTimeAndItsLongestStep()
+    {
+        var log = new Lines();
+        var clock = new Clock();
+        var cleanup = new SessionCleanup(log, "dev-test-b", clock.Read);
+
+        cleanup.Run("the state of the session", () => clock.Now += 12);
+        cleanup.Run("the DNS changes", () => clock.Now += 4900);
+        cleanup.Run("the route to the server", () => clock.Now += 3);
+        cleanup.Done();
+
+        var (level, text, _) = log.Written[^1];
+        Assert.Equal(LogLevel.Information, level);
+        Assert.Equal("dev-test-b: the session is taken down in 4915 ms; the longest step, the DNS changes, took 4900 ms", text);
+    }
+
+    [Fact]
+    public void ACleanupWithoutSteps_NamesItsTimeAlone()
+    {
+        var log = new Lines();
+        var clock = new Clock();
+        var cleanup = new SessionCleanup(log, "dev-test-b", clock.Read);
+
+        clock.Now += 2;
+        cleanup.Done();
+
+        Assert.Equal("dev-test-b: the session is taken down in 2 ms", Assert.Single(log.Written).Text);
+    }
+
+    private sealed class Clock
+    {
+        public long Now { get; set; } = 1000;
+
+        public long Read() => Now;
     }
 
     private sealed class Lines : ILogger

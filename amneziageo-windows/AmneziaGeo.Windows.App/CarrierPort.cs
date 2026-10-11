@@ -84,6 +84,11 @@ internal sealed class CarrierPort : IDisposable
     public long QuietMs => Environment.TickCount64 - Volatile.Read(ref _heardAtMs);
 
     /// <summary>
+    /// When the present carrier was last heard, in milliseconds of the system clock.
+    /// </summary>
+    public long HeardAtMs => Volatile.Read(ref _heardAtMs);
+
+    /// <summary>
     /// Passes the datagrams of the tunnel to a second carrier beside the present one.
     /// </summary>
     public void Offer(int carrierPort)

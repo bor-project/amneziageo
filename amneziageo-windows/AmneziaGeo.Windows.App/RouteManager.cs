@@ -328,6 +328,14 @@ internal sealed partial class RouteManager
     /// </summary>
     public bool HeldByAnother(IPAddress address, uint? tunnelIndex)
     {
+        return HolderOf(address, tunnelIndex) is not null;
+    }
+
+    /// <summary>
+    /// The adapter of the host route another program keeps this address on; null when there is no such route.
+    /// </summary>
+    public uint? HolderOf(IPAddress address, uint? tunnelIndex)
+    {
         var v6 = address.AddressFamily == AddressFamily.InterNetworkV6;
         var dest = new SOCKADDR_INET { si_family = v6 ? AfInet6 : AfInet };
         if (v6)
@@ -343,7 +351,7 @@ internal sealed partial class RouteManager
         var bestSource = new SOCKADDR_INET();
         if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError)
         {
-            return false;
+            return null;
         }
 
         var found = best.DestinationPrefix.Prefix;
@@ -351,7 +359,9 @@ internal sealed partial class RouteManager
             ? found.si_family == AfInet6 && V6Equals(found, address)
             : found.si_family == AfInet && found.sin_addr == dest.sin_addr;
         var installed = Installed(address, best.DestinationPrefix.PrefixLength, best.InterfaceIndex);
-        return ForeignHostRoute(v6, same, best.DestinationPrefix.PrefixLength, best.InterfaceIndex, tunnelIndex, installed);
+        return ForeignHostRoute(v6, same, best.DestinationPrefix.PrefixLength, best.InterfaceIndex, tunnelIndex, installed)
+            ? best.InterfaceIndex
+            : null;
     }
 
     /// <summary>

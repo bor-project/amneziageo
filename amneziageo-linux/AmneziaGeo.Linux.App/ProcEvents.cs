@@ -49,7 +49,7 @@ internal sealed class ProcEvents : IDisposable
         var handle = socket(AfNetlink, SockDgram, NetlinkConnector);
         if (handle < 0)
         {
-            log.Warn("apps", "the kernel offers no process connector here, so an application shorter than a scan of the process table may miss the tunnel");
+            log.Warn("apps", "the kernel offers no process connector here, so an application shorter than a scan of the process table may miss its rule");
             return null;
         }
 
@@ -60,7 +60,7 @@ internal sealed class ProcEvents : IDisposable
         if (bind(handle, address, address.Length) < 0 || send(handle, subscription, subscription.Length, 0) < 0)
         {
             close(handle);
-            log.Warn("apps", "the process connector refused the subscription, so an application shorter than a scan of the process table may miss the tunnel");
+            log.Warn("apps", "the process connector refused the subscription, so an application shorter than a scan of the process table may miss its rule");
             return null;
         }
 

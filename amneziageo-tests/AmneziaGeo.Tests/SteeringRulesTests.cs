@@ -285,6 +285,36 @@ public sealed class SteeringRulesTests
     }
 
     [Fact]
+    public void Passes_WhatTheApplicationsOfTheCgroupSendTakesAMarkOfItsOwn()
+    {
+        var text = SteeringRules.Passes("amneziageo-direct", ["eth0"]);
+
+        Assert.StartsWith("table inet amneziageo-direct {\n", text, StringComparison.Ordinal);
+        Assert.Contains("    type route hook output priority mangle; policy accept;\n    socket cgroupv2 level 1 \"amneziageo-direct\" meta mark set 0x51822\n", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(SteeringRules.Mark, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Passes_TheSourceIsRewrittenOnTheDevicesTheApplicationsLeaveBy()
+    {
+        var one = SteeringRules.Passes("amneziageo-direct", ["eth0"]);
+        var two = SteeringRules.Passes("amneziageo-direct", ["eth0", "wlan0"]);
+
+        Assert.Contains("    type nat hook postrouting priority srcnat; policy accept;\n    meta mark 0x51822 oifname { \"eth0\" } masquerade\n", one, StringComparison.Ordinal);
+        Assert.Contains("    meta mark 0x51822 oifname { \"eth0\", \"wlan0\" } masquerade\n", two, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Passes_TheSixthFamilyOfTheApplicationsIsRefusedOnTheTunnelNamed()
+    {
+        var carried = SteeringRules.Passes("amneziageo-direct", ["eth0"], "awg0");
+        var left = SteeringRules.Passes("amneziageo-direct", ["eth0"]);
+
+        Assert.Contains("  chain refuse {\n    type filter hook output priority mangle - 1; policy accept;\n    socket cgroupv2 level 1 \"amneziageo-direct\" meta nfproto ipv6 oifname \"awg0\" reject with icmpv6 type no-route\n  }\n", carried, StringComparison.Ordinal);
+        Assert.DoesNotContain("chain refuse", left, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Leading_ADirectRangeStandingInItsTableIsNamedByThatTable()
     {
         Assert.Equal("51821", SteeringRules.Leading(

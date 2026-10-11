@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -16,12 +17,18 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
     private const int WithdrawWindowMs = 750;
     private const int MaxPendingWithdrawals = 512;
 
+    // How long an exchange waits for the pipe of a device that is coming up.
+    private const int ConnectWaitMs = 5000;
+
     // Per-prefix removal support: 0 unknown, 1 supported, 2 unsupported.
     private int _removalSupport;
 
     private readonly object _pendingLock = new();
     private readonly Dictionary<(string Tunnel, string Peer), HashSet<string>> _pending = [];
     private Timer? _withdrawTimer;
+
+    // What ends the waits for the pipe of each device that was told closed.
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _gone = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Adds an allowed IP to the peer identified by its base64 public key.
@@ -147,6 +154,22 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
     }
 
     /// <summary>
+    /// Tells that the device of a tunnel has closed: no exchange waits for its pipe from here on.
+    /// </summary>
+    public void Close(string tunnelName)
+    {
+        _gone.GetOrAdd(TunnelDevice.NameOf(tunnelName), _ => new CancellationTokenSource()).Cancel();
+    }
+
+    /// <summary>
+    /// Tells that the device of a tunnel is coming up: exchanges wait for its pipe again.
+    /// </summary>
+    public void Open(string tunnelName)
+    {
+        _gone.TryRemove(TunnelDevice.NameOf(tunnelName), out _);
+    }
+
+    /// <summary>
     /// Stops the withdrawal timer.
     /// </summary>
     public void Dispose()
@@ -203,7 +226,7 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
         return request.ToString();
     }
 
-    private static bool Send(string tunnelName, string request)
+    private bool Send(string tunnelName, string request)
     {
         return Exchange(tunnelName, request).Contains("errno=0", StringComparison.Ordinal);
     }
@@ -353,12 +376,22 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
         return new PeerStatus(handshake, rx, tx);
     }
 
-    private static string Exchange(string tunnelName, string request)
+    private string Exchange(string tunnelName, string request)
     {
-        var pipeName = $@"ProtectedPrefix\Administrators\AmneziaWG\{TunnelDevice.NameOf(tunnelName)}";
+        var device = TunnelDevice.NameOf(tunnelName);
+        var gone = _gone.GetOrAdd(device, _ => new CancellationTokenSource()).Token;
+        var pipeName = $@"ProtectedPrefix\Administrators\AmneziaWG\{device}";
         using (var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut))
         {
-            client.Connect(5000);
+            try
+            {
+                client.ConnectAsync(ConnectWaitMs, gone).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException($"the device {device} has closed");
+            }
+
             var payload = Encoding.UTF8.GetBytes(request);
             client.Write(payload, 0, payload.Length);
             client.Flush();

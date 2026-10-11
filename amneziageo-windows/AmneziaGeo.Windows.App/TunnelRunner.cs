@@ -88,6 +88,15 @@ internal sealed class TunnelRunner(
     }
 
     /// <summary>
+    /// Whether a tunnel takes every UDP destination: the rule of the list or of the settings in split mode, on the
+    /// tunnel that carries the machine alone.
+    /// </summary>
+    internal static bool TakesAllUdp(bool split, bool carriesDefault, bool? ofList, bool ofSettings)
+    {
+        return split && carriesDefault && (ofList ?? ofSettings);
+    }
+
+    /// <summary>
     /// Runs the native tunnel service loop.
     /// </summary>
     public async Task RunAsync(string name)
@@ -132,6 +141,7 @@ internal sealed class TunnelRunner(
     {
         var connectSw = Stopwatch.StartNew();
         logger.LogInformation("{Name}: setting up the connection", name);
+        uapi.Open(name);
 
         // Bound the cleanup: it runs inside the service manager's start deadline, and a WMI call hung behind a
         // restarting service holds it past that deadline, so the tunnel never reports running at all (#247).
@@ -280,6 +290,10 @@ internal sealed class TunnelRunner(
         // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
 
+        // The applications the list keeps direct leave past the tunnel that carries the machine.
+        IReadOnlyList<string> passApps = !geoSplit && duties.CarriesDefault ? activeList?.DirectApps ?? [] : [];
+        _appRole = geoSplit ? RouteRole.Proxy : duties.CarriesDefault ? RouteRole.Direct : (RouteRole?)null;
+
         var appSettings = await settings.LoadAsync();
 
         // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
@@ -296,6 +310,14 @@ internal sealed class TunnelRunner(
         if (routedResolvers.Count > 0 && AmneziaGeo.Ipc.DnsTransports.Of(appSettings.DnsTransport) != AmneziaGeo.Ipc.DnsTransports.Plain)
         {
             routedResolvers = [.. routedResolvers, DohResolver.DefaultAddress.ToString()];
+        }
+
+        // A resolver inside a network this machine stands in stays on the adapter of that network.
+        var resolversAtHome = PrivateNetworks.InsideLocal(routedResolvers, routes.LocalSubnets());
+        if (resolversAtHome.Count > 0)
+        {
+            routedResolvers = [.. routedResolvers.Except(resolversAtHome, StringComparer.Ordinal)];
+            logger.LogWarning("{Name}: {Resolvers} lie inside a network this machine stands in, so they stay on its own adapter and take no route into the tunnel; what is asked of them is answered by the host of that network, not by the server of the tunnel", name, string.Join(", ", resolversAtHome));
         }
 
         // Resolver /32s are infrastructure: routed through the tunnel so the tunnel DNS stays reachable. Collect
@@ -340,6 +362,12 @@ internal sealed class TunnelRunner(
         // The server takes the tunnel down by a signal from its own address inside it: the way back to that
         // address rides along with the resolver infrastructure, so the signal is answered through the tunnel.
         var signal = TunnelSignal.Of(offer, config, !stripV6);
+        if (signal is not null && PrivateNetworks.InsideLocal(signal.Sources, routes.LocalSubnets()) is { Count: > 0 } signalAtHome)
+        {
+            logger.LogWarning("{Name}: its server sends the signal to disconnect from {Sources}, inside a network this machine stands in, so that address stays on its own adapter and the signal is not listened for; a tunnel the server takes down is noticed by its silence", name, string.Join(", ", signalAtHome));
+            signal = null;
+        }
+
         IReadOnlyList<string> signalRoutes = signal?.Routes ?? [];
         foreach (var route in signalRoutes)
         {
@@ -435,7 +463,7 @@ internal sealed class TunnelRunner(
             name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
 
         // All-UDP catch-all (split-only); from the routing list or the global setting.
-        var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);
+        var allUdp = TakesAllUdp(geoSplit, duties.CarriesDefault, routingSettings?.AllUdp, appSettings.TunnelAllUdp);
 
         // Preferred-DNS overrides the system resolvers for non-tunneled names; empty = auto-detect.
         var preferredDnsServers = (await store.GetConfigDnsAsync(name))?.Servers ?? string.Empty;
@@ -591,6 +619,10 @@ internal sealed class TunnelRunner(
         var pinnedRoutes = new List<string>(routedResolvers);
         pinnedRoutes.AddRange(inboundRoutes);
         pinnedRoutes.AddRange(signalRoutes);
+        // What the rules and the connection itself send through the tunnel stays open to the programs the list
+        // keeps direct.
+        _throughPinned = [.. pinnedRoutes];
+        _throughTunnel = [.. proxyRanges, .. _throughPinned];
         // The server and the own network's resolvers keep the routes set up for them.
         var bypassed = new List<string>(lanResolverRoutes);
         if (underlayProbe is { AddressFamily: AddressFamily.InterNetwork } serverAddress)
@@ -607,7 +639,7 @@ internal sealed class TunnelRunner(
         routing.Spare(TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config)));
         // What the previous session used most is taken back from the store: the verdicts an address settled are
         // taken again under the list in force now, and each takes its path with the connection.
-        routing.SetMemory(new StoredRouteMemory(store, name, apps, domains, directDomains, blockDomains));
+        routing.SetMemory(new StoredRouteMemory(store, name, geoSplit ? apps : passApps, domains, directDomains, blockDomains));
         // The tunnel that holds the leak protection routes a dropped datagram to an address no list names into itself.
         var flows = default(NetworkFlowTracker);
         if (allUdp && killSwitch)
@@ -662,7 +694,7 @@ internal sealed class TunnelRunner(
                 matcher = candidate;
                 _appMatcher = candidate;
                 candidate.ReportRuleProblems();
-                appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>());
+                appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>(), WatchSession.Name(WatchSession.Names, duties.CarriesDefault, TunnelDevice.NameOf(name)));
                 // A matched app's destination is dropped before anything observes it, so the drop itself is where
                 // the app rule has to be applied: its remotes take the tunnel instead of a permit.
                 routing.SetAppMatch(matcher.MatchesDevicePath);
@@ -675,11 +707,33 @@ internal sealed class TunnelRunner(
                 _processImages = null;
             }
         }
+        else if (passApps.Count > 0)
+        {
+            _processImages = new ProcessImages();
+            var candidate = new AppMatcher(passApps, loggerFactory.CreateLogger<AppMatcher>(), _processImages, past: true);
+            if (candidate.HasMatchers)
+            {
+                matcher = candidate;
+                _appMatcher = candidate;
+                candidate.ReportRuleProblems();
+                // The cache takes the claim of such an application from a dropped packet, from the connection table
+                // and from the connection events alike, and what the application opened through the tunnel before
+                // its route stood is closed, so it opens again past the tunnel.
+                routing.SetAppMatch(matcher.MatchesDevicePath);
+                liveDestinations.SetAppMatch(matcher.MatchPids);
+                routing.AppDestination += address => synReset.AbortOwnedThroughTunnel([address], candidate.MatchPids);
+                logger.LogInformation("{Name}: {Count} rule(s) keep applications past the tunnel: each address one of them opens takes a route of its own while it is in use, and that route holds for every program of this machine", name, passApps.Count);
+            }
+            else
+            {
+                _processImages = null;
+            }
+        }
 
         // Sessions of the named applications are taken onto an adapter of their own, where each is decided knowing
         // which program opened it. A routing table names no program, so this is the only place the rule can hold
         // for one application without holding for every other that shares the address.
-        if (matcher is not null && AppGateway.Wanted())
+        if (trackApps && matcher is not null && AppGateway.Wanted())
         {
             // The carrier's address is kept out of the adapter beside the local networks.
             var keptOut = new List<string>(exclusionCidrs);
@@ -957,7 +1011,9 @@ internal sealed class TunnelRunner(
         {
             var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note, _processImages,
                 address => substituted.Contains(address) || routes.HeldByAnother(address, TunnelInterface()),
-                Addresses([.. localResolver, .. lanResolvers]));
+                Addresses([.. localResolver, .. lanResolvers]),
+                WatchSession.Name(WatchSession.Flows, duties.CarriesDefault, TunnelDevice.NameOf(name)),
+                address => routes.HolderOf(address, TunnelInterface()) is { } holder ? peers.FirstOrDefault(peer => routes.FindTunnelIndex(peer) == holder) : null);
             flows = flowTracker;
             // A released destination must lose its dedupe record too, or the next packet to it is skipped and the
             // route never comes back.
@@ -1022,6 +1078,7 @@ internal sealed class TunnelRunner(
         finally
         {
             logger.LogInformation("{Name}: the session ended after {Elapsed} ms; removing its routes, firewall rules and DNS changes", name, connectSw.ElapsedMilliseconds);
+            uapi.Close(name);
             var cleanup = new SessionCleanup(logger, name);
             cleanup.Run("the state of the session", () =>
             {
@@ -1093,6 +1150,8 @@ internal sealed class TunnelRunner(
             {
                 cleanup.Run("the firewall rule of the disconnect signal", () => InboundFirewall.RemoveSignal(name, logger));
             }
+
+            cleanup.Done();
         }
     }
 
@@ -1821,6 +1880,15 @@ internal sealed class TunnelRunner(
     private AppGateway? _appGateway;
     // The matcher the running session routes applications by, so an edited rule reaches it without a reconnect.
     private AppMatcher? _appMatcher;
+
+    // The bucket whose applications this tunnel acts on: the tunnel one in a split, the direct one where it
+    // carries the machine, none where the default belongs to another tunnel.
+    private RouteRole? _appRole;
+
+    // The ranges that stay open on the tunnel adapter to the programs the list keeps direct: the ones the
+    // connection itself holds there, and those with what the rules send through the tunnel.
+    private IReadOnlyList<string> _throughPinned = [];
+    private IReadOnlyList<string> _throughTunnel = [];
     // The bring-up facts the standing ranges of an edited list are worked out from.
     private StandingBasis? _standingBasis;
     private StandingRanges _standing = StandingRanges.None;
@@ -1950,6 +2018,7 @@ internal sealed class TunnelRunner(
             {
                 await lent.ReloadAsync(ct);
                 proxy.ClearCache();
+                dns.FlushCache();
                 return true;
             }
 
@@ -2002,10 +2071,15 @@ internal sealed class TunnelRunner(
             var held = routing.Snapshot();
             var aroundLocal = PrivateNetworks.AroundLocal(current.Routes, routes.LocalSubnets());
             var edited = await store.GetRoutingListAsync(current.ListId, ct).ConfigureAwait(false);
-            ApplyAppRules(edited, tunnelName);
+            var named = ApplyAppRules(routing, edited, tunnelName);
             var standing = Restand(routing, tunnelName, edited, aroundLocal.Carried);
             IReadOnlyList<string> tunneled = standing is { Networks.Count: > 0 } ? [.. aroundLocal.Carried, .. standing.Networks] : aroundLocal.Carried;
             routing.Rebuild(tunneled, [.. current.DirectRoutes, .. aroundLocal.Kept], current.BlockRoutes);
+            var opened = Opens(tunneled);
+            if (named || opened)
+            {
+                KeepOffTunnel(tunnelName);
+            }
 
             // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
             // while these two buckets decide in both.
@@ -2025,11 +2099,54 @@ internal sealed class TunnelRunner(
         }
     }
 
-    // Puts the edited rules by application in force on the running tunnel. The trackers they drive are raised at
-    // bring-up only, so rules added to a tunnel that connected without any wait for a reconnect and are named here.
-    private void ApplyAppRules(RoutingList? list, string tunnelName)
+    // How many programs a list keeps direct are refused the tunnel adapter at most, and how many ranges stay open
+    // to them.
+    private const int OffTunnelImages = 256;
+    private const int OpenRanges = 2048;
+
+    // Refuses the tunnel adapter to the programs the list keeps direct, but for what a rule or the connection
+    // itself sends through the tunnel.
+    private void KeepOffTunnel(string tunnelName)
     {
-        var apps = list?.Rules.Where(rule => rule.Kind == GeoRuleKind.App).Select(rule => rule.Value).ToList() ?? [];
+        if (_appRole != RouteRole.Direct || _appMatcher is not { } matcher)
+        {
+            return;
+        }
+
+        var through = _throughTunnel;
+        var (programs, ranges) = firewall.KeepOffTunnel(matcher.Images(OffTunnelImages), [.. through.Take(OpenRanges)]);
+        logger.LogInformation("{Tunnel}: {Programs} program(s) the list keeps direct are refused the tunnel adapter, so nothing of theirs rides the tunnel but what {Ranges} range(s) of the rules and of the connection itself send through it: an address one of them opens for the first time is refused until its route past the tunnel stands, a second or two", tunnelName, programs, ranges);
+        if (through.Count > OpenRanges)
+        {
+            logger.LogWarning("{Tunnel}: the rules send {Count} range(s) through the tunnel and only the first {Kept} stay open to the programs the list keeps direct, so an address of the rest is refused to them", tunnelName, through.Count, OpenRanges);
+        }
+    }
+
+    // Takes the ranges the edited rules send through the tunnel; true when what stays open to the programs the
+    // list keeps direct has changed.
+    private bool Opens(IReadOnlyList<string> tunneled)
+    {
+        IReadOnlyList<string> through = [.. tunneled, .. _throughPinned];
+        if (through.SequenceEqual(_throughTunnel, StringComparer.Ordinal))
+        {
+            return false;
+        }
+
+        _throughTunnel = through;
+        return true;
+    }
+
+    // Puts the edited rules by application in force on the running tunnel; true when the programs they name have
+    // changed. The trackers they drive are raised at bring-up only, so rules added to a tunnel that connected
+    // without any wait for a reconnect and are named here.
+    private bool ApplyAppRules(RoutingCache routing, RoutingList? list, string tunnelName)
+    {
+        if (_appRole is not { } role)
+        {
+            return false;
+        }
+
+        var apps = list?.Rules.Where(rule => rule.Kind == GeoRuleKind.App && rule.Role == role).Select(rule => rule.Value).ToList() ?? [];
         if (_appMatcher is not { } matcher)
         {
             if (apps.Count > 0)
@@ -2037,17 +2154,24 @@ internal sealed class TunnelRunner(
                 logger.LogWarning("{Tunnel}: rules by application were added to a tunnel that connected without any, so they start working only after it is reconnected", tunnelName);
             }
 
-            return;
+            return false;
         }
 
         if (!matcher.Reload(apps))
         {
-            return;
+            return false;
         }
 
         // A name the applications asked for before the edit may be answered from a cache that the rules no longer agree with.
         dns.FlushCache();
+        if (role == RouteRole.Direct)
+        {
+            var released = routing.ReleasePassed();
+            logger.LogDebug("{Tunnel}: {Released} address(es) the applications kept direct had taken past the tunnel are decided again", tunnelName, released);
+        }
+
         logger.LogInformation("{Tunnel}: {Count} rule(s) by application are in force without reconnecting", tunnelName, apps.Count);
+        return true;
     }
 
     // The bring-up facts the standing ranges are worked out from: the mode, the configuration's own networks, the
@@ -2197,6 +2321,7 @@ internal sealed class TunnelRunner(
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
+                KeepOffTunnel(name);
 
                 // A destination dropped before its verdict exists is announced by the drop itself; nothing else
                 // sees it, because the send that would raise a connect or datagram event never happens.

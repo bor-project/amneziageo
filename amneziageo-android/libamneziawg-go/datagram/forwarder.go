@@ -22,6 +22,12 @@ const Idle = 120 * time.Second
 // Шаг, с которым ищем простаивающие сокеты.
 const sweepEvery = 30 * time.Second
 
+// Самый длинный ответ, который отдаёт сокет.
+const maxAnswer = 65507
+
+// Буферы под ответ любой длины: сокет держит такой, пока разбирает один ответ.
+var answers = sync.Pool{New: func() any { return new([maxAnswer]byte) }}
+
 // Свой адрес и порт, с которых приложение шлёт датаграммы.
 type endpoint struct {
 	addr uint32
@@ -54,6 +60,9 @@ type Forwarder struct {
 	flows  map[endpoint]*flow
 	closed bool
 
+	pieces gatherer
+	ident  atomic.Uint32
+
 	Sent    atomic.Uint64
 	Back    atomic.Uint64
 	Dropped atomic.Uint64
@@ -78,6 +87,7 @@ func start(tun Writer, mtu int, control Control, idle, every time.Duration) *For
 		flows:   make(map[endpoint]*flow),
 		stop:    make(chan struct{}),
 	}
+	f.pieces.wait = cutWait
 	go f.sweep(every)
 	return f
 }
@@ -109,26 +119,52 @@ func (f *Forwarder) Send(packet []byte) bool {
 		return false
 	}
 	ihl := int(packet[0]&0x0f) * 4
-	if ihl < 20 || len(packet) < ihl+8 || packet[9] != syscall.IPPROTO_UDP {
+	if ihl < 20 || len(packet) < ihl || packet[9] != syscall.IPPROTO_UDP {
 		return false
 	}
+	if Cut(packet) {
+		f.piece(packet, ihl)
+		return true
+	}
+	if len(packet) < ihl+8 {
+		return false
+	}
+	f.leave(packet, packet[ihl:])
+	return true
+}
+
+// Берёт кусок разрезанной датаграммы и отправляет её, когда пришли все.
+func (f *Forwarder) piece(packet []byte, ihl int) {
+	whole, lost := f.pieces.add(packet, ihl, time.Now().UnixNano())
+	f.Dropped.Add(uint64(lost))
+	if whole == nil {
+		return
+	}
+	if len(whole) < 8 {
+		f.Dropped.Add(1)
+		return
+	}
+	f.leave(packet, whole)
+}
+
+// Отправляет датаграмму адресату пакета: заголовок UDP и то, что за ним.
+func (f *Forwarder) leave(packet, datagram []byte) {
 	key := endpoint{
 		addr: binary.BigEndian.Uint32(packet[12:16]),
-		port: binary.BigEndian.Uint16(packet[ihl : ihl+2]),
+		port: binary.BigEndian.Uint16(datagram[0:2]),
 	}
-	to := netip.AddrPortFrom(netip.AddrFrom4([4]byte(packet[16:20])), binary.BigEndian.Uint16(packet[ihl+2:ihl+4]))
+	to := netip.AddrPortFrom(netip.AddrFrom4([4]byte(packet[16:20])), binary.BigEndian.Uint16(datagram[2:4]))
 
 	fl := f.lookup(key)
 	if fl == nil {
 		f.Dropped.Add(1)
-		return true
+		return
 	}
-	if _, err := fl.conn.WriteToUDPAddrPort(packet[ihl+8:], to); err != nil {
+	if _, err := fl.conn.WriteToUDPAddrPort(datagram[8:], to); err != nil {
 		f.Dropped.Add(1)
-		return true
+		return
 	}
 	f.Sent.Add(1)
-	return true
 }
 
 // Сокет своего адреса и порта: один на всех адресатов.
@@ -178,29 +214,110 @@ func (f *Forwarder) open() (*net.UDPConn, error) {
 
 // Ответы с любого адреса вписываются обратно в tun как датаграммы своему адресу и порту.
 func (f *Forwarder) receive(fl *flow) {
-	// Лишний байт отличает ответ по размеру tun от обрезанного.
-	limit := f.mtu - 28
-	buf := make([]byte, limit+1)
+	raw, err := fl.conn.SyscallConn()
+	if err != nil {
+		f.drop(fl)
+		return
+	}
+
 	packet := make([]byte, f.mtu)
+	var (
+		buf    *[maxAnswer]byte
+		n      int
+		sender *syscall.SockaddrInet4
+		failed error
+	)
+	take := func(fd uintptr) bool {
+		buf = answers.Get().(*[maxAnswer]byte)
+		n, sender, failed = answerOn(int(fd), buf[:])
+		if failed == syscall.EAGAIN {
+			answers.Put(buf)
+			buf = nil
+			return false
+		}
+		return true
+	}
 	for {
-		n, from, err := fl.conn.ReadFromUDPAddrPort(buf)
-		if err != nil {
+		if err := raw.Read(take); err != nil || failed != nil {
+			if buf != nil {
+				answers.Put(buf)
+			}
 			f.drop(fl)
 			return
 		}
 		fl.last.Store(time.Now().UnixNano())
-		sender := from.Addr().Unmap()
-		if n > limit || !sender.Is4() {
+		if sender != nil && f.back(packet, sender.Addr, uint16(sender.Port), fl.key, buf[:n]) {
+			f.Back.Add(1)
+		} else {
 			f.Dropped.Add(1)
-			continue
 		}
-		size := build(packet, sender.As4(), from.Port(), fl.key, buf[:n])
-		if _, err := f.tun.Write([][]byte{packet[:size]}, 0); err != nil {
-			f.Dropped.Add(1)
-			continue
-		}
-		f.Back.Add(1)
+		answers.Put(buf)
+		buf = nil
 	}
+}
+
+// Читает из сокета один ответ и называет приславшего; адрес другого рода остаётся без имени.
+func answerOn(fd int, buf []byte) (int, *syscall.SockaddrInet4, error) {
+	for {
+		n, from, err := syscall.Recvfrom(fd, buf, 0)
+		if err == syscall.EINTR {
+			continue
+		}
+		if err != nil {
+			return 0, nil, err
+		}
+		sender, _ := from.(*syscall.SockaddrInet4)
+		return n, sender, nil
+	}
+}
+
+// Вписывает ответ в tun своему адресу и порту, а ответ длиннее tun - кусками.
+func (f *Forwarder) back(packet []byte, sender [4]byte, port uint16, to endpoint, payload []byte) bool {
+	if 28+len(payload) <= f.mtu {
+		size := build(packet, sender, port, to, payload)
+		_, err := f.tun.Write([][]byte{packet[:size]}, 0)
+		return err == nil
+	}
+
+	var head [8]byte
+	binary.BigEndian.PutUint16(head[0:2], port)
+	binary.BigEndian.PutUint16(head[2:4], to.port)
+	binary.BigEndian.PutUint16(head[4:6], uint16(8+len(payload)))
+	binary.BigEndian.PutUint16(head[6:8], longChecksum(sender, to.addr, head[:], payload))
+
+	id := uint16(f.ident.Add(1))
+	room := (f.mtu - 20) &^ 7
+	total := 8 + len(payload)
+	for offset := 0; offset < total; offset += room {
+		size := min(room, total-offset)
+		field := uint16(offset / 8)
+		if offset+size < total {
+			field |= moreFlag
+		}
+
+		packet[0] = 0x45
+		packet[1] = 0
+		binary.BigEndian.PutUint16(packet[2:4], uint16(20+size))
+		binary.BigEndian.PutUint16(packet[4:6], id)
+		binary.BigEndian.PutUint16(packet[6:8], field)
+		packet[8] = 64
+		packet[9] = syscall.IPPROTO_UDP
+		binary.BigEndian.PutUint16(packet[10:12], 0)
+		copy(packet[12:16], sender[:])
+		binary.BigEndian.PutUint32(packet[16:20], to.addr)
+		binary.BigEndian.PutUint16(packet[10:12], checksum(packet[:20]))
+		if offset == 0 {
+			copy(packet[20:28], head[:])
+			copy(packet[28:20+size], payload)
+		} else {
+			copy(packet[20:20+size], payload[offset-8:])
+		}
+
+		if _, err := f.tun.Write([][]byte{packet[:20+size]}, 0); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // Закрывает сокет и убирает его из таблицы, если там стоит он.
@@ -222,6 +339,7 @@ func (f *Forwarder) sweep(every time.Duration) {
 		case <-f.stop:
 			return
 		case <-ticker.C:
+			f.Dropped.Add(uint64(f.pieces.expire(time.Now().UnixNano())))
 			deadline := time.Now().Add(-f.idle).UnixNano()
 			f.mu.Lock()
 			for key, fl := range f.flows {
@@ -268,6 +386,33 @@ func checksum(header []byte) uint16 {
 		sum = (sum & 0xffff) + (sum >> 16)
 	}
 	return ^uint16(sum)
+}
+
+// Контрольная сумма датаграммы, которая в один пакет не входит: заголовок UDP и содержимое порознь.
+func longChecksum(sender [4]byte, to uint32, head, payload []byte) uint16 {
+	var sum uint32
+	sum += uint32(binary.BigEndian.Uint16(sender[0:2]))
+	sum += uint32(binary.BigEndian.Uint16(sender[2:4]))
+	sum += to>>16 + to&0xffff
+	sum += uint32(syscall.IPPROTO_UDP)
+	sum += uint32(len(head) + len(payload))
+	for i := 0; i+1 < len(head); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(head[i : i+2]))
+	}
+	for i := 0; i+1 < len(payload); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(payload[i : i+2]))
+	}
+	if len(payload)%2 == 1 {
+		sum += uint32(payload[len(payload)-1]) << 8
+	}
+	for sum>>16 != 0 {
+		sum = (sum & 0xffff) + (sum >> 16)
+	}
+	out := ^uint16(sum)
+	if out == 0 {
+		return 0xffff
+	}
+	return out
 }
 
 // Контрольная сумма датаграммы считается вместе с псевдозаголовком.

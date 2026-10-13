@@ -8,7 +8,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// The transport settings of a config: the WebSocket switch with the front of the settings (the server address, the TLS port, an authorization mode - none / basic login+password / path token - with its inputs), taken only while neither the server nor the config names a front, the MTU with its mode, IPv6, the router, inbound access and routing. The mode + inputs are folded into one stored address string on save and parsed back on load. Saving sends set-websocket.
+/// The transport settings of a config: the WebSocket switch with the front of the settings (the server address, the TLS port, an authorization mode - none / basic login+password / path token - with its inputs), taken only while neither the server nor the config names a front, the MTU with its mode, IPv6, the router, inbound access, routing and the signal of the server to disconnect. The mode + inputs are folded into one stored address string on save and parsed back on load. Saving sends set-websocket, and set-signal once that switch differs.
 /// </summary>
 internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditScope
 {
@@ -33,6 +33,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
     private bool _baseUseRouting;
+    private bool _baseAllowSignal;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WebSocketOn))]
@@ -116,6 +117,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _useRouting = true;
 
+    [ObservableProperty]
+    private bool _allowSignal = true;
+
+    // Whether the server of the configuration leaves the choice about its signal to disconnect to the device.
+    [ObservableProperty]
+    private bool _signalOffered;
+
     // The reach of the access the agent holds: the whole tunnel network or the server alone.
     private bool _inboundNetwork;
 
@@ -165,7 +173,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false)
     {
         _connection = connection;
         ConfigName = name;
@@ -178,6 +186,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _allowInbound = allowInbound;
         _inboundNetwork = inboundNetwork;
         _useRouting = useRouting;
+        _allowSignal = allowSignal;
+        _signalOffered = signalOffered;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
@@ -294,6 +304,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnAllowSignalChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -322,7 +338,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || UseIpv6 != _baseUseIpv6
             || UseRouter != _baseUseRouter
             || AllowInbound != _baseAllowInbound
-            || UseRouting != _baseUseRouting;
+            || UseRouting != _baseUseRouting
+            || AllowSignal != _baseAllowSignal;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -346,6 +363,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
         _baseUseRouting = UseRouting;
+        _baseAllowSignal = AllowSignal;
         if (IsDirty)
         {
             IsDirty = false;
@@ -372,6 +390,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
             UseRouting = _baseUseRouting;
+            AllowSignal = _baseAllowSignal;
             StatusMessage = string.Empty;
         }
         finally
@@ -495,6 +514,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             if (ack.Ok)
             {
                 _inboundNetwork = network;
+            }
+
+            // The signal switch goes in a command of its own once it differs from the stored one.
+            if (ack.Ok && AllowSignal != _baseAllowSignal)
+            {
+                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSignal, [ConfigName, AllowSignal ? "on" : "off"]));
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).

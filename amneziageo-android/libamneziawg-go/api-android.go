@@ -28,6 +28,7 @@ import "C"
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"time"
@@ -37,11 +38,15 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
 	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"github.com/bor-project/amneziageo/libamneziawg-go/probe"
+	"github.com/bor-project/amneziageo/libamneziawg-go/procs"
 	"github.com/bor-project/amneziageo/libamneziawg-go/protect"
 	"github.com/bor-project/amneziageo/libamneziawg-go/renew"
 )
 
 const logTag = "amneziawg-go"
+
+// Список ядер устройства, каким его называет система.
+const coresList = "/sys/devices/system/cpu/possible"
 
 // Движок, слой вердиктов под ним, привязка его сокетов и ключи его пиров.
 type tunnel struct {
@@ -79,9 +84,31 @@ func newAndroidLogger(level int) *device.Logger {
 	return logger
 }
 
+// Ядра устройства по списку системы, а без него по счёту рантайма.
+func deviceCores() int {
+	if list, err := os.ReadFile(coresList); err == nil {
+		if cores, ok := procs.Cores(string(list)); ok {
+			return cores
+		}
+	}
+	return runtime.NumCPU()
+}
+
+// Оставляет движку столько процессоров рантайма, сколько положено устройству.
+func settleProcs() {
+	cores := deviceCores()
+	if take := procs.For(cores); take > 0 {
+		runtime.GOMAXPROCS(take)
+	}
+
+	androidLog(C.ANDROID_LOG_INFO, logTagText,
+		fmt.Sprintf("the device has %d core(s), the engine runs on %d processor(s) of the runtime", cores, runtime.GOMAXPROCS(0)))
+}
+
 //export wgTurnOn
 func wgTurnOn(settings *C.char, tunFd int32, logLevel int32, fn C.ag_protect_fn) int32 {
 	logger := newAndroidLogger(int(logLevel))
+	settleProcs()
 
 	tunDevice, _, err := tun.CreateUnmonitoredTUNFromFD(int(tunFd))
 	if err != nil {

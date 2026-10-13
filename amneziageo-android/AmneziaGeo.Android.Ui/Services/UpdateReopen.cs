@@ -118,7 +118,6 @@ internal static class UpdateReopen
             }
 
             var launch = LaunchIntent(context);
-            launch?.AddFlags(ActivityFlags.NewTask);
             var content = PendingIntent.GetActivity(
                 context,
                 0,
@@ -142,6 +141,5 @@ internal static class UpdateReopen
         }
     }
 
-    private static Intent? LaunchIntent(Context context)
-        => context.PackageManager?.GetLaunchIntentForPackage(context.PackageName ?? string.Empty);
+    private static Intent? LaunchIntent(Context context) => TunnelNotices.Icon(context);
 }

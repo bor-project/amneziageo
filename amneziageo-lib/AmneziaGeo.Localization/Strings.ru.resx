@@ -526,6 +526,12 @@
   <data name="Main_InboundHint" xml:space="preserve">
     <value>Другие устройства в VPN-сети смогут подключаться к этому компьютеру по его VPN-адресам:</value>
   </data>
+  <data name="Main_SignalTitle" xml:space="preserve">
+    <value>Разрешить серверу отключать туннель</value>
+  </data>
+  <data name="Main_SignalHint" xml:space="preserve">
+    <value>Сервер снимает туннель, когда этого клиента выключают на сервере</value>
+  </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Роутер</value>
   </data>

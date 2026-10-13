@@ -649,13 +649,16 @@ public static class VpnBridge
     public static void RequestRouteTtl(Context context) => context.SendBroadcast(Broadcast(context, ActionRouteTtl));
 
     /// <summary>
-    /// Writes whether the listener came up, for the head to show.
+    /// Writes whether the listener came up and who holds a connection to it, for the head to show.
     /// </summary>
-    public static void WriteProxyState(bool running, string error)
+    public static void WriteProxyState(bool running, string error, IReadOnlyList<ProxyClientEntry>? clients = null)
     {
         try
         {
-            File.WriteAllText(ProxyStatePath(), $"{(running ? "1" : "0")}\n{error}");
+            var path = ProxyStatePath();
+            var fresh = path + ".new";
+            File.WriteAllText(fresh, $"{(running ? "1" : "0")}\n{error.ReplaceLineEndings(" ")}\n{ProxyClientEntry.ToRows(clients ?? [])}");
+            File.Move(fresh, path, true);
         }
         catch (Exception ex)
         {
@@ -664,25 +667,26 @@ public static class VpnBridge
     }
 
     /// <summary>
-    /// Reads what the tunnel said about its listener.
+    /// Reads what the tunnel said about its listener and the clients of it.
     /// </summary>
-    public static (bool Running, string Error) ReadProxyState()
+    public static (bool Running, string Error, IReadOnlyList<ProxyClientEntry> Clients) ReadProxyState()
     {
         try
         {
             var path = ProxyStatePath();
             if (!File.Exists(path))
             {
-                return (false, string.Empty);
+                return (false, string.Empty, []);
             }
 
             var lines = File.ReadAllLines(path);
-            return (lines.Length > 0 && lines[0] == "1", lines.Length > 1 ? lines[1] : string.Empty);
+            var running = lines.Length > 0 && lines[0] == "1";
+            return (running, lines.Length > 1 ? lines[1] : string.Empty, running ? ProxyClientEntry.FromRows(lines.Skip(2)) : []);
         }
         catch (Exception ex)
         {
             global::Android.Util.Log.Warn("VpnBridge", "reading the proxy state failed: " + ex);
-            return (false, string.Empty);
+            return (false, string.Empty, []);
         }
     }
 

@@ -181,4 +181,43 @@ public sealed class SystemRoutesTests
     {
         Assert.Empty(SystemRoutes.Without(["192.168.31.0/24"], ["192.168.31.0/24"]));
     }
+
+    [Fact]
+    public void Direct_KeepsTheAddressesADirectRangeHolds()
+    {
+        var kept = SystemRoutes.Direct(["198.51.100.7", "203.0.113.9"], ["198.51.100.0/24", "203.0.113.9/32"], []);
+
+        Assert.Equal(["198.51.100.7", "203.0.113.9"], kept);
+    }
+
+    [Fact]
+    public void Direct_DropsTheAddressTheListSendsThroughTheTunnelNow()
+    {
+        var kept = SystemRoutes.Direct(["198.51.100.7", "192.0.2.5"], ["192.0.2.0/24"], []);
+
+        Assert.Equal(["192.0.2.5"], kept);
+    }
+
+    [Fact]
+    public void Direct_DropsTheAddressABlockedRangeHolds()
+    {
+        var kept = SystemRoutes.Direct(["198.51.100.7", "198.51.100.200"], ["198.51.100.0/24"], ["198.51.100.128/25"]);
+
+        Assert.Equal(["198.51.100.7"], kept);
+    }
+
+    [Fact]
+    public void Direct_KeepsNothingUnderAListWithoutDirectRanges()
+    {
+        Assert.Empty(SystemRoutes.Direct(["198.51.100.7", "203.0.113.9"], [], []));
+        Assert.Empty(SystemRoutes.Direct([], ["198.51.100.0/24"], []));
+    }
+
+    [Fact]
+    public void Direct_DropsWhatIsNotOneAddress()
+    {
+        var kept = SystemRoutes.Direct(["198.51.100.0/30", "not an address", "2001:db8::7", "198.51.100.7/32"], ["198.51.100.0/24"], []);
+
+        Assert.Equal(["198.51.100.7/32"], kept);
+    }
 }

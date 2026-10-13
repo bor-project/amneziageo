@@ -115,6 +115,7 @@ public static class CliRunner
               config mtu <name> auto|config|<number>   packet size: picked, from the text, or set here
               config inbound <name> off|host|network    nobody, the server, or the whole tunnel network
               config routing <name> on|off              take the routing list or keep off it
+              config signal <name> on|off               let the server take the tunnel down or not
               config geo <name> on|off [rule...]
 
             routing lists

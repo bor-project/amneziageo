@@ -93,7 +93,7 @@ func outgoing(port uint16, to netip.AddrPort, payload string) []byte {
 // Датаграмма, которая дошла до чужой стороны, и адрес, с которого она пришла.
 func heard(t *testing.T, conn *net.UDPConn) (string, netip.AddrPort) {
 	t.Helper()
-	buffer := make([]byte, 2048)
+	buffer := make([]byte, 65535)
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, from, err := conn.ReadFromUDPAddrPort(buffer)
 	if err != nil {
@@ -369,21 +369,61 @@ func TestASocketThatCouldNotBeMarkedSendsNothing(t *testing.T) {
 	}
 }
 
-func TestAnAnswerLongerThanTheTunIsDropped(t *testing.T) {
+func TestAnAnswerLongerThanTheTunComesBackInPieces(t *testing.T) {
 	f, tun := forwarder(t, 576, Idle, sweepEvery, nil)
 	far := peer(t)
 	f.Send(outgoing(40000, at(far), "ask"))
 	_, seen := heard(t, far)
 
-	reply(t, far, seen.Port(), strings.Repeat("x", 549))
+	long := strings.Repeat("x", 549)
+	reply(t, far, seen.Port(), long)
 	reply(t, far, seen.Port(), strings.Repeat("y", 548))
+
+	want := answer{from: at(far), to: netip.AddrPortFrom(app, 40000), payload: long, sound: true}
+	if got := joined(t, tun, 576, 2); got != want {
+		t.Fatalf("the tun got %d byte(s) from %v to %v, sound %v", len(got.payload), got.from, got.to, got.sound)
+	}
 
 	if got := written(t, tun); got.payload != strings.Repeat("y", 548) || !got.sound {
 		t.Fatalf("the tun got %d byte(s) starting with %q", len(got.payload), got.payload[:1])
 	}
 
-	if dropped := f.Dropped.Load(); dropped != 1 {
-		t.Fatalf("%d answer(s) are counted as dropped of 1", dropped)
+	if back, dropped := f.Back.Load(), f.Dropped.Load(); back != 2 || dropped != 0 {
+		t.Fatalf("%d answer(s) are counted of 2, %d dropped", back, dropped)
+	}
+}
+
+func TestTheLongestAnswerComesBackWhole(t *testing.T) {
+	f, tun := plain(t)
+	far := peer(t)
+	f.Send(outgoing(40000, at(far), "ask"))
+	_, seen := heard(t, far)
+
+	long := strings.Repeat("0123456789abcdef", 4095)[:maxAnswer]
+	reply(t, far, seen.Port(), long)
+
+	want := answer{from: at(far), to: netip.AddrPortFrom(app, 40000), payload: long, sound: true}
+	if got := joined(t, tun, 1420, 47); got != want {
+		t.Fatalf("the tun got %d byte(s) from %v to %v, sound %v", len(got.payload), got.from, got.to, got.sound)
+	}
+
+	if dropped := f.Dropped.Load(); dropped != 0 {
+		t.Fatalf("%d answer(s) are counted as dropped", dropped)
+	}
+}
+
+func TestEachLongAnswerHasANumberOfItsOwn(t *testing.T) {
+	f, tun := forwarder(t, 576, Idle, sweepEvery, nil)
+	far := peer(t)
+	f.Send(outgoing(40000, at(far), "ask"))
+	_, seen := heard(t, far)
+
+	reply(t, far, seen.Port(), strings.Repeat("x", 600))
+	reply(t, far, seen.Port(), strings.Repeat("y", 600))
+
+	first, second := numbered(t, tun, 2), numbered(t, tun, 2)
+	if first == second {
+		t.Fatalf("two answers were cut under one number %d", first)
 	}
 }
 

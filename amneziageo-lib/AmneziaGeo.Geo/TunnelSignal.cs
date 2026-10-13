@@ -13,10 +13,10 @@ public static class TunnelSignal
     /// <summary>
     /// Returns where the device takes the signal under what its server offers: its own addresses inside the tunnel
     /// of a family the signal comes over, IPv4 alone for a tunnel that carries no IPv6; null when the server sends
-    /// none or the text names no keys.
+    /// none, the configuration does not take the signal or the text names no keys.
     /// </summary>
-    public static SignalPlace? Of(ServerOffer? offer, string? configText, bool ipv6 = true) =>
-        offer is { SignalPort: > 0 } ? Of(offer.SignalPort, offer.SignalSources(), configText, ipv6) : null;
+    public static SignalPlace? Of(ServerOffer? offer, string? configText, bool ipv6 = true, bool allowed = true) =>
+        allowed && offer is { SignalPort: > 0 } ? Of(offer.SignalPort, offer.SignalSources(), configText, ipv6) : null;
 
     /// <summary>
     /// Returns where the device takes the signal that comes to the port from the addresses named; null when no

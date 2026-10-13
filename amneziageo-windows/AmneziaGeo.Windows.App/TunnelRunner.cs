@@ -101,7 +101,7 @@ internal sealed class TunnelRunner(
     /// </summary>
     public async Task RunAsync(string name)
     {
-        using var turn = await TunnelTurn.TakeAsync(TunnelPaths.TurnFile(name), _turnBudget).ConfigureAwait(false);
+        using var turn = await TunnelTurn.TakeAsync(TunnelPaths.TurnFile(name), _turnBudget, passing: true).ConfigureAwait(false);
         if (!turn.Held)
         {
             logger.LogWarning("{Name}: the session before this one has not taken its routes, firewall rules and DNS changes down in {Sec}s, so this one sets up without waiting and may lose them to it",
@@ -160,6 +160,7 @@ internal sealed class TunnelRunner(
 
         var config = await store.GetConfigTextAsync(name)
             ?? throw new ConnectFailureException(ConnectFailureReason.ConfigMissing, $"configuration '{name}' is not stored");
+        var original = config;
         // Log length only - the config carries private keys.
         logger.LogTrace("{Name}: configuration read, {Length} chars [{Elapsed} ms in]", name, config.Length, connectSw.ElapsedMilliseconds);
 
@@ -361,7 +362,7 @@ internal sealed class TunnelRunner(
 
         // The server takes the tunnel down by a signal from its own address inside it: the way back to that
         // address rides along with the resolver infrastructure, so the signal is answered through the tunnel.
-        var signal = TunnelSignal.Of(offer, config, !stripV6);
+        var signal = TunnelSignal.Of(offer, config, !stripV6, transport?.AllowSignal ?? true);
         if (signal is not null && PrivateNetworks.InsideLocal(signal.Sources, routes.LocalSubnets()) is { Count: > 0 } signalAtHome)
         {
             logger.LogWarning("{Name}: its server sends the signal to disconnect from {Sources}, inside a network this machine stands in, so that address stays on its own adapter and the signal is not listened for; a tunnel the server takes down is noticed by its silence", name, string.Join(", ", signalAtHome));
@@ -1026,7 +1027,8 @@ internal sealed class TunnelRunner(
         {
             wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials,
                 wsOffered ? ServiceToken.HeaderOf(config) : null, TunnelPaths.WsHeadersFile(name),
-                line => RecordRejection(name, line), loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
+                line => RecordRejection(name, line), (dialed, stop) => MovedFrontAsync(name, original, dialed, stop),
+                loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
             if (wsTransport is null)
             {
                 throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, $"WebSocket transport (wstunnel) failed to start for {name}");
@@ -1175,6 +1177,15 @@ internal sealed class TunnelRunner(
         {
             logger.LogWarning(ex, "{Name}: the error of the engine could not be saved, so the next attempt may be reported as an unreachable server", name);
         }
+    }
+
+    // Asks the server of a tunnel where its websocket front stands now and returns the front its carrier moves to,
+    // null while the one it dials holds.
+    private async Task<WsEndpoint?> MovedFrontAsync(string name, string text, WsEndpoint dialed, CancellationToken ct)
+    {
+        var named = await new ServerOffers(store).FrontAsync(name, text, ct).ConfigureAwait(false);
+
+        return FrontRedial.Moved(dialed, named) ? named : null;
     }
 
     // Records a permanent carrier rejection: the session is already up, so the agent reads the cause from the

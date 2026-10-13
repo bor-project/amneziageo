@@ -302,13 +302,19 @@ internal sealed class ConfigRunner(
                     await ShowHeldAsync();
                 }
 
-                if (repair != RecoveryStep.Restart)
+                var gone = repair != RecoveryStep.Restart && await FrontGoneAsync(config, ct).ConfigureAwait(false);
+                if (repair != RecoveryStep.Restart && !gone)
                 {
                     await RepairAsync(config, repair, ct);
                     continue;
                 }
 
-                if (_serviceLost)
+                if (gone)
+                {
+                    logger.LogWarning("{Config}: {Reason}, and its server offers no websocket front any more; reconnecting now, without the websocket",
+                        config, _recovery.Reason);
+                }
+                else if (_serviceLost)
                 {
                     logger.LogWarning("{Config}: the tunnel service stopped while connected and took its routes and firewall with it; reconnecting now",
                         config);
@@ -1002,6 +1008,29 @@ internal sealed class ConfigRunner(
             && IPAddress.IsLoopback(address);
     }
 
+    // Asks the server of a tunnel carried inside a websocket where its front stands now; true when it offers none any
+    // more, so no carrier brings the tunnel back.
+    private async Task<bool> FrontGoneAsync(string config, CancellationToken ct)
+    {
+        if (!Carried(config))
+        {
+            return false;
+        }
+
+        try
+        {
+            var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false);
+
+            return await new ServerOffers(store, OfferNote).FrontAsync(config, text, ct).ConfigureAwait(false) is null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "{Config}: its server could not be asked whether it still offers a websocket front", config);
+
+            return false;
+        }
+    }
+
     // Resolves the endpoint a config declares. A host that is already an address resolves to itself, which costs
     // one rung and nothing else.
     private static async Task<string?> ResolveEndpointAsync(string endpoint, CancellationToken ct)
@@ -1084,7 +1113,7 @@ internal sealed class ConfigRunner(
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var offer = await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false);
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        if (TunnelSignal.Of(offer, text, transport?.UseIpv6 ?? false) is not { } place)
+        if (TunnelSignal.Of(offer, text, transport?.UseIpv6 ?? false, transport?.AllowSignal ?? true) is not { } place)
         {
             return;
         }

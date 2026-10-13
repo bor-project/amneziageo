@@ -764,6 +764,8 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.UseRouting = entry.UseRouting;
             existing.AllowInbound = entry.AllowInbound;
             existing.InboundNetwork = entry.InboundNetwork;
+            existing.AllowSignal = entry.AllowSignal;
+            existing.SignalOffered = entry.SignalOffered;
             existing.Address = entry.Address;
             existing.WebSocketFront = entry.WebSocketFront;
             existing.WebSocketHost = entry.WebSocketHost;
@@ -1107,11 +1109,11 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false);
         RefreshEditBar();
     }
 
-    // Переносит фронт WebSocket из свежего снимка в открытую страницу настроек конфигурации.
+    // Переносит фронт WebSocket и выбор о сигнале сервера из свежего снимка в открытую страницу настроек конфигурации.
     private void RefreshOpenTransportFront()
     {
         if (ConfigTransport is not { } transport)
@@ -1127,6 +1129,7 @@ internal partial class ConfigViewModel : ViewModelBase
 
         transport.WebSocketOpen = item.WebSocketOffered;
         transport.WebSocketManual = item.WebSocketManual;
+        transport.SignalOffered = item.SignalOffered;
     }
 
     // Subscribe the open-config editors' dirty signal so the footer Save/Cancel bar tracks their state.

@@ -112,6 +112,26 @@ public sealed class SchemaMigrationTests
     }
 
     [Fact]
+    public async Task InitializeAsync_OnAStoreWrittenBeforeTheSignalSwitch_LeavesTheSignalTaken()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-signal-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteGuardedTransportAsync(path, "office");
+
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+
+            Assert.Contains("allow_signal", await ColumnsAsync(path, "config_transport"));
+            Assert.True((await store.GetConfigTransportAsync("office"))?.AllowSignal);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
     public async Task InitializeAsync_OnAStoreOpenedAgain_KeepsTheAutoModeBesideAStoredSize()
     {
         var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-mode-{Guid.NewGuid():N}.db");

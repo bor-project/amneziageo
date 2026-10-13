@@ -192,8 +192,8 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "STATE"], Cells(lines[0]));
-        Assert.Equal(8, Cells(lines[1]).Length);
+        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "SIGNAL", "STATE"], Cells(lines[0]));
+        Assert.Equal(9, Cells(lines[1]).Length);
     }
 
     [Fact]
@@ -212,6 +212,43 @@ public sealed class ConfigCommandsTests : IDisposable
         StatusCommands.Print(new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]).Snapshot);
 
         Assert.DoesNotContain("leak guard", _console.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheHelp_NamesTheSignalCommand()
+    {
+        var usage = CliRunner.Usage(new Host());
+
+        Assert.Contains("config signal <name> on|off", usage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConfigSignal_SendsTheSwitchInACommandOfItsOwn()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["signal", "office", "off"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["signal", "office", "maybe"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["signal", "office"]));
+
+        Assert.Equal([IpcContract.OpSetSignal], link.Sent);
+        Assert.Equal(["office", "off"], link.Args[0]);
+    }
+
+    [Fact]
+    public async Task TheTable_ShowsWhetherEveryConfigurationTakesTheSignal()
+    {
+        var link = new Link([
+            new ConfigEntry("taking", "10.9.1.1:51821", false, "idle", []),
+            new ConfigEntry("deaf", "10.9.1.1:51821", false, "idle", [], AllowSignal: false),
+        ]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
+
+        var lines = _console.ToString().Split('\n');
+        Assert.Equal("SIGNAL", Cells(lines[0])[7]);
+        Assert.Equal("on", Cells(lines[1])[7]);
+        Assert.Equal("off", Cells(lines[2])[7]);
     }
 
     // Splits one printed row into its cells, which stand at least two spaces apart.

@@ -496,11 +496,7 @@ internal sealed class LinuxAgent : IDisposable
     // One entry per client address, the busiest first.
     private IReadOnlyList<ProxyClientEntry> ProxyClients()
     {
-        return [.. _proxy.Peers()
-            .GroupBy(peer => peer.Address, StringComparer.Ordinal)
-            .Select(group => new ProxyClientEntry(group.Key, string.Empty, group.Count(), group.Min(peer => peer.Since)))
-            .OrderByDescending(entry => entry.Connections)
-            .ThenBy(entry => entry.Address, StringComparer.Ordinal)];
+        return ProxyClientEntry.Gather(_proxy.Peers().Select(peer => (peer.Address, peer.Since)));
     }
 
     // What goes into the store: the toggles keep one spelling, the rest is stored as it came.
@@ -887,6 +883,9 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpSetWebSocket:
                 return await SetTransportAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpSetSignal:
+                return await SetSignalAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpSetConfigDns:
                 return await SetConfigDnsAsync(args, ct).ConfigureAwait(false);
@@ -1667,13 +1666,33 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
         }
 
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
             await ApplyInboundAsync(args[0], transport, ct).ConfigureAwait(false);
         }
 
+        FlagTransportRestart(args[0], stored, transport);
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
+    }
+
+    private async Task<IpcAck> SetSignalAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return Fail();
+        }
+
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
+        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var transport = stored with { AllowSignal = IsOn(args[1]) };
+        await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         FlagTransportRestart(args[0], stored, transport);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
@@ -3151,7 +3170,9 @@ internal sealed class LinuxAgent : IDisposable
             WsEndpoint.SourceOf(text, offer) == WsSource.Settings,
             member is not null && stale.Contains(member.Subscription),
             reading.Churning,
-            shown.LossStreak);
+            shown.LossStreak,
+            transport?.AllowSignal ?? true,
+            offer.SignalAllowed);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

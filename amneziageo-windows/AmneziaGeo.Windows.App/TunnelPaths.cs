@@ -174,6 +174,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// The files the sessions of the tunnels hold their turns in, whichever are there.
+    /// </summary>
+    public static IEnumerable<string> TurnFiles()
+    {
+        return EnumerateState("turn-*.lock");
+    }
+
+    /// <summary>
     /// Path to the file a tunnel holds while it adds or removes the routes the tunnels of the machine share.
     /// </summary>
     public static string RoutesTurnFile()

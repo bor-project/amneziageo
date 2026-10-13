@@ -61,7 +61,11 @@ public sealed record ConfigEntry(
     // Whether the running tunnel keeps re-establishing its session while nothing comes back through it.
     bool LinkChurning = false,
     // Longest run of those echoes lost one after another; 0 on every config that is not running.
-    int LossStreak = 0);
+    int LossStreak = 0,
+    // Whether the config takes the signal of its server to disconnect, and whether its server leaves that choice to
+    // the device.
+    bool AllowSignal = true,
+    bool SignalOffered = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

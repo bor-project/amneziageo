@@ -299,17 +299,6 @@ func (l *liveSet) take(addr uint32, v verdict, last int64) bool {
 	return true
 }
 
-// Роль из снимка; всё неузнанное идёт в туннель, как и адрес без правила.
-func parseVerdict(text string) verdict {
-	switch text {
-	case "direct":
-		return verdictDirect
-	case "block":
-		return verdictBlock
-	}
-	return verdictProxy
-}
-
 // Сколько адресов под учётом.
 func (l *liveSet) size() int {
 	l.mu.RLock()
@@ -356,6 +345,7 @@ type verdictTun struct {
 	split   atomic.Bool
 	owner   atomic.Pointer[func(uint8, uint32, uint16, uint32, uint16) int]
 	owners  owners.Cache
+	heads   datagram.Heads
 
 	stop chan struct{}
 	once sync.Once
@@ -466,7 +456,7 @@ func (d *verdictTun) setTtl(ttl time.Duration) {
 }
 
 // Берёт назад адреса прошлой сессии: строки «адрес роль возраст-в-секундах», как их отдаёт снимок. Роль берётся
-// из таблицы, которая стоит сейчас, и только адрес вне её правил приходит с той, что записана в строке.
+// из таблицы, которая стоит сейчас; адрес вне её правил не берётся.
 func (d *verdictTun) preload(text string) int {
 	nanos := time.Now().UnixNano()
 	taken := 0
@@ -492,7 +482,7 @@ func (d *verdictTun) preload(text string) int {
 
 		v, listed := d.verdictFor(addr)
 		if !listed {
-			v = parseVerdict(parts[1])
+			continue
 		}
 
 		if d.live.take(addr, v, nanos-age*int64(time.Second)) {
@@ -552,11 +542,31 @@ func (d *verdictTun) setRelay(port int, split bool, owner func(uint8, uint32, ui
 // Куда идёт датаграмма, которую ни одно правило по адресу не назвало: приложение из правил едет туннелем,
 // остальные - мимо него, как и потоки того же приложения. Полный туннель не спрашивает: там всё едет туннелем.
 func (d *verdictTun) datagram(packet []byte) bool {
-	if d.relay.Load() <= 0 || !d.split.Load() || len(packet) < 28 || packet[9] != syscall.IPPROTO_UDP {
+	if d.relay.Load() <= 0 || !d.split.Load() || len(packet) < 20 || packet[9] != syscall.IPPROTO_UDP {
 		return false
 	}
 
-	if d.whose(packet, protoUdp) == owners.Other {
+	// Продолжение разрезанной датаграммы портов не несёт и идёт туда же, куда ушло её начало.
+	if datagram.Later(packet) {
+		aside, _ := d.heads.Went(packet, time.Now().UnixNano())
+		return d.counted(aside)
+	}
+
+	if len(packet) < 28 {
+		return false
+	}
+
+	aside := d.whose(packet, protoUdp) == owners.Other
+	if datagram.Cut(packet) {
+		d.heads.Note(packet, aside, time.Now().UnixNano())
+	}
+
+	return d.counted(aside)
+}
+
+// Считает датаграмму, отданную владельцу или оставленную туннелю.
+func (d *verdictTun) counted(aside bool) bool {
+	if aside {
 		d.aside6.Add(1)
 		return true
 	}

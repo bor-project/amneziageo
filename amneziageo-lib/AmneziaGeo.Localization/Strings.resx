@@ -526,6 +526,12 @@
   <data name="Main_InboundHint" xml:space="preserve">
     <value>Other devices on the VPN network can reach this computer at its VPN addresses:</value>
   </data>
+  <data name="Main_SignalTitle" xml:space="preserve">
+    <value>Allow the server to disconnect the tunnel</value>
+  </data>
+  <data name="Main_SignalHint" xml:space="preserve">
+    <value>The server takes the tunnel down when this client is turned off on the server</value>
+  </data>
   <data name="Main_RouterTitle" xml:space="preserve">
     <value>Router</value>
   </data>

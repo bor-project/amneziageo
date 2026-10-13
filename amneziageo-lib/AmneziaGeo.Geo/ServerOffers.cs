@@ -66,6 +66,18 @@ public sealed class ServerOffers
         (await AskBindingAsync(config, text, false, ct).ConfigureAwait(false)).Offer;
 
     /// <summary>
+    /// Asks the server of a config now and returns the websocket front that holds for its tunnel afterwards: null
+    /// where the config is not carried inside a websocket or its server offers no front.
+    /// </summary>
+    public async Task<WsEndpoint?> FrontAsync(string config, string? text, CancellationToken ct)
+    {
+        var offer = await AskAsync(config, text, ct).ConfigureAwait(false);
+        var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+
+        return transport?.UseWebSocket == true ? WsEndpoint.Of(text, offer, transport) : null;
+    }
+
+    /// <summary>
     /// Asks the server of a config before its tunnel comes up: at once where it was ours, never asked or never
     /// answered yet, in the background where it answered as a server of another kind or kept silent through
     /// <see cref="SilentWaits"/> connects, so such a server does not hold the connect back.
@@ -187,7 +199,8 @@ public sealed class ServerOffers
         }
 
         var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
-        var reply = await _ask(point, ct).ConfigureAwait(false);
+        var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        var reply = await _ask(point with { TakesSignal = transport?.AllowSignal ?? true }, ct).ConfigureAwait(false);
         if (!reply.Heard)
         {
             if (kept is { Heard: true })

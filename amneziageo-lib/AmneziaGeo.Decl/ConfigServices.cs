@@ -14,6 +14,11 @@ namespace AmneziaGeo.Decl;
 public sealed record ServiceTarget(string Host, int Port, string PrivateKey, string ServerKey)
 {
     /// <summary>
+    /// Whether the device takes the signal of the server to disconnect; the hello says it to the services.
+    /// </summary>
+    public bool TakesSignal { get; init; } = true;
+
+    /// <summary>
     /// Returns the mark an answer of these services is kept under: the point and the keys, not the rest of the text.
     /// </summary>
     public string Mark() =>

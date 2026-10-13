@@ -36,6 +36,11 @@ public static class ServiceToken
     public const string SignalContext = "amneziageo-signal";
 
     /// <summary>
+    /// What the key of what a hello says about the device is bound to.
+    /// </summary>
+    public const string SaysContext = "amneziageo-says";
+
+    /// <summary>
     /// The scheme a token travels under in the header of a websocket.
     /// </summary>
     public const string Scheme = "AmneziaGeo";
@@ -87,6 +92,47 @@ public static class ServiceToken
         }
 
         return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    /// <summary>
+    /// Returns the JSON a hello carries: the token and what the device says about itself, sealed under its keys.
+    /// </summary>
+    public static string Hello(ServiceProof token, ServiceTarget point)
+    {
+        ArgumentNullException.ThrowIfNull(token);
+        ArgumentNullException.ThrowIfNull(point);
+
+        var said = Seal(point.PrivateKey, point.ServerKey, token.Nonce, Says(point), SaysContext);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("key", token.Key);
+            writer.WriteNumber("time", token.Time);
+            writer.WriteString("nonce", token.Nonce);
+            writer.WriteString("proof", token.Proof);
+            writer.WriteStartObject("says");
+            writer.WriteString("iv", said.Iv);
+            writer.WriteString("data", said.Data);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    // Renders what a device says about itself to the services of its server.
+    private static byte[] Says(ServiceTarget point)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteBoolean("disconnect", point.TakesSignal);
+            writer.WriteEndObject();
+        }
+
+        return buffer.ToArray();
     }
 
     /// <summary>

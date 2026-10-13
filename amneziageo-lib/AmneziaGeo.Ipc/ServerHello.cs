@@ -64,7 +64,7 @@ public static class ServerHello
             for (var attempt = 0; attempt < 2; attempt++)
             {
                 var token = ServiceToken.Make(point.PrivateKey, point.ServerKey, time);
-                using var body = new StringContent(ServiceToken.Body(token), Encoding.UTF8, "application/json");
+                using var body = new StringContent(ServiceToken.Hello(token, point), Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync(Origin(point) + Path, body, ct).ConfigureAwait(false);
                 heard = true;
                 var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);

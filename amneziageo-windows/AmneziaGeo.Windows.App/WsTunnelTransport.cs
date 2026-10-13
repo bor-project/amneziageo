@@ -4,6 +4,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using AmneziaGeo.Decl;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -34,7 +35,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private const int StderrTail = 20;
 
     private readonly string _serverHost;
-    private readonly int _wsPort;
+    private volatile int _wsPort;
     // How often the headers are written anew, well inside the window the server takes a token in.
     private static readonly TimeSpan HeadersRefresh = TimeSpan.FromSeconds(30);
 
@@ -54,11 +55,12 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
     private readonly CarrierPort _port; // the port the tunnel dials in front of the carrier
     private volatile int _carrierPort;  // loopback UDP port the carrier process listens on
-    private readonly string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
+    private volatile string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
     private readonly string _credentials; // optional basic-auth "user[:pass]"
     private readonly Func<string>? _header; // the token header the front of a server of ours asks for
     private readonly string _headersFile; // the file wstunnel reads the headers from on every connection
     private readonly Action<string>? _onRejected;
+    private readonly Func<WsEndpoint, CancellationToken, Task<WsEndpoint?>>? _moved; // asks the server which front the carrier moves to
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly Queue<string> _stderr = new();
@@ -76,7 +78,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private int _handing;
     private long _startedAtMs;
 
-    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, int carrierPort, Action<string>? onRejected, ILogger logger)
+    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, int carrierPort, Action<string>? onRejected, Func<WsEndpoint, CancellationToken, Task<WsEndpoint?>>? moved, ILogger logger)
     {
         _serverHost = serverHost;
         _wsPort = wsPort;
@@ -89,6 +91,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         _port = new CarrierPort(carrierPort, logger);
         LocalPort = _port.Port;
         _onRejected = onRejected;
+        _moved = moved;
         _logger = logger;
     }
 
@@ -368,9 +371,10 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     /// <summary>
     /// Starts a wstunnel client and waits until its local UDP listener is bound; null on missing binary or timeout.
-    /// The callback fires once when the carrier reports a permanent rejection (TLS certificate).
+    /// The first callback fires once when the carrier reports a permanent rejection (TLS certificate); the second is
+    /// asked, once the front refused the carrier, which front the carrier moves to.
     /// </summary>
-    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, Action<string>? onRejected, ILogger logger, CancellationToken ct)
+    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, Action<string>? onRejected, Func<WsEndpoint, CancellationToken, Task<WsEndpoint?>>? moved, ILogger logger, CancellationToken ct)
     {
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
@@ -379,7 +383,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        var transport = Create(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, onRejected, logger);
+        var transport = Create(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, onRejected, moved, logger);
         if (transport is null)
         {
             return null;
@@ -409,14 +413,14 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     }
 
     // Makes the transport with the port the tunnel dials; null when the loopback gives none.
-    private static WsTunnelTransport? Create(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, Action<string>? onRejected, ILogger logger)
+    private static WsTunnelTransport? Create(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Func<string>? header, string headersFile, Action<string>? onRejected, Func<WsEndpoint, CancellationToken, Task<WsEndpoint?>>? moved, ILogger logger)
     {
         try
         {
             // The port of the carrier stays taken until the port in front of it is bound.
             using var held = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             held.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-            return new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, ((IPEndPoint)held.LocalEndPoint!).Port, onRejected, logger);
+            return new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, header, headersFile, ((IPEndPoint)held.LocalEndPoint!).Port, onRejected, moved, logger);
         }
         catch (SocketException ex)
         {
@@ -646,6 +650,46 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         return pause;
     }
 
+    // Returns the wait before the carrier asks again after its front refused it: none where the server names another
+    // front by now, which the carrier then dials.
+    private async Task<TimeSpan> RefusedAsync(CarrierRefusal said, CancellationToken ct)
+    {
+        if (await MovedAsync(ct).ConfigureAwait(false) is not { } named)
+        {
+            return Refused(said);
+        }
+
+        _logger.LogWarning("the front of the server at {Host}:{Port} refused the websocket of the tunnel ({Cause}), and the server names another front by now: port {Named}, path token set: {HasPath}; the carrier is started again at it, and the tunnel keeps its session", _serverHost, _wsPort, Told(said), named.Port, named.PathPrefix.Length > 0);
+        _wsPort = named.Port;
+        _pathPrefix = named.PathPrefix;
+
+        return TimeSpan.Zero;
+    }
+
+    // Asks the server which front the carrier moves to; null while the one it dials holds or the server is not heard.
+    private async Task<WsEndpoint?> MovedAsync(CancellationToken ct)
+    {
+        if (_moved is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _moved(new WsEndpoint(_serverHost, _wsPort, _pathPrefix, _credentials, _header is not null), ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "the server could not be asked where its websocket front stands now, so the carrier asks the front it knows again");
+
+            return null;
+        }
+    }
+
     private async Task SuperviseAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -708,7 +752,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
                     _lastExit = (code, _stderr.Count == 0 ? "(empty)" : string.Join(Environment.NewLine, _stderr));
                 }
 
-                var pause = RefusalOf(process) is { } said ? Refused(said) : Fallen(code);
+                var pause = RefusalOf(process) is { } said ? await RefusedAsync(said, ct).ConfigureAwait(false) : Fallen(code);
                 process.Dispose();
                 _process = null;
 

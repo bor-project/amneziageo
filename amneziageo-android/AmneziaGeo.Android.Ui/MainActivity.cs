@@ -26,6 +26,7 @@ namespace AmneziaGeo.Android.Ui;
     Banner = "@drawable/banner",
     Theme = "@style/AppTheme",
     MainLauncher = true,
+    LaunchMode = LaunchMode.SingleTop,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 [IntentFilter(new[] { Intent.ActionMain }, Categories = new[] { "android.intent.category.LEANBACK_LAUNCHER" })]
 public sealed class MainActivity : AvaloniaMainActivity<App>

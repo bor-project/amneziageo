@@ -205,7 +205,7 @@ internal sealed class TunnelController : IDisposable
 
         // The server takes the tunnel down by a signal from its own address inside it: the way back to that
         // address stands from the start.
-        var signal = TunnelSignal.Of(options.Offer, resolved, options.Transport?.UseIpv6 == true);
+        var signal = TunnelSignal.Of(options.Offer, resolved, options.Transport?.UseIpv6 == true, options.Transport?.AllowSignal != false);
         IReadOnlyList<string> signalRoutes = signal?.Routes ?? [];
         foreach (var route in signalRoutes)
         {

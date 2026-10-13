@@ -156,10 +156,21 @@ public static class TunnelNotices
     private static Notification.Action Action(string label, PendingIntent? intent) =>
         new Notification.Action.Builder((global::Android.Graphics.Drawables.Icon?)null, label, intent).Build();
 
+    /// <summary>
+    /// The intent the icon of the application starts it with; null where the system names no launcher activity.
+    /// </summary>
+    public static Intent? Icon(Context context)
+    {
+        var launch = context.PackageManager?.GetLaunchIntentForPackage(context.PackageName ?? string.Empty);
+        launch?.SetPackage(null);
+        launch?.SetFlags(ActivityFlags.NewTask | ActivityFlags.ResetTaskIfNeeded);
+        return launch;
+    }
+
     // Opens the application the way its icon does.
     private static PendingIntent? Open(Context context)
     {
-        var launch = context.PackageManager?.GetLaunchIntentForPackage(context.PackageName ?? string.Empty);
+        var launch = Icon(context);
         return launch is null
             ? null
             : PendingIntent.GetActivity(context, OpenCode, launch, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);

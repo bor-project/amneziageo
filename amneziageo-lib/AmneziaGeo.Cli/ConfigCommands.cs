@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|mtu|inbound|routing|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|mtu|inbound|routing|signal|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -45,6 +45,7 @@ internal static class ConfigCommands
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
             "inbound" => await InboundAsync(agent, rest).ConfigureAwait(false),
             "routing" => await RoutingAsync(agent, rest).ConfigureAwait(false),
+            "signal" => await SignalAsync(agent, rest).ConfigureAwait(false),
             "geo" => await GeoAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown config command '{args[0]}'"),
         };
@@ -69,11 +70,12 @@ internal static class ConfigCommands
                 config.Dns.Length > 0 ? config.Dns : "-",
                 Inbound(config),
                 Routing(config),
+                Signal(config),
                 config.Status,
             ])
             .ToList();
 
-        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "STATE"], rows, "no configurations yet");
+        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "SIGNAL", "STATE"], rows, "no configurations yet");
         return Exit.Ok;
     }
 
@@ -87,6 +89,9 @@ internal static class ConfigCommands
 
     // Names the routing switch.
     private static string Routing(ConfigEntry config) => config.UseRouting ? "on" : "off";
+
+    // Names whether the config takes the signal of its server to disconnect.
+    private static string Signal(ConfigEntry config) => config.AllowSignal ? "on" : "off";
 
     private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
@@ -364,6 +369,16 @@ internal static class ConfigCommands
             stored.AllowInbound ? "on" : "off",
             stored.InboundNetwork ? "on" : "off",
             Toggle.Text(on)).ConfigureAwait(false));
+    }
+
+    private static async Task<int> SignalAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 2 || !Toggle.TryParse(args[1], out var on))
+        {
+            return Reply.Usage("usage: amneziageo config signal <name> on|off");
+        }
+
+        return Reply.Report(await agent.SendAsync(IpcContract.OpSetSignal, args[0], Toggle.Text(on)).ConfigureAwait(false));
     }
 
     // What the word stands for: no access, the server alone, or every device of the tunnel network.

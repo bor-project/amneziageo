@@ -69,6 +69,36 @@ public static class SystemRoutes
     }
 
     /// <summary>
+    /// The addresses a rule set sends past the tunnel: inside a direct range and outside every blocked one.
+    /// </summary>
+    public static IReadOnlyList<string> Direct(
+        IReadOnlyList<string> addresses,
+        IReadOnlyList<string> direct,
+        IReadOnlyList<string> block)
+    {
+        if (addresses.Count == 0)
+        {
+            return [];
+        }
+
+        var bypassed = GeoIpRanges.Build(direct);
+        var blocked = GeoIpRanges.Build(block);
+        var kept = new List<string>(addresses.Count);
+        foreach (var address in addresses)
+        {
+            if (GeoIpRanges.TryParse(address, out var start, out var end, out _)
+                && start == end
+                && bypassed.Contains(start)
+                && !blocked.Contains(start))
+            {
+                kept.Add(address);
+            }
+        }
+
+        return kept;
+    }
+
+    /// <summary>
     /// How many direct addresses fit the tun route budget.
     /// </summary>
     public static int Fit(

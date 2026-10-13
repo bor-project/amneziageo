@@ -50,6 +50,12 @@ public static class IpcContract
     public const string OpSetWebSocket = "set-websocket";
 
     /// <summary>
+    /// Command to set whether a config takes the signal of its server to disconnect. Args: name, on/off. Applies on
+    /// the next connect.
+    /// </summary>
+    public const string OpSetSignal = "set-signal";
+
+    /// <summary>
     /// Command to set a config's preferred DNS for local name resolution. Args: name, servers
     /// (comma/space-separated; empty clears it). Applies on the next connect.
     /// </summary>

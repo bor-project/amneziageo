@@ -446,6 +446,61 @@ public sealed class ServerOffersTests : IAsyncLifetime
         Assert.Equal(string.Empty, ServerOffers.Download(null, false));
     }
 
+    [Fact]
+    public async Task TheFrontOfAConfig_IsTheOneItsServerNamesWhenAskedAgain()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("office", true));
+        var replies = new Queue<HelloReply>([new HelloReply(Fronted(8446, "first"), true), new HelloReply(Fronted(8447, "second"), true), new HelloReply(null, false)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+
+        var first = await offers.FrontAsync("office", Text, CancellationToken.None);
+        var second = await offers.FrontAsync("office", Text, CancellationToken.None);
+        var silent = await offers.FrontAsync("office", Text, CancellationToken.None);
+
+        Assert.Equal(new WsEndpoint("vpn.example", 8446, "first", Offered: true), first);
+        Assert.Equal(new WsEndpoint("vpn.example", 8447, "second", Offered: true), second);
+        Assert.Equal(second, silent);
+        Assert.Equal("second", (await offers.OfferAsync("office", Text, CancellationToken.None)).WebSocketPath);
+    }
+
+    [Fact]
+    public async Task AServerThatOffersNoWebSocketAnyMore_LeavesTheConfigWithoutAFront()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("office", true));
+        var replies = new Queue<HelloReply>([new HelloReply(Fronted(8446, "first"), true), new HelloReply(Fronted(0, string.Empty), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+
+        var first = await offers.FrontAsync("office", Text, CancellationToken.None);
+        var second = await offers.FrontAsync("office", Text, CancellationToken.None);
+
+        Assert.NotNull(first);
+        Assert.Null(second);
+    }
+
+    [Fact]
+    public async Task AConfigNotCarriedInsideAWebSocket_HasNoFront()
+    {
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(Fronted(8446, "first"), true)));
+
+        var unset = await offers.FrontAsync("office", Text, CancellationToken.None);
+        await _store.SetConfigTransportAsync(new ConfigTransport("office", false));
+        var off = await offers.FrontAsync("office", Text, CancellationToken.None);
+
+        Assert.Null(unset);
+        Assert.Null(off);
+    }
+
+    private static ServerOffer Fronted(int port, string path)
+    {
+        var websocket = port > 0
+            ? "\"websocket\":{\"port\":" + port.ToString(CultureInfo.InvariantCulture) + ",\"path\":\"" + path + "\"},"
+            : string.Empty;
+
+        const string answer = """{"server":"amneziageo","version":"1","client":"c","features":{WEBSOCKET"routing":{"allowed":true}}}""";
+
+        return ServerOffer.Parse(answer.Replace("WEBSOCKET", websocket, StringComparison.Ordinal));
+    }
+
     private static ServerOffer Named(string revision, string url = "https://vpn.example:51820/sub/abc")
     {
         const string answer = """{"server":"amneziageo","version":"1","client":"c","features":{"subscription":{"url":"URL","revision":"REVISION","pin":"ab12"}}}""";

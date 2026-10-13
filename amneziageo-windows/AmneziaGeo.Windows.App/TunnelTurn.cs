@@ -32,9 +32,14 @@ internal sealed class TunnelTurn : IDisposable
     public TimeSpan Waited { get; }
 
     /// <summary>
-    /// Takes the turn kept in the file given, waiting up to the limit for the session that holds it.
+    /// Takes the turn kept in the file given, waiting up to the limit for the session that holds it; a passing turn
+    /// takes its file away as it is given up.
     /// </summary>
-    public static async Task<TunnelTurn> TakeAsync(string path, TimeSpan limit, CancellationToken ct = default)
+    public static async Task<TunnelTurn> TakeAsync(
+        string path,
+        TimeSpan limit,
+        CancellationToken ct = default,
+        bool passing = false)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var clock = Stopwatch.StartNew();
@@ -43,19 +48,46 @@ internal sealed class TunnelTurn : IDisposable
         {
             try
             {
-                var file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                var file = new FileStream(
+                    path,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    1,
+                    passing ? FileOptions.DeleteOnClose : FileOptions.None);
                 return new TunnelTurn(file, tries == 0 ? TimeSpan.Zero : clock.Elapsed);
             }
-            catch (IOException) when (clock.Elapsed < limit)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && clock.Elapsed < limit)
             {
                 tries++;
                 await Task.Delay(RetryDelay, ct).ConfigureAwait(false);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 return new TunnelTurn(null, clock.Elapsed);
             }
         }
+    }
+
+    /// <summary>
+    /// Takes away the files of the turns nobody holds, returning how many went.
+    /// </summary>
+    public static int Sweep(IEnumerable<string> paths)
+    {
+        var gone = 0;
+        foreach (var path in paths)
+        {
+            try
+            {
+                using var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose);
+                gone++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return gone;
     }
 
     /// <summary>

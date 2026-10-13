@@ -268,6 +268,15 @@ public sealed class ServerOffer
             : 0;
 
     /// <summary>
+    /// Whether the server leaves it to the device to take the signal to disconnect or not.
+    /// </summary>
+    public bool SignalAllowed =>
+        SignalPort > 0
+        && Arguments(DisconnectFeature) is { } arguments
+        && arguments.TryGetProperty("allowed", out var allowed)
+        && allowed.ValueKind == JsonValueKind.True;
+
+    /// <summary>
     /// When the pass of the speed feature stops answering; the start of time when the server does not measure.
     /// </summary>
     public DateTimeOffset SpeedExpires =>

@@ -41,6 +41,12 @@ internal sealed class FleetHostedService(
             logger.LogInformation("removed {Count} tunnel(s) left behind by a previous run ({Names}); nothing was connected, so they were strays", reaped.Count, string.Join(", ", reaped));
         }
 
+        var swept = TunnelTurn.Sweep(TunnelPaths.TurnFiles());
+        if (swept > 0)
+        {
+            logger.LogInformation("removed {Count} lock file(s) left behind by tunnels that ran before; nothing was connected, so nobody held them", swept);
+        }
+
         // Stand the boot cleanup down the moment a tunnel is asked for: its own reconcile then owns adapter state.
         reconciler.Reconcile(WantsATunnel);
         _ = RetryBootReconcileAsync(stoppingToken);

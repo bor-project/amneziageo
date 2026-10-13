@@ -82,6 +82,75 @@ public sealed class TunnelTurnTests : IDisposable
         Assert.Equal(".lock", Path.GetExtension(TunnelPaths.TurnFile("office.example")));
     }
 
+    [Fact]
+    public async Task APassingTurn_TakesItsFileAwayAsItIsGivenUp()
+    {
+        var path = Turn("office.example");
+        var turn = await TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10), passing: true);
+
+        Assert.True(turn.Held);
+        Assert.True(File.Exists(path));
+
+        turn.Dispose();
+
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task ASessionThatWaitedForAPassingTurn_HoldsAFileOfItsOwn()
+    {
+        var path = Turn("office.example");
+        var before = await TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10), passing: true);
+        var next = TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10), passing: true);
+        await Task.Delay(300);
+        before.Dispose();
+        var turn = await next.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(turn.Held);
+        Assert.True(File.Exists(path));
+
+        turn.Dispose();
+
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task ATurnThatDoesNotPass_KeepsItsFile()
+    {
+        var path = Turn("routes");
+        var turn = await TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10));
+        turn.Dispose();
+
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public async Task TheFilesNobodyHolds_AreSweptAndTheHeldOneStays()
+    {
+        Directory.CreateDirectory(_root);
+        var left = Turn("left");
+        var other = Turn("other");
+        var held = Turn("held");
+        await File.WriteAllBytesAsync(left, []);
+        await File.WriteAllBytesAsync(other, []);
+        using var turn = await TunnelTurn.TakeAsync(held, TimeSpan.FromSeconds(10), passing: true);
+
+        var gone = TunnelTurn.Sweep([left, other, held, Turn("never")]);
+
+        Assert.Equal(2, gone);
+        Assert.False(File.Exists(left));
+        Assert.False(File.Exists(other));
+        Assert.True(File.Exists(held));
+        Assert.True(turn.Held);
+    }
+
+    [Fact]
+    public void TheTurnTheTunnelsShare_IsNotAmongTheFilesOfTheSessions()
+    {
+        Assert.StartsWith("turn-", Path.GetFileName(TunnelPaths.TurnFile("laptop")), StringComparison.Ordinal);
+        Assert.False(Path.GetFileName(TunnelPaths.RoutesTurnFile()).StartsWith("turn-", StringComparison.Ordinal));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))

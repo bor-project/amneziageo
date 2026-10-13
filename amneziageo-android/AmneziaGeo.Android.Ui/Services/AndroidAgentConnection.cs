@@ -499,6 +499,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetWebSocket:
                 return await SetWebSocketAsync(args);
 
+            case IpcContract.OpSetSignal:
+                return await SetSignalAsync(args).ConfigureAwait(false);
+
             case IpcContract.OpSetGeo:
                 return await SetGeoAsync(args);
 
@@ -704,7 +707,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
-            TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true));
+            TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false));
         return new IpcAck(true, "connecting");
     }
 
@@ -1411,7 +1414,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
             ProxyAddresses: reach.Addresses,
-            ProxyPlaces: reach.Places);
+            ProxyPlaces: reach.Places,
+            ProxyClients: proxy.Clients);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1600,7 +1604,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             SubscriptionStale: member is not null && _stale.Contains(member.Subscription),
             ConfigMtu: WgConfigEditor.GetMtu(config),
             MtuMode: transport?.MtuMode ?? MtuMode.Auto,
-            ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config));
+            ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config),
+            AllowSignal: transport?.AllowSignal ?? true,
+            SignalOffered: offer?.SignalAllowed == true);
     }
 
     private string StatusFor(string target)
@@ -2367,7 +2373,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.UseRouter,
                         transport.AllowInbound,
                         transport.InboundNetwork,
-                        transport.UseRouting),
+                        transport.UseRouting,
+                        transport.AllowSignal),
                 null));
         }
 
@@ -2608,7 +2615,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -2662,11 +2669,34 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
         }
 
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port)).ConfigureAwait(false);
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true)).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
         {
             _restartRequired = true;
             _log.Info("agent", "the routing switch applies on the next connect");
+        }
+
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return Ok();
+    }
+
+    // Stores whether a config takes the signal of its server to disconnect; the tunnel reads it on the next connect.
+    private async Task<IpcAck> SetSignalAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !_configs.ContainsKey(args[0]))
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var allowed = IsOn(args[1]);
+        await _store.SetConfigTransportAsync(previous with { AllowSignal = allowed }).ConfigureAwait(false);
+        if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && allowed != previous.AllowSignal)
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the signal switch applies on the next connect");
         }
 
         await RefreshTransportsAsync().ConfigureAwait(false);

@@ -134,6 +134,14 @@
                            IsVisible="{Binding ShowInboundAddress}" />
     </StackPanel>
 
+    <!-- Сигнал сервера на отключение: строка стоит, пока сервер оставляет выбор устройству. -->
+    <StackPanel Spacing="14" IsVisible="{Binding SignalOffered}">
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
+      <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_SignalTitle}" Description="{l:Tr Main_SignalHint}"
+                                 IsChecked="{Binding AllowSignal, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+    </StackPanel>
+
     <!-- The router decides destinations while the session runs and costs a second pass through userspace;
          turning it off leaves the route table alone with the rules. -->
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_RouterTitle}" Description="{l:Tr Main_RouterHint}"

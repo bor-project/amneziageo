@@ -87,6 +87,16 @@ internal sealed class TunnelController : IDisposable
     public Func<CancellationToken, Task>? ServerAskedDown { get; set; }
 
     /// <summary>
+    /// Asks the server of the session where its websocket front stands now; null when it offers none.
+    /// </summary>
+    public Func<CancellationToken, Task<WsEndpoint?>>? FrontAsker { get; set; }
+
+    /// <summary>
+    /// Takes the session to a tunnel without the websocket when its server offers no front any more.
+    /// </summary>
+    public Func<Task>? FrontGone { get; set; }
+
+    /// <summary>
     /// The device the tunnel stands on.
     /// </summary>
     public string Device => _iface;
@@ -1092,10 +1102,21 @@ internal sealed class TunnelController : IDisposable
             return (null, null, Refused($"the websocket front {front.Display()} has no address to dial"));
         }
 
-        var carrier = WsCarrier.Start(front, address, targetPort, front.Offered ? ServiceToken.HeaderOf(configText) : null, null, Note);
+        var carrier = WsCarrier.Start(
+            front,
+            address,
+            targetPort,
+            front.Offered ? ServiceToken.HeaderOf(configText) : null,
+            null,
+            Note,
+            front.Offered ? FrontAsker : null,
+            Gone);
         _log.Info("tunnel", $"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {Loopback}:{carrier.LocalPort}");
         return (carrier, address.ToString(), null);
     }
+
+    // Hands the news that the server offers no websocket front any more on to whoever dials the session again.
+    private void Gone() => _ = Task.Run(() => FrontGone?.Invoke() ?? Task.CompletedTask);
 
     // Hands the signal of the server on to whoever takes the session down.
     private Task AskedDownAsync(CancellationToken session) =>

@@ -386,6 +386,110 @@ public sealed class WsCarrierRenewTests : IDisposable
         }
     }
 
+    [Fact]
+    public void ARefusedFront_HasTheServerAskedAndTheCarrierDialsTheFrontItNamesByNow()
+    {
+        using var moved = new Front();
+        var asked = 0;
+        _front.Refuses = true;
+        using var carrier = WsCarrier.Start(
+            new WsEndpoint("127.0.0.1", _front.Port, "old", Offered: true), IPAddress.Loopback, 51820, () => "token", null,
+            (message, _) => _notes.Enqueue(message),
+            _ =>
+            {
+                Interlocked.Increment(ref asked);
+                return Task.FromResult<WsEndpoint?>(new WsEndpoint("127.0.0.1", moved.Port, "new", Offered: true));
+            });
+
+        Flow(carrier, WaitMs, () => moved.Count > 0);
+        var taken = moved.Await(0);
+        SayTo(carrier, "after");
+
+        Assert.Equal("after", Until(taken, "after", WaitMs));
+        Assert.True(Noted("the server names another front by now: port " + moved.Port), Notes());
+        Assert.Equal(1, Volatile.Read(ref asked));
+    }
+
+    [Fact]
+    public void ARefusedFrontWhoseServerOffersNoneAnyMore_TellsTheCallerOnce()
+    {
+        using var gone = new ManualResetEventSlim();
+        var told = 0;
+        _front.Refuses = true;
+        using var carrier = WsCarrier.Start(
+            new WsEndpoint("127.0.0.1", _front.Port, Offered: true), IPAddress.Loopback, 51820, () => "token", null,
+            (message, _) => _notes.Enqueue(message),
+            _ => Task.FromResult<WsEndpoint?>(null),
+            () =>
+            {
+                Interlocked.Increment(ref told);
+                gone.Set();
+            });
+
+        Flow(carrier, WaitMs, () => gone.IsSet);
+        Flow(carrier, 1500);
+
+        Assert.True(gone.IsSet, Notes());
+        Assert.Equal(1, Volatile.Read(ref told));
+        Assert.True(Noted("the server offers no websocket front any more"), Notes());
+    }
+
+    [Fact]
+    public void ARefusedFrontWhoseServerNamesTheSameOne_IsAskedNoMoreOftenThanTheGap()
+    {
+        var asked = 0;
+        var gone = 0;
+        var front = new WsEndpoint("127.0.0.1", _front.Port, Offered: true);
+        _front.Refuses = true;
+        using var carrier = WsCarrier.Start(
+            front, IPAddress.Loopback, 51820, () => "token", null,
+            (message, _) => _notes.Enqueue(message),
+            _ =>
+            {
+                Interlocked.Increment(ref asked);
+                return Task.FromResult<WsEndpoint?>(front);
+            },
+            () => Interlocked.Increment(ref gone));
+
+        Flow(carrier, 3000);
+
+        Assert.Equal(1, Volatile.Read(ref asked));
+        Assert.Equal(0, Volatile.Read(ref gone));
+        Assert.False(Noted("another front"), Notes());
+    }
+
+    // Keeps the engine sending to a carrier for the time given or until the condition holds.
+    private void Flow(WsCarrier carrier, int ms, Func<bool>? until = null)
+    {
+        var end = Environment.TickCount64 + ms;
+        while (Environment.TickCount64 < end && until?.Invoke() != true)
+        {
+            SayTo(carrier, "flow");
+            Thread.Sleep(20);
+        }
+    }
+
+    // Sends a datagram of the engine to a carrier.
+    private void SayTo(WsCarrier carrier, string text)
+    {
+        _engine.SendTo(Encoding.ASCII.GetBytes(text), new IPEndPoint(IPAddress.Loopback, carrier.LocalPort));
+    }
+
+    // The first datagram a websocket takes that reads this way, null where none comes in time.
+    private static string? Until(Connection connection, string text, int ms)
+    {
+        var end = Environment.TickCount64 + ms;
+        while (Environment.TickCount64 < end)
+        {
+            if (connection.Take((int)Math.Max(1, end - Environment.TickCount64)) is { } taken && taken == text)
+            {
+                return taken;
+            }
+        }
+
+        return null;
+    }
+
     // Sends a datagram of the engine to the carrier.
     private void Say(string text)
     {

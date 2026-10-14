@@ -141,7 +141,7 @@ internal sealed class LinuxAgent : IDisposable
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, _geoFiles);
         _diagnostics = new DiagnosticsBundle(_store, log.Store);
         _geo = new GeoConfigurator(_store, _geoFiles);
-        _tunnel = new TunnelController(enginePath, interfaceName, log) { ServerAskedDown = ServerAskedDownAsync };
+        _tunnel = new TunnelController(enginePath, interfaceName, log) { ServerAskedDown = ServerAskedDownAsync, FrontGone = FrontGoneAsync };
         _bundles = new BundleCommands(_store, _geo);
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
@@ -1088,6 +1088,7 @@ internal sealed class LinuxAgent : IDisposable
         _heldUnanswered = false;
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with { Offer = offer };
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
+        _tunnel.FrontAsker = Asker(configName, config);
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is { } refusal)
         {
@@ -1132,6 +1133,35 @@ internal sealed class LinuxAgent : IDisposable
 
                 _log.Info("agent", $"{_boundTarget}: disconnecting on the signal of the server");
                 await SetConnectionAsync("disconnect", CancellationToken.None).ConfigureAwait(false);
+            },
+            CancellationToken.None);
+    }
+
+    // Asks the server of a config where the websocket front of its tunnel stands now.
+    private Func<CancellationToken, Task<WsEndpoint?>> Asker(string name, string text) =>
+        session => _offers.FrontAsync(name, text, session);
+
+    // Dials the session again when its server offers no websocket front any more, so the tunnel goes without one.
+    private Task FrontGoneAsync()
+    {
+        return GatedAsync(
+            async () =>
+            {
+                if (!_tunnel.Running || !_tunnel.Carried)
+                {
+                    return;
+                }
+
+                if (!string.Equals(_boundTarget, _selectedTarget, StringComparison.Ordinal))
+                {
+                    _restartRequired = true;
+                    _log.Info("agent", $"{_boundTarget}: its server offers no websocket front any more; the tunnel goes without it on the next connect");
+                    return;
+                }
+
+                _log.Info("agent", $"{_boundTarget}: its server offers no websocket front any more; reconnecting now, without the websocket");
+                await SetConnectionAsync("disconnect", CancellationToken.None).ConfigureAwait(false);
+                await SetConnectionAsync("connect", CancellationToken.None).ConfigureAwait(false);
             },
             CancellationToken.None);
     }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -21,6 +22,7 @@ internal sealed class AppGroup : IDisposable
     private readonly AgentLog _log;
     private readonly CancellationTokenSource _cts = new();
     private readonly HashSet<int> _placed = [];
+    private readonly Dictionary<int, string> _homes = [];
     private Task? _syncing;
     private ProcEvents? _events;
     private volatile bool _watching;
@@ -80,7 +82,7 @@ internal sealed class AppGroup : IDisposable
     }
 
     /// <summary>
-    /// Stops placing and hands the processes back to the root cgroup.
+    /// Stops placing and hands each process back to the cgroup it was taken from.
     /// </summary>
     public async Task StopAsync()
     {
@@ -99,10 +101,12 @@ internal sealed class AppGroup : IDisposable
             }
         }
 
-        Release(Path);
+        var homes = Homes();
+        Release(Path, pid => CgroupHomes.Back(pid, homes, Parent) ?? Root);
         lock (_placed)
         {
             _placed.Clear();
+            _homes.Clear();
         }
     }
 
@@ -114,22 +118,7 @@ internal sealed class AppGroup : IDisposable
     /// <summary>
     /// Hands the processes of a cgroup back to the root one.
     /// </summary>
-    public static void Release(string path)
-    {
-        try
-        {
-            foreach (var line in File.ReadLines($"{path}/cgroup.procs"))
-            {
-                if (int.TryParse(line.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid))
-                {
-                    Place(Root, pid);
-                }
-            }
-        }
-        catch (Exception)
-        {
-        }
-    }
+    public static void Release(string path) => Release(path, _ => Root);
 
     /// <summary>
     /// Deletes a cgroup that holds no process.
@@ -157,6 +146,25 @@ internal sealed class AppGroup : IDisposable
         _events?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
+    }
+
+    // Hands each process of a cgroup to the cgroup named for it, or to the root one when that one does not take it.
+    private static void Release(string path, Func<int, string> back)
+    {
+        try
+        {
+            foreach (var line in File.ReadAllLines($"{path}/cgroup.procs"))
+            {
+                if (int.TryParse(line.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pid)
+                    && !Place(back(pid), pid))
+                {
+                    Place(Root, pid);
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
     }
 
     // Fills the cgroup with what the connector did not report.
@@ -209,10 +217,15 @@ internal sealed class AppGroup : IDisposable
         }
 
         var image = Image(pid);
-        if (image is not null && _images.Names(image) && Place(Path, pid))
+        if (image is not null && _images.Names(image))
         {
-            _log.Info("apps", $"{image} {_taken}");
-            return;
+            var home = Home(pid);
+            if (Place(Path, pid))
+            {
+                Keep(pid, home);
+                _log.Info("apps", $"{image} {_taken}");
+                return;
+            }
         }
 
         lock (_placed)
@@ -232,6 +245,57 @@ internal sealed class AppGroup : IDisposable
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    // The cgroup a pid lives in, or null when it is gone or unreadable.
+    private static string? Home(int pid)
+    {
+        try
+        {
+            var path = CgroupHomes.Of(File.ReadAllText($"/proc/{pid.ToString(CultureInfo.InvariantCulture)}/cgroup"));
+
+            return path is null ? null : Root + path.TrimEnd('/');
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // The parent of a pid, or null when it is gone or unreadable.
+    private static int? Parent(int pid)
+    {
+        try
+        {
+            return CgroupHomes.Parent(File.ReadAllText($"/proc/{pid.ToString(CultureInfo.InvariantCulture)}/stat"));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // Keeps the cgroup a placed pid was taken from.
+    private void Keep(int pid, string? home)
+    {
+        if (home is null || home == Path)
+        {
+            return;
+        }
+
+        lock (_placed)
+        {
+            _homes[pid] = home;
+        }
+    }
+
+    // A copy of the cgroups the placed pids were taken from.
+    private Dictionary<int, string> Homes()
+    {
+        lock (_placed)
+        {
+            return new Dictionary<int, string>(_homes);
         }
     }
 

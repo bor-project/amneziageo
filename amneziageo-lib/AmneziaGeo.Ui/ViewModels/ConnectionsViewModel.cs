@@ -35,6 +35,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     private string _baseHotspotSsid = string.Empty;
     private string _baseHotspotPassword = string.Empty;
     private int _baseBandIndex;
+    private bool _baseHotspotHidden;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
@@ -100,16 +101,33 @@ internal partial class ConnectionsViewModel : ViewModelBase
     public bool SubscriptionIntervalEnabled => SubscriptionAutoRefresh;
 
     /// <summary>
-    /// The access point settings are editable where it can be raised and it is asked for.
+    /// The access point settings are editable where it can be raised.
     /// </summary>
-    public bool HotspotSettingsEnabled => HotspotSupported && HotspotEnabled;
+    public bool HotspotSettingsEnabled => HotspotSupported;
+
+    /// <summary>
+    /// Whether the name and the password the agent holds are both fit to raise the point.
+    /// </summary>
+    public bool HotspotSavedComplete =>
+        SettingKeys.IsValidHotspotSsid(_baseHotspotSsid) && SettingKeys.IsValidHotspotPassword(_baseHotspotPassword);
+
+    /// <summary>
+    /// Whether the access point switch takes a click: it turns on only on a saved name and password.
+    /// </summary>
+    public bool HotspotSwitchEnabled => HotspotSupported && (HotspotEnabled || HotspotSavedComplete);
+
+    /// <summary>
+    /// Whether the access point can keep its name out of the beacon here.
+    /// </summary>
+    public bool CanHideHotspot => OperatingSystem.IsLinux();
 
     /// <summary>
     /// Whether the access point fields differ from what the agent holds.
     /// </summary>
     public bool HotspotDirty => !string.Equals(HotspotSsid, _baseHotspotSsid, StringComparison.Ordinal)
         || !string.Equals(HotspotPassword, _baseHotspotPassword, StringComparison.Ordinal)
-        || SelectedBandIndex != _baseBandIndex;
+        || SelectedBandIndex != _baseBandIndex
+        || HotspotHidden != _baseHotspotHidden;
 
     /// <summary>
     /// Whether the footer Save / Cancel bar is shown.
@@ -117,11 +135,12 @@ internal partial class ConnectionsViewModel : ViewModelBase
     public bool ShowSaveBar => IsActiveSection && HotspotDirty;
 
     /// <summary>
-    /// Whether the footer Save button is enabled: the name and the password are each empty or valid.
+    /// Whether the footer Save button is enabled: the name and the password are each empty or valid, and both valid
+    /// while the access point is on.
     /// </summary>
     public bool CanSave => HotspotDirty
-        && (HotspotSsid.Length == 0 || SettingKeys.IsValidHotspotSsid(HotspotSsid))
-        && (HotspotPassword.Length == 0 || SettingKeys.IsValidHotspotPassword(HotspotPassword));
+        && ((HotspotSsid.Length == 0 && !HotspotEnabled) || SettingKeys.IsValidHotspotSsid(HotspotSsid))
+        && ((HotspotPassword.Length == 0 && !HotspotEnabled) || SettingKeys.IsValidHotspotPassword(HotspotPassword));
 
     /// <summary>
     /// Whether the tunnel settings are offered (Windows only: the Android agent does not apply them).
@@ -246,6 +265,10 @@ internal partial class ConnectionsViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
     [NotifyPropertyChangedFor(nameof(HotspotSettingsEnabled))]
+    [NotifyPropertyChangedFor(nameof(HotspotSwitchEnabled))]
+    [NotifyPropertyChangedFor(nameof(HotspotBlocked))]
+    [NotifyPropertyChangedFor(nameof(HotspotBlockedText))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private bool _hotspotEnabled;
 
     /// <summary>
@@ -279,6 +302,15 @@ internal partial class ConnectionsViewModel : ViewModelBase
     private string _hotspotPassword = string.Empty;
 
     /// <summary>
+    /// Whether the access point keeps its name out of the beacon.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HotspotDirty))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
+    private bool _hotspotHidden;
+
+    /// <summary>
     /// Whether the network password is shown.
     /// </summary>
     [ObservableProperty]
@@ -289,8 +321,10 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HotspotBlocked))]
+    [NotifyPropertyChangedFor(nameof(HotspotBlockedText))]
     [NotifyPropertyChangedFor(nameof(HotspotHintText))]
     [NotifyPropertyChangedFor(nameof(HotspotSettingsEnabled))]
+    [NotifyPropertyChangedFor(nameof(HotspotSwitchEnabled))]
     private bool _hotspotSupported;
 
     /// <summary>
@@ -399,15 +433,16 @@ internal partial class ConnectionsViewModel : ViewModelBase
     public bool ShowSubscriptions => SubscriptionsShown && (CanConfigureConnection ? IsTunnelTab : IsProxyTab);
 
     /// <summary>
-    /// Whether the access point fields are locked out.
+    /// Whether the access point switch stands locked: the machine raises no point, or the name and the password are
+    /// not saved.
     /// </summary>
-    public bool HotspotBlocked => !HotspotSupported;
+    public bool HotspotBlocked => !HotspotSupported || (!HotspotEnabled && !HotspotSavedComplete);
 
     /// <summary>
     /// What stands in the way of an access point on this machine. Each cause has its own remedy, so each
     /// carries its own line.
     /// </summary>
-    public string HotspotBlockedText => HotspotReason switch
+    public string HotspotBlockedText => HotspotSupported ? Loc.Instance.Get("General_HotspotNeedsName") : HotspotReason switch
     {
         HotspotReasons.NoAdapter => Loc.Instance.Get("General_HotspotNoAdapter"),
         HotspotReasons.RadioOff => Loc.Instance.Get("General_HotspotRadioOff"),
@@ -604,9 +639,16 @@ internal partial class ConnectionsViewModel : ViewModelBase
             await SetSettingAsync(SettingKeys.HotspotBand, bandToken);
         }
 
+        var hidden = HotspotHidden;
+        if (hidden != _baseHotspotHidden)
+        {
+            await SetSettingAsync(SettingKeys.HotspotHidden, hidden ? "on" : "off");
+        }
+
         _baseHotspotSsid = ssid;
         _baseHotspotPassword = password;
         _baseBandIndex = band;
+        _baseHotspotHidden = hidden;
         RaiseHotspotDirty();
     }
 
@@ -619,6 +661,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
         HotspotSsid = _baseHotspotSsid;
         HotspotPassword = _baseHotspotPassword;
         SelectedBandIndex = _baseBandIndex;
+        HotspotHidden = _baseHotspotHidden;
     }
 
     /// <summary>
@@ -726,11 +769,13 @@ internal partial class ConnectionsViewModel : ViewModelBase
         _baseHotspotSsid = snapshot.HotspotSsid;
         _baseHotspotPassword = snapshot.HotspotPassword;
         _baseBandIndex = BandIndex(snapshot.HotspotBand);
+        _baseHotspotHidden = snapshot.HotspotHidden;
         if (!edited)
         {
             HotspotSsid = _baseHotspotSsid;
             HotspotPassword = _baseHotspotPassword;
             SelectedBandIndex = _baseBandIndex;
+            HotspotHidden = _baseHotspotHidden;
         }
 
         RaiseHotspotDirty();
@@ -742,6 +787,9 @@ internal partial class ConnectionsViewModel : ViewModelBase
         OnPropertyChanged(nameof(HotspotDirty));
         OnPropertyChanged(nameof(ShowSaveBar));
         OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(HotspotSwitchEnabled));
+        OnPropertyChanged(nameof(HotspotBlocked));
+        OnPropertyChanged(nameof(HotspotBlockedText));
     }
 
     // Where a client points: every address of this machine the neighbours can reach, and loopback only where

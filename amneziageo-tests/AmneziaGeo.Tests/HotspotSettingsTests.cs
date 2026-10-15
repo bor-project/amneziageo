@@ -122,6 +122,19 @@ public sealed class HotspotSettingsTests
     }
 
     [Fact]
+    public void Options_HideTheNameOnlyWhenAskedTo()
+    {
+        var plain = HotspotOptions.Read(new Dictionary<string, string>());
+        var hidden = HotspotOptions.Read(new Dictionary<string, string> { [SettingKeys.HotspotHidden] = "on" });
+        var shown = HotspotOptions.Read(new Dictionary<string, string> { [SettingKeys.HotspotHidden] = "off" });
+
+        Assert.False(plain.Hidden);
+        Assert.True(hidden.Hidden);
+        Assert.False(shown.Hidden);
+        Assert.NotEqual(plain, hidden);
+    }
+
+    [Fact]
     public void Options_StandWithoutTheProxy()
     {
         var options = HotspotOptions.Read(new Dictionary<string, string>

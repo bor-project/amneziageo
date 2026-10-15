@@ -116,6 +116,7 @@ public static class CliRunner
               config inbound <name> off|host|network    nobody, the server, or the whole tunnel network
               config routing <name> on|off              take the routing list or keep off it
               config signal <name> on|off               let the server take the tunnel down or not
+              config hold <name> on|off                 hold what the tunnel carries while it reconnects
               config geo <name> on|off [rule...]
 
             routing lists

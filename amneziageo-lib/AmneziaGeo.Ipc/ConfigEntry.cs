@@ -65,7 +65,9 @@ public sealed record ConfigEntry(
     // Whether the config takes the signal of its server to disconnect, and whether its server leaves that choice to
     // the device.
     bool AllowSignal = true,
-    bool SignalOffered = false);
+    bool SignalOffered = false,
+    // Whether a tunnel that has stood is taken down by nothing but the user.
+    bool HoldTraffic = true);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

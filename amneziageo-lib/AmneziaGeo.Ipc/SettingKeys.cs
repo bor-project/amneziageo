@@ -104,6 +104,11 @@ public static class SettingKeys
     public const string HotspotBand = "hotspot-band";
 
     /// <summary>
+    /// Whether the access point keeps its name out of the beacon.
+    /// </summary>
+    public const string HotspotHidden = "hotspot-hidden";
+
+    /// <summary>
     /// Whether subscriptions are re-read on a timer.
     /// </summary>
     public const string SubscriptionAutoRefresh = "subscription-auto-refresh-enabled";

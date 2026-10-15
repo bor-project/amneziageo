@@ -187,6 +187,9 @@
   <data name="General_HotspotBand5" xml:space="preserve">
     <value>5 GHz</value>
   </data>
+  <data name="General_HotspotHidden" xml:space="preserve">
+    <value>Hidden network</value>
+  </data>
   <data name="General_HotspotBandAdapter" xml:space="preserve">
     <value>The adapter chose the band itself.</value>
   </data>
@@ -549,6 +552,12 @@
   </data>
   <data name="Main_UseRoutingHint" xml:space="preserve">
     <value>Use routing where it is available</value>
+  </data>
+  <data name="Main_HoldTrafficTitle" xml:space="preserve">
+    <value>Hold traffic when the tunnel drops</value>
+  </data>
+  <data name="Main_HoldTrafficHint" xml:space="preserve">
+    <value>While the tunnel reconnects, what is selected does not go directly</value>
   </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Amnezia engine version</value>

@@ -393,7 +393,7 @@ internal sealed class LinuxHotspot(AgentLog log, string tunnelInterface) : IDisp
         text.Append("ieee80211n=1\n");
         text.Append("wmm_enabled=1\n");
         text.Append("auth_algs=1\n");
-        text.Append("ignore_broadcast_ssid=0\n");
+        text.Append(CultureInfo.InvariantCulture, $"ignore_broadcast_ssid={(options.Hidden ? 1 : 0)}\n");
         text.Append(CultureInfo.InvariantCulture, $"max_num_sta={Capacity}\n");
         text.Append("wpa=2\n");
         text.Append("wpa_key_mgmt=WPA-PSK\n");

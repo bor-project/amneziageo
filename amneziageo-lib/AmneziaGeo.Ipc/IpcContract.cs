@@ -56,6 +56,12 @@ public static class IpcContract
     public const string OpSetSignal = "set-signal";
 
     /// <summary>
+    /// Command to set whether a config holds its traffic while its tunnel is repaired. Args: name, on/off. On keeps a
+    /// tunnel that has stood from being taken down by anything but the user.
+    /// </summary>
+    public const string OpSetHoldTraffic = "set-hold-traffic";
+
+    /// <summary>
     /// Command to set a config's preferred DNS for local name resolution. Args: name, servers
     /// (comma/space-separated; empty clears it). Applies on the next connect.
     /// </summary>

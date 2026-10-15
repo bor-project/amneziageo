@@ -627,11 +627,13 @@
                            IsVisible="{Binding Config.SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 <!-- Compact drops the Save / Cancel pair under the unsaved-changes label so they never overlap it. -->
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-                  <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                              Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
-                    <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
-                  </StackPanel>
+                  <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                    <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top"
+                             Margin="0,4,0,0" />
+                    <TextBlock Grid.Column="1" Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </Grid>
                   <UniformGrid Rows="1" ColumnSpacing="8" VerticalAlignment="Center"
                                HorizontalAlignment="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
                                Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
@@ -683,11 +685,13 @@
                              HorizontalAlignment="Stretch" />
                 <!-- Compact drops the Save / Cancel pair under the unsaved-changes label so they never overlap it. -->
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-                  <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                              Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
-                    <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
-                  </StackPanel>
+                  <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                    <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top"
+                             Margin="0,4,0,0" />
+                    <TextBlock Grid.Column="1" Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                  </Grid>
                   <UniformGrid Rows="1" ColumnSpacing="8" VerticalAlignment="Center"
                                HorizontalAlignment="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
                                Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
@@ -711,11 +715,13 @@
                     Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
                     BorderThickness="0,1,0,0" CornerRadius="0,0,13,13" MinHeight="52" Padding="18,7">
               <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                  <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
-                  <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
-                </StackPanel>
+                <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
+                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top"
+                           Margin="0,4,0,0" />
+                  <TextBlock Grid.Column="1" Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                             VerticalAlignment="Center" />
+                </Grid>
                 <UniformGrid Rows="1" ColumnSpacing="8" VerticalAlignment="Center"
                              HorizontalAlignment="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
                              Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
@@ -739,12 +745,13 @@
                     BorderThickness="0,1,0,0" CornerRadius="0,0,13,13" MinHeight="52" Padding="18,7">
               <!-- Compact drops the reconnect actions under the prompt so they never overlap it. -->
               <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                  <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
-                  <TextBlock Text="{l:Tr Main_ReconnectPrompt}" Classes="muted" FontSize="12"
-                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
+                <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
+                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top"
+                           Margin="0,4,0,0" />
+                  <TextBlock Grid.Column="1" Text="{l:Tr Main_ReconnectPrompt}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                             VerticalAlignment="Center" />
+                </Grid>
                 <UniformGrid Rows="1" ColumnSpacing="8" VerticalAlignment="Center"
                              HorizontalAlignment="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
                              Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"

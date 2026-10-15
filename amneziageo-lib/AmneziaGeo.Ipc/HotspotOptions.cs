@@ -26,6 +26,11 @@ public sealed record HotspotOptions
     public string Band { get; init; } = HotspotBands.Auto;
 
     /// <summary>
+    /// Whether the network name stays out of the beacon.
+    /// </summary>
+    public bool Hidden { get; init; }
+
+    /// <summary>
     /// Whether the name and the password are both fit to raise the point.
     /// </summary>
     public bool Complete => SettingKeys.IsValidHotspotSsid(Ssid) && SettingKeys.IsValidHotspotPassword(Password);
@@ -46,6 +51,7 @@ public sealed record HotspotOptions
             Ssid = settings.TryGetValue(SettingKeys.HotspotSsid, out var ssid) ? ssid : string.Empty,
             Password = settings.TryGetValue(SettingKeys.HotspotPassword, out var password) ? password : string.Empty,
             Band = HotspotBands.Of(settings.TryGetValue(SettingKeys.HotspotBand, out var band) ? band : null),
+            Hidden = settings.TryGetValue(SettingKeys.HotspotHidden, out var hidden) && hidden == "on",
         };
     }
 }

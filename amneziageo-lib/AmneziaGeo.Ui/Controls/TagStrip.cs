@@ -4,19 +4,22 @@ using Avalonia.Controls;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Ряд плашек в строку: что не влезло по ширине, уходит за край и отсекается клипом.
+/// Ряд плашек: что не влезло по ширине, переносится на следующую строку.
 /// </summary>
 internal sealed class TagStrip : Panel
 {
     public static readonly StyledProperty<double> SpacingProperty =
         AvaloniaProperty.Register<TagStrip, double>(nameof(Spacing), 6d);
 
+    public static readonly StyledProperty<double> RowSpacingProperty =
+        AvaloniaProperty.Register<TagStrip, double>(nameof(RowSpacing), 4d);
+
     /// <summary>
     /// ctor
     /// </summary>
     static TagStrip()
     {
-        AffectsMeasure<TagStrip>(SpacingProperty);
+        AffectsMeasure<TagStrip>(SpacingProperty, RowSpacingProperty);
     }
 
     /// <summary>
@@ -29,46 +32,89 @@ internal sealed class TagStrip : Panel
     }
 
     /// <summary>
-    /// Меряет ряд по влезшим плашкам: хвост, которому ширины не хватило, места не занимает.
+    /// Промежуток между строками.
     /// </summary>
-    protected override Size MeasureOverride(Size availableSize)
+    public double RowSpacing
     {
-        var taken = 0d;
-        var fitted = 0d;
-        var height = 0d;
-        foreach (var child in Children)
-        {
-            child.Measure(new Size(double.PositiveInfinity, availableSize.Height));
-            taken += taken > 0 ? Spacing + child.DesiredSize.Width : child.DesiredSize.Width;
-            if (taken > availableSize.Width)
-            {
-                continue;
-            }
-
-            fitted = taken;
-            height = Math.Max(height, child.DesiredSize.Height);
-        }
-
-        return new Size(fitted, height);
+        get => GetValue(RowSpacingProperty);
+        set => SetValue(RowSpacingProperty, value);
     }
 
     /// <summary>
-    /// Ставит влезшие плашки в строку, остальные уводит за правый край.
+    /// Меряет плашки по строкам: плашка, которой не хватило места в строке, начинает следующую.
+    /// </summary>
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var widest = 0d;
+        var height = 0d;
+        foreach (var row in Rows(availableSize.Width, true))
+        {
+            widest = Math.Max(widest, row.Width);
+            height += height > 0 ? RowSpacing + row.Height : row.Height;
+        }
+
+        return new Size(Math.Min(widest, availableSize.Width), height);
+    }
+
+    /// <summary>
+    /// Ставит плашки по строкам; плашка шире всей строки стоит в своей, сжатая до её ширины.
     /// </summary>
     protected override Size ArrangeOverride(Size finalSize)
     {
-        var x = 0d;
-        foreach (var child in Children)
+        var y = 0d;
+        foreach (var row in Rows(finalSize.Width, false))
         {
-            var width = child.DesiredSize.Width;
-            var fits = x + width <= finalSize.Width + Epsilon;
-            child.Arrange(fits
-                ? new Rect(x, 0, width, finalSize.Height)
-                : new Rect(finalSize.Width + Spacing, 0, width, finalSize.Height));
-            x += width + Spacing;
+            var x = 0d;
+            foreach (var child in row.Children)
+            {
+                child.Arrange(new Rect(x, y, child.DesiredSize.Width, row.Height));
+                x += child.DesiredSize.Width + Spacing;
+            }
+
+            y += row.Height + RowSpacing;
         }
 
         return finalSize;
+    }
+
+    // Делит плашки на строки по ширине.
+    private List<(List<Control> Children, double Width, double Height)> Rows(double width, bool measure)
+    {
+        var rows = new List<(List<Control> Children, double Width, double Height)>();
+        var children = new List<Control>();
+        var taken = 0d;
+        var height = 0d;
+        foreach (var child in Children)
+        {
+            if (measure)
+            {
+                child.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                if (child.DesiredSize.Width > width && !double.IsInfinity(width))
+                {
+                    child.Measure(new Size(width, double.PositiveInfinity));
+                }
+            }
+
+            var size = child.DesiredSize;
+            if (children.Count > 0 && taken + Spacing + size.Width > width + Epsilon)
+            {
+                rows.Add((children, taken, height));
+                children = [];
+                taken = 0;
+                height = 0;
+            }
+
+            taken += children.Count > 0 ? Spacing + size.Width : size.Width;
+            height = Math.Max(height, size.Height);
+            children.Add(child);
+        }
+
+        if (children.Count > 0)
+        {
+            rows.Add((children, taken, height));
+        }
+
+        return rows;
     }
 
     // Запас на округление ширины при измерении.

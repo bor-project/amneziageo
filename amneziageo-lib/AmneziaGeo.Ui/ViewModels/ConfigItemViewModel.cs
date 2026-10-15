@@ -90,6 +90,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private bool _signalOffered;
 
     [ObservableProperty]
+    private bool _holdTraffic = true;
+
+    [ObservableProperty]
     private string _address = string.Empty;
 
     // Вход WebSocket, куда идёт туннель: предложенный сервером, названный конфигурацией или из настроек; пустой,

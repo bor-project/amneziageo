@@ -187,6 +187,9 @@
   <data name="General_HotspotBand5" xml:space="preserve">
     <value>5 ГГц</value>
   </data>
+  <data name="General_HotspotHidden" xml:space="preserve">
+    <value>Скрытая сеть</value>
+  </data>
   <data name="General_HotspotBandAdapter" xml:space="preserve">
     <value>Адаптер сам выбрал диапазон.</value>
   </data>
@@ -549,6 +552,12 @@
   </data>
   <data name="Main_UseRoutingHint" xml:space="preserve">
     <value>Использовать маршрутизацию, если она доступна</value>
+  </data>
+  <data name="Main_HoldTrafficTitle" xml:space="preserve">
+    <value>Удерживать трафик при обрыве туннеля</value>
+  </data>
+  <data name="Main_HoldTrafficHint" xml:space="preserve">
+    <value>Пока туннель переподключается, выбранное не идёт напрямую</value>
   </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Версия движка Amnezia</value>

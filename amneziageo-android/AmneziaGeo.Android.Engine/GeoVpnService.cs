@@ -155,6 +155,11 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraBases = "bases";
 
+    /// <summary>
+    /// Whether a session that has stood is taken down by nothing but the user.
+    /// </summary>
+    public const string ExtraHoldTraffic = "hold-traffic";
+
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
@@ -233,6 +238,7 @@ public sealed class GeoVpnService : VpnService
     private readonly object _swapGate = new();
     private IReadOnlyList<string> _excluded = [];
     private bool _liveTun;
+    private int _ttlSeconds = 300;
     private VpnBridge.Listener? _proxySettings;
     private VpnBridge.Listener? _routeTtl;
     private VpnBridge.Listener? _probes;
@@ -416,6 +422,7 @@ public sealed class GeoVpnService : VpnService
         // A request the system delivers again after the process died is not one the head has just made.
         var asked = carried is not null && (flags & StartCommandFlags.Redelivery) == 0;
         _unattended = !asked;
+        _hold.Set(request.HoldTraffic);
         if (_unattended)
         {
             _hold.Raised();
@@ -1057,6 +1064,7 @@ public sealed class GeoVpnService : VpnService
             }
 
             // Passes the idle window to the engine.
+            _ttlSeconds = plan.TtlSeconds;
             AwgEngine.SetVerdictTtl(handle, plan.TtlSeconds);
             VpnBridge.WriteRouteTtl(plan.TtlSeconds);
 
@@ -1122,10 +1130,16 @@ public sealed class GeoVpnService : VpnService
             var reports = new CancellationTokenSource();
             _reports = reports;
             _ = Task.Run(() => ReportShareAsync(relay, reports.Token));
-            if (_liveTun)
+            if (_liveTun && _hold.Guard)
             {
                 Report("the leak guard keeps this tun in its place, so a destination decided direct leaves through "
                     + "the shim and gets its exclusion at the next connect");
+            }
+            else if (_liveTun)
+            {
+                Report("a destination decided direct leaves this tun on its own exclusion, and comes back to it "
+                    + "when the cache releases it");
+                _ = Task.Run(() => RefreshTunAsync(reports.Token));
             }
 
             // The port the user set up: it opens with the tunnel, because everything it carries leaves through it.
@@ -1209,10 +1223,10 @@ public sealed class GeoVpnService : VpnService
             string.Join(',', servers), string.Join(',', excluded.OrderBy(address => address, StringComparer.Ordinal)));
     }
 
-    // Takes a second descriptor of a fresh tun and closes the one held before it.
+    // Takes a second descriptor of a fresh tun while the traffic is held, and closes the one held before it.
     private void Keep(ParcelFileDescriptor tun, string parts)
     {
-        Hold(Second(tun), parts);
+        Hold(_hold.Guard ? Second(tun) : null, parts);
     }
 
     // Closes the tun held with no engine behind it.
@@ -1996,6 +2010,54 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
+    // Rebuilds the tun on the cache sweep step.
+    private async Task RefreshTunAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(Math.Clamp(_ttlSeconds / 5, 5, 60) * 1000, ct).ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
+                return;
+            }
+
+            RefreshTun();
+        }
+    }
+
+    // Rebuilds the tun around the addresses the cache holds now.
+    private void RefreshTun()
+    {
+        lock (_swapGate)
+        {
+            var shape = _shape;
+            var handle = _handle;
+            if (shape is null || handle < 0 || _stage != VpnStage.Connected)
+            {
+                return;
+            }
+
+            var wanted = DirectAddresses(AwgEngine.LiveAddresses(handle));
+            if (wanted.Count == _excluded.Count && new HashSet<string>(wanted).SetEquals(_excluded))
+            {
+                return;
+            }
+
+            if (!Swap(handle, shape, wanted, out var error))
+            {
+                Report($"the tun could not be rebuilt around {wanted.Count} direct address(es): {error}");
+                return;
+            }
+
+            var added = wanted.Count - _excluded.Count;
+            _excluded = wanted;
+            Report($"{wanted.Count} address(es) decided direct now leave the tun on their own ({added:+#;-#;0})");
+        }
+    }
+
     // Puts a tun of this shape under the running engine.
     private bool Swap(int handle, TunShape shape, IReadOnlyList<string> excluded, out string? error)
     {
@@ -2009,7 +2071,7 @@ public sealed class GeoVpnService : VpnService
             return false;
         }
 
-        var second = Second(pfd);
+        var second = _hold.Guard ? Second(pfd) : null;
         var tunFd = pfd.DetachFd();
         if (AwgEngine.SwapTun(handle, tunFd))
         {
@@ -3498,7 +3560,8 @@ public sealed class GeoVpnService : VpnService
             Words(intent.GetStringExtra(ExtraNotice)),
             intent.GetIntExtra(ExtraSignalPort, 0),
             intent.GetStringArrayExtra(ExtraSignalFrom),
-            intent.GetStringArrayExtra(ExtraBases));
+            intent.GetStringArrayExtra(ExtraBases),
+            intent.GetBooleanExtra(ExtraHoldTraffic, true));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.
@@ -3687,6 +3750,7 @@ public sealed class GeoVpnService : VpnService
             return;
         }
 
+        _ttlSeconds = seconds;
         _relay?.SetTtl(seconds);
         var handle = _handle;
         if (handle >= 0)

@@ -195,6 +195,7 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
             sb.AppendLine($"    routing:    {(transport?.UseRouting != false ? "on" : "off")}");
             sb.AppendLine($"    inbound:    {(transport?.AllowInbound != true ? "off" : transport.InboundNetwork ? "tunnel network" : "server only")}");
             sb.AppendLine($"    signal:     {(transport?.AllowSignal != false ? "on" : "off")}");
+            sb.AppendLine($"    hold:       {(transport?.HoldTraffic != false ? "on" : "off")}");
 
             var geo = await store.GetTunnelGeoAsync(config, ct).ConfigureAwait(false);
             if (geo is not null)

@@ -268,7 +268,7 @@
             <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_HotspotEnabled}"
                                        Description="{l:Tr General_HotspotEnabledHint}"
                                        IsChecked="{Binding HotspotEnabled, Mode=TwoWay}"
-                                       IsEnabled="{Binding HotspotSupported}" />
+                                       IsEnabled="{Binding HotspotSwitchEnabled}" />
 
             <TextBlock Text="{Binding HotspotBlockedText}" FontSize="12.5" TextWrapping="Wrap"
                        Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding HotspotBlocked}" />
@@ -314,6 +314,13 @@
                 <TextBlock Text="{Binding HotspotHintText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                            Margin="0,-2,0,0"
                            IsVisible="{Binding HotspotHintText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+
+              <!-- Скрытая сеть: имя не вещается, устройства подключаются вводом имени. -->
+              <StackPanel Spacing="12" IsVisible="{Binding CanHideHotspot}">
+                <Border Classes="rowsep" />
+                <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_HotspotHidden}"
+                                           IsChecked="{Binding HotspotHidden, Mode=TwoWay}" />
               </StackPanel>
 
               <TextBlock Text="{Binding HotspotErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"

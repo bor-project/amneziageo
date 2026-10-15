@@ -9,7 +9,7 @@ namespace AmneziaGeo.Cli;
 internal static class HotspotCommands
 {
     private const string Usage =
-        "usage: amneziageo hotspot [show|on|off] [--ssid <name>] [--password <password>] [--band auto|2.4|5]";
+        "usage: amneziageo hotspot [show|on|off] [--ssid <name>] [--password <password>] [--band auto|2.4|5] [--hidden on|off]";
 
     /// <summary>
     /// Runs one access point command.
@@ -39,6 +39,7 @@ internal static class HotspotCommands
             ("ssid", snapshot.HotspotSsid.Length > 0 ? snapshot.HotspotSsid : "-"),
             ("password", snapshot.HotspotPassword.Length > 0 ? snapshot.HotspotPassword : "-"),
             ("band", Band(snapshot)),
+            ("hidden", snapshot.HotspotHidden ? "on" : "off"),
             ("clients", Clients(snapshot)),
         };
 
@@ -157,6 +158,17 @@ internal static class HotspotCommands
                     }
 
                     updates.Add((SettingKeys.HotspotBand, HotspotBands.Of(band)));
+                    break;
+                }
+
+                case "--hidden":
+                {
+                    if (!Next(args, ref i, out var hidden) || !Toggle.TryParse(hidden, out var hide))
+                    {
+                        return Reply.Usage("--hidden takes on or off");
+                    }
+
+                    updates.Add((SettingKeys.HotspotHidden, Toggle.Text(hide)));
                     break;
                 }
 

@@ -7,8 +7,9 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The leak guard: a tunnel that has stood is taken down by the user alone, so the ladder that repairs it never
-/// raises the session again and never stands down; it stands for every configuration and nothing switches it.
+/// The leak guard: a tunnel that has stood is taken down by the user alone while its configuration holds the
+/// traffic, so the ladder that repairs it never raises the session again and never stands down; the hold stands on
+/// until it is turned off.
 /// </summary>
 public sealed class LeakGuardTests
 {
@@ -42,6 +43,38 @@ public sealed class LeakGuardTests
         Assert.True(hold.Carries());
         Assert.False(hold.Carries());
         Assert.False(hold.Down);
+        Assert.True(hold.Active);
+    }
+
+    [Fact]
+    public void AHoldThatIsOff_HoldsNoTunnel()
+    {
+        var hold = new LeakHold();
+
+        hold.Set(false);
+        hold.Raised();
+
+        Assert.False(hold.Guard);
+        Assert.False(hold.Active);
+        Assert.False(hold.Stalled());
+        Assert.False(hold.Down);
+    }
+
+    [Fact]
+    public void TheHoldTurnedOff_EndsTheHold()
+    {
+        var hold = new LeakHold();
+        hold.Raised();
+        hold.Stalled();
+
+        hold.Set(false);
+
+        Assert.False(hold.Active);
+        Assert.False(hold.Down);
+        Assert.True(hold.Stood);
+
+        hold.Set(true);
+
         Assert.True(hold.Active);
     }
 
@@ -129,7 +162,7 @@ public sealed class LeakGuardTests
     }
 
     [Fact]
-    public void NothingCarriesASwitchOfTheGuard()
+    public void NothingCarriesTheEarlierSwitchOfTheGuard()
     {
         Assert.Null(typeof(ConfigTransport).GetProperty("LeakGuard"));
         Assert.Null(typeof(ConfigEntry).GetProperty("LeakGuard"));

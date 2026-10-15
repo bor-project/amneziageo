@@ -135,22 +135,22 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         _toggleUdp ??= new AsyncRelayCommand(() => ToggleAsync(() => AllUdp = !AllUdp));
 
     /// <summary>
-    /// Плашки карточки: весь UDP у списка, который несёт только выбранное, и обновление, когда сервер отдал новую
-    /// версию.
+    /// Плашки карточки: обновление, когда сервер отдал новую версию, и весь UDP у списка, который несёт только
+    /// выбранное.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
         get
         {
             var wanted = new List<CardTag>();
-            if (!UseGlobalProxy)
-            {
-                wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand));
-            }
-
             if (HasUpdate)
             {
                 wanted.Add(new(Loc.Instance.Get("Main_CardTagUpdate"), true, UpdateCommand, warn: true));
+            }
+
+            if (!UseGlobalProxy)
+            {
+                wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand));
             }
 
             CardTag.Sync(_tags, wanted);

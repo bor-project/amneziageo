@@ -61,6 +61,7 @@ internal static class StatusCommands
             ("names", NameLine(snapshot)),
             ("survive reboot", snapshot.SurviveReboot ? "on" : "off"),
             ("auto reconnect", Reconnect(snapshot)),
+            ("hold traffic", Hold(snapshot)),
             ("log level", snapshot.LogLevel),
         };
 
@@ -83,6 +84,14 @@ internal static class StatusCommands
 
         Output.Line();
         Output.Table([" ", "CONFIG", "ENDPOINT", "STATE"], rows, "no configurations yet");
+    }
+
+    // The hold of the traffic of the configuration the agent runs, or would run; a dash while there is none.
+    private static string Hold(StatusSnapshot snapshot)
+    {
+        var name = snapshot.BoundTarget ?? snapshot.SelectedTarget;
+        var config = snapshot.Configs.FirstOrDefault(config => string.Equals(config.Name, name, StringComparison.Ordinal));
+        return config is null ? "-" : config.HoldTraffic ? "on" : "off";
     }
 
     /// <summary>

@@ -333,6 +333,14 @@ public sealed class RoutingListModeTests
     }
 
     [Fact]
+    public void TheUpdateTag_StandsBeforeTheUdpTag()
+    {
+        var card = new RoutingListSummaryViewModel { HasUpdate = true };
+
+        Assert.Equal([Loc.Instance.Get("Main_CardTagUpdate"), Loc.Instance.Get("Main_CardTagUdp")], card.Tags.Select(tag => tag.Text));
+    }
+
+    [Fact]
     public void TheCardOfAFullList_CarriesNoUdpTag()
     {
         var card = new RoutingListSummaryViewModel { UseGlobalProxy = true, AllUdp = true };

@@ -502,6 +502,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetSignal:
                 return await SetSignalAsync(args).ConfigureAwait(false);
 
+            case IpcContract.OpSetHoldTraffic:
+                return await SetHoldTrafficAsync(args).ConfigureAwait(false);
+
             case IpcContract.OpSetGeo:
                 return await SetGeoAsync(args);
 
@@ -829,6 +832,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraMtu, transport.Mtu);
             intent.PutExtra(GeoVpnService.ExtraMtuMode, (int)transport.MtuMode);
             intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
+            intent.PutExtra(GeoVpnService.ExtraHoldTraffic, transport.HoldTraffic);
         }
 
         if (front is { } carried)
@@ -1612,7 +1616,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             MtuMode: transport?.MtuMode ?? MtuMode.Auto,
             ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config),
             AllowSignal: transport?.AllowSignal ?? true,
-            SignalOffered: offer?.SignalAllowed == true);
+            SignalOffered: offer?.SignalAllowed == true,
+            HoldTraffic: transport?.HoldTraffic ?? true);
     }
 
     private string StatusFor(string target)
@@ -2380,7 +2385,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.AllowInbound,
                         transport.InboundNetwork,
                         transport.UseRouting,
-                        transport.AllowSignal),
+                        transport.AllowSignal,
+                        transport.HoldTraffic),
                 null));
         }
 
@@ -2621,7 +2627,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic)).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -2675,7 +2681,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
         }
 
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true)).ConfigureAwait(false);
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true)).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
         {
             _restartRequired = true;
@@ -2703,6 +2709,29 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             _restartRequired = true;
             _log.Info("agent", "the signal switch applies on the next connect");
+        }
+
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return Ok();
+    }
+
+    // Stores whether a config holds its traffic while its tunnel is repaired; the tunnel reads it on the next connect.
+    private async Task<IpcAck> SetHoldTrafficAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !_configs.ContainsKey(args[0]))
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var hold = IsOn(args[1]);
+        await _store.SetConfigTransportAsync(previous with { HoldTraffic = hold }).ConfigureAwait(false);
+        if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && hold != previous.HoldTraffic)
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the hold of the traffic applies on the next connect");
         }
 
         await RefreshTransportsAsync().ConfigureAwait(false);

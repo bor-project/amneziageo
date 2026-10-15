@@ -454,6 +454,7 @@ internal sealed class LinuxAgent : IDisposable
             HotspotSsid: _hotspotOptions.Ssid,
             HotspotPassword: _hotspotOptions.Password,
             HotspotBand: _hotspotOptions.Band,
+            HotspotHidden: _hotspotOptions.Hidden,
             HotspotBandActual: _hotspot.BandActual,
             HotspotClients: _hotspot.Clients,
             HotspotMaxClients: LinuxHotspot.MaxClients,
@@ -900,6 +901,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpSetSignal:
                 return await SetSignalAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpSetHoldTraffic:
+                return await SetHoldTrafficAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpSetConfigDns:
                 return await SetConfigDnsAsync(args, ct).ConfigureAwait(false);
 
@@ -1096,6 +1100,7 @@ internal sealed class LinuxAgent : IDisposable
         var routing = await TunnelRouting.LoadAsync(_store, configName, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
+        _hold.Set(configTransport?.HoldTraffic ?? true);
         _hold.Dialled();
         _recovery.Held = _hold.Active;
         _heldUnanswered = false;
@@ -1752,7 +1757,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
         }
 
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
@@ -1784,8 +1789,33 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    // Raises the reconnect banner for a running configuration; access from the tunnel is left out, it applies on
-    // the spot.
+    private async Task<IpcAck> SetHoldTrafficAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return Fail();
+        }
+
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
+        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var hold = IsOn(args[1]);
+        await _store.SetConfigTransportAsync(stored with { HoldTraffic = hold }, ct).ConfigureAwait(false);
+        if (string.Equals(args[0], _boundTarget, StringComparison.Ordinal))
+        {
+            _hold.Set(hold);
+            _recovery.Held = _hold.Active;
+        }
+
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
+    }
+
+    // Raises the reconnect banner for a running configuration; access from the tunnel and the hold of the traffic
+    // are left out, they apply on the spot.
     private void FlagTransportRestart(string name, ConfigTransport? stored, ConfigTransport transport)
     {
         if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
@@ -1797,6 +1827,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             AllowInbound = stored?.AllowInbound ?? false,
             InboundNetwork = stored?.InboundNetwork ?? false,
+            HoldTraffic = stored?.HoldTraffic ?? true,
         };
         if (carried == stored)
         {
@@ -2382,6 +2413,10 @@ internal sealed class LinuxAgent : IDisposable
                 }
 
                 await _store.SetSettingAsync(SettingKeys.HotspotBand, HotspotBands.Of(args[1]), ct).ConfigureAwait(false);
+                await ApplyHotspotAsync(ct).ConfigureAwait(false);
+                break;
+            case SettingKeys.HotspotHidden:
+                await _store.SetSettingAsync(SettingKeys.HotspotHidden, IsOn(args[1]) ? "on" : "off", ct).ConfigureAwait(false);
                 await ApplyHotspotAsync(ct).ConfigureAwait(false);
                 break;
             default:
@@ -3190,6 +3225,7 @@ internal sealed class LinuxAgent : IDisposable
         sb.AppendLine($"route ttl:       {_routeTtlSeconds}s");
         sb.AppendLine($"survive reboot:  {(_surviveReboot ? "on" : "off")}");
         sb.AppendLine($"reconnect:       {(_periodicReconnect ? $"every {_reconnectIntervalSeconds}s" : "off")}");
+        sb.AppendLine($"hold traffic:    {(_hold.Guard ? "on" : "off")}");
         sb.AppendLine();
         sb.AppendLine("[state]");
         sb.AppendLine($"selected target: {_selectedTarget ?? "-"}");
@@ -3258,7 +3294,8 @@ internal sealed class LinuxAgent : IDisposable
             reading.Churning,
             shown.LossStreak,
             transport?.AllowSignal ?? true,
-            offer.SignalAllowed);
+            offer.SignalAllowed,
+            transport?.HoldTraffic ?? true);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

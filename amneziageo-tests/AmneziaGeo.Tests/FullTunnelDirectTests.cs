@@ -1,3 +1,4 @@
+using System.Net;
 using AmneziaGeo.Routing;
 using AmneziaGeo.Windows.App;
 using Xunit;
@@ -25,6 +26,33 @@ public sealed class FullTunnelDirectTests
         Assert.False(RouteManager.KeepsOwnPath(1, false));
         Assert.False(RouteManager.KeepsOwnPath(24, true));
         Assert.False(RouteManager.KeepsOwnPath(1, true));
+    }
+
+    [Fact]
+    public void ABypassLeavesThroughTheGatewayTowardTheServer()
+    {
+        var asked = false;
+
+        var gateway = RouteApplier.BypassGateway(IPAddress.Parse("10.0.0.1"), () =>
+        {
+            asked = true;
+            return IPAddress.Parse("192.168.1.1");
+        });
+
+        Assert.Equal(IPAddress.Parse("10.0.0.1"), gateway);
+        Assert.False(asked);
+    }
+
+    [Fact]
+    public void ABypassBesideAServerOnAnOwnNetworkLeavesThroughTheGatewayOfItsAdapter()
+    {
+        Assert.Equal(IPAddress.Parse("192.168.1.1"), RouteApplier.BypassGateway(null, () => IPAddress.Parse("192.168.1.1")));
+    }
+
+    [Fact]
+    public void ABypassStaysOnLinkWhenTheAdapterOfTheServerHasNoGateway()
+    {
+        Assert.Null(RouteApplier.BypassGateway(null, () => null));
     }
 
     [Fact]

@@ -2634,8 +2634,29 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 : new IpcAck(true, $"set {key}");
         }
 
+        if (await AppliedAsync(key, ct).ConfigureAwait(false) is { } applied)
+        {
+            return applied;
+        }
+
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
+    }
+
+    /// <summary>
+    /// Answers a setting the machine takes at once; null for one that waits for a reconnect.
+    /// </summary>
+    protected virtual Task<IpcAck?> AppliedAsync(string key, CancellationToken ct)
+    {
+        return Task.FromResult<IpcAck?>(null);
+    }
+
+    /// <summary>
+    /// The settings as stored.
+    /// </summary>
+    protected Task<AppSettings> SettingsAsync(CancellationToken ct)
+    {
+        return settingsStore.LoadAsync(ct);
     }
 
     private async Task<IpcAck> CollectDiagnosticsAsync(CancellationToken ct)

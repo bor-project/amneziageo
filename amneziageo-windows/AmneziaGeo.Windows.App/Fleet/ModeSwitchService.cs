@@ -12,6 +12,7 @@ internal sealed class ModeSwitchService(
     IServiceProvider services,
     AgentMode mode,
     AgentControl selected,
+    FleetControl fleet,
     SettingsStore settingsStore,
     ILogger<ModeSwitchService> logger) : BackgroundService
 {
@@ -26,7 +27,7 @@ internal sealed class ModeSwitchService(
         {
             try
             {
-                await Task.Delay(_poll, stoppingToken);
+                await mode.NapAsync(_poll, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -46,15 +47,22 @@ internal sealed class ModeSwitchService(
                 mode.SoleWasUp = selected.Running;
             }
 
+            var setStands = fleet.Wanted.Count > 0;
+            mode.Leaving();
             await LowerAsync(supervisor);
-            if (!wanted && mode.SoleWasUp)
+            var soleBack = SoleComesBack(wanted, mode.SoleWasUp, setStands);
+            if (soleBack)
             {
                 logger.LogInformation("the machine goes back on '{Config}', the tunnel it stood on before the set took it over", selected.Target);
+            }
+            else if (!wanted && mode.SoleWasUp)
+            {
+                logger.LogInformation("the set was down when the flag moved, so '{Config}' is not connected until you ask", selected.Target);
             }
 
             // Each mode answers for what is up from here on: the single tunnel is put back on what it stood on
             // before the set took the machine over, and the set stands up on its own tunnels.
-            selected.SetRunning(!wanted && mode.SoleWasUp);
+            selected.SetRunning(soleBack);
 
             mode.MultiServer = wanted;
             mode.Switched = true;
@@ -62,6 +70,15 @@ internal sealed class ModeSwitchService(
         }
 
         await LowerAsync(supervisor);
+    }
+
+    /// <summary>
+    /// Whether the single tunnel goes back up as the flag moves: the flag goes off, the machine stood on that
+    /// tunnel before the set took it over, and the set still stands.
+    /// </summary>
+    internal static bool SoleComesBack(bool wanted, bool soleWasUp, bool setStands)
+    {
+        return !wanted && soleWasUp && setStands;
     }
 
     private async Task<BackgroundService> RaiseAsync(bool multiServer, CancellationToken ct)

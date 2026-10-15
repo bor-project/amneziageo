@@ -54,6 +54,7 @@ internal sealed class FleetHostedService(
 
         await SeedSelectionAsync(stoppingToken);
         await RestoreAsync(stoppingToken);
+        mode.Stood();
 
         while (!stoppingToken.IsCancellationRequested)
         {

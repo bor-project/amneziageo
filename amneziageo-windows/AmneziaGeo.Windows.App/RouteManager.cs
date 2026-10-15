@@ -394,6 +394,31 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// The gateway the adapter leads out through toward the address; null when it reaches the address on-link or not
+    /// at all.
+    /// </summary>
+    public static IPAddress? GatewayOn(IPAddress address, uint interfaceIndex)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork || interfaceIndex == 0)
+        {
+            return null;
+        }
+
+        var dest = ToSockaddr(address);
+        var best = new MIB_IPFORWARD_ROW2();
+        var source = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, interfaceIndex, IntPtr.Zero, ref dest, 0, ref best, ref source) != NoError
+            || best.InterfaceIndex != interfaceIndex
+            || best.NextHop.si_family != AfInet
+            || best.NextHop.sin_addr == 0)
+        {
+            return null;
+        }
+
+        return new IPAddress(BitConverter.GetBytes(best.NextHop.sin_addr));
+    }
+
+    /// <summary>
     /// The path the machine keeps for an address beside the tunnel; null when only a default route or an adapter of
     /// ours leads there.
     /// </summary>

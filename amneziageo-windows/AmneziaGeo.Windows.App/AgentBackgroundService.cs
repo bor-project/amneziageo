@@ -14,10 +14,20 @@ internal sealed class AgentBackgroundService(
     SettingsStore settingsStore,
     NetworkReconciler reconciler,
     ActiveTunnelScope activeScope,
+    AgentMode mode,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
     private IStateStore store => activeScope.Store;
     private ConfigRepository configRepo => activeScope.ConfigRepo;
+
+    /// <summary>
+    /// Whether the selected config is dialed as the supervisor starts: on a start of the agent with 'stay
+    /// connected after a restart' on, not on a move of the several-servers flag.
+    /// </summary>
+    internal static bool DialsOnStart(bool surviveReboot, bool switched)
+    {
+        return surviveReboot && !switched;
+    }
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -69,7 +79,7 @@ internal sealed class AgentBackgroundService(
             // Survive-reboot: dial the selected config on start; the supervisor's retry engine waits out a
             // missing network (backoff + a NetworkWatcher wake) until the host answers or rejects the config.
             var settings = await settingsStore.LoadAsync(stoppingToken);
-            if (settings.SurviveReboot)
+            if (DialsOnStart(settings.SurviveReboot, mode.Switched))
             {
                 logger.LogInformation("'stay connected after a restart' is on, so configuration '{Config}' is being connected without waiting for you", config);
                 control.SetRunning(true);
@@ -85,6 +95,7 @@ internal sealed class AgentBackgroundService(
             logger.LogInformation("the background service is up, but no configuration is selected; nothing will connect until you pick one");
         }
 
+        mode.Stood();
         await runner.RunAsync(config, stoppingToken);
         logger.LogInformation("the background service is stopping; no tunnel is kept up while it is down");
     }

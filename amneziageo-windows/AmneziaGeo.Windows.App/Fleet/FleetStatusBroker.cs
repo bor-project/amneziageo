@@ -123,6 +123,9 @@ internal sealed class FleetStatusBroker(
     private static readonly TimeSpan SettleWait = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan SettleStep = TimeSpan.FromMilliseconds(400);
 
+    // How long the answer to the several-servers flag waits for the machine to change over.
+    private static readonly TimeSpan ChangeOverWait = TimeSpan.FromSeconds(15);
+
     /// <inheritdoc/>
     protected override async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
     {
@@ -200,6 +203,22 @@ internal sealed class FleetStatusBroker(
         {
             log.LogInformation("rules gone from the tunnel buckets of list {List} took their addresses with them", listId);
         }
+    }
+
+    /// <inheritdoc/>
+    protected override async Task<IpcAck?> AppliedAsync(string key, CancellationToken ct)
+    {
+        if (key != SettingKeys.MultiServer)
+        {
+            return null;
+        }
+
+        var wanted = (await SettingsAsync(ct).ConfigureAwait(false)).MultiServer;
+        var state = wanted ? "on" : "off";
+        log.LogInformation("set setting {Key} = {Value}", key, state);
+        return await mode.SettleAsync(wanted, ChangeOverWait, ct).ConfigureAwait(false)
+            ? new IpcAck(true, $"several servers is {state}")
+            : new IpcAck(true, $"set {key} = {state} (the machine is still changing over)");
     }
 
     // Whether the running set stands on the caller's library.

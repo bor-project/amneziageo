@@ -70,7 +70,8 @@ internal sealed class RouteApplier(
 
     /// <summary>
     /// Adds a host route out the physical path: the machine's own path to the address when it has one, on-link through
-    /// the adapter of a connected network the address is on, through the gateway otherwise.
+    /// the adapter of a connected network the address is on, through the gateway of the adapter toward the server
+    /// otherwise.
     /// </summary>
     public bool TryAddRoute(IPAddress address, out uint interfaceIndex)
     {
@@ -94,7 +95,8 @@ internal sealed class RouteApplier(
             return false;
         }
 
-        return Routed(address, routes.AddDirectHost(address, hop.Gateway, interfaceIndex));
+        var gateway = BypassGateway(hop.Gateway, () => RouteManager.GatewayOn(address, hop.InterfaceIndex));
+        return Routed(address, routes.AddDirectHost(address, gateway, interfaceIndex));
     }
 
     // Aborts the attempts to the address that set out through the tunnel before its route existed.
@@ -221,6 +223,15 @@ internal sealed class RouteApplier(
         }
 
         firewall.DeleteHostFilters(filters, generation);
+    }
+
+    /// <summary>
+    /// Gateway of a route out the physical path: the hop toward the server, or, for a server on a network of this
+    /// machine, the gateway its adapter leads out through.
+    /// </summary>
+    internal static IPAddress? BypassGateway(IPAddress? hop, Func<IPAddress?> adapterGateway)
+    {
+        return hop ?? adapterGateway();
     }
 
     private Hop ResolveHop()

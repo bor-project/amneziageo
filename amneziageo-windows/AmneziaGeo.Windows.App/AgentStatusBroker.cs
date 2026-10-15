@@ -395,7 +395,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         await configRepo.AddFromTextAsync(args[0], args[1], ct);
-        await EnsureDefaultTargetAsync(args[0], ct);
+        await SelectImportedAsync(args[0], ct).ConfigureAwait(false);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigImported", args[0]));
     }
@@ -1096,21 +1096,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return clean.Length == 0 ? "config" : clean;
     }
 
-    // Selects the config when this user has none, so a first import is ready to dial; idempotent.
-    private async Task EnsureDefaultTargetAsync(string name, CancellationToken ct)
+    // Selects an imported config as the connection target, as picking it in the list does.
+    private async Task SelectImportedAsync(string name, CancellationToken ct)
     {
-        if (!string.IsNullOrEmpty(await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct)))
-        {
-            return;
-        }
-
-        await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
+        var previous = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct).ConfigureAwait(false);
+        await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct).ConfigureAwait(false);
+        Journal(SwitchLog.Config(previous, name));
         if (!control.Running || activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid))
         {
             control.SetTarget(name);
         }
 
-        logger.LogInformation("auto-selected configuration '{Config}' as connection target (none was set)", name);
+        logger.LogInformation("selected imported configuration '{Config}'; a running tunnel keeps its own until the next connect", name);
     }
 
     private async Task<IpcAck> SetGeoAsync(IReadOnlyList<string> args, CancellationToken ct)

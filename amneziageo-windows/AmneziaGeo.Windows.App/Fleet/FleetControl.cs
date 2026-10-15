@@ -203,7 +203,7 @@ internal sealed class FleetControl(FleetLive live) : TunnelDutyRoster
     /// <inheritdoc/>
     public override bool ServerAskedDown(string name)
     {
-        TakeAllDown();
+        Remove(name);
         return true;
     }
 

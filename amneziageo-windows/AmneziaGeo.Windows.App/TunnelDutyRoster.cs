@@ -19,8 +19,8 @@ internal class TunnelDutyRoster
     }
 
     /// <summary>
-    /// Takes down what the machine stands on when the server of the named tunnel asks for it; false where the
-    /// tunnel is the only one and its own supervisor takes it down.
+    /// Takes the named tunnel down when its server asks for it; false where the tunnel is the only one and its own
+    /// supervisor takes it down.
     /// </summary>
     public virtual bool ServerAskedDown(string name)
     {

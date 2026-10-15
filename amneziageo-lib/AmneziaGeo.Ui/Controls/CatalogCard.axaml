@@ -110,7 +110,7 @@
                             IsVisible="{Binding $parent[controls:CatalogCard].Extras, Converter={x:Static ObjectConverters.IsNotNull}}" />
             <controls:CardTags x:Name="TagsPart" Grid.Column="1" Margin="0,0,8,0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <!-- Шестерёнка встаёт под кнопку подключения: поле повторяет её ширину. -->
-            <Panel Grid.Column="2" Width="64">
+            <Panel Grid.Column="2" Width="64" VerticalAlignment="Top">
               <Button x:Name="SettingsPart" Classes="methodpick cardgear" HorizontalAlignment="Center"
                       ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                       Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">

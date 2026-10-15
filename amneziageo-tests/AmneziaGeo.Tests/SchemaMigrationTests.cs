@@ -72,7 +72,7 @@ public sealed class SchemaMigrationTests
     }
 
     [Fact]
-    public async Task InitializeAsync_OnANewDatabase_AddsNoLeakGuardColumn()
+    public async Task InitializeAsync_OnANewDatabase_AddsTheHoldAndNoLeakGuardColumn()
     {
         var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-plain-{Guid.NewGuid():N}.db");
         try
@@ -80,6 +80,7 @@ public sealed class SchemaMigrationTests
             await new SqliteStateStore(path).InitializeAsync();
 
             Assert.DoesNotContain("leak_guard", await ColumnsAsync(path, "config_transport"));
+            Assert.Contains("hold_traffic", await ColumnsAsync(path, "config_transport"));
         }
         finally
         {
@@ -104,6 +105,26 @@ public sealed class SchemaMigrationTests
             Assert.True(office?.UseWebSocket);
             Assert.Equal(1380, office?.Mtu);
             Assert.NotNull(await store.GetConfigTransportAsync("home"));
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_OnAStoreThatTurnedTheLeakGuardOff_HoldsTheTraffic()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-hold-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteGuardedTransportAsync(path, "office", 0);
+
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+
+            Assert.Contains("hold_traffic", await ColumnsAsync(path, "config_transport"));
+            Assert.True((await store.GetConfigTransportAsync("office"))?.HoldTraffic);
         }
         finally
         {
@@ -249,8 +270,8 @@ public sealed class SchemaMigrationTests
         ClearPool(path);
     }
 
-    // A config_transport that still carries the switch of the leak guard, with one row that has it on.
-    private static async Task WriteGuardedTransportAsync(string path, string name)
+    // A config_transport that still carries the switch of the leak guard, with one row that has it as given.
+    private static async Task WriteGuardedTransportAsync(string path, string name, int guard = 1)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
         await using (connection.ConfigureAwait(false))
@@ -270,10 +291,11 @@ public sealed class SchemaMigrationTests
                         leak_guard INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
-                    INSERT INTO config_transport (name, leak_guard, updated_at) VALUES ($name, 1, '2026-01-01T00:00:00Z');
+                    INSERT INTO config_transport (name, leak_guard, updated_at) VALUES ($name, $guard, '2026-01-01T00:00:00Z');
                     PRAGMA user_version = 1;
                     """;
                 command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$guard", guard);
                 await command.ExecuteNonQueryAsync();
             }
         }

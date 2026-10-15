@@ -177,23 +177,41 @@ public sealed class ConfigCommandsTests : IDisposable
     }
 
     [Fact]
-    public void TheHelp_NamesNoGuardCommand()
+    public void TheHelp_NamesTheHoldCommandAndNoGuardCommand()
     {
         var usage = CliRunner.Usage(new Host());
 
+        Assert.Contains("config hold <name> on|off", usage, StringComparison.Ordinal);
         Assert.DoesNotContain("config guard", usage, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task TheTable_HasNoGuardColumn()
+    public async Task TheTable_ShowsTheHoldOfEveryConfiguration()
     {
-        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+        var link = new Link([
+            new ConfigEntry("held", "10.9.1.1:51821", false, "idle", []),
+            new ConfigEntry("loose", "10.9.1.1:51821", false, "idle", [], HoldTraffic: false),
+        ]);
 
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "SIGNAL", "STATE"], Cells(lines[0]));
-        Assert.Equal(9, Cells(lines[1]).Length);
+        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], Cells(lines[0]));
+        Assert.Equal("on", Cells(lines[1])[8]);
+        Assert.Equal("off", Cells(lines[2])[8]);
+    }
+
+    [Fact]
+    public async Task ConfigHold_SendsTheSwitchInACommandOfItsOwn()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["hold", "office", "off"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["hold", "office", "maybe"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["hold", "office"]));
+
+        Assert.Equal([IpcContract.OpSetHoldTraffic], link.Sent);
+        Assert.Equal(["office", "off"], link.Args[0]);
     }
 
     [Fact]
@@ -207,11 +225,24 @@ public sealed class ConfigCommandsTests : IDisposable
     }
 
     [Fact]
-    public void TheStatus_HasNoLeakGuardRow()
+    public void TheStatus_NamesTheHoldInARowOfItsOwn()
     {
         StatusCommands.Print(new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]).Snapshot);
 
+        Assert.Contains("hold traffic", _console.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("leak guard", _console.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheStatus_NamesTheHoldOfTheSelectedConfigurationOrADash()
+    {
+        StatusCommands.Print(new StatusSnapshot("1.0.0", "loose", [new ConfigEntry("loose", "10.9.1.1:51821", false, "idle", [], HoldTraffic: false)]));
+        StatusCommands.Print(new StatusSnapshot("1.0.0", null, [new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]));
+
+        var rows = _console.ToString().Split('\n').Where(line => line.StartsWith("hold traffic", StringComparison.Ordinal)).ToList();
+        Assert.Equal(2, rows.Count);
+        Assert.EndsWith("off", rows[0].TrimEnd(), StringComparison.Ordinal);
+        Assert.EndsWith("-", rows[1].TrimEnd(), StringComparison.Ordinal);
     }
 
     [Fact]

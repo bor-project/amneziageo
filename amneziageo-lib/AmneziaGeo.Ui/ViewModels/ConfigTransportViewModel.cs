@@ -34,6 +34,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseAllowInbound;
     private bool _baseUseRouting;
     private bool _baseAllowSignal;
+    private bool _baseHoldTraffic;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WebSocketOn))]
@@ -120,6 +121,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _allowSignal = true;
 
+    [ObservableProperty]
+    private bool _holdTraffic = true;
+
     // Whether the server of the configuration leaves the choice about its signal to disconnect to the device.
     [ObservableProperty]
     private bool _signalOffered;
@@ -173,7 +177,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false, bool holdTraffic = true)
     {
         _connection = connection;
         ConfigName = name;
@@ -188,6 +192,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _useRouting = useRouting;
         _allowSignal = allowSignal;
         _signalOffered = signalOffered;
+        _holdTraffic = holdTraffic;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
@@ -310,6 +315,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnHoldTrafficChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -339,7 +350,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || UseRouter != _baseUseRouter
             || AllowInbound != _baseAllowInbound
             || UseRouting != _baseUseRouting
-            || AllowSignal != _baseAllowSignal;
+            || AllowSignal != _baseAllowSignal
+            || HoldTraffic != _baseHoldTraffic;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -364,6 +376,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseAllowInbound = AllowInbound;
         _baseUseRouting = UseRouting;
         _baseAllowSignal = AllowSignal;
+        _baseHoldTraffic = HoldTraffic;
         if (IsDirty)
         {
             IsDirty = false;
@@ -391,6 +404,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             AllowInbound = _baseAllowInbound;
             UseRouting = _baseUseRouting;
             AllowSignal = _baseAllowSignal;
+            HoldTraffic = _baseHoldTraffic;
             StatusMessage = string.Empty;
         }
         finally
@@ -520,6 +534,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             if (ack.Ok && AllowSignal != _baseAllowSignal)
             {
                 ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSignal, [ConfigName, AllowSignal ? "on" : "off"]));
+            }
+
+            // The hold of the traffic goes in a command of its own once it differs from the stored one.
+            if (ack.Ok && HoldTraffic != _baseHoldTraffic)
+            {
+                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetHoldTraffic, [ConfigName, HoldTraffic ? "on" : "off"]));
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).

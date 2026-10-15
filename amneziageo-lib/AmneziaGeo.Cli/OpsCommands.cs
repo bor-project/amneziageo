@@ -26,6 +26,7 @@ internal static class OpsCommands
         [IpcContract.OpSetConfigExclusions] = "config exclusions",
         [IpcContract.OpSetWebSocket] = "config websocket",
         [IpcContract.OpSetSignal] = "config signal",
+        [IpcContract.OpSetHoldTraffic] = "config hold",
         [IpcContract.OpSetGeo] = "config geo",
         [IpcContract.OpAssignRouting] = "routing use",
         [IpcContract.OpSaveRoutingList] = "routing create / set / add",

@@ -127,6 +127,8 @@ public sealed record StatusSnapshot(
     string HotspotPassword = "",
     // Band asked for: auto, 2.4, or 5.
     string HotspotBand = HotspotBands.Auto,
+    // Whether the access point keeps its name out of the beacon.
+    bool HotspotHidden = false,
     // Band the access point took; differs from the one asked for when the adapter already holds a channel.
     string HotspotBandActual = "",
     // Devices on the access point right now.

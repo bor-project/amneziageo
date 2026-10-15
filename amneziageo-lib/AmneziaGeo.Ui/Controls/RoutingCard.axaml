@@ -72,7 +72,7 @@
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <controls:CardTags x:Name="TagsPart" Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <!-- Шестерёнка встаёт под круг применения: поле повторяет его ширину. -->
-            <Panel Grid.Column="1" Width="42">
+            <Panel Grid.Column="1" Width="42" VerticalAlignment="Top">
               <Button x:Name="SettingsPart" Classes="methodpick cardgear" HorizontalAlignment="Center"
                       ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                       Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">

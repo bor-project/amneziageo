@@ -121,6 +121,11 @@
                                IsChecked="{Binding UseRouting, Mode=TwoWay}"
                                HorizontalAlignment="Stretch" />
 
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
+    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_HoldTrafficTitle}" Description="{l:Tr Main_HoldTrafficHint}"
+                               IsChecked="{Binding HoldTraffic, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
     <!-- Приём входящих по адресу этой машины в туннеле. -->
     <StackPanel Spacing="14" IsVisible="{Binding InboundAvailable}">
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

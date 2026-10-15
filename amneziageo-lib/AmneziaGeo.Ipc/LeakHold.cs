@@ -1,24 +1,47 @@
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
-/// Whether a tunnel is taken down by the user alone: a session has stood since the user last took the tunnel down.
-/// Such a tunnel is kept standing while it carries nothing, so what the rules send through it does not leave
-/// directly.
+/// Whether a tunnel is taken down by the user alone: its configuration holds the traffic and a session has stood
+/// since the user last took the tunnel down. Such a tunnel is kept standing while it carries nothing, so what the
+/// rules send through it does not leave directly.
 /// </summary>
 public sealed class LeakHold
 {
+    private volatile bool _guard = true;
     private volatile bool _stood;
     private volatile bool _down;
 
     /// <summary>
+    /// Whether the configuration holds the traffic.
+    /// </summary>
+    public bool Guard => _guard;
+
+    /// <summary>
+    /// Whether a session has stood since the user last took the tunnel down.
+    /// </summary>
+    public bool Stood => _stood;
+
+    /// <summary>
     /// Whether the tunnel is taken down by the user alone.
     /// </summary>
-    public bool Active => _stood;
+    public bool Active => _guard && _stood;
 
     /// <summary>
     /// Whether the tunnel stands held while it carries nothing.
     /// </summary>
     public bool Down => _down;
+
+    /// <summary>
+    /// Takes the hold of the traffic of the configuration.
+    /// </summary>
+    public void Set(bool guard)
+    {
+        _guard = guard;
+        if (!guard)
+        {
+            _down = false;
+        }
+    }
 
     /// <summary>
     /// Notes a session being raised anew: nothing stands held any more.

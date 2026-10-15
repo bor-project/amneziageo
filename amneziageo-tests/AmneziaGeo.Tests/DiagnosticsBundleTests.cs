@@ -188,7 +188,7 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheSummary_HasNoLeakGuardRow()
+    public async Task TheSummary_NamesTheHoldOfTheTraffic()
     {
         await _store.SaveConfigAsync("srv", "[Interface]\nPrivateKey = topSecretKey\n\n[Peer]\nPublicKey = serverKey\nEndpoint = 10.0.0.1:51820\n");
         await _store.SetConfigTransportAsync(new ConfigTransport("srv", true));
@@ -201,6 +201,7 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
         var summary = await reader.ReadToEndAsync();
 
         Assert.Contains("inbound:    off", summary, StringComparison.Ordinal);
+        Assert.Contains("hold:       on", summary, StringComparison.Ordinal);
         Assert.DoesNotContain("leak guard", summary, StringComparison.Ordinal);
     }
 

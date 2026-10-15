@@ -32,7 +32,7 @@ Country rules are built from address ranges and applied at connect time.
 - **Split tunnel** - traffic goes direct by default, and only connections that match your rules take the VPN.
 - **Flexible routing rules** - by domain, site category, country, address range or application. Rules are grouped into lists, and lists attach to VPN configurations.
 - **Access to a remote network** - subnets behind the server are reachable through the full tunnel or through an address-range rule, and the DNS from the configuration resolves internal names.
-- **Application routing (experimental)** - all traffic of a chosen program and its child processes takes the tunnel, whatever addresses it reaches for. The controls are hidden by default; see [configuration](usage.md#application-routing).
+- **Application routing (experimental)** - all traffic of a chosen program and its child processes takes the tunnel, whatever addresses it reaches for. See [configuration](usage.md#application-routing).
 - **All UDP through the tunnel** - for calls, voice chats and games that may learn server addresses without DNS.
 - **WebSocket over TCP** - connects on networks where UDP is blocked. It runs on any port and looks like ordinary HTTPS traffic from the outside.
 - **Proxy for the local network** - built-in SOCKS5 and HTTP proxies let TVs, phones, consoles and other devices use the tunnel without a VPN client. Ports, accounts or password-free access are configurable, and connected clients are listed.

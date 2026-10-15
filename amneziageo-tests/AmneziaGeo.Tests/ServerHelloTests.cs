@@ -48,5 +48,31 @@ public sealed class ServerHelloTests
         Assert.Equal(1, panel.Served);
     }
 
+    [Fact]
+    public async Task APortThatRefusesTheConnection_IsHeardAsAServerOfAnotherKind()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        var reply = await ServerHello.AskAsync(new ServiceTarget("127.0.0.1", port, Key(), Key()), CancellationToken.None);
+
+        Assert.True(reply.Heard);
+        Assert.Null(reply.Offer);
+    }
+
+    [Fact]
+    public async Task AnErrorOfTheServer_TellsNothing()
+    {
+        using var panel = new TlsPanel(status: 500);
+
+        var reply = await ServerHello.AskAsync(new ServiceTarget("localhost", panel.Port, Key(), Key()), CancellationToken.None);
+
+        Assert.False(reply.Heard);
+        Assert.Null(reply.Offer);
+        Assert.Equal(1, panel.Served);
+    }
+
     private static string Key() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 }

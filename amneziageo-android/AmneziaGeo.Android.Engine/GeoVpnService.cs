@@ -150,6 +150,11 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraSignalFrom = "signal-from";
 
+    /// <summary>
+    /// The addresses of the bases of rules and updates, knocked at outside the tunnel once it stops carrying.
+    /// </summary>
+    public const string ExtraBases = "bases";
+
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
@@ -210,6 +215,12 @@ public sealed class GeoVpnService : VpnService
     private ConnectivityManager? _connectivity;
     private InetSocketAddress? _proxyEnd;
     private WsCarrier? _carrier;
+
+    // Where the knocks go once the tunnel stops carrying: the server or front the engine dials and the port to knock
+    // at, and the bases of rules and updates the head named with the addresses they resolved to while it carried.
+    private (System.Net.IPAddress? Server, int Port) _reach;
+    private string[] _baseUrls = [];
+    private IReadOnlyList<System.Net.IPEndPoint> _bases = [];
     private ProxyRelay? _relay;
     private SessionReport? _routed;
     private LocalProxyServer? _proxy;
@@ -408,6 +419,7 @@ public sealed class GeoVpnService : VpnService
         }
         _notice = request.Notice ?? NoticeWords.Plain;
         _noticeName = request.Name;
+        _baseUrls = request.Bases ?? [];
         _stageSince = Java.Lang.JavaSystem.CurrentTimeMillis();
         TunnelNotices.Cancel(this, TunnelNotices.StoppedId);
         if (!StartForegroundNotification())
@@ -928,6 +940,10 @@ public sealed class GeoVpnService : VpnService
                 _carrier = carrier;
                 resolved = WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
             }
+            else
+            {
+                _reach = (DialledAddress(underlay), ConfigServices.Target(config)?.Port ?? 0);
+            }
 
             var uapi = WgQuickToUapi.Convert(resolved);
             if (uapi is null)
@@ -1081,6 +1097,7 @@ public sealed class GeoVpnService : VpnService
             _underKey = AndroidNetworks.Read(this).UnderKey;
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), name);
             _hold.Raised();
+            _ = KeepBasesAsync();
             KeepMarks();
             Publish(VpnStage.Connected, name);
             PublishLink(handshake, LinkReading.Empty);
@@ -2599,6 +2616,7 @@ public sealed class GeoVpnService : VpnService
         var lastTx = -1L;
         var gaveUp = false;
         var echoed = default(string);
+        var causeTold = false;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -2641,11 +2659,24 @@ public sealed class GeoVpnService : VpnService
             }
 
             // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
-            if (seen > 0
-                && _recovery.Sample(moved, System.Environment.TickCount64) is { } step
-                && Repair(handle, step))
+            var step = seen > 0 ? _recovery.Sample(moved, System.Environment.TickCount64) : null;
+            if (!_recovery.Repairing)
             {
-                return;
+                causeTold = false;
+            }
+
+            if (step is { } asked)
+            {
+                if (!causeTold)
+                {
+                    causeTold = true;
+                    _ = Task.Run(() => TellCauseAsync(seen));
+                }
+
+                if (Repair(handle, asked))
+                {
+                    return;
+                }
             }
 
             if (_recovery.GivenUp && !gaveUp)
@@ -2708,6 +2739,53 @@ public sealed class GeoVpnService : VpnService
         }
 
         return false;
+    }
+
+    // Keeps the addresses of the bases of rules and updates while the tunnel carries, to knock at them once it stops.
+    private async Task KeepBasesAsync()
+    {
+        try
+        {
+            _bases = await LinkCause.ResolveAsync(_baseUrls, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Report($"the addresses of the bases of rules and updates were not kept: {ex.Message}");
+        }
+    }
+
+    // Writes to the journal where a tunnel that stopped carrying is broken, from knocks outside it.
+    private async Task TellCauseAsync(long seen)
+    {
+        try
+        {
+            var (server, port) = _reach;
+            var options = new LinkCauseOptions(
+                AndroidNetworks.Read(this).Under != NetworkSnapshot.NoNetwork,
+                LocalGateway.Find(),
+                server,
+                port,
+                _bases,
+                seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : -1,
+                socket => Protect(socket.Handle.ToInt32()));
+            var report = await LinkCause.FindAsync(options, CancellationToken.None).ConfigureAwait(false);
+            var text = $"the tunnel carries nothing: {report.Text} ({report.Cause})";
+            Report(text);
+            Note("tunnel", text);
+        }
+        catch (Exception ex)
+        {
+            Report($"where the tunnel is broken was not found: {ex.Message}");
+        }
+    }
+
+    // The address the engine dials outside the tunnel, as the configuration names it once resolved.
+    private static System.Net.IPAddress? DialledAddress(string config)
+    {
+        var endpoint = WgConfigEditor.GetEndpoint(config) ?? string.Empty;
+        var colon = endpoint.LastIndexOf(':');
+
+        return colon > 0 && System.Net.IPAddress.TryParse(endpoint[..colon].Trim('[', ']'), out var address) ? address : null;
     }
 
     // Writes the marks of the session where the head reads them.
@@ -3137,6 +3215,7 @@ public sealed class GeoVpnService : VpnService
 
         var carrier = WsCarrier.Start(front, parsed, targetPort, front.Offered ? ServiceToken.HeaderOf(config) : null, socket => Protect(socket.Handle.ToInt32()),
             (message, ex) => Report(ex is null ? message : $"{message}: {ex.Message}"));
+        _reach = (parsed, front.Port);
         Report($"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
         return carrier;
     }
@@ -3349,7 +3428,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetBooleanExtra(ExtraWsOffered, false),
             Words(intent.GetStringExtra(ExtraNotice)),
             intent.GetIntExtra(ExtraSignalPort, 0),
-            intent.GetStringArrayExtra(ExtraSignalFrom));
+            intent.GetStringArrayExtra(ExtraSignalFrom),
+            intent.GetStringArrayExtra(ExtraBases));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

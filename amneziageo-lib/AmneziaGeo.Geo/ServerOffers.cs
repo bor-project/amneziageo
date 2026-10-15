@@ -18,6 +18,22 @@ public sealed class ServerOffers
     /// </summary>
     public const int SilentWaits = 3;
 
+    /// <summary>
+    /// How long the answer of a server of ours stands before it is asked again behind a connect.
+    /// </summary>
+    public static readonly TimeSpan FreshFor = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// How long a server of ours is let be after a question that got no answer of ours; the pause doubles with every
+    /// such question in a row, up to <see cref="FreshFor"/>.
+    /// </summary>
+    public static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How many answers of another kind in a row take a server of ours back where no refresh asked.
+    /// </summary>
+    public const int ForeignAnswers = 3;
+
     // Two configs of one server answer at once: one of them adds what it hands out, the other finds it held.
     private static readonly SemaphoreSlim _listing = new(1, 1);
 
@@ -63,7 +79,7 @@ public sealed class ServerOffers
     /// as it stands. Returns the offer that holds afterwards.
     /// </summary>
     public async Task<ServerOffer> AskAsync(string config, string? text, CancellationToken ct) =>
-        (await AskBindingAsync(config, text, false, ct).ConfigureAwait(false)).Offer;
+        (await AskBindingAsync(config, text, false, false, ct).ConfigureAwait(false)).Offer;
 
     /// <summary>
     /// Asks the server of a config now and returns the websocket front that holds for its tunnel afterwards: null
@@ -78,26 +94,27 @@ public sealed class ServerOffers
     }
 
     /// <summary>
-    /// Asks the server of a config before its tunnel comes up: at once where it was ours, never asked or never
-    /// answered yet, in the background where it answered as a server of another kind or kept silent through
-    /// <see cref="SilentWaits"/> connects, so such a server does not hold the connect back.
+    /// Asks the server of a config before its tunnel comes up where it was never asked under the text of the config
+    /// or never answered yet; otherwise takes the kept answer at once and asks behind the connect, so the connect does
+    /// not wait. A server that kept silent through <see cref="SilentWaits"/> connects is asked behind the connect too.
     /// </summary>
     public async Task<ServerOffer> BeforeConnectAsync(string config, string? text, Func<string, Task>? changed, CancellationToken ct)
     {
         var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
-        if (kept is { Offer.Ours: false } && (kept.Heard || kept.Waits >= SilentWaits))
+        if (kept is not null && (kept.Heard || kept.Waits >= SilentWaits))
         {
             Warm([(config, text)], changed);
 
             return kept.Offer;
         }
 
-        return (await AskBindingAsync(config, text, true, ct).ConfigureAwait(false)).Offer;
+        return (await AskBindingAsync(config, text, true, false, ct).ConfigureAwait(false)).Offer;
     }
 
     /// <summary>
-    /// Asks the servers of the configs in the background, one question per config at a time, and names every config
-    /// whose offer settles the tunnel otherwise now.
+    /// Asks the servers of the configs in the background, one question per config at a time, a server of ours only
+    /// when its answer is <see cref="FreshFor"/> old or the pause after a question it did not answer ran out, and
+    /// names every config whose offer settles the tunnel otherwise now.
     /// </summary>
     public void Warm(IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed = null)
     {
@@ -141,14 +158,14 @@ public sealed class ServerOffers
     }
 
     /// <summary>
-    /// Asks the servers of the configs at once and waits for every answer, naming every config whose offer settles
-    /// the tunnel otherwise now.
+    /// Asks the servers of the configs at once, as a refresh does, and waits for every answer, naming every config
+    /// whose offer settles the tunnel otherwise now; an answer of another kind takes a server of ours back at once.
     /// </summary>
     public async Task AskEachAsync(IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(targets);
 
-        await Task.WhenAll(targets.Select(target => AskOneAsync(target.Config, target.Text, changed, ct))).ConfigureAwait(false);
+        await Task.WhenAll(targets.Select(target => AskOneAsync(target.Config, target.Text, changed, true, ct))).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -190,8 +207,9 @@ public sealed class ServerOffers
     public static string Download(ServerOffer? offer, bool inside) => offer?.Speed(inside)?.Down ?? string.Empty;
 
     // Asks the server of a config, keeps what it said and binds the config to the subscription it names. Services
-    // that never answered are kept as silent, with the connects that waited for them counted.
-    private async Task<(ServerOffer Offer, bool Bound)> AskBindingAsync(string config, string? text, bool waited, CancellationToken ct)
+    // that never answered are kept as silent, with the connects that waited for them counted; a question that gets
+    // no answer, or an answer of another kind short of a series or a refresh, leaves an answer kept before.
+    private async Task<(ServerOffer Offer, bool Bound)> AskBindingAsync(string config, string? text, bool waited, bool refresh, CancellationToken ct)
     {
         if (ConfigServices.Target(text) is not { } point)
         {
@@ -201,10 +219,17 @@ public sealed class ServerOffers
         var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var reply = await _ask(point with { TakesSignal = transport?.AllowSignal ?? true }, ct).ConfigureAwait(false);
+        var now = _time.GetUtcNow();
         if (!reply.Heard)
         {
             if (kept is { Heard: true })
             {
+                await ServerOfferStore.KeepAsync(_store, config, point, kept with { Misses = kept.Misses + 1, Tried = now }, ct).ConfigureAwait(false);
+                if (kept.Misses == 0)
+                {
+                    _note?.Invoke($"{config}: the services at {point} gave no answer; what they offered stays, and they are asked again after a pause", null);
+                }
+
                 return (kept.Offer, false);
             }
 
@@ -219,7 +244,19 @@ public sealed class ServerOffers
         }
 
         var offer = reply.Offer ?? ServerOffer.None;
-        await ServerOfferStore.WriteAsync(_store, config, point, offer, _time.GetUtcNow(), ct).ConfigureAwait(false);
+        if (!offer.Ours && kept is { Offer.Ours: true } && !refresh && kept.Foreign + 1 < ForeignAnswers)
+        {
+            await ServerOfferStore.KeepAsync(_store, config, point, kept with { Misses = kept.Misses + 1, Foreign = kept.Foreign + 1, Tried = now }, ct)
+                .ConfigureAwait(false);
+            if (kept.Foreign == 0)
+            {
+                _note?.Invoke($"{config}: the services at {point} answered as a server of another kind; it stays a server of ours until {ForeignAnswers} such answers in a row", null);
+            }
+
+            return (kept.Offer, false);
+        }
+
+        await ServerOfferStore.WriteAsync(_store, config, point, offer, now, ct).ConfigureAwait(false);
         if (offer.Ours != (kept?.Offer.Ours ?? false))
         {
             _note?.Invoke(offer.Ours
@@ -309,12 +346,27 @@ public sealed class ServerOffers
         }
     }
 
+    // Whether a server of ours is asked again: a day after its answer, or after a pause that doubles with every
+    // question in a row that got no answer of ours.
+    private bool Due(KeptOffer kept)
+    {
+        var now = _time.GetUtcNow();
+        if (kept.Misses == 0)
+        {
+            return now - kept.Asked >= FreshFor;
+        }
+
+        var pause = TimeSpan.FromTicks(Math.Min(FreshFor.Ticks, RetryAfter.Ticks << Math.Min(kept.Misses - 1, 16)));
+
+        return now - kept.Tried >= pause;
+    }
+
     // Asks one server in the background and lets the next question to it through.
     private async Task WarmOneAsync(string config, string? text, Func<string, Task>? changed)
     {
         try
         {
-            await AskOneAsync(config, text, changed, CancellationToken.None).ConfigureAwait(false);
+            await AskOneAsync(config, text, changed, false, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -325,13 +377,19 @@ public sealed class ServerOffers
         }
     }
 
-    // Asks one server and names the config when what it settles or the subscription it names changed.
-    private async Task AskOneAsync(string config, string? text, Func<string, Task>? changed, CancellationToken ct)
+    // Asks one server and names the config when what it settles or the subscription it names changed; a server of
+    // ours is let be behind the connects while its answer stands.
+    private async Task AskOneAsync(string config, string? text, Func<string, Task>? changed, bool refresh, CancellationToken ct)
     {
         try
         {
+            if (!refresh && await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false) is { Offer.Ours: true } kept && !Due(kept))
+            {
+                return;
+            }
+
             var before = await OfferAsync(config, text, ct).ConfigureAwait(false);
-            var (after, bound) = await AskBindingAsync(config, text, false, ct).ConfigureAwait(false);
+            var (after, bound) = await AskBindingAsync(config, text, false, refresh, ct).ConfigureAwait(false);
             if (changed is not null && (bound || !before.Settles(after)))
             {
                 await changed(config).ConfigureAwait(false);

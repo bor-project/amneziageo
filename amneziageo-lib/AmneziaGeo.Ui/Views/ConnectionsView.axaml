@@ -221,7 +221,7 @@
                     <TextBlock Text="{l:Tr General_ProxyAccounts}" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                   </StackPanel>
-                  <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
+                  <Button x:Name="AddAccount" Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
                           Command="{Binding AddProxyAccountCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                       <TextBlock Text="+" />
@@ -229,7 +229,8 @@
                     </StackPanel>
                   </Button>
                 </Grid>
-                <ItemsControl ItemsSource="{Binding ProxyAccounts}">
+                <ItemsControl ItemsSource="{Binding ProxyAccounts}"
+                              controls:RowFocus.Enabled="True" controls:RowFocus.Spare="{Binding #AddAccount}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:ProxyAccountViewModel">
                       <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">

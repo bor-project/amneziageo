@@ -491,7 +491,7 @@
     <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Для звонков, игр и видеосвязи</value>
+    <value>Звонки, игры и видеосвязь идут через туннель, даже если их адресов нет в списке</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
@@ -815,7 +815,7 @@
     <value>Трафик для адресов и приложений из этого списка будет идти напрямую, без VPN.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Трафик для адресов и приложений из этого списка будет заблокирован.</value>
+    <value>Трафик для адресов из этого списка будет заблокирован.</value>
   </data>
   <data name="Main_RoleProxyRouteHint" xml:space="preserve">
     <value>Трафик для адресов из этого списка будет идти по маршруту, выбранному у записи.</value>

@@ -13,7 +13,8 @@ namespace AmneziaGeo.Ipc;
 /// What the services of a server answered the hello.
 /// </summary>
 /// <param name="Offer">The offer of a server of ours, null when none answered.</param>
-/// <param name="Heard">Whether the services answered anything at all.</param>
+/// <param name="Heard">Whether the services told what the server is: they answered, or their port refused the
+/// connection; a timeout, a name or TLS that failed and an error of the server tell nothing.</param>
 public sealed record HelloReply(ServerOffer? Offer, bool Heard);
 
 /// <summary>
@@ -66,6 +67,11 @@ public static class ServerHello
                 var token = ServiceToken.Make(point.PrivateKey, point.ServerKey, time);
                 using var body = new StringContent(ServiceToken.Hello(token, point), Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync(Origin(point) + Path, body, ct).ConfigureAwait(false);
+                if ((int)response.StatusCode >= 500)
+                {
+                    return new HelloReply(null, false);
+                }
+
                 heard = true;
                 var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
@@ -85,7 +91,7 @@ public static class ServerHello
         }
         catch (Exception ex) when (Refused(ex))
         {
-            return new HelloReply(null, heard);
+            return new HelloReply(null, heard || Closed(ex));
         }
     }
 
@@ -142,6 +148,20 @@ public static class ServerHello
             && time.TryGetInt64(out var seconds)
                 ? seconds
                 : null;
+    }
+
+    // Tells whether the services refused the connection: a closed port tells a server of another kind.
+    private static bool Closed(Exception ex)
+    {
+        for (var inner = ex; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is SocketException { SocketErrorCode: SocketError.ConnectionRefused })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Tells whether a failure means the services answered nothing of ours.

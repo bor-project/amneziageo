@@ -491,7 +491,7 @@
     <value>Line format: time · [level] · component · message.  Levels low to high: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>For calls, games and video chat</value>
+    <value>Calls, games and video chat go through the tunnel even when their addresses are not in the list</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>All UDP through the tunnel</value>
@@ -815,7 +815,7 @@
     <value>Traffic for addresses and apps in this list will go directly, without VPN.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Traffic for addresses and apps in this list will be blocked.</value>
+    <value>Traffic for addresses in this list will be blocked.</value>
   </data>
   <data name="Main_RoleProxyRouteHint" xml:space="preserve">
     <value>Traffic for addresses in this list will go by the route picked on the entry.</value>

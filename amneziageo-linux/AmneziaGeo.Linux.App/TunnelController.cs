@@ -92,6 +92,11 @@ internal sealed class TunnelController : IDisposable
     public Func<CancellationToken, Task<WsEndpoint?>>? FrontAsker { get; set; }
 
     /// <summary>
+    /// The address the engine dials: the server, or the front of the websocket the tunnel rides.
+    /// </summary>
+    public string? EndpointAddress { get; private set; }
+
+    /// <summary>
     /// Takes the session to a tunnel without the websocket when its server offers no front any more.
     /// </summary>
     public Func<Task>? FrontGone { get; set; }
@@ -190,6 +195,8 @@ internal sealed class TunnelController : IDisposable
             // The engine takes an address and nothing else, so a name left unresolved would come back as errno -22.
             return Refused($"{named} does not resolve, so there is no address to dial");
         }
+
+        EndpointAddress = endpointIp;
 
         var split = routing.Split && routing.HasRules;
         var hasRules = routing.HasRules;
@@ -453,6 +460,7 @@ internal sealed class TunnelController : IDisposable
         try
         {
             await daemon.ConfigureAsync($"public_key={peer}\nendpoint={endpoint}", ct).ConfigureAwait(false);
+            EndpointAddress = endpointIp;
             _log.Info("tunnel", $"{_iface} now dials {endpoint}");
             if (repin)
             {

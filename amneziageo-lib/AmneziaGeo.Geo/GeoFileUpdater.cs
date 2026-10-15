@@ -37,7 +37,9 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
     public async Task<GeoFetch> FetchAsync(GeoSource source, IProgress<GeoDownload>? progress = null, CancellationToken ct = default)
     {
         var existing = await store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
-        var held = existing is not null && string.Equals(existing.SourceUrl, source.Url, StringComparison.OrdinalIgnoreCase) ? existing : null;
+        var held = existing is not null && string.Equals(existing.SourceUrl, source.Url, StringComparison.OrdinalIgnoreCase) && OnDisk(source.Name)
+            ? existing
+            : null;
         var fresh = await DownloadAsync(source.Url, held, progress, ct).ConfigureAwait(false);
         if (fresh is null)
         {
@@ -64,6 +66,14 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
         var metadata = new GeoFileMetadata(fetched.Source.Name, fetched.Source.Url, DateTimeOffset.UtcNow, sha, fetched.Count, fetched.ETag, fetched.LastModified);
         await store.SaveGeoFileAsync(metadata, ct).ConfigureAwait(false);
         return metadata;
+    }
+
+    // Whether the file of a source stands on disk.
+    private bool OnDisk(string name)
+    {
+        using var stream = files.OpenRead(name);
+
+        return stream is not null;
     }
 
     private static int CountEntries(GeoSource source, byte[] data)

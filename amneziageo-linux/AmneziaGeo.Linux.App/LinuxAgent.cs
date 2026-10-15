@@ -118,6 +118,8 @@ internal sealed class LinuxAgent : IDisposable
     private long _lastRxBytes = -1;
     private long _lastTxBytes = -1;
     private bool _gaveUpLogged;
+    private IReadOnlyList<System.Net.IPEndPoint> _bases = [];
+    private bool _causeTold;
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
     private DateTime _nextRetryUtc = DateTime.MinValue;
@@ -707,6 +709,11 @@ internal sealed class LinuxAgent : IDisposable
             await PushAsync(ct).ConfigureAwait(false);
         }
 
+        if (!_recovery.Repairing)
+        {
+            _causeTold = false;
+        }
+
         if (asked is not { } step)
         {
             if (_recovery.GivenUp && !_gaveUpLogged)
@@ -717,6 +724,12 @@ internal sealed class LinuxAgent : IDisposable
             }
 
             return false;
+        }
+
+        if (!_causeTold)
+        {
+            _causeTold = true;
+            _ = TellCauseAsync(peer);
         }
 
         if (_recovery.Stuck && _hold.Stalled())
@@ -1172,6 +1185,49 @@ internal sealed class LinuxAgent : IDisposable
         _hold.Raised();
         _recovery.Held = _hold.Active;
         _heldUnanswered = false;
+        _ = KeepBasesAsync();
+    }
+
+    // Keeps the addresses of the bases of rules and updates while the tunnel carries, to knock at them once it stops.
+    private async Task KeepBasesAsync()
+    {
+        try
+        {
+            var sources = await _store.ListGeoSourcesAsync(CancellationToken.None).ConfigureAwait(false);
+            _bases = await LinkCause.ResolveAsync([.. sources.Select(source => source.Url), LinkCause.UpdateBase], CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("agent", $"the addresses of the bases of rules and updates were not kept: {ex.Message}");
+        }
+    }
+
+    // Writes to the journal, at the level it keeps by default, where a tunnel that stopped carrying is broken, from
+    // knocks outside it.
+    private async Task TellCauseAsync(PeerCounters peer)
+    {
+        try
+        {
+            var config = _boundTarget ?? string.Empty;
+            var text = await _store.GetConfigTextAsync(config, CancellationToken.None).ConfigureAwait(false) ?? string.Empty;
+            var transport = await _store.GetConfigTransportAsync(config, CancellationToken.None).ConfigureAwait(false);
+            var carrier = Carrier(text, transport, await _offers.OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false));
+            var device = await _tunnel.PhysicalDeviceAsync(CancellationToken.None).ConfigureAwait(false);
+            var options = new LinkCauseOptions(
+                device is not null,
+                LocalGateway.Find(),
+                System.Net.IPAddress.TryParse(_tunnel.EndpointAddress, out var server) ? server : null,
+                carrier.Port > 0 ? carrier.Port : ConfigServices.Target(text)?.Port ?? 0,
+                _bases,
+                HandshakeSeconds(peer),
+                device is null ? null : PhysicalPath.Bypass(device));
+            var report = await LinkCause.FindAsync(options, CancellationToken.None).ConfigureAwait(false);
+            _log.Error("link", $"the tunnel carries nothing: {report.Text} ({report.Cause})");
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("agent", $"where the tunnel is broken was not found: {ex.Message}");
+        }
     }
 
     // Waits out the peer's first answer while the connect still holds the floor: a server that is there answers

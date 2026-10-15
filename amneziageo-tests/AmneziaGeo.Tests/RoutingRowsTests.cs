@@ -78,7 +78,7 @@ public sealed class RoutingRowsTests
         var changes = Changes(editor);
 
         editor.RuleInput = "added.example";
-        editor.AddRuleCommand.Execute(null);
+        editor.PickSuggestionCommand.Execute(editor.MatchedSuggestions[0].Token);
 
         Assert.Equal(101, editor.RuleItems.Count);
         Kept(rows, editor.RuleItems.Take(100));
@@ -128,7 +128,7 @@ public sealed class RoutingRowsTests
         var changes = Changes(editor);
 
         editor.RuleInput = "added.example";
-        editor.AddRuleCommand.Execute(null);
+        editor.PickSuggestionCommand.Execute(editor.MatchedSuggestions[0].Token);
 
         Kept(rows, editor.RuleItems);
         Assert.Empty(changes);

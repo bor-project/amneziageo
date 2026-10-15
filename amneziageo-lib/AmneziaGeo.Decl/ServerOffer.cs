@@ -583,7 +583,11 @@ public sealed class ServerOffer
 /// <param name="Asked">When the server was asked.</param>
 /// <param name="Heard">Whether the services ever answered anything at all.</param>
 /// <param name="Waits">How many connects waited in vain for services that never answered.</param>
-public sealed record KeptOffer(ServerOffer Offer, DateTimeOffset Asked, bool Heard = true, int Waits = 0);
+/// <param name="Misses">How many questions in a row since the offer was kept got no answer that kept it.</param>
+/// <param name="Foreign">How many of them in a row the services answered as a server of another kind.</param>
+/// <param name="Tried">When the last of them was asked.</param>
+public sealed record KeptOffer(
+    ServerOffer Offer, DateTimeOffset Asked, bool Heard = true, int Waits = 0, int Misses = 0, int Foreign = 0, DateTimeOffset Tried = default);
 
 /// <summary>
 /// Keeps what the servers of the configs offer in the settings of the store, one entry per config.
@@ -654,11 +658,12 @@ public static class ServerOfferStore
                 ? DateTimeOffset.FromUnixTimeSeconds(seconds)
                 : DateTimeOffset.MinValue;
             var heard = !root.TryGetProperty("heard", out var answered) || answered.ValueKind != JsonValueKind.False;
-            var waits = root.TryGetProperty("waits", out var waited) && waited.ValueKind == JsonValueKind.Number && waited.TryGetInt32(out var count)
-                ? Math.Max(count, 0)
-                : 0;
+            var waits = Count(root, "waits");
+            var tried = root.TryGetProperty("tried", out var last) && last.TryGetInt64(out var at)
+                ? DateTimeOffset.FromUnixTimeSeconds(at)
+                : DateTimeOffset.MinValue;
 
-            return new KeptOffer(offer, asked, heard, waits);
+            return new KeptOffer(offer, asked, heard, waits, Count(root, "misses"), Count(root, "foreign"), tried);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentOutOfRangeException)
         {
@@ -675,22 +680,36 @@ public static class ServerOfferStore
     /// <summary>
     /// Keeps what the services of a config offered, or that they never answered and how many connects waited for them.
     /// </summary>
-    public static Task WriteAsync(IStateStore store, string config, ServiceTarget point, ServerOffer offer, DateTimeOffset asked, bool heard, int waits, CancellationToken ct = default)
+    public static Task WriteAsync(IStateStore store, string config, ServiceTarget point, ServerOffer offer, DateTimeOffset asked, bool heard, int waits, CancellationToken ct = default) =>
+        KeepAsync(store, config, point, new KeptOffer(offer, asked, heard, waits), ct);
+
+    /// <summary>
+    /// Keeps an offer of a config with what came of the questions after it.
+    /// </summary>
+    public static Task KeepAsync(IStateStore store, string config, ServiceTarget point, KeptOffer kept, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(point);
-        ArgumentNullException.ThrowIfNull(offer);
+        ArgumentNullException.ThrowIfNull(kept);
 
+        var offer = kept.Offer;
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteString("mark", point.Mark());
-            writer.WriteNumber("asked", asked.ToUnixTimeSeconds());
-            if (!heard)
+            writer.WriteNumber("asked", kept.Asked.ToUnixTimeSeconds());
+            if (!kept.Heard)
             {
                 writer.WriteBoolean("heard", false);
-                writer.WriteNumber("waits", waits);
+                writer.WriteNumber("waits", kept.Waits);
+            }
+
+            if (kept.Misses > 0)
+            {
+                writer.WriteNumber("misses", kept.Misses);
+                writer.WriteNumber("foreign", kept.Foreign);
+                writer.WriteNumber("tried", kept.Tried.ToUnixTimeSeconds());
             }
 
             writer.WritePropertyName("offer");
@@ -736,6 +755,12 @@ public static class ServerOfferStore
 
         return store.SetSettingAsync(Key(config), string.Empty, ct);
     }
+
+    // Reads a count kept under a name, none where it is missing.
+    private static int Count(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var count)
+            ? Math.Max(count, 0)
+            : 0;
 
     private static ServerOffer Parse(JsonElement body)
     {

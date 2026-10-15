@@ -523,15 +523,19 @@ public sealed class HelloListsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task BeforeAConnect_ANewerVersionOfAListIsSeenWhenTheQuestionReturns()
+    public async Task BehindAConnect_ANewerVersionOfAListIsSeenOnceTheAnswerIsADayOld()
     {
         await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
 
-        await Asked(Lists(Item(First, "Unblock", "proxy|geosite:openai", Noon)))
+        await Asked(Lists(Item(First, "Unblock", "proxy|geosite:openai", Noon)), time: new Ahead(ServerOffers.FreshFor))
             .BeforeConnectAsync("office", Text, null, CancellationToken.None);
 
-        var summary = Assert.Single(await _store.ListRoutingListSummariesAsync());
-        Assert.True(summary.HasUpdate);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!Assert.Single(await _store.ListRoutingListSummariesAsync()).HasUpdate)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "the newer version never showed");
+            await Task.Delay(20);
+        }
     }
 
     [Fact]
@@ -581,13 +585,20 @@ public sealed class HelloListsTests : IAsyncLifetime
 
     private ServerOffers Offers(Action<IReadOnlyList<GeoSource>>? fetch = null) => Asked(Answer, fetch);
 
-    private ServerOffers Asked(string answer, Action<IReadOnlyList<GeoSource>>? fetch = null, Action? rerouted = null) =>
+    private ServerOffers Asked(string answer, Action<IReadOnlyList<GeoSource>>? fetch = null, Action? rerouted = null, TimeProvider? time = null) =>
         new(
             _store,
             ask: (_, _) => Task.FromResult(new HelloReply(ServerOffer.Parse(answer), true)),
+            time: time,
             geo: new GeoConfigurator(_store, new NoFiles()),
             fetch: fetch,
             rerouted: rerouted);
+
+    // Часы, которые идут на заданное время впереди.
+    private sealed class Ahead(TimeSpan by) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + by;
+    }
 
     private static string Lists(params string[] items) =>
         "{\"server\":\"amneziageo\",\"version\":\"1\",\"client\":\"c\",\"features\":{\"presets\":{\"lists\":[" + string.Join(',', items) + "]}}}";

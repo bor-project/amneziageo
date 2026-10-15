@@ -91,6 +91,11 @@ internal sealed class ConfigRunner(
     // packet that never arrived.
     private LinkLossProbe? _loss;
 
+    // The addresses of the bases of rules and updates, kept while the tunnel carries, and whether the journal has
+    // been told where the link broke since it last carried.
+    private IReadOnlyList<IPEndPoint> _bases = [];
+    private bool _causeTold;
+
     // The listener the server of the session takes the tunnel down through.
     private CancellationTokenSource? _signalRun;
 
@@ -267,6 +272,7 @@ internal sealed class ConfigRunner(
         _unreadable = 0;
         _recovery = new LinkRecovery(_ladder, _settings.DeadThresholdSeconds);
         _hold.Raised();
+        _ = KeepBasesAsync(ct);
         await StartLossProbeAsync(config, ct);
         await StartSignalAsync(config, ct);
 
@@ -289,9 +295,20 @@ internal sealed class ConfigRunner(
                     await SetStateAsync("connected");
                 }
 
+                if (!_recovery.Repairing)
+                {
+                    _causeTold = false;
+                }
+
                 if (asked is not { } repair)
                 {
                     continue;
+                }
+
+                if (!_causeTold)
+                {
+                    _causeTold = true;
+                    _ = TellCauseAsync(config, ct);
                 }
 
                 if (_recovery.Stuck && _hold.Stalled())
@@ -353,6 +370,7 @@ internal sealed class ConfigRunner(
                 _lastRxBytes = -1;
                 _lastTxBytes = -1;
                 _hold.Raised();
+                _ = KeepBasesAsync(ct);
                 await StartSignalAsync(config, ct);
 
                 // The session that follows is a new one: it is judged from the bottom of the ladder again.
@@ -999,6 +1017,86 @@ internal sealed class ConfigRunner(
         }
 
         return pointed;
+    }
+
+    // Keeps the addresses of the bases of rules and updates while the tunnel carries, to knock at them once it stops.
+    private async Task KeepBasesAsync(CancellationToken ct)
+    {
+        try
+        {
+            var sources = await store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
+            _bases = await LinkCause.ResolveAsync([.. sources.Select(source => source.Url), LinkCause.UpdateBase], ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "the addresses of the bases of rules and updates were not kept");
+        }
+    }
+
+    // Writes to the journal, at the level it keeps by default, where a tunnel that stopped carrying is broken, from
+    // knocks outside it.
+    private async Task TellCauseAsync(string config, CancellationToken ct)
+    {
+        try
+        {
+            var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+            var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+            var front = transport?.UseWebSocket == true
+                ? WsEndpoint.Of(text, await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false), transport)
+                : null;
+            var server = front is { } carrier
+                ? await AddressAsync(carrier.Host, ct).ConfigureAwait(false)
+                : Dialled(config) ?? await ServerAddressAsync(config, ct).ConfigureAwait(false);
+            var age = uapi.TryGetPeerStatus(config) is { HandshakeSec: > 0 } peer
+                ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeSec)
+                : -1;
+            var options = new LinkCauseOptions(
+                PhysicalPath.InterfaceIndex() is not null,
+                PhysicalPath.Gateway(server?.ToString()),
+                server,
+                front?.Port ?? ConfigServices.Target(text)?.Port ?? 0,
+                _bases,
+                age,
+                PhysicalPath.Bypass());
+            var report = await LinkCause.FindAsync(options, ct).ConfigureAwait(false);
+            logger.LogError("{Config}: the tunnel carries nothing: {Text} ({Cause})", config, report.Text, report.Cause);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "{Config}: where the tunnel is broken was not found", config);
+        }
+    }
+
+    // The address the tunnel dials now; none while it dials a carrier on loopback.
+    private IPAddress? Dialled(string config)
+    {
+        return uapi.TryGetEndpoint(config) is { } running
+            && IPAddress.TryParse(Host(running).Trim('[', ']'), out var address)
+            && !IPAddress.IsLoopback(address)
+                ? address
+                : null;
+    }
+
+    // One IPv4 address of a host, waited for a few seconds at most.
+    private static async Task<IPAddress?> AddressAsync(string host, CancellationToken ct)
+    {
+        if (IPAddress.TryParse(host, out var literal))
+        {
+            return literal;
+        }
+
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(TimeSpan.FromSeconds(3));
+        try
+        {
+            var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, limit.Token).ConfigureAwait(false);
+
+            return addresses.FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     private bool Carried(string config)

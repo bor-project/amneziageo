@@ -60,15 +60,14 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AServerThatAnswersNothingOfOurs_TakesTheOfferBack()
+    public async Task AServerThatAnswersNothingOfOursOnARefresh_TakesTheOfferBack()
     {
         var replies = new Queue<HelloReply>([new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true), new HelloReply(null, true)]);
         var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
 
         await offers.AskAsync("office", Text, CancellationToken.None);
-        var after = await offers.AskAsync("office", Text, CancellationToken.None);
+        await offers.AskEachAsync([("office", Text)], null, CancellationToken.None);
 
-        Assert.False(after.Ours);
         Assert.False((await offers.OfferAsync("office", Text, CancellationToken.None)).Ours);
     }
 
@@ -92,15 +91,17 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AServerOfOurs_IsAskedBeforeTheConnect()
+    public async Task AServerOfOurs_IsTakenAsKeptAtTheConnect()
     {
         var replies = new Queue<HelloReply>([new HelloReply(Offer(0, DateTimeOffset.UtcNow.AddMinutes(5)), true), new HelloReply(Offer(8446, DateTimeOffset.UtcNow.AddMinutes(5)), true)]);
         var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
 
         await offers.AskAsync("office", Text, CancellationToken.None);
         var offer = await offers.BeforeConnectAsync("office", Text, null, CancellationToken.None);
+        await Task.Delay(300);
 
-        Assert.Equal(8446, offer.WebSocketPort);
+        Assert.Equal(0, offer.WebSocketPort);
+        Assert.Single(replies);
     }
 
     [Fact]

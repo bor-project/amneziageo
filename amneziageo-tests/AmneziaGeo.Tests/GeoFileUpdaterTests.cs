@@ -94,6 +94,21 @@ public sealed class GeoFileUpdaterTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AFileGoneFromTheDisk_IsFetchedWhole()
+    {
+        _feed.Body = GeoIp("TT");
+        _feed.Tag = Tag;
+        await _updater.UpdateAsync(_source);
+        _files.Written.Remove(_source.Name);
+
+        var fetched = await _updater.FetchAsync(_source);
+        await _updater.StoreAsync(fetched);
+
+        Assert.Equal(_feed.Body, fetched.Data);
+        Assert.Equal(_feed.Body, _files.Read(_source.Name));
+    }
+
+    [Fact]
     public async Task ASourceThatMoved_IsFetchedWhateverItsOldAddressSaid()
     {
         _feed.Body = GeoIp("TT");

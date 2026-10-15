@@ -707,7 +707,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
-            TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false));
+            TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
+            [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase]);
         return new IpcAck(true, "connecting");
     }
 
@@ -777,7 +778,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null, string[]? bases = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -816,6 +817,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             intent.PutExtra(GeoVpnService.ExtraSignalPort, signal.Port);
             intent.PutExtra(GeoVpnService.ExtraSignalFrom, [.. signal.Sources]);
+        }
+
+        if (bases is { Length: > 0 })
+        {
+            intent.PutExtra(GeoVpnService.ExtraBases, bases);
         }
 
         if (transport is not null)

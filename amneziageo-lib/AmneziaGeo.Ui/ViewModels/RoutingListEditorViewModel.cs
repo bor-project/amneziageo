@@ -1455,43 +1455,6 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private static string[] SubnetLines(string payload) =>
         payload.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    [RelayCommand]
-    private void AddRule()
-    {
-        var text = RuleInput.Trim();
-        if (text.Length == 0)
-        {
-            return;
-        }
-
-        if (IsAppMethod)
-        {
-            AddAppToken(AppTokenOf(text));
-            RuleInput = string.Empty;
-            return;
-        }
-
-        var rule = Normalize(text);
-        if (!Rules.Contains(rule))
-        {
-            Rules.Add(rule);
-        }
-
-        RuleInput = string.Empty;
-    }
-
-    // What a typed or picked application entry names: a folder if it stands on disk, a program file otherwise.
-    private static string AppTokenOf(string text)
-    {
-        if (text.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
-        {
-            return text;
-        }
-
-        var path = Environment.ExpandEnvironmentVariables(text);
-        return System.IO.Directory.Exists(path) ? "app:dir=" + text : "app:path=" + text;
-    }
-
     /// <summary>
     /// Adds a suggestion picked from the inline match list to the active bucket and clears the input.
     /// </summary>

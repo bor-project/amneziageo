@@ -216,6 +216,9 @@ public sealed class GeoVpnService : VpnService
     private InetSocketAddress? _proxyEnd;
     private WsCarrier? _carrier;
 
+    // How long a question to the server about where its websocket front stands may take.
+    private const int FrontAskWaitMs = 15_000;
+
     // Where the knocks go once the tunnel stops carrying: the server or front the engine dials and the port to knock
     // at, and the bases of rules and updates the head named with the addresses they resolved to while it carried.
     private (System.Net.IPAddress? Server, int Port) _reach;
@@ -934,7 +937,7 @@ public sealed class GeoVpnService : VpnService
             var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
             // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
             var underlay = resolved;
-            var carrier = StartCarrier(config, wsHost, wsPort, wsOffered);
+            var carrier = StartCarrier(config, wsHost, wsPort, wsOffered, name);
             if (carrier is not null)
             {
                 _carrier = carrier;
@@ -3189,7 +3192,7 @@ public sealed class GeoVpnService : VpnService
     // offers, which takes the token of the config, else at the address the head passes. The front is resolved
     // here, while the machine still answers lookups of its own, and the carrier's socket is excused from the
     // tunnel, or it would be asked to carry itself.
-    private WsCarrier? StartCarrier(string config, string? host, int port, bool offered)
+    private WsCarrier? StartCarrier(string config, string? host, int port, bool offered, string? name = null)
     {
         if (string.IsNullOrEmpty(host) || port <= 0)
         {
@@ -3214,10 +3217,76 @@ public sealed class GeoVpnService : VpnService
         }
 
         var carrier = WsCarrier.Start(front, parsed, targetPort, front.Offered ? ServiceToken.HeaderOf(config) : null, socket => Protect(socket.Handle.ToInt32()),
-            (message, ex) => Report(ex is null ? message : $"{message}: {ex.Message}"));
+            (message, ex) => Report(ex is null ? message : $"{message}: {ex.Message}"),
+            name is not null && front.Offered ? FrontAsker(config, parsed) : null,
+            name is null ? null : () => FrontGone(name));
         _reach = (parsed, front.Port);
         Report($"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
         return carrier;
+    }
+
+    // Asks the server of a configuration past the tunnel, at the address its front was dialled at, where its websocket
+    // front stands now; null when it offers none.
+    private Func<CancellationToken, Task<WsEndpoint?>>? FrontAsker(string config, System.Net.IPAddress address)
+    {
+        if (ConfigServices.Target(config) is not { } target)
+        {
+            return null;
+        }
+
+        return async ct =>
+        {
+            var reply = await ServerHello.AskAsync(target, (context, opening) => PastTunnelAsync(context, address, opening), TimeSpan.FromMilliseconds(FrontAskWaitMs), ct)
+                .ConfigureAwait(false);
+
+            return reply.Offer is { } offer
+                ? WsEndpoint.Of(config, offer, null)
+                : throw new IOException("the server did not tell where its websocket front stands");
+        };
+    }
+
+    // Opens a connection to the services of a server past the tunnel, at an address known already.
+    private async ValueTask<Stream> PastTunnelAsync(System.Net.Http.SocketsHttpConnectionContext context, System.Net.IPAddress known, CancellationToken ct)
+    {
+        var address = System.Net.IPAddress.TryParse(context.DnsEndPoint.Host, out var literal) ? literal : known;
+        var socket = new System.Net.Sockets.Socket(address.AddressFamily, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            if (!Protect(socket.Handle.ToInt32()))
+            {
+                throw new IOException("the connection to the server could not be kept out of the tunnel");
+            }
+
+            await socket.ConnectAsync(new System.Net.IPEndPoint(address, context.DnsEndPoint.Port), ct).ConfigureAwait(false);
+
+            return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
+    // Raises the session again without the websocket once its server offers no front any more.
+    private void FrontGone(string name)
+    {
+        var request = VpnBridge.ReadRequest();
+        if (request is not { WsHost.Length: > 0 } || !string.Equals(request.Name, name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var plain = request with { WsHost = null, WsPort = 0, WsOffered = false };
+        VpnBridge.WriteRequest(plain);
+        var why = $"the server of {name} offers no websocket front any more; raising the session again without the websocket";
+        Report(why);
+        Note("tunnel", why);
+        _unattended = true;
+        _session.Dropped(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        KeepMarks();
+        Publish(VpnStage.Connecting, name);
+        Dial(VpnBridge.ReadPlan(), plain, repair: true);
     }
 
     private static string ResolveEndpoint(string config)

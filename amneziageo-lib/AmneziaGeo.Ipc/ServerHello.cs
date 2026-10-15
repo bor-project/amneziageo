@@ -38,9 +38,20 @@ public static class ServerHello
     /// <summary>
     /// Asks the services of a config what they offer it, over connections opened the way given.
     /// </summary>
+    public static Task<HelloReply> AskAsync(
+        ServiceTarget point,
+        Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>? connect,
+        CancellationToken ct) =>
+        AskAsync(point, connect, _timeout, ct);
+
+    /// <summary>
+    /// Asks the services of a config what they offer it, over connections opened the way given, each step waited
+    /// for as long as given.
+    /// </summary>
     public static async Task<HelloReply> AskAsync(
         ServiceTarget point,
         Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>? connect,
+        TimeSpan timeout,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(point);
@@ -50,14 +61,14 @@ public static class ServerHello
             return new HelloReply(null, false);
         }
 
-        using var handler = new SocketsHttpHandler { ConnectTimeout = _timeout, UseProxy = false };
+        using var handler = new SocketsHttpHandler { ConnectTimeout = timeout, UseProxy = false };
         if (connect is not null)
         {
             handler.ConnectCallback = connect;
         }
 
         handler.SslOptions.RemoteCertificateValidationCallback = Presented;
-        using var client = new HttpClient(handler) { Timeout = _timeout };
+        using var client = new HttpClient(handler) { Timeout = timeout };
         var heard = false;
         try
         {

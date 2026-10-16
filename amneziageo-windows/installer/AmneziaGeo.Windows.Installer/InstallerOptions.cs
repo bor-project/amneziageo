@@ -15,6 +15,10 @@ public sealed class InstallerOptions
 {
     private const string Scope = "installer";
 
+    private const string UiScope = "ui";
+
+    private const string LanguageKey = "language";
+
     /// <summary>
     /// Create a desktop shortcut.
     /// </summary>
@@ -69,6 +73,21 @@ public sealed class InstallerOptions
         catch
         {
             return new InstallerOptions();
+        }
+    }
+
+    /// <summary>
+    /// Reads the interface language chosen in the app, or null when there is none.
+    /// </summary>
+    public static string? SavedLanguage()
+    {
+        try
+        {
+            return new LocalKeyValueStore(DbPath).Read(UiScope, LanguageKey);
+        }
+        catch
+        {
+            return null;
         }
     }
 

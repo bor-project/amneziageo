@@ -551,27 +551,18 @@ internal sealed class DnsProxy
         }
     }
 
-    // Whether a program kept off the tunnel asked the name. Its ask is reported a moment after the query: an answer
-    // ready before the report waits for it, a short while at most.
-    private async Task<bool> PassedAsync(string name, long started)
+    // Whether a program the tracker names asked the name. Its ask is reported a moment after the query: a name not
+    // marked yet waits for the report of its asker, a short while at most.
+    private static async Task<bool> AskedByAsync(AppDnsTracker tracker, string name, long started)
     {
-        if (_passDns is null)
-        {
-            return false;
-        }
-
-        if (_passDns.IsTunneled(name))
+        if (tracker.IsTunneled(name))
         {
             return true;
         }
 
         var since = started - (PassWindowMs * System.Diagnostics.Stopwatch.Frequency / 1000);
-        if (!_passDns.AskedSince(name, since))
-        {
-            await _passDns.WaitAskedAsync(name, since, PassReportMs).ConfigureAwait(false);
-        }
-
-        return _passDns.IsTunneled(name);
+        await tracker.WaitAskedAsync(name, since, PassReportMs).ConfigureAwait(false);
+        return tracker.IsTunneled(name);
     }
 
     /// <summary>
@@ -945,7 +936,8 @@ internal sealed class DnsProxy
             var type = DnsMessage.QuestionType(query);
 
             // The provider holds the asks it logged until a flush: asked for now, so the asker of this name is
-            // reported by the time the answer is ready.
+            // reported by the time it is decided or answered.
+            _appDns?.Flush();
             _passDns?.Flush();
 
             // Liveness probe: answered on the spot, ahead of every rule, so the answer proves only that queries
@@ -1009,8 +1001,9 @@ internal sealed class DnsProxy
 
             // App-tunnel: a name recently queried by a matched app resolves through the tunnel and routes its
             // answer, even with no geo rule. Its decision comes from DNS-Client ETW, not the geo matcher, so it
-            // overrides the bypass negative-cache.
-            var appDns = name is not null && !kept && _appDns is not null && _appDns.IsTunneled(name);
+            // overrides the bypass negative-cache; the ask behind this very query is waited for, so the first
+            // answer the app gets already takes the tunnel.
+            var appDns = name is not null && !kept && _appDns is not null && await AskedByAsync(_appDns, name, started).ConfigureAwait(false);
 
             // Matched names resolve via the clean tunnel resolver; others use the local resolver.
             var geoMatch = !kept && !bypassed && name is not null ? _matcher.Match(name) : null;
@@ -1213,7 +1206,7 @@ internal sealed class DnsProxy
                     var addresses = DnsMessage.Addresses(response);
                     // A program kept off the tunnel asked: its addresses take their route past the tunnel before it
                     // opens them.
-                    var passed = byName == RouteVerdict.None && name is not null && addresses.Count > 0 && await PassedAsync(name, started).ConfigureAwait(false);
+                    var passed = byName == RouteVerdict.None && name is not null && addresses.Count > 0 && _passDns is not null && await AskedByAsync(_passDns, name, started).ConfigureAwait(false);
                     foreach (var address in addresses)
                     {
                         if (byName is RouteVerdict.Direct or RouteVerdict.Block)

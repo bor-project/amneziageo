@@ -195,7 +195,7 @@ internal sealed class ServiceManager
         var serviceName = TunnelPaths.AgentServiceName();
         // Quote the target: it is re-parsed from ImagePath into argv.
         var binPath = $"\"{ServiceHost()}\" --agent \"{target}\"";
-        return Sc(
+        var created = Sc(
             "create",
             serviceName,
             "binPath=",
@@ -208,6 +208,13 @@ internal sealed class ServiceManager
             "LocalSystem",
             "DisplayName=",
             "AmneziaGeo Agent");
+        if (created != 0)
+        {
+            return created;
+        }
+
+        RestartOnCrash(serviceName);
+        return 0;
     }
 
     /// <summary>
@@ -251,7 +258,7 @@ internal sealed class ServiceManager
         return Sc("query", TunnelPaths.AgentServiceName());
     }
 
-    // Has the service manager start a tunnel service again when its process dies without being stopped.
+    // Has the service manager start a service again when its process dies without being stopped.
     private static void RestartOnCrash(string serviceName)
     {
         Run("failure", serviceName, "reset=", "3600", "actions=", "restart/2000/restart/5000/restart/30000");

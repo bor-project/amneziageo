@@ -15,7 +15,7 @@ internal static class Program
 
     private static int Main()
     {
-        Loc.Instance.ApplyStartupCulture(null);
+        Loc.Instance.ApplyStartupCulture(InstallerOptions.SavedLanguage());
 
         if (!MachineFits())
         {

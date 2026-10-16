@@ -18,7 +18,7 @@
     <StackPanel Grid.Row="0" Spacing="4">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}"
-                   VerticalAlignment="Center" IsVisible="{Binding !Logs.IsShort}" />
+                   VerticalAlignment="Center" IsVisible="{Binding !Logs.IsShort}" TextTrimming="CharacterEllipsis" />
         <Button Grid.Column="1" Classes="softbtn" Padding="12,5" VerticalAlignment="Center"
                 ToolTip.Tip="{l:Tr Main_ArchiveHint}"
                 IsEnabled="{Binding !ArchiveRunning}" Click="OnCollectArchive">

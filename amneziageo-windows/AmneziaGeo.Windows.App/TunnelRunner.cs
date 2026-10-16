@@ -684,6 +684,7 @@ internal sealed class TunnelRunner(
         // the app rules. The DNS-Client tracker marks names queried by matched apps for tunnel resolution.
         AppMatcher? matcher = null;
         AppDnsTracker? appDns = null;
+        AppDnsTracker? passDns = null;
         if (trackApps && tracker is not null)
         {
             // The image of every program is held from its start, so one that ends before its traffic is decided is
@@ -723,6 +724,9 @@ internal sealed class TunnelRunner(
                 routing.SetAppMatch(matcher.MatchesDevicePath);
                 liveDestinations.SetAppMatch(matcher.MatchPids);
                 routing.AppDestination += address => synReset.AbortOwnedThroughTunnel([address], candidate.MatchPids);
+                // The ask of such an application is reported as it looks a name up, so the answer routes the name's
+                // addresses past the tunnel before the application opens them.
+                passDns = new AppDnsTracker(candidate, loggerFactory.CreateLogger<AppDnsTracker>(), WatchSession.Name(WatchSession.Names, duties.CarriesDefault, TunnelDevice.NameOf(name)), past: true);
                 logger.LogInformation("{Name}: {Count} rule(s) keep applications past the tunnel: each address one of them opens takes a route of its own while it is in use, and that route holds for every program of this machine", name, passApps.Count);
             }
             else
@@ -799,7 +803,7 @@ internal sealed class TunnelRunner(
         var adapterIndex = default(uint?);
         uint? TunnelInterface() => adapterIndex ??= routes.FindTunnelIndex(name);
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport, appSettings.RouteTtlSeconds);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, passDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport, appSettings.RouteTtlSeconds);
         session.SetProxy(proxy);
 
         // The names kept on the own network with these suffixes.
@@ -911,6 +915,13 @@ internal sealed class TunnelRunner(
                 }
             });
             _ = Task.Run(() => appDns.RunAsync(sessionCts.Token));
+        }
+
+        // An ask reported only after the answer went out still routes what the name answered with, for the next try.
+        if (proxy is not null && passDns is not null)
+        {
+            passDns.NameLearned += proxy.PassKnown;
+            _ = Task.Run(() => passDns.RunAsync(sessionCts.Token));
         }
 
         // Rebuild the proxy matcher live on a geosite refresh or list rule edit, even for a list that had no
@@ -1203,13 +1214,13 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport, int routeTtlSeconds)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, AppDnsTracker? passDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport, int routeTtlSeconds)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
         var (lanIp, lanPool) = LanResolvers(lanUpstream);
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport, passDns);
         proxy.SetRouteTtl(routeTtlSeconds);
         if (!listen)
         {

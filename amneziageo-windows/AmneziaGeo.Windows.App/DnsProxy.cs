@@ -49,6 +49,10 @@ internal sealed class DnsProxy
     // isn't re-run on every query. Bounded, and cleared wholesale on a matcher rebuild (list edit), so a
     // domain newly added to a list is re-evaluated promptly.
     private const int BypassTtlSeconds = 600;
+    // How long before a query an ask of its name still counts as the ask behind it, and how long an answer waits
+    // for the report of its asker.
+    private const int PassWindowMs = 100;
+    private const int PassReportMs = 20;
     // Reachability probe (serve-known heal): a short TCP handshake to a domain's last-good IPs decides whether
     // the cached set still connects BEFORE any re-resolve. 443 is the near-universal port for tunneled web/CDN
     // hosts; a completed handshake or a refusal (RST) both prove the path+host are alive, only silence is dead.
@@ -132,6 +136,8 @@ internal sealed class DnsProxy
     private readonly bool _stripV6;
     // Names queried by a matched app resolve through the tunnel and route their answer, even with no geo rule.
     private readonly AppDnsTracker? _appDns;
+    // Names a program kept off the tunnel asked: their addresses take a route past it before the answer leaves.
+    private readonly AppDnsTracker? _passDns;
     // Direct-verdict addresses get their host route here, before the answer reaches the client.
     private readonly RoutingCache? _routing;
     // Queries the tunnel resolver failed to answer and the local one took over, since it last answered. Kept so
@@ -156,10 +162,11 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Default)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Default, AppDnsTracker? passDns = null)
     {
         _tunnelInterface = tunnelInterface;
         _appDns = appDns;
+        _passDns = passDns;
         _routing = routing;
         _domains = domains;
         _matcher = new DomainMatcher(domains);
@@ -523,6 +530,48 @@ internal sealed class DnsProxy
     internal static RouteVerdict AnswerVerdict(RouteVerdict byName, bool local)
     {
         return local && byName == RouteVerdict.None ? RouteVerdict.Direct : byName;
+    }
+
+    /// <summary>
+    /// Gives the addresses a name lately answered with a route past the tunnel: a program kept off it asked the name.
+    /// </summary>
+    public void PassKnown(string name)
+    {
+        if (_routing is null || !_cache.TryGetValue(CacheKey(name, TypeA), out var entry) || entry.Expiry <= Environment.TickCount64)
+        {
+            return;
+        }
+
+        foreach (var address in DnsMessage.Addresses(entry.Response))
+        {
+            if (GeoIpRanges.TryToNumeric(address, out var numeric))
+            {
+                _routing.Note(numeric, true);
+            }
+        }
+    }
+
+    // Whether a program kept off the tunnel asked the name. Its ask is reported a moment after the query: an answer
+    // ready before the report waits for it, a short while at most.
+    private async Task<bool> PassedAsync(string name, long started)
+    {
+        if (_passDns is null)
+        {
+            return false;
+        }
+
+        if (_passDns.IsTunneled(name))
+        {
+            return true;
+        }
+
+        var since = started - (PassWindowMs * System.Diagnostics.Stopwatch.Frequency / 1000);
+        if (!_passDns.AskedSince(name, since))
+        {
+            await _passDns.WaitAskedAsync(name, since, PassReportMs).ConfigureAwait(false);
+        }
+
+        return _passDns.IsTunneled(name);
     }
 
     /// <summary>
@@ -895,6 +944,10 @@ internal sealed class DnsProxy
             var name = DnsMessage.QuestionName(query);
             var type = DnsMessage.QuestionType(query);
 
+            // The provider holds the asks it logged until a flush: asked for now, so the asker of this name is
+            // reported by the time the answer is ready.
+            _passDns?.Flush();
+
             // Liveness probe: answered on the spot, ahead of every rule, so the answer proves only that queries
             // still reach this socket and are served.
             if (name is not null && string.Equals(name.TrimEnd('.'), HealthName, StringComparison.OrdinalIgnoreCase))
@@ -1157,11 +1210,19 @@ internal sealed class DnsProxy
                     // A name in the Direct or Block bucket decides for the addresses it answers with, so a range
                     // covering one of them cannot pull it back into the tunnel.
                     var byName = AnswerVerdict(name is null ? RouteVerdict.None : NameVerdict(name), isLocal);
-                    foreach (var address in DnsMessage.Addresses(response))
+                    var addresses = DnsMessage.Addresses(response);
+                    // A program kept off the tunnel asked: its addresses take their route past the tunnel before it
+                    // opens them.
+                    var passed = byName == RouteVerdict.None && name is not null && addresses.Count > 0 && await PassedAsync(name, started).ConfigureAwait(false);
+                    foreach (var address in addresses)
                     {
                         if (byName is RouteVerdict.Direct or RouteVerdict.Block)
                         {
                             _routing.Note(address, byName);
+                        }
+                        else if (passed && GeoIpRanges.TryToNumeric(address, out var numeric))
+                        {
+                            _routing.Note(numeric, true);
                         }
                         else
                         {
@@ -1194,8 +1255,9 @@ internal sealed class DnsProxy
                 _logger.LogDebug("{Name}: a client of the access point is answered with {Stand}, so this machine carries what it opens", name, stand);
             }
 
-            // The client keeps the answer no longer than its routes live.
-            respond(DnsMessage.CapTtl(response, _routeTtlSeconds));
+            // The client keeps the answer no longer than its routes live; with programs kept off the tunnel it keeps
+            // nothing, so every ask of theirs passes here.
+            respond(DnsMessage.CapTtl(response, _passDns is null ? _routeTtlSeconds : 0));
         }
         catch (Exception)
         {

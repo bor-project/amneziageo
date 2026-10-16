@@ -1,50 +1,60 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.Diagnostics.Tracing;
-using Microsoft.Diagnostics.Tracing.Session;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Marks DNS names queried by matched apps so the proxy resolves them through the tunnel and routes the answer
-/// even with no geo rule. Reads the DNS-Client ETW provider, which reports the initiating process across the
-/// Windows DNS Client service - a socket-source lookup on the proxy would only ever see svchost (Dnscache).
+/// even with no geo rule, or, for apps kept past the tunnel, routes the answer past it. Reads the DNS-Client ETW
+/// provider, which reports the initiating process across the Windows DNS Client service - a socket-source lookup on
+/// the proxy would only ever see svchost (Dnscache).
 /// </summary>
-internal sealed class AppDnsTracker : IDisposable
+internal sealed partial class AppDnsTracker : IDisposable
 {
     // Microsoft-Windows-DNS-Client.
     private static readonly Guid DnsClientProvider = new("1C95126E-7EEA-49A9-A3FE-A378B03DDB4D");
     // Event 3006: a DNS query is issued, in the caller's process context.
     private const int DnsQueryIssuedId = 3006;
-    // How long a name stays app-tunneled after its last query by a matched app; longer than any app retry gap.
+    // How long a name stays marked after its last query by a matched app; longer than any app retry gap.
     private const long NameTtlMs = 600_000;
     private const int MaxNames = 4096;
     // Per-pid match decision cache; MatchesPid snapshots the process tree, so a chatty resolver skips it.
     private const long PidCacheTtlMs = 1000;
+    // The timer resolution asked for while an answer waits for the report of its asker, in ms.
+    private const uint WaitResolutionMs = 1;
     private static readonly uint OwnProcessId = (uint)Environment.ProcessId;
 
     private readonly AppMatcher _matcher;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, long> _names = new(StringComparer.Ordinal);
+    // When each name was last reported asked, by any program, as a Stopwatch timestamp.
+    private readonly ConcurrentDictionary<string, long> _asked = new(StringComparer.Ordinal);
     // ETW handler is single-threaded; no lock needed.
     private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
-    private TraceEventSession? _session;
+    private TraceSession? _session;
+    private ETWTraceEventSource? _source;
     // The monitoring session of this tunnel.
     private readonly string _sessionName;
+    // Whether the matched apps are kept past the tunnel rather than carried through it.
+    private readonly bool _past;
 
     /// <summary>
-    /// Raised the first time a name is marked app-tunneled, so the proxy can drop any pre-mark local answer.
+    /// Raised the first time a name is marked, so the proxy can drop any pre-mark local answer.
     /// </summary>
     public event Action<string>? NameLearned;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public AppDnsTracker(AppMatcher matcher, ILogger logger, string? sessionName = null)
+    public AppDnsTracker(AppMatcher matcher, ILogger logger, string? sessionName = null, bool past = false)
     {
         _matcher = matcher;
         _logger = logger;
         _sessionName = sessionName ?? WatchSession.Names;
+        _past = past;
     }
 
     /// <summary>
@@ -67,9 +77,75 @@ internal sealed class AppDnsTracker : IDisposable
     }
 
     /// <summary>
-    /// Marks a name app-tunneled outside the ETW path, for an app whose own resolver never reaches DNS-Client.
+    /// Marks a name outside the ETW path, for an app whose own resolver never reaches DNS-Client.
     /// </summary>
     public void MarkName(string name) => Mark(name);
+
+    /// <summary>
+    /// Notes a name as asked now, outside the ETW path.
+    /// </summary>
+    public void NoteAsked(string name)
+    {
+        var key = Normalize(name);
+        if (key.Length == 0)
+        {
+            return;
+        }
+
+        if (_asked.Count >= MaxNames && !_asked.ContainsKey(key))
+        {
+            _asked.Clear();
+        }
+
+        _asked[key] = Stopwatch.GetTimestamp();
+    }
+
+    /// <summary>
+    /// Whether some program was reported asking the name at or after <paramref name="since"/>, a Stopwatch timestamp.
+    /// </summary>
+    public bool AskedSince(string name, long since) => Asked(Normalize(name), since);
+
+    /// <summary>
+    /// Hands the asks the provider logged so far to the reader, so the asker of a name just received is reported at once.
+    /// </summary>
+    public void Flush() => _session?.Flush();
+
+    /// <summary>
+    /// Waits until some program is reported asking the name at or after <paramref name="since"/>, at most
+    /// <paramref name="limitMs"/>; true when one was.
+    /// </summary>
+    public async Task<bool> WaitAskedAsync(string name, long since, int limitMs)
+    {
+        var key = Normalize(name);
+        if (Asked(key, since))
+        {
+            return true;
+        }
+
+        // The reader wakes with the system timer: finer ticks for the few ms of the wait.
+        var raised = TimeBeginPeriod(WaitResolutionMs) == 0;
+        try
+        {
+            var deadline = Stopwatch.GetTimestamp() + (limitMs * Stopwatch.Frequency / 1000);
+            while (Stopwatch.GetTimestamp() < deadline)
+            {
+                await Task.Delay(1).ConfigureAwait(false);
+                if (Asked(key, since))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (raised)
+            {
+                TimeEndPeriod(WaitResolutionMs);
+            }
+        }
+    }
 
     /// <summary>
     /// Reads the DNS-Client provider until the session closes (cancellation).
@@ -79,13 +155,22 @@ internal sealed class AppDnsTracker : IDisposable
         var sessionName = _sessionName;
         try
         {
-            using (_session = new TraceEventSession(sessionName, TraceEventSessionOptions.Create))
+            _logger.LogDebug("starting the session {Session} of name lookups", sessionName);
+            using (_session = TraceSession.Start(sessionName, DnsClientProvider))
+            using (_source = new ETWTraceEventSource(sessionName, TraceEventSourceType.Session))
             {
                 ct.Register(Stop);
-                _session.EnableProvider(DnsClientProvider, TraceEventLevel.Informational, ulong.MaxValue);
-                _session.Source.Dynamic.All += Handle;
-                _logger.LogInformation("watching which programs look up which names, so an app you route through the tunnel takes its domains with it");
-                await Task.Run(() => _session.Source.Process(), CancellationToken.None).ConfigureAwait(false);
+                _source.Dynamic.All += Handle;
+                if (_past)
+                {
+                    _logger.LogInformation("watching which programs look up which names, so an app you keep off the tunnel reaches its names past it from the first try");
+                }
+                else
+                {
+                    _logger.LogInformation("watching which programs look up which names, so an app you route through the tunnel takes its domains with it");
+                }
+
+                await Task.Run(() => _source.Process(), CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -93,7 +178,7 @@ internal sealed class AppDnsTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "no longer watching which programs look up which names; per-app rules now depend on outgoing connections alone");
+            _logger.LogWarning(ex, "no longer watching which programs look up which names; per-app rules now depend on outgoing connections alone");
         }
     }
 
@@ -105,12 +190,13 @@ internal sealed class AppDnsTracker : IDisposable
         }
 
         var pid = (uint)evt.ProcessID;
-        if (pid == 0 || pid == OwnProcessId || !MatchesPidCached(pid))
+        if (pid == OwnProcessId || evt.PayloadByName("QueryName") is not string name || name.Length == 0)
         {
             return;
         }
 
-        if (evt.PayloadByName("QueryName") is string name && name.Length > 0)
+        NoteAsked(name);
+        if (pid != 0 && MatchesPidCached(pid))
         {
             Mark(name);
         }
@@ -132,10 +218,18 @@ internal sealed class AppDnsTracker : IDisposable
 
         if (_names.TryAdd(key, expiry))
         {
-            _logger.LogInformation("{Name} was looked up by an app you route through the tunnel, so this name goes through the tunnel too", key);
+            if (_past)
+            {
+                _logger.LogInformation("{Name} was looked up by an app you keep off the tunnel, so its addresses take a route past the tunnel", key);
+            }
+            else
+            {
+                _logger.LogInformation("{Name} was looked up by an app you route through the tunnel, so this name goes through the tunnel too", key);
+            }
+
             if (RouteLog.Enabled)
             {
-                RouteLog.Note($"app dns {key} -> tunnel");
+                RouteLog.Note(_past ? $"app dns {key} -> past" : $"app dns {key} -> tunnel");
             }
 
             NameLearned?.Invoke(key);
@@ -146,8 +240,10 @@ internal sealed class AppDnsTracker : IDisposable
         }
     }
 
+    private bool Asked(string key, long since) => _asked.TryGetValue(key, out var at) && at >= since;
+
     // Bounded eviction that preserves live marks: sweep expired entries, then drop the nearest-to-expire, so an
-    // overflow never wipes still-active app-tunnel domains at once.
+    // overflow never wipes still-active marks at once.
     private void EvictForRoom()
     {
         var now = Environment.TickCount64;
@@ -216,5 +312,15 @@ internal sealed class AppDnsTracker : IDisposable
     /// <summary>
     /// Деструктор
     /// </summary>
-    public void Dispose() => _session?.Dispose();
+    public void Dispose()
+    {
+        _source?.Dispose();
+        _session?.Dispose();
+    }
+
+    [LibraryImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    private static partial uint TimeBeginPeriod(uint period);
+
+    [LibraryImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+    private static partial uint TimeEndPeriod(uint period);
 }

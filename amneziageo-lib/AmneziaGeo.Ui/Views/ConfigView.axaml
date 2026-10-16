@@ -25,7 +25,8 @@
 
     <!-- Заголовок раздела над каталогом и над экранами конфигурации, у каталога справа обновление конфигураций из подписок. -->
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="10">
-      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
+      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" />
       <Panel Grid.Column="1" VerticalAlignment="Center" IsVisible="{Binding IsSectionCatalogue}">
         <Button Classes="linkbtn" IsVisible="{Binding HasSubscriptions}"
                 Command="{Binding RefreshAllSubscriptionsCommand}" IsEnabled="{Binding !SubscriptionsRefreshing}"

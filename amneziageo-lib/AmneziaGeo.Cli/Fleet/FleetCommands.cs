@@ -239,9 +239,14 @@ public static class FleetCommands
     // all, so naming neither end takes the address back off it.
     private static async Task<int> TargetAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count is < 2 or > 4 || RoutingCommands.Resolve(agent, args[0]) is not { } list)
+        if (args.Count is < 2 or > 4)
         {
             return Reply.Usage("usage: amneziageo fleet target <id|name> <rule> [auto|best|direct|block|<config>] [auto|best|direct|block|<config>]");
+        }
+
+        if (RoutingCommands.Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         var id = list.Id.ToString(CultureInfo.InvariantCulture);

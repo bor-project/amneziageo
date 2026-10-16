@@ -48,7 +48,7 @@ internal static class BundleCommands
         {
             if (RoutingCommands.Resolve(agent, key) is not { } list)
             {
-                return Reply.Usage($"routing list '{key}' not found");
+                return Exit.Usage;
             }
 
             lists.Add(list.Id.ToString(CultureInfo.InvariantCulture));

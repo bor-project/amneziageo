@@ -317,8 +317,7 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Follows a config rename in the live binding without switching the tunnel, so the supervisor keeps
-    /// resolving the running config - a stale target reads as a broken binding on the next re-dial.
+    /// Follows a config rename in the live binding and dials the running tunnel again under the new name.
     /// </summary>
     public void RetargetName(string oldName, string newName)
     {
@@ -327,9 +326,17 @@ internal sealed class AgentControl
             _target = newName;
         }
 
-        if (string.Equals(_runningTarget, oldName, StringComparison.Ordinal))
+        if (!string.Equals(_runningTarget, oldName, StringComparison.Ordinal))
         {
-            _runningTarget = newName;
+            return;
+        }
+
+        _runningTarget = newName;
+        if (_running)
+        {
+            _restartRequired = false;
+            Signal();
+            SignalStatus();
         }
     }
 

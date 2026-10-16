@@ -128,6 +128,17 @@ public sealed class FleetCommandsTests : IDisposable
         Assert.DoesNotContain(link.Sent, sent => sent[0] == FleetOps.SetTarget);
     }
 
+    [Fact]
+    public async Task AListNoKeyFinds_IsRefusedInOneLine()
+    {
+        var link = new Link(Snapshot(Set()));
+
+        Assert.Equal(Exit.Usage, await FleetCommands.RunAsync(link, ["fleet", "target", "nowhere", "geosite:youtube"]));
+
+        Assert.Equal("routing list 'nowhere' not found", Assert.Single(_console.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)));
+        Assert.DoesNotContain(link.Sent, sent => sent[0] == FleetOps.SetTarget);
+    }
+
     private static FleetSnapshot Set()
     {
         return new FleetSnapshot(

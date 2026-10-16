@@ -2093,6 +2093,11 @@ internal sealed class TunnelRunner(
             var held = routing.Snapshot();
             var aroundLocal = PrivateNetworks.AroundLocal(current.Routes, routes.LocalSubnets());
             var edited = await store.GetRoutingListAsync(current.ListId, ct).ConfigureAwait(false);
+            if (edited is not null)
+            {
+                session.SetListName(edited.Name);
+            }
+
             var named = ApplyAppRules(routing, edited, tunnelName);
             var standing = Restand(routing, tunnelName, edited, aroundLocal.Carried);
             IReadOnlyList<string> tunneled = standing is { Networks.Count: > 0 } ? [.. aroundLocal.Carried, .. standing.Networks] : aroundLocal.Carried;

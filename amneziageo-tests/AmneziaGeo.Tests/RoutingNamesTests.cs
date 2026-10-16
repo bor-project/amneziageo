@@ -76,6 +76,54 @@ public sealed class RoutingNamesTests : IDisposable
         Assert.Contains("\"routingLists\":[\"8\",\"9\"]", sent[1], StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("use main")]
+    [InlineData("show main")]
+    [InlineData("set main")]
+    [InlineData("add main proxy|cidr:10.0.0.0/24")]
+    [InlineData("delete-rule main proxy|cidr:10.0.0.0/24")]
+    [InlineData("remove main")]
+    [InlineData("update main")]
+    [InlineData("order home main")]
+    [InlineData("settings main")]
+    [InlineData("configure main")]
+    public async Task ANameTwoListsCarry_IsRefusedInOneLine(string command)
+    {
+        var link = new Link();
+
+        Assert.Equal(Exit.Usage, await RoutingCommands.RunAsync(link, command.Split(' ')));
+
+        Assert.Equal("2 routing lists are called 'main': ids 6, 8; name one by its id", Assert.Single(Lines()));
+        Assert.Empty(link.Sent);
+    }
+
+    [Fact]
+    public async Task AnExportOfANameTwoListsCarry_IsRefusedInOneLine()
+    {
+        var link = new Link();
+
+        Assert.Equal(Exit.Usage, await BundleCommands.RunAsync(link, ["export", "--list", "main"]));
+
+        Assert.Equal("2 routing lists are called 'main': ids 6, 8; name one by its id", Assert.Single(Lines()));
+    }
+
+    [Theory]
+    [InlineData("use nowhere")]
+    [InlineData("show nowhere")]
+    [InlineData("order home nowhere")]
+    public async Task ANameNoListCarries_IsRefusedInOneLine(string command)
+    {
+        var link = new Link();
+
+        Assert.Equal(Exit.Usage, await RoutingCommands.RunAsync(link, command.Split(' ')));
+
+        Assert.Equal("routing list 'nowhere' not found", Assert.Single(Lines()));
+        Assert.Empty(link.Sent);
+    }
+
+    // The lines the console printed.
+    private string[] Lines() => _console.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
     // Answers one snapshot with two lists called "main" and one called "home", and writes down what was sent.
     private sealed class Link : IAgentLink
     {

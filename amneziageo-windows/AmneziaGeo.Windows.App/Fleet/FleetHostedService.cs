@@ -495,7 +495,7 @@ internal sealed class FleetHostedService(
         }
     }
 
-    // Carries a renamed tunnel over: its supervisor resolves the configuration under the new name from here on.
+    // Carries a renamed tunnel over and dials it again under the new name.
     private void Follow(string oldName, string newName)
     {
         if (!_members.Remove(oldName, out var member))
@@ -506,7 +506,7 @@ internal sealed class FleetHostedService(
         member.Control.RetargetName(oldName, newName);
         _members[newName] = new FleetMember(newName, member.Duties, member.Stamp, member.Control, member.Stop, member.Run);
         live.Retarget(oldName, newName);
-        logger.LogInformation("{Old} is called '{New}' from now on; it stays up and carries what it carried", oldName, newName);
+        logger.LogInformation("{Old} is called '{New}' from now on; it is dialled again under that name", oldName, newName);
     }
 
     private async Task StopAsync(string name)

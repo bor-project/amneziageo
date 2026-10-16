@@ -707,12 +707,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
-        // Rename is allowed while running: the live adapter keeps carrying traffic under its old service name and
-        // the UI reflects the new name at once; a later re-dial re-resolves the current config (ConfigRunner).
         await configRepo.RenameAsync(oldName, newName, ct);
 
-        // Follow the rename in the live binding so the supervisor keeps resolving the config: a stale
-        // running target would look like a broken binding on the next re-dial and drop the tunnel.
+        // A running tunnel is dialled again under the new name.
         control.RetargetName(oldName, newName);
         await RetargetConfigAsync(oldName, newName, ct);
 

@@ -70,6 +70,14 @@ internal sealed class LiveSession
     }
 
     /// <summary>
+    /// Publishes the name of the routing list in force.
+    /// </summary>
+    public void SetListName(string listName)
+    {
+        _listName = listName;
+    }
+
+    /// <summary>
     /// Publishes the standing ranges kept past the tunnel.
     /// </summary>
     public void SetBypassed(IReadOnlyList<string> ranges)

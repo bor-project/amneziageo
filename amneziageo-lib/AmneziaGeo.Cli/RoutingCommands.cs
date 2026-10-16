@@ -51,7 +51,7 @@ internal static class RoutingCommands
         {
             if (Resolve(agent, args[0]) is not { } list)
             {
-                return Reply.Usage($"routing list '{args[0]}' not found");
+                return Exit.Usage;
             }
 
             listId = list.Id.ToString(CultureInfo.InvariantCulture);
@@ -73,7 +73,7 @@ internal static class RoutingCommands
         {
             if (Resolve(agent, key) is not { } list)
             {
-                return Reply.Usage($"routing list '{key}' not found");
+                return Exit.Usage;
             }
 
             ids.Add(list.Id.ToString(CultureInfo.InvariantCulture));
@@ -85,9 +85,14 @@ internal static class RoutingCommands
     // Takes the newer version the server handed out for a list.
     private static async Task<int> UpdateAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
+        if (args.Count != 1)
         {
             return Reply.Usage("usage: amneziageo routing update <id|name>");
+        }
+
+        if (Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         if (!list.HasUpdate)
@@ -101,8 +106,7 @@ internal static class RoutingCommands
     }
 
     /// <summary>
-    /// Finds a routing list by id or by name. A name several lists carry finds none: their ids are printed, so the
-    /// list can be named by its id.
+    /// Finds a routing list by id or by name, or prints why there is none.
     /// </summary>
     public static RoutingListEntry? Resolve(IAgentLink agent, string key)
     {
@@ -123,7 +127,13 @@ internal static class RoutingCommands
             return null;
         }
 
-        return named.FirstOrDefault();
+        if (named.Count == 0)
+        {
+            Output.Error($"routing list '{key}' not found");
+            return null;
+        }
+
+        return named[0];
     }
 
     private static int List(IAgentLink agent)
@@ -154,9 +164,14 @@ internal static class RoutingCommands
 
     private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
+        if (args.Count != 1)
         {
             return Reply.Usage("usage: amneziageo routing show <id|name>");
+        }
+
+        if (Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         var ack = await RulesAsync(agent, list.Id).ConfigureAwait(false);
@@ -200,9 +215,14 @@ internal static class RoutingCommands
 
     private static async Task<int> SetAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count < 1 || Resolve(agent, args[0]) is not { } list)
+        if (args.Count < 1)
         {
             return Reply.Usage("usage: amneziageo routing set <id|name> [rule...]");
+        }
+
+        if (Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         var rules = args.Skip(1).Select(Rules.Normalize).ToArray();
@@ -218,9 +238,14 @@ internal static class RoutingCommands
     private static async Task<int> AmendAsync(IAgentLink agent, IReadOnlyList<string> args, bool add)
     {
         var verb = add ? "add" : "delete-rule";
-        if (args.Count < 2 || Resolve(agent, args[0]) is not { } list)
+        if (args.Count < 2)
         {
             return Reply.Usage($"usage: amneziageo routing {verb} <id|name> <rule...>");
+        }
+
+        if (Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         var changes = args.Skip(1).Select(Rules.Normalize).ToArray();
@@ -270,9 +295,14 @@ internal static class RoutingCommands
 
     private static async Task<int> RemoveAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
+        if (args.Count != 1)
         {
             return Reply.Usage("usage: amneziageo routing remove <id|name>");
+        }
+
+        if (Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         if (agent.Snapshot.SelectedRoutingList == list.Id)
@@ -285,9 +315,14 @@ internal static class RoutingCommands
 
     private static async Task<int> SettingsAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
+        if (args.Count != 1)
         {
             return Reply.Usage("usage: amneziageo routing settings <id|name>");
+        }
+
+        if (Resolve(agent, args[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         var ack = await agent.SendAsync(IpcContract.OpGetRoutingSettings, list.Id.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
@@ -322,9 +357,14 @@ internal static class RoutingCommands
             return Reply.Usage(flags.Error!);
         }
 
-        if (flags.Positional.Count != 1 || Resolve(agent, flags.Positional[0]) is not { } list)
+        if (flags.Positional.Count != 1)
         {
             return Reply.Usage("usage: amneziageo routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>] [--all-udp on|off] [--global-proxy on|off]");
+        }
+
+        if (Resolve(agent, flags.Positional[0]) is not { } list)
+        {
+            return Exit.Usage;
         }
 
         var id = list.Id.ToString(CultureInfo.InvariantCulture);

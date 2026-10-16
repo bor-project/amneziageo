@@ -25,19 +25,38 @@ internal sealed partial class TraceSession : IDisposable
     private const int MinimumBuffers = 4;
     private const int MaximumBuffers = 64;
     private const int FlushSeconds = 1;
+    // ENABLE_TRACE_PARAMETERS_VERSION_2, with filters.
+    private const uint ParametersVersion = 2;
+    // EVENT_FILTER_TYPE_EVENT_ID: the provider writes the listed events and no other.
+    private const uint FilterTypeEventId = 0x80000200;
+    // EVENT_FILTER_EVENT_ID of one event: FilterIn, Reserved, Count, Events[1].
+    private const int EventFilterSize = 6;
 
     private readonly ulong _handle;
-    private int _stopped;
+    // The properties block of the control calls, freed with the session.
+    private IntPtr _properties;
+    private readonly object _sync = new();
+    private bool _stopped;
 
-    private TraceSession(ulong handle)
+    /// <summary>
+    /// ctor
+    /// </summary>
+    internal TraceSession(ulong handle)
     {
         _handle = handle;
+        _properties = Properties();
     }
 
     /// <summary>
-    /// Starts a session under the name, in place of one of that name left behind, with the provider enabled on it.
+    /// Whether the provider was told to write the one event asked for and no other.
     /// </summary>
-    public static TraceSession Start(string name, Guid provider)
+    public bool Filtered { get; private set; }
+
+    /// <summary>
+    /// Starts a session under the name, in place of one of that name left behind, with the provider enabled on it:
+    /// for the one event when <paramref name="eventId"/> names it, else for every event.
+    /// </summary>
+    public static TraceSession Start(string name, Guid provider, ushort eventId = 0)
     {
         var rc = StartNamed(name, out var handle);
         if (rc == ErrorAlreadyExists)
@@ -52,7 +71,17 @@ internal sealed partial class TraceSession : IDisposable
         }
 
         var session = new TraceSession(handle);
-        rc = EnableTraceEx2(handle, ref provider, EnableProvider, LevelInformational, ulong.MaxValue, 0, 0, IntPtr.Zero);
+        rc = eventId == 0 ? EnableAll(handle, provider) : EnableOne(handle, provider, eventId);
+        if (rc == 0)
+        {
+            session.Filtered = eventId != 0;
+        }
+        else if (eventId != 0)
+        {
+            // A system that takes no event filter still gets the provider whole.
+            rc = EnableAll(handle, provider);
+        }
+
         if (rc != 0)
         {
             session.Dispose();
@@ -67,9 +96,13 @@ internal sealed partial class TraceSession : IDisposable
     /// </summary>
     public void Flush()
     {
-        if (Volatile.Read(ref _stopped) == 0)
+        lock (_sync)
         {
-            Control(_handle, null, ControlFlush);
+            if (!_stopped)
+            {
+                Prepare(_properties);
+                ControlTraceW(_handle, null, _properties, ControlFlush);
+            }
         }
     }
 
@@ -78,16 +111,32 @@ internal sealed partial class TraceSession : IDisposable
     /// </summary>
     public void Stop()
     {
-        if (Interlocked.Exchange(ref _stopped, 1) == 0)
+        lock (_sync)
         {
-            Control(_handle, null, ControlStop);
+            if (!_stopped)
+            {
+                _stopped = true;
+                Prepare(_properties);
+                ControlTraceW(_handle, null, _properties, ControlStop);
+            }
         }
     }
 
     /// <summary>
     /// Деструктор
     /// </summary>
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        lock (_sync)
+        {
+            if (_properties != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_properties);
+                _properties = IntPtr.Zero;
+            }
+        }
+    }
 
     private static uint StartNamed(string name, out ulong handle)
     {
@@ -115,10 +164,49 @@ internal sealed partial class TraceSession : IDisposable
         }
     }
 
-    // EVENT_TRACE_PROPERTIES of the session: real time, one pool of small buffers, the timer at its floor.
+    private static uint EnableAll(ulong handle, Guid provider) =>
+        EnableTraceEx2(handle, ref provider, EnableProvider, LevelInformational, ulong.MaxValue, 0, 0, IntPtr.Zero);
+
+    // Enables the provider with an event id filter of the one event: the filter and its descriptor in one block.
+    private static uint EnableOne(ulong handle, Guid provider, ushort eventId)
+    {
+        var block = Marshal.AllocHGlobal(32);
+        try
+        {
+            Marshal.WriteByte(block, 0, 1);
+            Marshal.WriteByte(block, 1, 0);
+            Marshal.WriteInt16(block, 2, 1);
+            Marshal.WriteInt16(block, 4, (short)eventId);
+            Marshal.WriteInt16(block, 6, 0);
+            Marshal.WriteInt64(block, 8, 0);
+            var descriptor = block + 16;
+            Marshal.WriteInt64(descriptor, 0, block.ToInt64());
+            Marshal.WriteInt32(descriptor, 8, EventFilterSize);
+            Marshal.WriteInt32(descriptor, 12, unchecked((int)FilterTypeEventId));
+            var parameters = new EnableParameters
+            {
+                Version = ParametersVersion,
+                FilterDescriptors = descriptor,
+                FilterDescriptorCount = 1,
+            };
+            return EnableTraceEx2(handle, ref provider, EnableProvider, LevelInformational, ulong.MaxValue, 0, 0, ref parameters);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(block);
+        }
+    }
+
     private static IntPtr Properties()
     {
         var properties = Marshal.AllocHGlobal(PropertiesSize);
+        Prepare(properties);
+        return properties;
+    }
+
+    // EVENT_TRACE_PROPERTIES of the session: real time, one pool of small buffers, the timer at its floor.
+    private static void Prepare(IntPtr properties)
+    {
         for (var at = 0; at < PropertiesSize; at += sizeof(int))
         {
             Marshal.WriteInt32(properties, at, 0);
@@ -134,7 +222,18 @@ internal sealed partial class TraceSession : IDisposable
         Marshal.WriteInt32(properties, 64, (int)(RealTimeMode | NoPerProcessorBuffering));
         Marshal.WriteInt32(properties, 68, FlushSeconds);
         Marshal.WriteInt32(properties, 116, LoggerNameOffset);
-        return properties;
+    }
+
+    // ENABLE_TRACE_PARAMETERS.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EnableParameters
+    {
+        public uint Version;
+        public uint EnableProperty;
+        public uint ControlFlags;
+        public Guid SourceId;
+        public IntPtr FilterDescriptors;
+        public uint FilterDescriptorCount;
     }
 
     [LibraryImport("advapi32.dll", StringMarshalling = StringMarshalling.Utf16)]
@@ -145,4 +244,7 @@ internal sealed partial class TraceSession : IDisposable
 
     [LibraryImport("advapi32.dll")]
     private static partial uint EnableTraceEx2(ulong handle, ref Guid provider, uint code, byte level, ulong matchAny, ulong matchAll, uint timeout, IntPtr parameters);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "EnableTraceEx2")]
+    private static partial uint EnableTraceEx2(ulong handle, ref Guid provider, uint code, byte level, ulong matchAny, ulong matchAll, uint timeout, ref EnableParameters parameters);
 }

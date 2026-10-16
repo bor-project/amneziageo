@@ -104,20 +104,67 @@ public sealed class DnsPassTests
 
         var waiting = tracker.WaitAskedAsync(Name, since, 1000);
         await Task.Delay(30);
+        var clock = Stopwatch.StartNew();
         tracker.NoteAsked(Name);
 
         Assert.True(await waiting);
+        Assert.InRange(clock.ElapsedMilliseconds, 0, 500);
         Assert.False(await tracker.WaitAskedAsync("other.example", since, 20));
     }
 
-    private static AppDnsTracker Tracker() =>
-        new(new AppMatcher(["name=probe.exe"], NullLogger<AppMatcher>.Instance, past: true), NullLogger<AppDnsTracker>.Instance, past: true);
+    [Fact]
+    public void AReportedAskOfAMatchedProgram_MarksTheNameBeforeItCountsAsAsked()
+    {
+        var tracker = Tracker(ThisProgram);
+        var since = Stopwatch.GetTimestamp();
+        var askedAtMark = true;
+        tracker.NameLearned += name => askedAtMark = tracker.AskedSince(name, since);
+
+        tracker.Report((uint)Environment.ProcessId, Name);
+
+        Assert.True(tracker.IsTunneled(Name));
+        Assert.True(tracker.AskedSince(Name, since));
+        Assert.False(askedAtMark);
+    }
+
+    [Fact]
+    public void AReportedAskOfAnotherProgram_OnlyCountsAsAsked()
+    {
+        var tracker = Tracker();
+        var since = Stopwatch.GetTimestamp();
+
+        tracker.Report((uint)Environment.ProcessId, Name);
+
+        Assert.False(tracker.IsTunneled(Name));
+        Assert.True(tracker.AskedSince(Name, since));
+    }
+
+    [Fact]
+    public async Task AnAskReportedWhileTheAnswerWaits_RoutesItPastTheTunnel()
+    {
+        var applier = new PassApplier();
+        var (proxy, tracker) = Passing(applier, ThisProgram);
+
+        var answering = proxy.AnswerAsync(Query, CancellationToken.None);
+        await Task.Delay(5);
+        tracker.Report((uint)Environment.ProcessId, Name);
+        var answer = await answering;
+
+        Assert.Equal([Address], DnsMessage.Addresses(answer!).Select(address => address.ToString()));
+        Assert.Equal([Address], applier.Added);
+    }
+
+    // The rule that names the test host itself.
+    private static string ThisProgram => $"path={Environment.ProcessPath}";
+
+    private static AppDnsTracker Tracker(string rule = "name=probe.exe") =>
+        new(new AppMatcher([rule], NullLogger<AppMatcher>.Instance, past: true), NullLogger<AppDnsTracker>.Instance, past: true);
 
     // A proxy with programs kept off the tunnel, answering www.lent.example through another tunnel of the set.
-    private static (DnsProxy Proxy, AppDnsTracker Tracker) Passing(PassApplier applier)
+    private static (DnsProxy Proxy, AppDnsTracker Tracker) Passing(PassApplier applier, string rule = "name=probe.exe")
     {
         var routing = new RoutingCache(applier, new IdleLive(), false, [], [], [], 300, NullLogger<RoutingCache>.Instance);
-        var tracker = Tracker();
+        var tracker = Tracker(rule);
         var proxy = new DnsProxy([], [], Resolver, Resolver, null, [], true, [], [], null, NullLogger<DnsProxy>.Instance, stripV6: false, routing: routing, listen: false, passDns: tracker);
         proxy.SetLentNames(
             name => name.EndsWith("lent.example", StringComparison.Ordinal) ? "second" : null,

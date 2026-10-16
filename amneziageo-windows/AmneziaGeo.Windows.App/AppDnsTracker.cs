@@ -32,6 +32,8 @@ internal sealed partial class AppDnsTracker : IDisposable
     private readonly ConcurrentDictionary<string, long> _names = new(StringComparer.Ordinal);
     // When each name was last reported asked, by any program, as a Stopwatch timestamp.
     private readonly ConcurrentDictionary<string, long> _asked = new(StringComparer.Ordinal);
+    // Completed and replaced on every reported ask, so a waiting answer wakes as its asker is reported.
+    private TaskCompletionSource _reported = new(TaskCreationOptions.RunContinuationsAsynchronously);
     // ETW handler is single-threaded; no lock needed.
     private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
     private TraceSession? _session;
@@ -98,6 +100,7 @@ internal sealed partial class AppDnsTracker : IDisposable
         }
 
         _asked[key] = Stopwatch.GetTimestamp();
+        Interlocked.Exchange(ref _reported, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
     }
 
     /// <summary>
@@ -127,16 +130,25 @@ internal sealed partial class AppDnsTracker : IDisposable
         try
         {
             var deadline = Stopwatch.GetTimestamp() + (limitMs * Stopwatch.Frequency / 1000);
-            while (Stopwatch.GetTimestamp() < deadline)
+            while (true)
             {
-                await Task.Delay(1).ConfigureAwait(false);
+                // The pulse is taken before the check: an ask noted after the check completes this very pulse.
+                var pulse = Volatile.Read(ref _reported).Task;
                 if (Asked(key, since))
                 {
                     return true;
                 }
-            }
 
-            return false;
+                var left = deadline - Stopwatch.GetTimestamp();
+                if (left <= 0)
+                {
+                    return false;
+                }
+
+                // Rounded up; the timer may still end a tick short, so the deadline is read again.
+                var ms = (int)((left * 1000 + Stopwatch.Frequency - 1) / Stopwatch.Frequency);
+                await Task.WhenAny(pulse, Task.Delay(ms)).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -156,11 +168,16 @@ internal sealed partial class AppDnsTracker : IDisposable
         try
         {
             _logger.LogDebug("starting the session {Session} of name lookups", sessionName);
-            using (_session = TraceSession.Start(sessionName, DnsClientProvider))
+            using (_session = TraceSession.Start(sessionName, DnsClientProvider, DnsQueryIssuedId))
             using (_source = new ETWTraceEventSource(sessionName, TraceEventSourceType.Session))
             {
                 ct.Register(Stop);
                 _source.Dynamic.All += Handle;
+                if (!_session.Filtered)
+                {
+                    _logger.LogDebug("the provider of name lookups writes every event of its own into the session {Session}; the asks are picked out here", sessionName);
+                }
+
                 if (_past)
                 {
                     _logger.LogInformation("watching which programs look up which names, so an app you keep off the tunnel reaches its names past it from the first try");
@@ -195,11 +212,21 @@ internal sealed partial class AppDnsTracker : IDisposable
             return;
         }
 
-        NoteAsked(name);
+        Report(pid, name);
+    }
+
+    /// <summary>
+    /// Takes the report that the process asked the name: a matched process marks the name before the ask is noted,
+    /// so an answer that wakes on the note finds the mark in place.
+    /// </summary>
+    internal void Report(uint pid, string name)
+    {
         if (pid != 0 && MatchesPidCached(pid))
         {
             Mark(name);
         }
+
+        NoteAsked(name);
     }
 
     private void Mark(string name)

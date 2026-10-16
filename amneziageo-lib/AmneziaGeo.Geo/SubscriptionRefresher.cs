@@ -122,7 +122,15 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
     /// <summary>
     /// Обновляет одну подписку и запоминает, чем это кончилось.
     /// </summary>
-    public async Task<SubscriptionResult> RefreshAsync(Subscription subscription, CancellationToken ct)
+    public Task<SubscriptionResult> RefreshAsync(Subscription subscription, CancellationToken ct)
+    {
+        return RefreshAsync(subscription, null, ct);
+    }
+
+    /// <summary>
+    /// Обновляет одну подписку; единственная конфигурация первого чтения получает данное имя.
+    /// </summary>
+    public async Task<SubscriptionResult> RefreshAsync(Subscription subscription, string? soleName, CancellationToken ct)
     {
         var snapshot = default(SubscriptionSnapshot);
         try
@@ -141,7 +149,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
         var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
         var names = await library.NamesAsync(ct).ConfigureAwait(false);
         var texts = await TextsAsync(members, names, ct).ConfigureAwait(false);
-        var plan = SubscriptionMerge.Plan(snapshot.Configs, members, names, texts);
+        var plan = SubscriptionMerge.Plan(snapshot.Configs, members, names, texts, soleName);
 
         var added = 0;
         var rewritten = new List<string>();

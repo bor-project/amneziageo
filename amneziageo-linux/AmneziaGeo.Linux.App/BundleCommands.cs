@@ -10,8 +10,8 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 {
-    // Export selection from OpExportBundle's arg0 JSON; all arrays optional. RoutingRules maps a routing
-    // list name to the rule tokens to KEEP; an absent list keeps all its rules.
+    // Export selection from OpExportBundle's arg0 JSON; all arrays optional. A routing list goes by its number or
+    // by its name; RoutingRules maps that word to the rule tokens to KEEP; an absent list keeps all its rules.
     private sealed record SelectionRequest(
         string[]? Configs,
         string[]? RoutingLists,
@@ -36,7 +36,6 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         var configNames = new HashSet<string>(selection.Configs ?? [], StringComparer.Ordinal);
         var routingNames = new HashSet<string>(selection.RoutingLists ?? [], StringComparer.Ordinal);
         var pickedConfigs = new HashSet<string>(configNames, StringComparer.Ordinal);
-        var pickedLists = new HashSet<string>(routingNames, StringComparer.Ordinal);
         var missing = new List<string>();
 
         if (configNames.Count == 0 && routingNames.Count == 0)
@@ -75,25 +74,15 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
         if (routingNames.Count > 0)
         {
-            var allLists = await store.ListRoutingListsAsync(ct).ConfigureAwait(false);
-            foreach (var name in routingNames)
+            var (picked, unknown) = BundleLists.Pick(await store.ListRoutingListsAsync(ct).ConfigureAwait(false), routingNames);
+            missing.AddRange(unknown);
+            foreach (var (key, list) in picked)
             {
-                var list = allLists.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.Ordinal));
-                if (list is null)
-                {
-                    if (pickedLists.Contains(name))
-                    {
-                        missing.Add(name);
-                    }
-
-                    continue;
-                }
-
                 // Role-tagged: bare tokens would re-import every rule as Proxy and drop its bucket.
                 var rules = list.Rules.Select(GeoConfigurator.FormatWithRole).ToList();
 
                 // Rules the user unchecked in the export tree are dropped; no entry keeps the whole list.
-                if (selection.RoutingRules is not null && selection.RoutingRules.TryGetValue(name, out var kept))
+                if (selection.RoutingRules is not null && selection.RoutingRules.TryGetValue(key, out var kept))
                 {
                     var keepSet = new HashSet<string>(kept, StringComparer.Ordinal);
                     rules = [.. rules.Where(keepSet.Contains)];
@@ -103,7 +92,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                     ? new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp, settings.Mode, settings.UseGlobalProxy)
                     : null;
 
-                routingBlocks.Add(new PortableBundle.RoutingBlock(name, rules, settingsBlock));
+                routingBlocks.Add(new PortableBundle.RoutingBlock(list.Name, rules, settingsBlock, list.Uid));
             }
         }
 
@@ -121,8 +110,9 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
     }
 
     /// <summary>
-    /// Writes a bundle into the library. The policy decides what a name already taken means:
-    /// new (numbered copy), replace, skip, or merge.
+    /// Writes a bundle into the library. The policy decides what a config name already taken means:
+    /// new (numbered copy), replace, skip, or merge. A routing list goes by its lasting id: the list held under it
+    /// is replaced, skipped or merged with, and "new" replaces it as well.
     /// </summary>
     public async Task<IpcAck> ImportAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -153,14 +143,12 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
         }
 
-        // Configs and routing lists each own a separate name space; the snapshots detect collisions.
+        // Configs collide by name, routing lists by their lasting id; the snapshots detect collisions.
         var existingConfigs = new HashSet<string>(await store.ListConfigNamesAsync(ct).ConfigureAwait(false), StringComparer.Ordinal);
-        var existingLists = (await store.ListRoutingListsAsync(ct).ConfigureAwait(false))
-            .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
+        var existingLists = await store.ListRoutingListsAsync(ct).ConfigureAwait(false);
 
-        // Growing name spaces so the add-as-new path never reuses a name taken earlier in THIS import.
+        // A growing name space so the add-as-new path never reuses a name taken earlier in THIS import.
         var configNames = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
-        var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
         var renames = new List<string>();
         var importedConfigs = 0;
@@ -198,8 +186,8 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
         foreach (var block in bundle.RoutingLists)
         {
-            // Same-name list and a non-default policy: act on the existing row, so the selection stays valid.
-            if (existingLists.TryGetValue(block.Name, out var existingList) && policy != "new")
+            // The list held under the block's id: act on that row, so the selection stays valid.
+            if (BundleLists.Held(block, existingLists) is { } existingList)
             {
                 if (policy == "skip")
                 {
@@ -207,10 +195,11 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                 }
 
                 // A pre-role bundle carries bare tokens; those import as Proxy, as they did before roles existed.
-                var merged = policy == "merge"
+                var merge = policy == "merge";
+                var merged = merge
                     ? existingList.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
                     : block.Rules.ToList();
-                await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, merged, ct).ConfigureAwait(false);
+                await geo.ApplyToRoutingListAsync(existingList.Id, merge ? existingList.Name : BundleLists.NameOf(block), merged, ct).ConfigureAwait(false);
                 if (block.Settings is { } existingSettings)
                 {
                     await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, existingSettings.Exclusions, existingSettings.AllUdp, existingSettings.Mode, existingSettings.UseGlobalProxy), ct).ConfigureAwait(false);
@@ -220,14 +209,8 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                 continue;
             }
 
-            var freeName = FreeName(block.Name, listNames);
-            listNames.Add(freeName);
-            if (!string.Equals(freeName, block.Name, StringComparison.Ordinal))
-            {
-                renames.Add($"«{block.Name}» → «{freeName}»");
-            }
-
-            var newId = await geo.ApplyToRoutingListAsync(0, freeName, block.Rules, ct).ConfigureAwait(false);
+            // A list no row holds lands under its own name and id; a bundle of an earlier build gives no id.
+            var newId = await geo.ApplyToRoutingListAsync(0, BundleLists.NameOf(block), block.Rules, block.Id ?? string.Empty, ct).ConfigureAwait(false);
             if (block.Settings is { } settings)
             {
                 await store.SetRoutingSettingsAsync(new RoutingSettings(newId, settings.Exclusions, settings.AllUdp, settings.Mode, settings.UseGlobalProxy), ct).ConfigureAwait(false);

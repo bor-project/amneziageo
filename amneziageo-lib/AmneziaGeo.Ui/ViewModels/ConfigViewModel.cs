@@ -26,6 +26,7 @@ internal partial class ConfigViewModel : ViewModelBase
     private string? _pendingOpenConfig;
     private string? _configBeforeCreate;
     private string _sectionConfigDefaultName = string.Empty;
+    private string _sectionAddressName = string.Empty;
     private bool _sectionConfigSaving;
 
     // Whether the agent has reported its config catalogue, and whether entering the section waits for it.
@@ -1473,6 +1474,7 @@ internal partial class ConfigViewModel : ViewModelBase
         // on open; the user can accept it or type over it. Clearing it turns the box red and blocks the save.
         // Remember the default so an import can still overwrite it with the config's own name (SectionConfigNameIsDefault).
         _sectionConfigDefaultName = UniqueConfigName();
+        _sectionAddressName = string.Empty;
         SectionConfigName = _sectionConfigDefaultName;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
@@ -1491,6 +1493,7 @@ internal partial class ConfigViewModel : ViewModelBase
     private void CancelSectionConfig()
     {
         IsCreatingSectionConfig = false;
+        _sectionAddressName = string.Empty;
         SectionConfigName = string.Empty;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
@@ -1777,12 +1780,15 @@ internal partial class ConfigViewModel : ViewModelBase
 
         var url = SectionConfigText.Trim();
         var name = !SectionConfigNameIsDefault ? SectionConfigName.Trim() : SubscriptionCodec.AddressName(url);
+
+        // Имя, введённое поверх взятого из адреса, получает и конфигурация, если подписка принесёт одну.
+        var typed = !SectionConfigNameIsDefault && !string.Equals(name, _sectionAddressName, StringComparison.Ordinal);
         _sectionConfigSaving = true;
         IsLoadingSubscription = true;
         SectionConfigStatus = string.Empty;
         try
         {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddSubscription, [url, name]));
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddSubscription, typed ? [url, name, name] : [url, name]));
             if (!ack.Ok)
             {
                 SectionConfigStatus = ack.Message;
@@ -1815,7 +1821,8 @@ internal partial class ConfigViewModel : ViewModelBase
         var host = SubscriptionCodec.AddressName(url);
         if (host.Length > 0)
         {
-            SectionConfigName = UniqueName.ResolveParen(host, _subscriptionNames);
+            _sectionAddressName = UniqueName.ResolveParen(host, _subscriptionNames);
+            SectionConfigName = _sectionAddressName;
         }
     }
 

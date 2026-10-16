@@ -34,13 +34,15 @@ public static class SubscriptionMerge
 {
     /// <summary>
     /// Возвращает решения по каждому узлу подписки и по каждому пропавшему из неё. Тексты заведённых
-    /// конфигураций опознают узел, которому подписка сменила имя.
+    /// конфигураций опознают узел, которому подписка сменила имя. Единственный узел первого чтения получает
+    /// данное имя.
     /// </summary>
     public static IReadOnlyList<SubscriptionChange> Plan(
         IReadOnlyList<VpnLinkCodec.Imported> fetched,
         IReadOnlyList<SubscriptionMember> members,
         IReadOnlyCollection<string> configNames,
-        IReadOnlyDictionary<string, string>? texts = null)
+        IReadOnlyDictionary<string, string>? texts = null,
+        string? soleName = null)
     {
         var known = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
         foreach (var member in members)
@@ -53,6 +55,7 @@ public static class SubscriptionMerge
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var kept = new HashSet<string>(StringComparer.Ordinal);
         var plan = new List<SubscriptionChange>();
+        var given = Given(fetched, members, soleName);
 
         foreach (var imported in fetched)
         {
@@ -71,7 +74,7 @@ public static class SubscriptionMerge
                 continue;
             }
 
-            var name = Returned(remark, known, taken, kept) ?? Unique(NodeName(imported, fetched), taken);
+            var name = Returned(remark, known, taken, kept) ?? Unique(given ?? NodeName(imported, fetched), taken);
             taken.Add(name);
             plan.Add(new SubscriptionChange(remark, name, imported.ConfText, SubscriptionChangeKind.Add));
         }
@@ -85,6 +88,19 @@ public static class SubscriptionMerge
         }
 
         return plan;
+    }
+
+    // Имя, данное при заведении, если первое чтение принесло один узел.
+    private static string? Given(
+        IReadOnlyList<VpnLinkCodec.Imported> fetched,
+        IReadOnlyList<SubscriptionMember> members,
+        string? soleName)
+    {
+        return !string.IsNullOrWhiteSpace(soleName)
+            && members.Count == 0
+            && fetched.Select(Remark).Distinct(StringComparer.Ordinal).Count() == 1
+            ? soleName.Trim()
+            : null;
     }
 
     // Имя конфигурации, снятой уходом узла из подписки: вернувшийся узел садится на него вместе с настройками.

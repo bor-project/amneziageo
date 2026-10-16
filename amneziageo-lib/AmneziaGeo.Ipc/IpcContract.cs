@@ -123,7 +123,7 @@ public static class IpcContract
     public const string OpUpdateRoutingList = "update-routing-list";
 
     /// <summary>
-    /// Command to set the order the routing lists are listed in. Args: the names, in the order they are shown.
+    /// Command to set the order the routing lists are listed in. Args: the ids, in the order they are shown.
     /// </summary>
     public const string OpReorderRoutingLists = "reorder-routing-lists";
 
@@ -176,7 +176,8 @@ public static class IpcContract
     public const string OpSelectConfig = "set-config";
 
     /// <summary>
-    /// Adds a subscription and reads it right away: address, and optionally a name.
+    /// Adds a subscription and reads it right away: address, optionally a name, and optionally the name the only
+    /// configuration it brings in takes.
     /// </summary>
     public const string OpAddSubscription = "add-subscription";
 

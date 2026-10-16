@@ -31,7 +31,8 @@ public sealed record SubscriptionOutcome(IpcAck Ack, int Added, int Updated, int
 public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscriptionLibrary library)
 {
     /// <summary>
-    /// Заводит подписку по адресу и читает её сразу. Аргументы: адрес, необязательное имя.
+    /// Заводит подписку по адресу и читает её сразу. Аргументы: адрес, необязательное имя и необязательное имя
+    /// единственной конфигурации, которую подписка принесёт.
     /// </summary>
     public async Task<SubscriptionOutcome> AddAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -48,6 +49,7 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         }
 
         var name = args.Count > 1 && !string.IsNullOrWhiteSpace(args[1]) ? args[1].Trim() : uri.Host;
+        var soleName = args.Count > 2 && !string.IsNullOrWhiteSpace(args[2]) ? args[2].Trim() : null;
         var subscriptions = await store.ListSubscriptionsAsync(ct).ConfigureAwait(false);
         if (subscriptions.Any(item => string.Equals(item.Name, name, StringComparison.Ordinal)))
         {
@@ -55,7 +57,7 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         }
 
         // Первое чтение проверяет адрес: подписка, которую не удалось прочитать, не заводится.
-        var result = await Refresher().RefreshAsync(new Subscription(name, url), ct).ConfigureAwait(false);
+        var result = await Refresher().RefreshAsync(new Subscription(name, url), soleName, ct).ConfigureAwait(false);
         if (!result.Ok)
         {
             await store.RemoveSubscriptionAsync(name, ct).ConfigureAwait(false);

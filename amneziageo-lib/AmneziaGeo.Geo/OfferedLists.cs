@@ -30,20 +30,19 @@ public sealed record TakenSources(IReadOnlyList<GeoSource> Added, IReadOnlyList<
 /// What taking the routing lists of a server did.
 /// </summary>
 /// <param name="Added">How many lists were added.</param>
-/// <param name="Bound">How many lists held under the name were tied to the list of the server.</param>
 /// <param name="Waiting">How many lists got a newer version that waits for the owner.</param>
 /// <param name="InUse">The list put in use, null when none was.</param>
-public sealed record TakenPresets(int Added, int Bound, int Waiting, long? InUse)
+public sealed record TakenPresets(int Added, int Waiting, long? InUse)
 {
     /// <summary>
     /// Nothing taken.
     /// </summary>
-    public static TakenPresets None { get; } = new(0, 0, 0, null);
+    public static TakenPresets None { get; } = new(0, 0, null);
 
     /// <summary>
     /// Whether anything was taken.
     /// </summary>
-    public bool Any => Added > 0 || Bound > 0 || Waiting > 0 || InUse is not null;
+    public bool Any => Added > 0 || Waiting > 0 || InUse is not null;
 }
 
 /// <summary>
@@ -167,7 +166,6 @@ public static class OfferedLists
         var names = new HashSet<string>(lists.Select(list => list.Name), StringComparer.Ordinal);
         var ids = new HashSet<long>(lists.Select(list => list.Id));
         var added = 0;
-        var bound = 0;
         var waiting = 0;
         var inUse = default(long?);
         foreach (var preset in offered)
@@ -176,7 +174,7 @@ public static class OfferedLists
             {
                 if (names.Add(preset.Name))
                 {
-                    ids.Add(await AddListAsync(store, geo, preset.Name, preset.Rules, preset.AllUdp, preset.Full, ct).ConfigureAwait(false));
+                    ids.Add(await AddListAsync(store, geo, preset.Name, preset.Rules, preset.AllUdp, preset.Full, string.Empty, ct).ConfigureAwait(false));
                     added++;
                 }
 
@@ -200,24 +198,9 @@ public static class OfferedLists
                 continue;
             }
 
-            if (lists.Find(list => string.Equals(list.Name, preset.Name, StringComparison.Ordinal)) is { } named
-                && !origins.Exists(one => one.ListId == named.Id))
-            {
-                var same = await SameAsync(store, named, version, ct).ConfigureAwait(false);
-                var tied = same
-                    ? new RoutingListOrigin(named.Id, preset.Id, version.Source, when)
-                    : new RoutingListOrigin(named.Id, preset.Id, version.Source, DateTimeOffset.MinValue, version);
-                await store.SetRoutingListOriginAsync(tied, ct).ConfigureAwait(false);
-                origins.Add(tied);
-                bound++;
-                waiting += same ? 0 : 1;
-
-                continue;
-            }
-
-            var name = FreeName(names, preset.Name);
-            names.Add(name);
-            var id = await AddListAsync(store, geo, name, preset.Rules, preset.AllUdp, preset.Full, ct).ConfigureAwait(false);
+            // A list is told apart by the id of the server: a list held under the same name stays apart from it.
+            names.Add(preset.Name);
+            var id = await AddListAsync(store, geo, preset.Name, preset.Rules, preset.AllUdp, preset.Full, preset.Id, ct).ConfigureAwait(false);
             var fresh = new RoutingListOrigin(id, preset.Id, version.Source, when);
             await store.SetRoutingListOriginAsync(fresh, ct).ConfigureAwait(false);
             origins.Add(fresh);
@@ -230,7 +213,7 @@ public static class OfferedLists
             }
         }
 
-        return new TakenPresets(added, bound, waiting, inUse);
+        return new TakenPresets(added, waiting, inUse);
     }
 
     /// <summary>
@@ -247,10 +230,9 @@ public static class OfferedLists
             return null;
         }
 
-        var taken = lists.Any(list => list.Id != listId && string.Equals(list.Name, pending.Name, StringComparison.Ordinal));
         var settings = await store.GetRoutingSettingsAsync(listId, ct).ConfigureAwait(false);
 
-        return new WaitingList(listId, taken ? held.Name : pending.Name, pending.Rules, settings?.Exclusions ?? string.Empty, pending.AllUdp, pending.Full);
+        return new WaitingList(listId, pending.Name, pending.Rules, settings?.Exclusions ?? string.Empty, pending.AllUdp, pending.Full);
     }
 
     /// <summary>
@@ -286,12 +268,13 @@ public static class OfferedLists
         IReadOnlyList<string> rules,
         bool allUdp,
         bool full,
+        string uid,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(geo);
 
-        var id = await geo.ApplyToRoutingListAsync(0, name, rules, ct).ConfigureAwait(false);
+        var id = await geo.ApplyToRoutingListAsync(0, name, rules, uid, ct).ConfigureAwait(false);
         if (allUdp || full)
         {
             await store.SetRoutingSettingsAsync(new RoutingSettings(id, string.Empty, allUdp, full ? "full" : "split", full), ct).ConfigureAwait(false);
@@ -332,19 +315,4 @@ public static class OfferedLists
             && list.Rules.Select(GeoConfigurator.FormatWithRole).SequenceEqual(offered, StringComparer.Ordinal);
     }
 
-    private static string FreeName(HashSet<string> names, string name)
-    {
-        if (!names.Contains(name))
-        {
-            return name;
-        }
-
-        var number = 2;
-        while (names.Contains($"{name} ({number})"))
-        {
-            number++;
-        }
-
-        return $"{name} ({number})";
-    }
 }

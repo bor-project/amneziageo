@@ -153,7 +153,10 @@ internal static class ConfigCommands
             }
 
             var named = flags.Positional.Count > 0 ? flags.Positional[0] : SubscriptionCodec.AddressName(address);
-            return Reply.Report(await agent.SendAsync(IpcContract.OpAddSubscription, address, named).ConfigureAwait(false));
+
+            // Названное имя получает и конфигурация, если подписка принесёт одну.
+            var sent = flags.Positional.Count > 0 ? new[] { address, named, named } : new[] { address, named };
+            return Reply.Report(await agent.SendAsync(IpcContract.OpAddSubscription, sent).ConfigureAwait(false));
         }
 
         var imported = VpnLinkCodec.TryDecode(text);

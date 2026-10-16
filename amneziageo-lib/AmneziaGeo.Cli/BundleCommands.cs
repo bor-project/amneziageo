@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
@@ -40,11 +41,24 @@ internal static class BundleCommands
         }
 
         var snapshot = agent.Snapshot;
+
+        // A routing list goes to the agent by its number: names repeat.
+        var lists = new List<string>();
+        foreach (var key in flags.Values("list"))
+        {
+            if (RoutingCommands.Resolve(agent, key) is not { } list)
+            {
+                return Reply.Usage($"routing list '{key}' not found");
+            }
+
+            lists.Add(list.Id.ToString(CultureInfo.InvariantCulture));
+        }
+
         var selection = flags.Has("all")
             ? new Selection(
                 [.. snapshot.Configs.Select(config => config.Name)],
-                [.. (snapshot.RoutingLists ?? []).Select(list => list.Name)])
-            : new Selection([.. flags.Values("config")], [.. flags.Values("list")]);
+                [.. (snapshot.RoutingLists ?? []).Select(list => list.Id.ToString(CultureInfo.InvariantCulture))])
+            : new Selection([.. flags.Values("config")], [.. lists]);
 
         if (selection.Configs.Length + selection.RoutingLists.Length == 0)
         {

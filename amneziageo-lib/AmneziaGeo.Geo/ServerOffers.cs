@@ -304,7 +304,7 @@ public sealed class ServerOffers
             if (lists.Any)
             {
                 var use = lists.InUse is null ? string.Empty : "; a list the server marks default was put in use";
-                _note?.Invoke($"{config}: of the routing lists of the server {lists.Added} added, {lists.Bound} tied to a list held, {lists.Waiting} with a newer version{use}", null);
+                _note?.Invoke($"{config}: of the routing lists of the server {lists.Added} added, {lists.Waiting} with a newer version{use}", null);
             }
 
             if (lists.InUse is not null)

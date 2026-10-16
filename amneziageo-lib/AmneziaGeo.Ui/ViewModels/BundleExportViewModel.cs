@@ -138,13 +138,13 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
                 // actually exports, so a spare entry is harmless.
                 if (item.Rules.Any(r => !r.IsChecked))
                 {
-                    routingRules[item.Name] = [.. item.Rules.Where(r => r.IsChecked).Select(r => r.Token)];
+                    routingRules[ListKey(item)] = [.. item.Rules.Where(r => r.IsChecked).Select(r => r.Token)];
                 }
             }
 
             var selection = new SelectionPayload(
                 [.. ConfigItems.Where(i => i.IsChecked).Select(i => i.Name)],
-                [.. RoutingItems.Where(i => i.IsChecked).Select(i => i.Name)],
+                [.. RoutingItems.Where(i => i.IsChecked).Select(ListKey)],
                 routingRules.Count > 0 ? routingRules : null);
             var json = JsonSerializer.Serialize(selection, _selectionOptions);
 
@@ -167,7 +167,10 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
         }
     }
 
-    // Selection JSON sent to the agent (camelCase). RoutingRules maps a routing list name to the rule
+    // A routing list goes to the agent by its number: names repeat.
+    private static string ListKey(BundleItem item) => item.ListId.ToString(CultureInfo.InvariantCulture);
+
+    // Selection JSON sent to the agent (camelCase). RoutingRules maps a routing list number to the rule
     // tokens to KEEP; absent list = keep all its rules.
     private sealed record SelectionPayload(
         string[] Configs,

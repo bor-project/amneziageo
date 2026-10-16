@@ -31,9 +31,7 @@ internal static class RoutingCommands
             "delete-rule" => await AmendAsync(agent, rest, add: false).ConfigureAwait(false),
             "remove" => await RemoveAsync(agent, rest).ConfigureAwait(false),
             "update" => await UpdateAsync(agent, rest).ConfigureAwait(false),
-            "order" => rest.Count > 0
-                ? Reply.Report(await agent.SendAsync(IpcContract.OpReorderRoutingLists, [.. rest]).ConfigureAwait(false), "order saved")
-                : Reply.Usage("usage: amneziageo routing order <name> [<name>...]"),
+            "order" => await OrderAsync(agent, rest).ConfigureAwait(false),
             "settings" => await SettingsAsync(agent, rest).ConfigureAwait(false),
             "configure" => await ConfigureAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown routing command '{args[0]}'"),
@@ -62,6 +60,28 @@ internal static class RoutingCommands
         return Reply.Report(await agent.SendAsync(IpcContract.OpAssignRouting, listId).ConfigureAwait(false));
     }
 
+    // Sets the order of the catalogue: each list by id or name, sent on as ids.
+    private static async Task<int> OrderAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return Reply.Usage("usage: amneziageo routing order <id|name> [<id|name>...]");
+        }
+
+        var ids = new List<string>();
+        foreach (var key in args)
+        {
+            if (Resolve(agent, key) is not { } list)
+            {
+                return Reply.Usage($"routing list '{key}' not found");
+            }
+
+            ids.Add(list.Id.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return Reply.Report(await agent.SendAsync(IpcContract.OpReorderRoutingLists, [.. ids]).ConfigureAwait(false), "order saved");
+    }
+
     // Takes the newer version the server handed out for a list.
     private static async Task<int> UpdateAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
@@ -81,7 +101,8 @@ internal static class RoutingCommands
     }
 
     /// <summary>
-    /// Finds a routing list by id or by name.
+    /// Finds a routing list by id or by name. A name several lists carry finds none: their ids are printed, so the
+    /// list can be named by its id.
     /// </summary>
     public static RoutingListEntry? Resolve(IAgentLink agent, string key)
     {
@@ -95,7 +116,14 @@ internal static class RoutingCommands
             }
         }
 
-        return lists.FirstOrDefault(list => string.Equals(list.Name, key, StringComparison.OrdinalIgnoreCase));
+        var named = lists.Where(list => string.Equals(list.Name, key, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (named.Count > 1)
+        {
+            Output.Error($"{named.Count.ToString(CultureInfo.InvariantCulture)} routing lists are called '{key}': ids {string.Join(", ", named.Select(list => list.Id.ToString(CultureInfo.InvariantCulture)))}; name one by its id");
+            return null;
+        }
+
+        return named.FirstOrDefault();
     }
 
     private static int List(IAgentLink agent)

@@ -241,9 +241,14 @@ public interface IStateStore
     Task<RoutingListStamp?> GetRoutingListStampAsync(long id, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the routing list by name, or null if absent.
+    /// Returns the first routing list by name in the order of the catalogue, or null if absent.
     /// </summary>
     Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the routing list by its lasting id, or null if absent.
+    /// </summary>
+    Task<RoutingList?> GetRoutingListByUidAsync(string uid, CancellationToken ct = default);
 
     /// <summary>
     /// Returns all stored routing lists, in the order the user set them, then by name.
@@ -257,9 +262,9 @@ public interface IStateStore
     Task<IReadOnlyList<RoutingListSummary>> ListRoutingListSummariesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Stores the order the routing lists are listed in. Names left out keep their own place.
+    /// Stores the order the routing lists are listed in. Lists left out keep their own place.
     /// </summary>
-    Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default);
+    Task SetRoutingListOrderAsync(IReadOnlyList<long> ids, CancellationToken ct = default);
 
     /// <summary>
     /// Removes a routing list by id. The global selection is cleared when it named this list.

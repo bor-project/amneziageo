@@ -1963,12 +1963,7 @@ internal sealed class LinuxAgent : IDisposable
             return Fail();
         }
 
-        // The name column is unique: a clash used to surface as a raw SQLite error from the insert.
         var lists = await _store.ListRoutingListsAsync(ct).ConfigureAwait(false);
-        if (lists.Any(l => l.Id != id && string.Equals(l.Name, name, StringComparison.Ordinal)))
-        {
-            return new IpcAck(false, IpcMessage.Key("Agent_RoutingListNameTaken", name));
-        }
 
         var saved = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)], ct).ConfigureAwait(false);
 
@@ -1996,7 +1991,7 @@ internal sealed class LinuxAgent : IDisposable
             : new IpcAck(true, string.Join('\n', list.Rules.Select(GeoConfigurator.FormatWithRole)));
     }
 
-    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    // Stores the order the routing-list catalogue is shown in.
     private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count == 0)
@@ -2005,14 +2000,15 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var stored = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
-            .Select(summary => summary.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        if (args.Any(name => !stored.Contains(name)))
+            .Select(summary => summary.Id)
+            .ToHashSet();
+        var ids = RoutingListIds.Parse(args);
+        if (ids is null || ids.Any(id => !stored.Contains(id)))
         {
             return Fail();
         }
 
-        await _store.SetRoutingListOrderAsync(args, ct).ConfigureAwait(false);
+        await _store.SetRoutingListOrderAsync(ids, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }

@@ -236,6 +236,9 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default) => user.GetRoutingListByNameAsync(name, ct);
 
     /// <inheritdoc/>
+    public Task<RoutingList?> GetRoutingListByUidAsync(string uid, CancellationToken ct = default) => user.GetRoutingListByUidAsync(uid, ct);
+
+    /// <inheritdoc/>
     public Task<RoutingListStamp?> GetRoutingListStampAsync(long id, CancellationToken ct = default) => user.GetRoutingListStampAsync(id, ct);
 
     /// <inheritdoc/>
@@ -246,7 +249,7 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
         => user.ListRoutingListSummariesAsync(ct);
 
     /// <inheritdoc/>
-    public Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default) => user.SetRoutingListOrderAsync(names, ct);
+    public Task SetRoutingListOrderAsync(IReadOnlyList<long> ids, CancellationToken ct = default) => user.SetRoutingListOrderAsync(ids, ct);
 
     /// <inheritdoc/>
     public Task RemoveRoutingListAsync(long id, CancellationToken ct = default) => user.RemoveRoutingListAsync(id, ct);

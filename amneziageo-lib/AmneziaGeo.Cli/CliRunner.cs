@@ -129,7 +129,7 @@ public static class CliRunner
               routing delete-rule <id|name> <rule...>
               routing remove <id|name>
               routing update <id|name>              take the newer version its server handed out
-              routing order <name> [<name>...]      the order they are listed in
+              routing order <id|name> [<id|name>...] the order they are listed in
               routing settings <id|name>
               routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>]
                                           [--all-udp on|off] [--global-proxy on|off]

@@ -80,6 +80,41 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Add_GivesTheConfigNameToTheOnlyConfigItBringsIn()
+    {
+        _feed.Body = Body(Config("phone"));
+
+        var outcome = await _service.AddAsync([Url, "мой сервер", "мой сервер"], default);
+
+        Assert.True(outcome.Ack.Ok);
+        Assert.Equal(["мой сервер"], _library.Names);
+        Assert.Equal("мой сервер", (await _store.ListSubscriptionsAsync())[0].Name);
+    }
+
+    [Fact]
+    public async Task Add_LeavesTheServerNamesWhenItBringsInSeveral()
+    {
+        _feed.Body = Body(Config("phone"), Config("laptop"));
+
+        await _service.AddAsync([Url, "мой сервер", "мой сервер"], default);
+
+        Assert.Equal(["phone", "laptop"], _library.Names);
+    }
+
+    [Fact]
+    public async Task Refresh_KeepsTheConfigNameGivenOnAdding()
+    {
+        _feed.Body = Body(Config("phone"));
+        await _service.AddAsync([Url, "мой сервер", "мой сервер"], default);
+        _feed.Body = Body(Config("phone", "example.net:51999"));
+
+        var outcome = await _service.RefreshAsync([], default);
+
+        Assert.Equal(["мой сервер"], outcome.Rewritten);
+        Assert.Equal(["мой сервер"], _library.Names);
+    }
+
+    [Fact]
     public async Task Add_RefusesAnythingThatIsNotAnHttpAddress()
     {
         var outcome = await _service.AddAsync(["vpn://not-an-address"], default);

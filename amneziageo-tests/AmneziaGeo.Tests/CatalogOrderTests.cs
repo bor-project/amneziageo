@@ -47,11 +47,11 @@ public sealed class CatalogOrderTests : IAsyncLifetime
     [Fact]
     public async Task RoutingListsKeepTheStoredOrder()
     {
-        await SaveListAsync("alpha");
-        await SaveListAsync("bravo");
-        await SaveListAsync("charlie");
+        var alpha = await SaveListAsync("alpha");
+        var bravo = await SaveListAsync("bravo");
+        var charlie = await SaveListAsync("charlie");
 
-        await _store.SetRoutingListOrderAsync(["charlie", "alpha", "bravo"]);
+        await _store.SetRoutingListOrderAsync([charlie, alpha, bravo]);
 
         Assert.Equal(["charlie", "alpha", "bravo"], await ListNamesAsync());
     }
@@ -59,18 +59,18 @@ public sealed class CatalogOrderTests : IAsyncLifetime
     [Fact]
     public async Task NewRoutingListLandsLast()
     {
-        await SaveListAsync("alpha");
-        await SaveListAsync("bravo");
-        await _store.SetRoutingListOrderAsync(["bravo", "alpha"]);
+        var alpha = await SaveListAsync("alpha");
+        var bravo = await SaveListAsync("bravo");
+        await _store.SetRoutingListOrderAsync([bravo, alpha]);
 
         await SaveListAsync("charlie");
 
         Assert.Equal(["bravo", "alpha", "charlie"], await ListNamesAsync());
     }
 
-    private async Task SaveListAsync(string name)
+    private async Task<long> SaveListAsync(string name)
     {
-        await _store.SaveRoutingListAsync(new RoutingList(0, name, [], [], [], [], [], [], [], [], []));
+        return await _store.SaveRoutingListAsync(new RoutingList(0, name, [], [], [], [], [], [], [], [], []));
     }
 
     private async Task<IReadOnlyList<string>> ListNamesAsync()

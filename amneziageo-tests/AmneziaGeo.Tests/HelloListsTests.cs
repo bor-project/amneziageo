@@ -229,6 +229,7 @@ public sealed class HelloListsTests : IAsyncLifetime
         Assert.Equal(["proxy|geosite:youtube"], list.Rules.Select(GeoConfigurator.FormatWithRole));
         Assert.True((await _store.GetRoutingSettingsAsync(list.Id))!.AllUdp);
         Assert.Equal(new RoutingListOrigin(list.Id, First, "vpn.example-awg1-office", MorningTime), origin);
+        Assert.Equal(First, list.Uid);
         Assert.Equal("vpn.example-awg1-office", summary.Source);
         Assert.False(summary.HasUpdate);
         Assert.Null(await _store.GetSelectedRoutingListAsync());
@@ -380,7 +381,7 @@ public sealed class HelloListsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AnUpdate_KeepsTheNameAnotherListDoesNotCarry()
+    public async Task AnUpdate_TakesTheNameOfTheServerThoughAnotherListCarriesIt()
     {
         var geo = new GeoConfigurator(_store, new NoFiles());
         await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
@@ -391,7 +392,7 @@ public sealed class HelloListsTests : IAsyncLifetime
         await UpdateAsync(geo, list.Id);
 
         var after = await _store.GetRoutingListAsync(list.Id);
-        Assert.Equal("Unblock", after!.Name);
+        Assert.Equal("Taken", after!.Name);
         Assert.Equal(["direct|geoip:ru"], after.Rules.Select(GeoConfigurator.FormatWithRole));
     }
 
@@ -406,7 +407,7 @@ public sealed class HelloListsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AListHeldUnderTheName_IsTiedToTheListOfTheServer()
+    public async Task AListHeldUnderTheName_StaysApartFromTheListOfTheServer()
     {
         await Offers().AskAsync("office", Text, CancellationToken.None);
         var held = await _store.ListRoutingListsAsync();
@@ -416,26 +417,28 @@ public sealed class HelloListsTests : IAsyncLifetime
             Item(Second, "Everything", "direct|geoip:by", Noon));
 
         var origins = await _store.ListRoutingListOriginsAsync();
+        var lists = await _store.ListRoutingListsAsync();
         var summaries = await _store.ListRoutingListSummariesAsync();
-        Assert.Equal(held.Select(list => list.Id), (await _store.ListRoutingListsAsync()).Select(list => list.Id));
+        Assert.Equal(["Unblock", "Everything", "Unblock", "Everything"], lists.Select(list => list.Name));
+        Assert.Equal(held.Select(list => list.Id), lists.Take(2).Select(list => list.Id));
+        Assert.Equal(lists.Skip(2).Select(list => list.Id), origins.Select(origin => origin.ListId));
         Assert.Equal([First, Second], origins.Select(origin => origin.PresetId));
-        Assert.Null(origins[0].Pending);
-        Assert.Equal(NoonTime, origins[0].Updated);
-        Assert.Equal(["direct|geoip:by"], origins[1].Pending!.Rules);
-        Assert.Equal([false, true], summaries.Select(summary => summary.HasUpdate));
-        Assert.All(summaries, summary => Assert.Equal("vpn.example-awg1-office", summary.Source));
+        Assert.Equal([First, Second], lists.Skip(2).Select(list => list.Uid));
+        Assert.All(origins, origin => Assert.Null(origin.Pending));
+        Assert.Equal(["", "", "vpn.example-awg1-office", "vpn.example-awg1-office"], summaries.Select(summary => summary.Source));
+        Assert.Equal(["direct|geoip:by"], lists[3].Rules.Select(GeoConfigurator.FormatWithRole));
         Assert.Null(await _store.GetSelectedRoutingListAsync());
     }
 
     [Fact]
-    public async Task AListOfAnotherServerUnderTheSameName_GetsANameOfItsOwn()
+    public async Task AListOfAnotherServerUnderTheSameName_KeepsTheName()
     {
         await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
 
         await AskAsync(Item(Second, "Unblock", "proxy|geosite:openai", Morning, source: "other.example-awg1-office"));
 
         var summaries = await _store.ListRoutingListSummariesAsync();
-        Assert.Equal(["Unblock", "Unblock (2)"], summaries.Select(summary => summary.Name));
+        Assert.Equal(["Unblock", "Unblock"], summaries.Select(summary => summary.Name));
         Assert.Equal(["vpn.example-awg1-office", "other.example-awg1-office"], summaries.Select(summary => summary.Source));
     }
 

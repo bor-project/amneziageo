@@ -39,7 +39,8 @@ public static class PortableBundle
         IReadOnlyList<ProfileBlock>? Profiles = null,
         // What was in use when the bundle was written, so a restore comes back to the same server and list.
         string? ActiveConfig = null,
-        string? ActiveRoutingList = null);
+        string? ActiveRoutingList = null,
+        string? ActiveRoutingListId = null);
 
     /// <summary>
     /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.
@@ -63,12 +64,14 @@ public static class PortableBundle
     public sealed record GeoBlock(bool Split, IReadOnlyList<string> Rules);
 
     /// <summary>
-    /// A shared routing list: rule tokens and optional traffic settings.
+    /// A shared routing list: rule tokens, optional traffic settings and the lasting id that tells it apart; a
+    /// bundle of an earlier build carries no id.
     /// </summary>
     public sealed record RoutingBlock(
         string Name,
         IReadOnlyList<string> Rules,
-        RoutingSettingsBlock? Settings);
+        RoutingSettingsBlock? Settings,
+        string? Id = null);
 
     /// <summary>
     /// A routing list's traffic policy: bypass entries, UDP handling, split or full mode.

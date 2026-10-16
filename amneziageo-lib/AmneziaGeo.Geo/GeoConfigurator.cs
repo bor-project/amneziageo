@@ -37,7 +37,15 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
     /// Materializes the role-tagged rule tokens and saves them as a shared routing list. When listId is 0
     /// a new list is created; otherwise the list with that id is replaced. Returns the row id.
     /// </summary>
-    public async Task<long> ApplyToRoutingListAsync(long listId, string name, IReadOnlyList<string> ruleTokens, CancellationToken ct = default)
+    public Task<long> ApplyToRoutingListAsync(long listId, string name, IReadOnlyList<string> ruleTokens, CancellationToken ct = default)
+    {
+        return ApplyToRoutingListAsync(listId, name, ruleTokens, string.Empty, ct);
+    }
+
+    /// <summary>
+    /// Saves the rule tokens as a routing list; a new list takes the lasting id given, an empty one makes its own.
+    /// </summary>
+    public async Task<long> ApplyToRoutingListAsync(long listId, string name, IReadOnlyList<string> ruleTokens, string uid, CancellationToken ct = default)
     {
         var rules = new List<GeoRule>();
         foreach (var token in ruleTokens)
@@ -50,7 +58,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         }
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
-        return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index), ct).ConfigureAwait(false);
+        return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index) with { Uid = uid }, ct).ConfigureAwait(false);
     }
 
     /// <summary>

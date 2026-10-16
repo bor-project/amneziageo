@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
@@ -38,7 +39,7 @@ internal partial class RoutingViewModel : ViewModelBase
     // Определение региона: посев набора ждёт его результата.
     private Task? _regionProbe;
 
-    private IReadOnlyList<string>? _pendingOrder;
+    private IReadOnlyList<long>? _pendingOrder;
 
     // Set once the agent has reported its catalogue; until then an empty one only means "not loaded".
     private bool _catalogueKnown;
@@ -894,9 +895,11 @@ internal partial class RoutingViewModel : ViewModelBase
     [RelayCommand]
     private async Task ApplyOrder()
     {
-        var names = RoutingLists.Select(list => list.Name).ToList();
-        _pendingOrder = names;
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderRoutingLists, names));
+        var ids = RoutingLists.Select(list => list.Id).ToList();
+        _pendingOrder = ids;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(
+            IpcContract.OpReorderRoutingLists,
+            [.. ids.Select(id => id.ToString(CultureInfo.InvariantCulture))]));
         if (!ack.Ok)
         {
             _pendingOrder = null;
@@ -1202,7 +1205,7 @@ internal partial class RoutingViewModel : ViewModelBase
         // A drag just sent its order: leave the rows where the user put them until the agent's snapshot carries
         // that order back, so a snapshot already on its way does not throw them about meanwhile.
         var holdOrder = _pendingOrder is { } pending
-            && !pending.SequenceEqual(entries.Select(e => e.Name), StringComparer.Ordinal);
+            && !pending.SequenceEqual(entries.Select(e => e.Id));
         if (!holdOrder)
         {
             _pendingOrder = null;
@@ -1618,7 +1621,6 @@ internal partial class RoutingViewModel : ViewModelBase
 
         if (editor.ApplyImport(text, out var options))
         {
-            ResolveImportedName(editor);
             if (options is not null && RoutingSettings is { } settings)
             {
                 settings.AllUdp = options.AllUdp;
@@ -1630,25 +1632,10 @@ internal partial class RoutingViewModel : ViewModelBase
         ImportMethod = RoutingImportMethod.Draft;
     }
 
-    // The imported name may be taken by another list; the save would be refused, so land on a free one and say so.
-    private void ResolveImportedName(RoutingListEditorViewModel editor)
-    {
-        var taken = RoutingLists.Where(r => r.Id != editor.Id).Select(r => r.Name);
-        var free = UniqueName.Resolve(editor.Name, taken);
-        if (string.Equals(free, editor.Name, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var clashed = editor.Name;
-        editor.Name = free;
-        editor.StatusMessage = Loc.Instance.Get("RoutingEditor_ImportedNameTaken", clashed, free);
-    }
-
     /// <summary>
-    /// Импортирует брошенный драгом список маршрутизации: уникализирует имя, сохраняет и выбирает.
+    /// Импортирует брошенный драгом список маршрутизации: сохраняет под его именем и выбирает.
     /// </summary>
-    public async Task<bool> ImportDroppedListAsync(string text, ISet<string> reserved)
+    public async Task<bool> ImportDroppedListAsync(string text)
     {
         if (!PortableTransfer.TryDecodeRouting(text, out var importedName, out _))
         {
@@ -1657,10 +1644,9 @@ internal partial class RoutingViewModel : ViewModelBase
 
         var editor = NewDraft(null);
         editor.ApplyImport(text, out var options);
-        var baseName = string.IsNullOrWhiteSpace(importedName)
+        editor.Name = string.IsNullOrWhiteSpace(importedName)
             ? Loc.Instance.Get("MainVm_NewListDefaultName")
             : importedName;
-        editor.Name = UniqueName.Resolve(baseName, reserved);
 
         if (!await editor.SaveAsync())
         {
@@ -1676,8 +1662,6 @@ internal partial class RoutingViewModel : ViewModelBase
             };
             await settings.CommitAsync();
         }
-
-        reserved.Add(editor.Name);
 
         if (!IsCreatingSectionRouting && !IsEditDirty)
         {
@@ -1707,7 +1691,6 @@ internal partial class RoutingViewModel : ViewModelBase
             return;
         }
 
-        var taken = new HashSet<string>(ListNames, StringComparer.Ordinal);
         var imported = 0;
         var bundle = 0;
         var rejected = 0;
@@ -1719,7 +1702,7 @@ internal partial class RoutingViewModel : ViewModelBase
             {
                 bundle++;
             }
-            else if (item.Kind == DroppedKind.RoutingList && await ImportDroppedListAsync(item.RoutingText!, taken))
+            else if (item.Kind == DroppedKind.RoutingList && await ImportDroppedListAsync(item.RoutingText!))
             {
                 imported++;
             }

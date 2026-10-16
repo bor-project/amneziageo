@@ -73,6 +73,41 @@ public sealed class SubscriptionMergeTests
     }
 
     [Fact]
+    public void FirstRead_OfOneNode_TakesTheGivenName()
+    {
+        var plan = SubscriptionMerge.Plan([Node("phone")], [], [], soleName: "мой сервер");
+
+        Assert.Equal("мой сервер", Assert.Single(plan).ConfigName);
+    }
+
+    [Fact]
+    public void FirstRead_OfSeveralNodes_KeepsTheirOwnNames()
+    {
+        var plan = SubscriptionMerge.Plan([Node("phone"), Node("laptop")], [], [], soleName: "мой сервер");
+
+        Assert.Equal(["phone", "laptop"], plan.Select(change => change.ConfigName));
+    }
+
+    [Fact]
+    public void GivenNameAlreadyTaken_GetsADashedSuffix()
+    {
+        var plan = SubscriptionMerge.Plan([Node("phone")], [], ["мой"], soleName: "мой");
+
+        Assert.Equal("мой-2", Assert.Single(plan).ConfigName);
+    }
+
+    [Fact]
+    public void LaterRead_KeepsTheGivenNameAndGivesNoNameToANewNode()
+    {
+        var first = SubscriptionMerge.Plan([Node("phone")], [], [], soleName: "мой");
+        var members = new[] { Member(first[0]) };
+
+        var second = SubscriptionMerge.Plan([Node("phone"), Node("laptop")], members, ["мой"], Texts(("мой", Node("phone"))), "другой");
+
+        Assert.Equal(["мой", "laptop"], second.Select(change => change.ConfigName));
+    }
+
+    [Fact]
     public void NameAlreadyTaken_GetsADashedSuffix()
     {
         // Скобочный суффикс дал бы имя, которое не принимает адаптер туннеля.

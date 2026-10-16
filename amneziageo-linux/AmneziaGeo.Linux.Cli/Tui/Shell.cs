@@ -415,12 +415,16 @@ internal sealed class Shell : Window
             Prompt.Info(Localized("Main_SubscriptionInsecure"));
         }
 
-        if (Prompt.Line(Localized("Main_ImportButton"), Localized("Main_NameLabel"), SubscriptionCodec.AddressName(address)) is not { } name)
+        var suggested = SubscriptionCodec.AddressName(address);
+        if (Prompt.Line(Localized("Main_ImportButton"), Localized("Main_NameLabel"), suggested) is not { } name)
         {
             return;
         }
 
-        var ack = Send(IpcContract.OpAddSubscription, address, name);
+        // Имя, введённое поверх предложенного, получает и конфигурация, если подписка принесёт одну.
+        var ack = string.Equals(name.Trim(), suggested, StringComparison.Ordinal)
+            ? Send(IpcContract.OpAddSubscription, address, name)
+            : Send(IpcContract.OpAddSubscription, address, name, name);
         if (Apply(ack))
         {
             Prompt.Info(AckText.Localize(ack.Message));

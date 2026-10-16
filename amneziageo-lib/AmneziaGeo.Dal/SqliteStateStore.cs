@@ -237,7 +237,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
                     CREATE TABLE IF NOT EXISTS routing_lists (
                         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name                TEXT NOT NULL UNIQUE,
+                        name                TEXT NOT NULL,
                         routes_json         TEXT NOT NULL,
                         domains_json        TEXT NOT NULL,
                         direct_routes_json  TEXT NOT NULL DEFAULT '[]',
@@ -385,6 +385,19 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // The place a routing list holds in the catalogue; existing rows share 0 and stay ordered by name.
             await AddColumnAsync(connection, schema, "routing_lists", "sort_order", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
+            // A routing list is told apart by its lasting id, not by its name: a list from a server carries the id
+            // the server gave it, a local one an id of its own.
+            await AddColumnAsync(connection, schema, "routing_lists", "uid", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+            await FreeRoutingListNamesAsync(connection, ct).ConfigureAwait(false);
+            await ExecuteAsync(
+                connection,
+                """
+                UPDATE routing_lists SET uid = COALESCE((SELECT o.preset_id FROM routing_list_origins o WHERE o.list_id = routing_lists.id), '') WHERE uid = '';
+                UPDATE routing_lists SET uid = lower(hex(randomblob(16))) WHERE uid = '';
+                CREATE UNIQUE INDEX IF NOT EXISTS routing_lists_uid ON routing_lists (uid);
+                """,
+                ct).ConfigureAwait(false);
+
             // What the last reading of a subscription brought and what the server of a config names for it.
             await AddColumnAsync(connection, schema, "subscriptions", "revision", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
             await AddColumnAsync(connection, schema, "subscriptions", "offered", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
@@ -409,7 +422,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             return;
         }
 
-        await BackupBeforeDropAsync(connection, ct).ConfigureAwait(false);
+        await BackupBeforeAsync(connection, ".pre-profiles.bak", ct).ConfigureAwait(false);
 
         var carried = await ReadCarriedProfileAsync(connection, ct).ConfigureAwait(false);
         if (carried is { } source)
@@ -473,9 +486,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
     }
 
-    private async Task BackupBeforeDropAsync(SqliteConnection connection, CancellationToken ct)
+    private async Task BackupBeforeAsync(SqliteConnection connection, string suffix, CancellationToken ct)
     {
-        var path = databasePath + ".pre-profiles.bak";
+        var path = databasePath + suffix;
         try
         {
             File.Delete(path);
@@ -537,6 +550,95 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             mark.Parameters.AddWithValue("$key", key);
             mark.Parameters.AddWithValue("$updated", Timestamp());
             await mark.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <remarks>
+    /// One-time drop of the unique name of a routing list. SQLite drops no constraint, so the table is built anew
+    /// without it, with the same rows, ids and id counter; the rows that point at a list keep pointing at it. The
+    /// unique index on the name is the guard.
+    /// </remarks>
+    private async Task FreeRoutingListNamesAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        if (!await HasUniqueNameAsync(connection, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await BackupBeforeAsync(connection, ".pre-list-ids.bak", ct).ConfigureAwait(false);
+
+        // Dropping the old table must not take the rules and settings of every list along by cascade.
+        var keys = await ScalarAsync(connection, "PRAGMA foreign_keys;", ct).ConfigureAwait(false);
+        await ExecuteAsync(connection, "PRAGMA foreign_keys = OFF;", ct).ConfigureAwait(false);
+        try
+        {
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                const string columns = "id, name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, updated_at, generation, sort_order, uid";
+                var command = connection.CreateCommand();
+                await using (command.ConfigureAwait(false))
+                {
+                    command.Transaction = transaction;
+                    command.CommandText =
+                        $"""
+                        CREATE TABLE routing_lists_free (
+                            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name                 TEXT NOT NULL,
+                            routes_json          TEXT NOT NULL,
+                            domains_json         TEXT NOT NULL,
+                            direct_routes_json   TEXT NOT NULL DEFAULT '[]',
+                            direct_domains_json  TEXT NOT NULL DEFAULT '[]',
+                            block_routes_json    TEXT NOT NULL DEFAULT '[]',
+                            block_domains_json   TEXT NOT NULL DEFAULT '[]',
+                            exclude_routes_json  TEXT NOT NULL DEFAULT '[]',
+                            exclude_domains_json TEXT NOT NULL DEFAULT '[]',
+                            updated_at           TEXT NOT NULL,
+                            generation           INTEGER NOT NULL DEFAULT 0,
+                            sort_order           INTEGER NOT NULL DEFAULT 0,
+                            uid                  TEXT NOT NULL DEFAULT ''
+                        );
+                        INSERT INTO routing_lists_free ({columns}) SELECT {columns} FROM routing_lists;
+                        CREATE TEMP TABLE routing_lists_counter AS SELECT seq FROM sqlite_sequence WHERE name = 'routing_lists';
+                        DROP TABLE routing_lists;
+                        ALTER TABLE routing_lists_free RENAME TO routing_lists;
+                        DELETE FROM sqlite_sequence WHERE name = 'routing_lists';
+                        INSERT INTO sqlite_sequence (name, seq)
+                            SELECT 'routing_lists', MAX(COALESCE((SELECT seq FROM routing_lists_counter), 0), COALESCE((SELECT MAX(id) FROM routing_lists), 0));
+                        DROP TABLE routing_lists_counter;
+                        """;
+                    await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (SqliteException)
+        {
+            // A rebuild that fails rolls back: the table stays as it was, with its lists and the unique name.
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"PRAGMA foreign_keys = {(keys is long on && on != 0 ? "ON" : "OFF")};", ct).ConfigureAwait(false);
+        }
+    }
+
+    // The name of a routing list carries a unique index: the table predates names that repeat.
+    private static async Task<bool> HasUniqueNameAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        return await ScalarAsync(
+            connection,
+            "SELECT 1 FROM pragma_index_list('routing_lists') l JOIN pragma_index_info(l.name) i WHERE l.\"unique\" = 1 AND i.name = 'name';",
+            ct).ConfigureAwait(false) is not null;
+    }
+
+    private static async Task<object?> ScalarAsync(SqliteConnection connection, string sql, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = sql;
+            return await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
         }
     }
 
@@ -2339,11 +2441,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         // A new list lands after the ones already listed.
                         insert.CommandText =
                             """
-                            INSERT INTO routing_lists (name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, generation, sort_order, updated_at)
-                            VALUES ($name, $routes, $domains, $directRoutes, $directDomains, $blockRoutes, $blockDomains, $excludeRoutes, $excludeDomains, 1, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM routing_lists), $updated)
+                            INSERT INTO routing_lists (name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, generation, sort_order, updated_at, uid)
+                            VALUES ($name, $routes, $domains, $directRoutes, $directDomains, $blockRoutes, $blockDomains, $excludeRoutes, $excludeDomains, 1, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM routing_lists), $updated,
+                                    CASE WHEN $uid = '' OR EXISTS (SELECT 1 FROM routing_lists WHERE uid = $uid) THEN lower(hex(randomblob(16))) ELSE $uid END)
                             RETURNING id;
                             """;
                         insert.Parameters.AddWithValue("$name", list.Name);
+                        insert.Parameters.AddWithValue("$uid", list.Uid);
                         insert.Parameters.AddWithValue("$routes", routesJson);
                         insert.Parameters.AddWithValue("$domains", domainsJson);
                         insert.Parameters.AddWithValue("$directRoutes", directRoutesJson);
@@ -2465,13 +2569,24 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task<RoutingList?> GetRoutingListByUidAsync(string uid, CancellationToken ct = default)
+    {
+        var lease = await LeaseAsync(ct).ConfigureAwait(false);
+        await using (lease.ConfigureAwait(false))
+        {
+            var connection = lease.Connection;
+            return await ReadRoutingListAsync(connection, "uid = $key", "$key", uid, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default)
     {
         var lease = await LeaseAsync(ct).ConfigureAwait(false);
         await using (lease.ConfigureAwait(false))
         {
             var connection = lease.Connection;
-            return await ReadRoutingListAsync(connection, "name = $key", "$key", name, ct).ConfigureAwait(false);
+            return await ReadRoutingListAsync(connection, "name = $key ORDER BY sort_order, id LIMIT 1", "$key", name, ct).ConfigureAwait(false);
         }
     }
 
@@ -2513,7 +2628,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default)
     {
-        var lists = new List<(long Id, string Name, string Routes, string Domains, string DirectRoutes, string DirectDomains, string BlockRoutes, string BlockDomains, string ExcludeRoutes, string ExcludeDomains)>();
+        var lists = new List<(long Id, string Name, string Routes, string Domains, string DirectRoutes, string DirectDomains, string BlockRoutes, string BlockDomains, string ExcludeRoutes, string ExcludeDomains, string Uid)>();
 
         var lease = await LeaseAsync(ct).ConfigureAwait(false);
         await using (lease.ConfigureAwait(false))
@@ -2527,8 +2642,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     """
                     SELECT id, name, routes_json, domains_json,
                            direct_routes_json, direct_domains_json, block_routes_json, block_domains_json,
-                           exclude_routes_json, exclude_domains_json
-                    FROM routing_lists ORDER BY sort_order, name;
+                           exclude_routes_json, exclude_domains_json, uid
+                    FROM routing_lists ORDER BY sort_order, name, id;
                     """;
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
@@ -2538,7 +2653,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         lists.Add((reader.GetInt64(0), reader.GetString(1),
                             reader.GetString(2), reader.GetString(3),
                             reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7),
-                            reader.GetString(8), reader.GetString(9)));
+                            reader.GetString(8), reader.GetString(9), reader.GetString(10)));
                     }
                 }
             }
@@ -2549,7 +2664,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 var rules = await ReadRoutingListRulesAsync(connection, row.Id, ct).ConfigureAwait(false);
                 result.Add(BuildRoutingList(row.Id, row.Name, rules,
                     row.Routes, row.Domains, row.DirectRoutes, row.DirectDomains, row.BlockRoutes, row.BlockDomains,
-                    row.ExcludeRoutes, row.ExcludeDomains));
+                    row.ExcludeRoutes, row.ExcludeDomains, row.Uid));
             }
 
             return result;
@@ -2591,7 +2706,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     FROM routing_lists rl
                     LEFT JOIN routing_settings rs ON rs.list_id = rl.id
                     LEFT JOIN routing_list_origins o ON o.list_id = rl.id
-                    ORDER BY rl.sort_order, rl.name;
+                    ORDER BY rl.sort_order, rl.name, rl.id;
                     """;
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -2621,7 +2736,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default)
+    public async Task SetRoutingListOrderAsync(IReadOnlyList<long> ids, CancellationToken ct = default)
     {
         var lease = await LeaseAsync(ct).ConfigureAwait(false);
         await using (lease.ConfigureAwait(false))
@@ -2631,15 +2746,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
             {
-                for (var i = 0; i < names.Count; i++)
+                for (var i = 0; i < ids.Count; i++)
                 {
                     var update = connection.CreateCommand();
                     await using (update.ConfigureAwait(false))
                     {
                         update.Transaction = transaction;
-                        update.CommandText = "UPDATE routing_lists SET sort_order = $order WHERE name = $name;";
+                        update.CommandText = "UPDATE routing_lists SET sort_order = $order WHERE id = $id;";
                         update.Parameters.AddWithValue("$order", i + 1);
-                        update.Parameters.AddWithValue("$name", names[i]);
+                        update.Parameters.AddWithValue("$id", ids[i]);
                         await update.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                     }
                 }
@@ -3024,6 +3139,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         string blockDomainsJson;
         string excludeRoutesJson;
         string excludeDomainsJson;
+        var uid = string.Empty;
 
         var command = connection.CreateCommand();
         await using (command.ConfigureAwait(false))
@@ -3032,7 +3148,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 $"""
                 SELECT id, name, routes_json, domains_json,
                        direct_routes_json, direct_domains_json, block_routes_json, block_domains_json,
-                       exclude_routes_json, exclude_domains_json
+                       exclude_routes_json, exclude_domains_json, uid
                 FROM routing_lists WHERE {whereClause};
                 """;
             command.Parameters.AddWithValue(keyParam, keyValue);
@@ -3054,19 +3170,20 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 blockDomainsJson = reader.GetString(7);
                 excludeRoutesJson = reader.GetString(8);
                 excludeDomainsJson = reader.GetString(9);
+                uid = reader.GetString(10);
             }
         }
 
         var rules = await ReadRoutingListRulesAsync(connection, id, ct).ConfigureAwait(false);
         return BuildRoutingList(id, name, rules,
             routesJson, domainsJson, directRoutesJson, directDomainsJson, blockRoutesJson, blockDomainsJson,
-            excludeRoutesJson, excludeDomainsJson);
+            excludeRoutesJson, excludeDomainsJson, uid);
     }
 
     // Deserializes the materialized-bucket columns into a RoutingList; apps come from the rules of each bucket.
     private static RoutingList BuildRoutingList(long id, string name, IReadOnlyList<GeoRule> rules,
         string routesJson, string domainsJson, string directRoutesJson, string directDomainsJson,
-        string blockRoutesJson, string blockDomainsJson, string excludeRoutesJson, string excludeDomainsJson)
+        string blockRoutesJson, string blockDomainsJson, string excludeRoutesJson, string excludeDomainsJson, string uid)
     {
         var routes = JsonSerializer.Deserialize<List<string>>(routesJson) ?? [];
         var domains = JsonSerializer.Deserialize<List<GeoDomain>>(domainsJson) ?? [];
@@ -3078,7 +3195,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         directRoutes.AddRange(JsonSerializer.Deserialize<List<string>>(excludeRoutesJson) ?? []);
         directDomains.AddRange(JsonSerializer.Deserialize<List<GeoDomain>>(excludeDomainsJson) ?? []);
         return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules, RouteRole.Proxy),
-            directRoutes, directDomains, ExtractApps(rules, RouteRole.Direct), blockRoutes, blockDomains);
+            directRoutes, directDomains, ExtractApps(rules, RouteRole.Direct), blockRoutes, blockDomains, uid);
     }
 
     // Collect one bucket's App-kind rule values as matcher tokens.

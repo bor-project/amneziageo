@@ -720,8 +720,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
     }
 
-    // Export selection from OpExportBundle's arg0 JSON; all arrays optional. RoutingRules maps a routing
-    // list name to the rule tokens to KEEP; an absent list keeps all its rules.
+    // Export selection from OpExportBundle's arg0 JSON; all arrays optional. A routing list goes by its number or
+    // by its name; RoutingRules maps that word to the rule tokens to KEEP; an absent list keeps all its rules.
     private sealed record SelectionRequest(
         string[]? Configs,
         string[]? RoutingLists,
@@ -793,15 +793,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
         if (routingNames.Count > 0)
         {
-            var allLists = await store.ListRoutingListsAsync(ct);
-            foreach (var name in routingNames)
+            var (picked, _) = BundleLists.Pick(await store.ListRoutingListsAsync(ct), routingNames);
+            foreach (var (key, list) in picked)
             {
-                var list = allLists.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.Ordinal));
-                if (list is null)
-                {
-                    continue;
-                }
-
                 // Role-tagged: a routing list's rules carry a bucket (proxy/direct/block/exclude). Formatting them
                 // bare would re-import every rule as Proxy and drop the bucket. Also matches the tokens the export
                 // tree shows (get-routing-list), so the keep-filter below compares like for like.
@@ -810,7 +804,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 // Drop rules the user unchecked in the export tree (machine-specific app rules, etc).
                 // No entry for this list = keep everything.
                 if (selection.RoutingRules is not null
-                    && selection.RoutingRules.TryGetValue(name, out var kept))
+                    && selection.RoutingRules.TryGetValue(key, out var kept))
                 {
                     var keepSet = new HashSet<string>(kept, StringComparer.Ordinal);
                     rules = rules.Where(keepSet.Contains).ToList();
@@ -823,7 +817,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                     settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp, settings.Mode, settings.UseGlobalProxy);
                 }
 
-                routingBlocks.Add(new PortableBundle.RoutingBlock(name, rules, settingsBlock));
+                routingBlocks.Add(new PortableBundle.RoutingBlock(list.Name, rules, settingsBlock, list.Uid));
             }
         }
 
@@ -871,18 +865,15 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
         }
 
-        // Configs and routing lists each own a separate name space. Snapshots taken before import
+        // Configs collide by name, routing lists by their lasting id. Snapshots taken before import
         // drive collision detection.
         var existingConfigs = new HashSet<string>(await configRepo.ListAsync(ct), StringComparer.Ordinal);
-        var existingLists = (await store.ListRoutingListsAsync(ct))
-            .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
+        var existingLists = await store.ListRoutingListsAsync(ct);
 
-        // Growing name spaces so the add-as-new path never reuses a name taken earlier in THIS import.
+        // A growing name space so the add-as-new path never reuses a name taken earlier in THIS import.
         var configNames = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
-        var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
         var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
-        var routingMap = new Dictionary<string, (string Name, long Id)>(StringComparer.Ordinal);
         var renames = new List<string>();
         var importedConfigs = 0;
         var importedLists = 0;
@@ -956,46 +947,38 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         foreach (var block in bundle.RoutingLists)
         {
-            // Same-name list already here and a non-default policy: act on the existing row (id kept, so
-            // the selection keeps pointing at it).
-            if (existingLists.TryGetValue(block.Name, out var existingList) && policy != "new")
+            // The list held under the block's id: act on that row (id kept, so the selection keeps pointing at it).
+            // A copy beside it would carry a second id for the same list, so "new" replaces it as well.
+            if (BundleLists.Held(block, existingLists) is { } existingList)
             {
                 if (policy == "skip")
                 {
-                    routingMap[block.Name] = (existingList.Name, existingList.Id);
                     continue;
                 }
 
                 // Role-tagged, so a merge keeps the existing rules in their own buckets. A pre-role bundle carries
                 // bare tokens; those import as Proxy, as they did before roles existed.
-                List<string> rules = policy == "merge"
+                var merge = policy == "merge";
+                var rules = merge
                     ? existingList.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
                     : block.Rules.ToList();
-                await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
+                await geo.ApplyToRoutingListAsync(existingList.Id, merge ? existingList.Name : BundleLists.NameOf(block), rules, ct);
                 if (block.Settings is { } sE)
                 {
                     await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.Exclusions, sE.AllUdp, sE.Mode, sE.UseGlobalProxy), ct);
                 }
 
-                routingMap[block.Name] = (existingList.Name, existingList.Id);
                 importedLists++;
                 continue;
             }
 
-            var finalName = FreeName(block.Name, listNames);
-            listNames.Add(finalName);
-            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
-            {
-                renames.Add($"«{block.Name}» → «{finalName}»");
-            }
-
-            var newId = await geo.ApplyToRoutingListAsync(0, finalName, block.Rules, ct);
+            // A list no row holds lands under its own name and id; a bundle of an earlier build gives no id.
+            var newId = await geo.ApplyToRoutingListAsync(0, BundleLists.NameOf(block), block.Rules, block.Id ?? string.Empty, ct);
             if (block.Settings is { } s)
             {
                 await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.Exclusions, s.AllUdp, s.Mode, s.UseGlobalProxy), ct);
             }
 
-            routingMap[block.Name] = (finalName, newId);
             importedLists++;
         }
 
@@ -1673,12 +1656,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "name is required");
         }
 
-        // The name column is unique: a clash would surface as a raw SQLite error from the insert.
         var lists = await store.ListRoutingListsAsync(ct);
-        if (lists.Any(l => l.Id != id && string.Equals(l.Name, name, StringComparison.Ordinal)))
-        {
-            return new IpcAck(false, IpcMessage.Key("Agent_RoutingListNameTaken", name));
-        }
 
         // A rule on this application would tunnel the agent's own downloads, the resolver upstream and the
         // websocket carrier. The window keeps such a rule out; this closes the same door to the console.
@@ -1756,23 +1734,24 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
     }
 
-    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    // Stores the order the routing-list catalogue is shown in.
     private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count == 0)
         {
-            return new IpcAck(false, "reorder-routing-lists requires the ordered names");
+            return new IpcAck(false, "reorder-routing-lists requires the ordered ids");
         }
 
         var stored = (await store.ListRoutingListSummariesAsync(ct))
-            .Select(summary => summary.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        if (args.Any(name => !stored.Contains(name)))
+            .Select(summary => summary.Id)
+            .ToHashSet();
+        var ids = RoutingListIds.Parse(args);
+        if (ids is null || ids.Any(id => !stored.Contains(id)))
         {
-            return new IpcAck(false, "reorder-routing-lists takes the names of stored lists");
+            return new IpcAck(false, "reorder-routing-lists takes the ids of stored lists");
         }
 
-        await store.SetRoutingListOrderAsync(args, ct);
+        await store.SetRoutingListOrderAsync(ids, ct);
         return new IpcAck(true, "reordered routing lists");
     }
 

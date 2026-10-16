@@ -5,12 +5,14 @@ namespace AmneziaGeo.Dal;
 /// <summary>
 /// Per-scope key/value rows in a private table of the state database, usable from any process without
 /// the schema-version reset of <see cref="SqliteStateStore"/>. Reserved for UI/installer preferences.
+/// Holds the database file open only for the length of a call.
 /// </summary>
 public sealed class LocalKeyValueStore(string databasePath)
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
     {
         DataSource = databasePath,
+        Pooling = false,
     }.ToString();
 
     /// <summary>

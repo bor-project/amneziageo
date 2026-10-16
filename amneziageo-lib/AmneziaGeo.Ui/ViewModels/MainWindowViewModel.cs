@@ -275,9 +275,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool HeaderDownloadVisible => General.DownloadActive && !UiPlatform.IsTelevision;
 
     /// <summary>
-    /// Whether the settings header shows the app name: the wide layout with no download running.
+    /// Whether the settings header shows the app name: the wide layout with no download running, where the platform
+    /// keeps the name in the header.
     /// </summary>
-    public bool ShowHeaderName => !IsCompact && !HeaderDownloadVisible;
+    public bool ShowHeaderName => UiPlatform.HeaderNamesApp && !IsCompact && !HeaderDownloadVisible;
+
+    /// <summary>
+    /// Whether the home header shows the app name: no download running, where the platform keeps the name in the
+    /// header.
+    /// </summary>
+    public bool ShowHomeName => UiPlatform.HeaderNamesApp && !HeaderDownloadVisible;
 
     /// <summary>
     /// Whether the home column carries the update offer itself. Television only; its row opens the sheet that
@@ -719,6 +726,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(AppUpdateBannerVisible));
             OnPropertyChanged(nameof(HeaderDownloadVisible));
             OnPropertyChanged(nameof(ShowHeaderName));
+            OnPropertyChanged(nameof(ShowHomeName));
         }
     }
 

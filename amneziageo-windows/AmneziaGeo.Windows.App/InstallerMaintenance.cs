@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AmneziaGeo.Windows.App;
@@ -12,6 +13,8 @@ namespace AmneziaGeo.Windows.App;
 internal static class InstallerMaintenance
 {
     private const string TransientPrefix = "AmneziaGeo$";
+
+    private const string RetiredLibrary = "state.db.legacy";
 
     /// <summary>
     /// Stops and deletes any leftover transient "AmneziaGeo$*" tunnel services orphaned by an agent crash.
@@ -114,12 +117,112 @@ internal static class InstallerMaintenance
     }
 
     /// <summary>
-    /// Removes the per-user runtime data tree, retrying briefly so the wipe survives the
-    /// narrow window where the just-stopped agent has not yet released state.db or the current log file.
+    /// Settings reset: removes the per-user runtime data tree, the agent settings kept for the machine and the retired
+    /// copies of the databases, retrying briefly so the wipe survives the narrow window where the just-stopped agent
+    /// has not yet released state.db or the current log file.
     /// </summary>
     public static void WipeRuntimeData()
     {
-        var dir = AppDataRoot.Base();
+        WipeRuntimeData(AppDataRoot.Base(), AppDataRoot.MachineBase());
+    }
+
+    /// <summary>
+    /// Removal with the configuration deleted: removes the per-user and the machine runtime data trees.
+    /// </summary>
+    public static void WipeAllRuntimeData()
+    {
+        WipeAllRuntimeData(AppDataRoot.Base(), AppDataRoot.MachineBase());
+    }
+
+    /// <summary>
+    /// Settings reset of the given per-user and machine roots.
+    /// </summary>
+    internal static void WipeRuntimeData(string userRoot, string machineRoot)
+    {
+        RemoveTree(userRoot);
+        ResetMachineSettings(Path.Combine(machineRoot, Path.GetFileName(TunnelPaths.MachineDbFile())));
+        RemoveRetiredCopies(machineRoot);
+    }
+
+    /// <summary>
+    /// Removal of the given per-user and machine roots.
+    /// </summary>
+    internal static void WipeAllRuntimeData(string userRoot, string machineRoot)
+    {
+        RemoveTree(userRoot);
+        RemoveTree(machineRoot);
+    }
+
+    // Deletes the settings rows the machine store owns, so the agent comes up on its defaults.
+    private static void ResetMachineSettings(string machineDb)
+    {
+        if (!File.Exists(machineDb))
+        {
+            return;
+        }
+
+        try
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = machineDb, Pooling = false }.ToString());
+            connection.Open();
+
+            using (var pragma = connection.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA busy_timeout = 3000;";
+                pragma.ExecuteNonQuery();
+            }
+
+            using var command = connection.CreateCommand();
+            var names = new List<string>();
+            foreach (var key in ScopedStateStore.MachineKeys)
+            {
+                var name = $"$k{names.Count}";
+                names.Add(name);
+                command.Parameters.AddWithValue(name, key);
+            }
+
+            command.CommandText = $"DELETE FROM settings WHERE key IN ({string.Join(", ", names)});";
+            command.ExecuteNonQuery();
+        }
+        catch (SqliteException)
+        {
+        }
+    }
+
+    // Removes the retired library and the copies the databases set aside before a migration or after a corruption.
+    private static void RemoveRetiredCopies(string machineRoot)
+    {
+        if (!Directory.Exists(machineRoot))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(machineRoot))
+        {
+            var name = Path.GetFileName(file);
+            if (name.StartsWith(RetiredLibrary, StringComparison.Ordinal)
+                || name.EndsWith(".bak", StringComparison.Ordinal)
+                || name.Contains(".corrupt-", StringComparison.Ordinal))
+            {
+                TryDelete(file);
+            }
+        }
+    }
+
+    private static void TryDelete(string file)
+    {
+        try
+        {
+            File.Delete(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    // Removes a tree, retrying while a just-stopped process still holds a file in it.
+    private static void RemoveTree(string dir)
+    {
         for (var attempt = 0; attempt < 10 && Directory.Exists(dir); attempt++)
         {
             try

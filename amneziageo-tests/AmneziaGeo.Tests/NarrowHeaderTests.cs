@@ -6,7 +6,8 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The settings header carries the app name in the wide layout only.
+/// The settings header carries the app name in the wide layout only. Where the title bar of the window names the
+/// app, neither header carries it, and a running download keeps its place.
 /// </summary>
 public sealed class NarrowHeaderTests
 {
@@ -41,6 +42,47 @@ public sealed class NarrowHeaderTests
 
         Assert.Contains(nameof(MainWindowViewModel.ShowHeaderName), raised);
         Assert.False(window.ShowHeaderName);
+    }
+
+    [Fact]
+    public void Elsewhere_TheHomeHeaderCarriesTheName()
+    {
+        var window = Window(987, sectionOpen: false);
+
+        Assert.True(window.ShowHomeName);
+    }
+
+    [Fact]
+    public void WhereTheTitleBarNamesTheApp_NeitherHeaderCarriesTheName()
+    {
+        var window = Window(987, sectionOpen: false);
+        UiPlatform.HeaderNamesApp = false;
+        try
+        {
+            Assert.False(window.ShowHeaderName);
+            Assert.False(window.ShowHomeName);
+        }
+        finally
+        {
+            UiPlatform.HeaderNamesApp = true;
+        }
+    }
+
+    [Fact]
+    public void WhereTheTitleBarNamesTheApp_TheDownloadKeepsItsPlace()
+    {
+        var window = Window(987, sectionOpen: false);
+        UiPlatform.HeaderNamesApp = false;
+        try
+        {
+            window.General.UpdateDownloading = true;
+
+            Assert.True(window.HeaderDownloadVisible);
+        }
+        finally
+        {
+            UiPlatform.HeaderNamesApp = true;
+        }
     }
 
     // The settings screen of a window of the given width, on the section list or inside a section.

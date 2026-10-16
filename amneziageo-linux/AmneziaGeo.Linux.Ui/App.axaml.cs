@@ -40,6 +40,7 @@ public sealed partial class App : Application
             Loc.Instance.ApplyStartupCulture(prefs.Language);
             DesktopQrScanning.Register();
             PopupBringIntoView.Register();
+            UiPlatform.HeaderNamesApp = false;
 
             var connection = new AgentConnection();
             _connection = connection;

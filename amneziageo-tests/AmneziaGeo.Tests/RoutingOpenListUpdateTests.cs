@@ -8,7 +8,7 @@ namespace AmneziaGeo.Tests;
 /// <summary>
 /// An open routing list whose server holds a newer version offers it at the title of the section: taking it sends the
 /// command of the card and reads the rules and the settings of the list again. A name the list got elsewhere reaches
-/// the open editor.
+/// the open editor and the prompt of its deletion.
 /// </summary>
 public sealed class RoutingOpenListUpdateTests
 {
@@ -35,6 +35,26 @@ public sealed class RoutingOpenListUpdateTests
 
         Assert.Equal("mine", routing.RoutingEditor.Name);
         Assert.True(routing.RoutingEditor.IsDirty);
+    }
+
+    [Fact]
+    public async Task AnOpenListRenamed_NamesTheNewNameInTheDeletePrompt()
+    {
+        var routing = Routing(new Agent());
+        await OpenAsync(routing, new RoutingListEntry(7, "home", 1, 0, 0));
+        var raised = new List<string?>();
+        routing.PropertyChanged += (_, e) =>
+        {
+            lock (raised)
+            {
+                raised.Add(e.PropertyName);
+            }
+        };
+
+        routing.Apply(Snapshot(new RoutingListEntry(7, "office", 1, 0, 0)));
+
+        Assert.Contains("office", routing.DeleteListPrompt);
+        Assert.Contains(nameof(RoutingViewModel.DeleteListPrompt), raised);
     }
 
     [Fact]

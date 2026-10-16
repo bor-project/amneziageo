@@ -44,7 +44,7 @@ public sealed class DnsPassTests
         Assert.Empty(applier.Added);
     }
 
-    [Fact]
+    [WindowsFact("the wait raises the timer resolution through winmm")]
     public async Task AnAnswerWhoseAskerIsNotReported_WaitsAShortWhileAndLeaves()
     {
         var applier = new PassApplier();
@@ -96,7 +96,7 @@ public sealed class DnsPassTests
         Assert.False(tracker.AskedSince("other.example", before));
     }
 
-    [Fact]
+    [WindowsFact("the wait raises the timer resolution through winmm")]
     public async Task AWaitEndsWhenTheAskIsReported()
     {
         var tracker = Tracker();
@@ -112,7 +112,7 @@ public sealed class DnsPassTests
         Assert.False(await tracker.WaitAskedAsync("other.example", since, 20));
     }
 
-    [Fact]
+    [WindowsFact("the program behind an ask is found in the process tree read through kernel32")]
     public void AReportedAskOfAMatchedProgram_MarksTheNameBeforeItCountsAsAsked()
     {
         var tracker = Tracker(ThisProgram);
@@ -127,7 +127,7 @@ public sealed class DnsPassTests
         Assert.False(askedAtMark);
     }
 
-    [Fact]
+    [WindowsFact("the program behind an ask is found in the process tree read through kernel32")]
     public void AReportedAskOfAnotherProgram_OnlyCountsAsAsked()
     {
         var tracker = Tracker();
@@ -139,7 +139,7 @@ public sealed class DnsPassTests
         Assert.True(tracker.AskedSince(Name, since));
     }
 
-    [Fact]
+    [WindowsFact("the program behind an ask is found in the process tree read through kernel32")]
     public async Task AnAskReportedWhileTheAnswerWaits_RoutesItPastTheTunnel()
     {
         var applier = new PassApplier();

@@ -1294,6 +1294,7 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(ShowListUpdate));
+        OnPropertyChanged(nameof(DeleteListPrompt));
         MarkSelectedList();
     }
 

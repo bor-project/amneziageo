@@ -40,6 +40,12 @@ internal static class UiPlatform
     public static bool AgentMovesTunnel { get; set; }
 
     /// <summary>
+    /// Whether the header of the window carries the app name. Off on Linux, where the title bar the window manager
+    /// draws names the app right above it.
+    /// </summary>
+    public static bool HeaderNamesApp { get; set; } = true;
+
+    /// <summary>
     /// How much over the laid-out size the head is drawn on this device. A block that has to keep the size it
     /// was laid out at divides by it.
     /// </summary>

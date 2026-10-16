@@ -101,20 +101,30 @@
                   Impersonate="no"
                   Return="ignore" />
 
-    <!-- #105/#114: optionally wipe the runtime data tree (ProgramData\AmneziaGeo: state.db, Configurations\,
-         geo\, logs\) when the user ticked the wipe toggle in the BA (DELETECONFIG=1, passed by the bundle):
+    <!-- #105/#114: optionally wipe the runtime data when the user ticked the wipe toggle in the BA (DELETECONFIG=1,
+         passed by the bundle). On removal (wipe-config all) both trees go: the user's library under LocalAppData and
+         ProgramData\AmneziaGeo with the machine settings, geo, logs and the tunnel state AgCleanup has just used. On
+         install/update/repair (wipe-config) the user's library goes, and in ProgramData the agent settings and the
+         retired copies of the databases; the geo cache, logs and tunnel state stay:
          «Удалить конфигурацию и кэш» on removal, or «Сбросить настройки» on install/update/repair (start the
          app from a clean config). Off by default, so a plain (un)install keeps profiles/settings. The WHOLE
          tree is removed, not just state.db: leaving legacy Configurations\*.conf behind would let them migrate
          back into a fresh DB. Runs the installed agent exe with the wipe-config verb, which removes the tree
          in-process via the file API with a short retry (no powershell child - #167). Deferred + Impersonate="no"
-         runs it as SYSTEM (the data is owned by the service account); sequenced Before RemoveFiles so the exe is
-         still on disk, yet AFTER StopServices has stopped the agent (its process exit unlocks state.db) and
-         before the service is (re)started. On a fresh install / a
-         machine with no config the tree is absent (and the exe not yet laid), so the action is a Return="ignore"
+         runs it as SYSTEM (the data is owned by the service account), AFTER StopServices has stopped the agent
+         (its process exit unlocks state.db) and before the service is (re)started: on removal Before RemoveFiles,
+         while the exe is still on disk; on install/update/repair (AgWipeConfigLaid) After InstallFiles, once the
+         exe of this package is laid, since a major upgrade removes the previous product with its exe first. On a
+         machine with no config the tree is absent, so the action is a Return="ignore"
          no-op. The exe's retry loop (~3s) rides out the narrow window where the service is SCM-stopped but its
          process has not yet released state.db / the current log file. -->
     <CustomAction Id="AgWipeConfig"
+                  FileRef="AppExe"
+                  ExeCommand="--wipe-config --all"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="AgWipeConfigLaid"
                   FileRef="AppExe"
                   ExeCommand="--wipe-config"
                   Execute="deferred"
@@ -122,7 +132,8 @@
                   Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="AgWipeConfig" Before="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot;" />
+      <Custom Action="AgWipeConfig" Before="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot; AND REMOVE=&quot;ALL&quot;" />
+      <Custom Action="AgWipeConfigLaid" After="InstallFiles" Condition="DELETECONFIG=&quot;1&quot; AND NOT REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>
 

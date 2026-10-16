@@ -35,6 +35,9 @@ public static class AppEntry
             case ["--wipe-config"]:
                 InstallerMaintenance.WipeRuntimeData();
                 return 0;
+            case ["--wipe-config", "--all"]:
+                InstallerMaintenance.WipeAllRuntimeData();
+                return 0;
             case ["--heal-dns"]:
                 // Elevated repair (UI button): clear a leftover loopback DNS redirect so the internet works again.
                 InstallerMaintenance.RestoreDnsRedirect();

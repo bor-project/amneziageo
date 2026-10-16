@@ -52,7 +52,7 @@
                            VerticalAlignment="Center" HorizontalAlignment="Center"
                            TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource AgMutedBrush}"
-                           IsVisible="{Binding !HeaderDownloadVisible}" />
+                           IsVisible="{Binding ShowHomeName}" />
                 <Panel IsVisible="{Binding HeaderDownloadVisible}">
                   <controls:HeaderDownload DataContext="{Binding General}" />
                 </Panel>

@@ -22,6 +22,10 @@
     <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon);Version=$(Version);Compressed=$(Compressed)</DefineConstants>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
   <Target Name="EnsureStageDir" BeforeTargets="Build"
           Condition="'$(StageDir)' == '' or !Exists('$(StageDir)')">
     <Error Text="StageDir is not set or does not exist. Build via build-installer.ps1 (it publishes the App + UI self-contained and passes -p:StageDir)." />

@@ -23,7 +23,8 @@
   Runtime data (state.db, Configurations\, geo\, logs\) lives in ProgramData\AmneziaGeo and is
   created by the service at runtime, so the MSI does not lay it down.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <!-- Compressed=yes carries the files inside the MSI; no leaves them beside it, the way the update layout of
        build-installer.ps1 lays them out. -->
@@ -32,6 +33,7 @@
            Version="$(var.Version)"
            UpgradeCode="CF01DE97-3FF5-4A9A-B106-DAD6D3D95CB5"
            Scope="perMachine"
+           Codepage="65001"
            Compressed="$(var.Compressed)">
 
     <!-- AllowDowngrades: the Burn bundle (AmneziaGeo.Windows.Installer) drives install / update /
@@ -153,7 +155,14 @@
                       ErrorControl="normal"
                       Account="LocalSystem"
                       Arguments="--agent"
-                      Vital="yes" />
+                      Vital="yes">
+        <!-- Restarts the agent when its process dies without being stopped. -->
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="5"
+                            ResetPeriodInDays="1" />
+      </ServiceInstall>
       <ServiceControl Id="AgentSvcControl"
                       Name="AmneziaGeoAgent"
                       Start="install"

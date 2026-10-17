@@ -52,10 +52,10 @@ jobs:
               cat "$document.md"
             } > "_pages_source/$document.md"
           done
-          # The site source is flat; links in the repository still point one level up.
-          sed -i 's|(../CODE_SIGNING.md)|(CODE_SIGNING.md)|g; s|(../PRIVACY.md)|(PRIVACY.md)|g' _pages_source/*.md
+          # Links in the repository point at the policy files in the repository root.
+          find _pages_source -name '*.md' -exec sed -i -E 's#\((\.\./)+(CODE_SIGNING|PRIVACY)\.md\)#({{ site.baseurl }}/\2.html)#g' {} +
           # The layout provides the language switch; retain it in the Markdown sources for GitHub readers.
-          sed -i '/^\*\*English\*\* | /d; /^\[English\].* | \*\*Русский\*\*$/d' _pages_source/*.md
+          find _pages_source -name '*.md' -exec sed -i '/^\*\*English\*\* | /d; /^\[English\].* | \*\*Русский\*\*$/d' {} +
           sed -i 's|](.github/workflows/release.yml)|](https://github.com/bor-project/amneziageo/blob/master/.github/workflows/release.yml)|g' _pages_source/CODE_SIGNING.md
 
       - name: Build documentation

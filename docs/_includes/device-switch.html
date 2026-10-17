@@ -1,0 +1,17 @@
+{%- assign ds_t = site.data.i18n[page.lang] -%}
+<nav class="device-switch" aria-label="{{ ds_t.device_switch }}">
+{%- for ds_device in site.data.devices -%}
+  {%- assign ds_pages = site.pages | where: "device", ds_device.id | where: "lang", page.lang -%}
+  {%- assign ds_target = ds_pages | where: "topic", page.topic | first -%}
+  {%- unless ds_target -%}
+    {%- if page.topic contains "/" -%}
+      {%- assign ds_group = page.topic | split: "/" | first | append: "/index" -%}
+      {%- assign ds_target = ds_pages | where: "topic", ds_group | first -%}
+    {%- endif -%}
+  {%- endunless -%}
+  {%- unless ds_target -%}
+    {%- assign ds_target = ds_pages | where: "topic", "index" | first -%}
+  {%- endunless %}
+  <a href="{{ ds_target.url | relative_url }}"{% if ds_device.id == page.device %} aria-current="page"{% endif %}>{{ ds_device.name }}</a>
+{%- endfor %}
+</nav>

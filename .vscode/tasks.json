@@ -81,6 +81,65 @@
         "reveal": "always",
         "panel": "dedicated"
       }
+    },
+    {
+      "label": "Serve Docs",
+      "detail": "Builds the documentation site from docs/ and serves it, rebuilding on save.",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/.vscode/docs-site.sh", "serve"],
+      "windows": {
+        "command": "wsl.exe",
+        "args": ["-e", "bash", ".vscode/docs-site.sh", "serve"]
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "docs",
+        "pattern": {
+          "regexp": "^\\b\\B(.)(\\d)(.)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\d\\d:\\d\\d:\\d\\d \\S+$",
+          "endsPattern": "http://127\\.0\\.0\\.1:\\d+/amneziageo/"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Wait Docs",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/.vscode/docs-site.sh", "wait"],
+      "windows": {
+        "command": "wsl.exe",
+        "args": ["-e", "bash", ".vscode/docs-site.sh", "wait"]
+      },
+      "dependsOn": "Serve Docs",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never"
+      }
+    },
+    {
+      "label": "Stop Docs",
+      "type": "process",
+      "command": "bash",
+      "args": ["${workspaceFolder}/.vscode/docs-site.sh", "stop"],
+      "windows": {
+        "command": "wsl.exe",
+        "args": ["-e", "bash", ".vscode/docs-site.sh", "stop"]
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never"
+      }
     }
   ]
 }

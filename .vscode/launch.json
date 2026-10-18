@@ -64,6 +64,15 @@
         "debuggerPath": "vsdbg",
         "quoteArgs": false
       }
+    },
+    {
+      // The documentation site from docs/, built and served by .vscode/docs-site.sh (WSL on Windows).
+      "name": "Docs Site",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://127.0.0.1:4000/amneziageo/index.ru.html",
+      "preLaunchTask": "Wait Docs",
+      "postDebugTask": "Stop Docs"
     }
   ]
 }

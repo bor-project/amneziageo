@@ -1,0 +1,8 @@
+{%- assign dn_t = site.data.i18n[page.lang] -%}
+<nav class="device-nav" aria-label="{{ dn_t.devices }}">
+  <p class="sidebar-label">{{ dn_t.devices }}</p>
+  {%- for dn_device in site.data.devices -%}
+    {%- assign dn_index = site.pages | where: "device", dn_device.id | where: "lang", page.lang | where: "topic", "index" | first %}
+  <a href="{{ dn_index.url | relative_url }}">{{ dn_device.name }}</a>
+  {%- endfor %}
+</nav>

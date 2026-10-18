@@ -1,60 +1,62 @@
 <!doctype html>
-<html lang="{{ page.lang | default: 'en' }}">
+{%- assign t = site.data.i18n[page.lang] -%}
+{%- assign device = nil -%}
+{%- if page.device -%}
+  {%- assign device = site.data.devices | where: "id", page.device | first -%}
+{%- endif -%}
+{%- assign build_page = site.pages | where: "topic", "develop/build" | where: "lang", page.lang | first %}
+<html lang="{{ page.lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ page.title | escape }} · {{ site.title | escape }}</title>
+    <title>{{ page.title | escape }}{% if device and page.topic != "index" %} · {{ device.name }}{% endif %} · {{ site.title | escape }}</title>
     <meta name="description" content="{{ page.description | default: site.description | escape }}">
+    {%- if page.noindex %}
+    <meta name="robots" content="noindex">
+    {%- endif %}
     <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
   </head>
   <body>
-    {% if page.lang == 'ru' %}
-      {% assign home = '/index.ru.html' %}
-      {% assign docs_label = 'Документация' %}
-      {% assign download_label = 'Скачать' %}
-      {% assign skip_label = 'Перейти к содержимому' %}
-      {% assign privacy_label = 'Конфиденциальность (EN)' %}
-      {% assign signing_label = 'Подпись кода (EN)' %}
-    {% else %}
-      {% assign home = '/' %}
-      {% assign docs_label = 'Documentation' %}
-      {% assign download_label = 'Download' %}
-      {% assign skip_label = 'Skip to content' %}
-      {% assign privacy_label = 'Privacy' %}
-      {% assign signing_label = 'Code signing' %}
-    {% endif %}
-    <a class="skip-link" href="#content">{{ skip_label }}</a>
+    <a class="skip-link" href="#content">{{ t.skip }}</a>
     <header class="site-header">
-      <a class="brand" href="{{ home | relative_url }}">AmneziaGeo <span>{{ docs_label }}</span></a>
-      <nav class="header-links" aria-label="{% if page.lang == 'ru' %}Ссылки проекта{% else %}Project links{% endif %}">
-        <a href="https://github.com/bor-project/amneziageo/releases">{{ download_label }}</a>
+      <a class="brand" href="{{ t.home | relative_url }}">AmneziaGeo <span>{{ t.docs }}</span></a>
+      <nav class="header-links" aria-label="{{ t.project_links }}">
+        <a href="https://github.com/bor-project/amneziageo/releases">{{ t.download }}</a>
         <a href="https://github.com/bor-project/amneziageo">GitHub</a>
-        {% if page.lang == 'ru' %}
-          <a class="language" lang="en" hreflang="en" href="{{ page.translation | default: '/' | relative_url }}">English</a>
-        {% else %}
-          <a class="language" lang="ru" hreflang="ru" href="{{ page.translation | default: '/index.ru.html' | relative_url }}">Русский</a>
-        {% endif %}
+        {% include language-link.html %}
       </nav>
     </header>
     <div class="page-grid">
       <aside class="sidebar">
-        <nav aria-label="{{ docs_label }}">
-          {% for item in site.data.navigation[page.lang] %}
-            <a href="{{ item.url | relative_url }}"{% if item.section == page.section %} aria-current="page"{% endif %}>{{ item.title }}</a>
-          {% endfor %}
-        </nav>
+        {%- if device %}
+        {% include device-switch.html %}
+        {% include toc.html %}
+        {%- else %}
+        {% include device-nav.html %}
+        {%- endif %}
         <div class="policy-links">
-          <a href="{{ '/PRIVACY.html' | relative_url }}"{% if page.section == 'privacy' %} aria-current="page"{% endif %}>{{ privacy_label }}</a>
-          <a href="{{ '/CODE_SIGNING.html' | relative_url }}"{% if page.section == 'signing' %} aria-current="page"{% endif %}>{{ signing_label }}</a>
+          <a href="{{ build_page.url | relative_url }}"{% if page.topic == 'develop/build' %} aria-current="page"{% endif %}>{{ t.build }}</a>
+          <a href="{{ '/PRIVACY.html' | relative_url }}"{% if page.section == 'privacy' %} aria-current="page"{% endif %}>{{ t.privacy }}</a>
+          {%- comment %}
+          <a href="{{ '/CODE_SIGNING.html' | relative_url }}"{% if page.section == 'signing' %} aria-current="page"{% endif %}>{{ t.signing }}</a>
+          {% endcomment %}
         </div>
       </aside>
       <main id="content" class="article" tabindex="-1">
+        {%- if device %}
+        {% include breadcrumbs.html %}
+        {%- endif %}
         {{ content }}
         <footer class="article-footer">
-          <a href="https://github.com/bor-project/amneziageo/issues">{% if page.lang == 'ru' %}Сообщить о проблеме{% else %}Report an issue{% endif %}</a>
+          <a href="https://github.com/bor-project/amneziageo/issues">{{ t.report_issue }}</a>
           <a href="https://github.com/bor-project/amneziageo/blob/master/LICENSE">GPL-3.0</a>
         </footer>
       </main>
     </div>
+    <script>
+      if (window.matchMedia('(max-width: 800px)').matches) {
+        document.querySelectorAll('.toc-details').forEach(function (toc) { toc.removeAttribute('open'); });
+      }
+    </script>
   </body>
 </html>

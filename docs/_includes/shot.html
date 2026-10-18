@@ -1,0 +1,11 @@
+{%- assign shot_device = include.device | default: page.device -%}
+{%- assign shot_dir = '/assets/img/' | append: shot_device | append: '/' -%}
+{%- if shot_device == 'android' -%}{%- assign shot_w = 360 -%}{%- assign shot_h = 724 -%}{%- assign shot_class = 'shot shot-phone' -%}{%- else -%}{%- assign shot_w = 984 -%}{%- assign shot_h = 752 -%}{%- assign shot_class = 'shot' -%}{%- endif -%}
+{%- assign shot_lang = page.lang -%}
+{%- assign shot_path = shot_dir | append: shot_lang | append: '/' | append: include.name | append: '.png' -%}
+{%- assign shot_found = site.static_files | where: 'path', shot_path | first -%}
+{%- unless shot_found -%}
+{%- assign shot_lang = 'en' -%}
+{%- assign shot_path = shot_dir | append: 'en/' | append: include.name | append: '.png' -%}
+{%- endunless -%}
+<figure class="{{ shot_class }}"{% if shot_lang != page.lang %} data-shot-fallback="{{ page.lang }}"{% endif %}><img src="{{ shot_path | relative_url }}" alt="{{ include.alt }}" width="{{ include.width | default: shot_w }}" height="{{ include.height | default: shot_h }}" loading="lazy">{% if include.caption %}<figcaption>{{ include.caption }}</figcaption>{% endif %}</figure>

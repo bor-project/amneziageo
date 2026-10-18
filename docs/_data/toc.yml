@@ -1,0 +1,21 @@
+- id: index
+- id: install
+- id: first-config
+- id: menu/index
+  items:
+    - id: menu/home
+    - id: menu/configurations
+    - id: menu/routing
+      items:
+        - id: menu/geo-sources
+    - id: menu/connections
+    - id: menu/diagnostics
+    - id: menu/general
+- id: recipes/index
+  items:
+    - id: recipes/discord-udp
+    - id: recipes/remote-network
+    - id: recipes/lan-proxy
+    - id: recipes/multiple-vpn
+    - id: recipes/hotspot
+- id: cli

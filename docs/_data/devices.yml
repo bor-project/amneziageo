@@ -1,0 +1,15 @@
+- id: windows
+  name: Windows
+  summary:
+    en: Windows 7, 10 and 11, x64 and ARM64
+    ru: Windows 7, 10 и 11, x64 и ARM64
+- id: linux
+  name: Linux
+  summary:
+    en: deb packages for amd64 and arm64, desktop and server
+    ru: пакеты deb для amd64 и arm64, рабочий стол и сервер
+- id: android
+  name: Android
+  summary:
+    en: Android 7.0 or newer, phones, tablets and TVs
+    ru: Android 7.0 или новее, телефоны, планшеты и телевизоры

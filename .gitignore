@@ -28,3 +28,9 @@ dist/
 
 # Local handoff notes - not committed
 HANDOFF.md
+
+# Documentation screenshot kits: stand settings, output and job files (per-developer)
+shots/*/local/
+shots/*/out/
+shots/*/jobs/
+__pycache__/

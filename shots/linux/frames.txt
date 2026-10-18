@@ -1,0 +1,25 @@
+# Порядок съёмки. Имя кадра - файл docs/assets/img/linux/<язык>/<имя>.png, задание - frames/<имя>.py.
+home-connected      главный экран, туннель подключён
+config-catalog      каталог конфигураций
+config-add          меню «Добавить» в каталоге
+config-page         страница конфигурации
+config-websocket    рецепт Discord: «Прокси» (WebSocket) на странице конфигурации
+routing-cards       карточка списка маршрутизации
+routing-new         новый список: режим и шаблон
+routing-modes       новый список: выбор режима VPN для приложений
+routing-editor      редактор правил
+routing-suggest     подсказки при вводе правила
+routing-category    раскрытая запись geosite:youtube
+routing-advanced    «Дополнительно» у списка
+routing-discord     рецепт Discord: записи discord в списке
+routing-cidr        рецепт «Сеть за сервером»: правило cidr
+geo-sources         источники geo
+connections-proxy   подключения: прокси
+diag-routes         журнал маршрутов с поиском youtube
+diag-active         активные подключения с поиском youtube
+diag-probe          проба www.youtube.com
+diag-config         текущая конфигурация
+general             раздел «Общие»
+general-export      экспорт конфигураций и списков
+general-import      импорт
+home-disconnected   главный экран, туннель отключён

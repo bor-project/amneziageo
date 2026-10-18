@@ -1,5 +1,9 @@
 # Code signing policy
 
+> **Status, October 2026:** signing is not in place yet. The code signing certificate is being issued;
+> until then Windows releases are unsigned and SmartScreen warns about an unknown publisher. The policy
+> below describes how signing will work once the certificate is issued.
+
 Windows binaries and installers of AmneziaGeo are code signed through SignPath.io. Signing happens inside
 the release pipeline; no signing key ever exists on a developer machine. Releases up to 1.5.x are unsigned.
 

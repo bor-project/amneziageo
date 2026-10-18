@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Помощник набора кадров: окно грузит его через DOTNET_STARTUP_HOOKS. Avalonia берётся из папки окна. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>AgShot</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Avalonia.Base">
+      <HintPath>$(AvaloniaDir)/Avalonia.Base.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Avalonia.Controls">
+      <HintPath>$(AvaloniaDir)/Avalonia.Controls.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

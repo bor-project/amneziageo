@@ -1,0 +1,32 @@
+# Порядок съёмки. Имя кадра - файл docs/assets/img/windows/<язык>/<имя>.png, задание - frames/<имя>.ps1.
+home-connected      главный экран, туннель подключён
+config-catalog      каталог конфигураций
+config-add          меню «Добавить» в каталоге
+config-page         страница конфигурации
+routing-cards       карточка списка маршрутизации
+routing-modes       новый список: режим VPN для приложений
+routing-new         новый список: выбор шаблона
+routing-editor      редактор правил
+routing-suggest     подсказки при вводе правила
+routing-category    раскрытая запись geosite:youtube
+routing-advanced    маршрутизация, «Дополнительно»
+geo-sources         источники geo
+connections-tunnel  подключения, вкладка туннеля
+connections-proxy   подключения, вкладка прокси
+diag-routes         журнал маршрутов с поиском youtube
+diag-active         активные подключения с поиском youtube
+diag-config         текущая конфигурация
+diag-probe          проба www.youtube.com
+general             раздел «Общие»
+general-export      экспорт конфигураций и списков
+general-import      импорт
+install-actions     установщик поверх установленной версии
+install-options     установщик, параметры установки
+install-remove      установщик, удаление
+routing-discord     рецепт Discord: записи discord в списке
+config-websocket    рецепт Discord: «Прокси» (WebSocket) на странице конфигурации
+connections-multi   рецепт «Несколько VPN»: переключатель и настройки перехода
+routing-cidr        рецепт «Сеть за сервером»: правило cidr
+home-servers        рецепт «Несколько VPN»: блок «Серверы» на главном
+routing-route       рецепт «Несколько VPN»: «Маршрут» и «Запасной» у записей
+home-disconnected   главный экран, туннель отключён

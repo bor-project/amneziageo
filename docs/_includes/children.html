@@ -1,0 +1,34 @@
+{%- assign ch_pages = site.pages | where: "device", page.device | where: "lang", page.lang -%}
+{%- assign ch_node = site.data.toc | where: "id", include.of | first -%}
+<ul class="topic-list">
+{%- for ch_item in ch_node.items -%}
+  {%- assign ch_page = ch_pages | where: "topic", ch_item.id | first -%}
+  {%- if ch_page %}
+  <li>
+    <a href="{{ ch_page.url | relative_url }}">{{ ch_page.title }}</a>
+    {%- if ch_page.description %}
+    <span>{{ ch_page.description | escape }}</span>
+    {%- endif -%}
+    {%- if ch_item.items -%}
+      {%- capture ch_sub -%}
+        {%- for ch_leaf in ch_item.items -%}
+          {%- assign ch_leaf_page = ch_pages | where: "topic", ch_leaf.id | first -%}
+          {%- if ch_leaf_page %}
+      <li>
+        <a href="{{ ch_leaf_page.url | relative_url }}">{{ ch_leaf_page.title }}</a>
+            {%- if ch_leaf_page.description %}
+        <span>{{ ch_leaf_page.description | escape }}</span>
+            {%- endif %}
+      </li>
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endcapture -%}
+      {%- if ch_sub != "" %}
+    <ul>{{ ch_sub }}
+    </ul>
+      {%- endif -%}
+    {%- endif %}
+  </li>
+  {%- endif -%}
+{%- endfor %}
+</ul>

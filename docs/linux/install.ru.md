@@ -27,6 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/bor-project/amneziageo/master/amnez
 
 Архитектуру он читает из dpkg, каждый пакет сверяет с SHA-256 из `update.json` и отдаёт apt. Ключи: `--no-gui` (только агент), `--tag v1.2.3.4` (конкретный релиз), `--prerelease`, `--repo owner/name`.
 
+С терминала он спрашивает, поставить ли короткую команду консольного клиента и как её назвать, по умолчанию `ag-c`: это ссылка `/usr/local/bin/ag-c` на `/usr/bin/amneziageo`, и `ag-c status` делает то же, что `amneziageo status`. Имя, занятое другой программой или командой оболочки, скрипт не трогает и спрашивает другое. `--shortcut <имя>` ставит ссылку без вопроса, `--no-shortcut` ничего не спрашивает, без терминала ссылка не ставится. Повторный запуск оставляет найденную ссылку, удаление пакета её убирает.
+
 ## Пакеты вручную
 
 Возьмите пакеты своей архитектуры со страницы [Releases](https://github.com/bor-project/amneziageo/releases) - собираются amd64 и arm64 - и поставьте через apt, он подтянет названные ими библиотеки:
@@ -39,9 +41,9 @@ sudo apt install ./amneziageo_<версия>_amd64.deb
 sudo apt install ./amneziageo_<версия>_amd64.deb ./amneziageo-gui_<версия>_amd64.deb
 ```
 
-Агент сразу запускается; в автозагрузке он стоит, пока включён `survive-reboot`. Бинарники лежат в `/usr/lib/amneziageo`, библиотека - в `/var/lib/amneziageo`, клиент - `/usr/bin/amneziageo`, имя интерфейса агент берёт из `/etc/default/amneziageo`.
+Агент сразу запускается; в автозагрузке он стоит, пока включён `survive-reboot`. Бинарники лежат в `/usr/lib/amneziageo`, библиотека - в `/var/lib/amneziageo`, клиент - `/usr/bin/amneziageo`, имя интерфейса агент берёт из `/etc/default/amneziageo`. apt о короткой команде не спрашивает: её ставит `sudo ln -s /usr/bin/amneziageo /usr/local/bin/ag-c`, удаление пакета её убирает.
 
-Для машины не на Debian `amneziageo-linux/tools/install-server.sh` публикует агент и консольный клиент из исходников прямо в `/opt/amneziageo`.
+Для машины не на Debian `amneziageo-linux/tools/install-server.sh` публикует агент и консольный клиент из исходников прямо в `/opt/amneziageo` и так же спрашивает о короткой команде, ссылке на `/opt/amneziageo/amneziageo`.
 
 Дальше - [первая конфигурация](first-config.ru.md).
 

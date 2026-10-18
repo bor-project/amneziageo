@@ -27,6 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/bor-project/amneziageo/master/amnez
 
 It reads the architecture from dpkg, checks every package against the SHA-256 published in `update.json` and hands them to apt. Options: `--no-gui` (agent alone), `--tag v1.2.3.4` (a named release), `--prerelease`, `--repo owner/name`.
 
+On a terminal it asks whether to put a short command for the console client and its name, `ag-c` by default: a link `/usr/local/bin/ag-c` to `/usr/bin/amneziageo`, so `ag-c status` does what `amneziageo status` does. It leaves a name another command or the shell holds alone and asks for another one. `--shortcut <name>` puts the link without asking, `--no-shortcut` asks nothing, and without a terminal it puts none. A run again keeps the link it finds, and removing the package takes it off.
+
 ## Packages by hand
 
 Take the packages for your architecture from the [Releases](https://github.com/bor-project/amneziageo/releases) page - there are amd64 and arm64 builds - and let apt pull in the shared libraries they name:
@@ -39,9 +41,9 @@ sudo apt install ./amneziageo_<version>_amd64.deb
 sudo apt install ./amneziageo_<version>_amd64.deb ./amneziageo-gui_<version>_amd64.deb
 ```
 
-The agent starts right away; it starts at boot while `survive-reboot` is on. The binaries live in `/usr/lib/amneziageo`, the library in `/var/lib/amneziageo`, the client is `/usr/bin/amneziageo`, and the interface name comes from `/etc/default/amneziageo`.
+The agent starts right away; it starts at boot while `survive-reboot` is on. The binaries live in `/usr/lib/amneziageo`, the library in `/var/lib/amneziageo`, the client is `/usr/bin/amneziageo`, and the interface name comes from `/etc/default/amneziageo`. apt asks nothing about a short command: `sudo ln -s /usr/bin/amneziageo /usr/local/bin/ag-c` puts one, and removing the package takes it off.
 
-For a machine that is not Debian-based, `amneziageo-linux/tools/install-server.sh` publishes the agent and the console client from the sources straight into `/opt/amneziageo`.
+For a machine that is not Debian-based, `amneziageo-linux/tools/install-server.sh` publishes the agent and the console client from the sources straight into `/opt/amneziageo` and asks for the short command the same way, a link to `/opt/amneziageo/amneziageo`.
 
 Next: [first configuration](first-config.md).
 

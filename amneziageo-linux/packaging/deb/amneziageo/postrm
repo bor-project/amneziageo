@@ -3,6 +3,13 @@ set -e
 
 case "$1" in
   remove)
+    # Takes off the short commands that lead to the client of the package.
+    for link in /usr/local/bin/*; do
+      if [ -L "$link" ] && [ "$(readlink "$link")" = /usr/bin/amneziageo ]; then
+        rm -f "$link"
+      fi
+    done
+
     if [ -d /run/systemd/system ]; then
       systemctl daemon-reload || true
     fi

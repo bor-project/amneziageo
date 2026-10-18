@@ -8,6 +8,10 @@ PRERELEASE="no"
 WITH_GUI="yes"
 KEEP="no"
 WORK=""
+SHORTCUT=""
+ASK_SHORTCUT="yes"
+TOOL="/usr/bin/amneziageo"
+LINK_DIR="/usr/local/bin"
 
 usage() {
   cat <<EOF
@@ -18,6 +22,8 @@ usage: install.sh [options]
   --prerelease        consider prereleases, not just the latest stable release
   --repo owner/name   pull from another repository (default: $REPO)
   --keep              keep the downloaded packages in the working directory
+  --shortcut <name>   put the short command <name> for amneziageo without asking
+  --no-shortcut       put no short command and ask nothing
   --help              this help
 
 Downloads the amneziageo and amneziageo-gui packages built for this machine, checks them against the
@@ -27,6 +33,10 @@ SHA-256 published in update.json and installs them with apt. Needs root:
 
 The agent starts right away and checks for later versions by itself; it starts at boot while the
 survive-reboot setting is on.
+
+On a terminal it asks whether to put a short command for the console client, ag-c by default: a link
+in /usr/local/bin to /usr/bin/amneziageo. A name another command holds is left alone, and removing
+the package takes the link off.
 EOF
 }
 
@@ -38,6 +48,8 @@ while [ $# -gt 0 ]; do
     --prerelease) PRERELEASE="yes"; shift ;;
     --repo) REPO="$2"; shift 2 ;;
     --keep) KEEP="yes"; shift ;;
+    --shortcut) SHORTCUT="$2"; shift 2 ;;
+    --no-shortcut) ASK_SHORTCUT="no"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
@@ -138,6 +150,92 @@ sha_of() {
   grep -o "\"name\":\"$1\"[^}]*" "$WORK/update.compact" | grep -o '"sha256":"[^"]*"' | cut -d'"' -f4 | head -1
 }
 
+# Tells whether a terminal is there to ask on.
+on_terminal() {
+  { : < /dev/tty; } 2> /dev/null
+}
+
+# Asks a line on the terminal and prints it, the default for an empty one; fails where the terminal ends.
+ask() {
+  local answer=""
+  read -r -p "$1 " answer < /dev/tty || return 1
+  printf '%s' "${answer:-$2}"
+}
+
+# Tells whether a word can name the short command: no command holds it, or it leads to amneziageo already.
+shortcut_ok() {
+  local link="$LINK_DIR/$1" taken=""
+  if ! [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]]; then
+    echo "'$1' cannot name a command: letters, digits, dots, dashes and underscores" >&2
+    return 1
+  fi
+
+  if [ "$1" = "amneziageo" ]; then
+    taken="$TOOL"
+  elif [ "$(readlink "$link" || true)" = "$TOOL" ]; then
+    return 0
+  elif [ -e "$link" ] || [ -L "$link" ]; then
+    taken="$link"
+  elif compgen -b -k -- "$1" | grep -qxF -- "$1"; then
+    taken="a command of the shell"
+  else
+    taken="$(type -P "$1" || true)"
+  fi
+
+  if [ -n "$taken" ]; then
+    echo "$1 is taken: $taken" >&2
+    return 1
+  fi
+}
+
+# Prints the first name of the short command no command holds: the name given, else it with a number after it.
+free_shortcut() {
+  local name="$1" number=1
+  while ! shortcut_ok "$name" 2> /dev/null; do
+    name="$1$number"
+    number=$((number + 1))
+  done
+
+  printf '%s' "$name"
+}
+
+# Prints the short commands that lead to amneziageo.
+shortcuts() {
+  local link
+  for link in "$LINK_DIR"/*; do
+    if [ -L "$link" ] && [ "${link##*/}" != "amneziageo" ] && [ "$(readlink "$link")" = "$TOOL" ]; then
+      printf '%s\n' "${link##*/}"
+    fi
+  done
+}
+
+# Asks on the terminal for the short command and prints its name, nothing for none.
+ask_shortcut() {
+  local answer="" offered name
+  if ! on_terminal; then
+    return 0
+  fi
+
+  while [ "$answer" != "yes" ]; do
+    answer="$(ask "Put a short command for amneziageo? [Y/n]" y)" || return 0
+    case "${answer,,}" in
+      y|yes) answer="yes" ;;
+      n|no) return 0 ;;
+      *) echo "answer y or n" >&2 ;;
+    esac
+  done
+
+  offered="$(free_shortcut ag-c)"
+  while name="$(ask "Name of the short command [$offered]:" "$offered")"; do
+    if shortcut_ok "$name"; then
+      printf '%s' "$name"
+      return 0
+    fi
+  done
+
+  return 0
+}
+
 echo "== AmneziaGeo for $ARCH from $REPO =="
 for i in "${!URLS[@]}"; do
   name="${FILES[$i]}"
@@ -168,6 +266,21 @@ if [ -d /run/systemd/system ]; then
   systemctl start amneziageo-agent.service || true
 fi
 
+# The short command: the one named, one already put on, or the one asked for on the terminal.
+HELD="$(shortcuts | head -1)"
+if [ -n "$SHORTCUT" ]; then
+  shortcut_ok "$SHORTCUT" || SHORTCUT=""
+elif [ -n "$HELD" ]; then
+  SHORTCUT="$HELD"
+elif [ "$ASK_SHORTCUT" = "yes" ]; then
+  SHORTCUT="$(ask_shortcut)"
+fi
+
+if [ -n "$SHORTCUT" ] && [ "$(readlink "$LINK_DIR/$SHORTCUT" || true)" != "$TOOL" ] \
+  && ! ln -s "$TOOL" "$LINK_DIR/$SHORTCUT"; then
+  SHORTCUT=""
+fi
+
 cat <<EOF
 
 Installed: ${FILES[*]}
@@ -180,6 +293,9 @@ The agent runs as the amneziageo-agent service and checks for later versions its
 EOF
 if [ -n "${GUI_URL:-}" ]; then
   echo "  amneziageo-gui                                  # desktop interface"
+fi
+if [ -n "$SHORTCUT" ]; then
+  printf '  %-48s# %s\n' "$SHORTCUT status" "the console client by its short command"
 fi
 
 if [ "$KEEP" = "yes" ]; then

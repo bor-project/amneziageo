@@ -17,7 +17,7 @@ internal sealed class HotspotNames
     /// <summary>
     /// Prefix the stand-in addresses are taken from.
     /// </summary>
-    public const string Prefix = "198.18.0.0/15";
+    public const string Prefix = "198.18.0.0/16";
 
     /// <summary>
     /// How long a client keeps the address it was answered with. The answer carries a far shorter TTL, so a
@@ -26,7 +26,7 @@ internal sealed class HotspotNames
     public const int LeaseSeconds = 1800;
 
     private const uint RangeFirst = 0xC6120000; // 198.18.0.0
-    private const uint RangeLast = 0xC613FFFF;  // 198.19.255.255
+    private const uint RangeLast = 0xC612FFFF;  // 198.18.255.255
     private const uint First = RangeFirst + 1;
     private const uint Last = RangeLast - 1;
     // Cap far below the range, so a sweep always frees something and the pool never has to be walked far.

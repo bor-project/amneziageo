@@ -37,9 +37,19 @@ public sealed class HotspotProxyTests : IDisposable
     public void AnAddressOutsideTheRange_StandsForNothing()
     {
         Assert.False(HotspotNames.Covers(IPAddress.Parse("198.17.255.255")));
-        Assert.False(HotspotNames.Covers(IPAddress.Parse("198.20.0.0")));
-        Assert.True(HotspotNames.Covers(IPAddress.Parse("198.19.255.255")));
+        Assert.False(HotspotNames.Covers(IPAddress.Parse("198.19.0.0")));
+        Assert.True(HotspotNames.Covers(IPAddress.Parse("198.18.255.255")));
         Assert.Null(_names.Name(IPAddress.Parse("198.18.7.7")));
+    }
+
+    [Fact]
+    public void TheRange_LeavesTheStandInsOfTheServerToTheTunnel()
+    {
+        var range = IPNetwork.Parse(HotspotNames.Prefix);
+
+        Assert.False(range.Contains(IPAddress.Parse("198.19.0.1")));
+        Assert.False(range.Contains(IPAddress.Parse("198.19.255.254")));
+        Assert.True(range.Contains(IPAddress.Parse("198.18.255.254")));
     }
 
     [Fact]

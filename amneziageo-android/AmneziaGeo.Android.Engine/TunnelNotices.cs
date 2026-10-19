@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Android.App;
 using Android.Content;
 using Android.OS;
@@ -14,12 +15,12 @@ public static class TunnelNotices
     /// <summary>
     /// Category of the notification the service runs under.
     /// </summary>
-    public const string TunnelChannel = "amneziageo.vpn";
+    public const string TunnelChannel = "amneziageo.tunnel";
 
     /// <summary>
     /// Category of the notification of a tunnel that stopped on its own.
     /// </summary>
-    public const string StoppedChannel = "amneziageo.stopped";
+    public const string StoppedChannel = "amneziageo.tunnel-stopped";
 
     /// <summary>
     /// Id of the notification the service runs under and leaves behind.
@@ -45,6 +46,9 @@ public static class TunnelNotices
     private const int OpenCode = 1;
     private const int DisconnectCode = 2;
     private const int ConnectCode = 3;
+
+    // Categories earlier builds posted under.
+    private static readonly string[] Retired = ["amneziageo.vpn", "amneziageo.stopped", "amneziageo.update", "amneziageo-update"];
 
     // The name the categories were last created under in this process.
     private static string? _channelsNamed;
@@ -135,7 +139,7 @@ public static class TunnelNotices
     // Creates the two categories once for a name; the name of the second one comes in the language of the window.
     private static void EnsureChannels(Context context, NoticeWords words)
     {
-        if (Build.VERSION.SdkInt < BuildVersionCodes.O || string.Equals(_channelsNamed, words.StoppedChannel, StringComparison.Ordinal))
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26) || string.Equals(_channelsNamed, words.StoppedChannel, StringComparison.Ordinal))
         {
             return;
         }
@@ -145,9 +149,38 @@ public static class TunnelNotices
             return;
         }
 
-        manager.CreateNotificationChannel(new NotificationChannel(TunnelChannel, TunnelChannelName, NotificationImportance.Low));
-        manager.CreateNotificationChannel(new NotificationChannel(StoppedChannel, words.StoppedChannel, NotificationImportance.Default));
+        manager.CreateNotificationChannel(Unmarked(TunnelChannel, TunnelChannelName, NotificationImportance.Low));
+        manager.CreateNotificationChannel(Unmarked(StoppedChannel, words.StoppedChannel, NotificationImportance.Default));
+        Retire(manager);
         _channelsNamed = words.StoppedChannel;
+    }
+
+    /// <summary>
+    /// Category whose notifications leave no mark on the icon of the application.
+    /// </summary>
+    [SupportedOSPlatform("android26.0")]
+    public static NotificationChannel Unmarked(string id, string name, NotificationImportance importance)
+    {
+        var channel = new NotificationChannel(id, name, importance);
+        channel.SetShowBadge(false);
+        return channel;
+    }
+
+    // Deletes the categories earlier builds posted under, together with their notifications on the shade.
+    [SupportedOSPlatform("android26.0")]
+    private static void Retire(NotificationManager manager)
+    {
+        foreach (var id in Retired)
+        {
+            try
+            {
+                manager.DeleteNotificationChannel(id);
+            }
+            catch (Exception ex)
+            {
+                global::Android.Util.Log.Warn("TunnelNotices", "the category " + id + " was not deleted: " + ex);
+            }
+        }
     }
 
     private static NotificationManager? Manager(Context context) =>

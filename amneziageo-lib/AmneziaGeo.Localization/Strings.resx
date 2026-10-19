@@ -337,6 +337,15 @@
   <data name="Background_Configure" xml:space="preserve">
     <value>Configure</value>
   </data>
+  <data name="Background_TunnelNotice" xml:space="preserve">
+    <value>Tunnel notification</value>
+  </data>
+  <data name="Background_TunnelNoticeFull" xml:space="preserve">
+    <value>Detailed</value>
+  </data>
+  <data name="Background_TunnelNoticeBrief" xml:space="preserve">
+    <value>Brief</value>
+  </data>
   <data name="Background_Open" xml:space="preserve">
     <value>Open</value>
   </data>
@@ -1956,6 +1965,12 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   </data>
   <data name="Android_UpdateReopen" xml:space="preserve">
     <value>The update is installed. Tap to open AmneziaGeo.</value>
+  </data>
+  <data name="Android_UpdateFound" xml:space="preserve">
+    <value>Version {0} is available</value>
+  </data>
+  <data name="Android_UpdateFoundChannel" xml:space="preserve">
+    <value>Update available</value>
   </data>
   <data name="Main_ExportListTitle" xml:space="preserve">
     <value>Export list</value>

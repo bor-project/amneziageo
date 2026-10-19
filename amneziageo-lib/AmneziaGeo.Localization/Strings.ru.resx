@@ -337,6 +337,15 @@
   <data name="Background_Configure" xml:space="preserve">
     <value>Настроить</value>
   </data>
+  <data name="Background_TunnelNotice" xml:space="preserve">
+    <value>Уведомление туннеля</value>
+  </data>
+  <data name="Background_TunnelNoticeFull" xml:space="preserve">
+    <value>Подробное</value>
+  </data>
+  <data name="Background_TunnelNoticeBrief" xml:space="preserve">
+    <value>Краткое</value>
+  </data>
   <data name="Background_Open" xml:space="preserve">
     <value>Открыть</value>
   </data>
@@ -1956,6 +1965,12 @@
   </data>
   <data name="Android_UpdateReopen" xml:space="preserve">
     <value>Обновление установлено. Нажмите, чтобы открыть AmneziaGeo.</value>
+  </data>
+  <data name="Android_UpdateFound" xml:space="preserve">
+    <value>Доступна версия {0}</value>
+  </data>
+  <data name="Android_UpdateFoundChannel" xml:space="preserve">
+    <value>Доступно обновление</value>
   </data>
   <data name="Main_ExportListTitle" xml:space="preserve">
     <value>Экспорт списка</value>

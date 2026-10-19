@@ -161,6 +161,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _directTcp = true;
     private bool _excludeRoutes = true;
     private bool _localInTunnel;
+    private string _tunnelNotice = TunnelNoticeModes.Full;
     private int _routeTtl = 300;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
@@ -875,7 +876,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             Loc.GetIn(language, "Notice_StoppedChannel"),
             Loc.CultureOf(language).Name,
             list,
-            lists);
+            lists,
+            _tunnelNotice == TunnelNoticeModes.Brief);
     }
 
     // Whether there is a routing list at all.
@@ -890,7 +892,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         string.Join('\n', name, words.List, words.Lists ? "1" : "0", words.Culture);
 
     // Keeps the notification a tunnel that is down left on the shade true to the configuration and the list chosen
-    // now; a tunnel whose process is gone and which is to be raised again shows as connecting.
+    // now, or takes it off when the notification is brief; a tunnel whose process is gone and which is to be raised
+    // again shows as connecting.
     private async Task RetellDownAsync()
     {
         try
@@ -903,6 +906,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             var words = await NoticeWordsAsync().ConfigureAwait(false);
             var owed = _raiseOwed;
+            if (words.Brief && !owed)
+            {
+                TunnelNotices.Cancel(context, TunnelNotices.TunnelId);
+                return;
+            }
+
             var key = DownKey(name, words) + (owed ? "|raise" : string.Empty);
             if (_active || string.Equals(key, _downNotice, StringComparison.Ordinal))
             {
@@ -916,6 +925,26 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         catch (Exception ex)
         {
             _log.Warn("agent", "the notification of the tunnel was not brought up to date: " + ex);
+        }
+    }
+
+    // Hands a running tunnel the words of its notification again.
+    private async Task RetellRunningAsync()
+    {
+        try
+        {
+            var context = Application.Context;
+            if (!VpnBridge.IsRunning(context))
+            {
+                return;
+            }
+
+            var words = await NoticeWordsAsync().ConfigureAwait(false);
+            VpnBridge.RequestNotice(context, JsonSerializer.Serialize(words));
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("agent", "the words of the notification were not handed to the tunnel: " + ex);
         }
     }
 
@@ -1393,6 +1422,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             EngineVersion: string.Empty,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
+            TunnelNotice: _tunnelNotice,
             RouteTtlSeconds: _routeTtl,
             GeoAutoCheck: _geoAutoCheck,
             GeoCheckIntervalHours: _geoCheckIntervalHours,
@@ -3203,6 +3233,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _localInTunnel = localInTunnel.ValueKind == JsonValueKind.True;
             }
 
+            if (document.RootElement.TryGetProperty("TunnelNotice", out var tunnelNotice)
+                && tunnelNotice.ValueKind == JsonValueKind.String)
+            {
+                _tunnelNotice = TunnelNoticeModes.Known(tunnelNotice.GetString());
+            }
+
             if (document.RootElement.TryGetProperty("AllowPrerelease", out var prerelease)
                 && prerelease.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
@@ -3343,6 +3379,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"DirectTcp\":").Append(_directTcp ? "true" : "false");
             builder.Append(",\"ExcludeRoutes\":").Append(_excludeRoutes ? "true" : "false");
             builder.Append(",\"LocalInTunnel\":").Append(_localInTunnel ? "true" : "false");
+            builder.Append(",\"TunnelNotice\":").Append(JsonSerializer.Serialize(_tunnelNotice));
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
             builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
@@ -4505,6 +4542,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 Save();
                 PushSnapshot();
                 return Ok();
+            case SettingKeys.TunnelNotice:
+                if (!TunnelNoticeModes.IsKnown(args[1]))
+                {
+                    return Fail();
+                }
+
+                _tunnelNotice = args[1];
+                _downNotice = string.Empty;
+                Save();
+                _ = RetellRunningAsync();
+                PushSnapshot();
+                return Ok();
             case "allow-prerelease":
                 _updater.AllowPrerelease = IsOn(args[1]);
                 Save();
@@ -4642,6 +4691,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("direct tcp   : ").Append(_directTcp ? "on" : "off").Append('\n');
         report.Append("exclude routes: ").Append(_excludeRoutes ? "on" : "off").Append('\n');
         report.Append("local in tun : ").Append(_localInTunnel ? "on" : "off").Append('\n');
+        report.Append("tunnel notice: ").Append(_tunnelNotice).Append('\n');
         report.Append("route log    : ").Append(_routeLog ? "on" : "off").Append('\n');
         return new IpcAck(true, report.ToString());
     }

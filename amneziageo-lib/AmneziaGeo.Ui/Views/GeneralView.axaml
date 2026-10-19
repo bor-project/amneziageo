@@ -59,19 +59,35 @@
                </ItemsControl.ItemsPanel>
                <ItemsControl.ItemTemplate>
                  <DataTemplate x:DataType="vm:BackgroundLimitRow">
-                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                       <TextBlock Text="{Binding Name}" FontSize="13.5" TextWrapping="Wrap" />
-                       <Panel IsVisible="{Binding HasState}">
-                         <TextBlock Text="{Binding StateText}" Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                                    IsVisible="{Binding !IsLimited}" />
-                         <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource AgWarnBrush}" FontSize="12.5"
-                                    TextWrapping="Wrap" IsVisible="{Binding IsLimited}" />
-                       </Panel>
-                     </StackPanel>
-                     <Button Grid.Column="1" Classes="softbtn" Padding="16,7" VerticalAlignment="Center"
-                             Content="{Binding ActionText}" Command="{Binding OpenCommand}" />
-                   </Grid>
+                   <StackPanel Spacing="12">
+                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                       <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                         <TextBlock Text="{Binding Name}" FontSize="13.5" TextWrapping="Wrap" />
+                         <Panel IsVisible="{Binding HasState}">
+                           <TextBlock Text="{Binding StateText}" Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                                      IsVisible="{Binding !IsLimited}" />
+                           <TextBlock Text="{Binding StateText}" Foreground="{DynamicResource AgWarnBrush}" FontSize="12.5"
+                                      TextWrapping="Wrap" IsVisible="{Binding IsLimited}" />
+                         </Panel>
+                       </StackPanel>
+                       <Button Grid.Column="1" Classes="softbtn" Padding="16,7" VerticalAlignment="Center"
+                               Content="{Binding ActionText}" Command="{Binding OpenCommand}" />
+                     </Grid>
+                     <!-- Уведомление туннеля под строкой уведомлений: подробное или краткое. -->
+                     <ContentControl Content="{Binding Notice}" IsVisible="{Binding HasNotice}">
+                       <ContentControl.ContentTemplate>
+                         <DataTemplate x:DataType="vm:TunnelNoticeChoice">
+                           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                             <TextBlock Grid.Column="0" Text="{l:Tr Background_TunnelNotice}" FontSize="13.5"
+                                        TextWrapping="Wrap" VerticalAlignment="Center" />
+                             <controls:AdaptiveComboBox Grid.Column="1" Classes="field" VerticalAlignment="Center"
+                                                        ItemsSource="{Binding Options}"
+                                                        SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}" />
+                           </Grid>
+                         </DataTemplate>
+                       </ContentControl.ContentTemplate>
+                     </ContentControl>
+                   </StackPanel>
                  </DataTemplate>
                </ItemsControl.ItemTemplate>
              </ItemsControl>

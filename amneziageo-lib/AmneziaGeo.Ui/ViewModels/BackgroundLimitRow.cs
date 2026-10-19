@@ -15,17 +15,29 @@ internal sealed partial class BackgroundLimitRow : ObservableObject
     /// <summary>
     /// ctor
     /// </summary>
-    public BackgroundLimitRow(BackgroundLimitKind kind, BackgroundLimitState state, Action<BackgroundLimitKind> open)
+    public BackgroundLimitRow(BackgroundLimitKind kind, BackgroundLimitState state, Action<BackgroundLimitKind> open,
+        TunnelNoticeChoice? notice = null)
     {
         Kind = kind;
         _state = state;
         _open = open;
+        Notice = kind == BackgroundLimitKind.Notifications ? notice : null;
     }
 
     /// <summary>
     /// Ограничение строки.
     /// </summary>
     public BackgroundLimitKind Kind { get; }
+
+    /// <summary>
+    /// Выбор уведомления туннеля под строкой уведомлений.
+    /// </summary>
+    public TunnelNoticeChoice? Notice { get; }
+
+    /// <summary>
+    /// Стоит ли под строкой выбор уведомления туннеля.
+    /// </summary>
+    public bool HasNotice => Notice is not null;
 
     /// <summary>
     /// Состояние ограничения.

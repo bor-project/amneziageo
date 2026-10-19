@@ -173,4 +173,9 @@ public sealed record StatusSnapshot(
     /// Whether the agent dials a dropped or failed connection again whatever <c>PeriodicReconnect</c> says, which
     /// then only sets the longest pause between the attempts.
     /// </summary>
-    bool ReconnectAlways = false);
+    bool ReconnectAlways = false,
+
+    /// <summary>
+    /// How much the notification of the tunnel says, full or brief; empty where the platform shows none.
+    /// </summary>
+    string TunnelNotice = "");

@@ -10,14 +10,17 @@ internal sealed class BackgroundLimitsViewModel : ViewModelBase
 {
     private readonly Func<IReadOnlyList<BackgroundLimit>> _read;
     private readonly Action<BackgroundLimitKind> _open;
+    private readonly TunnelNoticeChoice? _notice;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public BackgroundLimitsViewModel(Func<IReadOnlyList<BackgroundLimit>> read, Action<BackgroundLimitKind> open)
+    public BackgroundLimitsViewModel(Func<IReadOnlyList<BackgroundLimit>> read, Action<BackgroundLimitKind> open,
+        TunnelNoticeChoice? notice = null)
     {
         _read = read;
         _open = open;
+        _notice = notice;
         Reload();
     }
 
@@ -54,7 +57,7 @@ internal sealed class BackgroundLimitsViewModel : ViewModelBase
             }
             else
             {
-                Rows.Insert(Math.Min(i, Rows.Count), new BackgroundLimitRow(limit.Kind, limit.State, _open));
+                Rows.Insert(Math.Min(i, Rows.Count), new BackgroundLimitRow(limit.Kind, limit.State, _open, _notice));
             }
         }
 
@@ -70,5 +73,7 @@ internal sealed class BackgroundLimitsViewModel : ViewModelBase
         {
             row.Relabel();
         }
+
+        _notice?.Relabel();
     }
 }

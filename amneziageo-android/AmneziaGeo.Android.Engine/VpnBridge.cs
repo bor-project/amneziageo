@@ -194,6 +194,11 @@ public static class VpnBridge
     public const string ActionWatch = "org.amneziageo.android.VPN_WATCH";
 
     /// <summary>
+    /// Broadcast that hands a running tunnel the words of its notification.
+    /// </summary>
+    public const string ActionNotice = "org.amneziageo.android.VPN_NOTICE";
+
+    /// <summary>
     /// Shown loss extra: share of the tunnel's latest echoes lost since the link last came back.
     /// </summary>
     public const string ExtraNowLoss = "nowloss";
@@ -649,6 +654,16 @@ public static class VpnBridge
     /// Asks a running tunnel to reapply the idle window.
     /// </summary>
     public static void RequestRouteTtl(Context context) => context.SendBroadcast(Broadcast(context, ActionRouteTtl));
+
+    /// <summary>
+    /// Hands a running tunnel the words of its notification.
+    /// </summary>
+    public static void RequestNotice(Context context, string words)
+    {
+        var intent = Broadcast(context, ActionNotice);
+        intent.PutExtra(GeoVpnService.ExtraNotice, words);
+        context.SendBroadcast(intent);
+    }
 
     /// <summary>
     /// Writes whether the listener came up and who holds a connection to it, for the head to show.

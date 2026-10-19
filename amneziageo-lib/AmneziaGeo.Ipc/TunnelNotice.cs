@@ -47,6 +47,8 @@ public enum NoticeStage
 /// <param name="Culture">Name of the culture the numbers are written in.</param>
 /// <param name="List">Name of the routing list in use, empty when none is.</param>
 /// <param name="Lists">Whether there is a routing list the configuration could route by.</param>
+/// <param name="Brief">Whether the notification names the stage alone, without the speed, the attempt and the
+/// routing list.</param>
 public sealed record NoticeWords(
     string Connected,
     string Connecting,
@@ -62,7 +64,8 @@ public sealed record NoticeWords(
     string StoppedChannel,
     string Culture,
     string List = "",
-    bool Lists = false)
+    bool Lists = false,
+    bool Brief = false)
 {
     /// <summary>
     /// The words a tunnel raised without a head falls back to.
@@ -70,6 +73,33 @@ public sealed record NoticeWords(
     public static NoticeWords Plain { get; } = new(
         "Connected", "Connecting", "attempt {0}", "Disconnected", "The tunnel has stopped", "↓ {0} ↑ {1} Mbit/s",
         "↓ {0} ↑ {1} kbit/s", "Routing: {0}", "Routing is off", "Disconnect", "Connect", "Tunnel stopped", string.Empty);
+}
+
+/// <summary>
+/// How much the notification of the tunnel says.
+/// </summary>
+public static class TunnelNoticeModes
+{
+    /// <summary>
+    /// The stage with the speed or the attempt, and the routing list.
+    /// </summary>
+    public const string Full = "full";
+
+    /// <summary>
+    /// The stage alone.
+    /// </summary>
+    public const string Brief = "brief";
+
+    /// <summary>
+    /// The mode a stored or typed value stands for; anything else is the full one.
+    /// </summary>
+    public static string Known(string? value) =>
+        string.Equals(value?.Trim(), Brief, StringComparison.OrdinalIgnoreCase) ? Brief : Full;
+
+    /// <summary>
+    /// Whether the value names a mode.
+    /// </summary>
+    public static bool IsKnown(string? value) => value is Full or Brief;
 }
 
 /// <summary>
@@ -82,12 +112,14 @@ public static class TunnelNotice
 
     /// <summary>
     /// The line under the title: the stage, with the speed of a session that stands and the attempt of one that is
-    /// dialled again.
+    /// dialled again; a brief notification names the stage alone.
     /// </summary>
     public static string Text(NoticeWords words, NoticeStage stage, int retry, long rxBitsPerSecond, long txBitsPerSecond)
     {
         return stage switch
         {
+            NoticeStage.Connected when words.Brief => words.Connected,
+            NoticeStage.Connecting when words.Brief => words.Connecting,
             NoticeStage.Connected => words.Connected + Separator + Speed(words, rxBitsPerSecond, txBitsPerSecond),
             NoticeStage.Connecting when retry >= 1 => words.Connecting + Separator + Fill(words, words.Attempt, retry + 1),
             NoticeStage.Connecting => words.Connecting,
@@ -97,10 +129,15 @@ public static class TunnelNotice
     }
 
     /// <summary>
-    /// The line about the routing list; nothing when there is no list to speak of.
+    /// The line about the routing list; nothing when there is no list to speak of or the notification is brief.
     /// </summary>
     public static string? Routing(NoticeWords words)
     {
+        if (words.Brief)
+        {
+            return null;
+        }
+
         if (words.List.Length > 0)
         {
             return Fill(words, words.Routing, words.List);

@@ -2,6 +2,7 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using AmneziaGeo.Android.Engine;
 using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Android.Ui.Services;
@@ -13,7 +14,7 @@ namespace AmneziaGeo.Android.Ui.Services;
 [Service(Exported = false, ForegroundServiceType = ForegroundService.TypeDataSync)]
 internal sealed class UpdateDownloadService : Service
 {
-    private const string ChannelId = "amneziageo.update";
+    private const string ChannelId = "amneziageo.update-download";
     private const int NotificationId = 4711;
 
     private PowerManager.WakeLock? _wake;
@@ -85,8 +86,7 @@ internal sealed class UpdateDownloadService : Service
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
         {
             var manager = (NotificationManager?)GetSystemService(NotificationService);
-            var channel = new NotificationChannel(ChannelId, "Update", NotificationImportance.Low);
-            manager?.CreateNotificationChannel(channel);
+            manager?.CreateNotificationChannel(TunnelNotices.Unmarked(ChannelId, "Update", NotificationImportance.Low));
         }
 
         try

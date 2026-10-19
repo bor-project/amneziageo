@@ -163,7 +163,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// <summary>
     /// Блок «Работа в фоне».
     /// </summary>
-    public BackgroundLimitsViewModel Background { get; } = new(BackgroundLimitsBridge.Read, BackgroundLimitsBridge.Open);
+    public BackgroundLimitsViewModel Background { get; }
+
+    /// <summary>
+    /// Выбор уведомления туннеля; есть только на телефоне Android.
+    /// </summary>
+    public TunnelNoticeChoice? NoticeChoice { get; }
 
     /// <summary>
     /// Whether the network-repair action is offered (Windows only).
@@ -192,6 +197,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Seed backing fields from prefs without echoing OnChanged.
         _selectedThemeIndex = IndexForTheme(prefs.Theme);
         _selectedLanguageIndex = IndexForLanguage(prefs.Language);
+        NoticeChoice = OperatingSystem.IsAndroid() && !UiPlatform.IsTelevision
+            ? new TunnelNoticeChoice(mode => _ = SetSettingAsync(SettingKeys.TunnelNotice, mode))
+            : null;
+        Background = new(BackgroundLimitsBridge.Read, BackgroundLimitsBridge.Open, NoticeChoice);
         Loc.Instance.CultureChanged += OnCultureChanged;
     }
 
@@ -302,6 +311,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _suppressSettingPush = true;
         AllowPrerelease = snapshot.AllowPrerelease;
         _suppressSettingPush = false;
+        NoticeChoice?.Apply(snapshot.TunnelNotice);
 
         UpdateUrl = snapshot.UpdateUrl;
 

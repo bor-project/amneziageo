@@ -12,7 +12,7 @@ namespace AmneziaGeo.Android.Ui.Services;
 /// </summary>
 internal static class UpdateReopen
 {
-    private const string ChannelId = "amneziageo-update";
+    private const string ChannelId = "amneziageo.update-installed";
     private const int NotificationId = 0x7A20;
     private const string MarkerName = "update-reopen";
 
@@ -34,8 +34,8 @@ internal static class UpdateReopen
     }
 
     /// <summary>
-    /// Зовёт сторожа туннеля и возвращает окно по сигналу приёмника; метка снимается, поэтому окно возвращается
-    /// один раз.
+    /// Зовёт сторожа туннеля, снимает уведомление о найденной версии и возвращает окно по сигналу приёмника; метка
+    /// снимается, поэтому окно возвращается один раз.
     /// </summary>
     public static void Run(BroadcastReceiver receiver, Context context)
     {
@@ -44,6 +44,7 @@ internal static class UpdateReopen
             TunnelGuard.Ring(context);
         }
 
+        UpdateFound.Withdraw(context);
         if (!TakeMarker(context))
         {
             return;
@@ -113,8 +114,8 @@ internal static class UpdateReopen
         {
             if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
             {
-                var channel = new NotificationChannel(ChannelId, "AmneziaGeo", NotificationImportance.Default);
-                (context.GetSystemService(Context.NotificationService) as NotificationManager)?.CreateNotificationChannel(channel);
+                (context.GetSystemService(Context.NotificationService) as NotificationManager)?.CreateNotificationChannel(
+                    TunnelNotices.Unmarked(ChannelId, "AmneziaGeo", NotificationImportance.Default));
             }
 
             var launch = LaunchIntent(context);

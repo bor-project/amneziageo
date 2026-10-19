@@ -245,6 +245,7 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _cards;
     private VpnBridge.Listener? _switches;
     private VpnBridge.Listener? _watches;
+    private VpnBridge.Listener? _notices;
     private volatile LinkLossProbe? _loss;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
@@ -372,6 +373,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _switches, VpnBridge.ActionSwitch);
         _watches = new VpnBridge.Listener { Handler = _ => Watch() };
         VpnBridge.Listen(this, _watches, VpnBridge.ActionWatch);
+        _notices = new VpnBridge.Listener { Handler = TakeNotice };
+        VpnBridge.Listen(this, _notices, VpnBridge.ActionNotice);
         WatchUnderlay();
         _screen = new VpnBridge.Listener { Handler = OnScreen };
         var side = new HandlerThread("ageo-screen");
@@ -497,6 +500,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_routeTtl);
             _routeTtl = null;
+        }
+
+        if (_notices is not null)
+        {
+            UnregisterReceiver(_notices);
+            _notices = null;
         }
 
         if (_probes is not null)
@@ -3476,8 +3485,8 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // Leaves on the shade what the tunnel went down with: taken down by the user, or stopped on its own with
-    // nobody at the window to see it.
+    // Leaves on the shade what the tunnel went down with: taken down by the user unless the notification is brief,
+    // or stopped on its own with nobody at the window to see it.
     private void LeaveNotice(VpnStage stage)
     {
         lock (_noticeGate)
@@ -3485,6 +3494,12 @@ public sealed class GeoVpnService : VpnService
             var now = Java.Lang.JavaSystem.CurrentTimeMillis();
             _noticeDown = true;
             _noticeText = string.Empty;
+            if (stage == VpnStage.Disconnected && _notice.Brief)
+            {
+                StopForeground(StopForegroundFlags.Remove);
+                return;
+            }
+
             if (stage == VpnStage.Disconnected)
             {
                 StopForeground(StopForegroundFlags.Detach);
@@ -3500,6 +3515,28 @@ public sealed class GeoVpnService : VpnService
                     TunnelNotices.Compose(this, _notice, _noticeName, NoticeStage.Stopped, 0, 0, 0, now));
             }
         }
+    }
+
+    // Takes the words the head handed over for the notification and for a session raised again.
+    private void TakeNotice(Intent intent)
+    {
+        if (Words(intent.GetStringExtra(ExtraNotice)) is not { } words)
+        {
+            return;
+        }
+
+        lock (_noticeGate)
+        {
+            _notice = words;
+            _noticeText = string.Empty;
+        }
+
+        if (VpnBridge.ReadRequest() is { } kept)
+        {
+            VpnBridge.WriteRequest(kept with { Notice = words });
+        }
+
+        ShowStage();
     }
 
     // Pushes the alarm of the guard ahead for as long as a session is wanted.

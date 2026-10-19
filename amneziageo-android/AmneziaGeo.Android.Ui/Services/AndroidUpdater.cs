@@ -49,6 +49,7 @@ internal sealed class AndroidUpdater : IDisposable
             Application.Context.CacheDir?.AbsolutePath ?? System.IO.Path.GetTempPath(),
             "updates");
         UpdateInstallReceiver.Finished = OnInstallFinished;
+        UpdateFound.Settle(Application.Context);
     }
 
     /// <summary>
@@ -334,6 +335,7 @@ internal sealed class AndroidUpdater : IDisposable
         await AdoptAsync(FileFor(Version, name), ct).ConfigureAwait(false);
 
         _log.Info("update", $"{Version} published as {name} for this {_arch} device (installed {_installed})");
+        UpdateFound.Tell(Application.Context, Available ? Version : string.Empty);
         return Available
             ? new IpcAck(true, IpcMessage.Key("Agent_UpdateAvailable", Version))
             : new IpcAck(true, IpcMessage.Key("Agent_UpToDate"));

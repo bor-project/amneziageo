@@ -78,10 +78,43 @@ public sealed class TunnelNoticeTests
         var words = JsonSerializer.Deserialize<NoticeWords>(kept);
 
         Assert.NotNull(words);
+        Assert.False(words.Brief);
         Assert.Equal("Отключить", words.Disconnect);
         Assert.Equal("Туннель остановлен", words.StoppedChannel);
         Assert.Equal("Маршрутизация: Недоступные сайты", TunnelNotice.Routing(words));
         Assert.Equal("Подключено · ↓ 12,4 ↑ 0,3 Мбит/с", TunnelNotice.Text(words, NoticeStage.Connected, 0, 12_400_000, 300_000));
+    }
+
+    [Fact]
+    public void ABriefNotice_NamesTheStageAlone()
+    {
+        var brief = _ru with { Brief = true };
+
+        Assert.Equal("Подключено", TunnelNotice.Text(brief, NoticeStage.Connected, 0, 12_400_000, 300_000));
+        Assert.Equal("Подключение", TunnelNotice.Text(brief, NoticeStage.Connecting, 3, 0, 0));
+        Assert.Equal("Отключено", TunnelNotice.Text(brief, NoticeStage.Disconnected, 0, 0, 0));
+        Assert.Equal("Туннель остановлен", TunnelNotice.Text(brief, NoticeStage.Stopped, 0, 0, 0));
+    }
+
+    [Fact]
+    public void ABriefNotice_SaysNothingAboutRouting()
+    {
+        Assert.Null(TunnelNotice.Routing(_ru with { List = "Недоступные сайты", Lists = true, Brief = true }));
+        Assert.Null(TunnelNotice.Routing(_ru with { Lists = true, Brief = true }));
+    }
+
+    [Fact]
+    public void TheModeOfTheNotice_IsFullUnlessItIsBrief()
+    {
+        Assert.Equal(TunnelNoticeModes.Brief, TunnelNoticeModes.Known("brief"));
+        Assert.Equal(TunnelNoticeModes.Brief, TunnelNoticeModes.Known(" Brief "));
+        Assert.Equal(TunnelNoticeModes.Full, TunnelNoticeModes.Known("full"));
+        Assert.Equal(TunnelNoticeModes.Full, TunnelNoticeModes.Known("short"));
+        Assert.Equal(TunnelNoticeModes.Full, TunnelNoticeModes.Known(null));
+        Assert.True(TunnelNoticeModes.IsKnown("brief"));
+        Assert.True(TunnelNoticeModes.IsKnown("full"));
+        Assert.False(TunnelNoticeModes.IsKnown("short"));
+        Assert.False(TunnelNoticeModes.IsKnown(null));
     }
 
     [Fact]

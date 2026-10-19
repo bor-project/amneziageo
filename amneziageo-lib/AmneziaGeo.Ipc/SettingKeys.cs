@@ -34,6 +34,11 @@ public static class SettingKeys
     public const string LocalInTunnel = "local-in-tunnel";
 
     /// <summary>
+    /// How much the notification of the tunnel says: full or brief.
+    /// </summary>
+    public const string TunnelNotice = "tunnel-notice";
+
+    /// <summary>
     /// How the resolver behind the tunnel is asked: auto, plain or doh.
     /// </summary>
     public const string DnsTransport = "dns-transport";

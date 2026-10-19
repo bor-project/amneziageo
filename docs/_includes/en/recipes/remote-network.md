@@ -4,6 +4,10 @@ Subnets behind the server are reachable in two ways:
 
 - the full tunnel - everything goes to the other side, including its internal addresses;
 - an address-range rule in split mode, for example `cidr:10.8.0.0/24` - only that subnet takes the tunnel.
+{% if page.device == "windows" %}
+
+{% include shot.html name="routing-cidr" alt="The list editor: the hint for the cidr:10.8.0.0/24 rule" caption="A rule by address range." %}
+{% endif %}
 
 The DNS from the configuration is applied, so internal names resolve.
 

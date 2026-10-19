@@ -1,11 +1,19 @@
 # {{ page.title }}
 
-{% include todo.html text="the connect button and its states; Server - the configuration pick; Routing - the switch and the list name that leads into the section; Add configuration while there are none" %}
+In the middle of the screen stands the connect button, with the state under it: "Disconnected", "Connecting", "Connected". Under the state stands the hint "Select a configuration" while no configuration is selected, and "Establishing connection…" while the tunnel comes up.{% if page.device != "android" %} What a click does is said by the tooltip of the button: "Click to connect" or "Click to disconnect".{% endif %} While the connect is being repeated, "Attempt N" and "Click to cancel" stand under the button: a click cancels the attempts. Beside a connected tunnel stand the latency of the server, the received and sent speed and the loss in the tunnel. An orange button reading "The server has stopped answering" means the tunnel is held until the server answers, see below. The orange line "another program resolves site addresses" means name lookups do not reach the client: another program takes them, and the sites of the rules open slower than usual.
 {% if page.device == "windows" %}
+When the tunnel is up under another Windows account, the button offers "Switch to yours".
+
+{% include shot.html name="home-connected" alt="Home screen: the tunnel is connected, latency, speed and loss under the button" caption="The tunnel is connected: the latency of the server, received and sent, loss." %}
+{% endif %}
+"Server" picks the configuration to connect; while there are no configurations, "Add configuration" stands in its place, see [Adding a configuration](configurations.html#adding-a-configuration). "Routing" shows the name of the selected list or "No list": a click on the name opens the [Routing](routing.html) section, and the switch beside it turns routing on and off. With routing off the addresses of the original configuration, its `AllowedIPs`, are used.
+{% if page.device == "windows" %}
+
+{% include shot.html name="home-disconnected" alt="Home screen: the tunnel is disconnected, a server and a routing list are selected" caption="The tunnel is disconnected: Server and Routing under the button." %}
 
 ## Servers
 
-{% include todo.html text="the Servers block in the multiple-VPN mode: the servers up, the place of each, latency, speed and loss, More - into the catalogue" %}
+In the multiple-VPN mode the home screen shows the "Servers" block instead of the server pick: the servers that are up, each with its place - "Primary", "Reserve 1", "Reserve 2" and on, or "Neutral" - its latency in milliseconds, the received and sent speed and the loss; the heading says how many servers are connected. A click on the place opens its choice. "More" leads into the configuration catalogue, where servers are connected and disconnected with the "In use" switch.
 
 The mode as a whole: the [Multiple VPN connections](../recipes/multiple-vpn.html) recipe.
 {% endif %}

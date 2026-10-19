@@ -2,27 +2,60 @@
 
 ## Catalogue
 
-{% include todo.html text="configuration cards, In use, Check - checking the servers, Refresh configs - every subscription at once" %}
+Configurations stand as cards: the name, the latency of the server, labels - "MTU auto" or "MTU 1420", the name of the subscription the configuration came from - and the "Selected" mark on the selected one. The "In use" switch picks the configuration for the next connect{% if page.device == "windows" %}, and in the multiple-VPN mode it connects and disconnects the server{% endif %}; the "Connect" link brings the tunnel up on it at once, "Settings" opens its page, and "Reorder" in the menu of the card moves the cards around.
+
+"Check" measures the latency of every server at once, past the tunnel. The card shows the time in milliseconds, "no answer", "unreachable" when the server has no address, or "hidden by the tunnel" when the tunnel is up on another configuration and takes the probe into itself. The card of the connected server shows the latency of the tunnel itself. "Refresh configs" reads every subscription again at once, without waiting for its time. When a subscription brought a new version of a configuration while the tunnel runs on the old one, the home screen says "Configuration update available": it applies at the next connect.
+{% if page.device == "windows" %}
+
+{% include shot.html name="config-catalog" alt="Configuration catalogue: cards with latency, speed and labels" caption="The configuration catalogue. Server addresses are hidden." %}
+{% endif %}
 
 ## Adding a configuration
 
-{% include todo.html text="Add: a .conf file, pasted text or a vpn:// link, an http(s) subscription address, a QR code; a shared settings file - through Import / export in General" %}
+"Add" in the catalogue and "Add configuration" on the home screen offer a way:
+
+- "Load file" - a `.conf` file or a picture with a QR code.{% if page.device == "android" %} The file is picked with the system file picker; on a TV and where there is none, with the built-in browser: "App folder", "Shared storage", and files outside the app folder show after "Allow access to all files…".{% endif %}
+- "Paste" - from the clipboard: the text of a wg-quick configuration, a `vpn://` link or an `http(s)` subscription address. The application recognises a subscription address itself, reads it and loads the configurations it hands out, and then keeps them fresh, see [Subscription auto-refresh](connections.html#subscription-auto-refresh). An address without encryption is marked with a warning: the keys from the subscription travel as plain text.
+- "Scan QR code" - with the camera, where there is one.
+- "Create manually" - an editor of wg-quick text; the `[Interface]` and `[Peer]` sections are required.
+{% if page.device == "windows" %}
+
+{% include shot.html name="config-add" alt="The Add menu in the catalogue: load file, paste, scan QR code, create manually" caption="Ways to add a configuration." %}
+{% endif %}
+{% if page.device != "android" %}
+A configuration file or a picture with a QR code can be dragged into the window. A transfer file dragged in is not imported by the window but sent on to the import window.
+{% endif %}
+A configuration with a parameter the engine does not know is turned down with a message that a newer version of AmneziaWG is needed. A shared settings file from another device - configurations and routing lists together - is imported through "Import / export" in [General](general.html#import--export).
 
 ## Configuration settings
 
-{% include todo.html text="the name, the configuration text, refreshing a subscription" %}
+The page of a configuration opens with the "Settings" link on its card. "Configuration name" - under it a configuration from a subscription shows the name of the subscription, the time of the last refresh and a "Refresh" button that reads the subscription now. "Configuration text" is hidden behind the "Show" button: it is the wg-quick text as it is saved, read only. The name is saved with the "Save" button at the bottom of the page. Further down the same page stand the transport settings, see [Transport](#transport).
+{% if page.device == "windows" %}
+
+{% include shot.html name="config-page" alt="Configuration page: the name, the configuration text and the transport settings" caption="Configuration page: the name, the text and the transport." %}
+{% endif %}
+
+The text of a configuration, its own resolvers and exclusions are changed from the console: `amneziageo config edit <name> ...`, `amneziageo config dns <name> [<servers>]` and `amneziageo config exclusions <name> ...`; the tunnel takes the new text at the next connect.{% if page.device == "android" %} On Android they do not apply: names are resolved inside the tunnel, and exclusions are set in the routing list.{% endif %}
 
 ### Export
 
-{% include todo.html text="QR file, QR link, Subscription; Copy, Download QR, Send…; the QR code contains a private key" %}
+"Export" on the page of a configuration shows a QR code in one of the views: "QR file" - the content of the `.conf`, "QR link" - a `vpn://` link, "Subscription" - the subscription address of a configuration that came from one. "Copy" puts the text on the clipboard, "Download QR" saves the picture{% if page.device == "android" %}, "Send…" passes it to another app{% endif %}. The QR code contains the private key: do not show it to others. A long configuration does not fit into a QR code, and then the text or the `vpn://` link is what remains. From the console the link is printed by `amneziageo config link <name>`.
+{% if page.device == "windows" %}
+
+{% include shot.html name="config-export" alt="Configuration export: the QR file view, a QR code, the Copy and Download QR buttons" caption="Export to a QR code. The frame encodes the line «Hello from VPN» instead of a configuration." %}
+{% endif %}
 
 ### Deleting
 
-{% include todo.html text="Delete configuration and the confirmation" %}
+"Delete configuration" at the bottom of the page asks for a confirmation; a deletion cannot be undone. A configuration from a subscription comes back when the subscription is refreshed, as long as the subscription hands it out; the whole subscription is removed by `amneziageo sub remove <name> --configs`.
 
 ## Transport
 
-{% include todo.html text="MTU (Auto, Config, Manual), IPv6, Routing - use routing where it is available" %}
+The transport settings on the page of a configuration: "Proxy" (WebSocket, see below), "MTU", "IPv6", "Routing", "Hold traffic when the tunnel drops"{% if page.device != "android" %}, "Allow incoming connections from the VPN network"{% endif %}, "Allow the server to disconnect the tunnel".
+
+- "MTU" - the packet size of the tunnel: "Auto" - the largest that passes the link, but not above the one declared in the configuration, "Config" - exactly the `MTU` line of the configuration, "Manual" - a number from 1280 to 1500. The value in force stands as a label on the card. From the console: `amneziageo config mtu <name> auto|config|<number>`.
+- "IPv6" - whether the tunnel carries IPv6; off by default, see [Limitations](routing.html#limitations).
+- "Routing" - whether the selected routing list applies to this configuration. With the switch off the tunnel follows the `AllowedIPs` of its text. From the console: `amneziageo config routing <name> on|off`.
 
 ### WebSocket
 
@@ -93,3 +126,5 @@ The question, and the reading of a subscription, leave on the network under the 
 A tunnel that stands inside a WebSocket has its server asked again. When the front refuses the tunnel, the question goes at once, and an answer that names another port or path has the tunnel carried there while it stays up. When the tunnel carries nothing, the question goes with every repair, and an answer that offers no front any more has the tunnel raised again without the WebSocket.
 {% endif %}
 A subscription read at its address is proven by the certificate of its server: by the store of the device, or by the roots of Let's Encrypt the application carries for a device whose store lacks them.
+
+The server side, the panel, is described in its repository: [amneziageo_server](https://github.com/bor-project/amneziageo_server/tree/master/docs).

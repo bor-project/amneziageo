@@ -9,7 +9,11 @@ The mode belongs to the routing list, not to the configuration: the same list at
 
 A fresh install holds no list, and everything goes through the VPN until one is in use: a list the owner adds, or a list a server hands out, see [What the server offers](configurations.html#what-the-server-offers).
 
-{% include todo.html text="the modes in the app: Everything except selected and Only selected; the routing switch on the home screen" %}
+In the app the mode is called "VPN mode for apps" and is chosen when a list is created: "Only selected" is the split tunnel, the sites and apps of the list connect through the VPN and the rest directly; "Everything except selected" is the full one, everything connects through the VPN except the entries of "Direct" and "Block". The mode of the selected list stands in the heading of the section. On the home screen the "Routing" switch turns the whole list on and off: with it off the tunnel follows the `AllowedIPs` of the configuration.
+{% if page.device == "windows" %}
+
+{% include shot.html name="routing-modes" alt="Choosing the VPN mode for apps when a list is created" caption="The mode is chosen when a list is created." %}
+{% endif %}
 
 ## Rule lists
 
@@ -31,15 +35,37 @@ The databases for `geosite:` and `geoip:` are in [Geo sources](geo-sources.html)
 
 ### New list
 
-{% include todo.html text="Add: VPN mode for apps, Choose a template - Region and Block ads; Load file, Paste, Scan QR code" %}
+"Add" opens "VPN mode for apps" and "Choose a template". "Choose a template" holds the ready templates of the mode, and with them "By hand" - your own rules from scratch - and "Import" - a ready list from a file, the clipboard or a QR code.
+
+For the "Only selected" mode there is one ready template, "Unavailable sites": the sites of a ready list go through the VPN, the rest directly, and "All UDP through the tunnel" is on. For the "Everything except selected" mode there are two: "Everything but the selected region", where "Pick a region" ticks one or more countries whose addresses and sites go directly, and "Everything through VPN", where only the home network stays direct. The default region is the country of the device. The "Block ads" switch adds to any template and closes the domains of the `geosite:category-ads-all` category. After "Add" the list opens in the editor, where the rules can be adjusted.
+
+Import: "Load file", "Paste" from the clipboard or "Scan QR code". A list without a name asks for one before it is saved; a list whose name is taken is saved under a new one.
+{% if page.device == "windows" %}
+
+{% include shot.html name="routing-new" alt="New list: choosing a template - Unavailable sites, By hand, Import" caption="A ready template, By hand and Import in one list." %}
+{% endif %}
 
 ### List card
 
-{% include todo.html text="In use, Update on a list from a server, where the list came from - the configuration name or Local; Delete list" %}
+The card shows the name, the number of rules by role ("N proxy", "N direct", "N blocked"), the "All UDP through the tunnel" label, where the list came from - the name of the configuration it arrived with from the server, or "Local" - and the "Selected" mark on the selected one. The "In use" switch picks the list for connections. A list from a server that the server changed since shows "Update", see [What the server offers](configurations.html#what-the-server-offers). "Settings" opens the rule editor, "Advanced" the traffic settings and the export, and "Delete list" asks for a confirmation; a deleted list cannot be brought back.
+{% if page.device == "windows" %}
+
+{% include shot.html name="routing-cards" alt="A routing list card: the name, the mode, the number of rules by role, the All UDP through the tunnel label" caption="A list card." %}
+{% endif %}
 
 ### Rule editor
 
-{% include todo.html text="List name, rule groups, adding by Address, Application and Folder; sorting, Clear, Copy" %}
+At the top stands "List name". "Rule group" switches the basket: "Through VPN", "Direct", "Block", each with a line saying where its traffic goes. "What to add" picks the kind of entry. "Address" - a domain, a `geosite` category, a `geoip` country or an address range on one line, for example `youtube` or `geoip:ru`; while you type, the hints offer "Exact domain match", "Domains in the … category", "IP ranges of …" and "Address range". "Application" adds a program{% if page.device == "android" %} from the application picker{% else %}: "Application" - the file of a program, "Folder" - every program in a folder{% endif %}, see [Application routing](#application-routing). Entries are marked with their kind: "Domain", "GeoSite", "GeoIP", "CIDR", "File", "Folder", "Package", "Service". {% if page.device != "android" %}On a category entry a button shows what it holds and how many entries are there; a{% else %}A{% endif %} category absent from the loaded databases is marked "No entries". The sort button orders the entries by name, "Clear" removes every entry of the list, "Copy" puts the list on the clipboard. Changes take effect after "Save".
+{% if page.device == "windows" %}
+
+{% include shot.html name="routing-editor" alt="Rule editor: the list name, the rule group, what to add, the address field and the entries" caption="The rule editor." %}
+
+{% include shot.html name="routing-suggest" alt="Hints while typing netflix: the exact domain, IP ranges and the domains of a category" caption="Hints while typing: a domain, the ranges of a region, a category." %}
+
+{% include shot.html name="routing-category" alt="The geosite:youtube entry unfolded: the number of entries, address ranges and domains" caption="What a category holds and how many entries are there." %}
+
+In the multiple-VPN mode a "Through VPN" entry has "Route" and "Fallback": "Auto", "Best", "Direct", "Block" or the name of a server, see the [Multiple VPN connections](../recipes/multiple-vpn.html) recipe.
+{% endif %}
 
 ## Application routing
 
@@ -52,6 +78,8 @@ In a full-tunnel list a program is added with the direct role: the tunnel carrie
 The program and its child processes leave past the tunnel. A connection opened before the tunnel came up stays silent under it until the program opens it again. An edit of the set of programs applies after a reconnect.
 {% elsif page.device == "windows" %}
 The way past the tunnel is given to the address the program reached for, not to the program. An address the program looked up by name has its route past the tunnel before the answer reaches the program, so the first attempt goes through; while the list names such a program, the system keeps no answers of the resolver, so every lookup passes the client. The first attempt at an address the program reached without a name lookup is refused, and a second or two later the address has a route past the tunnel. While a route lives (`route-ttl-seconds` after its last use) every program of the machine reaches the address past the tunnel. A UDP socket connected to such an address earlier has to be opened again. A program named by its name, package or service, and a child process whose file lies outside a named folder, is not refused the tunnel: an address it reached without a name lookup goes through the tunnel for the first second or two, then that connection is dropped and opens again past the tunnel. An edit of the set of programs applies without a reconnect.
+
+Shared processes do not fit a rule, and the editor does not take them: for `svchost.exe` pick a particular service from the list, and instead of the shared WebView2 process add the application itself, and its web traffic goes along with it. AmneziaGeo itself is not added to the rules.
 {% elsif page.device == "android" %}
 A program with the direct role stays out of the tunnel in either mode of the list.
 
@@ -61,6 +89,10 @@ The application picker lists the programs with a launcher icon and every program
 {% endif %}
 
 ## Advanced
+{% if page.device == "windows" %}
+
+{% include shot.html name="routing-advanced" alt="Advanced: all UDP through the tunnel, the route lifetime, system DNS requests, the list export" caption="Advanced settings of a list." %}
+{% endif %}
 
 ### All UDP through the tunnel
 
@@ -71,15 +103,17 @@ The first datagram to an address nothing decided yet is held back until its rout
 
 ### Route lifetime
 
-{% include todo.html text="How long an address stays cached, `route-ttl-seconds`" %}
+"How long an address stays cached". An address the rules sent into the tunnel or past it stays on its route for this many seconds after the last use; then the route is taken away and laid again at the next use. 300 by default. The setting is one for all lists. From the console: `amneziageo settings set route-ttl-seconds <seconds>`.
+{% if page.device == "windows" %}
 
 ### System DNS requests
 
-{% include todo.html text="Taking address lookups from the system: Automatic, Off, On" %}
+"Taking address lookups from the system". The client answers the name lookups of the system itself, to see the addresses of the domains of the rules. When lookups stop reaching it over the usual port 53, it takes them over HTTPS. "Automatic" - over HTTPS only once lookups over port 53 stop coming, "On" - over HTTPS at once when the tunnel comes up, "Off" - port 53 alone. From the console: `amneziageo settings set local-doh auto|off|on`.
+{% endif %}
 
 ### Export list
 
-{% include todo.html text="Config and QR; Copy, Save to file…, Send…" %}
+In "Advanced" the list is exported as "QR" or "Config" - the text of the list. "Copy" puts the text on the clipboard, "Save to file…" writes a file{% if page.device == "android" %}, "Send…" passes it to another app{% endif %}. A long list does not fit into a QR code, and then the text is what remains. On another device the list is taken by "Add" - "Import".
 
 ## Limitations
 

@@ -127,6 +127,9 @@ amneziageo tui                      # полноэкранная консоль 
 {%- if page.device == "windows" %}
 | `multi-server` | `on` или `off`: несколько туннелей одновременно |
 {%- endif %}
+{%- if page.device == "android" %}
+| `tunnel-notice` | `full` или `brief`: подробное или краткое уведомление туннеля |
+{%- endif %}
 
 ### Прокси и точка доступа
 

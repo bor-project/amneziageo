@@ -11,7 +11,7 @@
 
 ## Background activity
 
-The general settings carry a "Background activity" block: notifications, the battery saver and, on MIUI and HyperOS, autostart, each with its state and a button that opens its system screen. `doctor` reports the same three. On MIUI and HyperOS the battery row names no state while the exemption list of Android does not have the application: the system there keeps a setting of its own and manages that list itself.
+The general settings carry a "Background activity" block: notifications, the battery saver and, on MIUI and HyperOS, autostart, each with its state and a button that opens its system screen. On a phone the notifications row carries the "Tunnel notification" choice: "Detailed" or "Brief", see [The tunnel notification](home.html#the-tunnel-notification). `doctor` reports the same three. On MIUI and HyperOS the battery row names no state while the exemption list of Android does not have the application: the system there keeps a setting of its own and manages that list itself.
 {% endif %}
 
 ## About
@@ -20,7 +20,7 @@ The general settings carry a "Background activity" block: notifications, the bat
 
 ## Update
 
-"Check for updates" asks the release server; a version found is written beside it, "Download" fetches it, "Install" starts the installation, "Cancel" stops the download. "Check for prerelease versions" adds beta builds to the check. The check also runs by itself: a new version is announced by the "Update available" bar at the top of the window{% if page.device == "windows" %} and by a tray notification{% endif %}. The downloaded file is checked against the published checksum.{% if page.device == "android" %} Installing an APK needs the permission to install apps from this source: the system asks for it, and after the answer "Install" has to be pressed again.{% endif %}
+"Check for updates" asks the release server; a version found is written beside it, "Download" fetches it, "Install" starts the installation, "Cancel" stops the download. "Check for prerelease versions" adds beta builds to the check. The check also runs by itself: a new version is announced by the "Update available" bar at the top of the window{% if page.device == "windows" %} and by a tray notification{% elsif page.device == "android" %} and by the notification "Version <version> is available"{% endif %}.{% if page.device == "android" %} The version notification comes once, a tap opens the application, and it stays until that version is installed; it is the only notification that puts a mark on the icon of the application. It is turned off in the notification settings of the application, the "Update available" category.{% endif %} The downloaded file is checked against the published checksum.{% if page.device == "android" %} Installing an APK needs the permission to install apps from this source: the system asks for it, and after the answer "Install" has to be pressed again.{% endif %}
 
 How the app updates itself: [Update](../install.html#update) in the installation.
 {% if page.device == "windows" %}

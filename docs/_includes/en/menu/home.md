@@ -68,4 +68,6 @@ The application follows the tunnel process: when the system kills it and nobody 
 ## The tunnel notification
 
 The notification of the tunnel names the configuration and shows the stage with the speed in both directions, refreshed every 5 seconds while the screen is on, and the attempt while the tunnel is dialled again; unfolded it names the routing list in use. Its button takes the tunnel down, and a tap opens the application. A tunnel you took down leaves a "Disconnected" notification with a "Connect" button, which can be swiped away.
+
+The "Tunnel notification" choice in [General](general.html#background-activity) makes it brief: the configuration and the stage remain, without the speed, the attempt and the routing list, and a tunnel you take down leaves no notification. The notifications of the tunnel put no mark on the icon of the application.
 {% endif %}

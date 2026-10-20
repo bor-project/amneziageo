@@ -14,6 +14,7 @@
     {%- if page.noindex %}
     <meta name="robots" content="noindex">
     {%- endif %}
+    {%- include language-head.html %}
     <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
   </head>
   <body>
@@ -23,6 +24,7 @@
       <nav class="header-links" aria-label="{{ t.project_links }}">
         <a href="https://github.com/bor-project/amneziageo/releases">{{ t.download }}</a>
         <a href="https://github.com/bor-project/amneziageo">GitHub</a>
+        <a href="{{ t.server_site }}">{{ t.server }}</a>
         {% include language-link.html %}
       </nav>
     </header>

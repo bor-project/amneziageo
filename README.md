@@ -8,13 +8,13 @@
 
 AmneziaGeo is a cross-platform VPN client for Windows, Linux and Android, built on AmneziaWG - a WireGuard fork. Use split tunneling to route selected traffic through your own servers. On Windows, connect to multiple VPN servers at once and choose a server for each routing rule.
 
-**[Download](https://github.com/bor-project/amneziageo/releases) · [Documentation](https://bor-project.github.io/amneziageo/)**
+**[Download](https://github.com/bor-project/amneziageo/releases) · [Documentation](https://bor-project.github.io/amneziageo/) · [Server](https://github.com/bor-project/amneziageo_server)**
 
 ## Features
 
 - Multiple simultaneous VPN connections on Windows, with a main server, reserve servers and per-rule server selection.
 - Full and split tunneling by domain, site category, country, IP range or application; domain and country rules update without reconnecting.
-- DNS-based domain routing and access to networks behind your servers. Application routing is experimental; see [configuration](https://bor-project.github.io/amneziageo/usage.html#application-routing).
+- DNS-based domain routing and access to networks behind your servers. Application routing is experimental; see application routing for [Windows](https://bor-project.github.io/amneziageo/windows/menu/routing.html#application-routing), [Linux](https://bor-project.github.io/amneziageo/linux/menu/routing.html#application-routing) and [Android](https://bor-project.github.io/amneziageo/android/menu/routing.html#application-routing).
 - WebSocket over TCP for networks that block UDP.
 - SOCKS5 and HTTP proxies for other devices on the local network.
 - Route diagnostics, speed checks and a shared command-line interface.
@@ -22,6 +22,10 @@ AmneziaGeo is a cross-platform VPN client for Windows, Linux and Android, built 
 Windows 7, 10 and 11 (x64 and ARM64), Linux (deb packages for amd64 and arm64), and Android.
 
 Installation, configuration, command-line reference and build instructions are on the **[documentation site](https://bor-project.github.io/amneziageo/)**.
+
+## Server
+
+**[AmneziaGeo Server](https://github.com/bor-project/amneziageo_server)** is a panel for your own AmneziaWG server on Linux: clients with configurations, QR codes and subscriptions, templates, routing by geo databases and domains through other servers, a resolver for the clients. The client reads the geo sources, routing lists and subscription of such a server by itself; any other AmneziaWG server works as well. Installation and setup are on the **[server documentation site](https://bor-project.github.io/amneziageo_server/)**.
 
 ## Support the project
 

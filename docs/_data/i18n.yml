@@ -3,6 +3,8 @@ en:
   home: /
   docs: Documentation
   download: Download
+  server: Server
+  server_site: https://bor-project.github.io/amneziageo_server/
   skip: Skip to content
   project_links: Project links
   devices: Devices
@@ -19,6 +21,8 @@ ru:
   home: /index.ru.html
   docs: Документация
   download: Скачать
+  server: Сервер
+  server_site: https://bor-project.github.io/amneziageo_server/index.ru.html
   skip: Перейти к содержимому
   project_links: Ссылки проекта
   devices: Устройства

@@ -355,8 +355,8 @@
   <data name="About_Version" xml:space="preserve">
     <value>Версия приложения</value>
   </data>
-  <data name="About_Source" xml:space="preserve">
-    <value>Репозиторий проекта</value>
+  <data name="About_Website" xml:space="preserve">
+    <value>Сайт проекта</value>
   </data>
   <data name="About_BuildType" xml:space="preserve">
     <value>Тип сборки</value>

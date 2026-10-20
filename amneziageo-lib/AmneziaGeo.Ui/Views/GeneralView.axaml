@@ -119,7 +119,7 @@
              </StackPanel>
 
              <StackPanel Spacing="2">
-               <TextBlock Text="{l:Tr About_Source}" FontSize="13.5" />
+               <TextBlock Text="{l:Tr About_Website}" FontSize="13.5" />
                <!-- The link keeps the padding that carries the focus ring, and a margin of the same size puts
                     its text under the label. -->
                <Button Classes="linkbtn" FontSize="12.5" HorizontalAlignment="Left" Margin="-7,0,0,0"

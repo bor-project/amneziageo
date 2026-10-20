@@ -1,17 +1,2 @@
-{%- if page.lang == "ru" -%}
-  {%- assign ll_other = "en" -%}
-{%- else -%}
-  {%- assign ll_other = "ru" -%}
-{%- endif -%}
-{%- assign ll_href = site.data.i18n[ll_other].home -%}
-{%- if page.topic -%}
-  {%- assign ll_pages = site.pages | where: "topic", page.topic | where: "lang", ll_other -%}
-  {%- if page.device -%}
-    {%- assign ll_pages = ll_pages | where: "device", page.device -%}
-  {%- endif -%}
-  {%- assign ll_page = ll_pages | first -%}
-  {%- if ll_page -%}
-    {%- assign ll_href = ll_page.url -%}
-  {%- endif -%}
-{%- endif -%}
+{%- include language-pair.html -%}
 <a class="language" lang="{{ ll_other }}" hreflang="{{ ll_other }}" href="{{ ll_href | relative_url }}">{{ site.data.i18n[ll_other].language_name }}</a>

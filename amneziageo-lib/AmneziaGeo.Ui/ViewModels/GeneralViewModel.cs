@@ -215,9 +215,18 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool HasBuildType => !string.IsNullOrEmpty(BuildTarget);
 
     /// <summary>
-    /// Project home page, shown in About and opened by its link.
+    /// Project site in the language of the window, shown in About and opened by its link.
     /// </summary>
-    public string ProjectUrl => "https://github.com/bor-project/amneziageo";
+    public string ProjectUrl => SiteUrlFor(Loc.Instance.Culture);
+
+    /// <summary>
+    /// Site home page for a culture: the Russian page for Russian, the English one for any other.
+    /// </summary>
+    internal static string SiteUrlFor(System.Globalization.CultureInfo culture)
+    {
+        const string site = "https://bor-project.github.io/amneziageo/";
+        return culture.TwoLetterISOLanguageName == "ru" ? site + "index.ru.html" : site;
+    }
 
     /// <summary>
     /// Human-readable build type from the baked target: architecture plus payload (e.g. "x64 · SCD").

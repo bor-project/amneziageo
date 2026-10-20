@@ -504,9 +504,10 @@ internal partial class ConnectionViewModel : ViewModelBase
     public IBrush NamesUnroutedBrush => _orange;
 
     /// <summary>
-    /// Whether the subscription of some config waits for an update.
+    /// Whether the subscription of some config waits for an update nobody skipped.
     /// </summary>
-    public bool ShowConfigUpdate => _host.Config.Configs.Any(row => row.SubscriptionStale);
+    public bool ShowConfigUpdate => _host.Config.Configs.Any(row => row.SubscriptionStale
+        && ConfigUpdateSkips.Waits(_prefs.SkippedConfigUpdates, row.Subscription, _host.Config.OfferedRevision(row.Subscription)));
 
     /// <summary>
     /// Warning that a configuration update is available.
@@ -1229,9 +1230,25 @@ internal partial class ConnectionViewModel : ViewModelBase
         _ = AskServersAsync();
     }
 
-    // Reads every subscription again when the update warning is pressed.
+    /// <summary>
+    /// Re-reads the update warning against the revisions the subscriptions name.
+    /// </summary>
+    public void NotifyConfigUpdate() => OnPropertyChanged(nameof(ShowConfigUpdate));
+
+    // Reads every subscription again when the update is chosen under the warning.
     [RelayCommand]
     private Task UpdateConfigs() => _host.Config.RefreshAllSubscriptionsCommand.ExecuteAsync(null);
+
+    // Hides the update warning till the servers name the next revisions.
+    [RelayCommand]
+    private void SkipConfigUpdate()
+    {
+        _prefs.SkippedConfigUpdates = ConfigUpdateSkips.Skip(_host.Config.Configs
+            .Where(row => row.SubscriptionStale)
+            .Select(row => (row.Subscription, _host.Config.OfferedRevision(row.Subscription))));
+        _prefs.Save();
+        NotifyConfigUpdate();
+    }
 
     // Asks the servers of every configuration again; a broken pipe leaves the list as it was.
     private async Task AskServersAsync()

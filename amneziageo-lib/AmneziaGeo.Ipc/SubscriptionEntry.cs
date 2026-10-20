@@ -18,4 +18,6 @@ public sealed record SubscriptionEntry(
     int Configs,
     int Gone,
     // Whether the server holds another revision than the one read last.
-    bool Stale = false);
+    bool Stale = false,
+    // The revision the server named last, empty when it named none.
+    string Offered = "");

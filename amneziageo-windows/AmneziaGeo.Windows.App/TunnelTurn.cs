@@ -91,6 +91,37 @@ internal sealed class TunnelTurn : IDisposable
     }
 
     /// <summary>
+    /// Waits up to the limit until nobody holds the turn kept in the file given, and answers how long it waited, null
+    /// when the limit ran out first.
+    /// </summary>
+    public static TimeSpan? WaitFree(string path, TimeSpan limit)
+    {
+        var clock = Stopwatch.StartNew();
+        var tries = 0;
+        while (true)
+        {
+            try
+            {
+                using var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose);
+                return tries == 0 ? TimeSpan.Zero : clock.Elapsed;
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return tries == 0 ? TimeSpan.Zero : clock.Elapsed;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && clock.Elapsed < limit)
+            {
+                tries++;
+                Thread.Sleep(RetryDelay);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
     /// Gives the turn up.
     /// </summary>
     public void Dispose()

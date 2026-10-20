@@ -93,7 +93,8 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
             item.LastError,
             members.Count(member => Belongs(member, item.Name) && member.Present),
             members.Count(member => Belongs(member, item.Name) && !member.Present),
-            item.Stale));
+            item.Stale,
+            item.Offered));
 
         return new IpcAck(true, JsonSerializer.Serialize(entries, IpcJson.Options));
     }

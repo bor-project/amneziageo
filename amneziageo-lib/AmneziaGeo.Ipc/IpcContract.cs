@@ -301,10 +301,16 @@ public static class IpcContract
     public const string OpImportBundle = "import-bundle";
 
     /// <summary>
-    /// Command to check for an application update against the configured update URL. No args. The ack
+    /// Command to check for an application update against the configured update URL. Args: [0] "silent" for a
+    /// check without the checking state, [1] <see cref="CheckUpdateDetached"/> for an ack at once. The ack
     /// message holds a human-readable status; availability also rides the next status snapshot.
     /// </summary>
     public const string OpCheckUpdate = "check-update";
+
+    /// <summary>
+    /// Second argument of a silent update check: the agent answers at once, the outcome rides the snapshot.
+    /// </summary>
+    public const string CheckUpdateDetached = "detached";
 
     /// <summary>
     /// Command for the UI process that owns the setup download to report its phase to the agent, so the tray

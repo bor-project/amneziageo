@@ -37,6 +37,9 @@ internal sealed partial class SubscriptionItemViewModel : ViewModelBase
     private string _lastError = string.Empty;
 
     [ObservableProperty]
+    private string _offered = string.Empty;
+
+    [ObservableProperty]
     private bool _busy;
 
     /// <summary>

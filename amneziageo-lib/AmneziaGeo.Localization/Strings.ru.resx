@@ -1075,6 +1075,12 @@
   <data name="Main_ConfigUpdateAvailable" xml:space="preserve">
     <value>Доступно обновление конфигурации</value>
   </data>
+  <data name="Main_ConfigUpdateApply" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="Main_ConfigUpdateSkip" xml:space="preserve">
+    <value>Пропустить</value>
+  </data>
   <data name="Main_UpdateAvailableBadge" xml:space="preserve">
     <value>● Доступно обновление</value>
   </data>

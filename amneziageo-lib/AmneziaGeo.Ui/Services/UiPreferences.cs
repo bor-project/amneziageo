@@ -87,6 +87,11 @@ internal sealed class UiPreferences
     public string ShownUpdateVersion { get; set; } = string.Empty;
 
     /// <summary>
+    /// Subscription revisions whose update the home screen skipped, a name and a revision per line.
+    /// </summary>
+    public string SkippedConfigUpdates { get; set; } = string.Empty;
+
+    /// <summary>
     /// Speed service the send leg of a probe uploads to; empty measures against the built-in one.
     /// </summary>
     public string ProbeUploadUrl { get; set; } = string.Empty;
@@ -169,6 +174,7 @@ internal sealed class UiPreferences
             ["preset-regions"] = PresetRegions,
             ["region-auto"] = RegionAuto,
             ["shown-update"] = ShownUpdateVersion,
+            ["skipped-config-updates"] = SkippedConfigUpdates,
             ["probe-upload"] = ProbeUploadUrl,
             ["probe-path"] = ProbePath,
         };
@@ -235,6 +241,11 @@ internal sealed class UiPreferences
         if (values.TryGetValue("shown-update", out var shownUpdate))
         {
             prefs.ShownUpdateVersion = shownUpdate;
+        }
+
+        if (values.TryGetValue("skipped-config-updates", out var skippedUpdates))
+        {
+            prefs.SkippedConfigUpdates = skippedUpdates;
         }
 
         if (values.TryGetValue("last-config", out var lastConfig))

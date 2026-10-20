@@ -3,6 +3,7 @@ using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -20,6 +21,15 @@ internal partial class ConfigViewModel : ViewModelBase
 
     private IReadOnlyList<string> _configNames = [];
     private IReadOnlyList<string> _subscriptionNames = [];
+
+    // Как часто перечитывать список подписок, пока какая-то из них ждёт обновления.
+    private static readonly TimeSpan StaleReread = TimeSpan.FromMinutes(5);
+    private IReadOnlyList<string> _staleSubscriptions = [];
+    private DateTimeOffset _subscriptionsReadAt;
+
+    // Как часто проверять, не пора ли перечитать список подписок, пока какая-то из них ждёт обновления.
+    private static readonly TimeSpan StaleCheck = TimeSpan.FromMinutes(1);
+    private IDisposable? _staleWatch;
 
     // The order a drag just sent; held until a snapshot arrives carrying it.
     private IReadOnlyList<string>? _pendingOrder;
@@ -179,6 +189,11 @@ internal partial class ConfigViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(DeleteConfigPrompt));
     }
+
+    /// <summary>
+    /// Часы, по которым окно перечитывает список подписок.
+    /// </summary>
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     /// <summary>
     /// Набор способов оболочки: шторка «Добавить» / «Экспорт».
@@ -790,10 +805,14 @@ internal partial class ConfigViewModel : ViewModelBase
 
         // Список подписок в снимке не едет: перечитываем его, когда каталог показал другой набор имён.
         var carried = entries.Select(e => e.Subscription).Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToList();
-        if (carried.Except(_subscriptionNames, StringComparer.Ordinal).Any())
+        var stale = StaleSubscriptions(entries);
+        if (carried.Except(_subscriptionNames, StringComparer.Ordinal).Any() || StaleMoved(stale))
         {
             _ = LoadSubscriptionsAsync();
         }
+
+        _staleSubscriptions = stale;
+        WatchStale();
 
         RefreshOpenTransportFront();
         ReconcileConfigOptions();
@@ -831,6 +850,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _pendingOpenConfig = null;
         _configNames = [];
         _subscriptionNames = [];
+        _staleSubscriptions = [];
         IsCreatingSectionConfig = false;
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
@@ -912,6 +932,7 @@ internal partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public async Task LoadSubscriptionsAsync()
     {
+        _subscriptionsReadAt = Clock.GetUtcNow();
         var ack = await Ask(new IpcCommand(IpcContract.OpListSubscriptions, []));
         if (ack is not { Ok: true })
         {
@@ -941,11 +962,62 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.Title = entry.Title;
             existing.CheckedAt = entry.CheckedAt;
             existing.LastError = entry.LastError;
+            existing.Offered = entry.Offered;
         }
 
         _subscriptionNames = [.. entries.Select(entry => entry.Name)];
         OnPropertyChanged(nameof(HasSubscriptions));
         NotifyOpenConfigSubscriptionChanged();
+        _host.Home.NotifyConfigUpdate();
+    }
+
+    /// <summary>
+    /// Ревизия, которую сервер подписки назвал последней; пусто, пока список подписок её не назвал.
+    /// </summary>
+    public string OfferedRevision(string subscription)
+    {
+        return Subscriptions.FirstOrDefault(item => string.Equals(item.Name, subscription, StringComparison.Ordinal))?.Offered
+            ?? string.Empty;
+    }
+
+    // Подписки строк каталога, у которых сервер держит другую ревизию.
+    private static List<string> StaleSubscriptions(IReadOnlyList<ConfigEntry> entries)
+    {
+        return [.. entries.Where(e => e.SubscriptionStale).Select(e => e.Subscription)
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+    }
+
+    // Пора ли перечитать ревизии: сменился набор ждущих обновления подписок или они ждут дольше StaleReread.
+    private bool StaleMoved(IReadOnlyList<string> stale)
+    {
+        return stale.Count > 0
+            && (!stale.SequenceEqual(_staleSubscriptions, StringComparer.Ordinal)
+                || Clock.GetUtcNow() - _subscriptionsReadAt >= StaleReread);
+    }
+
+    /// <summary>
+    /// Перечитывает список подписок, когда ждущие обновления подписки ждут дольше StaleReread.
+    /// </summary>
+    internal Task RereadStaleAsync()
+    {
+        return StaleMoved(_staleSubscriptions) ? LoadSubscriptionsAsync() : Task.CompletedTask;
+    }
+
+    // Держит таймер перечитывания списка подписок, пока какая-то из них ждёт обновления.
+    private void WatchStale()
+    {
+        if (_staleSubscriptions.Count == 0)
+        {
+            _staleWatch?.Dispose();
+            _staleWatch = null;
+            return;
+        }
+
+        _staleWatch ??= DispatcherTimer.Run(() =>
+        {
+            _ = RereadStaleAsync();
+            return true;
+        }, StaleCheck);
     }
 
     // Кнопка у заголовка настроек читает и каталог, и список подписок.

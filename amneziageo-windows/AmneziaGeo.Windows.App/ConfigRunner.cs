@@ -47,6 +47,9 @@ internal sealed class ConfigRunner(
     // Interval between re-issued stop requests.
     private static readonly TimeSpan _stopRetry = TimeSpan.FromSeconds(1);
 
+    // How long the agent waits for the tunnel process to take down what its session changed.
+    private static readonly TimeSpan _cleanupWait = TimeSpan.FromSeconds(10);
+
     private string _config = string.Empty;
     private AppSettings _settings = new();
 
@@ -1282,6 +1285,7 @@ internal sealed class ConfigRunner(
 
         StopService(member);
         serviceManager.DeleteService(member);
+        AwaitCleanup(member);
         reconciler.Reconcile(member);
         if (string.Equals(_launched, member, StringComparison.Ordinal))
         {
@@ -1298,7 +1302,24 @@ internal sealed class ConfigRunner(
         }
 
         StopService(member);
+        AwaitCleanup(member);
         reconciler.Reconcile(member);
+    }
+
+    // Waits until the tunnel process has taken down what its session changed.
+    private void AwaitCleanup(string member)
+    {
+        var waited = TunnelTurn.WaitFree(TunnelPaths.TurnFile(member), _cleanupWait);
+        if (waited is null)
+        {
+            logger.LogWarning("{Member}: the tunnel process has not taken its routes, firewall rules and DNS changes down in {Sec}s, so the agent takes them down alongside it", member, (int)_cleanupWait.TotalSeconds);
+            return;
+        }
+
+        if (waited > TimeSpan.Zero)
+        {
+            logger.LogDebug("{Member}: the tunnel process took its routes, firewall rules and DNS changes down {Ms} ms after its service stopped", member, (int)waited.Value.TotalMilliseconds);
+        }
     }
 
     // Stops the service and waits for it to die. A service still starting refuses the stop, so it is re-issued

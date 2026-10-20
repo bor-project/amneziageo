@@ -1075,6 +1075,12 @@
   <data name="Main_ConfigUpdateAvailable" xml:space="preserve">
     <value>Configuration update available</value>
   </data>
+  <data name="Main_ConfigUpdateApply" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="Main_ConfigUpdateSkip" xml:space="preserve">
+    <value>Skip</value>
+  </data>
   <data name="Main_UpdateAvailableBadge" xml:space="preserve">
     <value>● Update available</value>
   </data>

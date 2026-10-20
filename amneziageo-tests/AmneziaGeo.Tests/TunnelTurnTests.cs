@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 using AmneziaGeo.Windows.App;
 using Xunit;
 
@@ -149,6 +151,53 @@ public sealed class TunnelTurnTests : IDisposable
     {
         Assert.StartsWith("turn-", Path.GetFileName(TunnelPaths.TurnFile("laptop")), StringComparison.Ordinal);
         Assert.False(Path.GetFileName(TunnelPaths.RoutesTurnFile()).StartsWith("turn-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ATurnNobodyEverTook_IsFreeAtOnce()
+    {
+        Assert.Equal(TimeSpan.Zero, TunnelTurn.WaitFree(Turn("never"), TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public async Task TheAgent_WaitsForTheSessionToGiveUpItsTurn()
+    {
+        var path = Turn("office.example");
+        var session = await TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10), passing: true);
+        var waiting = Task.Run(() => TunnelTurn.WaitFree(path, TimeSpan.FromSeconds(10)));
+        await Task.Delay(300);
+
+        Assert.False(waiting.IsCompleted);
+        session.Dispose();
+
+        var waited = await waiting.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.NotNull(waited);
+        Assert.True(waited.Value >= TimeSpan.FromMilliseconds(250));
+    }
+
+    [Fact]
+    public async Task ATurnHeldPastTheLimit_IsNotFree()
+    {
+        var path = Turn("office.example");
+        using var session = await TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10), passing: true);
+        var clock = Stopwatch.StartNew();
+
+        Assert.Null(TunnelTurn.WaitFree(path, TimeSpan.FromMilliseconds(300)));
+
+        Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(300));
+        Assert.True(session.Held);
+    }
+
+    [Fact]
+    public async Task ATurnLeftBehind_IsFreeAndGoes()
+    {
+        var path = Turn("routes");
+        var turn = await TunnelTurn.TakeAsync(path, TimeSpan.FromSeconds(10));
+        turn.Dispose();
+
+        Assert.Equal(TimeSpan.Zero, TunnelTurn.WaitFree(path, TimeSpan.FromSeconds(10)));
+
+        Assert.False(File.Exists(path));
     }
 
     public void Dispose()

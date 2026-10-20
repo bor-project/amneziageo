@@ -83,6 +83,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // Serializes the update download-phase / cancel transitions, which arrive from concurrent pipe handlers.
     private readonly object _updateStateGate = new();
 
+    // The silent update check run off the command path.
+    private readonly DetachedRun _detachedCheck = new();
+
     // How long an install is held when its setup cannot be followed.
     private static readonly TimeSpan _installHold = TimeSpan.FromMinutes(10);
 
@@ -2732,6 +2735,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // A silent check (the UI's automatic on-open / hourly check, #22) refreshes the update banner without
         // driving the checking state, so it never triggers the tray's "Checking…" item or up-to-date notice.
         var silent = args.Count > 0 && string.Equals(args[0], "silent", StringComparison.Ordinal);
+        if (silent && args.Count > 1 && string.Equals(args[1], IpcContract.CheckUpdateDetached, StringComparison.Ordinal))
+        {
+            _detachedCheck.Start(() => CheckDetachedAsync(ct));
+            return new IpcAck(true, string.Empty);
+        }
+
         var settings = await settingsStore.LoadAsync(ct);
         if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
         {
@@ -2807,6 +2816,19 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 logger.LogWarning(ex, "update check failed");
                 return (null, true);
             }
+        }
+    }
+
+    // Checks for an update silently off the command path.
+    private async Task CheckDetachedAsync(CancellationToken ct)
+    {
+        try
+        {
+            await CheckUpdateAsync(["silent"], ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "the update check of the window failed; the update banner stays as it was");
         }
     }
 

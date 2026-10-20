@@ -495,7 +495,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         try
         {
-            await _connection.SendCommandRawAsync(new IpcCommand(IpcContract.OpCheckUpdate, ["silent"]));
+            await _connection.SendCommandRawAsync(new IpcCommand(IpcContract.OpCheckUpdate, ["silent", IpcContract.CheckUpdateDetached]));
         }
         catch
         {

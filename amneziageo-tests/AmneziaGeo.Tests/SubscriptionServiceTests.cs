@@ -167,6 +167,18 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task List_NamesTheRevisionTheServerOffers()
+    {
+        await _store.SaveSubscriptionAsync(new Subscription("vpn.example", "https://vpn.example:51820/sub/x", Revision: "r1", Offered: "r2"));
+
+        var ack = await _service.ListAsync(default);
+
+        var entry = Assert.Single(JsonSerializer.Deserialize<List<SubscriptionEntry>>(ack.Message, IpcJson.Options)!);
+        Assert.True(entry.Stale);
+        Assert.Equal("r2", entry.Offered);
+    }
+
+    [Fact]
     public async Task Refresh_ByNameOfNothing_Refuses()
     {
         var outcome = await _service.RefreshAsync(["absent"], default);

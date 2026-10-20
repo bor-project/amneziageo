@@ -1,4 +1,4 @@
-# Порядок съёмки. Имя кадра - файл docs/assets/img/linux/<язык>/<имя>.png, задание - frames/<имя>.py.
+# Порядок съёмки. Имя кадра - файл amneziageo-docs/client/assets/img/linux/<язык>/<имя>.png, задание - frames/<имя>.py.
 home-connected      главный экран, туннель подключён
 config-catalog      каталог конфигураций
 config-add          меню «Добавить» в каталоге

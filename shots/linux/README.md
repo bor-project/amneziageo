@@ -21,7 +21,7 @@
 | `local/` | в git не идёт: `configs/<имя>.conf` (конфигурации стенда), `relay.json` (настоящие адреса серверов), `mask.txt` (что размывать) |
 | `out/<язык>/` | снятые кадры до просмотра, в git не идут |
 
-На сайте кадр лежит в `docs/assets/img/linux/<язык>/<имя>.png` и вставляется по имени:
+На сайте кадр лежит в `amneziageo-docs/client/assets/img/linux/<язык>/<имя>.png` и вставляется по имени:
 `{% include shot.html name="<имя>" alt="..." caption="..." %}`. Кадр 984x752 - содержимое окна без рамки.
 
 ## Стенд
@@ -62,14 +62,14 @@ openbox, xdotool, ImageMagick `import`, .NET SDK в `~/.dotnet`, клон кли
 1. `python3 shoot.py ru` - подготовка, все кадры из `frames.txt`, разборка. Один кадр: `python3 shoot.py ru general`.
    Стенд уже подготовлен - `python3 shoot.py try ru <кадр ...>`. Лист для просмотра: `python3 kit/sheet.py ru`.
 2. Каждый кадр в `out/ru/` смотреть глазами: нет ли адресов серверов, ключей, QR настоящих конфигураций.
-3. Годные кадры скопировать в `docs/assets/img/linux/ru/`.
+3. Годные кадры скопировать в `amneziageo-docs/client/assets/img/linux/ru/`.
 4. После всех языков: `python3 shoot.py clean` (библиотека с ключами), удалить `local/configs` и клиентов на сервере.
 
 ## Новый язык
 
 1. В клиенте есть `Strings.<язык>.resx`, и язык есть в списке «Язык интерфейса»; в системе есть его локаль.
 2. Строка в `languages.json`: имя языка, как в списке приложения, и локаль.
-3. `python3 shoot.py <язык>`, просмотр, кадры в `docs/assets/img/linux/<язык>/`.
+3. `python3 shoot.py <язык>`, просмотр, кадры в `amneziageo-docs/client/assets/img/linux/<язык>/`.
 
 ## Новый кадр
 

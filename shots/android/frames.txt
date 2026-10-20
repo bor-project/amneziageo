@@ -1,4 +1,4 @@
-# Порядок съёмки. Имя кадра - файл docs/assets/img/android/<язык>/<имя>.png, задание - frames/<имя>.py.
+# Порядок съёмки. Имя кадра - файл amneziageo-docs/client/assets/img/android/<язык>/<имя>.png, задание - frames/<имя>.py.
 home-connected      главный экран, туннель подключён
 menu                список разделов настроек
 config-catalog      каталог конфигураций

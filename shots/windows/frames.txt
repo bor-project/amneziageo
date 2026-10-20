@@ -1,4 +1,4 @@
-# Порядок съёмки. Имя кадра - файл docs/assets/img/windows/<язык>/<имя>.png, задание - frames/<имя>.ps1.
+# Порядок съёмки. Имя кадра - файл amneziageo-docs/client/assets/img/windows/<язык>/<имя>.png, задание - frames/<имя>.ps1.
 home-connected      главный экран, туннель подключён
 config-catalog      каталог конфигураций
 config-add          меню «Добавить» в каталоге

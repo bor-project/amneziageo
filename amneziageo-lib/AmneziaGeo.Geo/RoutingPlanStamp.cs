@@ -11,7 +11,7 @@ namespace AmneziaGeo.Geo;
 public static class RoutingPlanStamp
 {
     // Rises with the shape of the plan, so a plan left by an older build is never taken for a fitting one.
-    private const int Format = 1;
+    private const int Format = 2;
 
     /// <summary>
     /// Returns the stamp of a list with its settings and the session around it.

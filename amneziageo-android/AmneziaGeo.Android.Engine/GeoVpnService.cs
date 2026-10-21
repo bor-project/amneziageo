@@ -1560,8 +1560,10 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Whether the session raises the relay. Every byte it carries crosses userspace twice, so it stands only where
-    // the route table cannot say the same thing: a connection to attribute to an application, or more ranges than
-    // establish() takes. A configuration can also refuse it outright, and then the route table decides alone.
+    // the route table cannot say the same thing: a list that outgrew the table, or every datagram on the tunnel. A
+    // list that carries only what it names holds to the table up to a fixed size whatever else it holds, so under
+    // it a vpn is shown to the named applications alone. A configuration can also refuse the relay outright, and
+    // then the route table decides alone.
     private static bool NeedsRelay(GeoRoutingPlan plan)
     {
         if (!RouteBudget.Relayable)
@@ -1587,8 +1589,23 @@ public sealed class GeoVpnService : VpnService
             return true;
         }
 
-        var routes = SystemRoutes.Tunneled(plan.FullTunnel, plan.ProxyRoutes, plan.DirectRoutes, plan.BlockRoutes).Count;
         var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
+        if (!plan.FullTunnel)
+        {
+            var listed = plan.ProxyRoutes.Count + plan.DirectRoutes.Count + plan.BlockRoutes.Count;
+            if (SplitBudget.Fits(listed, names))
+            {
+                Report($"{listed} range(s) and {names} name(s) fit the {SplitBudget.Limit} entries the route table "
+                    + "carries on its own, so the relay stays down and nothing crosses it");
+                return false;
+            }
+
+            Report($"{listed} range(s) and {names} name(s) are more than the {SplitBudget.Limit} entries the route "
+                + "table carries on its own, so the relay decides the destinations instead");
+            return true;
+        }
+
+        var routes = SystemRoutes.Tunneled(plan.FullTunnel, plan.ProxyRoutes, plan.DirectRoutes, plan.BlockRoutes).Count;
         if (RouteBudget.Fits(routes, names))
         {
             Report($"{routes} route(s) carry the rules on their own, so the relay stays down and nothing crosses it");

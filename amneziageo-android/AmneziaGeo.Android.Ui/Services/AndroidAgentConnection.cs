@@ -700,7 +700,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var planStarted = System.Environment.TickCount64;
         var session = await Task.Run(() => RaiseSessionPlanAsync(useRouter)).ConfigureAwait(false);
 
-        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(session.Mode, session.Packages.Length)}"
+        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(session.Mode, session.Packages.Length, AttributedNow())}"
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         var words = await NoticeWordsAsync().ConfigureAwait(false);
         _downNotice = DownKey(configName, words);
@@ -2188,7 +2188,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Counts the routes a draft rule set puts into the tun, so the editor can refuse a list this device cannot
-    // carry. A device with the relay reports no ceiling.
+    // carry. A device with the relay reports no ceiling, and for a list that carries only what it names it says
+    // whether the relay would stand under it.
     private async Task<IpcAck> CountRoutesAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 1)
@@ -2197,8 +2198,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
+        var full = string.Equals(args[0], "full", StringComparison.OrdinalIgnoreCase);
         // A session behind the relay has no ceiling: what the route table will not hold, the relay decides.
-        if (RouteBudget.Relayable && RouterEnabled())
+        var relayable = RouteBudget.Relayable && RouterEnabled();
+        if (relayable && full)
         {
             return new IpcAck(true, "{\"limit\":0,\"trims\":0}");
         }
@@ -2212,10 +2215,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _log.Warn("geo", $"route count runs on the geo files at hand: {ex.Message}");
         }
 
-        var full = string.Equals(args[0], "full", StringComparison.OrdinalIgnoreCase);
         var draft = await _geo.MaterializeDraftAsync([.. args.Skip(1)]).ConfigureAwait(false);
         // A name carries no address until connect, where it resolves and cuts or adds about two routes.
         var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
+        if (relayable)
+        {
+            var listed = draft.Routes.Count + draft.DirectRoutes.Count + draft.BlockRoutes.Count;
+            return new IpcAck(true, $"{{\"limit\":0,\"trims\":0,\"relay\":{(SplitBudget.Fits(listed, names) ? "0" : "1")}"
+                + $",\"ranges\":{listed.ToString(CultureInfo.InvariantCulture)}"
+                + $",\"names\":{names.ToString(CultureInfo.InvariantCulture)}}}");
+        }
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
         // The tun keeps the direct ranges that do not fit and leaves out the widest, so a list over the budget still
         // runs - shorter of reach, in either mode: every range left outside costs the routes around it.
@@ -3019,6 +3028,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Соединение приписывается своему владельцу начиная с Android 10.
     private static bool PerAppSupported => Build.VERSION.SdkInt >= BuildVersionCodes.Q;
 
+    // Whether the named applications are added to the rules by the relay rather than held as the allow list of the
+    // tunnel: the relay stands only where the list outgrew the route table or carries every datagram, and only on
+    // an android that names the owner of a connection.
+    private static bool Attributed(int routes, int names, RoutingSettings? settings) =>
+        PerAppSupported && SplitBudget.Relayed(routes, names, settings is { AllUdp: true, UseGlobalProxy: false });
+
+    private static bool Attributed(RoutingList list, RoutingSettings? settings) =>
+        Attributed(list.Routes.Count + list.DirectRoutes.Count + list.BlockRoutes.Count,
+            list.Domains.Count + list.DirectDomains.Count + list.BlockDomains.Count, settings);
+
     // Приложения, которым отдан туннель, и те, что идут мимо него.
     private static (string Mode, string[] Packages, string[] Bypass) AppSplit(RoutingListStamp? list, RoutingSettings? settings, bool useRouter)
     {
@@ -3072,13 +3091,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var directDomains = new List<GeoDomain>(list.DirectDomains);
         SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
 
-        // An application the list names rides the tunnel wherever no rule decided for the destination: the relay
-        // names the owner of every connection, so the rules keep deciding for everyone and the applications only
-        // add to them. Without a relay the owner is unreachable and the tunnel itself has to be restricted to them,
-        // which is what the whole tunnel below stands for.
+        // An application the list names rides the tunnel wherever no rule decided for the destination: behind the
+        // relay the owner of every connection is named, so the rules keep deciding for everyone and the
+        // applications only add to them. The relay stands only where the list outgrew the route table or carries
+        // every datagram; up to that the tunnel itself is restricted to the named applications, which is what the
+        // whole tunnel below stands for, and no other application is shown a vpn.
         var apps = AppPackages(list.Apps);
         var perApp = settings is not { UseGlobalProxy: true } && useRouter && apps.Length > 0;
-        var attributed = PerAppSupported;
+        var attributed = Attributed(proxyRoutes.Count + directRoutes.Count + list.BlockRoutes.Count,
+            list.Domains.Count + directDomains.Count + list.BlockDomains.Count, settings);
         var plan = new GeoRoutingPlan(
             proxyRoutes,
             directRoutes,
@@ -4383,6 +4404,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Whether the applications the selected list names ride the tunnel by connection, under the relay: read off the
+    // catalogue, which counts the ranges and names of every bucket without unfolding the list.
+    private bool AttributedNow()
+    {
+        if (RoutedList is not { } listId || _routingSummaries?.FirstOrDefault(r => r.Id == listId) is not { } summary)
+        {
+            return false;
+        }
+
+        return PerAppSupported
+            && SplitBudget.Relayed(summary.RouteCount, summary.DomainCount, summary is { AllUdp: true, UseGlobalProxy: false });
+    }
+
     // The app set from the selected routing list's app:pkg rules, as the allow list the tunnel falls back to where
     // a connection cannot be traced to its owner, and the set its Direct bucket names, which the tunnel leaves
     // alone whatever the mode; ("off", [], []) when none.
@@ -4398,8 +4432,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return AppSplit(await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false), settings, useRouter);
     }
 
-    // What the app rules of a list do here: they add to the rules where a connection can be traced to its owner,
-    // and hold the tunnel to themselves where it cannot.
+    // What the app rules of a list do here: they add to the rules where the relay stands, and hold the tunnel to
+    // themselves where it does not.
     private static AppScope AppMode(RoutingList? list, RoutingSettings? settings, bool useRouter)
     {
         if (!useRouter || settings is { UseGlobalProxy: true } || AppPackages(list?.Apps).Length == 0)
@@ -4407,7 +4441,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return AppScope.None;
         }
 
-        return Build.VERSION.SdkInt >= BuildVersionCodes.Q ? AppScope.Additive : AppScope.Exclusive;
+        return list is not null && Attributed(list, settings) ? AppScope.Additive : AppScope.Exclusive;
     }
 
     // Whether the selected configuration decides connections on its own: the flag rides with the tunnel, not
@@ -4684,7 +4718,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var (appMode, appPkgs, bypassPkgs) = await ResolveAppSplitFromRoutingAsync(RouterEnabled());
-        report.Append("app rules    : ").Append(AppRulesLine(appMode, appPkgs.Length)).Append('\n');
+        report.Append("app rules    : ").Append(AppRulesLine(appMode, appPkgs.Length, AttributedNow())).Append('\n');
         report.Append("apps off tun : ").Append(bypassPkgs.Length == 0 ? "none" : string.Join(", ", bypassPkgs)).Append('\n');
         AppendRoutingReport(report);
         report.Append("log level    : ").Append(_logLevel).Append('\n');
@@ -4700,14 +4734,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private static string BypassLine(int apps) => apps == 0 ? string.Empty : $", {apps} application(s) off the tunnel";
 
     // What the applications a list names get in the session the next connect builds.
-    private static string AppRulesLine(string mode, int apps)
+    private static string AppRulesLine(string mode, int apps, bool attributed)
     {
         if (mode == "off" || apps == 0)
         {
             return "off";
         }
 
-        return Build.VERSION.SdkInt >= BuildVersionCodes.Q
+        return attributed
             ? $"{apps} application(s) tunneled on top of the rules"
             : $"{apps} application(s) alone ride the tunnel, the rest pass every rule by";
     }

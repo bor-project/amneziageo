@@ -13,13 +13,15 @@ namespace AmneziaGeo.Android.Engine;
 /// <param name="PrivateDnsHost">The host of a strict private DNS; null when none is set.</param>
 /// <param name="PrivateDnsActive">Whether names resolve over private DNS; null below Android 9.</param>
 /// <param name="UnderKey">The network the device sits on, its interface and IPv4 addresses; null when not read.</param>
+/// <param name="UnderDns">The IPv4 name servers of the network the device sits on; null when not read.</param>
 public sealed record NetworkView(
     string Under,
     bool? UnderValidated,
     bool? TunnelValidated,
     string? PrivateDnsHost,
     bool? PrivateDnsActive,
-    string? UnderKey = null)
+    string? UnderKey = null,
+    IReadOnlyList<string>? UnderDns = null)
 {
     /// <summary>
     /// The network the device sits on in one phrase.
@@ -93,7 +95,7 @@ public static class AndroidNetworks
 
             var (host, active) = PrivateDns(tunnelLink ?? underLink);
             var key = underNetwork is null ? under : Key(underNetwork, underLink);
-            return new NetworkView(under, underValidated, tunnelValidated, host, active, key);
+            return new NetworkView(under, underValidated, tunnelValidated, host, active, key, Dns(underLink));
         }
         catch (Java.Lang.Exception ex)
         {
@@ -235,6 +237,16 @@ public static class AndroidNetworks
             .Order(StringComparer.Ordinal);
         return $"{network.NetworkHandle}|{link?.InterfaceName}|{string.Join(",", addresses)}";
     }
+
+    // The IPv4 name servers of a link, as the system hands them to the applications.
+    private static IReadOnlyList<string> Dns(LinkProperties? link) =>
+    [
+        .. (link?.DnsServers ?? [])
+            .OfType<Java.Net.Inet4Address>()
+            .Select(address => address.HostAddress ?? string.Empty)
+            .Where(address => address.Length > 0)
+            .Distinct(StringComparer.Ordinal),
+    ];
 
     // Whether a link holds one of the addresses.
     private static bool Holds(LinkProperties? link, IReadOnlyCollection<System.Net.IPAddress> addresses)

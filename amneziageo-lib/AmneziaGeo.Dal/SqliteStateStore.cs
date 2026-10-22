@@ -354,6 +354,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // The hold of the traffic per config, on by default; the leak_guard of earlier versions is not read.
             await AddColumnAsync(connection, schema, "config_transport", "hold_traffic", "INTEGER NOT NULL DEFAULT 1", ct).ConfigureAwait(false);
 
+            // What the names that go through the VPN are asked of per config, what the server picked by default.
+            await AddColumnAsync(connection, schema, "config_dns", "vpn_mode", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_dns", "vpn_servers", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+
             // Generation counter, bumped when the materialized set changes.
             await AddColumnAsync(connection, schema, "routing_lists", "generation", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
@@ -1135,7 +1139,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT servers FROM config_dns WHERE name = $name;";
+                command.CommandText = "SELECT servers, vpn_mode, vpn_servers FROM config_dns WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1146,7 +1150,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigDns(name, reader.GetString(0));
+                    return new ConfigDns(name, reader.GetString(0), (VpnDnsMode)reader.GetInt32(1), reader.GetString(2));
                 }
             }
         }
@@ -1165,14 +1169,18 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_dns (name, servers, updated_at)
-                    VALUES ($name, $servers, $updated)
+                    INSERT INTO config_dns (name, servers, vpn_mode, vpn_servers, updated_at)
+                    VALUES ($name, $servers, $vpnMode, $vpnServers, $updated)
                     ON CONFLICT(name) DO UPDATE SET
-                        servers    = excluded.servers,
-                        updated_at = excluded.updated_at;
+                        servers     = excluded.servers,
+                        vpn_mode    = excluded.vpn_mode,
+                        vpn_servers = excluded.vpn_servers,
+                        updated_at  = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", dns.Name);
                 command.Parameters.AddWithValue("$servers", dns.Servers);
+                command.Parameters.AddWithValue("$vpnMode", (int)dns.VpnMode);
+                command.Parameters.AddWithValue("$vpnServers", dns.VpnServers);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

@@ -160,6 +160,16 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraHoldTraffic = "hold-traffic";
 
+    /// <summary>
+    /// The name servers the names through the tunnel are asked of, as the head picked them.
+    /// </summary>
+    public const string ExtraVpnDns = "vpn-dns";
+
+    /// <summary>
+    /// Whether the names through the tunnel are left to the network of the device.
+    /// </summary>
+    public const string ExtraVpnDnsNetwork = "vpn-dns-network";
+
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
@@ -769,7 +779,8 @@ public sealed class GeoVpnService : VpnService
             () => AndroidNetworks.Read(this).Under != NetworkSnapshot.NoNetwork,
             _ => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
                 request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog,
-                request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel, signal, repair, ct),
+                request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel, signal, repair, ct,
+                request.VpnDns, request.VpnDnsNetwork),
             PauseAsync,
             () => Tell($"this device is on no network, so {request.Name} is not dialled; it is dialled as soon as one is there"),
             () => Tell($"a network is there, so {request.Name} is dialled"),
@@ -941,7 +952,7 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Raises the session once and tells what the attempt ended with.
-    private async Task<DialOutcome> BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, SignalPlace? signal, bool repair, CancellationToken ct)
+    private async Task<DialOutcome> BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, SignalPlace? signal, bool repair, CancellationToken ct, string[]? vpnDns = null, bool vpnDnsNetwork = false)
     {
         try
         {
@@ -970,7 +981,16 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.ConfigInvalid, "invalid config");
             }
 
-            var servers = DnsServers(resolved);
+            var servers = vpnDnsNetwork ? [] : DnsServers(vpnDns is { Length: > 0 } picked ? picked : WgConfigEditor.GetDns(resolved));
+            // The name servers of the network under the tunnel leave the tun with the network the device sits on.
+            IReadOnlyList<string> networkDns = vpnDnsNetwork
+                ? [.. (AndroidNetworks.Read(this).UnderDns ?? []).Select(server => server + "/32")]
+                : [];
+            if (vpnDnsNetwork)
+            {
+                Report("the names through the tunnel are left to the network of this device: the tunnel names no DNS of its own");
+            }
+
             // The resolvers and the way back to the server that sends the signal to disconnect ride the tunnel.
             IReadOnlyList<string> pinned = [.. servers.Select(server => server + "/32")
                 .Concat((signal?.Routes ?? []).Where(route => !route.Contains(':', StringComparison.Ordinal)))
@@ -986,7 +1006,9 @@ public sealed class GeoVpnService : VpnService
                 : [];
             // The network the device sits on stays inside the tun only where the engine sends it out itself.
             var carveLocal = !localInTunnel || _localCarveForced || !(directTcp || _proxyPort > 0);
-            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned).ConfigureAwait(false);
+            // The names of the list are asked of the name servers of the tunnel once it carries.
+            var late = relay is null && plan.HasDomains && !vpnDnsNetwork;
+            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned, !late, networkDns).ConfigureAwait(false);
             _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
@@ -1062,7 +1084,7 @@ public sealed class GeoVpnService : VpnService
                     + "leaves the tun again");
                 _localCarveForced = true;
                 return await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort, wsOffered,
-                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, signal, repair, ct).ConfigureAwait(false);
+                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, signal, repair, ct, vpnDns, vpnDnsNetwork).ConfigureAwait(false);
             }
 
             // All UDP on the tunnel leaves no datagram to the owner check.
@@ -1090,7 +1112,7 @@ public sealed class GeoVpnService : VpnService
             // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the far
             // end is echoed every few seconds - the peer where the server gives it an address, and otherwise the
             // resolvers, which the tunnel carries even where it carries nothing else of that subnet.
-            var targets = LinkLossProbe.Targets(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetDns(resolved));
+            var targets = LinkLossProbe.Targets(WgConfigEditor.GetAddresses(resolved), servers);
             var echo = new TunnelEcho(this, WgConfigEditor.GetAddresses(resolved), Report);
             var loss = new LinkLossProbe(targets, echo: echo.RoundTripAsync);
             _loss = loss;
@@ -1114,6 +1136,11 @@ public sealed class GeoVpnService : VpnService
                 null => "the peer answered, and the tun takes in none of the addresses an echo would prove it by; the "
                     + "session is reported as up on the handshake alone",
             });
+            if (late && await SettleNamesAsync(plan, resolved, servers, hot, carveLocal, pinned, handle, ct).ConfigureAwait(false) is { } settled)
+            {
+                return settled;
+            }
+
             _underKey = AndroidNetworks.Read(this).UnderKey;
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), name);
             _hold.Raised();
@@ -1165,6 +1192,58 @@ public sealed class GeoVpnService : VpnService
         {
             Past(false);
         }
+    }
+
+    // Asks the name servers of the tunnel for the names of the list and puts the tun around their addresses.
+    private async Task<DialOutcome?> SettleNamesAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, IReadOnlyList<string> hot, bool carveLocal, IReadOnlyList<string> pinned, int handle, CancellationToken ct)
+    {
+        var rules = await MaterializeAsync(plan, config, servers, false, hot, !_liveTun, carveLocal, pinned).ConfigureAwait(false);
+        if (_handle != handle || ct.IsCancellationRequested)
+        {
+            return DialOutcome.Raised;
+        }
+
+        if (rules.Tunneled.Count > RouteBudget.Max)
+        {
+            Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
+                + "transaction; shorten the routing list");
+            return DialOutcome.Failed(ConnectFailureReason.TooManyRoutes, $"{rules.Tunneled.Count} of {RouteBudget.Max}");
+        }
+
+        lock (_swapGate)
+        {
+            if (_shape is not { } shape)
+            {
+                return DialOutcome.Raised;
+            }
+
+            if (!shape.Routes.SequenceEqual(rules.Tunneled, StringComparer.Ordinal))
+            {
+                var next = shape with { Routes = rules.Tunneled };
+                if (!Swap(handle, next, _excluded, out var error))
+                {
+                    return DialOutcome.Failed(ConnectFailureReason.TunnelSetupFailed, error ?? "the tun could not be rebuilt");
+                }
+
+                _shape = next;
+                Report($"the tun is rebuilt around the names of the list: {rules.Tunneled.Count} route(s) into the tunnel");
+            }
+
+            var spec = new StringBuilder(rules.Verdicts);
+            foreach (var address in Refused())
+            {
+                spec.Append('\n').Append(address).Append("/32=block");
+            }
+
+            if (spec.Length > 0 && AwgEngine.SetVerdicts(handle, spec.ToString()))
+            {
+                _verdicts = rules.Verdicts;
+            }
+
+            _routed = RoutedReport(plan, rules);
+        }
+
+        return null;
     }
 
     // Hands out the tun the leak guard holds when the session needs the same one or one that differs in the
@@ -1637,7 +1716,7 @@ public sealed class GeoVpnService : VpnService
     // way for the session: a route table cannot be edited once the tun is established. Of the addresses the last
     // session sent direct, only the ones this list still sends direct are carried over; they leave the route table
     // where the tun cannot leave them out by itself.
-    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool routed, bool carveLocal, IReadOnlyList<string> pinned)
+    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool routed, bool carveLocal, IReadOnlyList<string> pinned, bool resolveNames = true, IReadOnlyList<string>? networkDns = null)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
 
@@ -1665,6 +1744,20 @@ public sealed class GeoVpnService : VpnService
         if (local.Count == 0)
         {
             Report("no local subnet found, the tun will carry the network the device sits on as well");
+        }
+
+        // The name servers of the network under the tunnel sit beside that segment where the names are left to them.
+        foreach (var server in networkDns ?? [])
+        {
+            if (!local.Contains(server))
+            {
+                local.Add(server);
+            }
+        }
+
+        if (networkDns is { Count: > 0 })
+        {
+            Report($"the name servers of the network under the tunnel, {string.Join(", ", networkDns)}, stay outside the tun with it");
         }
 
         // The private networks the configuration itself reaches, less the ones the device stands in.
@@ -1731,6 +1824,11 @@ public sealed class GeoVpnService : VpnService
                 Report("a socket that ignores the proxy still rides the tunnel: only datagrams take the direct "
                     + "path off the route table");
             }
+        }
+        else if (plan.HasDomains && !resolveNames)
+        {
+            Report($"{plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count} name rule(s) wait "
+                + "for the name servers of the tunnel");
         }
         else if (plan.HasDomains)
         {
@@ -3147,11 +3245,11 @@ public sealed class GeoVpnService : VpnService
         return total;
     }
 
-    // The resolvers handed to the applications: the config's IPv4 servers, or a public one when it names none.
-    private static IReadOnlyList<string> DnsServers(string config)
+    // The resolvers handed to the applications: the IPv4 ones picked, or a public one when none is.
+    private static IReadOnlyList<string> DnsServers(IReadOnlyList<string> picked)
     {
         var servers = new List<string>();
-        foreach (var server in WgConfigEditor.GetDns(config))
+        foreach (var server in picked)
         {
             if (System.Net.IPAddress.TryParse(server.Trim(), out var parsed)
                 && parsed.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
@@ -3615,7 +3713,9 @@ public sealed class GeoVpnService : VpnService
             intent.GetIntExtra(ExtraSignalPort, 0),
             intent.GetStringArrayExtra(ExtraSignalFrom),
             intent.GetStringArrayExtra(ExtraBases),
-            intent.GetBooleanExtra(ExtraHoldTraffic, true));
+            intent.GetBooleanExtra(ExtraHoldTraffic, true),
+            intent.GetStringArrayExtra(ExtraVpnDns),
+            intent.GetBooleanExtra(ExtraVpnDnsNetwork, false));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.

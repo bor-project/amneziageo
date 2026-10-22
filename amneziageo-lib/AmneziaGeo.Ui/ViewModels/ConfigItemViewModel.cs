@@ -92,6 +92,29 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private bool _holdTraffic = true;
 
+    // What the names that go through the VPN are asked of, the servers of its own, what the choice settles on, whether
+    // it settles on the network, and the resolver the server offers inside the tunnel.
+    [ObservableProperty]
+    private VpnDnsMode _vpnDnsMode;
+
+    [ObservableProperty]
+    private string _vpnDns = string.Empty;
+
+    [ObservableProperty]
+    private string _vpnDnsShown = string.Empty;
+
+    [ObservableProperty]
+    private bool _vpnDnsNetwork;
+
+    [ObservableProperty]
+    private string _serverDns = string.Empty;
+
+    [ObservableProperty]
+    private string _defaultDns = string.Empty;
+
+    [ObservableProperty]
+    private bool _defaultDnsNetwork;
+
     [ObservableProperty]
     private string _address = string.Empty;
 

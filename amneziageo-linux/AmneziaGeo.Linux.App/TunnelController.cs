@@ -54,6 +54,9 @@ internal sealed class TunnelController : IDisposable
     private string? _pinnedHop;
     private string _sessionConfig = string.Empty;
     private bool _split;
+    // The name servers of the network of the machine past a full tunnel, where the config leaves the names through the
+    // tunnel to them.
+    private IReadOnlyList<string> _networkResolvers = [];
     private bool _resolverApplied;
     private bool _inboundBlocked;
     private IReadOnlyList<string> _inboundRoutes = [];
@@ -201,12 +204,16 @@ internal sealed class TunnelController : IDisposable
         var split = routing.Split && routing.HasRules;
         var hasRules = routing.HasRules;
         routing = AroundLocal(routing);
-        var tunnelResolvers = TunnelResolvers(resolved);
+        var vpnDns = VpnDns.Pick(options.Dns, options.Offer?.Dns(), WgConfigEditor.GetDns(resolved));
+        var tunnelResolvers = TunnelResolvers(vpnDns.Network ? [] : vpnDns.Servers);
 
-        // The resolver asked over HTTPS rides the tunnel as well, or its answers are no safer than the plain ones.
-        IReadOnlyList<IPAddress> resolverRoutes = DnsTransports.Of(options.DnsTransport) == DnsTransports.Plain
-            ? tunnelResolvers
-            : [.. tunnelResolvers, DohResolver.DefaultAddress];
+        // The resolver asked over HTTPS rides the tunnel as well, or its answers are no safer than the plain ones; the
+        // network of the machine answers the names through the tunnel past it where the config picks it.
+        IReadOnlyList<IPAddress> resolverRoutes = vpnDns.Network
+            ? []
+            : DnsTransports.Of(options.DnsTransport) == DnsTransports.Plain
+                ? tunnelResolvers
+                : [.. tunnelResolvers, DohResolver.DefaultAddress];
         var startupRoutes = split ? resolverRoutes.Select(server => $"{server}/32").ToList() : [];
         IReadOnlyList<string> resolverRanges = [.. startupRoutes];
 
@@ -266,6 +273,13 @@ internal sealed class TunnelController : IDisposable
         // Read before the tunnel routes land, while the machine's own path is the only one there is.
         var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
         var lanResolvers = options.LocalResolvers.Count > 0 ? options.LocalResolvers : LanResolvers(hop.Via);
+
+        // The network of the machine answers the names through the tunnel past it where the config picks it; a range of a
+        // split list may cover its resolvers as well.
+        _networkResolvers = vpnDns.Network
+            ? [.. lanResolvers.Where(server => server.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(server)).Select(server => $"{server}/32")]
+            : [];
+        routing = WithNetworkResolvers(routing);
 
         var daemon = new AwgDaemon(_enginePath, _iface);
         try
@@ -370,7 +384,7 @@ internal sealed class TunnelController : IDisposable
                 _ = Task.Run(() => ServerSignal.ListenAsync(signal, () => AskedDownAsync(session), Note, session));
             }
 
-            StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers, options.DnsTransport);
+            StartNameRouter(routing with { Split = split }, allowedIps, vpnDns.Network && lanResolvers.Count > 0 ? lanResolvers : tunnelResolvers, lanResolvers, options.DnsTransport, vpnDns.Network);
             var ranges = cache.RangeCounts;
             _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
             return null;
@@ -517,7 +531,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         var hasRules = routing.HasRules;
-        routing = AroundLocal(routing);
+        routing = WithNetworkResolvers(AroundLocal(routing));
         Restand(cache, routing);
         Steer(cache, routing);
         RefuseAsync(cache, routing, CancellationToken.None).GetAwaiter().GetResult();
@@ -554,7 +568,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         _inboundRoutes = wanted;
-        routing = AroundLocal(routing);
+        routing = WithNetworkResolvers(AroundLocal(routing));
         Restand(cache, routing);
         await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
         await PassAsync(cache, routing, ct).ConfigureAwait(false);
@@ -881,10 +895,10 @@ internal sealed class TunnelController : IDisposable
 
     // Binds the name router and points the machine at it once the peer answers, so a dial that never completes
     // cannot leave the machine without a resolver.
-    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<string> allowedIps, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, string dnsTransport)
+    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<string> allowedIps, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, string dnsTransport, bool network)
     {
         var stripV6 = !allowedIps.Any(range => range.Contains(':', StringComparison.Ordinal));
-        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _cache!, _log, dnsTransport);
+        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _cache!, _log, dnsTransport, network);
         if (!router.Start())
         {
             router.Dispose();
@@ -1056,11 +1070,15 @@ internal sealed class TunnelController : IDisposable
         return null;
     }
 
-    // The resolvers reached through the tunnel: the config's own IPv4 ones, or Cloudflare when it names none.
-    private static IReadOnlyList<IPAddress> TunnelResolvers(string config)
+    // The routing with the name servers of the network past a full tunnel.
+    private TunnelRouting WithNetworkResolvers(TunnelRouting routing) =>
+        _networkResolvers.Count == 0 ? routing : routing with { DirectRoutes = [.. routing.DirectRoutes, .. _networkResolvers] };
+
+    // The resolvers reached through the tunnel: the IPv4 ones picked, or Cloudflare when none is.
+    private static IReadOnlyList<IPAddress> TunnelResolvers(IReadOnlyList<string> picked)
     {
         var servers = new List<IPAddress>();
-        foreach (var entry in WgConfigEditor.GetDns(config))
+        foreach (var entry in picked)
         {
             if (IPAddress.TryParse(entry, out var address) && address.AddressFamily == AddressFamily.InterNetwork)
             {

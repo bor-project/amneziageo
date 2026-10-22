@@ -108,7 +108,10 @@ public static class CliRunner
               config copy <name> <new-name>
               config remove <name>
               config order <name> [<name>...]   the order they are listed in
-              config dns <name> [<servers>]     preferred resolvers; omit to clear
+              config dns <name> [<servers>]     DNS for the names that go directly; omit to clear
+              config vpn-dns <name> default|network|server|own [<servers>]
+                                                DNS for the names that go through the VPN: what the server
+                                                picked, the network, the resolver of the server, or these
               config exclusions <name> (--file <path> | --stdin | --list a,b,c | --clear)
               config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>]
                                              [--ipv6 on|off] [--router on|off]

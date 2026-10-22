@@ -783,6 +783,13 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.AllowSignal = entry.AllowSignal;
             existing.SignalOffered = entry.SignalOffered;
             existing.HoldTraffic = entry.HoldTraffic;
+            existing.VpnDnsMode = entry.VpnDnsMode;
+            existing.VpnDns = entry.VpnDns;
+            existing.VpnDnsShown = entry.VpnDnsShown;
+            existing.VpnDnsNetwork = entry.VpnDnsNetwork;
+            existing.ServerDns = entry.ServerDns;
+            existing.DefaultDns = entry.DefaultDns;
+            existing.DefaultDnsNetwork = entry.DefaultDnsNetwork;
             existing.Address = entry.Address;
             existing.WebSocketFront = entry.WebSocketFront;
             existing.WebSocketHost = entry.WebSocketHost;
@@ -1183,7 +1190,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false, item?.HoldTraffic ?? true);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false, item?.HoldTraffic ?? true, item?.VpnDnsMode ?? VpnDnsMode.Default, item?.VpnDns ?? string.Empty, item?.VpnDnsShown ?? string.Empty, item?.VpnDnsNetwork ?? false, item?.ServerDns ?? string.Empty, item?.DefaultDns ?? string.Empty, item?.DefaultDnsNetwork ?? false);
         RefreshEditBar();
     }
 
@@ -1204,6 +1211,7 @@ internal partial class ConfigViewModel : ViewModelBase
         transport.WebSocketOpen = item.WebSocketOffered;
         transport.WebSocketManual = item.WebSocketManual;
         transport.SignalOffered = item.SignalOffered;
+        transport.Settled(item.VpnDnsShown, item.VpnDnsNetwork, item.ServerDns, item.DefaultDns, item.DefaultDnsNetwork);
     }
 
     // Subscribe the open-config editors' dirty signal so the footer Save/Cancel bar tracks their state.

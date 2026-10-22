@@ -80,6 +80,12 @@ internal sealed class TunnelRunner(
     }
 
     /// <summary>
+    /// The IPv4 ones among resolvers.
+    /// </summary>
+    internal static IReadOnlyList<string> V4(IReadOnlyList<string> resolvers) =>
+        [.. resolvers.Where(d => IPAddress.TryParse(d, out var dip) && dip.AddressFamily == AddressFamily.InterNetwork)];
+
+    /// <summary>
     /// The resolvers a tunnel routes through itself: every one while it looks names up, none otherwise.
     /// </summary>
     internal static IReadOnlyList<string> RoutedResolvers(IReadOnlyList<string> resolvers, bool holdsResolver, bool carriesNames, bool probesLink)
@@ -297,12 +303,23 @@ internal sealed class TunnelRunner(
 
         var appSettings = await settings.LoadAsync();
 
-        // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
-        var configDns = ConfigResolvers(config);
-        var tunnelResolver = TunnelResolvers(configDns);
-        // Resolvers take this tunnel only while it looks names up itself.
-        var routedResolvers = RoutedResolvers(tunnelResolver, duties.HoldsResolver, trackDomains, useWebSocket);
-        if (routedResolvers.Count < tunnelResolver.Count)
+        // Tunnel resolver = what the config picks for the names through the tunnel, else what its server picked, else
+        // the config DNS, reached through the tunnel; add its /32 to routes. The network of the machine answers them
+        // past the tunnel where the config picks it.
+        var lanResolvers = dns.CaptureUpstream();
+        var vpnDns = VpnDns.Pick(await store.GetConfigDnsAsync(name), offer.Dns(), ConfigResolvers(config));
+        var configDns = vpnDns.Network ? lanResolvers : V4(vpnDns.Servers);
+        var echoes = vpnDns.Network ? TunnelResolvers([]) : TunnelResolvers(configDns);
+        var tunnelResolver = vpnDns.Network && lanResolvers.Count > 0 ? lanResolvers : echoes;
+        // Resolvers take this tunnel only while it looks names up itself; the ones of the network never do.
+        var routedResolvers = vpnDns.Network
+            ? RoutedResolvers(echoes, false, false, useWebSocket)
+            : RoutedResolvers(tunnelResolver, duties.HoldsResolver, trackDomains, useWebSocket);
+        if (vpnDns.Network)
+        {
+            logger.LogInformation("{Name}: the names through the tunnel are asked of the network of this machine, {Resolvers}, past the tunnel", name, string.Join(", ", tunnelResolver));
+        }
+        else if (routedResolvers.Count < tunnelResolver.Count)
         {
             logger.LogInformation("{Name}: another tunnel looks this machine's names up, so {Resolvers} are left to it and take no route here", name, string.Join(", ", tunnelResolver));
         }
@@ -470,7 +487,6 @@ internal sealed class TunnelRunner(
         var preferredDnsServers = (await store.GetConfigDnsAsync(name))?.Servers ?? string.Empty;
         var preferredDns = ParseDnsServers(preferredDnsServers);
         // LAN resolver always captured; local names resolve here, not offshore.
-        var lanResolvers = dns.CaptureUpstream();
         var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
         // Bypass list: routing list's exclusions or per-config. The LAN floor is added unconditionally below.
         string? storedExclusions;
@@ -553,8 +569,9 @@ internal sealed class TunnelRunner(
             }
         }
 
-        // The own network's resolvers outside the ranges kept off the tunnel keep their own path in a full tunnel.
-        var lanResolverRoutes = geoSplit ? new List<string>() : OffLinkResolvers(lanResolvers, [.. tunnelResolver, .. routedResolvers], exclusionCidrs);
+        // The own network's resolvers outside the ranges kept off the tunnel keep their own path in a full tunnel, and
+        // in a split one as well where the names through the tunnel are left to them: a range of the list may cover them.
+        var lanResolverRoutes = geoSplit && !vpnDns.Network ? new List<string>() : OffLinkResolvers(lanResolvers, vpnDns.Network ? routedResolvers : [.. tunnelResolver, .. routedResolvers], exclusionCidrs);
         foreach (var cidr in lanResolverRoutes)
         {
             if (seenCidrs.Add(cidr))
@@ -803,7 +820,10 @@ internal sealed class TunnelRunner(
         var adapterIndex = default(uint?);
         uint? TunnelInterface() => adapterIndex ??= routes.FindTunnelIndex(name);
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, passDns, routing, duties.HoldsResolver, TunnelInterface, appSettings.DnsTransport, appSettings.RouteTtlSeconds);
+        // The names the network of the machine answers leave by the routing table, over plain DNS, and follow it when
+        // the machine moves to another network.
+        var networkAnswers = vpnDns.Network;
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, passDns, routing, duties.HoldsResolver, networkAnswers ? () => null : TunnelInterface, networkAnswers ? AmneziaGeo.Ipc.DnsTransports.Plain : appSettings.DnsTransport, appSettings.RouteTtlSeconds, networkAnswers);
         session.SetProxy(proxy);
 
         // The names kept on the own network with these suffixes.
@@ -1068,7 +1088,7 @@ internal sealed class TunnelRunner(
         {
             // The config's own DNS is gone from it by now, so the resolvers come from what was read out of it
             // earlier: those are the addresses the tunnel is given routes to, and an echo needs one of them.
-            var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), tunnelResolver), CarrierWatchdog.EchoIntervalMs, echo: TunnelEcho.From(WgConfigEditor.GetAddresses(config)));
+            var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), echoes), CarrierWatchdog.EchoIntervalMs, echo: TunnelEcho.From(WgConfigEditor.GetAddresses(config)));
             var watchdog = new CarrierWatchdog(wsTransport, uapi, probe, name, loggerFactory.CreateLogger<CarrierWatchdog>());
             _ = Task.Run(() => probe.RunAsync(sessionCts.Token));
             _ = Task.Run(() => watchdog.RunAsync(sessionCts.Token));
@@ -1214,13 +1234,13 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, AppDnsTracker? passDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport, int routeTtlSeconds)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, AppDnsTracker? passDns, RoutingCache? routing, bool listen, Func<uint?> tunnelInterface, string dnsTransport, int routeTtlSeconds, bool networkAnswers = false)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
         var (lanIp, lanPool) = LanResolvers(lanUpstream);
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport, passDns);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing, listen, tunnelInterface, dnsTransport, passDns, networkAnswers);
         proxy.SetRouteTtl(routeTtlSeconds);
         if (!listen)
         {

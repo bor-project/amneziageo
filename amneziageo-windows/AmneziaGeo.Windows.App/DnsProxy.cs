@@ -115,8 +115,11 @@ internal sealed class DnsProxy
     private volatile IReadOnlyList<GeoDomain> _directDomains;
     private volatile DomainMatcher _directMatcher;
     private volatile bool _hasDirectDomains;
-    private readonly IPAddress _tunnelUpstream;
-    private readonly IPAddress? _tunnelUpstreamSecondary;
+    // The resolver of the names through the tunnel: the one the config picks, or the own network's where the config
+    // leaves the names to it, which then follows the network the machine is on.
+    private volatile IPAddress _tunnelUpstream;
+    private volatile IPAddress? _tunnelUpstreamSecondary;
+    private readonly bool _network;
     // The index of the adapter a query to the tunnel's resolver leaves by; null while it is not known.
     private readonly Func<uint?>? _tunnelInterface;
     private volatile IPAddress _localUpstream;
@@ -162,9 +165,10 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Default, AppDnsTracker? passDns = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null, bool listen = true, Func<uint?>? tunnelInterface = null, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Default, AppDnsTracker? passDns = null, bool networkAnswers = false)
     {
         _tunnelInterface = tunnelInterface;
+        _network = networkAnswers;
         _appDns = appDns;
         _passDns = passDns;
         _routing = routing;
@@ -237,6 +241,11 @@ internal sealed class DnsProxy
     /// The transport the resolver behind the tunnel is reached over, and why that one.
     /// </summary>
     public string NameTransport => _tunnelAsk.State;
+
+    /// <summary>
+    /// The resolver the names through the tunnel are asked of right now.
+    /// </summary>
+    internal IPAddress TunnelUpstream => _tunnelUpstream;
 
     /// <summary>
     /// The IPv4 loopback address the proxy bound, or null.
@@ -481,8 +490,13 @@ internal sealed class DnsProxy
         var statics = Normalize(localDomains);
         lock (_localGate)
         {
-            var local = localFollows ? lanUpstream ?? _tunnelUpstream : _localUpstream;
-            if (Equals(_lanUpstream, lanUpstream) && _localUpstream.Equals(local) && _lanPool.SequenceEqual(lanPool)
+            // The names through the tunnel follow the own network's resolver where the config leaves them to it, and
+            // the direct resolver follows it where it was the same one.
+            var tunnel = _network && lanUpstream is not null ? lanUpstream : _tunnelUpstream;
+            var secondary = _network && lanUpstream is not null ? lanPool.FirstOrDefault(one => !one.Equals(lanUpstream)) : _tunnelUpstreamSecondary;
+            var local = localFollows ? lanUpstream ?? tunnel : _localUpstream.Equals(_tunnelUpstream) ? tunnel : _localUpstream;
+            if (Equals(_lanUpstream, lanUpstream) && _localUpstream.Equals(local) && _tunnelUpstream.Equals(tunnel)
+                && Equals(_tunnelUpstreamSecondary, secondary) && _lanPool.SequenceEqual(lanPool)
                 && _staticLocalDomains.SequenceEqual(statics, StringComparer.Ordinal))
             {
                 return false;
@@ -491,6 +505,8 @@ internal sealed class DnsProxy
             _lanUpstream = lanUpstream;
             _lanPool = lanPool;
             _localUpstream = local;
+            _tunnelUpstream = tunnel;
+            _tunnelUpstreamSecondary = secondary;
 
             // The machine moved to another network, so plain DNS gets another chance before the rest.
             _tunnelAsk.Reset();
@@ -1881,14 +1897,16 @@ internal sealed class DnsProxy
     }
 
     // Which resolver the query was sent to, and by which path.
-    private static string ResolverLabel(bool isLocal, bool matched, bool raced, IPAddress upstream)
+    private string ResolverLabel(bool isLocal, bool matched, bool raced, IPAddress upstream)
     {
         if (raced)
         {
             return "every resolver of your provider at once";
         }
 
-        var kind = isLocal ? "your network's resolver" : matched ? "the resolver inside the tunnel" : "your provider's resolver";
+        var kind = isLocal ? "your network's resolver"
+            : matched ? _network ? "your network's resolver, which the names through the tunnel are left to" : "the resolver inside the tunnel"
+            : "your provider's resolver";
         return $"{kind} {upstream}";
     }
 

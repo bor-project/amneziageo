@@ -21,6 +21,20 @@ public sealed record SpeedLeg(string Down, string Up);
 public sealed record OfferedSubscription(string Url, string Revision, string Pin);
 
 /// <summary>
+/// What a server of ours picked for the name servers of a config and where its resolver answers the config.
+/// </summary>
+/// <param name="Mode">What the client, its template or the server picked: routing, panel, network, own or endpoint.</param>
+/// <param name="Servers">The name servers of the DNS line of the file, none when it leaves them to the network.</param>
+/// <param name="Resolver">The addresses the resolver of the server answers the config on inside the tunnel, none while it does not.</param>
+public sealed record OfferedDns(string Mode, IReadOnlyList<string> Servers, IReadOnlyList<string> Resolver)
+{
+    /// <summary>
+    /// The mode that leaves the name servers to the network of the device.
+    /// </summary>
+    public const string NetworkMode = "network";
+}
+
+/// <summary>
 /// A geo source a server of ours hands its clients.
 /// </summary>
 /// <param name="Name">The name the server knows the source by, empty when it names none.</param>
@@ -145,6 +159,16 @@ public sealed class ServerOffer
     /// The feature that names where the device takes the signal to disconnect.
     /// </summary>
     public const string DisconnectFeature = "disconnect";
+
+    /// <summary>
+    /// The feature that names the name servers of the config and the resolver of the server.
+    /// </summary>
+    public const string DnsFeature = "dns";
+
+    /// <summary>
+    /// The most name servers one answer is taken with.
+    /// </summary>
+    public const int MaxDnsServers = 8;
 
     /// <summary>
     /// The most addresses the signal to disconnect is taken from.
@@ -336,6 +360,20 @@ public sealed class ServerOffer
         }
 
         return sources;
+    }
+
+    /// <summary>
+    /// Returns what the server picked for the name servers of the config and where its resolver answers; null when it
+    /// says nothing of them.
+    /// </summary>
+    public OfferedDns? Dns()
+    {
+        if (Arguments(DnsFeature) is not { } arguments)
+        {
+            return null;
+        }
+
+        return new OfferedDns(Text(arguments, "mode").Trim().ToLowerInvariant(), Addresses(arguments, "servers"), Addresses(arguments, "resolver"));
     }
 
     /// <summary>
@@ -536,6 +574,29 @@ public sealed class ServerOffer
         {
             return null;
         }
+    }
+
+    // Reads a list of addresses, the ones that are not addresses left out.
+    private static IReadOnlyList<string> Addresses(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var list) || list.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var addresses = new List<string>();
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String
+                && IPAddress.TryParse(item.GetString()!.Trim(), out var address)
+                && !addresses.Contains(address.ToString())
+                && addresses.Count < MaxDnsServers)
+            {
+                addresses.Add(address.ToString());
+            }
+        }
+
+        return addresses;
     }
 
     private static string Text(JsonElement element, string name) =>

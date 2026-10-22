@@ -35,6 +35,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseRouting;
     private bool _baseAllowSignal;
     private bool _baseHoldTraffic;
+    private int _baseVpnDnsMode;
+    private string _baseVpnDns = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WebSocketOn))]
@@ -124,6 +126,76 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _holdTraffic = true;
 
+    // What the names that go through the VPN are asked of: 0 what the server picked, 1 the network, 2 the resolver of
+    // the server, 3 the servers of the field.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsVpnDnsReadOnly))]
+    [NotifyPropertyChangedFor(nameof(VpnDnsText))]
+    [NotifyPropertyChangedFor(nameof(VpnDnsWatermark))]
+    private int _vpnDnsMode;
+
+    // The servers of its own the field holds while the choice is the field.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VpnDnsText))]
+    private string _vpnDns = string.Empty;
+
+    // What the choice the agent holds settles on and whether that is the network.
+    private string _vpnDnsShown = string.Empty;
+    private bool _vpnDnsNetwork;
+
+    // What the default choice settles on and whether that is the network.
+    private string _defaultDns = string.Empty;
+    private bool _defaultDnsNetwork;
+
+    // The resolver the server offers inside the tunnel, empty where it offers none.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ServerDnsAvailable))]
+    [NotifyPropertyChangedFor(nameof(ServerDnsTip))]
+    [NotifyPropertyChangedFor(nameof(VpnDnsText))]
+    private string _serverDns = string.Empty;
+
+    /// <summary>
+    /// Whether the field shows what the choice settles on rather than servers of its own.
+    /// </summary>
+    public bool IsVpnDnsReadOnly => VpnDnsMode != (int)Decl.VpnDnsMode.Own;
+
+    /// <summary>
+    /// Whether the server offers its resolver inside the tunnel, which the item of the server takes.
+    /// </summary>
+    public bool ServerDnsAvailable => ServerDns.Length > 0;
+
+    /// <summary>
+    /// Why the item of the server is not to be picked; none while it is.
+    /// </summary>
+    public string? ServerDnsTip => ServerDnsAvailable ? null : Loc.Instance.Get("Main_VpnDnsServerOff");
+
+    /// <summary>
+    /// What the field shows: the servers of its own for that choice, what the other choices settle on otherwise.
+    /// </summary>
+    public string VpnDnsText
+    {
+        get => (Decl.VpnDnsMode)VpnDnsMode switch
+        {
+            Decl.VpnDnsMode.Own => VpnDns,
+            Decl.VpnDnsMode.Network => NetworkDns(),
+            Decl.VpnDnsMode.Server when ServerDns.Length > 0 => ServerDns,
+            _ when VpnDnsMode == _baseVpnDnsMode => _vpnDnsNetwork ? NetworkDns() : _vpnDnsShown,
+            _ => _defaultDnsNetwork ? NetworkDns() : _defaultDns,
+        };
+        set
+        {
+            if (!IsVpnDnsReadOnly)
+            {
+                VpnDns = value ?? string.Empty;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The servers an empty field of its own stands for; none while the field shows what another choice settles on.
+    /// </summary>
+    public string? VpnDnsWatermark => IsVpnDnsReadOnly ? null : string.Join(", ", Decl.VpnDns.Usual);
+
     // Whether the server of the configuration leaves the choice about its signal to disconnect to the device.
     [ObservableProperty]
     private bool _signalOffered;
@@ -177,7 +249,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false, bool holdTraffic = true)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false, bool holdTraffic = true, VpnDnsMode vpnDnsMode = Decl.VpnDnsMode.Default, string vpnDns = "", string vpnDnsShown = "", bool vpnDnsNetwork = false, string serverDns = "", string defaultDns = "", bool defaultDnsNetwork = false)
     {
         _connection = connection;
         ConfigName = name;
@@ -193,6 +265,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _allowSignal = allowSignal;
         _signalOffered = signalOffered;
         _holdTraffic = holdTraffic;
+        _vpnDnsMode = (int)vpnDnsMode;
+        _vpnDns = vpnDns;
+        _vpnDnsShown = vpnDnsShown;
+        _vpnDnsNetwork = vpnDnsNetwork;
+        _serverDns = serverDns;
+        _defaultDns = defaultDns;
+        _defaultDnsNetwork = defaultDnsNetwork;
         TunnelAddress = FormatAddresses(address);
         _mtuMode = (int)mtuMode;
 
@@ -321,6 +400,31 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    partial void OnVpnDnsModeChanged(int value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
+    partial void OnVpnDnsChanged(string value) => MarkDirty();
+
+    /// <summary>
+    /// Takes what the choice held by the agent and the default one settle on and the resolver the server offers, from a
+    /// fresh snapshot.
+    /// </summary>
+    public void Settled(string shown, bool network, string server, string defaultDns = "", bool defaultNetwork = false)
+    {
+        _vpnDnsShown = shown;
+        _vpnDnsNetwork = network;
+        _defaultDns = defaultDns;
+        _defaultDnsNetwork = defaultNetwork;
+        ServerDns = server;
+        OnPropertyChanged(nameof(VpnDnsText));
+    }
+
+    // The words the field shows for the name servers of the network of the device.
+    private static string NetworkDns() => Loc.Instance.Get("Main_VpnDnsNetworkField");
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -351,7 +455,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || AllowInbound != _baseAllowInbound
             || UseRouting != _baseUseRouting
             || AllowSignal != _baseAllowSignal
-            || HoldTraffic != _baseHoldTraffic;
+            || HoldTraffic != _baseHoldTraffic
+            || VpnDnsMode != _baseVpnDnsMode
+            || !string.Equals(VpnDns, _baseVpnDns, StringComparison.Ordinal);
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -377,6 +483,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseUseRouting = UseRouting;
         _baseAllowSignal = AllowSignal;
         _baseHoldTraffic = HoldTraffic;
+        _baseVpnDnsMode = VpnDnsMode;
+        _baseVpnDns = VpnDns ?? string.Empty;
         if (IsDirty)
         {
             IsDirty = false;
@@ -405,6 +513,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             UseRouting = _baseUseRouting;
             AllowSignal = _baseAllowSignal;
             HoldTraffic = _baseHoldTraffic;
+            VpnDnsMode = _baseVpnDnsMode;
+            VpnDns = _baseVpnDns;
             StatusMessage = string.Empty;
         }
         finally
@@ -483,6 +593,18 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             return false;
         }
 
+        if (!IsVpnDnsReadOnly && Decl.VpnDns.Odd(VpnDns) is { Count: > 0 } odd)
+        {
+            StatusMessage = string.Format(CultureInfo.CurrentCulture, Loc.Instance.Get("Agent_VpnDnsBad"), string.Join(", ", odd));
+            return false;
+        }
+
+        if (!IsVpnDnsReadOnly && Decl.VpnDns.LacksV4(VpnDns))
+        {
+            StatusMessage = Loc.Instance.Get("Agent_VpnDnsV4");
+            return false;
+        }
+
         return true;
     }
 
@@ -540,6 +662,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             if (ack.Ok && HoldTraffic != _baseHoldTraffic)
             {
                 ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetHoldTraffic, [ConfigName, HoldTraffic ? "on" : "off"]));
+            }
+
+            // The choice of the name servers of the names through the VPN goes in a command of its own once it differs.
+            if (ack.Ok && (VpnDnsMode != _baseVpnDnsMode || !string.Equals(VpnDns, _baseVpnDns, StringComparison.Ordinal)))
+            {
+                var mode = (Decl.VpnDnsMode)VpnDnsMode;
+                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConfigVpnDns, [ConfigName, Decl.VpnDns.NameOf(mode), mode == Decl.VpnDnsMode.Own ? VpnDns.Trim() : string.Empty]));
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).

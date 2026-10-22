@@ -9,7 +9,7 @@ namespace AmneziaGeo.Linux.App;
 /// own network are looked up through, the idle window a destination keeps the route it earned, the transport the
 /// tunnel is carried over and what the server of the configuration offers.
 /// </summary>
-internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, int RouteTtlSeconds, ConfigTransport? Transport = null, string DnsTransport = AmneziaGeo.Ipc.DnsTransports.Auto, ServerOffer? Offer = null)
+internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, int RouteTtlSeconds, ConfigTransport? Transport = null, string DnsTransport = AmneziaGeo.Ipc.DnsTransports.Auto, ServerOffer? Offer = null, ConfigDns? Dns = null)
 {
     /// <summary>
     /// Idle window a route survives while the library names none.

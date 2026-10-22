@@ -1,4 +1,6 @@
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 using Xunit;
@@ -184,6 +186,70 @@ public sealed class ConfigTransportViewModelTests
     private static ConfigTransportViewModel Manual(IAgentConnection agent, string host, int port) =>
         new(agent, "e2e", true, 1420, false, webSocketOpen: true, webSocketManual: true, endpoint: "10.99.1.1:51821", webSocketHost: host, webSocketPort: port);
 
+    [Fact]
+    public void TheDnsField_ShowsWhatEachChoiceSettlesOn()
+    {
+        var transport = new ConfigTransportViewModel(new Recorder(), "e2e", false, 1420, false, vpnDnsMode: VpnDnsMode.Own, vpnDns: "9.9.9.9",
+            vpnDnsShown: "9.9.9.9", serverDns: "10.8.1.1", defaultDns: "10.0.1.1");
+
+        Assert.Equal("9.9.9.9", transport.VpnDnsText);
+        Assert.False(transport.IsVpnDnsReadOnly);
+        Assert.Equal("1.1.1.1, 1.0.0.1", transport.VpnDnsWatermark);
+
+        transport.VpnDnsMode = (int)VpnDnsMode.Default;
+        Assert.Equal("10.0.1.1", transport.VpnDnsText);
+        Assert.Null(transport.VpnDnsWatermark);
+
+        transport.VpnDnsMode = (int)VpnDnsMode.Server;
+        Assert.Equal("10.8.1.1", transport.VpnDnsText);
+
+        transport.VpnDnsMode = (int)VpnDnsMode.Network;
+        Assert.Equal(Loc.Instance.Get("Main_VpnDnsNetworkField"), transport.VpnDnsText);
+
+        transport.VpnDnsText = "8.8.8.8";
+        Assert.Equal("9.9.9.9", transport.VpnDns);
+    }
+
+    [Fact]
+    public void TheDnsField_ShowsTheNetworkWhereTheServerLeavesTheNamesToIt()
+    {
+        var transport = new ConfigTransportViewModel(new Recorder(), "e2e", false, 1420, false, vpnDnsNetwork: true, defaultDnsNetwork: true);
+
+        Assert.Equal(Loc.Instance.Get("Main_VpnDnsNetworkField"), transport.VpnDnsText);
+        Assert.False(transport.ServerDnsAvailable);
+        Assert.Equal(Loc.Instance.Get("Main_VpnDnsServerOff"), transport.ServerDnsTip);
+
+        transport.Settled("10.0.1.1", false, "10.8.1.1", "10.0.1.1");
+        Assert.Equal("10.0.1.1", transport.VpnDnsText);
+        Assert.True(transport.ServerDnsAvailable);
+    }
+
+    [Fact]
+    public async Task AnotherChoiceOfTheDns_GoesInACommandOfItsOwn()
+    {
+        var agent = new Recorder();
+        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, vpnDnsMode: VpnDnsMode.Own, vpnDns: "9.9.9.9");
+
+        transport.VpnDnsMode = (int)VpnDnsMode.Network;
+        Assert.True(await transport.CommitAsync());
+
+        Assert.Equal([IpcContract.OpSetWebSocket, IpcContract.OpSetConfigVpnDns], agent.Ops);
+        Assert.Equal(["e2e", "network", string.Empty], agent.Args);
+    }
+
+    [Fact]
+    public async Task ServersOfItsOwnThatAreNotAddresses_StayInTheWindow()
+    {
+        var agent = new Recorder();
+        var transport = new ConfigTransportViewModel(agent, "e2e", false, 1420, false, vpnDnsMode: VpnDnsMode.Own, vpnDns: "9.9.9.9");
+
+        transport.VpnDnsText = "9.9.9.9, dns.example";
+
+        Assert.False(await transport.CommitAsync());
+        Assert.Empty(agent.Ops);
+        Assert.Contains("dns.example", transport.StatusMessage, StringComparison.Ordinal);
+    }
+
     private static ConfigTransportViewModel Transport(IAgentConnection agent, bool allow, bool network) =>
         new(agent, "e2e", false, 1420, false, allowInbound: allow, inboundNetwork: network);
 
@@ -193,6 +259,8 @@ public sealed class ConfigTransportViewModelTests
         public IReadOnlyList<string> Inbound { get; private set; } = [];
 
         public IReadOnlyList<string> Args { get; private set; } = [];
+
+        public List<string> Ops { get; } = [];
 
         public event Action? Connected
         {
@@ -218,7 +286,13 @@ public sealed class ConfigTransportViewModelTests
 
         public Task<IpcAck> SendCommandAsync(IpcCommand command)
         {
+            Ops.Add(command.Op);
             Args = command.Args;
+            if (command.Op == IpcContract.OpSetConfigVpnDns)
+            {
+                return Task.FromResult(new IpcAck(true, string.Empty));
+            }
+
             Inbound = [command.Args[6], command.Args[7]];
 
             return Task.FromResult(new IpcAck(true, string.Empty));

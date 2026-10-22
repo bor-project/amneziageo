@@ -40,6 +40,7 @@ internal static class ConfigCommands
                 ? Reply.Report(await agent.SendAsync(IpcContract.OpReorderConfigs, [.. rest]).ConfigureAwait(false), "order saved")
                 : Reply.Usage("usage: amneziageo config order <name> [<name>...]"),
             "dns" => await DnsAsync(agent, rest).ConfigureAwait(false),
+            "vpn-dns" => await VpnDnsAsync(agent, rest).ConfigureAwait(false),
             "exclusions" => await ExclusionsAsync(agent, rest).ConfigureAwait(false),
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
@@ -69,6 +70,7 @@ internal static class ConfigCommands
                 config.GeoSplit ? $"on ({config.Rules.Count.ToString(CultureInfo.InvariantCulture)})" : "off",
                 config.WebSocket ? Front(config) : "-",
                 config.Dns.Length > 0 ? config.Dns : "-",
+                VpnDnsCell(config),
                 Inbound(config),
                 Routing(config),
                 Signal(config),
@@ -77,7 +79,7 @@ internal static class ConfigCommands
             ])
             .ToList();
 
-        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], rows, "no configurations yet");
+        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "VPN DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], rows, "no configurations yet");
         return Exit.Ok;
     }
 
@@ -97,6 +99,14 @@ internal static class ConfigCommands
 
     // Names whether the config holds its traffic while its tunnel is repaired.
     private static string Hold(ConfigEntry config) => config.HoldTraffic ? "on" : "off";
+
+    // Names who the names through the VPN are asked of, with the choice of the config where it makes one.
+    private static string VpnDnsCell(ConfigEntry config)
+    {
+        var shown = config.VpnDnsNetwork ? "network" : config.VpnDnsShown.Length > 0 ? config.VpnDnsShown : "-";
+
+        return config.VpnDnsMode is VpnDnsMode.Default or VpnDnsMode.Network ? shown : $"{shown} ({VpnDns.NameOf(config.VpnDnsMode)})";
+    }
 
     private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
@@ -210,6 +220,16 @@ internal static class ConfigCommands
 
         var servers = args.Count > 1 ? args[1] : string.Empty;
         return Reply.Report(await agent.SendAsync(IpcContract.OpSetConfigDns, args[0], servers).ConfigureAwait(false));
+    }
+
+    private static async Task<int> VpnDnsAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count is < 2 or > 3 || VpnDns.Read(args[1]) is not { } mode || (mode == VpnDnsMode.Own) != (args.Count == 3))
+        {
+            return Reply.Usage("usage: amneziageo config vpn-dns <name> default | network | server | own <servers>");
+        }
+
+        return Reply.Report(await agent.SendAsync(IpcContract.OpSetConfigVpnDns, args[0], VpnDns.NameOf(mode), args.Count == 3 ? args[2] : string.Empty).ConfigureAwait(false));
     }
 
     private static async Task<int> ExclusionsAsync(IAgentLink agent, IReadOnlyList<string> args)

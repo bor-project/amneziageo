@@ -1,6 +1,9 @@
 ﻿$Script:Base = $PSScriptRoot
-$Script:UiExe = 'C:\Program Files\AmneziaGeo\AmneziaGeo.Windows.Ui.exe'
-$Script:CliExe = 'C:\Program Files\AmneziaGeo\amneziageo.exe'
+$Script:App = 'C:\Program Files\AmneziaGeo'
+$appFile = Join-Path $PSScriptRoot 'app.txt'
+if (Test-Path $appFile) { $Script:App = (Get-Content -Raw $appFile).Trim() }
+$Script:UiExe = Join-Path $Script:App 'AmneziaGeo.Windows.Ui.exe'
+$Script:CliExe = Join-Path $Script:App 'amneziageo.exe'
 $Script:Strings = @{}
 $AE = [System.Windows.Automation.AutomationElement]
 $TS = [System.Windows.Automation.TreeScope]
@@ -430,7 +433,7 @@ function Get-MaskRects([IntPtr]$hwnd, [string]$pattern) {
         $text = [string]$c.Name
         $vp = Get-Pattern $e ([System.Windows.Automation.ValuePattern]::Pattern)
         if ($vp) { $text += ' ' + $vp.Current.Value }
-        if ($version) { $text = $text.Replace($version, '') }
+        if ($version) { $text = $text -replace ('(?<![\d.])' + [regex]::Escape($version) + '(?![\d.])'), '' }
         if ($text -notmatch $pattern) { continue }
         $r = $c.BoundingRectangle
         if ([double]::IsInfinity($r.X) -or $r.Width -le 0 -or $r.Height -le 0) { continue }

@@ -83,6 +83,25 @@ public sealed class DnsProxyRulesTests
     }
 
     [Fact]
+    public void ANetworkChange_MovesTheNamesThroughTheTunnel_WhereTheConfigLeavesThemToTheNetwork()
+    {
+        var lan = IPAddress.Parse("192.168.1.1");
+        var moved = IPAddress.Parse("10.0.10.1");
+        var second = IPAddress.Parse("10.0.10.2");
+        var left = new DnsProxy([GitHub, YouTube], [], lan, lan, lan, [lan], false, [], [], null, NullLogger<DnsProxy>.Instance, stripV6: false, listen: false, dnsTransport: AmneziaGeo.Ipc.DnsTransports.Plain, networkAnswers: true);
+        var picked = new DnsProxy([GitHub, YouTube], [], Resolver, Resolver, lan, [lan], false, [], [], null, NullLogger<DnsProxy>.Instance, stripV6: false, listen: false);
+
+        Assert.True(left.UpdateLan(moved, [moved, second], false, []));
+        Assert.True(picked.UpdateLan(moved, [moved, second], false, []));
+
+        Assert.Equal(moved, left.TunnelUpstream);
+        Assert.Equal(Resolver, picked.TunnelUpstream);
+        Assert.False(left.UpdateLan(moved, [moved, second], false, []));
+        Assert.True(left.UpdateLan(null, [], false, []));
+        Assert.Equal(moved, left.TunnelUpstream);
+    }
+
+    [Fact]
     public void ANetworkWithoutResolvers_SendsItsNamesNowhereLocal()
     {
         var lan = IPAddress.Parse("192.168.1.1");

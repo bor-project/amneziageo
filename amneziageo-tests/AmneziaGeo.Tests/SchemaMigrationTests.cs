@@ -237,6 +237,58 @@ public sealed class SchemaMigrationTests
         }
     }
 
+    [Fact]
+    public async Task InitializeAsync_OnAStoreWrittenBeforeTheVpnDnsChoice_KeepsTheServersWithTheChoiceOfTheServer()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ageo-schema-dns-{Guid.NewGuid():N}.db");
+        try
+        {
+            await WriteLegacyDnsAsync(path, "office", "8.8.8.8");
+
+            var store = new SqliteStateStore(path);
+            await store.InitializeAsync();
+
+            Assert.Contains("vpn_mode", await ColumnsAsync(path, "config_dns"));
+            Assert.Contains("vpn_servers", await ColumnsAsync(path, "config_dns"));
+            Assert.Equal(new ConfigDns("office", "8.8.8.8"), await store.GetConfigDnsAsync("office"));
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    // A config_dns from before the choice for the names that go through the VPN, with one row.
+    private static async Task WriteLegacyDnsAsync(string path, string name, string servers)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync();
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    CREATE TABLE config_dns (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name       TEXT NOT NULL UNIQUE,
+                        servers    TEXT NOT NULL DEFAULT '',
+                        updated_at TEXT NOT NULL
+                    );
+                    INSERT INTO config_dns (name, servers, updated_at) VALUES ($name, $servers, '2026-01-01T00:00:00Z');
+                    PRAGMA user_version = 1;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$servers", servers);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        ClearPool(path);
+    }
+
     // A config_transport from before the modes, with one row that carries a size.
     private static async Task WriteSizedTransportAsync(string path, string name, int mtu)
     {

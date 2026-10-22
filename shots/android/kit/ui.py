@@ -474,7 +474,7 @@ class Ui:
     def heads_up(self):
         """Всплывающее уведомление поверх окна: в кадр попадут чужие сообщения."""
         state = self.sh("dumpsys activity service com.android.systemui/.SystemUIService 2>/dev/null"
-                        " | grep -E 'mHeadsUpVisible=|mHeadsUpPinnedMode='")
+                        " | grep -E 'mHeadsUpVisible=|mHeadsUpPinnedMode=|hasPinnedHeadsUpRow='")
         return "=true" in state or not state.strip()
 
     def capture(self, timeout=90):

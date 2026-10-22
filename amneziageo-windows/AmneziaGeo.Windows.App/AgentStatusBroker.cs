@@ -250,6 +250,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpSetSignal => await SetSignalAsync(command.Args, ct),
                 IpcContract.OpSetHoldTraffic => await SetHoldTrafficAsync(command.Args, ct),
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
+                IpcContract.OpSetConfigVpnDns => await SetConfigVpnDnsAsync(command.Args, ct),
                 IpcContract.OpSetConfigExclusions => await SetConfigExclusionsAsync(command.Args, ct),
                 IpcContract.OpListLocalSubnets => ListLocalSubnets(),
                 IpcContract.OpListTunnelSubnets => await ListTunnelSubnetsAsync(ct),
@@ -787,7 +788,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             var dns = await store.GetConfigDnsAsync(name, ct);
             var exclusions = await store.GetConfigExclusionsAsync(name, ct);
-            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions));
+            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -1019,17 +1020,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // DNS and bypass entries a bundle carries for a config.
     private async Task ApplyConfigDataAsync(string name, PortableBundle.ConfigBlock block, CancellationToken ct)
     {
-        if (block.Dns is { } dns)
-        {
-            if (dns.Trim().Length == 0)
-            {
-                await store.RemoveConfigDnsAsync(name, ct);
-            }
-            else
-            {
-                await store.SetConfigDnsAsync(new ConfigDns(name, dns), ct);
-            }
-        }
+        await block.ApplyDnsAsync(store, name, ct);
 
         if (block.Exclusions is { } exclusions)
         {
@@ -1247,6 +1238,43 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         return new IpcAck(true, string.Empty);
     }
 
+    private async Task<IpcAck> SetConfigVpnDnsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2 || string.IsNullOrWhiteSpace(args[0]) || VpnDns.Read(args[1]) is not { } mode)
+        {
+            return new IpcAck(false, "set-config-vpn-dns requires a config name and default, network, server or own");
+        }
+
+        if (!await configRepo.ExistsAsync(args[0], ct))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        // The servers of its own stay with the record under another choice, there to come back to.
+        var servers = mode == VpnDnsMode.Own ? args.Count > 2 ? args[2].Trim() : string.Empty : null;
+        if (VpnDns.Odd(servers) is { Count: > 0 } odd)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_VpnDnsBad", string.Join(", ", odd)));
+        }
+
+        if (VpnDns.LacksV4(servers))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_VpnDnsV4"));
+        }
+
+        var previous = await store.GetConfigDnsAsync(args[0], ct);
+        await VpnDns.SaveAsync(store, args[0], null, mode, servers, ct);
+        var moved = mode != (previous?.VpnMode ?? VpnDnsMode.Default)
+            || (servers is not null && !string.Equals(servers, previous?.VpnServers ?? string.Empty, StringComparison.Ordinal));
+        if (moved && IsRunningMember(args[0]))
+        {
+            MarkRestartRequired(args[0]);
+        }
+
+        logger.LogInformation("{Name}: names through the tunnel will be asked of '{Choice}' - takes effect on reconnect", args[0], VpnDns.Describe(mode, servers));
+        return new IpcAck(true, IpcMessage.Key("Agent_VpnDnsSaved", VpnDns.Describe(mode, servers)));
+    }
+
     private async Task<IpcAck> SetConfigDnsAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -1261,14 +1289,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         // Optional 2nd arg: preferred DNS servers; empty clears the override.
         var servers = args.Count > 1 ? args[1].Trim() : string.Empty;
-        if (servers.Length == 0)
-        {
-            await store.RemoveConfigDnsAsync(args[0], ct);
-        }
-        else
-        {
-            await store.SetConfigDnsAsync(new ConfigDns(args[0], servers), ct);
-        }
+        await VpnDns.SaveAsync(store, args[0], servers, null, null, ct);
 
         // DNS applies on a fresh tunnel; flag a reconnect when the running target is affected.
         if (IsRunningMember(args[0]))
@@ -3089,7 +3110,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var shown = bound ? now : LinkNow.Unknown;
             var member = members.GetValueOrDefault(name);
             var offer = await scope.Offers.OfferAsync(name, configText, ct).ConfigureAwait(false);
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true));
+            var vpnDns = VpnDns.Showing(configDns, offer.Dns(), WgConfigEditor.GetDns(configText));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork));
         }
 
         var routingLists = new List<RoutingListEntry>();

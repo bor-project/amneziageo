@@ -23,6 +23,9 @@ push() {
   done
   remote "mkdir $winbase\\frames $winbase\\strings 2>nul & echo pushed to $winbase"
   scp -q -o BatchMode=yes "$here"/kit/* "$here/languages.psd1" "$here/local/mask.txt" "$host:$base/" 2>&1 | quiet
+  if [ -f "$here/local/app.txt" ]; then
+    scp -q -o BatchMode=yes "$here/local/app.txt" "$host:$base/" 2>&1 | quiet
+  fi
   scp -q -o BatchMode=yes "$here"/frames/*.ps1 "$host:$base/frames/" 2>&1 | quiet
   scp -q -o BatchMode=yes "$strings"/*.resx "$host:$base/strings/" 2>&1 | quiet
   if ls "$here"/local/installer/*.exe > /dev/null 2>&1; then

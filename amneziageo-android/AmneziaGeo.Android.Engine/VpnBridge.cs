@@ -33,7 +33,9 @@ public sealed record VpnRequest(
     int SignalPort = 0,
     string[]? SignalFrom = null,
     string[]? Bases = null,
-    bool HoldTraffic = true);
+    bool HoldTraffic = true,
+    string[]? VpnDns = null,
+    bool VpnDnsNetwork = false);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that

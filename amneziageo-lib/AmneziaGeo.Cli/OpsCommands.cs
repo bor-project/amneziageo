@@ -23,6 +23,7 @@ internal static class OpsCommands
         [IpcContract.OpRemoveConfig] = "config remove",
         [IpcContract.OpReorderConfigs] = "config order",
         [IpcContract.OpSetConfigDns] = "config dns",
+        [IpcContract.OpSetConfigVpnDns] = "config vpn-dns",
         [IpcContract.OpSetConfigExclusions] = "config exclusions",
         [IpcContract.OpSetWebSocket] = "config websocket",
         [IpcContract.OpSetSignal] = "config signal",

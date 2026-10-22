@@ -112,6 +112,35 @@
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
+    <!-- DNS для имён через VPN: выбор и его серверы. -->
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
+      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+        <TextBlock Text="{l:Tr Main_VpnDnsTitle}" FontWeight="SemiBold" FontSize="15" />
+        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_VpnDnsHint}" />
+      </StackPanel>
+      <Grid Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+            Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}"
+            ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
+            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+        <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+                                   Width="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w160}"
+                                   SelectedIndex="{Binding VpnDnsMode, Mode=TwoWay}">
+          <ComboBoxItem Content="{l:Tr Main_VpnDnsDefault}" />
+          <ComboBoxItem Content="{l:Tr Main_VpnDnsNetwork}" />
+          <ComboBoxItem Content="{l:Tr Main_VpnDnsServer}" IsEnabled="{Binding ServerDnsAvailable}"
+                        ToolTip.Tip="{Binding ServerDnsTip}" ToolTip.ShowOnDisabled="True" />
+          <ComboBoxItem Content="{l:Tr Main_VpnDnsOwn}" />
+        </controls:AdaptiveComboBox>
+        <TextBox Grid.Column="1" Classes="field" IsEnabled="{Binding !IsVpnDnsReadOnly}"
+                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW220}"
+                 Text="{Binding VpnDnsText}" Watermark="{Binding VpnDnsWatermark}" />
+      </Grid>
+    </Grid>
+
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
                                IsChecked="{Binding UseIpv6, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 

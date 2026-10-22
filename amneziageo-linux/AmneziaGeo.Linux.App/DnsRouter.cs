@@ -29,6 +29,8 @@ internal sealed class DnsRouter : IDisposable
     private volatile DomainMatcher _blockDomains;
     private readonly IReadOnlyList<IPAddress> _tunnelResolvers;
     private readonly IReadOnlyList<IPAddress> _lanResolvers;
+    // Whether the names through the tunnel are left to the network of the machine, asked by the routing table.
+    private readonly bool _network;
     private readonly RoutingCache _routes;
     private readonly ConcurrentDictionary<string, string> _names = new(StringComparer.Ordinal);
 
@@ -47,7 +49,7 @@ internal sealed class DnsRouter : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsRouter(TunnelRouting routing, bool stripV6, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, RoutingCache routes, AgentLog log, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Auto)
+    public DnsRouter(TunnelRouting routing, bool stripV6, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, RoutingCache routes, AgentLog log, string dnsTransport = AmneziaGeo.Ipc.DnsTransports.Auto, bool network = false)
     {
         _split = routing.Split;
         _stripV6 = stripV6;
@@ -56,6 +58,7 @@ internal sealed class DnsRouter : IDisposable
         _blockDomains = new DomainMatcher(routing.BlockDomains);
         _tunnelResolvers = tunnelResolvers;
         _lanResolvers = lanResolvers;
+        _network = network;
         _routes = routes;
         _log = log;
         _doh = AmneziaGeo.Ipc.DnsTransports.Of(dnsTransport) == AmneziaGeo.Ipc.DnsTransports.Plain
@@ -296,7 +299,8 @@ internal sealed class DnsRouter : IDisposable
             _ => _split || IsLocalName(name) ? _lanResolvers : _tunnelResolvers,
         };
 
-        var answer = ReferenceEquals(upstream, _tunnelResolvers)
+        // The network of the machine answers the names through the tunnel where the config leaves them to it.
+        var answer = ReferenceEquals(upstream, _tunnelResolvers) && !_network
             ? await AskThroughTunnelAsync(query, length, overTcp, ct).ConfigureAwait(false)
             : await AskAsync(upstream, query, length, overTcp, ct).ConfigureAwait(false);
         if (answer is null)

@@ -51,7 +51,34 @@ public static class PortableBundle
         TransportBlock? Transport,
         GeoBlock? Geo,
         string? Dns = null,
-        string? Exclusions = null);
+        string? Exclusions = null,
+        string? VpnDnsMode = null,
+        string? VpnDns = null)
+    {
+        /// <summary>
+        /// Returns the block of a config with its name servers of the names that go through the VPN, none where it
+        /// holds the choice of the server.
+        /// </summary>
+        public ConfigBlock WithVpnDns(ConfigDns? dns) =>
+            dns is null || (dns.VpnMode == Decl.VpnDnsMode.Default && dns.VpnServers.Length == 0)
+                ? this
+                : this with { VpnDnsMode = Decl.VpnDns.NameOf(dns.VpnMode), VpnDns = dns.VpnServers };
+
+        /// <summary>
+        /// Saves the name servers the block carries for a config: the ones of the names that go directly and the
+        /// choice for the names that go through the VPN.
+        /// </summary>
+        public async Task ApplyDnsAsync(IStateStore store, string name, CancellationToken ct)
+        {
+            var mode = Decl.VpnDns.Read(VpnDnsMode);
+            if (Dns is null && mode is null && VpnDns is null)
+            {
+                return;
+            }
+
+            await Decl.VpnDns.SaveAsync(store, name, Dns, mode, VpnDns, ct).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.

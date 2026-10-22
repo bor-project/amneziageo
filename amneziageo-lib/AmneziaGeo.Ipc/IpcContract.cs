@@ -68,6 +68,12 @@ public static class IpcContract
     public const string OpSetConfigDns = "set-config-dns";
 
     /// <summary>
+    /// Command to set what the names that go through the VPN of a config are asked of. Args: name, mode (default,
+    /// network, server or own), servers for own (comma/space-separated). Applies on the next connect.
+    /// </summary>
+    public const string OpSetConfigVpnDns = "set-config-vpn-dns";
+
+    /// <summary>
     /// Command to set a config's bypass exclusions. Args: name, exclusions (one entry per line /
     /// comma-separated; domains kept on the local resolver, IP/CIDR routed direct). Applies on the next
     /// connect.

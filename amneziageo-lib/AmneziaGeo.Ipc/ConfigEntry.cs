@@ -67,7 +67,17 @@ public sealed record ConfigEntry(
     bool AllowSignal = true,
     bool SignalOffered = false,
     // Whether a tunnel that has stood is taken down by nothing but the user.
-    bool HoldTraffic = true);
+    bool HoldTraffic = true,
+    // What the names that go through the VPN are asked of, the servers of its own, the servers the choice settles on
+    // as the interface shows them, whether it settles on the network of the device, the resolver the server offers
+    // inside the tunnel, empty where it offers none, and what the default choice settles on.
+    VpnDnsMode VpnDnsMode = VpnDnsMode.Default,
+    string VpnDns = "",
+    string VpnDnsShown = "",
+    bool VpnDnsNetwork = false,
+    string ServerDns = "",
+    string DefaultDns = "",
+    bool DefaultDnsNetwork = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

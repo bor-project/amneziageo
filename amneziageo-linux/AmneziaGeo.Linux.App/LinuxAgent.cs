@@ -907,6 +907,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpSetConfigDns:
                 return await SetConfigDnsAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpSetConfigVpnDns:
+                return await SetConfigVpnDnsAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpSetConfigExclusions:
                 return await SetConfigExclusionsAsync(args, ct).ConfigureAwait(false);
 
@@ -1104,7 +1107,7 @@ internal sealed class LinuxAgent : IDisposable
         _hold.Dialled();
         _recovery.Held = _hold.Active;
         _heldUnanswered = false;
-        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with { Offer = offer };
+        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with { Offer = offer, Dns = configDns };
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         _tunnel.FrontAsker = Asker(configName, config);
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
@@ -1885,18 +1888,45 @@ internal sealed class LinuxAgent : IDisposable
 
         var servers = args.Count > 1 ? args[1].Trim() : string.Empty;
         var stored = await _store.GetConfigDnsAsync(args[0], ct).ConfigureAwait(false);
-        if (servers.Length == 0)
-        {
-            await _store.RemoveConfigDnsAsync(args[0], ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await _store.SetConfigDnsAsync(new ConfigDns(args[0], servers), ct).ConfigureAwait(false);
-        }
+        await VpnDns.SaveAsync(_store, args[0], servers, null, null, ct).ConfigureAwait(false);
 
         FlagEditRestart(args[0], stored?.Servers, servers, "the edited resolvers apply on the next connect");
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    private async Task<IpcAck> SetConfigVpnDnsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2 || VpnDns.Read(args[1]) is not { } mode)
+        {
+            return Fail();
+        }
+
+        if (!await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return NotFound(args[0]);
+        }
+
+        // The servers of its own stay with the record under another choice, there to come back to.
+        var servers = mode == VpnDnsMode.Own ? args.Count > 2 ? args[2].Trim() : string.Empty : null;
+        if (VpnDns.Odd(servers) is { Count: > 0 } odd)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_VpnDnsBad", string.Join(", ", odd)));
+        }
+
+        if (VpnDns.LacksV4(servers))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_VpnDnsV4"));
+        }
+
+        var stored = await _store.GetConfigDnsAsync(args[0], ct).ConfigureAwait(false);
+        await VpnDns.SaveAsync(_store, args[0], null, mode, servers, ct).ConfigureAwait(false);
+
+        var said = VpnDns.Describe(mode, servers);
+        var was = stored is null ? VpnDns.NameOf(VpnDnsMode.Default) : VpnDns.Describe(stored.VpnMode, stored.VpnServers);
+        FlagEditRestart(args[0], was, said, "the name servers of the names through the tunnel apply on the next connect");
+        await PushAsync(ct).ConfigureAwait(false);
+        return new IpcAck(true, IpcMessage.Key("Agent_VpnDnsSaved", said));
     }
 
     private async Task<IpcAck> SetConfigExclusionsAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -3251,6 +3281,7 @@ internal sealed class LinuxAgent : IDisposable
         var dns = await _store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
         var exclusions = await _store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
         var offer = await _offers.OfferAsync(name, text, ct).ConfigureAwait(false);
+        var vpnDns = VpnDns.Showing(dns, offer.Dns(), WgConfigEditor.GetDns(text));
         var bound = string.Equals(name, _boundTarget, StringComparison.Ordinal);
         var handshake = bound ? _handshakeAge : -1;
         var reading = bound ? _link : LinkReading.Empty;
@@ -3291,7 +3322,14 @@ internal sealed class LinuxAgent : IDisposable
             shown.LossStreak,
             transport?.AllowSignal ?? true,
             offer.SignalAllowed,
-            transport?.HoldTraffic ?? true);
+            transport?.HoldTraffic ?? true,
+            dns?.VpnMode ?? VpnDnsMode.Default,
+            dns?.VpnServers ?? string.Empty,
+            vpnDns.Shown,
+            vpnDns.Network,
+            vpnDns.Server,
+            vpnDns.Default,
+            vpnDns.DefaultNetwork);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

@@ -868,6 +868,30 @@
   <data name="Main_LoginWatermark" xml:space="preserve">
     <value>login</value>
   </data>
+  <data name="Main_VpnDnsTitle" xml:space="preserve">
+    <value>DNS</value>
+  </data>
+  <data name="Main_VpnDnsHint" xml:space="preserve">
+    <value>For names through the VPN</value>
+  </data>
+  <data name="Main_VpnDnsDefault" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="Main_VpnDnsNetwork" xml:space="preserve">
+    <value>Network</value>
+  </data>
+  <data name="Main_VpnDnsNetworkField" xml:space="preserve">
+    <value>Network DNS</value>
+  </data>
+  <data name="Main_VpnDnsServer" xml:space="preserve">
+    <value>Server</value>
+  </data>
+  <data name="Main_VpnDnsOwn" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="Main_VpnDnsServerOff" xml:space="preserve">
+    <value>The server of this configuration offers no DNS of its own</value>
+  </data>
   <data name="Main_MtuHint" xml:space="preserve">
     <value>Packet size</value>
   </data>
@@ -1621,10 +1645,19 @@ Renamed on import: several names clashed with existing ones.</value>
     <value>Failed to collect logs: {0}</value>
   </data>
   <data name="Agent_DnsReset" xml:space="preserve">
-    <value>DNS reset to auto-detect (applies on reconnect)</value>
+    <value>DNS for the names that go directly reset to the system ones (applies on reconnect)</value>
+  </data>
+  <data name="Agent_VpnDnsSaved" xml:space="preserve">
+    <value>DNS for names through the VPN: {0} (applies on reconnect)</value>
+  </data>
+  <data name="Agent_VpnDnsBad" xml:space="preserve">
+    <value>Not a DNS address: {0}</value>
+  </data>
+  <data name="Agent_VpnDnsV4" xml:space="preserve">
+    <value>One of the DNS addresses must be IPv4</value>
   </data>
   <data name="Agent_DnsSaved" xml:space="preserve">
-    <value>DNS saved: {0} (applies on reconnect)</value>
+    <value>DNS for the names that go directly saved: {0} (applies on reconnect)</value>
   </data>
   <data name="Agent_DowngradeAvailable" xml:space="preserve">
     <value>Rollback to version {0} is available.</value>

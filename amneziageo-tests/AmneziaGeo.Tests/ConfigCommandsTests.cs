@@ -50,10 +50,10 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal("INBOUND", Cells(lines[0])[5]);
-        Assert.Equal("off", Cells(lines[1])[5]);
-        Assert.Equal("host", Cells(lines[2])[5]);
-        Assert.Equal("network", Cells(lines[3])[5]);
+        Assert.Equal("INBOUND", Cells(lines[0])[6]);
+        Assert.Equal("off", Cells(lines[1])[6]);
+        Assert.Equal("host", Cells(lines[2])[6]);
+        Assert.Equal("network", Cells(lines[3])[6]);
     }
 
     [Fact]
@@ -75,9 +75,9 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal("ROUTING", Cells(lines[0])[6]);
-        Assert.Equal("on", Cells(lines[1])[6]);
-        Assert.Equal("off", Cells(lines[2])[6]);
+        Assert.Equal("ROUTING", Cells(lines[0])[7]);
+        Assert.Equal("on", Cells(lines[1])[7]);
+        Assert.Equal("off", Cells(lines[2])[7]);
     }
 
     [Fact]
@@ -196,9 +196,44 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], Cells(lines[0]));
-        Assert.Equal("on", Cells(lines[1])[8]);
-        Assert.Equal("off", Cells(lines[2])[8]);
+        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "VPN DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], Cells(lines[0]));
+        Assert.Equal("on", Cells(lines[1])[9]);
+        Assert.Equal("off", Cells(lines[2])[9]);
+    }
+
+    [Fact]
+    public async Task TheTable_NamesWhoTheNamesThroughTheVpnAreAskedOf()
+    {
+        var link = new Link([
+            new ConfigEntry("plain", "10.9.1.1:51821", false, "idle", [], VpnDnsShown: "10.0.1.1"),
+            new ConfigEntry("own", "10.9.1.1:51821", false, "idle", [], VpnDnsMode: VpnDnsMode.Own, VpnDns: "9.9.9.9", VpnDnsShown: "9.9.9.9"),
+            new ConfigEntry("net", "10.9.1.1:51821", false, "idle", [], VpnDnsMode: VpnDnsMode.Network, VpnDnsNetwork: true),
+            new ConfigEntry("old", "10.9.1.1:51821", false, "idle", []),
+        ]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
+
+        var lines = _console.ToString().Split('\n');
+        Assert.Equal("10.0.1.1", Cells(lines[1])[5]);
+        Assert.Equal("9.9.9.9 (own)", Cells(lines[2])[5]);
+        Assert.Equal("network", Cells(lines[3])[5]);
+        Assert.Equal("-", Cells(lines[4])[5]);
+    }
+
+    [Fact]
+    public async Task ConfigVpnDns_SendsTheChoiceAndItsServersAlone()
+    {
+        var link = new Link([new ConfigEntry("office", "10.9.1.1:51821", false, "idle", [])]);
+
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["vpn-dns", "office", "own", "9.9.9.9"]));
+        Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["vpn-dns", "office", "network"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["vpn-dns", "office", "own"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["vpn-dns", "office", "network", "9.9.9.9"]));
+        Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["vpn-dns", "office", "panel"]));
+
+        Assert.Equal([IpcContract.OpSetConfigVpnDns, IpcContract.OpSetConfigVpnDns], link.Sent);
+        Assert.Equal(["office", "own", "9.9.9.9"], link.Args[0]);
+        Assert.Equal(["office", "network", ""], link.Args[1]);
     }
 
     [Fact]
@@ -277,9 +312,9 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal("SIGNAL", Cells(lines[0])[7]);
-        Assert.Equal("on", Cells(lines[1])[7]);
-        Assert.Equal("off", Cells(lines[2])[7]);
+        Assert.Equal("SIGNAL", Cells(lines[0])[8]);
+        Assert.Equal("on", Cells(lines[1])[8]);
+        Assert.Equal("off", Cells(lines[2])[8]);
     }
 
     // Splits one printed row into its cells, which stand at least two spaces apart.

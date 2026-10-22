@@ -81,6 +81,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Null until the store has been read: the snapshot says "not loaded yet", not "no lists".
     private IReadOnlyList<RoutingListEntry>? _routingSummaries;
     private IReadOnlyDictionary<string, ConfigTransport> _transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
+
+    // The name servers of each config: what the names through the tunnel are asked of.
+    private IReadOnlyDictionary<string, ConfigDns> _dns = new Dictionary<string, ConfigDns>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, ServerOffer> _offered = new Dictionary<string, ServerOffer>(StringComparer.Ordinal);
 
     // Which subscription brought which configuration; empty until the store has been read.
@@ -506,6 +509,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetHoldTraffic:
                 return await SetHoldTrafficAsync(args).ConfigureAwait(false);
 
+            case IpcContract.OpSetConfigVpnDns:
+                return await SetConfigVpnDnsAsync(args).ConfigureAwait(false);
+
             case IpcContract.OpSetGeo:
                 return await SetGeoAsync(args);
 
@@ -712,7 +718,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
             TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
-            [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase]);
+            [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase],
+            VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText)));
         return new IpcAck(true, "connecting");
     }
 
@@ -782,7 +789,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null, string[]? bases = null)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null, string[]? bases = null, VpnDnsPick? vpnDns = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -826,6 +833,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (bases is { Length: > 0 })
         {
             intent.PutExtra(GeoVpnService.ExtraBases, bases);
+        }
+
+        if (vpnDns is not null)
+        {
+            intent.PutExtra(GeoVpnService.ExtraVpnDns, [.. vpnDns.Servers]);
+            intent.PutExtra(GeoVpnService.ExtraVpnDnsNetwork, vpnDns.Network);
         }
 
         if (transport is not null)
@@ -1618,6 +1631,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var member = _members.GetValueOrDefault(name);
         var shown = bound ? _linkNow : LinkNow.Unknown;
         var offer = _offered.GetValueOrDefault(name);
+        var vpnDns = VpnDns.Showing(_dns.GetValueOrDefault(name), offer?.Dns(), WgConfigEditor.GetDns(config));
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
             Mtu: transport?.Mtu ?? 0,
@@ -1647,7 +1661,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ResolvedMtu: MtuPlan.ResolveForLearnedLink(transport, config),
             AllowSignal: transport?.AllowSignal ?? true,
             SignalOffered: offer?.SignalAllowed == true,
-            HoldTraffic: transport?.HoldTraffic ?? true);
+            HoldTraffic: transport?.HoldTraffic ?? true,
+            VpnDnsMode: _dns.GetValueOrDefault(name)?.VpnMode ?? VpnDnsMode.Default,
+            VpnDns: _dns.GetValueOrDefault(name)?.VpnServers ?? string.Empty,
+            VpnDnsShown: vpnDns.Shown,
+            VpnDnsNetwork: vpnDns.Network,
+            ServerDns: vpnDns.Server,
+            DefaultDns: vpnDns.Default,
+            DefaultDnsNetwork: vpnDns.DefaultNetwork);
     }
 
     private string StatusFor(string target)
@@ -2422,7 +2443,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.UseRouting,
                         transport.AllowSignal,
                         transport.HoldTraffic),
-                null));
+                null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -2524,6 +2545,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 {
                     _configs[block.Name] = block.ConfigText;
                     await ApplyTransportAsync(block.Name, block.Transport).ConfigureAwait(false);
+                    await (block with { Dns = null }).ApplyDnsAsync(_store, block.Name, CancellationToken.None).ConfigureAwait(false);
                 }
 
                 importedConfigs[block.Name] = block.Name;
@@ -2540,6 +2562,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _configs[finalName] = block.ConfigText;
             importedConfigs[block.Name] = finalName;
             await ApplyTransportAsync(finalName, block.Transport).ConfigureAwait(false);
+            await (block with { Dns = null }).ApplyDnsAsync(_store, finalName, CancellationToken.None).ConfigureAwait(false);
         }
 
         foreach (var block in bundle.RoutingLists)
@@ -2744,6 +2767,41 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Stores whether a config holds its traffic while its tunnel is repaired; the tunnel reads it on the next connect.
+    private async Task<IpcAck> SetConfigVpnDnsAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !_configs.ContainsKey(args[0]) || VpnDns.Read(args[1]) is not { } mode)
+        {
+            return Fail();
+        }
+
+        // The servers of its own stay with the record under another choice, there to come back to.
+        var servers = mode == VpnDnsMode.Own ? args.Count > 2 ? args[2].Trim() : string.Empty : null;
+        if (VpnDns.Odd(servers) is { Count: > 0 } odd)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_VpnDnsBad", string.Join(", ", odd)));
+        }
+
+        if (VpnDns.LacksV4(servers))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_VpnDnsV4"));
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var previous = await _store.GetConfigDnsAsync(args[0]).ConfigureAwait(false);
+        await VpnDns.SaveAsync(_store, args[0], null, mode, servers, CancellationToken.None).ConfigureAwait(false);
+        var moved = mode != (previous?.VpnMode ?? VpnDnsMode.Default)
+            || (servers is not null && !string.Equals(servers, previous?.VpnServers ?? string.Empty, StringComparison.Ordinal));
+        if (moved && _active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal))
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the name servers of the names through the tunnel apply on the next connect");
+        }
+
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return new IpcAck(true, IpcMessage.Key("Agent_VpnDnsSaved", VpnDns.Describe(mode, servers)));
+    }
+
     private async Task<IpcAck> SetHoldTrafficAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 2 || !_configs.ContainsKey(args[0]))
@@ -2775,15 +2833,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task RefreshTransportsAsync()
     {
         var transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
+        var dns = new Dictionary<string, ConfigDns>(StringComparer.Ordinal);
         foreach (var name in _configs.Keys.ToList())
         {
             if (await _store.GetConfigTransportAsync(name).ConfigureAwait(false) is { } transport)
             {
                 transports[name] = transport;
             }
+
+            if (await _store.GetConfigDnsAsync(name).ConfigureAwait(false) is { } held)
+            {
+                dns[name] = held;
+            }
         }
 
         _transports = transports;
+        _dns = dns;
         await RefreshOffersAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
     }

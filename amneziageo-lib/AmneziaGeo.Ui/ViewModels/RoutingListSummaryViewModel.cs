@@ -135,6 +135,11 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         _toggleUdp ??= new AsyncRelayCommand(() => ToggleAsync(() => AllUdp = !AllUdp));
 
     /// <summary>
+    /// Несёт ли устройство весь UDP через туннель.
+    /// </summary>
+    public static bool AllUdpSupported => !OperatingSystem.IsAndroid() || OperatingSystem.IsAndroidVersionAtLeast(29);
+
+    /// <summary>
     /// Плашки карточки: обновление, когда сервер отдал новую версию, и весь UDP у списка, который несёт только
     /// выбранное.
     /// </summary>
@@ -148,7 +153,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
                 wanted.Add(new(Loc.Instance.Get("Main_CardTagUpdate"), true, UpdateCommand, warn: true));
             }
 
-            if (!UseGlobalProxy)
+            if (!UseGlobalProxy && AllUdpSupported)
             {
                 wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand));
             }

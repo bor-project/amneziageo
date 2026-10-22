@@ -351,7 +351,7 @@ internal partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Стоит ли у списка переключатель всего UDP.
     /// </summary>
-    public bool ShowAllUdp => RoutingSettings is { UseGlobalProxy: false };
+    public bool ShowAllUdp => RoutingSettings is { UseGlobalProxy: false } && RoutingListSummaryViewModel.AllUdpSupported;
 
     /// <summary>
     /// Показан ли экран выбора регионов.

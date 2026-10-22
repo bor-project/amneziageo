@@ -201,6 +201,31 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public string RouteTrimNotice => Loc.Instance.Get("RoutingEditor_RoutesTrimmed", RouteKept, RouteTotal);
 
     /// <summary>
+    /// True when the list outgrew the route table and the relay decides each connection.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRelayNotice))]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
+    private bool _routeRelayed;
+
+    /// <summary>
+    /// True when the agent says whether the relay carries the list.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRelayNotice))]
+    private bool _relayKnown;
+
+    /// <summary>
+    /// True when the relay carries the list and every application is shown the vpn.
+    /// </summary>
+    public bool ShowRelayNotice => !GlobalProxyActive && (RouteRelayed || (RelayKnown && AllUdpActive));
+
+    /// <summary>
+    /// Why the relay carries the list.
+    /// </summary>
+    public string RelayNotice => Loc.Instance.Get(RouteRelayed ? "RoutingEditor_RelayNotice" : "RoutingEditor_RelayNoticeUdp");
+
+    /// <summary>
     /// Asks the agent what the current rules turn into and holds the answer.
     /// </summary>
     public async Task RefreshRouteBudgetAsync()
@@ -253,6 +278,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             _budgetSignature = signature;
             RouteCount = 0;
             RouteTrims = false;
+            RouteRelayed = false;
             return;
         }
 
@@ -271,10 +297,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         RouteKept = answer.Kept;
         RouteTotal = answer.Total;
         RouteTrims = answer.Trims;
+        RelayKnown = answer.Relay >= 0;
+        RouteRelayed = answer.Relay > 0;
     }
 
-    // Reads what the agent answers with; a malformed ack reads as no ceiling.
-    private static (int Routes, int Limit, bool Trims, int Kept, int Total) ParseBudget(string message)
+    // Reads what the agent answers with; a malformed ack reads as no ceiling. The relay is -1 where the agent
+    // says nothing about it.
+    private static (int Routes, int Limit, bool Trims, int Kept, int Total, int Relay) ParseBudget(string message)
     {
         try
         {
@@ -285,11 +314,12 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             var trims = root.TryGetProperty("trims", out var cut) && cut.TryGetInt32(out var cutting) && cutting != 0;
             var kept = root.TryGetProperty("kept", out var held) && held.TryGetInt32(out var holding) ? holding : 0;
             var total = root.TryGetProperty("total", out var all) && all.TryGetInt32(out var whole) ? whole : 0;
-            return (routes, limit, trims, kept, total);
+            var relay = root.TryGetProperty("relay", out var stand) && stand.TryGetInt32(out var standing) ? standing : -1;
+            return (routes, limit, trims, kept, total, relay);
         }
         catch (JsonException)
         {
-            return (0, 0, false, 0, 0);
+            return (0, 0, false, 0, 0, -1);
         }
     }
 
@@ -327,10 +357,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(CanAddApps))]
     [NotifyPropertyChangedFor(nameof(AppBucketsHint))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
+    [NotifyPropertyChangedFor(nameof(ShowRelayNotice))]
     private bool _globalProxyActive;
 
     // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRelayNotice))]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
     private bool _allUdpActive;
 
     partial void OnGlobalProxyActiveChanged(bool value)

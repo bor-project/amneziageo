@@ -108,6 +108,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     public long ListId { get; private set; }
 
     /// <summary>
+    /// Whether the server keeps the list read-only: its traffic block stays as the server set it.
+    /// </summary>
+    [ObservableProperty]
+    private bool _readOnly;
+
+    /// <summary>
     /// Retargets these settings at a (newly-created) list id before committing them. Used when a new-list draft
     /// is first saved: the draft's settings were built against id 0 and must now target the real id (#5).
     /// </summary>
@@ -339,19 +345,22 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         IsBusy = true;
         try
         {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetRoutingSettings,
-            [
-                ListId.ToString(),
-                string.Empty,
-                AllUdp ? "on" : "off",
-                UseGlobalProxy ? "full" : "split",
-                UseGlobalProxy ? "on" : "off",
-            ]));
-            // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
-            StatusMessage = ack.Ok ? string.Empty : ack.Message;
-            if (!ack.Ok)
+            if (!ReadOnly)
             {
-                return false;
+                var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetRoutingSettings,
+                [
+                    ListId.ToString(),
+                    string.Empty,
+                    AllUdp ? "on" : "off",
+                    UseGlobalProxy ? "full" : "split",
+                    UseGlobalProxy ? "on" : "off",
+                ]));
+                // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
+                StatusMessage = ack.Ok ? string.Empty : ack.Message;
+                if (!ack.Ok)
+                {
+                    return false;
+                }
             }
 
             // Agent-wide, and live: the running tunnel adopts it without a reconnect.

@@ -91,8 +91,9 @@ internal static class ConfigCommands
     private static string Inbound(ConfigEntry config) =>
         !config.AllowInbound ? "off" : config.InboundNetwork ? "network" : "host";
 
-    // Names the routing switch.
-    private static string Routing(ConfigEntry config) => config.UseRouting ? "on" : "off";
+    // Names the routing switch, and that the server holds it on.
+    private static string Routing(ConfigEntry config) =>
+        config.ServerListsOnly ? "on (server lists only)" : config.UseRouting ? "on" : "off";
 
     // Names whether the config takes the signal of its server to disconnect.
     private static string Signal(ConfigEntry config) => config.AllowSignal ? "on" : "off";

@@ -69,8 +69,19 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _hasUpdate;
 
+    // Whether the server keeps the list read-only.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _readOnly;
+
     [ObservableProperty]
     private bool _isSelected;
+
+    // The configuration whose server keeps the switch of the list where it stands, empty while none does.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Locked))]
+    [NotifyPropertyChangedFor(nameof(ActiveTip))]
+    private string _lockedBy = string.Empty;
 
     // Whether the tunnel runs on this list, so its rules are the ones in force.
     [ObservableProperty]
@@ -81,6 +92,18 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
     private bool _isPicked;
+
+    /// <summary>
+    /// Стоит ли тумблер применения на месте: сервер конфигурации разрешает только свои списки.
+    /// </summary>
+    public bool Locked => LockedBy.Length > 0;
+
+    /// <summary>
+    /// Подсказка тумблера применения.
+    /// </summary>
+    public string ActiveTip => Locked
+        ? Loc.Instance.Get("Main_ServerListsOnlyOf", LockedBy)
+        : Loc.Instance.Get("Main_CardActiveFlag");
 
     /// <summary>
     /// Режим списка строкой под его именем.
@@ -140,14 +163,19 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public static bool AllUdpSupported => !OperatingSystem.IsAndroid() || OperatingSystem.IsAndroidVersionAtLeast(29);
 
     /// <summary>
-    /// Плашки карточки: обновление, когда сервер отдал новую версию, и весь UDP у списка, который несёт только
-    /// выбранное.
+    /// Плашки карточки: только чтение у списка, который сервер не даёт править, обновление, когда сервер отдал
+    /// новую версию, и весь UDP у списка, который несёт только выбранное.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
         get
         {
             var wanted = new List<CardTag>();
+            if (ReadOnly)
+            {
+                wanted.Add(new(Loc.Instance.Get("Main_CardTagReadOnly"), false, plain: true));
+            }
+
             if (HasUpdate)
             {
                 wanted.Add(new(Loc.Instance.Get("Main_CardTagUpdate"), true, UpdateCommand, warn: true));
@@ -155,7 +183,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
             if (!UseGlobalProxy && AllUdpSupported)
             {
-                wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ToggleUdpCommand));
+                wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ReadOnly ? null : ToggleUdpCommand, plain: ReadOnly));
             }
 
             CardTag.Sync(_tags, wanted);
@@ -205,6 +233,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));
         OnPropertyChanged(nameof(SourceText));
+        OnPropertyChanged(nameof(ActiveTip));
         OnPropertyChanged(nameof(Tags));
     }
 }

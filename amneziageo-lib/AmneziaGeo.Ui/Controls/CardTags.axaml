@@ -5,6 +5,12 @@
              x:Class="AmneziaGeo.Ui.Controls.CardTags"
              x:CompileBindings="True"
              ClipToBounds="True">
+  <UserControl.Styles>
+    <!-- Плашка, которая только показывает режим, не тускнеет без нажатия. -->
+    <Style Selector="Button.cardtagbtn.plain:disabled">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </UserControl.Styles>
   <!-- Плашки режимов карточки: включённый режим носит цвет действия, выключенный уходит в серое. Ряд
        выкладывается по порядку, что не влезло, переносится на следующую строку. -->
   <ItemsControl x:Name="Strip" ItemsSource="{Binding $parent[controls:CardTags].Tags}">
@@ -15,8 +21,8 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate x:DataType="vm:CardTag">
-        <Button Classes="cardtagbtn" Command="{Binding Command}" IsHitTestVisible="{Binding Interactive}"
-                ToolTip.Tip="{Binding Hint}">
+        <Button Classes="cardtagbtn" Classes.plain="{Binding Plain}" Command="{Binding Command}"
+                IsHitTestVisible="{Binding Interactive}" ToolTip.Tip="{Binding Hint}">
           <Border Classes="cardchip cardtag" Classes.off="{Binding !On}" Classes.bad="{Binding Bad}"
                   Classes.busy="{Binding Busy}" Classes.warn="{Binding Warn}">
             <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />

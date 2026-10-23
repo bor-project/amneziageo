@@ -252,6 +252,17 @@ internal sealed class FleetStatusBroker(
     }
 
     /// <inheritdoc/>
+    protected override IReadOnlyList<string> ServerListsOrder(string config)
+    {
+        if (!mode.MultiServer || !fleet.Wanted.Contains(config, StringComparer.Ordinal))
+        {
+            return base.ServerListsOrder(config);
+        }
+
+        return [.. fleet.Wanted.Where(name => string.Equals(name, config, StringComparison.Ordinal) || live.Of(name) is { Running: true })];
+    }
+
+    /// <inheritdoc/>
     protected override TunnelDutyRoster Roster => mode.MultiServer ? fleet : base.Roster;
 
     /// <inheritdoc/>

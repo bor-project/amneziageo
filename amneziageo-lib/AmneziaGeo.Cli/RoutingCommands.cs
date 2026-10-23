@@ -155,10 +155,17 @@ internal static class RoutingCommands
                 list.DomainCount.ToString(CultureInfo.InvariantCulture),
                 list.Source.Length > 0 ? list.Source : "local",
                 list.HasUpdate ? "yes" : "-",
+                list.ReadOnly ? "yes" : "-",
             ])
             .ToList();
 
-        Output.Table(["ID", "NAME", "RULES", "ROUTES", "DOMAINS", "SOURCE", "UPDATE"], rows, "no routing lists yet");
+        Output.Table(["ID", "NAME", "RULES", "ROUTES", "DOMAINS", "SOURCE", "UPDATE", "READ-ONLY"], rows, "no routing lists yet");
+        if (agent.Snapshot.ServerListsOf is { Length: > 0 } config)
+        {
+            var ids = string.Join(", ", (agent.Snapshot.ServerLists ?? []).Select(id => id.ToString(CultureInfo.InvariantCulture)));
+            Output.Info($"the server of {config} allows none but its own routing lists: {ids}");
+        }
+
         return Exit.Ok;
     }
 
@@ -181,20 +188,43 @@ internal static class RoutingCommands
         }
 
         var rules = Split(ack.Message);
+        var found = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, values) in agent.Snapshot.FoundApps ?? new Dictionary<string, IReadOnlyList<string>>())
+        {
+            found.TryAdd(name, values);
+        }
+
         if (Output.Json)
         {
-            Output.AsJson(new { id = list.Id, name = list.Name, rules });
+            var apps = rules.Select(AppName).Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(name => name, name => found.GetValueOrDefault(name), StringComparer.OrdinalIgnoreCase);
+            Output.AsJson(new { id = list.Id, name = list.Name, rules, found = apps });
             return Exit.Ok;
         }
 
         Output.Info($"#{list.Id.ToString(CultureInfo.InvariantCulture)} {list.Name}");
         foreach (var rule in rules)
         {
-            Output.Line(rule);
+            Output.Line(AppName(rule) is { Length: > 0 } name ? $"{rule} -> {Found(found.GetValueOrDefault(name))}" : rule);
         }
 
         return Exit.Ok;
     }
+
+    // The program a rule names for the device to find, empty for any other rule.
+    private static string AppName(string rule)
+    {
+        var token = rule[(rule.IndexOf('|') + 1)..].Trim();
+        return token.StartsWith("app:", StringComparison.OrdinalIgnoreCase) && AppNames.IsName(token[4..]) ? token[4..].Trim() : string.Empty;
+    }
+
+    // What the device found for a program: its paths or packages, or that it found or searched nothing yet.
+    private static string Found(IReadOnlyList<string>? values) => values switch
+    {
+        null => "searching",
+        { Count: 0 } => "not found",
+        _ => string.Join(", ", values.Select(value => value[(value.IndexOf('=') + 1)..])),
+    };
 
     private static async Task<int> CreateAsync(IAgentLink agent, IReadOnlyList<string> args)
     {

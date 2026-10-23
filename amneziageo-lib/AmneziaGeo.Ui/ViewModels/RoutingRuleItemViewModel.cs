@@ -1,3 +1,5 @@
+using System.Globalization;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -9,12 +11,20 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal partial class RoutingRuleItemViewModel : ViewModelBase
 {
+    private const string AppPrefix = "app:";
+
+    // The program the token names for the device to find, empty for any other token.
+    private readonly string _appName;
+
     /// <summary>
     /// ctor
     /// </summary>
     public RoutingRuleItemViewModel(string token)
     {
         Token = token;
+        _appName = token.StartsWith(AppPrefix, StringComparison.OrdinalIgnoreCase) && AppNames.IsName(token[AppPrefix.Length..])
+            ? token[AppPrefix.Length..].Trim()
+            : string.Empty;
         CanPreview = UiPlatform.SupportsGeoPreview
             && (token.StartsWith("geosite:", StringComparison.OrdinalIgnoreCase)
                 || token.StartsWith("geoip:", StringComparison.OrdinalIgnoreCase));
@@ -46,9 +56,53 @@ internal partial class RoutingRuleItemViewModel : ViewModelBase
     public virtual string ExpandTooltip => Loc.Instance.Get("Main_RuleEntriesTooltip");
 
     /// <summary>
-    /// Kind and type of the entry, shown under its token.
+    /// The program the token names for the device to find, empty for any other token.
     /// </summary>
-    public string Caption => RuleToken.Caption(Token);
+    public string AppName => _appName;
+
+    /// <summary>
+    /// Kind and type of the entry, shown under its token; for a program named to be found, what the device found.
+    /// </summary>
+    public string Caption => _appName.Length == 0 ? RuleToken.Caption(Token) : AppCaption();
+
+    /// <summary>
+    /// Whether the device found no program the token names.
+    /// </summary>
+    public bool CaptionWarn => _appName.Length > 0 && Found is { Count: 0 };
+
+    /// <summary>
+    /// The programs the device found when it found more than one.
+    /// </summary>
+    public string? CaptionTip => _appName.Length > 0 && Found is { Count: > 1 } found ? string.Join(", ", found.Select(Shown)) : null;
+
+    /// <summary>
+    /// The app rule values the device found for the program the token names; null while it was never searched.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Caption))]
+    [NotifyPropertyChangedFor(nameof(CaptionWarn))]
+    [NotifyPropertyChangedFor(nameof(CaptionTip))]
+    private IReadOnlyList<string>? _found;
+
+    // What the device found for the program, under the kind of the entry.
+    private string AppCaption()
+    {
+        var kind = RuleToken.Kind(Token);
+        return Found switch
+        {
+            null => Loc.Instance.Get("Main_RuleAppSearching", kind),
+            { Count: 0 } => Loc.Instance.Get("Main_RuleAppMissing", kind),
+            { Count: 1 } one => Loc.Instance.Get("Main_RuleAppFound", kind, Shown(one[0])),
+            var many => Loc.Instance.Get("Main_RuleAppFound", kind, many.Count.ToString(CultureInfo.CurrentCulture)),
+        };
+    }
+
+    // A found value the way people read it: the path, the folder or the package without its kind.
+    private static string Shown(string value)
+    {
+        var equals = value.IndexOf('=', StringComparison.Ordinal);
+        return equals > 0 ? value[(equals + 1)..] : value;
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Glyph))]

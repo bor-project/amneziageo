@@ -577,8 +577,14 @@ internal sealed class ConfigRunner(
             OfferNote,
             geo: new GeoConfigurator(store, geoFiles),
             fetch: broker.FetchOffered,
-            rerouted: () => broker.RerouteOthers(config));
+            rerouted: () => broker.RerouteOthers(config),
+            take: broker.TakeReadOnlyVersionsAsync);
         await offers.BeforeConnectAsync(config, text, null, ct).ConfigureAwait(false);
+        if (await broker.KeepServerListsAsync(store, config, ct).ConfigureAwait(false))
+        {
+            broker.RerouteOthers(config);
+        }
+
         await RoutingProjection.ProjectAsync(store, geo, roster, config, logger, ct).ConfigureAwait(false);
     }
 
@@ -598,6 +604,11 @@ internal sealed class ConfigRunner(
     private async Task SetStateAsync(string status)
     {
         control.SetConnected(status == ConnectionStatus.Connected);
+        if (status == ConnectionStatus.Connected)
+        {
+            broker.FindAppsLater();
+        }
+
         try
         {
             await store.SaveTunnelStateAsync(new TunnelState(_config, status, DateTimeOffset.UtcNow));

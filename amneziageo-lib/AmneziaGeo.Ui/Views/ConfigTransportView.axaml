@@ -147,7 +147,8 @@
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseRoutingTitle}" Description="{l:Tr Main_UseRoutingHint}"
-                               IsChecked="{Binding UseRouting, Mode=TwoWay}"
+                               IsChecked="{Binding RoutingSwitch, Mode=TwoWay}"
+                               SwitchEnabled="{Binding !ServerListsOnly}" SwitchTip="{Binding RoutingSwitchTip}"
                                HorizontalAlignment="Stretch" />
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

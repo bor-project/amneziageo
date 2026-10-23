@@ -63,6 +63,9 @@ internal sealed class LinuxAgent : IDisposable
 
     // One download of rule databases at a time among those that do not hold the gate of the commands.
     private readonly SemaphoreSlim _sourcesGate = new(1, 1);
+
+    // One search of the programs of the machine at a time.
+    private readonly SemaphoreSlim _finding = new(1, 1);
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
 
@@ -148,7 +151,7 @@ internal sealed class LinuxAgent : IDisposable
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
         _hotspot = new LinuxHotspot(log, interfaceName);
-        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered);
+        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered, take: TakeLater);
     }
 
     /// <summary>
@@ -394,8 +397,9 @@ internal sealed class LinuxAgent : IDisposable
 
         var routingLists = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
             .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount,
-                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate))
+                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate, s.ReadOnly))
             .ToList();
+        var limit = await ServerListsLimitAsync(ct).ConfigureAwait(false);
 
         return new StatusSnapshot(
             AgentVersion: AgentBuild.Version,
@@ -459,7 +463,10 @@ internal sealed class LinuxAgent : IDisposable
             HotspotClients: _hotspot.Clients,
             HotspotMaxClients: LinuxHotspot.MaxClients,
             NameTransport: _tunnel.Running ? _tunnel.NameTransport : string.Empty,
-            DnsTransport: _dnsTransport);
+            DnsTransport: _dnsTransport,
+            ServerListsOf: limit?.Config ?? string.Empty,
+            ServerLists: limit?.Lists,
+            FoundApps: await AppFinds.ReadAsync(_store, ct).ConfigureAwait(false));
     }
 
     // One proxy setting on top of the ones in force.
@@ -646,6 +653,7 @@ internal sealed class LinuxAgent : IDisposable
             _handshakeDueUtc = DateTime.MaxValue;
             _boundStatus = ConnectionStatus.Connected;
             Stood();
+            FindAppsLater();
             _log.Info("agent", $"connected: {_boundTarget}");
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
             await PushAsync(ct).ConfigureAwait(false);
@@ -926,16 +934,18 @@ internal sealed class LinuxAgent : IDisposable
                 return await GetGeoEntriesAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpSaveRoutingList:
-                return await SaveRoutingListAsync(args, ct).ConfigureAwait(false);
+                return Searched(await OfferedLists.ReadOnlyRefusalAsync(_store, args, ct).ConfigureAwait(false)
+                    ?? await SaveRoutingListAsync(args, ct).ConfigureAwait(false));
 
             case IpcContract.OpGetRoutingList:
                 return await GetRoutingListAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpRemoveRoutingList:
-                return await RemoveRoutingListAsync(args, ct).ConfigureAwait(false);
+                return await OfferedLists.ReadOnlyRefusalAsync(_store, args, ct).ConfigureAwait(false)
+                    ?? await RemoveRoutingListAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpUpdateRoutingList:
-                return await UpdateRoutingListAsync(args, ct).ConfigureAwait(false);
+                return Searched(await UpdateRoutingListAsync(args, ct).ConfigureAwait(false));
 
             case IpcContract.OpReorderRoutingLists:
                 return await ReorderRoutingListsAsync(args, ct).ConfigureAwait(false);
@@ -944,7 +954,8 @@ internal sealed class LinuxAgent : IDisposable
                 return await GetRoutingSettingsAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpSetRoutingSettings:
-                return await SetRoutingSettingsAsync(args, ct).ConfigureAwait(false);
+                return await OfferedLists.ReadOnlyRefusalAsync(_store, args, ct).ConfigureAwait(false)
+                    ?? await SetRoutingSettingsAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpAddSource:
                 return await AddSourceAsync(args, ct).ConfigureAwait(false);
@@ -1100,6 +1111,7 @@ internal sealed class LinuxAgent : IDisposable
         await PushAsync(ct).ConfigureAwait(false);
 
         var offer = await _offers.BeforeConnectAsync(configName, config, OfferChangedAsync, ct).ConfigureAwait(false);
+        await KeepServerListsAsync(configName, ct).ConfigureAwait(false);
         var routing = await TunnelRouting.LoadAsync(_store, configName, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
@@ -1127,6 +1139,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             _boundStatus = ConnectionStatus.Connected;
             Stood();
+            FindAppsLater();
             _log.Info("agent", $"connected: {_boundTarget}");
             _session.Raised(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _boundTarget ?? string.Empty);
             await PushAsync(ct).ConfigureAwait(false);
@@ -1673,6 +1686,11 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
+        if (ServerListsOnly.Refusal(await ServerListsLimitAsync(ct).ConfigureAwait(false), listId) is { } refusal)
+        {
+            return refusal;
+        }
+
         var currentList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
         Journal(SwitchLog.RoutingList(
             await ListNameAsync(currentList, ct).ConfigureAwait(false),
@@ -1748,6 +1766,11 @@ internal sealed class LinuxAgent : IDisposable
         var allowInbound = args.Count > 6 ? IsOn(args[6]) : stored?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 7 ? IsOn(args[7]) : stored?.InboundNetwork ?? false;
         var useRouting = args.Count > 8 ? IsOn(args[8]) : stored?.UseRouting ?? true;
+        if (await ServerListsOnly.RoutingOffRefusalAsync(_store, args[0], useRouting || !(stored?.UseRouting ?? true), ct).ConfigureAwait(false) is { } kept)
+        {
+            return kept;
+        }
+
         var port = args.Count > 9 ? ConfigTransport.PortSent(args[9]) : stored?.WebSocketPort ?? 0;
         if (port < 0)
         {
@@ -2910,7 +2933,8 @@ internal sealed class LinuxAgent : IDisposable
 
         var list = await ConfigRouting.AllowedAsync(_store, _selectedTarget ?? string.Empty, ct).ConfigureAwait(false)
             && await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
-                ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
+            && await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false) is { } stored
+                ? await AppFinds.ExpandListAsync(_store, stored, ct).ConfigureAwait(false)
                 : null;
         var split = _tunnel.RoutingMode is not (SessionReport.ModeFull or SessionReport.ModeOff);
         // A probe nothing answers is counted on the tunnel, as the ladder counts its peer.
@@ -2918,7 +2942,7 @@ internal sealed class LinuxAgent : IDisposable
             Held,
             Trace: _tunnel.Running ? (address, token) => ChannelProbe.TraceAsync(address, _tunnel.TunnelCountersAsync, token) : null);
         var report = await new TargetInspector(list, split, directApps: !split)
-            .InspectAsync(args[0], _selectedTarget ?? string.Empty, probes, ct)
+            .InspectAsync(await AppFinds.TargetAsync(_store, args[0], ct).ConfigureAwait(false), _selectedTarget ?? string.Empty, probes, ct)
             .ConfigureAwait(false);
 
         Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
@@ -3122,22 +3146,166 @@ internal sealed class LinuxAgent : IDisposable
     // asked is done.
     private Task OfferChangedAsync(string config)
     {
-        _ = Task.Run(ReapplyRoutingAsync);
+        _ = Task.Run(() => ReapplyRoutingAsync(config));
+        FindAppsLater();
 
         return PushAsync(CancellationToken.None);
     }
 
-    private async Task ReapplyRoutingAsync()
+    private async Task ReapplyRoutingAsync(string config)
     {
         try
         {
-            await GatedAsync(() => ApplyRoutingAsync(CancellationToken.None), CancellationToken.None).ConfigureAwait(false);
+            await GatedAsync(
+                async () =>
+                {
+                    if (_desiredConnected && string.Equals(config, _boundTarget, StringComparison.Ordinal))
+                    {
+                        await KeepServerListsAsync(config, CancellationToken.None).ConfigureAwait(false);
+                    }
+
+                    await ApplyRoutingAsync(CancellationToken.None).ConfigureAwait(false);
+                },
+                CancellationToken.None).ConfigureAwait(false);
             await PushAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _log.Error("agent", "the routing the server changed was not applied", ex);
         }
+    }
+
+    // Puts on the routing list a configuration whose server allows none but its own lists, and puts one of them in use
+    // in place of the list in use.
+    private async Task KeepServerListsAsync(string config, CancellationToken ct)
+    {
+        if (await ServerListsOnly.RoutingOnAsync(_store, config, ct).ConfigureAwait(false))
+        {
+            _log.Info("agent", $"{config}: its server allows none but its own routing lists; the configuration takes the routing list");
+        }
+
+        var inUse = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        if (ServerListsOnly.Switch(await ServerListsOnly.OfAsync(_store, config, ct).ConfigureAwait(false), inUse) is not { } pick)
+        {
+            return;
+        }
+
+        Journal(SwitchLog.RoutingList(
+            await ListNameAsync(inUse, ct).ConfigureAwait(false),
+            await ListNameAsync(pick, ct).ConfigureAwait(false)));
+        await _store.SetSelectedRoutingListAsync(pick, ct).ConfigureAwait(false);
+        _log.Info("agent", $"{config}: its server allows none but its own routing lists; routing list {pick} is put in use");
+    }
+
+    // Has the programs of the machine searched again behind a command that changed a routing list.
+    private IpcAck Searched(IpcAck ack)
+    {
+        if (ack.Ok)
+        {
+            FindAppsLater();
+        }
+
+        return ack;
+    }
+
+    // Searches the programs of the machine for the names of the routing lists in the background.
+    private void FindAppsLater() => _ = Task.Run(FindAppsAsync);
+
+    // Keeps what each app:<name> of the routing lists stands for; a find that changes what the list in use names is put
+    // in force on the running tunnel, or dials it again where a live session cannot take it.
+    private async Task FindAppsAsync()
+    {
+        await _finding.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var search = await AppFinds.SearchListsAsync(_store, InstalledPrograms.List, note => _log.Info("agent", note)).ConfigureAwait(false);
+            if (search is not { Changed.Count: > 0 })
+            {
+                return;
+            }
+
+            _log.Info("agent", $"programs found again for {string.Join(", ", search.Changed.Select(name => "app:" + name))}");
+            await GatedAsync(() => TakeFoundAppsAsync(search.Changed), CancellationToken.None).ConfigureAwait(false);
+            await PushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "the programs of this machine were not searched for the names of the routing lists", ex);
+        }
+        finally
+        {
+            _finding.Release();
+        }
+    }
+
+    // Puts the programs found again in force on the running tunnel when the list in use names them.
+    private async Task TakeFoundAppsAsync(IReadOnlyList<string> changed)
+    {
+        if (!_tunnel.Running
+            || await _store.GetSelectedRoutingListAsync(CancellationToken.None).ConfigureAwait(false) is not { } listId
+            || await _store.GetRoutingListStampAsync(listId, CancellationToken.None).ConfigureAwait(false) is not { } stamp
+            || !AppFinds.NamesOf(stamp.Rules).Intersect(changed, StringComparer.OrdinalIgnoreCase).Any())
+        {
+            return;
+        }
+
+        var routing = await TunnelRouting.LoadAsync(_store, _boundTarget, CancellationToken.None).ConfigureAwait(false);
+        if (_tunnel.ApplyRules(routing))
+        {
+            return;
+        }
+
+        if (!string.Equals(_boundTarget, _selectedTarget, StringComparison.Ordinal))
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the routed list names other programs now; they apply on the next connect");
+            return;
+        }
+
+        _log.Info("agent", $"{_boundTarget}: the routed list names other programs now; reconnecting so the tunnel takes them");
+        await SetConnectionAsync("disconnect", CancellationToken.None).ConfigureAwait(false);
+        await SetConnectionAsync("connect", CancellationToken.None).ConfigureAwait(false);
+    }
+
+    // The limit the server of the configuration standing up sets on the routing lists.
+    private async Task<ListsLimit?> ServerListsLimitAsync(CancellationToken ct) =>
+        _desiredConnected && _boundTarget is { Length: > 0 } name
+            ? await ServerListsOnly.OfAsync(_store, name, ct).ConfigureAwait(false)
+            : null;
+
+    // The newer versions of the lists the server keeps read-only are taken once the gate is free: the answer of the
+    // server may come inside a command that holds it.
+    private Task TakeLater(IReadOnlyList<long> ids, CancellationToken ct)
+    {
+        _ = Task.Run(() => GatedAsync(() => TakeVersionsAsync(ids), CancellationToken.None));
+
+        return Task.CompletedTask;
+    }
+
+    // Takes the newer versions of the read-only lists the way the update of a list does, and tells the clients.
+    private async Task TakeVersionsAsync(IReadOnlyList<long> ids)
+    {
+        foreach (var id in ids)
+        {
+            try
+            {
+                var taken = await UpdateRoutingListAsync([id.ToString(CultureInfo.InvariantCulture)], CancellationToken.None).ConfigureAwait(false);
+                if (taken.Ok)
+                {
+                    _log.Info("routing", $"routing list {id} took the newer version its server keeps read-only");
+                }
+                else
+                {
+                    _log.Warn("routing", $"routing list {id} did not take the newer version its server keeps read-only: {taken.Message}");
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Warn("routing", $"routing list {id} did not take the newer version its server keeps read-only{Environment.NewLine}{ex}");
+            }
+        }
+
+        await PushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     // The files of the geo sources a server handed out are fetched in the background, after the command that asked.
@@ -3329,7 +3497,8 @@ internal sealed class LinuxAgent : IDisposable
             vpnDns.Network,
             vpnDns.Server,
             vpnDns.Default,
-            vpnDns.DefaultNetwork);
+            vpnDns.DefaultNetwork,
+            offer.PresetsOnly);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

@@ -29,13 +29,16 @@ internal static class RoutingProjection
             return;
         }
 
-        var list = await store.GetRoutingListAsync(listId.Value, ct);
-        if (list is null)
+        var stored = await store.GetRoutingListAsync(listId.Value, ct);
+        if (stored is null)
         {
             logger.LogWarning("routing list {Id} no longer exists; until another list is picked, everything goes through the tunnel", listId.Value);
             await ProjectFullTunnelAsync(store, config, logger, ct);
             return;
         }
+
+        // A program the list names stands for what this machine found for it last.
+        var list = await AppFinds.ExpandListAsync(store, stored, ct).ConfigureAwait(false);
 
         // The share of the list this tunnel carries. A machine running one tunnel is given the list itself,
         // and the rules are the ones already expanded into it.

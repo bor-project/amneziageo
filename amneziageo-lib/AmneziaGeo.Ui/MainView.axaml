@@ -330,7 +330,8 @@
                       </Button>
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
                                     IsChecked="{Binding Routing.HomeRoutingOn, Mode=TwoWay}"
-                                    ToolTip.Tip="{l:Tr Main_HomeRoutingHint}" />
+                                    IsEnabled="{Binding !Routing.HomeRoutingLocked}"
+                                    ToolTip.Tip="{Binding Routing.HomeRoutingTip}" ToolTip.ShowOnDisabled="True" />
                     </Grid>
                   </StackPanel>
                 </StackPanel>

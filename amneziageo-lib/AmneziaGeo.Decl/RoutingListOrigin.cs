@@ -9,4 +9,13 @@ namespace AmneziaGeo.Decl;
 /// <param name="Source">The name of the configuration the list arrived with.</param>
 /// <param name="Updated">When the server changed the version the list holds.</param>
 /// <param name="Pending">The newer version of the server, null when the list holds the newest.</param>
-public sealed record RoutingListOrigin(long ListId, string PresetId, string Source, DateTimeOffset Updated, OfferedPreset? Pending = null);
+/// <param name="ReadOnly">Whether the server keeps the list read-only: no change on the device, its versions taken as they come.</param>
+/// <param name="Config">The configuration of the device whose server last handed the list out.</param>
+public sealed record RoutingListOrigin(
+    long ListId,
+    string PresetId,
+    string Source,
+    DateTimeOffset Updated,
+    OfferedPreset? Pending = null,
+    bool ReadOnly = false,
+    string Config = "");

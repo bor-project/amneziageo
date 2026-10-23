@@ -77,7 +77,9 @@ public sealed record ConfigEntry(
     bool VpnDnsNetwork = false,
     string ServerDns = "",
     string DefaultDns = "",
-    bool DefaultDnsNetwork = false);
+    bool DefaultDnsNetwork = false,
+    // Whether its server allows none but its own routing lists, which keeps the config on the routing list.
+    bool ServerListsOnly = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

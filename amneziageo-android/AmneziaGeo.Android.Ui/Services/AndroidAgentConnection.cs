@@ -86,6 +86,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private IReadOnlyDictionary<string, ConfigDns> _dns = new Dictionary<string, ConfigDns>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, ServerOffer> _offered = new Dictionary<string, ServerOffer>(StringComparer.Ordinal);
 
+    // The limit the server of the configuration standing up sets on the routing lists, as last read.
+    private ListsLimit? _serverLists;
+
+    // What the device found for each app:<name> of the routing lists, as last kept.
+    private IReadOnlyDictionary<string, IReadOnlyList<string>> _appFinds = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+    // One search of the programs of the device at a time.
+    private readonly SemaphoreSlim _finding = new(1, 1);
+
     // Which subscription brought which configuration; empty until the store has been read.
     private IReadOnlyDictionary<string, SubscriptionMember> _members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
 
@@ -224,7 +233,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             OfferNote,
             (point, ct) => ServerHello.AskAsync(point, PastTunnel.ConnectAsync, ct),
             geo: _geo,
-            fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)));
+            fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)),
+            take: (ids, ct) => Task.Run(() => TakeVersionsAsync(ids), ct));
         Current = this;
     }
 
@@ -477,7 +487,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await Task.Run(() => GetGeoEntriesAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpSaveRoutingList:
-                return await Task.Run(() => SaveRoutingListAsync(args)).ConfigureAwait(false);
+                return Searched(await Task.Run(() => UnlessReadOnlyAsync(args, SaveRoutingListAsync)).ConfigureAwait(false));
 
             case IpcContract.OpGetRoutingList:
                 return await Task.Run(() => GetRoutingListAsync(args)).ConfigureAwait(false);
@@ -486,10 +496,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await Task.Run(() => CountRoutesAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpRemoveRoutingList:
-                return await Task.Run(() => RemoveRoutingListAsync(args)).ConfigureAwait(false);
+                return await Task.Run(() => UnlessReadOnlyAsync(args, RemoveRoutingListAsync)).ConfigureAwait(false);
 
             case IpcContract.OpUpdateRoutingList:
-                return await Task.Run(() => UpdateRoutingListAsync(args)).ConfigureAwait(false);
+                return Searched(await Task.Run(() => UpdateRoutingListAsync(args)).ConfigureAwait(false));
 
             case IpcContract.OpReorderRoutingLists:
                 return await Task.Run(() => ReorderRoutingListsAsync(args)).ConfigureAwait(false);
@@ -498,7 +508,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await Task.Run(() => GetRoutingSettingsAsync(args)).ConfigureAwait(false);
 
             case IpcContract.OpSetRoutingSettings:
-                return await Task.Run(() => SetRoutingSettingsAsync(args)).ConfigureAwait(false);
+                return await Task.Run(() => UnlessReadOnlyAsync(args, SetRoutingSettingsAsync)).ConfigureAwait(false);
 
             case IpcContract.OpSetWebSocket:
                 return await SetWebSocketAsync(args);
@@ -692,6 +702,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             _restartRequired = false;
         }
+
+        await KeepServerListsAsync(configName).ConfigureAwait(false);
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
@@ -1215,6 +1227,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 break;
             case VpnStage.Connected:
                 _active = true;
+                if (_boundStatus != ConnectionStatus.Connected)
+                {
+                    FindAppsLater();
+                }
+
                 _boundStatus = ConnectionStatus.Connected;
                 _boundTarget = session;
                 ClearConnectFailure();
@@ -1468,7 +1485,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyError: proxy.Error,
             ProxyAddresses: reach.Addresses,
             ProxyPlaces: reach.Places,
-            ProxyClients: proxy.Clients);
+            ProxyClients: proxy.Clients,
+            ServerListsOf: ShownServerLists?.Config ?? string.Empty,
+            ServerLists: ShownServerLists?.Lists,
+            FoundApps: _appFinds);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1668,7 +1688,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             VpnDnsNetwork: vpnDns.Network,
             ServerDns: vpnDns.Server,
             DefaultDns: vpnDns.Default,
-            DefaultDnsNetwork: vpnDns.DefaultNetwork);
+            DefaultDnsNetwork: vpnDns.DefaultNetwork,
+            ServerListsOnly: offer?.PresetsOnly == true);
     }
 
     private string StatusFor(string target)
@@ -2052,8 +2073,99 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var summaries = await _store.ListRoutingListSummariesAsync().ConfigureAwait(false);
         _routingSummaries = summaries
             .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount,
-                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate))
+                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate, s.ReadOnly))
             .ToList();
+        _serverLists = await ServerListsLimitAsync().ConfigureAwait(false);
+        _appFinds = await AppFinds.ReadAsync(_store).ConfigureAwait(false);
+    }
+
+    // Has the programs of the device searched again behind a command that changed a routing list.
+    private IpcAck Searched(IpcAck ack)
+    {
+        if (ack.Ok)
+        {
+            FindAppsLater();
+        }
+
+        return ack;
+    }
+
+    // Searches the programs of the device for the names of the routing lists in the background.
+    private void FindAppsLater() => _ = Task.Run(FindAppsAsync);
+
+    // Keeps what each app:<name> of the routing lists stands for; a find that changes what the routed list names
+    // builds the session again with it.
+    private async Task FindAppsAsync()
+    {
+        await _finding.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var search = await AppFinds.SearchListsAsync(_store, ListedApps, note => _log.Info("agent", note)).ConfigureAwait(false);
+            _appFinds = await AppFinds.ReadAsync(_store).ConfigureAwait(false);
+            if (search is not { Changed.Count: > 0 })
+            {
+                return;
+            }
+
+            _log.Info("agent", $"programs found again for {string.Join(", ", search.Changed.Select(name => "app:" + name))}");
+            if (_active && RoutedList is { } listId
+                && await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false) is { } stamp
+                && AppFinds.NamesOf(stamp.Rules).Intersect(search.Changed, StringComparer.OrdinalIgnoreCase).Any())
+            {
+                _log.Info("agent", "the routed list names other programs now; the session is built again with them");
+                _ = SetConnectionAsync("connect");
+            }
+
+            PushSnapshot();
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "the programs of the device were not searched", ex);
+        }
+        finally
+        {
+            _finding.Release();
+        }
+    }
+
+    // The programs of the device the way a search of app:<name> sees them.
+    private static IReadOnlyList<NamedApp> ListedApps() =>
+        [.. AppCensus.List(Application.Context).Select(entry => new NamedApp(entry.Label, string.Empty, entry.Package, "pkg=" + entry.Package))];
+
+    // The limit the server of the configuration standing up sets on the routing lists.
+    private async Task<ListsLimit?> ServerListsLimitAsync() =>
+        _active && _boundTarget is { Length: > 0 } name
+            ? await ServerListsOnly.OfAsync(_store, name, _configs.GetValueOrDefault(name), CancellationToken.None).ConfigureAwait(false)
+            : null;
+
+    // The limit as the snapshot shows it: the one of the configuration standing up.
+    private ListsLimit? ShownServerLists =>
+        _active && _serverLists is { } limit && string.Equals(limit.Config, _boundTarget, StringComparison.Ordinal) ? limit : null;
+
+    // Puts on the routing list a configuration whose server allows none but its own lists, and puts one of them in
+    // use in place of the list in use; returns whether either changed.
+    private async Task<bool> KeepServerListsAsync(string config)
+    {
+        var text = _configs.GetValueOrDefault(config);
+        var routed = await ServerListsOnly.RoutingOnAsync(_store, config, text, CancellationToken.None).ConfigureAwait(false);
+        if (routed)
+        {
+            await RefreshTransportsAsync().ConfigureAwait(false);
+            _log.Info("agent", $"{config}: its server allows none but its own routing lists; the configuration takes the routing list");
+        }
+
+        var limit = await ServerListsOnly.OfAsync(_store, config, text, CancellationToken.None).ConfigureAwait(false);
+        if (ServerListsOnly.Switch(limit, _selectedRoutingList) is not { } pick)
+        {
+            return routed;
+        }
+
+        Journal(SwitchLog.RoutingList(await ListNameAsync(_selectedRoutingList).ConfigureAwait(false), await ListNameAsync(pick).ConfigureAwait(false)));
+        _selectedRoutingList = pick;
+        Save();
+        _log.Info("agent", $"{config}: its server allows none but its own routing lists; routing list {pick} is put in use");
+
+        return true;
     }
 
     // Downloads the geoip databases on first use; retries after a failed attempt.
@@ -2332,6 +2444,41 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Takes the newer version the server handed out for a list, by the commands that save a list and its settings.
+    // A list the server keeps read-only takes no change and no removal on the device.
+    private async Task<IpcAck> UnlessReadOnlyAsync(IReadOnlyList<string> args, Func<IReadOnlyList<string>, Task<IpcAck>> command)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+
+        return await OfferedLists.ReadOnlyRefusalAsync(_store, args, CancellationToken.None).ConfigureAwait(false)
+            ?? await command(args).ConfigureAwait(false);
+    }
+
+    // Takes the newer versions of the lists the server keeps read-only the way the update of a list does.
+    private async Task TakeVersionsAsync(IReadOnlyList<long> ids)
+    {
+        foreach (var id in ids)
+        {
+            try
+            {
+                var taken = await UpdateRoutingListAsync([id.ToString(CultureInfo.InvariantCulture)]).ConfigureAwait(false);
+                if (taken.Ok)
+                {
+                    _log.Info("routing", $"routing list {id} took the newer version its server keeps read-only");
+                }
+                else
+                {
+                    _log.Warn("routing", $"routing list {id} did not take the newer version its server keeps read-only: {taken.Message}");
+                }
+            }
+            catch (Exception ex) when (ex is not System.OperationCanceledException)
+            {
+                _log.Warn("routing", $"routing list {id} did not take the newer version its server keeps read-only{System.Environment.NewLine}{ex}");
+            }
+        }
+
+        PushSnapshot();
+    }
+
     private async Task<IpcAck> UpdateRoutingListAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 1 || !long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
@@ -2719,6 +2866,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var allowInbound = args.Count > 6 ? IsOn(args[6]) : previous?.AllowInbound ?? false;
         var inboundNetwork = args.Count > 7 ? IsOn(args[7]) : previous?.InboundNetwork ?? false;
         var useRouting = args.Count > 8 ? IsOn(args[8]) : previous?.UseRouting ?? true;
+        if (await ServerListsOnly.RoutingOffRefusalAsync(_store, args[0], _configs.GetValueOrDefault(args[0]), useRouting || !(previous?.UseRouting ?? true), CancellationToken.None).ConfigureAwait(false) is { } kept)
+        {
+            return kept;
+        }
+
         var port = args.Count > 9 ? ConfigTransport.PortSent(args[9]) : previous?.WebSocketPort ?? 0;
         if (port < 0)
         {
@@ -2895,6 +3047,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshOffersAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
         await TakeStorePickAsync().ConfigureAwait(false);
+        FindAppsLater();
+        if (_active && string.Equals(_boundTarget, config, StringComparison.Ordinal) && await KeepServerListsAsync(config).ConfigureAwait(false))
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the routing list the server allows applies on the next connect");
+        }
+
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
@@ -3032,6 +3191,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             || !long.TryParse(listArg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId)
                 ? null
                 : (long?)listId;
+        if (ServerListsOnly.Refusal(await ServerListsLimitAsync().ConfigureAwait(false), picked) is { } refusal)
+        {
+            return refusal;
+        }
 
         var names = await Task.Run(async () => (
             From: await ListNameAsync(_selectedRoutingList).ConfigureAwait(false),
@@ -3057,7 +3220,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task<(string Mode, string[] Packages, string[] Bypass, bool Rebuilt)> RaiseSessionPlanAsync(bool useRouter)
     {
         await EnsureInitAsync().ConfigureAwait(false);
-        var stamp = await ReadListStampAsync().ConfigureAwait(false);
+        var stamp = AppFinds.ExpandStamp(await ReadListStampAsync().ConfigureAwait(false), _appFinds);
         var settings = await ReadListSettingsAsync().ConfigureAwait(false);
         var split = AppSplit(stamp, settings, useRouter);
         var mark = RoutingPlanStamp.Of(stamp, settings, InboundRanges(), useRouter, PerAppSupported, _routeTtl);
@@ -3135,11 +3298,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
-        if (list is null)
+        var stored = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
+        if (stored is null)
         {
             return GeoRoutingPlan.Full;
         }
+
+        var list = AppFinds.Expand(stored, _appFinds);
 
         var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
         // Inbound access rides the tunnel bucket: the tun then carries those ranges and the router sends the answers back.
@@ -3863,7 +4028,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         var (inspector, _) = await RulesAsync(ct).ConfigureAwait(false);
         var report = await inspector
-            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
+            .InspectAsync(await AppFinds.TargetAsync(_store, args[0], ct).ConfigureAwait(false), _selectedTarget ?? string.Empty, new TargetProbes(), ct)
             .ConfigureAwait(false);
 
         Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
@@ -3876,8 +4041,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task<(TargetInspector Inspector, bool Whole)> RulesAsync(CancellationToken ct)
     {
         var routed = RoutedList;
-        var list = routed is { } listId
-            ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
+        var list = routed is { } listId && await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false) is { } stored
+            ? AppFinds.Expand(stored, _appFinds)
             : null;
         var settings = routed is { } id
             ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
@@ -4494,7 +4659,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
-        return AppSplit(await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false), settings, useRouter);
+        return AppSplit(AppFinds.ExpandStamp(await _store.GetRoutingListStampAsync(listId).ConfigureAwait(false), _appFinds), settings, useRouter);
     }
 
     // What the app rules of a list do here: they add to the rules where the relay stands, and hold the tunnel to

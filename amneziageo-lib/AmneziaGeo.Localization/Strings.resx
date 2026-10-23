@@ -1647,6 +1647,12 @@ Renamed on import: several names clashed with existing ones.</value>
   <data name="Agent_RoutingListOwnApp" xml:space="preserve">
     <value>The rule {0} points at AmneziaGeo itself, whose traffic is not routed.</value>
   </data>
+  <data name="Agent_RoutingListReadOnly" xml:space="preserve">
+    <value>The list "{0}" is read-only: it comes from the server of {1}.</value>
+  </data>
+  <data name="Agent_RoutingListsServerOnly" xml:space="preserve">
+    <value>The server of {0} allows none but its own routing lists.</value>
+  </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Failed to collect logs: {0}</value>
   </data>
@@ -2321,6 +2327,15 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_CardTagUpdate" xml:space="preserve">
     <value>Update</value>
   </data>
+  <data name="Main_CardTagReadOnly" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="Main_ServerListsOnlyOf" xml:space="preserve">
+    <value>The server of {0} allows none but its own routing lists</value>
+  </data>
+  <data name="Main_ServerListsOnly" xml:space="preserve">
+    <value>The server of this configuration allows none but its own routing lists</value>
+  </data>
   <data name="Main_CardSourceLocal" xml:space="preserve">
     <value>Local</value>
   </data>
@@ -2773,6 +2788,15 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Main_RuleCaption" xml:space="preserve">
     <value>{0} · {1}</value>
+  </data>
+  <data name="Main_RuleAppFound" xml:space="preserve">
+    <value>{0} · found: {1}</value>
+  </data>
+  <data name="Main_RuleAppMissing" xml:space="preserve">
+    <value>{0} · not found</value>
+  </data>
+  <data name="Main_RuleAppSearching" xml:space="preserve">
+    <value>{0} · searching</value>
   </data>
   <data name="Main_SuggestGeoSite" xml:space="preserve">
     <value>Domains in the {0} category</value>

@@ -254,6 +254,14 @@ internal sealed class TunnelRunner(
             ? await store.GetRoutingListAsync(bucketListId)
             : null;
 
+        // A program the list names stands for what this machine found for it last; the search runs again behind the
+        // connect, and what it finds is put in force on the tunnel standing.
+        var namesApps = activeList is not null && AppFinds.NamesOf(activeList.Rules).Count > 0;
+        if (activeList is not null)
+        {
+            activeList = await AppFinds.ExpandListAsync(store, activeList);
+        }
+
         // Global proxy on = full tunnel minus the Direct bucket; off = split (tunnel only the Proxy bucket). A
         // routing list's flag wins over the config's own split; without a list the config's split stands.
         var geoSplit = activeList is not null
@@ -295,10 +303,11 @@ internal sealed class TunnelRunner(
         var trackDomains = domains.Count > 0 && (geoSplit || !duties.CarriesDefault);
 
         // App tracking only in split mode.
-        var trackApps = geoSplit && apps.Count > 0;
+        var trackApps = geoSplit && (apps.Count > 0 || namesApps);
 
         // The applications the list keeps direct leave past the tunnel that carries the machine.
         IReadOnlyList<string> passApps = !geoSplit && duties.CarriesDefault ? activeList?.DirectApps ?? [] : [];
+        var passNames = !geoSplit && duties.CarriesDefault && namesApps;
         _appRole = geoSplit ? RouteRole.Proxy : duties.CarriesDefault ? RouteRole.Direct : (RouteRole?)null;
 
         var appSettings = await settings.LoadAsync();
@@ -716,7 +725,7 @@ internal sealed class TunnelRunner(
             // matched by the rules all the same.
             _processImages = new ProcessImages();
             var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>(), _processImages);
-            if (candidate.HasMatchers)
+            if (candidate.HasMatchers || namesApps)
             {
                 matcher = candidate;
                 _appMatcher = candidate;
@@ -734,11 +743,11 @@ internal sealed class TunnelRunner(
                 _processImages = null;
             }
         }
-        else if (passApps.Count > 0)
+        else if (passApps.Count > 0 || passNames)
         {
             _processImages = new ProcessImages();
             var candidate = new AppMatcher(passApps, loggerFactory.CreateLogger<AppMatcher>(), _processImages, past: true);
-            if (candidate.HasMatchers)
+            if (candidate.HasMatchers || passNames)
             {
                 matcher = candidate;
                 _appMatcher = candidate;
@@ -763,7 +772,7 @@ internal sealed class TunnelRunner(
         // Sessions of the named applications are taken onto an adapter of their own, where each is decided knowing
         // which program opened it. A routing table names no program, so this is the only place the rule can hold
         // for one application without holding for every other that shares the address.
-        if (trackApps && matcher is not null && AppGateway.Wanted())
+        if (trackApps && matcher is { HasMatchers: true } && AppGateway.Wanted())
         {
             // The carrier's address is kept out of the adapter beside the local networks.
             var keptOut = new List<string>(exclusionCidrs);
@@ -2178,6 +2187,7 @@ internal sealed class TunnelRunner(
             if (edited is not null)
             {
                 session.SetListName(edited.Name);
+                edited = await AppFinds.ExpandListAsync(store, edited, ct).ConfigureAwait(false);
             }
 
             var named = ApplyAppRules(routing, edited, tunnelName);

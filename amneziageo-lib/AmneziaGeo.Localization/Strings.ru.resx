@@ -1647,6 +1647,12 @@
   <data name="Agent_RoutingListOwnApp" xml:space="preserve">
     <value>Правило {0} указывает на сам AmneziaGeo, а его трафик не маршрутизируется.</value>
   </data>
+  <data name="Agent_RoutingListReadOnly" xml:space="preserve">
+    <value>Список «{0}» только для чтения: он пришёл с сервера {1}.</value>
+  </data>
+  <data name="Agent_RoutingListsServerOnly" xml:space="preserve">
+    <value>Сервер конфигурации {0} разрешает только свои списки маршрутизации.</value>
+  </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Не удалось собрать логи: {0}</value>
   </data>
@@ -2321,6 +2327,15 @@
   <data name="Main_CardTagUpdate" xml:space="preserve">
     <value>Обновить</value>
   </data>
+  <data name="Main_CardTagReadOnly" xml:space="preserve">
+    <value>Только чтение</value>
+  </data>
+  <data name="Main_ServerListsOnlyOf" xml:space="preserve">
+    <value>Сервер конфигурации {0} разрешает только свои списки маршрутизации</value>
+  </data>
+  <data name="Main_ServerListsOnly" xml:space="preserve">
+    <value>Сервер конфигурации разрешает только свои списки маршрутизации</value>
+  </data>
   <data name="Main_CardSourceLocal" xml:space="preserve">
     <value>Локальный</value>
   </data>
@@ -2773,6 +2788,15 @@
   </data>
   <data name="Main_RuleCaption" xml:space="preserve">
     <value>{0} · {1}</value>
+  </data>
+  <data name="Main_RuleAppFound" xml:space="preserve">
+    <value>{0} · найдено: {1}</value>
+  </data>
+  <data name="Main_RuleAppMissing" xml:space="preserve">
+    <value>{0} · не найдено</value>
+  </data>
+  <data name="Main_RuleAppSearching" xml:space="preserve">
+    <value>{0} · ищется</value>
   </data>
   <data name="Main_SuggestGeoSite" xml:space="preserve">
     <value>Домены категории {0}</value>

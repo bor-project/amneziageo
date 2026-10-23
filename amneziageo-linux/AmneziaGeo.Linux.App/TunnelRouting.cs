@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -54,11 +55,14 @@ internal sealed record TunnelRouting(
             return None;
         }
 
-        var list = await store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false);
-        if (list is null)
+        var stored = await store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false);
+        if (stored is null)
         {
             return None;
         }
+
+        // A program the list names stands for what this machine found for it last.
+        var list = await AppFinds.ExpandListAsync(store, stored, ct).ConfigureAwait(false);
 
         var settings = await store.GetRoutingSettingsAsync(listId.Value, ct).ConfigureAwait(false);
         var split = !(settings?.UseGlobalProxy ?? false);

@@ -31,10 +31,14 @@ internal sealed partial class CardTag : ObservableObject
     [ObservableProperty]
     private bool _warn;
 
+    // Whether the label only shows a mode: without a press it keeps its full look.
+    [ObservableProperty]
+    private bool _plain;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null, bool warn = false)
+    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null, bool warn = false, bool plain = false)
     {
         _text = text;
         _on = on;
@@ -43,6 +47,7 @@ internal sealed partial class CardTag : ObservableObject
         _busy = busy;
         _hint = hint;
         _warn = warn;
+        _plain = plain;
     }
 
     /// <summary>
@@ -84,5 +89,6 @@ internal sealed partial class CardTag : ObservableObject
         Busy = other.Busy;
         Hint = other.Hint;
         Warn = other.Warn;
+        Plain = other.Plain;
     }
 }

@@ -25,6 +25,7 @@
     </Panel>
     <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" MinWidth="0"
                   IsChecked="{Binding #Root.IsChecked, Mode=TwoWay}"
-                  IsEnabled="{Binding #Root.SwitchEnabled}" />
+                  IsEnabled="{Binding #Root.SwitchEnabled}"
+                  ToolTip.Tip="{Binding #Root.SwitchTip}" ToolTip.ShowOnDisabled="True" />
   </Grid>
 </UserControl>

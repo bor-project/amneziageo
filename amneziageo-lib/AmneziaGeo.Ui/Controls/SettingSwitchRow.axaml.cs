@@ -25,6 +25,9 @@ internal sealed partial class SettingSwitchRow : UserControl
     public static readonly StyledProperty<bool> HeadingProperty =
         AvaloniaProperty.Register<SettingSwitchRow, bool>(nameof(Heading));
 
+    public static readonly StyledProperty<string?> SwitchTipProperty =
+        AvaloniaProperty.Register<SettingSwitchRow, string?>(nameof(SwitchTip));
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -55,6 +58,15 @@ internal sealed partial class SettingSwitchRow : UserControl
     {
         get => GetValue(SwitchEnabledProperty);
         set => SetValue(SwitchEnabledProperty, value);
+    }
+
+    /// <summary>
+    /// Подсказка тумблера, видная и у недоступного.
+    /// </summary>
+    public string? SwitchTip
+    {
+        get => GetValue(SwitchTipProperty);
+        set => SetValue(SwitchTipProperty, value);
     }
 
     /// <summary>

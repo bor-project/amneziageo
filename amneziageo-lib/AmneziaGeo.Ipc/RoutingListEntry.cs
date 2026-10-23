@@ -3,8 +3,8 @@ namespace AmneziaGeo.Ipc;
 /// <summary>
 /// A shared routing list, summarized for the UI: id, name, counts of its rules per bucket and of the
 /// materialized routes / domains, the traffic policy it carries, the configuration it arrived with (empty for a list
-/// made on the device) and whether its server holds a newer version. Full rule tokens are fetched on demand via the
-/// get-routing-list command to keep the snapshot small.
+/// made on the device), whether its server holds a newer version and whether the server keeps it read-only. Full rule
+/// tokens are fetched on demand via the get-routing-list command to keep the snapshot small.
 /// </summary>
 public sealed record RoutingListEntry(
     long Id,
@@ -18,4 +18,5 @@ public sealed record RoutingListEntry(
     bool AllUdp = false,
     bool UseGlobalProxy = false,
     string Source = "",
-    bool HasUpdate = false);
+    bool HasUpdate = false,
+    bool ReadOnly = false);

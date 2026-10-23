@@ -1,5 +1,6 @@
 using System.Globalization;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Geo;
 
@@ -32,7 +33,9 @@ public sealed record TakenSources(IReadOnlyList<GeoSource> Added, IReadOnlyList<
 /// <param name="Added">How many lists were added.</param>
 /// <param name="Waiting">How many lists got a newer version that waits for the owner.</param>
 /// <param name="InUse">The list put in use, null when none was.</param>
-public sealed record TakenPresets(int Added, int Waiting, long? InUse)
+/// <param name="Taking">The lists the server keeps read-only whose newer version is to be taken at once.</param>
+/// <param name="Marked">How many lists the server made read-only or let go of being so.</param>
+public sealed record TakenPresets(int Added, int Waiting, long? InUse, IReadOnlyList<long>? Taking = null, int Marked = 0)
 {
     /// <summary>
     /// Nothing taken.
@@ -40,9 +43,14 @@ public sealed record TakenPresets(int Added, int Waiting, long? InUse)
     public static TakenPresets None { get; } = new(0, 0, null);
 
     /// <summary>
+    /// The lists whose newer version is to be taken at once, none when there are none.
+    /// </summary>
+    public IReadOnlyList<long> TakeNow => Taking ?? [];
+
+    /// <summary>
     /// Whether anything was taken.
     /// </summary>
-    public bool Any => Added > 0 || Waiting > 0 || InUse is not null;
+    public bool Any => Added > 0 || Waiting > 0 || InUse is not null || TakeNow.Count > 0 || Marked > 0;
 }
 
 /// <summary>
@@ -140,9 +148,11 @@ public static class OfferedLists
 
     /// <summary>
     /// Takes the routing lists a server hands out. A list the store knows by the identifier of the server keeps what
-    /// it holds, and a newer version waits for the owner; a list the store holds none of is added, and put in use
-    /// when the server marks it so and no list is in use; a list held under the name is tied to the list of the
-    /// server. A server that names no identifiers has its lists added by name.
+    /// it holds, and a newer version waits for the owner, or is to be taken at once when the server keeps the list
+    /// read-only; a list the store holds none of is added, and put in use when the server marks it so and no list is
+    /// in use; a list held under the name is tied to the list of the server. A server that names no identifiers has
+    /// its lists added by name. A list the server makes read-only takes the version of the server when it holds
+    /// another; a read-only list the server of the configuration no longer hands out becomes an ordinary one.
     /// </summary>
     public static async Task<TakenPresets> TakePresetsAsync(
         IStateStore store,
@@ -158,7 +168,9 @@ public static class OfferedLists
 
         if (offered.Count == 0)
         {
-            return TakenPresets.None;
+            var released = await ReleaseAsync(store, config, offered, await store.ListRoutingListOriginsAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+
+            return released == 0 ? TakenPresets.None : new TakenPresets(0, 0, null, Marked: released);
         }
 
         var lists = (await store.ListRoutingListsAsync(ct).ConfigureAwait(false)).ToList();
@@ -167,7 +179,9 @@ public static class OfferedLists
         var ids = new HashSet<long>(lists.Select(list => list.Id));
         var added = 0;
         var waiting = 0;
+        var marks = 0;
         var inUse = default(long?);
+        var taking = new List<long>();
         foreach (var preset in offered)
         {
             if (preset.Id.Length == 0)
@@ -187,12 +201,31 @@ public static class OfferedLists
             if (at >= 0)
             {
                 var origin = origins[at];
+                var marked = origin with { ReadOnly = preset.ReadOnly, Config = config };
+                marks += marked.ReadOnly == origin.ReadOnly ? 0 : 1;
                 if (when > Newest(origin) && lists.Find(list => list.Id == origin.ListId) is { } held)
                 {
                     var same = await SameAsync(store, held, version, ct).ConfigureAwait(false);
-                    origins[at] = same ? origin with { Updated = when, Pending = null } : origin with { Pending = version };
-                    await store.SetRoutingListOriginAsync(origins[at], ct).ConfigureAwait(false);
-                    waiting += same ? 0 : 1;
+                    marked = same ? marked with { Updated = when, Pending = null } : marked with { Pending = version };
+                    waiting += same || preset.ReadOnly ? 0 : 1;
+                }
+                else if (marked is { ReadOnly: true, Pending: null } && !origin.ReadOnly
+                    && lists.Find(list => list.Id == origin.ListId) is { } kept
+                    && !await SameAsync(store, kept, version, ct).ConfigureAwait(false))
+                {
+                    // A list made read-only takes the version of its server in place of what the owner changed.
+                    marked = marked with { Pending = version };
+                }
+
+                if (marked != origin)
+                {
+                    origins[at] = marked;
+                    await store.SetRoutingListOriginAsync(marked, ct).ConfigureAwait(false);
+                }
+
+                if (marked is { ReadOnly: true, Pending: not null })
+                {
+                    taking.Add(marked.ListId);
                 }
 
                 continue;
@@ -201,7 +234,7 @@ public static class OfferedLists
             // A list is told apart by the id of the server: a list held under the same name stays apart from it.
             names.Add(preset.Name);
             var id = await AddListAsync(store, geo, preset.Name, preset.Rules, preset.AllUdp, preset.Full, preset.Id, ct).ConfigureAwait(false);
-            var fresh = new RoutingListOrigin(id, preset.Id, version.Source, when);
+            var fresh = new RoutingListOrigin(id, preset.Id, version.Source, when, ReadOnly: preset.ReadOnly, Config: config);
             await store.SetRoutingListOriginAsync(fresh, ct).ConfigureAwait(false);
             origins.Add(fresh);
             ids.Add(id);
@@ -213,7 +246,51 @@ public static class OfferedLists
             }
         }
 
-        return new TakenPresets(added, waiting, inUse);
+        marks += await ReleaseAsync(store, config, offered, origins, ct).ConfigureAwait(false);
+
+        return new TakenPresets(added, waiting, inUse, taking, marks);
+    }
+
+    /// <summary>
+    /// Returns the refusal of a command that changes or removes a list the server keeps read-only, null for any other
+    /// list; the command names the list first.
+    /// </summary>
+    public static async Task<IpcAck?> ReadOnlyRefusalAsync(IStateStore store, IReadOnlyList<string> args, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(args);
+
+        if (args.Count == 0
+            || !long.TryParse(args[0], NumberStyles.None, CultureInfo.InvariantCulture, out var id)
+            || id <= 0
+            || await store.GetRoutingListOriginAsync(id, ct).ConfigureAwait(false) is not { ReadOnly: true } origin)
+        {
+            return null;
+        }
+
+        var name = (await store.GetRoutingListStampAsync(id, ct).ConfigureAwait(false))?.Name ?? id.ToString(CultureInfo.InvariantCulture);
+
+        return new IpcAck(false, IpcMessage.Key("Agent_RoutingListReadOnly", name, origin.Source));
+    }
+
+    // A read-only list the server of the configuration handed out last and no longer hands out becomes an ordinary one;
+    // returns how many did.
+    private static async Task<int> ReleaseAsync(
+        IStateStore store,
+        string config,
+        IReadOnlyList<OfferedPreset> offered,
+        IReadOnlyList<RoutingListOrigin> origins,
+        CancellationToken ct)
+    {
+        var handed = offered.Select(preset => preset.Id).Where(id => id.Length > 0).ToHashSet(StringComparer.Ordinal);
+        var released = 0;
+        foreach (var origin in origins.Where(one => one.ReadOnly && string.Equals(one.Config, config, StringComparison.Ordinal) && !handed.Contains(one.PresetId)))
+        {
+            await store.SetRoutingListOriginAsync(origin with { ReadOnly = false }, ct).ConfigureAwait(false);
+            released++;
+        }
+
+        return released;
     }
 
     /// <summary>

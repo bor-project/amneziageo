@@ -118,6 +118,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _allowInbound;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RoutingSwitch))]
     private bool _useRouting = true;
 
     [ObservableProperty]
@@ -199,6 +200,27 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     // Whether the server of the configuration leaves the choice about its signal to disconnect to the device.
     [ObservableProperty]
     private bool _signalOffered;
+
+    // Whether the server of the configuration allows none but its own routing lists, which keeps the configuration on
+    // the routing list.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RoutingSwitch))]
+    [NotifyPropertyChangedFor(nameof(RoutingSwitchTip))]
+    private bool _serverListsOnly;
+
+    /// <summary>
+    /// What the routing switch shows: on while the server keeps the configuration on the routing list.
+    /// </summary>
+    public bool RoutingSwitch
+    {
+        get => UseRouting || ServerListsOnly;
+        set => UseRouting = value;
+    }
+
+    /// <summary>
+    /// Why the routing switch stands where it is; none while it is free.
+    /// </summary>
+    public string? RoutingSwitchTip => ServerListsOnly ? Loc.Instance.Get("Main_ServerListsOnly") : null;
 
     // The reach of the access the agent holds: the whole tunnel network or the server alone.
     private bool _inboundNetwork;

@@ -25,7 +25,8 @@
             </StackPanel>
 
             <Button x:Name="ActivePart" Grid.Column="1" Classes="cardpick" VerticalAlignment="Top" Margin="0,1,0,0"
-                    ClickMode="Press" ToolTip.Tip="{l:Tr Main_CardActiveFlag}"
+                    ClickMode="Press" ToolTip.Tip="{Binding ActiveTip}" ToolTip.ShowOnDisabled="True"
+                    IsEnabled="{Binding !Locked}"
                     Command="{Binding $parent[controls:RoutingCard].SelectCommand}"
                     CommandParameter="{Binding}">
               <!-- Поле повторяет ширину круга подключения: под ним встаёт шестерёнка подвала. -->

@@ -184,4 +184,20 @@ public sealed record StatusSnapshot(
     /// Whether the VPNs of other programs keep their adapters, ranges and servers beside the tunnel, on or off; empty
     /// where the platform takes no such choice.
     /// </summary>
-    string OtherVpn = "");
+    string OtherVpn = "",
+
+    /// <summary>
+    /// The configuration standing up whose server allows none but its own routing lists, empty while none does.
+    /// </summary>
+    string ServerListsOf = "",
+
+    /// <summary>
+    /// The routing lists of that server the device holds; the list in use is one of them.
+    /// </summary>
+    IReadOnlyList<long>? ServerLists = null,
+
+    /// <summary>
+    /// The programs the device found for each app:&lt;name&gt; of the routing lists, as app rule values; a name the
+    /// device was never searched for is missing, one it found nothing for stands for none.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? FoundApps = null);

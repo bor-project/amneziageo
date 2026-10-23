@@ -4,6 +4,7 @@ using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -43,6 +44,12 @@ internal partial class RoutingViewModel : ViewModelBase
 
     // Set once the agent has reported its catalogue; until then an empty one only means "not loaded".
     private bool _catalogueKnown;
+
+    // Строки каталога из прошлого снимка: по ним видно, что список «Только чтение» сменил версию.
+    private Dictionary<long, RoutingListEntry> _shownEntries = new();
+
+    // Открытый список «Только чтение» сменил версию, пока шла загрузка: его перечитывают после неё.
+    private bool _rereadAfterLoad;
 
     // Состояние туннеля из снимка: по нему видно, идёт ли маршрутизация по выбранному списку прямо сейчас.
     private string _boundStatus = ConnectionStatus.Disconnected;
@@ -87,7 +94,19 @@ internal partial class RoutingViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
     [NotifyPropertyChangedFor(nameof(UseOpenList))]
     [NotifyPropertyChangedFor(nameof(DeleteListPrompt))]
+    [NotifyPropertyChangedFor(nameof(OpenListLocked))]
+    [NotifyPropertyChangedFor(nameof(OpenListLockTip))]
     private RoutingListSummaryViewModel? _editRoutingList;
+
+    // The configuration standing up whose server allows none but its own routing lists, and those lists.
+    private string _serverListsOf = string.Empty;
+    private IReadOnlyList<long> _serverLists = [];
+
+    // What the switch of the open list shows for a moment while a press the server holds is taken back.
+    private bool? _openListEcho;
+
+    // What the device found for each app:<name> of the routing lists, as the agent last reported it.
+    private IReadOnlyDictionary<string, IReadOnlyList<string>>? _foundApps;
 
     // The routing list every config uses, mirrored from the snapshot; null leaves each config on its own settings.
     [ObservableProperty]
@@ -209,6 +228,8 @@ internal partial class RoutingViewModel : ViewModelBase
         RoutingEditor?.RefreshLocalizedLabels();
         OnPropertyChanged(nameof(DeleteListPrompt));
         OnPropertyChanged(nameof(PresetRegionsLabel));
+        OnPropertyChanged(nameof(HomeRoutingTip));
+        OnPropertyChanged(nameof(OpenListLockTip));
         RebuildRegionCards();
     }
 
@@ -292,7 +313,8 @@ internal partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Стоит ли внизу настроек списка карточка удаления.
     /// </summary>
-    public bool ShowDeleteCard => IsSectionSettings && RoutingEditor is { IsNew: false } && !SectionLoading;
+    public bool ShowDeleteCard => IsSectionSettings && RoutingEditor is { IsNew: false } && !SectionLoading
+        && EditRoutingList is not { ReadOnly: true };
 
     /// <summary>
     /// Whether the draft rule + traffic editor is shown: a list by hand, or a filled preset or import.
@@ -347,6 +369,11 @@ internal partial class RoutingViewModel : ViewModelBase
     /// Стоит ли у заголовка раздела плашка новой версии открытого списка.
     /// </summary>
     public bool ShowListUpdate => !IsCreatingSectionRouting && !SectionLoading && EditRoutingList is { HasUpdate: true };
+
+    /// <summary>
+    /// Стоит ли у заголовка раздела плашка «Только чтение» открытого списка.
+    /// </summary>
+    public bool ShowListReadOnly => !IsCreatingSectionRouting && !SectionLoading && EditRoutingList is { ReadOnly: true };
 
     /// <summary>
     /// Стоит ли у списка переключатель всего UDP.
@@ -508,6 +535,7 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowImportFrame));
         OnPropertyChanged(nameof(ShowListMode));
         OnPropertyChanged(nameof(ShowListUpdate));
+        OnPropertyChanged(nameof(ShowListReadOnly));
         OnPropertyChanged(nameof(ShowImportPresets));
         OnPropertyChanged(nameof(ShowImportRegions));
         OnPropertyChanged(nameof(ShowPresetLoader));
@@ -592,6 +620,10 @@ internal partial class RoutingViewModel : ViewModelBase
             MarkCatalogueKnown();
         }
 
+        _serverListsOf = snapshot.ServerListsOf;
+        _serverLists = snapshot.ServerLists ?? [];
+        _foundApps = snapshot.FoundApps;
+        RoutingEditor?.ApplyFoundApps(_foundApps);
         SelectedRoutingListId = snapshot.SelectedRoutingList;
         MarkSelectedList();
         _localDoh = snapshot.LocalDoh;
@@ -659,6 +691,28 @@ internal partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Стоит ли тумблер главного экрана на месте: сервер конфигурации разрешает только свои списки.
+    /// </summary>
+    public bool HomeRoutingLocked => _serverListsOf.Length > 0;
+
+    /// <summary>
+    /// Подсказка тумблера главного экрана.
+    /// </summary>
+    public string HomeRoutingTip => HomeRoutingLocked
+        ? Loc.Instance.Get("Main_ServerListsOnlyOf", _serverListsOf)
+        : Loc.Instance.Get("Main_HomeRoutingHint");
+
+    /// <summary>
+    /// Стоит ли тумблер открытого списка на месте.
+    /// </summary>
+    public bool OpenListLocked => EditRoutingList is { Locked: true };
+
+    /// <summary>
+    /// Почему тумблер открытого списка стоит на месте; пусто, пока он свободен.
+    /// </summary>
+    public string? OpenListLockTip => EditRoutingList is { Locked: true } open ? open.ActiveTip : null;
+
+    /// <summary>
     /// Имя списка в строке главного экрана.
     /// </summary>
     public string HomeRoutingList => HasRoutingLists
@@ -676,7 +730,7 @@ internal partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public bool UseOpenList
     {
-        get => IsOpenListActive;
+        get => _openListEcho ?? IsOpenListActive;
         set
         {
             if (value == IsOpenListActive)
@@ -684,8 +738,23 @@ internal partial class RoutingViewModel : ViewModelBase
                 return;
             }
 
+            if (OpenListLocked)
+            {
+                Dispatcher.UIThread.Post(() => TakeBackOpenList(value));
+                return;
+            }
+
             _ = AssignRoutingAsync(value && EditRoutingList is { } open ? open.Id : null);
         }
+    }
+
+    // Показывает нажатие и возвращает тумблер открытого списка на место.
+    private void TakeBackOpenList(bool pressed)
+    {
+        _openListEcho = pressed;
+        OnPropertyChanged(nameof(UseOpenList));
+        _openListEcho = null;
+        OnPropertyChanged(nameof(UseOpenList));
     }
 
     // Плашка UDP на карточке списка: тот же блок, что и в настройках списка.
@@ -757,6 +826,7 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowCatalogueLoader));
         NotifyCatalogueChanged();
         RoutingLists.Clear();
+        _shownEntries = new();
         HasRoutingLists = false;
         SelectedRoutingListId = null;
         RoutingEditor = null;
@@ -931,8 +1001,11 @@ internal partial class RoutingViewModel : ViewModelBase
         {
             row.IsSelected = SelectedRoutingListId is { } id && row.Id == id;
             row.IsLive = row.IsSelected && live;
+            row.LockedBy = _serverListsOf.Length > 0 && (row.IsSelected || !_serverLists.Contains(row.Id)) ? _serverListsOf : string.Empty;
         }
 
+        OnPropertyChanged(nameof(OpenListLocked));
+        OnPropertyChanged(nameof(OpenListLockTip));
         EnsurePickedCard();
         NotifyHomeRouting();
     }
@@ -942,6 +1015,8 @@ internal partial class RoutingViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HomeRoutingOn));
         OnPropertyChanged(nameof(HomeRoutingList));
+        OnPropertyChanged(nameof(HomeRoutingLocked));
+        OnPropertyChanged(nameof(HomeRoutingTip));
     }
 
     // Landing on the Routing section with nothing open: open the list that routes so it never opens empty, and
@@ -1047,13 +1122,15 @@ internal partial class RoutingViewModel : ViewModelBase
             return;
         }
 
-        BuildSectionRoutingEditor(value.Id, value.Name);
+        BuildSectionRoutingEditor(value.Id, value.Name, value.ReadOnly);
     }
 
     // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror the
     // combo, subscribe the dirty signal, and re-hook the edit listeners that clear a stale "cannot delete" block.
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
     {
+        _rereadAfterLoad = false;
+        newValue?.ApplyFoundApps(_foundApps);
         if (oldValue is not null)
         {
             oldValue.PropertyChanged -= OnEditPropertyChanged;
@@ -1134,7 +1211,7 @@ internal partial class RoutingViewModel : ViewModelBase
 
     // Builds the Routing section's rule editor + per-routing settings for a real (saved) list. Independent of
     // the selection - the section catalogue is standalone.
-    private void BuildSectionRoutingEditor(long id, string name)
+    private void BuildSectionRoutingEditor(long id, string name, bool readOnly)
     {
         if (RoutingEditor is not null && RoutingEditor.Id == id && !RoutingEditor.IsNew)
         {
@@ -1142,9 +1219,10 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         var editor = NewEditor(id, name, OnSectionRoutingEditorSaved);
+        editor.IsReadOnly = readOnly;
         RoutingEditor = editor;
 
-        var settings = new RoutingSettingsViewModel(_connection, id);
+        var settings = new RoutingSettingsViewModel(_connection, id) { ReadOnly = readOnly };
         RoutingSettings = settings;
 
         _ = LoadSectionAsync(editor, settings);
@@ -1165,6 +1243,11 @@ internal partial class RoutingViewModel : ViewModelBase
             if (ReferenceEquals(RoutingEditor, editor))
             {
                 SectionLoading = false;
+                if (_rereadAfterLoad)
+                {
+                    _rereadAfterLoad = false;
+                    RereadOpenList();
+                }
             }
         }
     }
@@ -1220,10 +1303,15 @@ internal partial class RoutingViewModel : ViewModelBase
             }
         }
 
+        var reread = false;
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
             var existing = RoutingLists.FirstOrDefault(r => r.Id == entry.Id);
+
+            // Открытый список «Только чтение» сменил версию у агента: редактор его перечитывает.
+            reread |= entry.ReadOnly && existing is not null && ReferenceEquals(existing, EditRoutingList)
+                && _shownEntries.TryGetValue(entry.Id, out var seen) && seen != entry;
             if (existing is null)
             {
                 existing = new RoutingListSummaryViewModel
@@ -1254,7 +1342,10 @@ internal partial class RoutingViewModel : ViewModelBase
             existing.AllUdp = entry.AllUdp;
             existing.Source = entry.Source;
             existing.HasUpdate = entry.HasUpdate;
+            existing.ReadOnly = entry.ReadOnly;
         }
+
+        _shownEntries = entries.ToDictionary(entry => entry.Id);
 
         // Reconcile the selected list: if removed elsewhere drop the editor; if its instance was replaced by a
         // fresh row of the same id, re-point at the surviving instance so the combo stays selected. A pending
@@ -1287,15 +1378,60 @@ internal partial class RoutingViewModel : ViewModelBase
             }
         }
 
-        // Открытый список переименован вне редактора: редактор берёт новое имя.
+        // Открытый список изменился вне редактора: редактор берёт новое имя и флаг «Только чтение».
         if (EditRoutingList is { } open && RoutingEditor is { } editor && editor.Id == open.Id)
         {
             editor.TakeName(open.Name);
+            ShowReadOnly(open, editor, reread);
         }
 
         OnPropertyChanged(nameof(ShowListUpdate));
+        OnPropertyChanged(nameof(ShowListReadOnly));
+        OnPropertyChanged(nameof(ShowDeleteCard));
         OnPropertyChanged(nameof(DeleteListPrompt));
         MarkSelectedList();
+    }
+
+    // Ставит флаг «Только чтение» на редактор и настройки открытого списка; версию, легшую без владельца, они
+    // перечитывают.
+    private void ShowReadOnly(RoutingListSummaryViewModel open, RoutingListEditorViewModel editor, bool reread)
+    {
+        editor.IsReadOnly = open.ReadOnly;
+        if (open.ReadOnly)
+        {
+            RoutingDeletePending = false;
+        }
+
+        if (RoutingSettings is { } settings)
+        {
+            settings.ReadOnly = open.ReadOnly;
+        }
+
+        if (reread)
+        {
+            RereadOpenList();
+        }
+    }
+
+    // Перечитывает открытый список, бросив набранное; идущая загрузка перечитывает его, когда закончится.
+    private void RereadOpenList()
+    {
+        if (EditRoutingList is not { } open || RoutingEditor is not { } editor || editor.Id != open.Id
+            || RoutingSettings is not { } settings)
+        {
+            return;
+        }
+
+        if (SectionLoading)
+        {
+            _rereadAfterLoad = true;
+            return;
+        }
+
+        editor.Revert();
+        settings.Revert();
+        editor.TakeName(open.Name);
+        _ = LoadSectionAsync(editor, settings);
     }
 
     // ---- Import create-form: "+ Импорт" opens a new-list draft with a method picker (blank / file / paste / QR). ----

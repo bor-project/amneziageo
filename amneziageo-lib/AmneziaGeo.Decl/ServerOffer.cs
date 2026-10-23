@@ -53,6 +53,7 @@ public sealed record OfferedSource(string Name, string Kind, string Url);
 /// <param name="Updated">When the server last changed the list, null when it does not say.</param>
 /// <param name="Default">Whether the list is put in use when it is added and none is in use.</param>
 /// <param name="Source">The name of the configuration the list came with, empty when the server names none.</param>
+/// <param name="ReadOnly">Whether the list is kept as the server hands it out and takes its versions as they come.</param>
 public sealed record OfferedPreset(
     string Name,
     IReadOnlyList<string> Rules,
@@ -61,7 +62,8 @@ public sealed record OfferedPreset(
     string Id = "",
     DateTimeOffset? Updated = null,
     bool Default = false,
-    string Source = "")
+    string Source = "",
+    bool ReadOnly = false)
 {
     /// <summary>
     /// Renders the list the way a server hands it out.
@@ -90,6 +92,7 @@ public sealed record OfferedPreset(
 
             writer.WriteBoolean("default", Default);
             writer.WriteString("source", Source);
+            writer.WriteBoolean("readOnly", ReadOnly);
             writer.WriteEndObject();
         }
 
@@ -206,7 +209,7 @@ public sealed class ServerOffer
     public const int MaxPresetSource = 128;
 
     private static readonly string[] PresetRoles = ["proxy", "direct", "block"];
-    private static readonly string[] PresetKinds = ["geosite", "geoip", "domain", "cidr"];
+    private static readonly string[] PresetKinds = ["geosite", "geoip", "domain", "cidr", "app"];
 
     private readonly Dictionary<string, JsonElement> _features;
 
@@ -299,6 +302,13 @@ public sealed class ServerOffer
         && Arguments(DisconnectFeature) is { } arguments
         && arguments.TryGetProperty("allowed", out var allowed)
         && allowed.ValueKind == JsonValueKind.True;
+
+    /// <summary>
+    /// Whether the server lets the config route by none but the routing lists it hands out.
+    /// </summary>
+    public bool PresetsOnly =>
+        Arguments(PresetsFeature) is { ValueKind: JsonValueKind.Object } arguments
+        && Flag(arguments, "only");
 
     /// <summary>
     /// When the pass of the speed feature stops answering; the start of time when the server does not measure.
@@ -431,7 +441,7 @@ public sealed class ServerOffer
 
     /// <summary>
     /// Returns the routing lists the server names, each with the rules the client routes by: what goes through the
-    /// tunnel, past it or nowhere, by geo key, network or domain. Lists without a name are left out.
+    /// tunnel, past it or nowhere, by geo key, network, domain or program. Lists without a name are left out.
     /// </summary>
     public IReadOnlyList<OfferedPreset> Presets()
     {
@@ -488,7 +498,8 @@ public sealed class ServerOffer
             id,
             id.Length > 0 ? When(list, "updated") : null,
             Flag(list, "default"),
-            source.Length > MaxPresetSource ? source[..MaxPresetSource] : source);
+            source.Length > MaxPresetSource ? source[..MaxPresetSource] : source,
+            Flag(list, "readOnly"));
     }
 
     /// <summary>
@@ -622,8 +633,8 @@ public sealed class ServerOffer
             : string.Empty;
     }
 
-    // A rule of an offered list says what it does and names a geo key, a network or a domain; a server never
-    // routes the applications of the device.
+    // A rule of an offered list says what it does and names a geo key, a network, a domain or a program, which the
+    // device finds itself under an app:<name>.
     private static bool IsPresetRule(string rule)
     {
         var bar = rule.IndexOf('|', StringComparison.Ordinal);

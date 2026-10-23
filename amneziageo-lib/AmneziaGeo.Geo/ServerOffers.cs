@@ -41,6 +41,7 @@ public sealed class ServerOffers
     private readonly GeoConfigurator? _geo;
     private readonly Action<IReadOnlyList<GeoSource>>? _fetch;
     private readonly Action? _rerouted;
+    private readonly Func<IReadOnlyList<long>, CancellationToken, Task>? _take;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
@@ -57,7 +58,8 @@ public sealed class ServerOffers
         TimeProvider? time = null,
         GeoConfigurator? geo = null,
         Action<IReadOnlyList<GeoSource>>? fetch = null,
-        Action? rerouted = null)
+        Action? rerouted = null,
+        Func<IReadOnlyList<long>, CancellationToken, Task>? take = null)
     {
         _store = store;
         _note = note;
@@ -66,6 +68,7 @@ public sealed class ServerOffers
         _geo = geo;
         _fetch = fetch;
         _rerouted = rerouted;
+        _take = take;
     }
 
     /// <summary>
@@ -266,21 +269,51 @@ public sealed class ServerOffers
 
         var bound = await BindAsync(config, text, offer, ct).ConfigureAwait(false);
         var listed = await ListAsync(config, offer, ct).ConfigureAwait(false);
+        var limited = offer.PresetsOnly != (kept?.Offer.PresetsOnly ?? false);
+        if (limited)
+        {
+            _note?.Invoke(offer.PresetsOnly
+                ? $"{config}: the server allows none but its own routing lists"
+                : $"{config}: the server allows any routing list again", null);
+        }
 
-        return (offer, bound || listed);
+        return (offer, bound || listed || limited);
     }
 
-    // Takes the geo sources and the routing lists the server hands out and has the files of the sources that came or
-    // moved fetched. Without the geo of the device it leaves both as they are.
+    // Takes the geo sources and the routing lists the server hands out, has the files of the sources that came or
+    // moved fetched and the newer versions of the lists the server keeps read-only taken. Without the geo of the
+    // device it leaves all of it as it is.
     private async Task<bool> ListAsync(string config, ServerOffer offer, CancellationToken ct)
     {
-        var sources = offer.Sources();
-        var presets = offer.Presets();
-        if (_geo is null || (sources.Count == 0 && presets.Count == 0))
+        if (_geo is null)
         {
             return false;
         }
 
+        var (changed, taking) = await KeepListsAsync(config, offer, _geo, ct).ConfigureAwait(false);
+        if (taking.Count == 0 || _take is not { } take)
+        {
+            return changed;
+        }
+
+        try
+        {
+            await take(taking, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _note?.Invoke($"{config}: the newer versions of the read-only lists of the server were not taken; they are taken at the next answer", ex);
+        }
+
+        return changed;
+    }
+
+    // Keeps what the server hands out under the lock two configs of one server share, and returns whether anything
+    // changed and which read-only lists are to take their newer version.
+    private async Task<(bool Changed, IReadOnlyList<long> Taking)> KeepListsAsync(string config, ServerOffer offer, GeoConfigurator geo, CancellationToken ct)
+    {
+        var sources = offer.Sources();
+        var presets = offer.Presets();
         await _listing.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -300,11 +333,13 @@ public sealed class ServerOffers
                 _fetch?.Invoke(taken.Fetch);
             }
 
-            var lists = await OfferedLists.TakePresetsAsync(_store, _geo, config, presets, ct).ConfigureAwait(false);
+            var lists = await OfferedLists.TakePresetsAsync(_store, geo, config, presets, ct).ConfigureAwait(false);
             if (lists.Any)
             {
                 var use = lists.InUse is null ? string.Empty : "; a list the server marks default was put in use";
-                _note?.Invoke($"{config}: of the routing lists of the server {lists.Added} added, {lists.Waiting} with a newer version{use}", null);
+                var kept = lists.TakeNow.Count == 0 ? string.Empty : $", {lists.TakeNow.Count} read-only taking the newer version";
+                var marks = lists.Marked == 0 ? string.Empty : $", {lists.Marked} made read-only or ordinary again";
+                _note?.Invoke($"{config}: of the routing lists of the server {lists.Added} added, {lists.Waiting} with a newer version{kept}{marks}{use}", null);
             }
 
             if (lists.InUse is not null)
@@ -312,13 +347,13 @@ public sealed class ServerOffers
                 _rerouted?.Invoke();
             }
 
-            return taken.Any || lists.Any;
+            return (taken.Any || lists.Any, lists.TakeNow);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _note?.Invoke($"{config}: the geo sources and routing lists the server hands out were not kept", ex);
 
-            return false;
+            return (false, []);
         }
         finally
         {

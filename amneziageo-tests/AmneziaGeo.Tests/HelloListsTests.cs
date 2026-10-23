@@ -82,12 +82,12 @@ public sealed class HelloListsTests : IAsyncLifetime
     }
 
     [Fact]
-    public void TheOffer_NamesListsByGeoKeyNetworkOrDomainOnly()
+    public void TheOffer_NamesListsByGeoKeyNetworkDomainOrProgramOnly()
     {
         var presets = ServerOffer.Parse(Answer).Presets();
 
         Assert.Equal(["Unblock", "Everything"], presets.Select(preset => preset.Name));
-        Assert.Equal(["proxy|geosite:youtube", "direct|geoip:ru", "block|domain:ads.example"], presets[0].Rules);
+        Assert.Equal(["proxy|geosite:youtube", "direct|geoip:ru", "block|domain:ads.example", "proxy|app:path=/usr/bin/x"], presets[0].Rules);
         Assert.True(presets[0].AllUdp);
         Assert.False(presets[0].Full);
         Assert.True(presets[1].Full);
@@ -156,7 +156,7 @@ public sealed class HelloListsTests : IAsyncLifetime
         var lists = await _store.ListRoutingListsAsync();
         Assert.Equal(["Unblock", "Everything"], lists.Select(list => list.Name));
         Assert.Equal(
-            ["proxy|geosite:youtube", "direct|geoip:ru", "block|domain:ads.example"],
+            ["proxy|geosite:youtube", "direct|geoip:ru", "block|domain:ads.example", "proxy|app:path=/usr/bin/x"],
             lists[0].Rules.Select(GeoConfigurator.FormatWithRole));
         Assert.True((await _store.GetRoutingSettingsAsync(lists[0].Id))!.AllUdp);
         Assert.True((await _store.GetRoutingSettingsAsync(lists[1].Id))!.UseGlobalProxy);
@@ -228,7 +228,7 @@ public sealed class HelloListsTests : IAsyncLifetime
         var summary = Assert.Single(await _store.ListRoutingListSummariesAsync());
         Assert.Equal(["proxy|geosite:youtube"], list.Rules.Select(GeoConfigurator.FormatWithRole));
         Assert.True((await _store.GetRoutingSettingsAsync(list.Id))!.AllUdp);
-        Assert.Equal(new RoutingListOrigin(list.Id, First, "vpn.example-awg1-office", MorningTime), origin);
+        Assert.Equal(new RoutingListOrigin(list.Id, First, "vpn.example-awg1-office", MorningTime, Config: "office"), origin);
         Assert.Equal(First, list.Uid);
         Assert.Equal("vpn.example-awg1-office", summary.Source);
         Assert.False(summary.HasUpdate);
@@ -375,7 +375,7 @@ public sealed class HelloListsTests : IAsyncLifetime
         Assert.Equal("10.0.0.0/8", settings.Exclusions);
         Assert.Equal(inUse ? list.Id : null, await _store.GetSelectedRoutingListAsync());
         Assert.Equal(
-            new RoutingListOrigin(list.Id, First, "vpn.example-awg0-office", NoonTime),
+            new RoutingListOrigin(list.Id, First, "vpn.example-awg0-office", NoonTime, Config: "office"),
             Assert.Single(await _store.ListRoutingListOriginsAsync()));
         Assert.False(Assert.Single(await _store.ListRoutingListSummariesAsync()).HasUpdate);
     }
@@ -563,6 +563,192 @@ public sealed class HelloListsTests : IAsyncLifetime
         Assert.Equal(0, told);
     }
 
+    [Fact]
+    public void TheOffer_NamesWhetherTheServerKeepsAListReadOnly()
+    {
+        var lists = ServerOffer.Parse(Lists(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true), Item(Second, "Ads", "block|geosite:ads", Morning))).Presets();
+
+        Assert.Equal([true, false], lists.Select(list => list.ReadOnly));
+        Assert.True(OfferedPreset.Parse(lists[0].ToPayload())!.ReadOnly);
+    }
+
+    [Fact]
+    public async Task AListKeptReadOnly_IsAddedWithTheMarkAndTheConfiguration()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true));
+
+        var origin = Assert.Single(await _store.ListRoutingListOriginsAsync());
+        Assert.True(origin.ReadOnly);
+        Assert.Equal("office", origin.Config);
+        Assert.True(Assert.Single(await _store.ListRoutingListSummariesAsync()).ReadOnly);
+    }
+
+    [Fact]
+    public async Task ANewerVersionOfAReadOnlyList_IsTakenAtOnce()
+    {
+        var geo = new GeoConfigurator(_store, new NoFiles());
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true));
+        var taken = new List<long>();
+
+        await Asked(
+                Lists(Item(First, "Unblock more", "proxy|geosite:openai", Noon, readOnly: true)),
+                take: async (ids, _) =>
+                {
+                    taken.AddRange(ids);
+                    foreach (var id in ids)
+                    {
+                        Assert.True(await UpdateAsync(geo, id));
+                    }
+                })
+            .AskAsync("office", Text, CancellationToken.None);
+
+        var list = Assert.Single(await _store.ListRoutingListsAsync());
+        var origin = Assert.Single(await _store.ListRoutingListOriginsAsync());
+        Assert.Equal([list.Id], taken);
+        Assert.Equal("Unblock more", list.Name);
+        Assert.Equal(["proxy|geosite:openai"], list.Rules.Select(GeoConfigurator.FormatWithRole));
+        Assert.Null(origin.Pending);
+        Assert.Equal(NoonTime, origin.Updated);
+        Assert.True(origin.ReadOnly);
+    }
+
+    [Fact]
+    public async Task AListTheServerNoLongerKeepsReadOnly_WaitsForTheOwnerAgain()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true));
+        var taken = 0;
+
+        await Asked(Lists(Item(First, "Unblock", "proxy|geosite:openai", Noon)), take: (_, _) => Task.FromResult(taken++))
+            .AskAsync("office", Text, CancellationToken.None);
+
+        var origin = Assert.Single(await _store.ListRoutingListOriginsAsync());
+        Assert.False(origin.ReadOnly);
+        Assert.NotNull(origin.Pending);
+        Assert.Equal(0, taken);
+    }
+
+    [Fact]
+    public async Task AReadOnlyListTheServerNoLongerHandsOut_BecomesAnOrdinaryOne()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true));
+
+        await Asked(Lists()).AskAsync("home", Text, CancellationToken.None);
+        var kept = Assert.Single(await _store.ListRoutingListOriginsAsync());
+        await Asked(Lists()).AskAsync("office", Text, CancellationToken.None);
+        var released = Assert.Single(await _store.ListRoutingListOriginsAsync());
+
+        Assert.True(kept.ReadOnly);
+        Assert.False(released.ReadOnly);
+        Assert.Single(await _store.ListRoutingListsAsync());
+    }
+
+    [Fact]
+    public async Task TheMarkOfTheServerAlone_TellsTheListsChanged()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
+        var geo = new GeoConfigurator(_store, new NoFiles());
+        var offered = ServerOffer.Parse(Lists(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true))).Presets();
+
+        var marked = await OfferedLists.TakePresetsAsync(_store, geo, "office", offered, CancellationToken.None);
+        var again = await OfferedLists.TakePresetsAsync(_store, geo, "office", offered, CancellationToken.None);
+
+        Assert.Equal(1, marked.Marked);
+        Assert.True(marked.Any);
+        Assert.False(again.Any);
+    }
+
+    [Fact]
+    public async Task AReadOnlyListTheServerLetsGo_TellsTheListsChanged()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true));
+        var geo = new GeoConfigurator(_store, new NoFiles());
+
+        var released = await OfferedLists.TakePresetsAsync(_store, geo, "office", [], CancellationToken.None);
+        var again = await OfferedLists.TakePresetsAsync(_store, geo, "office", [], CancellationToken.None);
+
+        Assert.Equal(1, released.Marked);
+        Assert.True(released.Any);
+        Assert.False(again.Any);
+    }
+
+    [Fact]
+    public async Task TheMarkOfTheServer_IsToldToTheAgent()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
+        var told = new List<string>();
+
+        await Asked(Lists(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true)))
+            .AskEachAsync([("office", Text)], config =>
+            {
+                told.Add(config);
+                return Task.CompletedTask;
+            }, CancellationToken.None);
+
+        Assert.Equal(["office"], told);
+    }
+
+    [Fact]
+    public async Task AListTheServerMakesReadOnlyAgain_DropsTheRulesItsOwnerAdded()
+    {
+        var geo = new GeoConfigurator(_store, new NoFiles());
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
+        var id = Assert.Single(await _store.ListRoutingListsAsync()).Id;
+        await geo.ApplyToRoutingListAsync(id, "Unblock", ["proxy|geosite:youtube", "proxy|domain:local.example"]);
+        var taking = new List<long>();
+
+        await Asked(Lists(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true)), take: (ids, _) =>
+        {
+            taking.AddRange(ids);
+            return Task.CompletedTask;
+        }).AskAsync("office", Text, CancellationToken.None);
+        var taken = await UpdateAsync(geo, id);
+
+        Assert.Equal([id], taking);
+        Assert.True(taken);
+        var list = Assert.Single(await _store.ListRoutingListsAsync());
+        Assert.Equal(["proxy|geosite:youtube"], list.Rules.Select(GeoConfigurator.FormatWithRole));
+        Assert.True((await _store.GetRoutingListOriginAsync(id))!.ReadOnly);
+        Assert.Null((await _store.GetRoutingListOriginAsync(id))!.Pending);
+    }
+
+    [Fact]
+    public async Task AListTheServerMakesReadOnlyAsItHandsItOut_TakesNothing()
+    {
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning));
+        var taking = new List<long>();
+
+        await Asked(Lists(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true)), take: (ids, _) =>
+        {
+            taking.AddRange(ids);
+            return Task.CompletedTask;
+        }).AskAsync("office", Text, CancellationToken.None);
+
+        Assert.Empty(taking);
+        Assert.True((await _store.GetRoutingListOriginAsync(Assert.Single(await _store.ListRoutingListsAsync()).Id))!.ReadOnly);
+    }
+
+    [Fact]
+    public async Task ACommandThatChangesAReadOnlyList_IsRefused()
+    {
+        var geo = new GeoConfigurator(_store, new NoFiles());
+        await AskAsync(Item(First, "Unblock", "proxy|geosite:youtube", Morning, readOnly: true));
+        var kept = Assert.Single(await _store.ListRoutingListsAsync()).Id;
+        var own = await geo.ApplyToRoutingListAsync(0, "Mine", ["proxy|geosite:openai"]);
+        var id = kept.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var refused = await OfferedLists.ReadOnlyRefusalAsync(_store, [id, "Renamed"], CancellationToken.None);
+        var mine = await OfferedLists.ReadOnlyRefusalAsync(_store, [own.ToString(System.Globalization.CultureInfo.InvariantCulture), "Mine"], CancellationToken.None);
+        var added = await OfferedLists.ReadOnlyRefusalAsync(_store, ["0", "New"], CancellationToken.None);
+
+        Assert.NotNull(refused);
+        Assert.False(refused.Ok);
+        Assert.True(IpcMessage.TryParse(refused.Message, out var key, out var args));
+        Assert.Equal("Agent_RoutingListReadOnly", key);
+        Assert.Equal(["Unblock", "vpn.example-awg1-office"], args);
+        Assert.Null(mine);
+        Assert.Null(added);
+    }
+
     private Task AskAsync(params string[] items) => Asked(Lists(items)).AskAsync("office", Text, CancellationToken.None);
 
     // Берёт ожидающую версию так, как это делает агент: своими командами сохранения списка и его настроек.
@@ -588,14 +774,20 @@ public sealed class HelloListsTests : IAsyncLifetime
 
     private ServerOffers Offers(Action<IReadOnlyList<GeoSource>>? fetch = null) => Asked(Answer, fetch);
 
-    private ServerOffers Asked(string answer, Action<IReadOnlyList<GeoSource>>? fetch = null, Action? rerouted = null, TimeProvider? time = null) =>
+    private ServerOffers Asked(
+        string answer,
+        Action<IReadOnlyList<GeoSource>>? fetch = null,
+        Action? rerouted = null,
+        TimeProvider? time = null,
+        Func<IReadOnlyList<long>, CancellationToken, Task>? take = null) =>
         new(
             _store,
             ask: (_, _) => Task.FromResult(new HelloReply(ServerOffer.Parse(answer), true)),
             time: time,
             geo: new GeoConfigurator(_store, new NoFiles()),
             fetch: fetch,
-            rerouted: rerouted);
+            rerouted: rerouted,
+            take: take);
 
     // Часы, которые идут на заданное время впереди.
     private sealed class Ahead(TimeSpan by) : TimeProvider
@@ -614,9 +806,11 @@ public sealed class HelloListsTests : IAsyncLifetime
         string updated,
         bool marked = false,
         bool allUdp = false,
-        string source = "vpn.example-awg1-office") =>
+        string source = "vpn.example-awg1-office",
+        bool readOnly = false) =>
         "{\"name\":\"" + name + "\",\"rules\":[\"" + rule + "\"],\"allUdp\":" + (allUdp ? "true" : "false") + ",\"full\":false,\"id\":\"" + id
-        + "\",\"updated\":\"" + updated + "\",\"default\":" + (marked ? "true" : "false") + ",\"source\":\"" + source + "\"}";
+        + "\",\"updated\":\"" + updated + "\",\"default\":" + (marked ? "true" : "false") + ",\"source\":\"" + source
+        + "\",\"readOnly\":" + (readOnly ? "true" : "false") + "}";
 
     // Файлов гео-баз нет.
     private sealed class NoFiles : IGeoFileStore

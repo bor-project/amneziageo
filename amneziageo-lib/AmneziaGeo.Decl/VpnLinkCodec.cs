@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace AmneziaGeo.Decl;
@@ -22,17 +25,38 @@ public static class VpnLinkCodec
     public sealed record Imported(string ConfText, string? Name);
 
     /// <summary>
-    /// Builds an Amnezia vpn:// link from a wg-quick config.
+    /// Builds an Amnezia vpn:// link from a wg-quick config: the config, and beside it the fields AmneziaVPN connects by.
     /// </summary>
     public static string Encode(string confText, string? name)
     {
         var (host, port) = ParseEndpoint(confText);
-        var lastConfig = JsonSerializer.Serialize(new Dictionary<string, object?>
+        var (iface, peer, obfuscated) = Sections(confText);
+        var container = obfuscated ? "amnezia-awg" : "amnezia-wireguard";
+        var last = new Dictionary<string, object?>
         {
             ["config"] = confText,
             ["hostName"] = host,
             ["port"] = port,
-        });
+            ["client_priv_key"] = Value(iface, "PrivateKey"),
+            ["client_ip"] = Value(iface, "Address"),
+            ["server_pub_key"] = Value(peer, "PublicKey"),
+            ["allowed_ips"] = Parts(Value(peer, "AllowedIPs")),
+        };
+        Take(last, "psk_key", Value(peer, "PresharedKey"));
+        Take(last, "mtu", Value(iface, "MTU"));
+        Take(last, "persistent_keep_alive", Value(peer, "PersistentKeepalive"));
+        if (obfuscated)
+        {
+            foreach (var key in _amneziaOrder)
+            {
+                Take(last, key, Value(iface, key));
+            }
+
+            foreach (var (key, fallback) in _demanded)
+            {
+                last.TryAdd(key, fallback);
+            }
+        }
 
         var root = new Dictionary<string, object?>
         {
@@ -40,32 +64,54 @@ public static class VpnLinkCodec
             {
                 new Dictionary<string, object?>
                 {
-                    ["container"] = "amnezia-awg",
-                    ["awg"] = new Dictionary<string, object?>
+                    ["container"] = container,
+                    [obfuscated ? "awg" : "wireguard"] = new Dictionary<string, object?>
                     {
-                        ["last_config"] = lastConfig,
+                        ["last_config"] = JsonSerializer.Serialize(last, _plain),
                         ["isThirdPartyConfig"] = true,
                         ["port"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture),
                         ["transport_proto"] = "udp",
                     },
                 },
             },
-            ["defaultContainer"] = "amnezia-awg",
+            ["defaultContainer"] = container,
             ["description"] = string.IsNullOrWhiteSpace(name) ? host : name,
             ["hostName"] = host,
         };
 
-        var json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(root));
+        // AmneziaVPN asks the two servers it is named and nothing else, so one server is named twice.
+        var servers = Parts(Value(iface, "DNS")).Where(IsV4).ToList();
+        if (servers.Count > 0)
+        {
+            root["dns1"] = servers[0];
+            root["dns2"] = servers.Count > 1 ? servers[1] : servers[0];
+        }
+
+        var json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(root, _plain));
         return _scheme + Base64UrlEncode(QCompress(json));
     }
 
-    // Keys of the AmneziaWG obfuscation, which no wireguard:// link can carry.
-    private static readonly HashSet<string> _amneziaKeys = new(StringComparer.OrdinalIgnoreCase)
-    {
+    // Keys of the AmneziaWG obfuscation, which no wireguard:// link can carry, the way AmneziaVPN names them.
+    private static readonly string[] _amneziaOrder =
+    [
         "Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4",
         "I1", "I2", "I3", "I4", "I5", "HeaderProtectionKey", "ContentPaddingAddition",
         "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout",
         "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies",
+    ];
+
+    private static readonly HashSet<string> _amneziaKeys = new(_amneziaOrder, StringComparer.OrdinalIgnoreCase);
+
+    // The settings AmneziaVPN refuses an obfuscated config without, with what the protocol takes for a missing one.
+    private static readonly (string Key, string Fallback)[] _demanded =
+    [
+        ("Jc", "0"), ("Jmin", "0"), ("Jmax", "0"), ("S1", "0"), ("S2", "0"),
+        ("H1", "1"), ("H2", "2"), ("H3", "3"), ("H4", "4"),
+    ];
+
+    private static readonly JsonSerializerOptions _plain = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     /// <summary>
@@ -74,53 +120,8 @@ public static class VpnLinkCodec
     /// </summary>
     public static string? EncodeWireguard(string confText, string? name)
     {
-        var iface = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var peer = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var section = string.Empty;
-
-        foreach (var rawLine in confText.Split('\n'))
-        {
-            var line = StripComment(rawLine).Trim();
-            if (line.Length == 0)
-            {
-                continue;
-            }
-
-            if (line.StartsWith('[') && line.EndsWith(']'))
-            {
-                section = line[1..^1].Trim();
-                continue;
-            }
-
-            var equals = line.IndexOf('=');
-            if (equals <= 0)
-            {
-                continue;
-            }
-
-            var key = line[..equals].Trim();
-            var value = line[(equals + 1)..].Trim();
-            if (value.Length == 0)
-            {
-                continue;
-            }
-
-            if (_amneziaKeys.Contains(key))
-            {
-                return null;
-            }
-
-            if (section.Equals("Interface", StringComparison.OrdinalIgnoreCase))
-            {
-                iface.TryAdd(key, value);
-            }
-            else if (section.Equals("Peer", StringComparison.OrdinalIgnoreCase))
-            {
-                peer.TryAdd(key, value);
-            }
-        }
-
-        if (!iface.TryGetValue("PrivateKey", out var privateKey) || !peer.TryGetValue("Endpoint", out var endpoint))
+        var (iface, peer, obfuscated) = Sections(confText);
+        if (obfuscated || !iface.TryGetValue("PrivateKey", out var privateKey) || !peer.TryGetValue("Endpoint", out var endpoint))
         {
             return null;
         }
@@ -151,6 +152,74 @@ public static class VpnLinkCodec
 
         return link.ToString();
     }
+
+    // The values of the interface and of the peer of a config, the first of each key, and whether any part of the
+    // config carries the obfuscation of AmneziaWG.
+    private static (Dictionary<string, string> Interface, Dictionary<string, string> Peer, bool Obfuscated) Sections(string confText)
+    {
+        var iface = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var peer = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var obfuscated = false;
+        var section = string.Empty;
+
+        foreach (var rawLine in confText.Split('\n'))
+        {
+            var line = StripComment(rawLine).Trim();
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            if (line.StartsWith('[') && line.EndsWith(']'))
+            {
+                section = line[1..^1].Trim();
+                continue;
+            }
+
+            var equals = line.IndexOf('=');
+            if (equals <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..equals].Trim();
+            var value = line[(equals + 1)..].Trim();
+            if (value.Length == 0)
+            {
+                continue;
+            }
+
+            obfuscated |= _amneziaKeys.Contains(key);
+            if (section.Equals("Interface", StringComparison.OrdinalIgnoreCase))
+            {
+                iface.TryAdd(key, value);
+            }
+            else if (section.Equals("Peer", StringComparison.OrdinalIgnoreCase))
+            {
+                peer.TryAdd(key, value);
+            }
+        }
+
+        return (iface, peer, obfuscated);
+    }
+
+    private static string Value(Dictionary<string, string> values, string key) =>
+        values.TryGetValue(key, out var value) ? value : string.Empty;
+
+    // The comma separated parts of a value: the addresses, the ranges, the name servers.
+    private static List<string> Parts(string value) =>
+        [.. value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    private static void Take(Dictionary<string, object?> fields, string key, string value)
+    {
+        if (value.Length > 0)
+        {
+            fields[key] = value;
+        }
+    }
+
+    private static bool IsV4(string text) =>
+        IPAddress.TryParse(text, out var address) && address.AddressFamily == AddressFamily.InterNetwork;
 
     private static string StripComment(string line)
     {

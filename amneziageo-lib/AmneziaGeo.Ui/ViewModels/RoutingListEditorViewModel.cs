@@ -132,6 +132,22 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private bool _isNew;
 
     /// <summary>
+    /// True while the server keeps the list read-only: the editor shows it and offers no change.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isReadOnly;
+
+    // Снимает начатую очистку и набранную строку со списка, который стал только для чтения.
+    partial void OnIsReadOnlyChanged(bool value)
+    {
+        if (value)
+        {
+            ClearPending = false;
+            RuleInput = string.Empty;
+        }
+    }
+
+    /// <summary>
     /// The persisted list id (0 until a new list is first saved).
     /// </summary>
     public long Id => _id;
@@ -432,6 +448,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     // Rules left expanded, kept across a projection rebuild.
     private readonly HashSet<string> _expandedRules = new(StringComparer.Ordinal);
 
+    // What the device found for each app:<name> of the routing lists, by the name in any case.
+    private Dictionary<string, IReadOnlyList<string>> _foundApps = new(StringComparer.OrdinalIgnoreCase);
+
     // Fetched geo entries per rule token, dropped when the screen is left.
     private readonly Dictionary<string, GeoEntries> _detailCache = new(StringComparer.Ordinal);
 
@@ -466,9 +485,42 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     }
 
     // The row of a rule, carrying expansion state and already-fetched entries over.
+    /// <summary>
+    /// Takes what the device found for each app:&lt;name&gt; and shows it on the rows that name a program.
+    /// </summary>
+    public void ApplyFoundApps(IReadOnlyDictionary<string, IReadOnlyList<string>>? found)
+    {
+        _foundApps = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, values) in found ?? new Dictionary<string, IReadOnlyList<string>>())
+        {
+            _foundApps.TryAdd(name, values);
+        }
+
+        foreach (var item in RuleItems)
+        {
+            ShowFound(item);
+        }
+    }
+
+    // Shows on a row what the device found for the program it names.
+    private void ShowFound(RoutingRuleItemViewModel item)
+    {
+        if (item.AppName.Length == 0)
+        {
+            return;
+        }
+
+        var found = _foundApps.TryGetValue(item.AppName, out var values) ? values : null;
+        if (found is null ? item.Found is not null : item.Found is null || !item.Found.SequenceEqual(found, StringComparer.Ordinal))
+        {
+            item.Found = found;
+        }
+    }
+
     private RoutingRuleItemViewModel RowOf(string token)
     {
         var item = NewRuleRow(token);
+        ShowFound(item);
         if (item.CanExpand && _expandedRules.Contains(token))
         {
             item.IsExpanded = true;

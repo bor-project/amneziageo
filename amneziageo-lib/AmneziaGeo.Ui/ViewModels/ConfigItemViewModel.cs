@@ -89,6 +89,10 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private bool _signalOffered;
 
+    // Whether the server allows none but its own routing lists, which keeps the configuration on the routing list.
+    [ObservableProperty]
+    private bool _serverListsOnly;
+
     [ObservableProperty]
     private bool _holdTraffic = true;
 

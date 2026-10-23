@@ -408,6 +408,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await AddColumnAsync(connection, schema, "subscriptions", "pin", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
             await AddColumnAsync(connection, schema, "subscriptions", "from_hello", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
+            // Whether the server keeps a list read-only, and the configuration whose server last handed the list out.
+            await AddColumnAsync(connection, schema, "routing_list_origins", "read_only", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "routing_list_origins", "config", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
@@ -2710,7 +2714,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                            COALESCE(rs.all_udp, 0),
                            COALESCE(rs.use_global_proxy, 0),
                            COALESCE(o.source, ''),
-                           CASE WHEN COALESCE(o.pending, '') <> '' THEN 1 ELSE 0 END
+                           CASE WHEN COALESCE(o.pending, '') <> '' THEN 1 ELSE 0 END,
+                           COALESCE(o.read_only, 0)
                     FROM routing_lists rl
                     LEFT JOIN routing_settings rs ON rs.list_id = rl.id
                     LEFT JOIN routing_list_origins o ON o.list_id = rl.id
@@ -2734,7 +2739,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                             reader.GetInt32(8) != 0,
                             reader.GetInt32(9) != 0,
                             reader.GetString(10),
-                            reader.GetInt32(11) != 0));
+                            reader.GetInt32(11) != 0,
+                            reader.GetInt32(12) != 0));
                     }
                 }
             }
@@ -2888,13 +2894,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     command.CommandText =
                         """
                         DELETE FROM routing_list_origins WHERE preset_id = $preset AND list_id <> $list;
-                        INSERT INTO routing_list_origins (list_id, preset_id, source, updated, pending, updated_at)
-                        VALUES ($list, $preset, $source, $when, $pending, $updated)
+                        INSERT INTO routing_list_origins (list_id, preset_id, source, updated, pending, read_only, config, updated_at)
+                        VALUES ($list, $preset, $source, $when, $pending, $readOnly, $config, $updated)
                         ON CONFLICT(list_id) DO UPDATE SET
                             preset_id  = excluded.preset_id,
                             source     = excluded.source,
                             updated    = excluded.updated,
                             pending    = excluded.pending,
+                            read_only  = excluded.read_only,
+                            config     = excluded.config,
                             updated_at = excluded.updated_at;
                         """;
                     command.Parameters.AddWithValue("$list", origin.ListId);
@@ -2902,6 +2910,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     command.Parameters.AddWithValue("$source", origin.Source);
                     command.Parameters.AddWithValue("$when", origin.Updated.ToString("O", CultureInfo.InvariantCulture));
                     command.Parameters.AddWithValue("$pending", origin.Pending?.ToPayload() ?? string.Empty);
+                    command.Parameters.AddWithValue("$readOnly", origin.ReadOnly ? 1 : 0);
+                    command.Parameters.AddWithValue("$config", origin.Config);
                     command.Parameters.AddWithValue("$updated", Timestamp());
                     await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
@@ -2921,7 +2931,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         {
             command.CommandText =
                 """
-                SELECT o.list_id, o.preset_id, o.source, o.updated, o.pending
+                SELECT o.list_id, o.preset_id, o.source, o.updated, o.pending, o.read_only, o.config
                 FROM routing_list_origins o
                 JOIN routing_lists rl ON rl.id = o.list_id
                 WHERE $id IS NULL OR o.list_id = $id
@@ -2939,7 +2949,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         reader.GetString(1),
                         reader.GetString(2),
                         ReadMoment(reader.GetString(3)) ?? DateTimeOffset.MinValue,
-                        OfferedPreset.Parse(reader.GetString(4))));
+                        OfferedPreset.Parse(reader.GetString(4)),
+                        reader.GetInt64(5) != 0,
+                        reader.GetString(6)));
                 }
             }
         }

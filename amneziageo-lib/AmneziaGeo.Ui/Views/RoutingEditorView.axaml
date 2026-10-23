@@ -38,6 +38,17 @@
       </Button>
     </DataTemplate>
   </UserControl.Resources>
+  <UserControl.Styles>
+    <!-- Имя списка «Только чтение»: серое и не правится. -->
+    <Style Selector="TextBox.field.locked">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+    <!-- Подпись строки app:<имя>, для которой устройство не нашло программу. -->
+    <Style Selector="TextBlock.muted.warn">
+      <Setter Property="Foreground" Value="{DynamicResource AgWarnBrush}" />
+    </Style>
+  </UserControl.Styles>
 
   <!-- Общий редактор списка: имя, корзины правил и трафик. Стоит и в разделе настроек, и в черновике импорта. -->
   <StackPanel Spacing="14">
@@ -53,7 +64,8 @@
 
         <StackPanel Spacing="2">
           <TextBlock Text="{l:Tr Main_ListNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
-          <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
+          <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}" Classes.locked="{Binding IsReadOnly}"
+                   IsReadOnly="{Binding IsReadOnly}"
                    Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
           <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
@@ -77,6 +89,7 @@
                 <MultiBinding Converter="{x:Static BoolConverters.And}">
                   <Binding Path="HasRules" />
                   <Binding Path="!ClearPending" />
+                  <Binding Path="!IsReadOnly" />
                 </MultiBinding>
               </Button.IsVisible>
               <TextBlock Text="{l:Tr Main_ClearButton}" />
@@ -122,115 +135,118 @@
           <TextBlock Text="{Binding RelayNotice}" FontSize="11.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ShowRelayNotice}" />
 
-          <!-- Заполняет показанную корзину: туннельную - сетями подключений, остальные - сетями машины. -->
-          <Button Classes="linkbtn" IsVisible="{Binding CanAddSubnets}"
-                  HorizontalAlignment="Left" Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}">
-            <TextBlock Text="{Binding AddSubnetsText}" TextWrapping="Wrap" />
-          </Button>
-
-          <!-- Что добавить: тип записи слева, геобазы ссылкой справа. -->
-          <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-            <TextBlock Grid.Column="0" Text="{l:Tr Main_BucketAddPrompt}" Classes="muted" FontSize="12"
-                       TextWrapping="Wrap" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
-                    IsVisible="{Binding IsAddressMethod}"
-                    Command="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenGeoSourcesCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgSourcesGeometry}" Width="12" Height="12"
-                          VerticalAlignment="Center" />
-                <TextBlock Text="{l:Tr Main_SourcesSection}" VerticalAlignment="Center" />
-                <PathIcon Data="{DynamicResource AgChevronGeometry}" Width="10" Height="10"
-                          VerticalAlignment="Center" />
-              </StackPanel>
+          <!-- Пополнение корзины: у списка «Только чтение» его нет. -->
+          <StackPanel Spacing="10" IsVisible="{Binding !IsReadOnly}">
+            <!-- Заполняет показанную корзину: туннельную - сетями подключений, остальные - сетями машины. -->
+            <Button Classes="linkbtn" IsVisible="{Binding CanAddSubnets}"
+                    HorizontalAlignment="Left" Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}">
+              <TextBlock Text="{Binding AddSubnetsText}" TextWrapping="Wrap" />
             </Button>
-          </Grid>
 
-          <!-- Способ добавления: адрес или приложение. -->
-          <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding AddMethodIndex, Mode=TwoWay}"
-              IsVisible="{Binding IsAppMethodAvailable}"
-              Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
-              HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-            <ComboBoxItem Content="{l:Tr Main_AddByAddressTab}" />
-            <ComboBoxItem Content="{Binding AppTabText}" IsEnabled="{Binding CanAddApps}" />
-          </controls:AdaptiveComboBox>
+            <!-- Что добавить: тип записи слева, геобазы ссылкой справа. -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_BucketAddPrompt}" Classes="muted" FontSize="12"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
+                      IsVisible="{Binding IsAddressMethod}"
+                      Command="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenGeoSourcesCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgSourcesGeometry}" Width="12" Height="12"
+                            VerticalAlignment="Center" />
+                  <TextBlock Text="{l:Tr Main_SourcesSection}" VerticalAlignment="Center" />
+                  <PathIcon Data="{DynamicResource AgChevronGeometry}" Width="10" Height="10"
+                            VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Grid>
 
-          <!-- Корзины, которые принимают приложения, названы прямо в подсказке. -->
-          <TextBlock Text="{Binding AppBucketsHint}" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                     IsVisible="{Binding !CanAddApps}" />
+            <!-- Способ добавления: адрес или приложение. -->
+            <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding AddMethodIndex, Mode=TwoWay}"
+                IsVisible="{Binding IsAppMethodAvailable}"
+                Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+              <ComboBoxItem Content="{l:Tr Main_AddByAddressTab}" />
+              <ComboBoxItem Content="{Binding AppTabText}" IsEnabled="{Binding CanAddApps}" />
+            </controls:AdaptiveComboBox>
 
-          <!-- Добавление записи; сюда уходит фокус, когда удалена последняя строка. -->
-          <Panel x:Name="AddRow">
-            <!-- Адрес и приложение вводятся одним полем; подсказки приходят выпадашкой на широком экране и
-                 строками под полем на узком. -->
-            <StackPanel Spacing="8" IsVisible="{Binding ShowRuleInput}">
-              <Grid ColumnDefinitions="*,Auto">
-                <Panel Grid.Column="0">
-                  <TextBox x:Name="RuleBox" Classes="field" Watermark="{Binding RuleWatermark}"
-                           Text="{Binding RuleInput, Mode=TwoWay}">
-                    <TextBox.InnerLeftContent>
-                      <PathIcon Data="{StaticResource AgSearchGeometry}" Width="13" Height="13" Margin="10,0,0,0"
-                                Foreground="{DynamicResource AgMutedBrush}" IsHitTestVisible="False"
-                                IsVisible="{Binding SearchIconShown}" />
-                    </TextBox.InnerLeftContent>
-                    <TextBox.InnerRightContent>
-                      <Button Classes="icon" Margin="0,0,6,0" IsVisible="{Binding HasRuleInput}"
-                              Command="{Binding ClearRuleInputCommand}">
-                        <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="9" Height="9" Stretch="Uniform"
-                              Stroke="{DynamicResource AgMutedBrush}" StrokeThickness="1.4"
-                              StrokeLineCap="Round" StrokeJoin="Round" />
-                      </Button>
-                    </TextBox.InnerRightContent>
-                  </TextBox>
-                  <Popup PlacementTarget="{Binding #RuleBox}" Placement="BottomEdgeAlignedLeft"
-                         IsLightDismissEnabled="False" IsOpen="{Binding ShowDropdownSuggestions}"
-                         Width="{Binding #RuleBox.Bounds.Width}">
-                    <Border Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
-                            BorderThickness="1" CornerRadius="10" Padding="6" Margin="0,4,0,0">
-                      <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding MatchedSuggestions}"
-                                      ItemTemplate="{StaticResource SuggestionTemplate}" />
-                      </ScrollViewer>
-                    </Border>
-                  </Popup>
-                </Panel>
+            <!-- Корзины, которые принимают приложения, названы прямо в подсказке. -->
+            <TextBlock Text="{Binding AppBucketsHint}" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                       IsVisible="{Binding !CanAddApps}" />
 
-                <!-- Приложение можно не набирать, а взять диалогом: файл программы или папка с программами. -->
-                <Button Grid.Column="1" Classes="softbtn" MinWidth="110" Margin="8,0,0,0" VerticalAlignment="Center"
-                        IsVisible="{Binding IsAppMethod}" Content="{l:Tr Main_PickButton}">
-                  <Button.Flyout>
-                    <MenuFlyout>
-                      <MenuItem Header="{l:Tr Main_PickApplication}" Click="OnPickApplication" />
-                      <MenuItem Header="{l:Tr Main_PickFolder}" Click="OnPickFolder" />
-                    </MenuFlyout>
-                  </Button.Flyout>
-                </Button>
-              </Grid>
+            <!-- Добавление записи; сюда уходит фокус, когда удалена последняя строка. -->
+            <Panel x:Name="AddRow">
+              <!-- Адрес и приложение вводятся одним полем; подсказки приходят выпадашкой на широком экране и
+                   строками под полем на узком. -->
+              <StackPanel Spacing="8" IsVisible="{Binding ShowRuleInput}">
+                <Grid ColumnDefinitions="*,Auto">
+                  <Panel Grid.Column="0">
+                    <TextBox x:Name="RuleBox" Classes="field" Watermark="{Binding RuleWatermark}"
+                             Text="{Binding RuleInput, Mode=TwoWay}">
+                      <TextBox.InnerLeftContent>
+                        <PathIcon Data="{StaticResource AgSearchGeometry}" Width="13" Height="13" Margin="10,0,0,0"
+                                  Foreground="{DynamicResource AgMutedBrush}" IsHitTestVisible="False"
+                                  IsVisible="{Binding SearchIconShown}" />
+                      </TextBox.InnerLeftContent>
+                      <TextBox.InnerRightContent>
+                        <Button Classes="icon" Margin="0,0,6,0" IsVisible="{Binding HasRuleInput}"
+                                Command="{Binding ClearRuleInputCommand}">
+                          <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="9" Height="9" Stretch="Uniform"
+                                Stroke="{DynamicResource AgMutedBrush}" StrokeThickness="1.4"
+                                StrokeLineCap="Round" StrokeJoin="Round" />
+                        </Button>
+                      </TextBox.InnerRightContent>
+                    </TextBox>
+                    <Popup PlacementTarget="{Binding #RuleBox}" Placement="BottomEdgeAlignedLeft"
+                           IsLightDismissEnabled="False" IsOpen="{Binding ShowDropdownSuggestions}"
+                           Width="{Binding #RuleBox.Bounds.Width}">
+                      <Border Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
+                              BorderThickness="1" CornerRadius="10" Padding="6" Margin="0,4,0,0">
+                        <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                          <ItemsControl ItemsSource="{Binding MatchedSuggestions}"
+                                        ItemTemplate="{StaticResource SuggestionTemplate}" />
+                        </ScrollViewer>
+                      </Border>
+                    </Popup>
+                  </Panel>
 
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasRules}">
-                <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
+                  <!-- Приложение можно не набирать, а взять диалогом: файл программы или папка с программами. -->
+                  <Button Grid.Column="1" Classes="softbtn" MinWidth="110" Margin="8,0,0,0" VerticalAlignment="Center"
+                          IsVisible="{Binding IsAppMethod}" Content="{l:Tr Main_PickButton}">
+                    <Button.Flyout>
+                      <MenuFlyout>
+                        <MenuItem Header="{l:Tr Main_PickApplication}" Click="OnPickApplication" />
+                        <MenuItem Header="{l:Tr Main_PickFolder}" Click="OnPickFolder" />
+                      </MenuFlyout>
+                    </Button.Flyout>
+                  </Button>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasRules}">
+                  <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center"
+                          Command="{Binding SortRulesCommand}" ToolTip.Tip="{l:Tr Main_SortRulesTooltip}">
+                    <PathIcon Data="{StaticResource AgRuleSortGeometry}" Width="14" Height="14" />
+                  </Button>
+                </Grid>
+
+                <Border IsVisible="{Binding ShowInlineSuggestions}" Padding="6"
+                        Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
+                        BorderThickness="1" CornerRadius="10">
+                  <ItemsControl ItemsSource="{Binding TopSuggestions}"
+                                ItemTemplate="{StaticResource SuggestionTemplate}" />
+                </Border>
+              </StackPanel>
+
+              <!-- Приложение на Android берётся системным списком. -->
+              <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !ShowRuleInput}">
+                <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch"
+                        Command="{Binding PickAppsCommand}" Content="{l:Tr Main_AppsButton}" />
+                <Button Grid.Column="1" Classes="icon" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasRules}"
                         Command="{Binding SortRulesCommand}" ToolTip.Tip="{l:Tr Main_SortRulesTooltip}">
                   <PathIcon Data="{StaticResource AgRuleSortGeometry}" Width="14" Height="14" />
                 </Button>
               </Grid>
-
-              <Border IsVisible="{Binding ShowInlineSuggestions}" Padding="6"
-                      Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
-                      BorderThickness="1" CornerRadius="10">
-                <ItemsControl ItemsSource="{Binding TopSuggestions}"
-                              ItemTemplate="{StaticResource SuggestionTemplate}" />
-              </Border>
-            </StackPanel>
-
-            <!-- Приложение на Android берётся системным списком. -->
-            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !ShowRuleInput}">
-              <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch"
-                      Command="{Binding PickAppsCommand}" Content="{l:Tr Main_AppsButton}" />
-              <Button Grid.Column="1" Classes="icon" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasRules}"
-                      Command="{Binding SortRulesCommand}" ToolTip.Tip="{l:Tr Main_SortRulesTooltip}">
-                <PathIcon Data="{StaticResource AgRuleSortGeometry}" Width="14" Height="14" />
-              </Button>
-            </Grid>
-          </Panel>
+            </Panel>
+          </StackPanel>
 
           <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
@@ -254,18 +270,25 @@
                           <TextBlock Text="{Binding Token}" Classes="mono" FontSize="12.5"
                                      TextTrimming="CharacterEllipsis" />
                           <TextBlock Text="{Binding Caption}" Classes="muted" FontSize="11"
+                                     Classes.warn="{Binding CaptionWarn}" ToolTip.Tip="{Binding CaptionTip}"
                                      TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <!-- Geo categories only: collapses the entries the rule expands to. -->
                         <Button Grid.Column="1" Classes="icon"
-                                IsVisible="{Binding CanExpand}"
                                 ToolTip.Tip="{Binding ExpandTooltip}"
                                 Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).ToggleRuleDetailsCommand}"
                                 CommandParameter="{Binding}">
+                          <Button.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                              <Binding Path="CanExpand" />
+                              <Binding Path="!$parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).IsReadOnly" />
+                            </MultiBinding>
+                          </Button.IsVisible>
                           <!-- Scaled at render time: the glyph matches the delete cross without growing the row. -->
                           <TextBlock Text="{Binding Glyph}" RenderTransform="scale(1.5)" />
                         </Button>
                         <Button Grid.Column="2" Classes="icon"
+                                IsVisible="{Binding !$parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).IsReadOnly}"
                                 Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
                                 CommandParameter="{Binding Token}">
                           <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="9" Height="9" Stretch="Uniform"

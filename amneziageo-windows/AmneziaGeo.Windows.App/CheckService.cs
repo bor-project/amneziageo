@@ -381,7 +381,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             ?? (await ConfigRouting.AllowedAsync(store, config, ct).ConfigureAwait(false)
                 ? await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false)
                 : null);
-        var list = listId is long id ? await store.GetRoutingListAsync(id, ct).ConfigureAwait(false) : null;
+        var list = listId is long id && await store.GetRoutingListAsync(id, ct).ConfigureAwait(false) is { } stored
+            ? await AppFinds.ExpandListAsync(store, stored, ct).ConfigureAwait(false)
+            : null;
         var routing = listId is long settings ? await store.GetRoutingSettingsAsync(settings, ct).ConfigureAwait(false) : null;
         var geo = await store.GetActiveTunnelGeoAsync(config, ct).ConfigureAwait(false);
         return (list, list is not null ? !(routing?.UseGlobalProxy ?? false) : geo?.GeoSplit ?? false);

@@ -253,6 +253,12 @@
   <data name="General_MultiServerHint" xml:space="preserve">
     <value>Подключаться к нескольким VPN-серверам одновременно.</value>
   </data>
+  <data name="General_OtherVpn" xml:space="preserve">
+    <value>Не мешать другим VPN</value>
+  </data>
+  <data name="General_OtherVpnHint" xml:space="preserve">
+    <value>Подключение SSTP, L2TP или IKEv2 рядом с туннелем работает как обычно.</value>
+  </data>
   <data name="General_BalanceInterval" xml:space="preserve">
     <value>Интервал проверки</value>
   </data>

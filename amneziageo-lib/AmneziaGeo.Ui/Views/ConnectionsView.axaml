@@ -84,6 +84,12 @@
               </TextBox>
             </StackPanel>
 
+            <Border Classes="rowsep" />
+
+            <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_OtherVpn}"
+                                       Description="{l:Tr General_OtherVpnHint}"
+                                       IsChecked="{Binding OtherVpn, Mode=TwoWay}" />
+
             <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
                  относятся. -->
             <StackPanel Spacing="12" IsVisible="{Binding MultiServerOffered}">

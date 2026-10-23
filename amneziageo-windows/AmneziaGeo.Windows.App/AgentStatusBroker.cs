@@ -3213,6 +3213,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             MultiServer: settings.MultiServer,
             DnsTransport: settings.DnsTransport,
             LocalDoh: settings.LocalDoh,
+            OtherVpn: settings.OtherVpn ? "on" : "off",
             UpdateSetupAsset: update?.Asset,
             ReconnectAlways: true), scope, states);
     }

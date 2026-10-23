@@ -19,6 +19,11 @@ public static class SettingKeys
     public const string MultiServer = "multi-server";
 
     /// <summary>
+    /// Whether the VPNs of other programs keep their adapters, ranges and servers beside the tunnel.
+    /// </summary>
+    public const string OtherVpn = "other-vpn";
+
+    /// <summary>
     /// Whether a stream to a direct range leaves on a protected socket instead of riding the tunnel.
     /// </summary>
     public const string DirectTcp = "direct-tcp";

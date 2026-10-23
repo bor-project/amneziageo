@@ -91,6 +91,140 @@ internal static class ResolvConf
         }
     }
 
+    /// <summary>
+    /// Whether the resolver file sends lookups to the address now.
+    /// </summary>
+    public static bool PointsAt(IPAddress listen)
+    {
+        try
+        {
+            return File.ReadAllLines(Path).Any(line => line.Trim().Equals($"nameserver {listen}", StringComparison.Ordinal));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The text of the resolver file, empty when it cannot be read.
+    /// </summary>
+    public static string ReadText()
+    {
+        try
+        {
+            return File.ReadAllText(Path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// The resolver file as written last: its time and its text, so a rewrite with the same words is told too.
+    /// </summary>
+    public static string Stamp()
+    {
+        try
+        {
+            return $"{File.GetLastWriteTimeUtc(Path).Ticks}:{File.ReadAllText(Path)}";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// The nameservers and the search domains the resolver file named before the agent took it, empty without a copy.
+    /// </summary>
+    public static (IReadOnlyList<IPAddress> Servers, IReadOnlyList<string> Domains) ReadSaved()
+    {
+        if (Saved() is not { } backup)
+        {
+            return ([], []);
+        }
+
+        try
+        {
+            var saved = File.ReadAllText(backup);
+            return saved.StartsWith(LinkMarker, StringComparison.Ordinal) ? ([], []) : Parse(saved);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ([], []);
+        }
+    }
+
+    /// <summary>
+    /// The IPv4 nameservers off the loopback and the search domains a resolver file names.
+    /// </summary>
+    public static (IReadOnlyList<IPAddress> Servers, IReadOnlyList<string> Domains) Parse(string text)
+    {
+        var servers = new List<IPAddress>();
+        var domains = new List<string>();
+        foreach (var line in text.Split('\n'))
+        {
+            var words = line.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length < 2)
+            {
+                continue;
+            }
+
+            if (words[0].Equals("nameserver", StringComparison.OrdinalIgnoreCase))
+            {
+                if (IsUpstream(words[1], out var address) && !servers.Contains(address))
+                {
+                    servers.Add(address);
+                }
+
+                continue;
+            }
+
+            if (!words[0].Equals("search", StringComparison.OrdinalIgnoreCase) && !words[0].Equals("domain", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var word in words.Skip(1))
+            {
+                var domain = word.Trim('.').ToLowerInvariant();
+                if (domain.Length > 0 && !domains.Contains(domain))
+                {
+                    domains.Add(domain);
+                }
+            }
+        }
+
+        return (servers, domains);
+    }
+
+    /// <summary>
+    /// The nameservers pppd took from its peer, when it keeps them in its own file.
+    /// </summary>
+    public static IReadOnlyList<IPAddress> ReadPeerNameservers()
+    {
+        return ReadNameservers("/etc/ppp/resolv.conf");
+    }
+
+    /// <summary>
+    /// Points the file at the address again after another program rewrote it; the saved copy stays as it was.
+    /// </summary>
+    public static bool Repoint(IPAddress listen, AgentLog log)
+    {
+        try
+        {
+            Replace($"# added by amneziageo\nnameserver {listen}\noptions edns0\n", log);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Error("dns", "pointing the system resolver at the agent again failed", ex);
+            return false;
+        }
+    }
+
     // Writes the file that sends lookups to the address and returns the saved previous one, or null on failure.
     private static string? PointFile(IPAddress listen, AgentLog log)
     {
@@ -156,10 +290,7 @@ internal static class ResolvConf
                     continue;
                 }
 
-                var value = trimmed[10..].Trim();
-                if (IPAddress.TryParse(value, out var address)
-                    && address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
-                    && (!IPAddress.IsLoopback(address) || (ContainerHost.Detected && !address.Equals(DnsRouter.Listen))))
+                if (IsUpstream(trimmed[10..].Trim(), out var address))
                 {
                     servers.Add(address);
                 }
@@ -170,5 +301,13 @@ internal static class ResolvConf
         }
 
         return servers;
+    }
+
+    // Whether a nameserver value is an IPv4 resolver worth asking: not a loopback stub outside a container.
+    private static bool IsUpstream(string value, out IPAddress address)
+    {
+        return IPAddress.TryParse(value, out address!)
+            && address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            && (!IPAddress.IsLoopback(address) || (ContainerHost.Detected && !address.Equals(DnsRouter.Listen)));
     }
 }

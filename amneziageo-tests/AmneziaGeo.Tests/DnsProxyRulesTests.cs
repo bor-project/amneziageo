@@ -111,4 +111,21 @@ public sealed class DnsProxyRulesTests
 
         Assert.Equal(DnsProxy.NamePath.Open, proxy.PathOf("vpn.corp.example"));
     }
+
+    [Fact]
+    public void ANameUnderTheSuffixOfAnAdapter_AsksTheResolversOfThatAdapter()
+    {
+        var lan = IPAddress.Parse("192.168.1.1");
+        var office = IPAddress.Parse("10.20.0.53");
+        var proxy = new DnsProxy([GitHub, YouTube], [], Resolver, Resolver, lan, [lan], true, ["corp.example"], [], null, NullLogger<DnsProxy>.Instance, stripV6: false, listen: false);
+
+        Assert.True(proxy.UpdateSuffixPools([("Corp.Example.", [office]), (string.Empty, [lan])]));
+
+        Assert.Equal([office], proxy.PoolOf("nas.corp.example"));
+        Assert.Equal([office], proxy.PoolOf("CORP.EXAMPLE"));
+        Assert.Null(proxy.PoolOf("api.github.com"));
+        Assert.False(proxy.UpdateSuffixPools([("corp.example", [office])]));
+        Assert.True(proxy.UpdateSuffixPools([]));
+        Assert.Null(proxy.PoolOf("nas.corp.example"));
+    }
 }

@@ -58,6 +58,8 @@ internal sealed class TunnelController : IDisposable
     // tunnel to them.
     private IReadOnlyList<string> _networkResolvers = [];
     private bool _resolverApplied;
+    // The VPNs of other programs beside this tunnel.
+    private OtherVpns? _others;
     private bool _inboundBlocked;
     private IReadOnlyList<string> _inboundRoutes = [];
     private SignalPlace? _signal;
@@ -273,6 +275,10 @@ internal sealed class TunnelController : IDisposable
         // Read before the tunnel routes land, while the machine's own path is the only one there is.
         var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
         var lanResolvers = options.LocalResolvers.Count > 0 ? options.LocalResolvers : LanResolvers(hop.Via);
+
+        // The servers of the other VPNs stay reachable past this tunnel, like its own.
+        _others = new OtherVpns(lanResolvers, _log);
+        await _others.LayServerRoutesAsync(hop.Via, hop.Dev, ct).ConfigureAwait(false);
 
         // The network of the machine answers the names through the tunnel past it where the config picks it; a range of a
         // split list may cover its resolvers as well.
@@ -790,6 +796,12 @@ internal sealed class TunnelController : IDisposable
             await ResolvConf.RestoreAsync(_iface, _log).ConfigureAwait(false);
         }
 
+        if (_others is { } others)
+        {
+            _others = null;
+            await others.RemoveServerRoutesAsync().ConfigureAwait(false);
+        }
+
         if (_cache is { } cache)
         {
             _cache = null;
@@ -920,6 +932,12 @@ internal sealed class TunnelController : IDisposable
                 {
                     _resolverApplied = await ResolvConf.ApplyAsync(DnsRouter.Listen, _iface, _log).ConfigureAwait(false);
                     _log.Info("dns", $"lookups now go to {DnsRouter.Listen}");
+                    // Another VPN that points the resolver elsewhere later is followed, not fought.
+                    if (_resolverApplied && _others is { } others && _dns is { } router)
+                    {
+                        _ = Task.Run(() => others.WatchResolverAsync(router, ct));
+                    }
+
                     return;
                 }
 

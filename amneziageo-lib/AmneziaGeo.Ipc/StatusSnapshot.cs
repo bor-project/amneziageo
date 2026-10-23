@@ -178,4 +178,10 @@ public sealed record StatusSnapshot(
     /// <summary>
     /// How much the notification of the tunnel says, full or brief; empty where the platform shows none.
     /// </summary>
-    string TunnelNotice = "");
+    string TunnelNotice = "",
+
+    /// <summary>
+    /// Whether the VPNs of other programs keep their adapters, ranges and servers beside the tunnel, on or off; empty
+    /// where the platform takes no such choice.
+    /// </summary>
+    string OtherVpn = "");

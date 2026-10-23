@@ -37,6 +37,7 @@ internal sealed class SettingsStore(IStateStore store)
             SubscriptionRefreshIntervalHours = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval, defaults.SubscriptionRefreshIntervalHours),
             AllowPrerelease = ReadBool(values, "allow-prerelease", defaults.AllowPrerelease),
             MultiServer = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.MultiServer, defaults.MultiServer),
+            OtherVpn = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.OtherVpn, defaults.OtherVpn),
             BalanceIntervalSeconds = Math.Clamp(ReadInt(values, "balance-interval-seconds", defaults.BalanceIntervalSeconds), 5, 3600),
             BalanceStrikes = Math.Clamp(ReadInt(values, "balance-strikes", defaults.BalanceStrikes), 1, 10),
             BalanceMarginPercent = Math.Clamp(ReadInt(values, "balance-margin-percent", defaults.BalanceMarginPercent), 1, 100),
@@ -234,7 +235,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] ProxyPortKeys =
         [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.SubscriptionAutoRefresh, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.ShareEthernet, AmneziaGeo.Ipc.SettingKeys.MultiServer];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.SubscriptionAutoRefresh, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, AmneziaGeo.Ipc.SettingKeys.ShareEthernet, AmneziaGeo.Ipc.SettingKeys.MultiServer, AmneziaGeo.Ipc.SettingKeys.OtherVpn];
 
     // Sharing settings, each with a rule of its own.
     private static readonly string[] ShareKeys =

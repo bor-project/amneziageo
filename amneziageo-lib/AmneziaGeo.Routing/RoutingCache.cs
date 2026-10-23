@@ -1243,6 +1243,37 @@ public sealed class RoutingCache
     }
 
     /// <summary>
+    /// Releases every destination the machine leads by a path of its own now, as another VPN that came up asks: the
+    /// next packet to it is decided again with that path in place. Returns how many were released.
+    /// </summary>
+    public int ReleaseLedElsewhere(Func<IPAddress, bool> ledElsewhere)
+    {
+        var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
+        var generation = _applier.Generation;
+        var released = 0;
+        foreach (var pair in _entries)
+        {
+            if (!ledElsewhere(pair.Value.Address) || !_entries.TryRemove(pair.Key, out var entry))
+            {
+                continue;
+            }
+
+            Interlocked.Decrement(ref _size);
+            lock (entry)
+            {
+                Release(entry, generation, filters, withdrawn);
+            }
+
+            released++;
+        }
+
+        _applier.RemoveTunnel(withdrawn);
+        _applier.DeleteFilters(filters, generation);
+        return released;
+    }
+
+    /// <summary>
     /// Adopts addresses the domain tracker installed: the cache records the contact but installs and reclaims
     /// nothing, so the two never fight over one address.
     /// </summary>

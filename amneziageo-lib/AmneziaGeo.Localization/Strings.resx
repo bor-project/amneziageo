@@ -253,6 +253,12 @@
   <data name="General_MultiServerHint" xml:space="preserve">
     <value>Connect to several VPN servers at once.</value>
   </data>
+  <data name="General_OtherVpn" xml:space="preserve">
+    <value>Do not interfere with other VPNs</value>
+  </data>
+  <data name="General_OtherVpnHint" xml:space="preserve">
+    <value>An SSTP, L2TP or IKEv2 connection alongside the tunnel works as usual.</value>
+  </data>
   <data name="General_BalanceInterval" xml:space="preserve">
     <value>Check interval</value>
   </data>

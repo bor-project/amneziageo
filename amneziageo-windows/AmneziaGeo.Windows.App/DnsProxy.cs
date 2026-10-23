@@ -131,6 +131,8 @@ internal sealed class DnsProxy
     private readonly bool _localIsLan;
     // Suffixes of the own network and of the session, apart from the Direct bucket.
     private volatile IReadOnlyList<string> _staticLocalDomains;
+    // The resolvers of the adapter each suffix belongs to, the longest suffix first.
+    private volatile IReadOnlyList<(string Suffix, IReadOnlyList<IPAddress> Pool)> _suffixPools = [];
     private volatile IReadOnlyList<string> _localDomains;
     // Serializes the writers of the local suffixes.
     private readonly Lock _localGate = new();
@@ -519,6 +521,34 @@ internal sealed class DnsProxy
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Hands over the resolvers of the adapter each suffix belongs to; returns whether they moved.
+    /// </summary>
+    public bool UpdateSuffixPools(IReadOnlyList<(string Suffix, IReadOnlyList<IPAddress> Pool)> pools)
+    {
+        var sorted = SuffixPools.Normalize(pools);
+        lock (_localGate)
+        {
+            if (SuffixPools.Same(_suffixPools, sorted))
+            {
+                return false;
+            }
+
+            _suffixPools = sorted;
+            _cache.Clear();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The resolvers of the adapter whose suffix the name falls under; null where no adapter claims it.
+    /// </summary>
+    internal IReadOnlyList<IPAddress>? PoolOf(string name)
+    {
+        return SuffixPools.PoolOf(_suffixPools, name);
     }
 
     /// <summary>
@@ -1111,6 +1141,13 @@ internal sealed class DnsProxy
                 var secondary = matched ? _tunnelUpstreamSecondary : null;
                 // LAN-bound names (local, or non-geo in split) race the whole provider pool.
                 var lanPool = _lanPool;
+                // A name under the suffix of an adapter is asked where that adapter points.
+                if (isLocal && name is not null && PoolOf(name) is { } own)
+                {
+                    lanPool = own;
+                    upstream = own[0];
+                }
+
                 var lanRace = lanPool.Count > 1 && (isLocal || (!matched && _localIsLan));
                 var result = lanRace
                     ? await ForwardCoalescedRacedAsync(name, type, query, lanPool)

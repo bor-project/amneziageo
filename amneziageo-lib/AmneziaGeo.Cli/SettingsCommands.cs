@@ -61,6 +61,11 @@ internal static class SettingsCommands
             values.Add((SettingKeys.LocalDoh, snapshot.LocalDoh));
         }
 
+        if (snapshot.OtherVpn.Length > 0)
+        {
+            values.Add((SettingKeys.OtherVpn, snapshot.OtherVpn));
+        }
+
         if (Output.Json)
         {
             Output.AsJson(values.ToDictionary(pair => pair.Key, pair => pair.Value));
@@ -120,7 +125,7 @@ internal static class SettingsCommands
 
             case _routeLogKey or _surviveRebootKey or _periodicReconnectKey or SettingKeys.SubscriptionAutoRefresh
                 or SettingKeys.MultiServer or SettingKeys.DirectTcp or SettingKeys.ExcludeRoutes
-                or SettingKeys.LocalInTunnel:
+                or SettingKeys.LocalInTunnel or SettingKeys.OtherVpn:
                 if (!Toggle.TryParse(raw, out var on))
                 {
                     error = $"{key} takes on or off";

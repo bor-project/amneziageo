@@ -603,6 +603,14 @@ internal sealed class TunnelRunner(
         // One tracker shared by DNS and app paths; created before the tracker starts so its loop stops with the session.
         using var sessionCts = new CancellationTokenSource();
 
+        // The VPNs of other programs keep their adapters, the ranges they lead and the way to their servers beside this
+        // tunnel.
+        var otherVpns = appSettings.OtherVpn ? new OtherVpnKeeper(name, routes, firewall, logger, duties.CarriesDefault) : null;
+        if (otherVpns is not null)
+        {
+            await otherVpns.ScanAsync(sessionCts.Token);
+        }
+
         // Verdict path for a database-sized Direct bucket: nothing is installed at connect, and a destination earns
         // its host route on first contact - from a DNS answer, or from an ETW connect event when it never resolved.
         // The proxy bucket is passed too: it decides precedence on an overlap, and in split it marks the addresses a
@@ -845,7 +853,27 @@ internal sealed class TunnelRunner(
         // Keeps the proxy on the resolvers and suffixes the adapters have now.
         if (proxy is not null)
         {
-            _ = Task.Run(() => FollowLanAsync(name, proxy, LocalsWith, geoSplit && preferredDns.Count == 0, sessionCts.Token));
+            if (otherVpns is not null)
+            {
+                proxy.UpdateSuffixPools(SuffixPools(dns.CaptureSuffixResolvers()));
+            }
+
+            _ = Task.Run(() => FollowLanAsync(name, proxy, LocalsWith, geoSplit && preferredDns.Count == 0, otherVpns is not null, sessionCts.Token));
+        }
+
+        // Keeps the other VPNs squared with the tunnel as they come and go; a destination one of them leads now is
+        // decided again, so a host route of the cache does not hold it on the tunnel.
+        if (otherVpns is not null)
+        {
+            otherVpns.Changed = () =>
+            {
+                var released = routing?.ReleaseLedElsewhere(address => routes.OwnPath(address) is not null) ?? 0;
+                if (released > 0)
+                {
+                    logger.LogInformation("{Name}: {Count} destination(s) another VPN leads now were released from the routing cache and are decided again on their next packet", name, released);
+                }
+            };
+            _ = Task.Run(() => otherVpns.FollowAsync(sessionCts.Token));
         }
 
         // This machine looks addresses up through one tunnel, so a name matched by a rule riding another one
@@ -1010,9 +1038,13 @@ internal sealed class TunnelRunner(
 
         // Keep the LAN and any manual exclusions direct in both modes (RFC1918 floor + stored list). In split
         // mode the tunnelled geo routes are more specific, so longest-prefix-match keeps them on the tunnel.
-        var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, bypassCidrs);
+        var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, bypassCidrs, otherVpns is null ? null : otherVpns.Leads);
         logger.LogDebug("{Name}: routes in place - the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
+
+        // The servers of the other VPNs stay reachable past this tunnel, like its own.
+        otherVpns?.Probe(underlayProbe);
+        otherVpns?.Square();
 
         // The rule takes the ranges the tunnel carries, so the address of the machine is open to them alone.
         var inboundOpened = InboundFirewall.Allow(name, inboundAddresses,
@@ -1023,7 +1055,7 @@ internal sealed class TunnelRunner(
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, transport?.AllowInbound != true, signal, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, transport?.AllowInbound != true, signal, otherVpns, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -1167,6 +1199,11 @@ internal sealed class TunnelRunner(
             if (excluded)
             {
                 cleanup.Run("the route to the server", () => routes.RemoveEndpointExclusion(name, endpoint!));
+            }
+
+            if (otherVpns is not null)
+            {
+                cleanup.Run("the routes to the servers of other VPNs", otherVpns.Release);
             }
 
             if (lanExcluded)
@@ -1845,7 +1882,7 @@ internal sealed class TunnelRunner(
     private static readonly TimeSpan[] LanRereadDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(15)];
 
     // Hands the proxy the own network's resolvers and suffixes after every change of the adapters.
-    private async Task FollowLanAsync(string name, DnsProxy proxy, Func<IReadOnlyList<string>, IReadOnlyList<string>> locals, bool localFollows, CancellationToken ct)
+    private async Task FollowLanAsync(string name, DnsProxy proxy, Func<IReadOnlyList<string>, IReadOnlyList<string>> locals, bool localFollows, bool bySuffix, CancellationToken ct)
     {
         var changed = new SemaphoreSlim(0, 1);
         void OnChanged(object? sender, EventArgs e)
@@ -1875,7 +1912,7 @@ internal sealed class TunnelRunner(
                         continue;
                     }
 
-                    ReadLan(name, proxy, locals, localFollows);
+                    ReadLan(name, proxy, locals, localFollows, bySuffix);
                     step++;
                 }
             }
@@ -1890,14 +1927,15 @@ internal sealed class TunnelRunner(
     }
 
     // Reads the own network's resolvers and suffixes and hands them to the proxy when they moved.
-    private void ReadLan(string name, DnsProxy proxy, Func<IReadOnlyList<string>, IReadOnlyList<string>> locals, bool localFollows)
+    private void ReadLan(string name, DnsProxy proxy, Func<IReadOnlyList<string>, IReadOnlyList<string>> locals, bool localFollows, bool bySuffix)
     {
         try
         {
             var resolvers = dns.CaptureUpstream();
             var suffixes = dns.CaptureLocalDnsSuffixes();
             var (first, pool) = LanResolvers(resolvers);
-            if (!proxy.UpdateLan(first, pool, localFollows, locals(suffixes)))
+            var pooled = bySuffix && proxy.UpdateSuffixPools(SuffixPools(dns.CaptureSuffixResolvers()));
+            if (!proxy.UpdateLan(first, pool, localFollows, locals(suffixes)) && !pooled)
             {
                 return;
             }
@@ -1910,6 +1948,30 @@ internal sealed class TunnelRunner(
         {
             logger.LogWarning(ex, "{Name}: the resolvers of your own network could not be read after the adapters changed, so names keep going to the ones read before", name);
         }
+    }
+
+    // The resolvers of the adapter each suffix belongs to, as the proxy takes them.
+    private static IReadOnlyList<(string Suffix, IReadOnlyList<IPAddress> Pool)> SuffixPools(IReadOnlyList<(string Suffix, IReadOnlyList<string> Servers)> captured)
+    {
+        var pools = new List<(string Suffix, IReadOnlyList<IPAddress> Pool)>();
+        foreach (var (suffix, servers) in captured)
+        {
+            var pool = new List<IPAddress>();
+            foreach (var server in servers)
+            {
+                if (IPAddress.TryParse(server, out var address) && address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    pool.Add(address);
+                }
+            }
+
+            if (pool.Count > 0)
+            {
+                pools.Add((suffix, pool));
+            }
+        }
+
+        return pools;
     }
 
     // What this tunnel is on the hook for, and the names the ones standing alongside carry.
@@ -2318,7 +2380,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, IPAddress? endpoint, RoutingCache? routing, bool blockInbound, SignalPlace? signal, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> peers, IPAddress? endpoint, RoutingCache? routing, bool blockInbound, SignalPlace? signal, OtherVpnKeeper? otherVpns, CancellationToken ct)
     {
         try
         {
@@ -2369,6 +2431,7 @@ internal sealed class TunnelRunner(
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
                 KeepOffTunnel(name);
+                otherVpns?.Square();
 
                 // A destination dropped before its verdict exists is announced by the drop itself; nothing else
                 // sees it, because the send that would raise a connect or datagram event never happens.

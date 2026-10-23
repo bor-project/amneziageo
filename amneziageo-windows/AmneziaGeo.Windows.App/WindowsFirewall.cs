@@ -66,6 +66,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private int _generation;
     // The tunnel adapters let through the block, and the filters holding each one open.
     private readonly Dictionary<uint, List<ulong>> _alongside = [];
+    // The adapters of other VPNs let through the block, and the filters holding each one open.
+    private readonly Dictionary<uint, List<ulong>> _others = [];
+    // The servers of other VPNs let through the block by address, and the filters holding each one open.
+    private readonly Dictionary<uint, (ulong Out, ulong In)> _otherServers = [];
     // The filters that refuse the tunnel adapter to the programs a list keeps direct, and the adapter refused.
     private readonly List<ulong> _offTunnel = [];
     private ulong _tunnelLuid;
@@ -565,6 +569,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         FwpmEngineClose0(_engine);
         _engine = IntPtr.Zero;
         _alongside.Clear();
+        _others.Clear();
+        _otherServers.Clear();
         _offTunnel.Clear();
         _tunnelLuid = 0;
         logger.LogInformation("leak protection is off; traffic is no longer restricted to the tunnel");
@@ -694,7 +700,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     }
 
     // The same permit as this tunnel's own adapter, keeping the filter ids so it can be taken back.
-    private List<ulong> PermitPeerInterface(IntPtr engine, ulong luid)
+    private List<ulong> PermitPeerInterface(IntPtr engine, ulong luid, string label = "Permit tunnel interface alongside")
     {
         var ids = new List<ulong>();
         var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
@@ -708,7 +714,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
             foreach (var layer in DecisionLayers)
             {
-                if (AddRaw(engine, layer, WeightTun, ActionPermit, 0, cond, "Permit tunnel interface alongside", out var id) == 0)
+                if (AddRaw(engine, layer, WeightTun, ActionPermit, 0, cond, label, out var id) == 0)
                 {
                     ids.Add(id);
                 }
@@ -1089,43 +1095,96 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     {
         lock (_gate)
         {
-            if (_engine == IntPtr.Zero)
+            return _engine == IntPtr.Zero ? (0, 0) : SquareAdaptersLocked(_alongside, interfaces, "Permit tunnel interface alongside");
+        }
+    }
+
+    /// <summary>
+    /// Squares the adapters of other VPNs let through the block with the given ones; returns how many were let
+    /// through and how many were taken back. Nothing is let through where no block stands.
+    /// </summary>
+    public (int Added, int Removed) PermitOtherVpns(IReadOnlyCollection<uint> interfaces)
+    {
+        lock (_gate)
+        {
+            return _engine == IntPtr.Zero || _tunnelLuid == 0 ? (0, 0) : SquareAdaptersLocked(_others, interfaces, "Permit the adapter of another VPN");
+        }
+    }
+
+    /// <summary>
+    /// Squares the servers of other VPNs let through the block by address with the given ones; returns how many were
+    /// let through and how many were taken back. Nothing is let through where no block stands.
+    /// </summary>
+    public (int Added, int Removed) PermitOtherServers(IReadOnlyCollection<uint> addresses)
+    {
+        lock (_gate)
+        {
+            if (_engine == IntPtr.Zero || _tunnelLuid == 0)
             {
                 return (0, 0);
             }
 
             var removed = 0;
-            foreach (var gone in _alongside.Keys.Where(index => !interfaces.Contains(index)).ToArray())
+            foreach (var gone in _otherServers.Keys.Where(address => !addresses.Contains(address)).ToArray())
             {
-                foreach (var id in _alongside[gone])
-                {
-                    DeleteByIdLocked(id);
-                }
-
-                _alongside.Remove(gone);
+                var (outId, inId) = _otherServers[gone];
+                DeleteByIdLocked(outId);
+                DeleteByIdLocked(inId);
+                _otherServers.Remove(gone);
                 removed++;
             }
 
             var added = 0;
-            foreach (var index in interfaces)
+            foreach (var address in addresses)
             {
-                if (_alongside.ContainsKey(index) || ConvertInterfaceIndexToLuid(index, out var luid) != 0)
+                if (_otherServers.ContainsKey(address)
+                    || !TryHostFilter(address, ActionPermit, WeightLan, "Permit the server of another VPN", out var outId, out var inId, out _, true))
                 {
                     continue;
                 }
 
-                var ids = PermitPeerInterface(_engine, luid);
-                if (ids.Count == 0)
-                {
-                    continue;
-                }
-
-                _alongside[index] = ids;
+                _otherServers[address] = (outId, inId);
                 added++;
             }
 
             return (added, removed);
         }
+    }
+
+    // Squares the adapters a set holds open with the given ones.
+    private (int Added, int Removed) SquareAdaptersLocked(Dictionary<uint, List<ulong>> held, IReadOnlyCollection<uint> interfaces, string label)
+    {
+        var removed = 0;
+        foreach (var gone in held.Keys.Where(index => !interfaces.Contains(index)).ToArray())
+        {
+            foreach (var id in held[gone])
+            {
+                DeleteByIdLocked(id);
+            }
+
+            held.Remove(gone);
+            removed++;
+        }
+
+        var added = 0;
+        foreach (var index in interfaces)
+        {
+            if (held.ContainsKey(index) || ConvertInterfaceIndexToLuid(index, out var luid) != 0)
+            {
+                continue;
+            }
+
+            var ids = PermitPeerInterface(_engine, luid, label);
+            if (ids.Count == 0)
+            {
+                continue;
+            }
+
+            held[index] = ids;
+            added++;
+        }
+
+        return (added, removed);
     }
 
     private bool DeleteByIdLocked(ulong id)

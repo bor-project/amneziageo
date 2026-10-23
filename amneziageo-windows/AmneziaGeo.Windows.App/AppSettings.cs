@@ -143,6 +143,11 @@ internal sealed record AppSettings
     public bool MultiServer { get; init; }
 
     /// <summary>
+    /// Whether the VPNs of other programs keep their adapters, ranges and servers beside the tunnel.
+    /// </summary>
+    public bool OtherVpn { get; init; } = true;
+
+    /// <summary>
     /// How often the balancer of the set is looked at again, in seconds.
     /// </summary>
     public int BalanceIntervalSeconds { get; init; } = AmneziaGeo.Ipc.Fleet.BalancePolicy.Default.IntervalSeconds;

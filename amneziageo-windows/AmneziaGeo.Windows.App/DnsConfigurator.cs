@@ -147,6 +147,38 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     }
 
     /// <summary>
+    /// The connection-specific suffix of each adapter with the resolvers the adapter has of its own, so a name under
+    /// the suffix is asked where that adapter points.
+    /// </summary>
+    public IReadOnlyList<(string Suffix, IReadOnlyList<string> Servers)> CaptureSuffixResolvers()
+    {
+        var recorded = RecordedServers();
+        var pools = new List<(string Suffix, IReadOnlyList<string> Servers)>();
+        foreach (var adapter in Adapters())
+        {
+            using (adapter)
+            {
+                var suffix = (adapter["DNSDomain"] as string)?.Trim().Trim('.').ToLowerInvariant();
+                if (suffix is not { Length: > 1 })
+                {
+                    continue;
+                }
+
+                var live = adapter["DNSServerSearchOrder"] as string[] ?? [];
+                var dns = AdapterGuid(adapter) is { } guid
+                    ? OwnResolvers(live, recorded.GetValueOrDefault(guid, Array.Empty<string>()), DhcpServers(V4InterfacesKey, guid))
+                    : OwnResolvers(live, [], []);
+                if (dns.Length > 0)
+                {
+                    pools.Add((suffix, dns));
+                }
+            }
+        }
+
+        return pools;
+    }
+
+    /// <summary>
     /// Sets every IP-enabled adapter's DNS to the proxy servers. The adapters' own settings are recorded
     /// first, so a crash between the record and the redirect still leaves something to put back.
     /// </summary>

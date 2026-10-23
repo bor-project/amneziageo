@@ -188,9 +188,9 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
-    /// Pins LAN ranges to the physical gateway in full-tunnel mode.
+    /// Pins LAN ranges to the physical gateway in full-tunnel mode; a range another VPN leads is pinned to its adapter.
     /// </summary>
-    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs)
+    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs, Func<uint, bool>? ledByOther = null)
     {
         using var turn = TakeRoutesTurn();
         var any = false;
@@ -210,17 +210,18 @@ internal sealed partial class RouteManager
             }
 
             var (gateway, interfaceIndex) = FindPhysicalGateway(dest);
-            if (gateway is null)
+            if (gateway is null && ledByOther?.Invoke(interfaceIndex) != true)
             {
                 continue;
             }
 
+            var hop = gateway ?? IPAddress.Any;
             var row = NewRow(dest, prefix, interfaceIndex, gateway);
             var result = CreateIpForwardEntry2(ref row);
             var ok = result is NoError or ErrorObjectAlreadyExists;
-            var record = RouteStateFile.Through($"{dest}/{prefix}", interfaceIndex, gateway.ToString());
+            var record = RouteStateFile.Through($"{dest}/{prefix}", interfaceIndex, hop.ToString());
             var ours = Ours(result, recorded, record);
-            RouteLog.Write("lan-excl", $"{dest}/{prefix}", $"{gateway} if{interfaceIndex}", ok, ok && !ours ? StoodBefore : null);
+            RouteLog.Write("lan-excl", $"{dest}/{prefix}", $"{hop} if{interfaceIndex}", ok, ok && !ours ? StoodBefore : null);
             if (ours)
             {
                 added.Add(record);
@@ -320,6 +321,37 @@ internal sealed partial class RouteManager
     public void RemoveGatewayHost(IPAddress address, uint interfaceIndex)
     {
         RemoveDirectHost(address, interfaceIndex);
+    }
+
+    /// <summary>
+    /// Adds a host route to the server of another VPN through the physical hop; true when the route is this session's
+    /// to take back, false when it stood before or could not be put.
+    /// </summary>
+    public bool AddOtherServerRoute(IPAddress address, IPAddress? gateway, uint interfaceIndex)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork || interfaceIndex == 0)
+        {
+            return false;
+        }
+
+        var row = NewRow(address, 32, interfaceIndex, gateway);
+        var result = CreateIpForwardEntry2(ref row);
+        if (result == NoError)
+        {
+            Remember(address, 32, interfaceIndex, row);
+        }
+
+        RouteLog.Write("other-vpn server", $"{address}/32", $"{gateway?.ToString() ?? "on-link"} if{interfaceIndex}", result is NoError or ErrorObjectAlreadyExists, result == ErrorObjectAlreadyExists ? StoodBefore : Said(result));
+        return result == NoError;
+    }
+
+    /// <summary>
+    /// Removes a host route <see cref="AddOtherServerRoute"/> put; one that stood before stays.
+    /// </summary>
+    public void RemoveOtherServerRoute(IPAddress address, uint interfaceIndex)
+    {
+        var gone = TryDeleteRemembered(address, 32, interfaceIndex);
+        RouteLog.Write("rm other-vpn server", $"{address}/32", $"if{interfaceIndex}", gone);
     }
 
     /// <summary>
@@ -535,8 +567,22 @@ internal sealed partial class RouteManager
         }
     }
 
-    // Whether the interface index is an adapter of ours.
-    private bool IsOwnAdapter(uint interfaceIndex)
+    /// <summary>
+    /// Drops what is known about the adapters, so the next look reads them anew.
+    /// </summary>
+    public void ForgetAdapterKinds()
+    {
+        lock (_adapterKindsLock)
+        {
+            _adapterKinds = [];
+            _adapterKindsStamp = 0;
+        }
+    }
+
+    /// <summary>
+    /// Whether the adapter with this index is one of the client's; an index among no adapter counts as the client's.
+    /// </summary>
+    public bool IsOwnAdapter(uint interfaceIndex)
     {
         var now = Environment.TickCount64;
         lock (_adapterKindsLock)
@@ -572,10 +618,18 @@ internal sealed partial class RouteManager
     /// </summary>
     public static bool IsTunnelAdapter(NetworkInterface ni)
     {
-        return ni.Name.StartsWith("AmneziaGeo", StringComparison.OrdinalIgnoreCase)
-            || ni.Description.Contains("WireGuard", StringComparison.OrdinalIgnoreCase)
-            || ni.Description.Contains("AmneziaWG", StringComparison.OrdinalIgnoreCase)
-            || ni.Description.Contains("Wintun", StringComparison.OrdinalIgnoreCase);
+        return IsTunnelAdapter(ni.Name, ni.Description);
+    }
+
+    /// <summary>
+    /// Whether an adapter with this name and description is one of the client's.
+    /// </summary>
+    public static bool IsTunnelAdapter(string name, string description)
+    {
+        return name.StartsWith("AmneziaGeo", StringComparison.OrdinalIgnoreCase)
+            || description.Contains("WireGuard", StringComparison.OrdinalIgnoreCase)
+            || description.Contains("AmneziaWG", StringComparison.OrdinalIgnoreCase)
+            || description.Contains("Wintun", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -888,6 +942,120 @@ internal sealed partial class RouteManager
     {
         using var turn = TakeRoutesTurn();
         RestoreLanFile(TunnelPaths.LanStateFile(name));
+    }
+
+    /// <summary>
+    /// Takes back the ranges kept out of the tunnel that an adapter of another VPN leads itself; returns how many went.
+    /// </summary>
+    public int ReleaseLanExclusions(string name, IReadOnlyCollection<uint> others)
+    {
+        if (others.Count == 0)
+        {
+            return 0;
+        }
+
+        using var turn = TakeRoutesTurn();
+        var path = TunnelPaths.LanStateFile(name);
+        var held = RouteStateFile.HeldElsewhere(path, TunnelPaths.LanStateFiles());
+        var released = 0;
+        foreach (var record in RouteStateFile.Read(path))
+        {
+            var entry = RouteStateFile.Entry(record);
+            if (held.Holds(record)
+                || RouteStateFile.Hop(record) is not { } through
+                || others.Contains(through.Interface)
+                || !LedByAnother(entry, others))
+            {
+                continue;
+            }
+
+            var result = DeleteRecorded(record);
+            RouteLog.Write("rm lan-excl", entry, HopOf(record), result is NoError or ErrorNotFound, "another VPN leads it");
+            RouteStateFile.Update(path, record, add: false);
+            released++;
+        }
+
+        return released;
+    }
+
+    // Whether one of the adapters has a route of its own that covers the range, narrower than a default route.
+    private static bool LedByAnother(string cidr, IReadOnlyCollection<uint> others)
+    {
+        var slash = cidr.IndexOf('/');
+        if (slash < 0
+            || !IPAddress.TryParse(cidr[..slash], out var dest)
+            || dest.AddressFamily != AddressFamily.InterNetwork
+            || !byte.TryParse(cidr[(slash + 1)..], out var prefix))
+        {
+            return false;
+        }
+
+        return others.Any(index => LeadsRange(index, dest, prefix));
+    }
+
+    /// <summary>
+    /// Whether the adapter leads the range by a route of its own, narrower than a default route and its halves.
+    /// </summary>
+    public static bool LeadsRange(uint interfaceIndex, IPAddress network, byte prefix)
+    {
+        return BestOn(interfaceIndex, network) is { } best
+            && best.DestinationPrefix.PrefixLength > 1
+            && best.DestinationPrefix.PrefixLength <= prefix;
+    }
+
+    /// <summary>
+    /// Whether the adapter leads a default route of its own.
+    /// </summary>
+    public static bool HoldsDefault(uint interfaceIndex)
+    {
+        return BestOn(interfaceIndex, IPAddress.Parse("192.0.2.1")) is { } best && best.DestinationPrefix.PrefixLength == 0;
+    }
+
+    // The best route the adapter has toward the address, null when it has none.
+    private static MIB_IPFORWARD_ROW2? BestOn(uint interfaceIndex, IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork || interfaceIndex == 0)
+        {
+            return null;
+        }
+
+        var dest = ToSockaddr(address);
+        var best = new MIB_IPFORWARD_ROW2();
+        var source = new SOCKADDR_INET();
+        return GetBestRoute2(IntPtr.Zero, interfaceIndex, IntPtr.Zero, ref dest, 0, ref best, ref source) == NoError && best.InterfaceIndex == interfaceIndex
+            ? best
+            : null;
+    }
+
+    /// <summary>
+    /// Adds a route for the range on the adapter without a gateway; true when the route is this session's to take back,
+    /// false when it stood before or could not be put.
+    /// </summary>
+    public bool AddOnLinkRange(IPAddress network, byte prefix, uint interfaceIndex)
+    {
+        if (network.AddressFamily != AddressFamily.InterNetwork || interfaceIndex == 0)
+        {
+            return false;
+        }
+
+        var row = NewRow(network, prefix, interfaceIndex, null);
+        var result = CreateIpForwardEntry2(ref row);
+        if (result == NoError)
+        {
+            Remember(network, prefix, interfaceIndex, row);
+        }
+
+        RouteLog.Write("other-vpn range", $"{network}/{prefix}", $"on-link if{interfaceIndex}", result is NoError or ErrorObjectAlreadyExists, result == ErrorObjectAlreadyExists ? StoodBefore : Said(result));
+        return result == NoError;
+    }
+
+    /// <summary>
+    /// Removes a route <see cref="AddOnLinkRange"/> put; one that stood before stays.
+    /// </summary>
+    public void RemoveOnLinkRange(IPAddress network, byte prefix, uint interfaceIndex)
+    {
+        var gone = TryDeleteRemembered(network, prefix, interfaceIndex);
+        RouteLog.Write("rm other-vpn range", $"{network}/{prefix}", $"if{interfaceIndex}", gone);
     }
 
     /// <summary>

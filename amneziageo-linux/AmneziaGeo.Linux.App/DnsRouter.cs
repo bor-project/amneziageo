@@ -28,7 +28,9 @@ internal sealed class DnsRouter : IDisposable
     private volatile DomainMatcher _directDomains;
     private volatile DomainMatcher _blockDomains;
     private readonly IReadOnlyList<IPAddress> _tunnelResolvers;
-    private readonly IReadOnlyList<IPAddress> _lanResolvers;
+    private volatile IReadOnlyList<IPAddress> _lanResolvers;
+    // The resolvers another VPN or network answers the names under its suffixes with, the longest suffix first.
+    private volatile IReadOnlyList<(string Suffix, IReadOnlyList<IPAddress> Pool)> _suffixPools = [];
     // Whether the names through the tunnel are left to the network of the machine, asked by the routing table.
     private readonly bool _network;
     private readonly RoutingCache _routes;
@@ -110,6 +112,37 @@ internal sealed class DnsRouter : IDisposable
         _directDomains = new DomainMatcher(routing.DirectDomains);
         _blockDomains = new DomainMatcher(routing.BlockDomains);
         _log.Info("dns", $"name rules reloaded: {routing.ProxyDomains.Count} tunneled, {routing.DirectDomains.Count} direct, {routing.BlockDomains.Count} refused");
+    }
+
+    /// <summary>
+    /// Takes the resolvers of the network of the machine as they stand now.
+    /// </summary>
+    public void UpdateLan(IReadOnlyList<IPAddress> lanResolvers)
+    {
+        _lanResolvers = lanResolvers;
+    }
+
+    /// <summary>
+    /// Takes the resolvers another VPN or network answers the names under its suffixes with; returns whether they moved.
+    /// </summary>
+    public bool UpdateSuffixPools(IReadOnlyList<(string Suffix, IReadOnlyList<IPAddress> Pool)> pools)
+    {
+        var sorted = SuffixPools.Normalize(pools);
+        if (SuffixPools.Same(_suffixPools, sorted))
+        {
+            return false;
+        }
+
+        _suffixPools = sorted;
+        return true;
+    }
+
+    /// <summary>
+    /// The resolvers that answer the names under the suffix the name falls under; null where no suffix claims it.
+    /// </summary>
+    internal IReadOnlyList<IPAddress>? PoolOf(string name)
+    {
+        return SuffixPools.PoolOf(_suffixPools, name);
     }
 
     /// <summary>
@@ -292,11 +325,13 @@ internal sealed class DnsRouter : IDisposable
             return DnsWire.BuildEmpty(query, length);
         }
 
+        // A name under the suffix of another VPN or network is asked where that one points.
+        var own = PoolOf(name);
         var upstream = verdict switch
         {
             RouteVerdict.Proxy => _tunnelResolvers,
-            RouteVerdict.Direct => _lanResolvers,
-            _ => _split || IsLocalName(name) ? _lanResolvers : _tunnelResolvers,
+            RouteVerdict.Direct => own ?? _lanResolvers,
+            _ => own ?? (_split || IsLocalName(name) ? _lanResolvers : _tunnelResolvers),
         };
 
         // The network of the machine answers the names through the tunnel where the config leaves them to it.

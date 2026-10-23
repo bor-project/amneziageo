@@ -78,6 +78,12 @@ internal partial class ConnectionsViewModel : ViewModelBase
     private bool _multiServer;
 
     /// <summary>
+    /// Whether the VPNs of other programs keep their adapters, ranges and servers beside the tunnel.
+    /// </summary>
+    [ObservableProperty]
+    private bool _otherVpn = true;
+
+    /// <summary>
     /// Re-read the subscriptions on a timer.
     /// </summary>
     [ObservableProperty]
@@ -555,6 +561,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
         _suppressSettingPush = true;
         ShowNotifications = snapshot.ShowNotifications;
         MultiServer = snapshot.MultiServer;
+        OtherVpn = snapshot.OtherVpn != "off";
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
         ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
@@ -874,6 +881,14 @@ internal partial class ConnectionsViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync(SettingKeys.MultiServer, value ? "on" : "off");
+        }
+    }
+
+    partial void OnOtherVpnChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.OtherVpn, value ? "on" : "off");
         }
     }
 

@@ -77,8 +77,20 @@ public static class AppNames
         return led.Select(app => app.Label.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1 ? Values(led) : [];
     }
 
-    private static IReadOnlyList<string> Values(IEnumerable<NamedApp> programs) =>
-        [.. programs.Select(app => app.Value).Where(value => !OwnAppRule.Names("app:" + value)).Distinct(StringComparer.OrdinalIgnoreCase)];
+    // The values of the programs without this application and without a program a folder among them holds.
+    private static IReadOnlyList<string> Values(IEnumerable<NamedApp> programs)
+    {
+        var values = programs.Select(app => app.Value).Where(value => !OwnAppRule.Names("app:" + value))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        return [.. values.Where(value => !values.Any(other => Holds(other, value)))];
+    }
+
+    // A folder value that holds the program of a path value.
+    private static bool Holds(string folder, string program) =>
+        AppRuleCover.Parse(folder).Kind == "dir"
+        && AppRuleCover.Parse(program).Kind == "path"
+        && AppRuleCover.Covers(folder, program);
 
     // The file name without its folder and extension.
     private static string Stem(string file)

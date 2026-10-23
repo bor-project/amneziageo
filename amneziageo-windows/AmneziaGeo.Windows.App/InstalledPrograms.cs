@@ -21,6 +21,9 @@ internal static class InstalledPrograms
     // How deep the folders of the Start menu are walked.
     private const int MenuDepth = 4;
 
+    // Words of the file names of the programs that install, remove or update a product.
+    private static readonly string[] _setupWords = ["install", "setup", "unins", "update"];
+
     /// <summary>
     /// Returns the programs of the machine and of the user with this SID; an entry that cannot be read is left out.
     /// </summary>
@@ -67,6 +70,11 @@ internal static class InstalledPrograms
                 }
 
                 var exe = ExeFromIcon(Text(key, "DisplayIcon", profile));
+                if (exe is not null && Installs(exe, Text(key, "UninstallString", profile)))
+                {
+                    exe = null;
+                }
+
                 var folder = Text(key, "InstallLocation", profile)?.Trim('"').TrimEnd('\\', '/');
                 if (exe is not null)
                 {
@@ -188,6 +196,18 @@ internal static class InstalledPrograms
 
         value = value.Trim().Trim('"');
         return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? value : null;
+    }
+
+    /// <summary>
+    /// Tells whether the program of an Uninstall entry installs, removes or updates its product: the program its
+    /// UninstallString runs, or a file name that says so.
+    /// </summary>
+    internal static bool Installs(string exe, string? uninstall)
+    {
+        var leaf = Path.GetFileNameWithoutExtension(exe);
+
+        return _setupWords.Any(word => leaf.Contains(word, StringComparison.OrdinalIgnoreCase))
+            || (uninstall is { Length: > 0 } && uninstall.Contains(exe, StringComparison.OrdinalIgnoreCase));
     }
 
     private static RegistryKey? Open(RegistryKey hive, string path)

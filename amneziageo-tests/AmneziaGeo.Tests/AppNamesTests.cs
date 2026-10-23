@@ -100,6 +100,31 @@ public sealed class AppNamesTests : IAsyncLifetime
     }
 
     [Fact]
+    public void AName_DropsAProgramTheFolderItFoundHolds()
+    {
+        IReadOnlyList<NamedApp> docker =
+        [
+            new("Docker Desktop", string.Empty, string.Empty, @"dir=C:\Program Files\Docker\Docker"),
+            new("Docker Desktop", @"C:\Program Files\Docker\Docker\Docker Desktop.exe", string.Empty, @"path=C:\Program Files\Docker\Docker\Docker Desktop.exe"),
+        ];
+
+        Assert.Equal([@"dir=C:\Program Files\Docker\Docker"], AppNames.Pick("Docker Desktop", docker));
+    }
+
+    [Fact]
+    public void AName_KeepsAPackageAndAProgramOfIt()
+    {
+        const string exe = @"C:\Program Files\WindowsApps\Microsoft.WindowsNotepad_11.2407.9.0_x64__8wekyb3d8bbwe\Notepad\Notepad.exe";
+        IReadOnlyList<NamedApp> notepad =
+        [
+            new("Notepad", string.Empty, "Microsoft.WindowsNotepad_8wekyb3d8bbwe", "pkg=Microsoft.WindowsNotepad_8wekyb3d8bbwe"),
+            new("Notepad", exe, string.Empty, "path=" + exe),
+        ];
+
+        Assert.Equal(["pkg=Microsoft.WindowsNotepad_8wekyb3d8bbwe", "path=" + exe], AppNames.Pick("Notepad", notepad));
+    }
+
+    [Fact]
     public void TheValues_PutWhatWasFoundInPlaceOfANameAndSkipANameNothingStandsFor()
     {
         var found = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
@@ -263,6 +288,19 @@ public sealed class AppNamesTests : IAsyncLifetime
         var programs = InstalledPrograms.List(null);
 
         Assert.All(programs, program => Assert.True(program.Value.StartsWith("path=", StringComparison.Ordinal) || program.Value.StartsWith("dir=", StringComparison.Ordinal)));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\Docker\Docker\Docker Desktop Installer.exe", @"""C:\Program Files\Docker\Docker\Docker Desktop Installer.exe"" uninstall", true)]
+    [InlineData(@"C:\Program Files\Tool\unins000.exe", null, true)]
+    [InlineData(@"C:\Users\anna\AppData\Local\Discord\Update.exe", null, true)]
+    [InlineData(@"C:\Program Files\Tool\setup.exe", null, true)]
+    [InlineData(@"C:\Program Files\Tool\helper.exe", @"C:\Program Files\Tool\helper.exe /remove", true)]
+    [InlineData(@"C:\Program Files\Docker\Docker\Docker Desktop.exe", @"""C:\Program Files\Docker\Docker\Docker Desktop Installer.exe"" uninstall", false)]
+    [InlineData(@"C:\Program Files\Mozilla Firefox\firefox.exe", @"""C:\Program Files\Mozilla Firefox\uninstall\helper.exe""", false)]
+    public void AnUninstallEntry_DoesNotTakeItsInstallerForTheProgram(string exe, string? uninstall, bool installs)
+    {
+        Assert.Equal(installs, InstalledPrograms.Installs(exe, uninstall));
     }
 
     // A shortcut whose link info names a local base path and no suffix.

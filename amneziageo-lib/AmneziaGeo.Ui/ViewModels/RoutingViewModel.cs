@@ -474,8 +474,18 @@ internal partial class RoutingViewModel : ViewModelBase
     /// Whether the footer Save/Cancel bar is shown: an import draft, or dirty open-list edits (only while this
     /// section is the one on screen).
     /// </summary>
-    public bool ShowSaveBar => IsActiveSection
-        && (IsCreatingSectionRouting ? IsImportManual || IsImportDraft || IsImportCamera : IsEditDirty);
+    public bool ShowSaveBar => IsActiveSection && HasUnsavedChanges;
+
+    /// <summary>
+    /// Есть ли черновик или правки, для которых раздел держит полосу «Сохранить».
+    /// </summary>
+    public bool HasUnsavedChanges =>
+        IsCreatingSectionRouting ? IsImportManual || IsImportDraft || IsImportCamera : IsEditDirty;
+
+    /// <summary>
+    /// Имя несохранённого списка.
+    /// </summary>
+    public string UnsavedName => RoutingEditor?.Name ?? string.Empty;
 
     /// <summary>
     /// Whether the footer Save button is shown: the import draft shows it with its editor; edits always.

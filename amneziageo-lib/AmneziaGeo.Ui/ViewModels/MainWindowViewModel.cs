@@ -627,12 +627,103 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        var unsaved = UnsavedPlaces();
+        if (unsaved.Count > 0)
+        {
+            Sheet.Show(
+                Loc.Instance.Get("Main_OutsideImportTitle"),
+                Loc.Instance.Get("Main_OutsideImportUnsaved", string.Join(", ", unsaved)),
+                [
+                    new ActionOption(Loc.Instance.Get("Main_OutsideImportOpen"), () => Glyphs.Download, () => OpenOverUnsaved(text)),
+                    new ActionOption(Loc.Instance.Get("Main_OutsideImportBack"), () => Glyphs.Pencil, BackToUnsaved),
+                ]);
+            return;
+        }
+
+        OpenOutsideImport(text);
+    }
+
+    // Открывает черновик под пришедший текст.
+    private void OpenOutsideImport(string text)
+    {
         Nav = "settings";
         SettingsSection = "config";
         SettingsDetailOpen = true;
         Config.ImportFromOutside(text);
         RefreshLogsActive();
     }
+
+    // Сбрасывает несохранённое всех разделов и открывает пришедший текст.
+    private void OpenOverUnsaved(string text)
+    {
+        if (Config.HasUnsavedChanges)
+        {
+            Config.CancelSectionCommand.Execute(null);
+        }
+
+        if (Routing.HasUnsavedChanges)
+        {
+            Routing.CancelSectionCommand.Execute(null);
+        }
+
+        if (Connections.HotspotDirty)
+        {
+            Connections.CancelSectionCommand.Execute(null);
+        }
+
+        OpenOutsideImport(text);
+    }
+
+    // Ведёт к разделу с несохранённым, пришедший текст не открывает.
+    private void BackToUnsaved()
+    {
+        var section = SectionHasUnsaved(SettingsSection)
+            ? SettingsSection
+            : new[] { "config", "routing", "connections" }.FirstOrDefault(SectionHasUnsaved);
+        if (section is null)
+        {
+            return;
+        }
+
+        Nav = "settings";
+        SettingsSection = section;
+        SettingsDetailOpen = true;
+    }
+
+    // Разделы с несохранённым и имена несохранённого в них.
+    private List<string> UnsavedPlaces()
+    {
+        var places = new List<string>();
+        if (Config.HasUnsavedChanges)
+        {
+            places.Add(Place("Main_RailConfigTitle", Config.UnsavedName));
+        }
+
+        if (Routing.HasUnsavedChanges)
+        {
+            places.Add(Place("Main_RailRoutingTitle", Routing.UnsavedName));
+        }
+
+        if (Connections.HotspotDirty)
+        {
+            places.Add(Place("Main_RailConnectionsTitle", Loc.Instance.Get("General_HotspotEnabled")));
+        }
+
+        return places;
+    }
+
+    // Есть ли несохранённое в разделе настроек.
+    private bool SectionHasUnsaved(string section) => section switch
+    {
+        "config" => Config.HasUnsavedChanges,
+        "routing" => Routing.HasUnsavedChanges,
+        "connections" => Connections.HotspotDirty,
+        _ => false,
+    };
+
+    // Раздел и имя в нём одной строкой.
+    private static string Place(string section, string name) =>
+        name.Length == 0 ? Loc.Instance.Get(section) : $"{Loc.Instance.Get(section)} · {name}";
 
     // Принятые условия пускают текст, который их ждал.
     partial void OnShowTermsGateChanged(bool value)

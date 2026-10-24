@@ -817,6 +817,18 @@
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Есть несохранённые изменения</value>
   </data>
+  <data name="Main_OutsideImportTitle" xml:space="preserve">
+    <value>Пришла конфигурация</value>
+  </data>
+  <data name="Main_OutsideImportUnsaved" xml:space="preserve">
+    <value>Несохранённые изменения: {0}</value>
+  </data>
+  <data name="Main_OutsideImportOpen" xml:space="preserve">
+    <value>Открыть пришедшую</value>
+  </data>
+  <data name="Main_OutsideImportBack" xml:space="preserve">
+    <value>Вернуться к изменениям</value>
+  </data>
   <data name="Main_RoutingOffButton" xml:space="preserve">
     <value>Отключить</value>
   </data>

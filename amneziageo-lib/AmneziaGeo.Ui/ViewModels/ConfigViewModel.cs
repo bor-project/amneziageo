@@ -376,7 +376,17 @@ internal partial class ConfigViewModel : ViewModelBase
     /// Whether the footer Save/Cancel bar is shown: an import draft, or dirty open-config edits (only while this
     /// section is the one on screen).
     /// </summary>
-    public bool ShowSaveBar => IsActiveSection && (IsCreatingSectionConfig ? !IsImportPicker : IsEditDirty);
+    public bool ShowSaveBar => IsActiveSection && HasUnsavedChanges;
+
+    /// <summary>
+    /// Есть ли черновик или правки, для которых раздел держит полосу «Сохранить».
+    /// </summary>
+    public bool HasUnsavedChanges => IsCreatingSectionConfig ? !IsImportPicker : IsEditDirty;
+
+    /// <summary>
+    /// Имя несохранённого: черновика или открытой конфигурации.
+    /// </summary>
+    public string UnsavedName => IsCreatingSectionConfig ? SectionConfigName : OpenConfig ?? string.Empty;
 
     /// <summary>
     /// Whether the footer Save button is shown: the import draft shows it once in manual entry; edits always.

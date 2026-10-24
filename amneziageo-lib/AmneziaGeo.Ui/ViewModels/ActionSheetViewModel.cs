@@ -10,13 +10,23 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal sealed class ActionOption
 {
+    private readonly Func<Geometry> _icon;
+
     /// <summary>
     /// ctor
     /// </summary>
     public ActionOption(string text, Geometry icon, Action run)
+        : this(text, () => icon, run)
+    {
+    }
+
+    /// <summary>
+    /// ctor
+    /// </summary>
+    public ActionOption(string text, Func<Geometry> icon, Action run)
     {
         Text = text;
-        Icon = icon;
+        _icon = icon;
         Run = run;
     }
 
@@ -28,7 +38,7 @@ internal sealed class ActionOption
     /// <summary>
     /// Значок строки.
     /// </summary>
-    public Geometry Icon { get; }
+    public Geometry Icon => _icon();
 
     /// <summary>
     /// Действие строки.

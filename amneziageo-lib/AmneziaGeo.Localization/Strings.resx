@@ -817,6 +817,18 @@
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Unsaved changes</value>
   </data>
+  <data name="Main_OutsideImportTitle" xml:space="preserve">
+    <value>Configuration received</value>
+  </data>
+  <data name="Main_OutsideImportUnsaved" xml:space="preserve">
+    <value>Unsaved changes: {0}</value>
+  </data>
+  <data name="Main_OutsideImportOpen" xml:space="preserve">
+    <value>Open the received one</value>
+  </data>
+  <data name="Main_OutsideImportBack" xml:space="preserve">
+    <value>Back to my changes</value>
+  </data>
   <data name="Main_RoutingOffButton" xml:space="preserve">
     <value>Turn off</value>
   </data>

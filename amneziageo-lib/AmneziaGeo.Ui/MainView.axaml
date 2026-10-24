@@ -899,12 +899,16 @@
           <TextBlock Grid.Row="0" Text="{l:Tr Terms_GateTitle}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
           <TextBlock Grid.Row="1" Text="{l:Tr Terms_GateHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
           <Border Grid.Row="2" Background="{DynamicResource AgInsetBrush}" CornerRadius="9" Padding="3">
-            <UniformGrid Columns="2">
-              <Button Classes="seg" Classes.active="{Binding Gate.IsTerms}" Content="{l:Tr About_Terms}"
-                      Command="{Binding Gate.ShowCommand}" CommandParameter="TERMS" />
-              <Button Classes="seg" Classes.active="{Binding Gate.IsPrivacy}" Content="{l:Tr About_Privacy}"
-                      Command="{Binding Gate.ShowCommand}" CommandParameter="PRIVACY" />
-            </UniformGrid>
+            <controls:SegmentRow>
+              <Button Classes="seg" Classes.active="{Binding Gate.IsTerms}"
+                      Command="{Binding Gate.ShowCommand}" CommandParameter="TERMS">
+                <TextBlock Text="{l:Tr About_Terms}" TextWrapping="Wrap" TextAlignment="Center" />
+              </Button>
+              <Button Classes="seg" Classes.active="{Binding Gate.IsPrivacy}"
+                      Command="{Binding Gate.ShowCommand}" CommandParameter="PRIVACY">
+                <TextBlock Text="{l:Tr About_Privacy}" TextWrapping="Wrap" TextAlignment="Center" />
+              </Button>
+            </controls:SegmentRow>
           </Border>
           <Border Grid.Row="3" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="8">
             <ScrollViewer x:Name="TermsScroll" Focusable="True" HorizontalScrollBarVisibility="Disabled">

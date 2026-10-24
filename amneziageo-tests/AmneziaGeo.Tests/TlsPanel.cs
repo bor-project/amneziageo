@@ -17,6 +17,7 @@ internal sealed class TlsPanel : IDisposable
     private const string ServerAuth = "1.3.6.1.5.5.7.3.1";
 
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly X509Certificate2 _issuer;
     private readonly SslStreamCertificateContext _context;
     private readonly int _status;
     private readonly string _body;
@@ -31,16 +32,17 @@ internal sealed class TlsPanel : IDisposable
         _body = body;
         _status = status;
         var now = DateTimeOffset.UtcNow;
+        var tag = Guid.NewGuid().ToString("N")[..8];
 
         using var rootKey = RSA.Create(2048);
-        var rootAsk = new CertificateRequest("CN=AmneziaGeo Test Root", rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var rootAsk = new CertificateRequest($"CN=AmneziaGeo Test Root {tag}", rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         rootAsk.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
         rootAsk.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
         rootAsk.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(rootAsk.PublicKey, false));
         using var root = rootAsk.CreateSelfSigned(now.AddDays(-2), now.AddDays(30));
 
         using var issuerKey = RSA.Create(2048);
-        var issuerAsk = new CertificateRequest("CN=AmneziaGeo Test Issuer", issuerKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var issuerAsk = new CertificateRequest($"CN=AmneziaGeo Test Issuer {tag}", issuerKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         issuerAsk.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
         issuerAsk.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
         issuerAsk.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(issuerAsk.PublicKey, false));
@@ -63,7 +65,8 @@ internal sealed class TlsPanel : IDisposable
 
         Root = X509CertificateLoader.LoadCertificate(root.RawData);
         Pin = Convert.ToHexStringLower(SHA256.HashData(leaf.RawData));
-        _context = SslStreamCertificateContext.Create(leaf, [X509CertificateLoader.LoadCertificate(issuerBare.RawData)], offline: true);
+        _issuer = X509CertificateLoader.LoadCertificate(issuerBare.RawData);
+        _context = SslStreamCertificateContext.Create(leaf, [_issuer], offline: true);
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         new Thread(Accept) { IsBackground = true, Name = "tls panel" }.Start();
@@ -99,7 +102,36 @@ internal sealed class TlsPanel : IDisposable
     {
         _disposed = true;
         _listener.Stop();
+        Forget(StoreLocation.CurrentUser);
+        Forget(StoreLocation.LocalMachine);
+        _issuer.Dispose();
         Root.Dispose();
+    }
+
+    // Takes the issuer and the root out of the CA store, where the certificate context puts them on Windows.
+    private void Forget(StoreLocation location)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            using var store = new X509Store(StoreName.CertificateAuthority, location);
+            store.Open(OpenFlags.ReadWrite | OpenFlags.OpenExistingOnly);
+            foreach (var mine in new[] { _issuer, Root })
+            {
+                foreach (var found in store.Certificates.Find(X509FindType.FindByThumbprint, mine.Thumbprint, false))
+                {
+                    store.Remove(found);
+                    found.Dispose();
+                }
+            }
+        }
+        catch (CryptographicException)
+        {
+        }
     }
 
     private static byte[] Serial()

@@ -62,6 +62,8 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     // The configuration the list arrived with, empty for a list made on the device.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SourceText))]
+    [NotifyPropertyChangedFor(nameof(FromServer))]
+    [NotifyPropertyChangedFor(nameof(ServerMarkText))]
     private string _source = string.Empty;
 
     // Whether the server of the list holds a newer version.
@@ -134,6 +136,16 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     /// Откуда список: имя конфигурации, с которой он приехал, или пометка локального.
     /// </summary>
     public string SourceText => Source.Length > 0 ? Source : Loc.Instance.Get("Main_CardSourceLocal");
+
+    /// <summary>
+    /// Пришёл ли список с сервера AmneziaGeo.
+    /// </summary>
+    public bool FromServer => Source.Length > 0;
+
+    /// <summary>
+    /// Что окно знака говорит о списке с сервера.
+    /// </summary>
+    public string ServerMarkText => Loc.Instance.Get("Main_ServerMarkList", Source);
 
     /// <summary>
     /// Сохранение настроек списка: ставит владелец каталога, своей связи с агентом у строки нет.

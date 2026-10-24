@@ -47,6 +47,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     // one of the settings.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WebSocketOn))]
+    [NotifyPropertyChangedFor(nameof(ProxyMarkState))]
     private bool _webSocketOpen;
 
     // Whether the front is the one of the settings: neither the server nor the config names one.
@@ -122,6 +123,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _useRouting = true;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SignalSwitch))]
     private bool _allowSignal = true;
 
     [ObservableProperty]
@@ -153,6 +155,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [NotifyPropertyChangedFor(nameof(ServerDnsAvailable))]
     [NotifyPropertyChangedFor(nameof(ServerDnsTip))]
     [NotifyPropertyChangedFor(nameof(VpnDnsText))]
+    [NotifyPropertyChangedFor(nameof(DnsMarkState))]
     private string _serverDns = string.Empty;
 
     /// <summary>
@@ -199,7 +202,43 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     // Whether the server of the configuration leaves the choice about its signal to disconnect to the device.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SignalSwitch))]
+    [NotifyPropertyChangedFor(nameof(SignalMarkState))]
     private bool _signalOffered;
+
+    // Whether a server of ours answered for the configuration.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProxyMarkState))]
+    [NotifyPropertyChangedFor(nameof(DnsMarkState))]
+    [NotifyPropertyChangedFor(nameof(SignalMarkState))]
+    private bool _serverOurs;
+
+    /// <summary>
+    /// What the signal switch shows: on while the config takes the signal its server leaves to the device.
+    /// </summary>
+    public bool SignalSwitch
+    {
+        get => AllowSignal && SignalOffered;
+        set => AllowSignal = value;
+    }
+
+    /// <summary>
+    /// What the server of the configuration is, as the sign of the proxy says it.
+    /// </summary>
+    public string ProxyMarkState => Loc.Instance.Get(
+        !ServerOurs ? "Main_ServerMarkProxyOther" : WebSocketOpen ? "Main_ServerMarkProxyOn" : "Main_ServerMarkProxyOff");
+
+    /// <summary>
+    /// What the server of the configuration is, as the sign of the DNS says it.
+    /// </summary>
+    public string DnsMarkState => Loc.Instance.Get(
+        !ServerOurs ? "Main_ServerMarkDnsOther" : ServerDnsAvailable ? "Main_ServerMarkDnsOn" : "Main_ServerMarkDnsOff");
+
+    /// <summary>
+    /// What the server of the configuration is, as the sign of the signal to disconnect says it.
+    /// </summary>
+    public string SignalMarkState => Loc.Instance.Get(
+        !ServerOurs ? "Main_ServerMarkSignalOther" : SignalOffered ? "Main_ServerMarkSignalOn" : "Main_ServerMarkSignalOff");
 
     // Whether the server of the configuration allows none but its own routing lists, which keeps the configuration on
     // the routing list.

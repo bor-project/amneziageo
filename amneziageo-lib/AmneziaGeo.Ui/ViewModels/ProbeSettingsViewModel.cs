@@ -54,6 +54,7 @@ internal sealed partial class ProbeSettingsViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UploadDefault))]
     [NotifyPropertyChangedFor(nameof(UploadHint))]
+    [NotifyPropertyChangedFor(nameof(ServerMarkState))]
     private ServerOffer _offer = ServerOffer.None;
 
     /// <summary>
@@ -61,6 +62,11 @@ internal sealed partial class ProbeSettingsViewModel : ViewModelBase
     /// </summary>
     public string UploadDefault =>
         Offer.Speed(false) is { } leg && Uri.TryCreate(leg.Up, UriKind.Absolute, out var up) ? up.Authority : ChannelProbe.DefaultUploadUrl;
+
+    /// <summary>
+    /// What the server of the selected configuration is, as the sign of the service says it.
+    /// </summary>
+    public string ServerMarkState => Loc.Instance.Get(Offer.Ours ? "Main_ServerMarkSpeedOn" : "Main_ServerMarkSpeedOther");
 
     /// <summary>
     /// The line under the field, naming what an empty field falls back to.

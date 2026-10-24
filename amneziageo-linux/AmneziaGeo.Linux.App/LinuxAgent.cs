@@ -3498,7 +3498,8 @@ internal sealed class LinuxAgent : IDisposable
             vpnDns.Server,
             vpnDns.Default,
             vpnDns.DefaultNetwork,
-            offer.PresetsOnly);
+            offer.PresetsOnly,
+            offer.Ours);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

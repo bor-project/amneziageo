@@ -79,7 +79,9 @@ public sealed record ConfigEntry(
     string DefaultDns = "",
     bool DefaultDnsNetwork = false,
     // Whether its server allows none but its own routing lists, which keeps the config on the routing list.
-    bool ServerListsOnly = false);
+    bool ServerListsOnly = false,
+    // Whether a server of ours answered for the config.
+    bool ServerOurs = false);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

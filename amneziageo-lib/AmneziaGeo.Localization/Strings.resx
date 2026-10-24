@@ -2336,6 +2336,60 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_ServerListsOnly" xml:space="preserve">
     <value>The server of this configuration allows none but its own routing lists</value>
   </data>
+  <data name="Main_ServerMarkTitle" xml:space="preserve">
+    <value>Only with an AmneziaGeo server</value>
+  </data>
+  <data name="Main_ServerMarkProxy" xml:space="preserve">
+    <value>An AmneziaGeo server names the WebSocket front itself: no address or port to type.</value>
+  </data>
+  <data name="Main_ServerMarkProxyOn" xml:space="preserve">
+    <value>The server of this configuration: AmneziaGeo, it has WebSocket.</value>
+  </data>
+  <data name="Main_ServerMarkProxyOff" xml:space="preserve">
+    <value>The server of this configuration: AmneziaGeo, WebSocket is off on its interface.</value>
+  </data>
+  <data name="Main_ServerMarkProxyOther" xml:space="preserve">
+    <value>The server of this configuration is not AmneziaGeo or has not answered yet: the proxy fields name the front.</value>
+  </data>
+  <data name="Main_ServerMarkDns" xml:space="preserve">
+    <value>The Server item asks the DNS server of the AmneziaGeo panel inside the tunnel.</value>
+  </data>
+  <data name="Main_ServerMarkDnsOn" xml:space="preserve">
+    <value>The server of this configuration: AmneziaGeo, its DNS server answers in the tunnel.</value>
+  </data>
+  <data name="Main_ServerMarkDnsOff" xml:space="preserve">
+    <value>The server of this configuration: AmneziaGeo, but its DNS server does not answer in the tunnel now: the Server item is not available.</value>
+  </data>
+  <data name="Main_ServerMarkDnsOther" xml:space="preserve">
+    <value>The server of this configuration is not AmneziaGeo or has not answered yet: the Server item is not available.</value>
+  </data>
+  <data name="Main_ServerMarkRouting" xml:space="preserve">
+    <value>The AmneziaGeo server keeps this configuration to its own routing lists.</value>
+  </data>
+  <data name="Main_ServerMarkSignal" xml:space="preserve">
+    <value>An AmneziaGeo server takes the tunnel of this device down when the client is turned off in the panel.</value>
+  </data>
+  <data name="Main_ServerMarkSignalOn" xml:space="preserve">
+    <value>The server of this configuration: AmneziaGeo, the signal is allowed.</value>
+  </data>
+  <data name="Main_ServerMarkSignalOff" xml:space="preserve">
+    <value>The server of this configuration: AmneziaGeo, the panel has not turned the signal on for this client.</value>
+  </data>
+  <data name="Main_ServerMarkSignalOther" xml:space="preserve">
+    <value>The server of this configuration is not AmneziaGeo or has not answered yet: no signal comes from it.</value>
+  </data>
+  <data name="Main_ServerMarkList" xml:space="preserve">
+    <value>The list came from the AmneziaGeo server of the configuration {0}, and new versions come from it too.</value>
+  </data>
+  <data name="Main_ServerMarkSpeed" xml:space="preserve">
+    <value>With an AmneziaGeo server the speed is measured against the server itself.</value>
+  </data>
+  <data name="Main_ServerMarkSpeedOn" xml:space="preserve">
+    <value>The server of the selected configuration: AmneziaGeo.</value>
+  </data>
+  <data name="Main_ServerMarkSpeedOther" xml:space="preserve">
+    <value>The server of the selected configuration is not AmneziaGeo or has not answered yet: the check goes through speed.cloudflare.com.</value>
+  </data>
   <data name="Main_CardSourceLocal" xml:space="preserve">
     <value>Local</value>
   </data>

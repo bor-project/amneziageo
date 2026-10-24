@@ -16,8 +16,12 @@
     <!-- The section heading carries the switch itself: a separate row under it only said the heading again. -->
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_ProxyWebSocketLabel}"
                                Description="{l:Tr Main_ProxyWebSocketHint}"
-                               IsChecked="{Binding WebSocketOn, Mode=TwoWay}" IsEnabled="{Binding WebSocketOpen}"
-                               HorizontalAlignment="Stretch" IsVisible="{Binding SupportsWebSocket}" />
+                               IsChecked="{Binding WebSocketOn, Mode=TwoWay}" SwitchEnabled="{Binding WebSocketOpen}"
+                               HorizontalAlignment="Stretch" IsVisible="{Binding SupportsWebSocket}">
+      <controls:SettingSwitchRow.Mark>
+        <controls:ServerMark Text="{l:Tr Main_ServerMarkProxy}" State="{Binding ProxyMarkState}" />
+      </controls:SettingSwitchRow.Mark>
+    </controls:SettingSwitchRow>
 
     <!-- A platform without wstunnel says so instead of offering a switch that cannot hold. -->
     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Android_WebSocketUnsupported}"
@@ -115,7 +119,10 @@
     <!-- DNS для имён через VPN: выбор и его серверы. -->
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
       <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-        <TextBlock Text="{l:Tr Main_VpnDnsTitle}" FontWeight="SemiBold" FontSize="15" />
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Text="{l:Tr Main_VpnDnsTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+          <controls:ServerMark Text="{l:Tr Main_ServerMarkDns}" State="{Binding DnsMarkState}" />
+        </StackPanel>
         <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_VpnDnsHint}" />
       </StackPanel>
       <Grid Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
@@ -149,7 +156,11 @@
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseRoutingTitle}" Description="{l:Tr Main_UseRoutingHint}"
                                IsChecked="{Binding RoutingSwitch, Mode=TwoWay}"
                                SwitchEnabled="{Binding !ServerListsOnly}" SwitchTip="{Binding RoutingSwitchTip}"
-                               HorizontalAlignment="Stretch" />
+                               HorizontalAlignment="Stretch">
+      <controls:SettingSwitchRow.Mark>
+        <controls:ServerMark Text="{l:Tr Main_ServerMarkRouting}" IsVisible="{Binding ServerListsOnly}" />
+      </controls:SettingSwitchRow.Mark>
+    </controls:SettingSwitchRow>
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
@@ -169,12 +180,17 @@
                            IsVisible="{Binding ShowInboundAddress}" />
     </StackPanel>
 
-    <!-- Сигнал сервера на отключение: строка стоит, пока сервер оставляет выбор устройству. -->
-    <StackPanel Spacing="14" IsVisible="{Binding SignalOffered}">
+    <!-- Сигнал сервера на отключение: тумблер доступен, пока сервер оставляет выбор устройству. -->
+    <StackPanel Spacing="14">
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
       <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_SignalTitle}" Description="{l:Tr Main_SignalHint}"
-                                 IsChecked="{Binding AllowSignal, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                                 IsChecked="{Binding SignalSwitch, Mode=TwoWay}" SwitchEnabled="{Binding SignalOffered}"
+                                 HorizontalAlignment="Stretch">
+        <controls:SettingSwitchRow.Mark>
+          <controls:ServerMark Text="{l:Tr Main_ServerMarkSignal}" State="{Binding SignalMarkState}" />
+        </controls:SettingSwitchRow.Mark>
+      </controls:SettingSwitchRow>
     </StackPanel>
 
     <!-- The router decides destinations while the session runs and costs a second pass through userspace;

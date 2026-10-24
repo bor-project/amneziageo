@@ -2,22 +2,28 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="AmneziaGeo.Ui.Controls.SettingSwitchRow"
              x:Name="Root">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.rowlabel">
+      <Setter Property="FontSize" Value="13.5" />
+    </Style>
+    <!-- A row that opens a section carries its heading, the rest a plain label. -->
+    <Style Selector="TextBlock.rowlabel.heading">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Styles>
   <!-- On/off for one setting: label left, switch right, description under the label. The whole label
        row is the hit target - never a switch alone in a card header. -->
   <Grid ColumnDefinitions="*,Auto" MinHeight="40">
-    <!-- Both weights share one cell: a row that opens a section carries its heading, the rest a plain
-         label. Either keeps its description right under it, so the two read as one block. -->
+    <!-- The label keeps its description right under it, so the two read as one block; the mark stands after the
+         label. -->
     <Panel Grid.Column="0" Margin="0,0,12,0" Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped">
-      <StackPanel Spacing="2" IsVisible="{Binding !#Root.Heading}" VerticalAlignment="Center">
-        <TextBlock Text="{Binding #Root.Label}" FontSize="13.5"
-                   Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
-        <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                   MaxWidth="430" HorizontalAlignment="Left"
-                   IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      </StackPanel>
-      <StackPanel Spacing="2" IsVisible="{Binding #Root.Heading}" VerticalAlignment="Center">
-        <TextBlock Text="{Binding #Root.Label}" FontSize="15" FontWeight="SemiBold"
-                   Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
+      <StackPanel Spacing="2" VerticalAlignment="Center">
+        <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Left">
+          <TextBlock Classes="rowlabel" Classes.heading="{Binding #Root.Heading}" Text="{Binding #Root.Label}"
+                     Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
+          <ContentPresenter Grid.Column="1" Content="{Binding #Root.Mark}" VerticalAlignment="Center" />
+        </Grid>
         <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                    MaxWidth="430" HorizontalAlignment="Left"
                    IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Controls.ServerMark"
+             VerticalAlignment="Center">
+  <!-- Sign of AmneziaGeo beside what works with a server of ours alone: its window says what the server gives and
+       what the server of this config is. -->
+  <Button x:Name="MarkPart" Classes="icon" Padding="3" Margin="4,0,0,0" VerticalAlignment="Center"
+          AutomationProperties.Name="{l:Tr Main_ServerMarkTitle}"
+          Click="OnMarkClick" PointerEntered="OnMarkPointerEntered" Tapped="OnMarkTapped">
+    <Panel Width="16" Height="16">
+      <Ellipse Fill="{DynamicResource AgAccentBrush}" />
+      <PathIcon Data="{StaticResource AgPowerGeometry}" Width="10" Height="10" Foreground="White" />
+    </Panel>
+    <FlyoutBase.AttachedFlyout>
+      <Flyout Placement="BottomEdgeAlignedLeft">
+        <StackPanel MaxWidth="320" Spacing="5">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Panel Width="15" Height="15" VerticalAlignment="Center">
+              <Ellipse Fill="{DynamicResource AgAccentBrush}" />
+              <PathIcon Data="{StaticResource AgPowerGeometry}" Width="9" Height="9" Foreground="White" />
+            </Panel>
+            <TextBlock Text="{l:Tr Main_ServerMarkTitle}" FontSize="12.5" FontWeight="SemiBold"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+          </StackPanel>
+          <TextBlock x:Name="TextPart" FontSize="12" TextWrapping="Wrap" />
+          <TextBlock x:Name="StatePart" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+        </StackPanel>
+      </Flyout>
+    </FlyoutBase.AttachedFlyout>
+  </Button>
+</UserControl>

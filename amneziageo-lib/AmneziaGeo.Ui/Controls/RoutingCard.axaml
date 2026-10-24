@@ -62,9 +62,13 @@
                            VerticalAlignment="Center" />
               </StackPanel>
             </WrapPanel>
-            <TextBlock x:Name="SourcePart" Text="{Binding SourceText}" FontSize="12" Classes="muted"
-                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                       ToolTip.Tip="{Binding SourceText}" />
+            <Grid x:Name="SourcePart" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+              <controls:ServerMark Grid.Column="0" Margin="0,0,2,0" IsVisible="{Binding FromServer}"
+                                   Text="{Binding ServerMarkText}" />
+              <TextBlock Grid.Column="1" Text="{Binding SourceText}" FontSize="12" Classes="muted"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                         ToolTip.Tip="{Binding SourceText}" />
+            </Grid>
           </controls:TailWrapRow>
         </Grid>
 

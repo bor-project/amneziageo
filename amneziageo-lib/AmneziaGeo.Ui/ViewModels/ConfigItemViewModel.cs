@@ -93,6 +93,10 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     private bool _serverListsOnly;
 
+    // Whether a server of ours answered for the configuration.
+    [ObservableProperty]
+    private bool _serverOurs;
+
     [ObservableProperty]
     private bool _holdTraffic = true;
 

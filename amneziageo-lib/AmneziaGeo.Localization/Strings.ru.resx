@@ -2369,6 +2369,60 @@
   <data name="Main_ServerListsOnly" xml:space="preserve">
     <value>Сервер конфигурации разрешает только свои списки маршрутизации</value>
   </data>
+  <data name="Main_ServerMarkTitle" xml:space="preserve">
+    <value>Только с сервером AmneziaGeo</value>
+  </data>
+  <data name="Main_ServerMarkProxy" xml:space="preserve">
+    <value>Фронт WebSocket называет сам сервер AmneziaGeo: адрес и порт вводить не надо.</value>
+  </data>
+  <data name="Main_ServerMarkProxyOn" xml:space="preserve">
+    <value>Сервер этой конфигурации: AmneziaGeo, WebSocket у него есть.</value>
+  </data>
+  <data name="Main_ServerMarkProxyOff" xml:space="preserve">
+    <value>Сервер этой конфигурации: AmneziaGeo, у его интерфейса WebSocket выключен.</value>
+  </data>
+  <data name="Main_ServerMarkProxyOther" xml:space="preserve">
+    <value>Сервер этой конфигурации не AmneziaGeo или ещё не ответил: адрес фронта задают поля прокси.</value>
+  </data>
+  <data name="Main_ServerMarkDns" xml:space="preserve">
+    <value>Пункт «Сервер» спрашивает DNS-сервер панели AmneziaGeo внутри туннеля.</value>
+  </data>
+  <data name="Main_ServerMarkDnsOn" xml:space="preserve">
+    <value>Сервер этой конфигурации: AmneziaGeo, DNS-сервер отвечает в туннеле.</value>
+  </data>
+  <data name="Main_ServerMarkDnsOff" xml:space="preserve">
+    <value>Сервер этой конфигурации: AmneziaGeo, но его DNS-сервер сейчас не отвечает в туннеле: пункт «Сервер» недоступен.</value>
+  </data>
+  <data name="Main_ServerMarkDnsOther" xml:space="preserve">
+    <value>Сервер этой конфигурации не AmneziaGeo или ещё не ответил: пункт «Сервер» недоступен.</value>
+  </data>
+  <data name="Main_ServerMarkRouting" xml:space="preserve">
+    <value>Сервер AmneziaGeo оставил этой конфигурации только свои списки маршрутизации.</value>
+  </data>
+  <data name="Main_ServerMarkSignal" xml:space="preserve">
+    <value>Сервер AmneziaGeo снимает туннель этого устройства, когда клиента выключают в панели.</value>
+  </data>
+  <data name="Main_ServerMarkSignalOn" xml:space="preserve">
+    <value>Сервер этой конфигурации: AmneziaGeo, сигнал разрешён.</value>
+  </data>
+  <data name="Main_ServerMarkSignalOff" xml:space="preserve">
+    <value>Сервер этой конфигурации: AmneziaGeo, панель этому клиенту сигнал не включила.</value>
+  </data>
+  <data name="Main_ServerMarkSignalOther" xml:space="preserve">
+    <value>Сервер этой конфигурации не AmneziaGeo или ещё не ответил: сигнала от него не будет.</value>
+  </data>
+  <data name="Main_ServerMarkList" xml:space="preserve">
+    <value>Список пришёл с сервера AmneziaGeo конфигурации {0}, новые версии приходят с него же.</value>
+  </data>
+  <data name="Main_ServerMarkSpeed" xml:space="preserve">
+    <value>С сервером AmneziaGeo скорость меряется до него самого.</value>
+  </data>
+  <data name="Main_ServerMarkSpeedOn" xml:space="preserve">
+    <value>Сервер выбранной конфигурации: AmneziaGeo.</value>
+  </data>
+  <data name="Main_ServerMarkSpeedOther" xml:space="preserve">
+    <value>Сервер выбранной конфигурации не AmneziaGeo или ещё не ответил: проверка идёт через speed.cloudflare.com.</value>
+  </data>
   <data name="Main_CardSourceLocal" xml:space="preserve">
     <value>Локальный</value>
   </data>

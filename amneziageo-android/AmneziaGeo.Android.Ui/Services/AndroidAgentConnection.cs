@@ -1689,7 +1689,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ServerDns: vpnDns.Server,
             DefaultDns: vpnDns.Default,
             DefaultDnsNetwork: vpnDns.DefaultNetwork,
-            ServerListsOnly: offer?.PresetsOnly == true);
+            ServerListsOnly: offer?.PresetsOnly == true,
+            ServerOurs: offer?.Ours == true);
     }
 
     private string StatusFor(string target)

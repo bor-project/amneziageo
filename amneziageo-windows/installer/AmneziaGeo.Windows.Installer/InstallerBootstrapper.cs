@@ -190,9 +190,14 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         var preset = IsUpdateFlow() && state == InstallState.Installed
             && !string.IsNullOrEmpty(engine.GetVariableString("DOWNLOADLISTS"));
 
+        // The window asks for the terms the user has not taken yet; a quiet run and an update from the app leave them to
+        // the first start of the app.
+        var askTerms = _interactive && !IsUpdateFlow() && InstallerOptions.AcceptedTerms() < _vm.TermsVersion;
+
         _dispatcher.BeginInvoke(() =>
         {
             _presetOptions = preset;
+            _vm.AskTerms = askTerms;
             _vm.SetDetected(state, _installedVersion, _myVersion);
 
             if (!_interactive)
@@ -703,6 +708,11 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return;
         }
 
+        if (_vm.TermsTaken && _action is InstallerAction.Install or InstallerAction.Update)
+        {
+            InstallerOptions.AcceptTerms(_vm.TermsVersion, DateTime.Now);
+        }
+
         var isApply = _action is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair;
         if (!(isApply && _vm.DownloadLists))
         {
@@ -811,7 +821,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         }
 
         _vm.BeginApply(action);
-        engine.Plan(_launch);
+        engine.Plan(_launch, BundleScope.Default);
     }
 
     private void OnUserClose()

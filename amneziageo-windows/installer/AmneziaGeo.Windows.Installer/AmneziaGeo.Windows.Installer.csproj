@@ -1,5 +1,5 @@
-<!-- AmneziaGeo installer UI: a WiX v5 out-of-process managed (WPF) Bootstrapper Application.
-     Plain Microsoft.NET.Sdk (NOT the WiX SDK) producing a WinExe; the only package is the v5
+<!-- AmneziaGeo installer UI: a WiX v7 out-of-process managed (WPF) Bootstrapper Application.
+     Plain Microsoft.NET.Sdk (NOT the WiX SDK) producing a WinExe; the only package is the v7
      BA API. Targets net10.0-windows like the rest of the product, so a self-contained build needs
      no runtime on the target, and a framework-dependent build needs only the .NET 10 Desktop
      Runtime (the build picks self-contained vs framework-dependent from installer.config.json). -->
@@ -7,6 +7,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AcceptEula>wix7</AcceptEula>
     <TargetFramework>net10.0-windows</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
@@ -24,9 +25,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The single SDK package for managed BAs in WiX v5 (replaces v4's WixToolset.Mba.Core +
+    <!-- The single SDK package for managed BAs since WiX v5 (replaces v4's WixToolset.Mba.Core +
          WixToolset.BalUtil); carries mbanative.dll as a runtime asset. -->
-    <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="5.0.2" />
+    <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\TERMS.md;..\..\..\TERMS.ru.md;..\..\..\PRIVACY.md;..\..\..\PRIVACY.ru.md"
+                      LogicalName="Legal.%(Filename)%(Extension)" WithCulture="false" />
   </ItemGroup>
 
   <ItemGroup>

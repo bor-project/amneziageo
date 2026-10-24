@@ -313,10 +313,10 @@ function Invoke-SignBundle([string]$bundle) {
     $engine = Join-Path ([System.IO.Path]::GetDirectoryName($bundle)) 'burnengine.exe'
     $out    = "$bundle.signed"
     Write-Host '== sign bundle (detach engine -> sign -> reattach -> sign bundle) =='
-    & wix burn detach $bundle -engine $engine
+    & wix burn detach $bundle -engine $engine -acceptEula wix7
     if ($LASTEXITCODE -ne 0) { throw "wix burn detach failed ($LASTEXITCODE)" }
     Invoke-Sign $engine
-    & wix burn reattach $bundle -engine $engine -o $out
+    & wix burn reattach $bundle -engine $engine -o $out -acceptEula wix7
     if ($LASTEXITCODE -ne 0) { throw "wix burn reattach failed ($LASTEXITCODE)" }
     Move-Item -Force $out $bundle
     Remove-Item -Force $engine
@@ -350,7 +350,7 @@ function Write-Patch([string]$dir, [string]$base, [string]$target) {
     $patch = "$base.patch"
     try {
         if (Test-Path $earlierDir) { Remove-Item -Recurse -Force $earlierDir }
-        & (Get-WixExe) burn extract $was.FullName -o (Join-Path $earlierDir 'bundle') -oba (Join-Path $earlierDir 'ba') | Out-Null
+        & (Get-WixExe) burn extract $was.FullName -o (Join-Path $earlierDir 'bundle') -oba (Join-Path $earlierDir 'ba') -acceptEula wix7 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "wix burn extract failed ($LASTEXITCODE)" }
         $wasMsi = Get-ChildItem (Join-Path $earlierDir 'bundle') -Recurse -File -Filter *.msi | Select-Object -First 1
         if (-not $wasMsi) { throw "no MSI in $($was.Name)" }

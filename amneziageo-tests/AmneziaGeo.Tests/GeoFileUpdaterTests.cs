@@ -26,7 +26,7 @@ public sealed class GeoFileUpdaterTests : IAsyncLifetime
     private GeoFileUpdater _updater = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _store = new SqliteStateStore(_dbPath);
         await _store.InitializeAsync();
@@ -35,7 +35,7 @@ public sealed class GeoFileUpdaterTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.ClearPool();
         foreach (var path in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
@@ -43,7 +43,7 @@ public sealed class GeoFileUpdaterTests : IAsyncLifetime
             Remove(path);
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

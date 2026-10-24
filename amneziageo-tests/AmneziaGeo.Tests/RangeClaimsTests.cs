@@ -25,14 +25,14 @@ public sealed class RangeClaimsTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _store = new SqliteStateStore(_dbPath);
         await _store.InitializeAsync();
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.ClearPool();
         try
@@ -43,7 +43,7 @@ public sealed class RangeClaimsTests : IAsyncLifetime
         {
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

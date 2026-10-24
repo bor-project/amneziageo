@@ -27,7 +27,7 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(_root);
         _store = new SqliteStateStore(_dbPath);
@@ -37,7 +37,7 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _logs.Dispose();
         _store.ClearPool();
@@ -49,7 +49,7 @@ public sealed class DiagnosticsBundleTests : IAsyncLifetime
         {
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

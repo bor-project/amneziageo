@@ -14,20 +14,20 @@ public sealed class RoutingPlanStampTests : IAsyncLifetime
     private SqliteStateStore _store = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _store = new SqliteStateStore(_dbPath);
         await _store.InitializeAsync();
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.ClearPool();
         TryDelete(_dbPath);
         TryDelete(_dbPath + "-wal");
         TryDelete(_dbPath + "-shm");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

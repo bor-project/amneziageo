@@ -17,14 +17,14 @@ public sealed class AddressCleanupTests : IAsyncLifetime
     private SqliteStateStore _store = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _store = new SqliteStateStore(_dbPath);
         await _store.InitializeAsync();
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.ClearPool();
         try
@@ -35,7 +35,7 @@ public sealed class AddressCleanupTests : IAsyncLifetime
         {
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

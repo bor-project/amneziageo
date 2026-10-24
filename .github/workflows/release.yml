@@ -64,7 +64,7 @@ jobs:
           - { arch: arm64, variant: scd }
     steps:
       - name: Checkout (submodules + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0   # engine version = `git describe --tags` of the amneziawg-windows submodule
@@ -88,7 +88,7 @@ jobs:
         run: ./amneziageo-windows/tools/build-gateway.ps1 -Arch ${{ matrix.arch }}
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -128,7 +128,7 @@ jobs:
           }
 
       - name: Upload unsigned installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-unsigned-${{ matrix.arch }}-${{ matrix.variant }}
           path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload the patch
         # The patch from the release before; kept apart from the installer the sign job takes.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: update-patch-${{ matrix.arch }}-${{ matrix.variant }}
           path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.patch
@@ -155,18 +155,18 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - name: Checkout (submodules + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0   # version falls back to 0.0.1.<commit count> off a tag
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: amneziageo-android/amneziawg-go/go.mod
           cache: false
@@ -199,7 +199,7 @@ jobs:
           amneziageo-linux/tools/build-deb.sh "${args[@]}"
 
       - name: Upload the packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.arch }}
           path: |
@@ -217,24 +217,24 @@ jobs:
         abi: ['', android-arm64, android-arm, android-x64]   # '' builds every ABI the project declares
     steps:
       - name: Checkout (submodules + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: amneziageo-android/libamneziawg-go/go.mod
           cache: false
@@ -283,7 +283,7 @@ jobs:
           amneziageo-android/tools/build-apk.sh "${args[@]}"
 
       - name: Upload the APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: apk${{ matrix.abi && format('-{0}', matrix.abi) || '' }}
           path: amneziageo-android/tools/dist/*.apk
@@ -306,12 +306,12 @@ jobs:
           - { arch: arm64, variant: scd }
     steps:
       - name: Download the unsigned artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: installer-unsigned-${{ matrix.arch }}-${{ matrix.variant }}
           path: unsigned
       - name: Submit to SignPath
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -322,7 +322,7 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: signed
       - name: Upload signed installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-signed-${{ matrix.arch }}-${{ matrix.variant }}
           path: signed/*.exe
@@ -348,7 +348,7 @@ jobs:
       # Grab every artifact of this run into artifacts/<name>/. Downloading by a specific name would fail
       # when that target did not build, so download all and pick below.
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 

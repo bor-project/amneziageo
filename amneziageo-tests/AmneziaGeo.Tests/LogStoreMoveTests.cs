@@ -14,7 +14,7 @@ public sealed class LogStoreMoveTests : IAsyncLifetime
     private SqliteLogStore _store = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(_root);
         _store = new SqliteLogStore(Path.Combine(_root, "log.db"));
@@ -22,7 +22,7 @@ public sealed class LogStoreMoveTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.Dispose();
         _store.ClearPool();
@@ -34,7 +34,7 @@ public sealed class LogStoreMoveTests : IAsyncLifetime
         {
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

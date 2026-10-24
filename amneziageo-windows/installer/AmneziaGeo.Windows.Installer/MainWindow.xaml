@@ -14,6 +14,53 @@
     <BooleanToVisibilityConverter x:Key="B2V" />
     <!-- #151: hides while keeping layout space, so the progress bar does not shift down. -->
     <l:BoolToVisibilityHiddenConverter x:Key="B2VH" />
+    <!-- A tab of the terms page: the open one is a raised white face on the inset strip. -->
+    <Style x:Key="SegmentTab" TargetType="{x:Type RadioButton}">
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type RadioButton}">
+            <Border x:Name="Face" Background="Transparent" CornerRadius="6" Padding="8,5">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Face" Property="Background" Value="{StaticResource SurfaceBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <!-- A thin scroll bar for the text of the terms. -->
+    <Style x:Key="ThinScrollBar" TargetType="{x:Type ScrollBar}">
+      <Setter Property="Width" Value="8" />
+      <Setter Property="MinWidth" Value="8" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type ScrollBar}">
+            <Track x:Name="PART_Track" IsDirectionReversed="True">
+              <Track.Thumb>
+                <Thumb>
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                      <Border Background="{StaticResource Border2Brush}" CornerRadius="2.5" Width="5" HorizontalAlignment="Center" />
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </Window.Resources>
 
   <Grid Margin="18">
@@ -135,8 +182,59 @@
           </StackPanel>
         </StackPanel>
 
-        <!-- filler so DockPanel balances -->
-        <Grid />
+        <!-- Terms of a new installation, before its options; the last child, so it takes the rest of the card. -->
+        <Grid Margin="0,14,0,0" Visibility="{Binding ShowTermsStep, Converter={StaticResource B2V}}">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <Border Grid.Row="0" Background="{StaticResource InsetBrush}" CornerRadius="8" Padding="3">
+            <UniformGrid Columns="2">
+              <RadioButton Style="{StaticResource SegmentTab}" Content="{l:Tr About_Terms}" IsChecked="{Binding ShowTerms}" />
+              <RadioButton Style="{StaticResource SegmentTab}" Content="{l:Tr About_Privacy}" IsChecked="{Binding ShowPrivacy}" />
+            </UniformGrid>
+          </Border>
+          <Border Grid.Row="1" Margin="0,10,0,0" BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1" CornerRadius="8">
+            <ScrollViewer x:Name="TermsScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="14,4,6,4">
+              <ScrollViewer.Resources>
+                <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinScrollBar}" />
+              </ScrollViewer.Resources>
+              <ItemsControl ItemsSource="{Binding LegalBlocks}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid x:Name="Block" Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock x:Name="Mark" Text="•" FontSize="12.5" Margin="2,0,8,0" Visibility="Collapsed" />
+                      <TextBlock x:Name="Words" Grid.Column="1" Text="{Binding Text}" FontSize="12.5" LineHeight="18" TextWrapping="Wrap" />
+                    </Grid>
+                    <DataTemplate.Triggers>
+                      <DataTrigger Binding="{Binding IsHeading}" Value="True">
+                        <Setter TargetName="Words" Property="FontWeight" Value="SemiBold" />
+                        <Setter TargetName="Words" Property="FontSize" Value="13" />
+                        <Setter TargetName="Block" Property="Margin" Value="0,8,0,4" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding IsBullet}" Value="True">
+                        <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+                        <Setter TargetName="Block" Property="Margin" Value="0,0,0,3" />
+                      </DataTrigger>
+                    </DataTemplate.Triggers>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+          <DockPanel Grid.Row="2" Margin="0,14,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Content="{l:Tr Terms_Accept}" Style="{StaticResource AccentButton}"
+                    Command="{Binding AcceptTermsCommand}" Margin="10,0,0,0" />
+            <Button DockPanel.Dock="Right" Content="{l:Tr Terms_Quit}" Command="{Binding CloseCommand}" />
+            <TextBlock DockPanel.Dock="Left" Text="{Binding LegalFooter}" Style="{StaticResource MutedTextBlock}" FontSize="11"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </DockPanel>
+        </Grid>
       </DockPanel>
     </Border>
   </Grid>

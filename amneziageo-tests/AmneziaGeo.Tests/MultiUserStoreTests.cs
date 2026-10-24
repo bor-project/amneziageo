@@ -18,7 +18,7 @@ public sealed class MultiUserStoreTests : IAsyncLifetime
     private ScopedStateStore _scoped = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _machine = new SqliteStateStore(_machinePath);
         _user = new SqliteStateStore(_userPath);
@@ -28,7 +28,7 @@ public sealed class MultiUserStoreTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _machine.ClearPool();
         _user.ClearPool();
@@ -39,7 +39,7 @@ public sealed class MultiUserStoreTests : IAsyncLifetime
             TryDelete(path + "-shm");
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

@@ -1,9 +1,10 @@
-<!-- Burn bundle (WiX v5). Built by build-installer.ps1, which supplies the BA exe path, the MSI path
+<!-- Burn bundle (WiX v7). Built by build-installer.ps1, which supplies the BA exe path, the MSI path
      and the 4-field bundle version, and writes BaPayloads.generated.wxs (auto-included alongside
      Bundle.wxs). Produces AmneziaGeoSetup.exe. -->
-<Project Sdk="WixToolset.Sdk/5.0.2">
+<Project Sdk="WixToolset.Sdk/7.0.0">
 
   <PropertyGroup>
+    <AcceptEula>wix7</AcceptEula>
     <OutputType>Bundle</OutputType>
     <OutputName>AmneziaGeoSetup</OutputName>
     <!-- arch supplied by build-installer.ps1 (-p:Platform=x64|arm64); defaults to x64 for a plain build. -->
@@ -19,7 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="7.0.0" />
   </ItemGroup>
 
   <Target Name="EnsureBundleInputs" BeforeTargets="Build"

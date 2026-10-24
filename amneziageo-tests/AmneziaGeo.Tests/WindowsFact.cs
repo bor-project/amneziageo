@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace AmneziaGeo.Tests;
@@ -11,7 +12,8 @@ public sealed class WindowsFactAttribute : FactAttribute
     /// <summary>
     /// ctor
     /// </summary>
-    public WindowsFactAttribute(string because)
+    public WindowsFactAttribute(string because, [CallerFilePath] string? sourceFilePath = null, [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (!OperatingSystem.IsWindows())
         {

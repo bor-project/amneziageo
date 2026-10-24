@@ -47,14 +47,14 @@ public sealed class HelloListsTests : IAsyncLifetime
     private SqliteStateStore _store = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _store = new SqliteStateStore(_path);
         await _store.InitializeAsync();
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.ClearPool();
         foreach (var file in new[] { _path, _path + "-wal", _path + "-shm" })
@@ -68,7 +68,7 @@ public sealed class HelloListsTests : IAsyncLifetime
             }
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

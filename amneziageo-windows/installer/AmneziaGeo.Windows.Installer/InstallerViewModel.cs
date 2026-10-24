@@ -99,6 +99,11 @@ public sealed class InstallerViewModel : ObservableObject
     private bool _canAutoConnect;
     private string _geoResult = string.Empty;
     private InstallerAction? _pendingAction;
+    private readonly LegalText _terms = LegalText.Load("TERMS", Loc.Instance.Culture);
+    private readonly LegalText _privacy = LegalText.Load("PRIVACY", Loc.Instance.Culture);
+    private bool _termsAccepted;
+    private bool _askTerms;
+    private bool _showPrivacy;
 
     /// <summary>
     /// ctor
@@ -131,7 +136,18 @@ public sealed class InstallerViewModel : ObservableObject
         });
         BackCommand = new RelayCommand(() => PendingAction = null);
         CloseCommand = new RelayCommand(() => _close());
+        AcceptTermsCommand = new RelayCommand(() =>
+        {
+            _termsAccepted = true;
+            SubText = ReadyText(State);
+            RaiseVisibility();
+        });
     }
+
+    /// <summary>
+    /// Takes the terms of a new installation and goes on to its options.
+    /// </summary>
+    public ICommand AcceptTermsCommand { get; }
 
     public ICommand InstallCommand { get; }
 
@@ -234,6 +250,10 @@ public sealed class InstallerViewModel : ObservableObject
                 RaiseVisibility();
                 Raise(nameof(DeleteConfigLabel));
                 Raise(nameof(OptionsHeading));
+                if (Phase == Phase.Ready)
+                {
+                    SubText = ReadyText(State);
+                }
             }
         }
     }
@@ -246,7 +266,72 @@ public sealed class InstallerViewModel : ObservableObject
     /// <summary>
     /// Show the options step for the staged action.
     /// </summary>
-    public bool ShowOptionsStep => Phase == Phase.Ready && _pendingAction is not null;
+    public bool ShowOptionsStep => Phase == Phase.Ready && _pendingAction is not null && !ShowTermsStep;
+
+    /// <summary>
+    /// Show the terms before the options of a new installation.
+    /// </summary>
+    public bool ShowTermsStep => Phase == Phase.Ready && _askTerms && !_termsAccepted
+        && _pendingAction is InstallerAction.Install or InstallerAction.Update;
+
+    /// <summary>
+    /// Whether an installation or update from this window asks for the terms first.
+    /// </summary>
+    public bool AskTerms
+    {
+        get => _askTerms;
+        set
+        {
+            _askTerms = value;
+            RaiseVisibility();
+        }
+    }
+
+    /// <summary>
+    /// Whether the terms were taken in this window.
+    /// </summary>
+    public bool TermsTaken => _termsAccepted;
+
+    /// <summary>
+    /// The number of the version of the terms the installer carries.
+    /// </summary>
+    public int TermsVersion => _terms.Number;
+
+    /// <summary>
+    /// Whether the privacy notes are open instead of the terms of use.
+    /// </summary>
+    public bool ShowPrivacy
+    {
+        get => _showPrivacy;
+        set
+        {
+            if (Set(ref _showPrivacy, value))
+            {
+                Raise(nameof(ShowTerms));
+                Raise(nameof(LegalBlocks));
+                Raise(nameof(LegalFooter));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the terms of use are open.
+    /// </summary>
+    public bool ShowTerms
+    {
+        get => !_showPrivacy;
+        set => ShowPrivacy = !value;
+    }
+
+    /// <summary>
+    /// The open text.
+    /// </summary>
+    public IReadOnlyList<LegalBlock> LegalBlocks => (_showPrivacy ? _privacy : _terms).Blocks;
+
+    /// <summary>
+    /// The version and license of the open text.
+    /// </summary>
+    public string LegalFooter => (_showPrivacy ? _privacy : _terms).Footer;
 
     private bool IsApplyAction => _pendingAction is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair;
 
@@ -434,13 +519,7 @@ public sealed class InstallerViewModel : ObservableObject
     {
         State = state;
         VersionText = BuildVersionText(state, installedVersion, newVersion);
-        SubText = state switch
-        {
-            InstallState.NotInstalled => Loc.Instance.Get("InstallerVm_ReadyToInstall"),
-            InstallState.Installed => Loc.Instance.Get("InstallerVm_AlreadyInstalled"),
-            InstallState.NewerInstalled => Loc.Instance.Get("InstallerVm_NewerInstalled"),
-            _ => Loc.Instance.Get("InstallerVm_Ready"),
-        };
+        SubText = ReadyText(state);
         Phase = Phase.Ready;
 
         if (SoleAction is { } sole)
@@ -448,6 +527,15 @@ public sealed class InstallerViewModel : ObservableObject
             PendingAction = sole;
         }
     }
+
+    // The status line of the ready window, the call to read the terms while they are open.
+    private string ReadyText(InstallState state) => ShowTermsStep ? Loc.Instance.Get("Terms_GateHint") : state switch
+    {
+        InstallState.NotInstalled => Loc.Instance.Get("InstallerVm_ReadyToInstall"),
+        InstallState.Installed => Loc.Instance.Get("InstallerVm_AlreadyInstalled"),
+        InstallState.NewerInstalled => Loc.Instance.Get("InstallerVm_NewerInstalled"),
+        _ => Loc.Instance.Get("InstallerVm_Ready"),
+    };
 
     // Version line: install shows the incoming version, an upgrade and a rollback show from -> to, otherwise
     // the installed one.
@@ -731,6 +819,7 @@ public sealed class InstallerViewModel : ObservableObject
     {
         Raise(nameof(ShowActionButtons));
         Raise(nameof(ShowOptionsStep));
+        Raise(nameof(ShowTermsStep));
         Raise(nameof(ShowBack));
         Raise(nameof(ShowInstall));
         Raise(nameof(ShowUpdate));

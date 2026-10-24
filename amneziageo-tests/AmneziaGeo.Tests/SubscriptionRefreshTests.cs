@@ -31,7 +31,7 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
     private SubscriptionRefresher _refresher = null!;
 
     /// <inheritdoc />
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _store = new SqliteStateStore(_dbPath);
         await _store.InitializeAsync();
@@ -40,13 +40,13 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
     }
 
     /// <inheritdoc />
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _store.ClearPool();
         TryDelete(_dbPath);
         TryDelete(_dbPath + "-wal");
         TryDelete(_dbPath + "-shm");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     private static string Config(string remark, string endpoint = "example.net:51821", string address = "10.0.1.2/32")

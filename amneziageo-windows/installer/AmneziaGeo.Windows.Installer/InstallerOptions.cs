@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using AmneziaGeo.Dal;
@@ -18,6 +19,10 @@ public sealed class InstallerOptions
     private const string UiScope = "ui";
 
     private const string LanguageKey = "language";
+
+    private const string AcceptedTermsKey = "accepted-terms";
+
+    private const string AcceptedTermsOnKey = "accepted-terms-on";
 
     /// <summary>
     /// Create a desktop shortcut.
@@ -88,6 +93,46 @@ public sealed class InstallerOptions
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the version of the terms the user took in the app or the installer, 0 when none.
+    /// </summary>
+    public static int AcceptedTerms()
+    {
+        try
+        {
+            var value = new LocalKeyValueStore(DbPath).Read(UiScope, AcceptedTermsKey);
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var version) ? version : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Writes the terms taken in the installer where the app reads them, unless a newer version is taken already.
+    /// </summary>
+    public static void AcceptTerms(int version, DateTime now)
+    {
+        if (version <= AcceptedTerms())
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
+            new LocalKeyValueStore(DbPath).Save(UiScope, new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [AcceptedTermsKey] = version.ToString(CultureInfo.InvariantCulture),
+                [AcceptedTermsOnKey] = now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            });
+        }
+        catch
+        {
         }
     }
 

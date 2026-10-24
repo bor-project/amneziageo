@@ -1,6 +1,7 @@
-<Project Sdk="WixToolset.Sdk/5.0.2">
+<Project Sdk="WixToolset.Sdk/7.0.0">
 
   <PropertyGroup>
+    <AcceptEula>wix7</AcceptEula>
     <!-- The bundled payload is a per-arch publish installed under ProgramFiles64Folder. Platform/arch
          is supplied by build-installer.ps1 (-p:Platform=x64|arm64) and defaults to x64 for a plain
          `dotnet build`; the output name follows the arch so per-arch MSIs do not collide. -->
@@ -23,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="7.0.0" />
   </ItemGroup>
 
   <Target Name="EnsureStageDir" BeforeTargets="Build"

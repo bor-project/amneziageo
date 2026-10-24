@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace AmneziaGeo.Tests;
@@ -11,7 +12,8 @@ public sealed class UnixFactAttribute : FactAttribute
     /// <summary>
     /// ctor
     /// </summary>
-    public UnixFactAttribute(string because)
+    public UnixFactAttribute(string because, [CallerFilePath] string? sourceFilePath = null, [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (OperatingSystem.IsWindows())
         {

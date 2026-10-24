@@ -231,6 +231,18 @@ public sealed class SubscriptionTests
         Assert.Equal(expected, SubscriptionCodec.ParseUpdateInterval(header));
     }
 
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData(" 2 ", true)]
+    [InlineData("0", false)]
+    [InlineData("yes", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Mark_IsAFormatNumberOfTheAnswer(string? header, bool expected)
+    {
+        Assert.Equal(expected, SubscriptionCodec.IsMarked(header));
+    }
+
     // Импорт различает три способа панели по началу строки, поэтому кнопки под каждый не нужны.
     [Theory]
     [InlineData("https://example.net:9080/sub/path/id", true)]

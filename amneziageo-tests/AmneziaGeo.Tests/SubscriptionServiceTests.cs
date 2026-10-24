@@ -148,6 +148,51 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Add_RefusesAnAnswerThatIsNotFromAnAmneziaGeoPanel()
+    {
+        _feed.Marked = false;
+        _feed.Body = Body(Config("phone"));
+
+        var outcome = await _service.AddAsync([Url], default);
+
+        Assert.False(outcome.Ack.Ok);
+        Assert.True(outcome.Foreign);
+        Assert.True(IpcMessage.TryParse(outcome.Ack.Message, out var key, out var args));
+        Assert.Equal("Agent_SubscriptionForeign", key);
+        Assert.Equal(["example.net"], args);
+        Assert.Empty(await _store.ListSubscriptionsAsync());
+        Assert.Empty(await _store.ListSubscriptionMembersAsync(null, default));
+        Assert.Empty(_library.Names);
+    }
+
+    [Fact]
+    public async Task Add_LeavesTheNameFreeAfterARefusedAnswer()
+    {
+        _feed.Marked = false;
+        await _service.AddAsync([Url], default);
+        _feed.Marked = true;
+        _feed.Body = Body(Config("phone"));
+
+        var outcome = await _service.AddAsync([Url], default);
+
+        Assert.True(outcome.Ack.Ok);
+        Assert.Equal("example.net", Assert.Single(await _store.ListSubscriptionsAsync()).Name);
+    }
+
+    [Fact]
+    public async Task Refresh_KeepsReadingASubscriptionAddedBeforeTheMark()
+    {
+        await _store.SaveSubscriptionAsync(new Subscription("example.net", Url));
+        _feed.Marked = false;
+        _feed.Body = Body(Config("phone"));
+
+        var outcome = await _service.RefreshAsync([], default);
+
+        Assert.True(outcome.Ack.Ok);
+        Assert.Equal(["phone"], _library.Names);
+    }
+
+    [Fact]
     public async Task List_ReportsWhatTheSubscriptionCarries()
     {
         _feed.Body = Body(Config("phone"), Config("laptop"));
@@ -343,12 +388,14 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
         }
     }
 
-    // Панель x-ui: тело в base64 и заголовки о профиле.
+    // Панель AmneziaGeo: тело в base64, заголовки о профиле и отметка панели.
     private sealed class Feed : HttpMessageHandler
     {
         public string Body { get; set; } = string.Empty;
 
         public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
+
+        public bool Marked { get; set; } = true;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -358,6 +405,11 @@ public sealed class SubscriptionServiceTests : IAsyncLifetime
             };
             response.Headers.TryAddWithoutValidation("Profile-Update-Interval", "12");
             response.Headers.TryAddWithoutValidation("Subscription-Userinfo", "upload=1; download=2; total=0; expire=0");
+            if (Marked)
+            {
+                response.Headers.TryAddWithoutValidation("X-AmneziaGeo-Subscription", "1");
+            }
+
             return Task.FromResult(response);
         }
     }

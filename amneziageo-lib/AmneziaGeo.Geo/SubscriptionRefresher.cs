@@ -13,7 +13,8 @@ public sealed record SubscriptionSnapshot(
     string Title,
     int IntervalHours,
     SubscriptionCodec.Usage? Usage,
-    string Revision = "");
+    string Revision = "",
+    bool Marked = false);
 
 /// <summary>
 /// Итог обновления одной подписки.
@@ -29,6 +30,11 @@ public sealed record SubscriptionResult(int Added, int Updated, int Gone, IReadO
     /// Конфигурации, которые подписка сняла.
     /// </summary>
     public IReadOnlyList<string> Dropped { get; init; } = [];
+
+    /// <summary>
+    /// Ответ пришёл не от панели AmneziaGeo.
+    /// </summary>
+    public bool Foreign { get; init; }
 }
 
 /// <summary>
@@ -114,7 +120,8 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                     SubscriptionCodec.ParseTitle(Header(response, "Profile-Title")) ?? string.Empty,
                     SubscriptionCodec.ParseUpdateInterval(Header(response, "Profile-Update-Interval")),
                     SubscriptionCodec.ParseUsage(Header(response, "Subscription-Userinfo")),
-                    response.Headers.ETag?.Tag.Trim('"') ?? string.Empty);
+                    response.Headers.ETag?.Tag.Trim('"') ?? string.Empty,
+                    SubscriptionCodec.IsMarked(Header(response, SubscriptionCodec.MarkHeader)));
             }
         }
     }
@@ -124,13 +131,20 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
     /// </summary>
     public Task<SubscriptionResult> RefreshAsync(Subscription subscription, CancellationToken ct)
     {
-        return RefreshAsync(subscription, null, ct);
+        return MergeAsync(subscription, null, false, ct);
     }
 
     /// <summary>
-    /// Обновляет одну подписку; единственная конфигурация первого чтения получает данное имя.
+    /// Читает подписку впервые: ответ не от панели AmneziaGeo ничего не заводит, единственная конфигурация получает
+    /// данное имя.
     /// </summary>
-    public async Task<SubscriptionResult> RefreshAsync(Subscription subscription, string? soleName, CancellationToken ct)
+    public Task<SubscriptionResult> FirstReadAsync(Subscription subscription, string? soleName, CancellationToken ct)
+    {
+        return MergeAsync(subscription, soleName, true, ct);
+    }
+
+    // Читает подписку и приводит к ней библиотеку.
+    private async Task<SubscriptionResult> MergeAsync(Subscription subscription, string? soleName, bool first, CancellationToken ct)
     {
         var snapshot = default(SubscriptionSnapshot);
         try
@@ -144,6 +158,12 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                 subscription with { CheckedAt = DateTimeOffset.UtcNow, LastError = reason },
                 ct).ConfigureAwait(false);
             return new SubscriptionResult(0, 0, 0, [], reason);
+        }
+
+        // Подписку заводит только ответ панели AmneziaGeo.
+        if (first && !snapshot.Marked)
+        {
+            return new SubscriptionResult(0, 0, 0, [], "the answer is not from an AmneziaGeo panel") { Foreign = true };
         }
 
         var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);

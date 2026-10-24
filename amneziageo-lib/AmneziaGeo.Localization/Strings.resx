@@ -1638,6 +1638,9 @@ Renamed on import: several names clashed with existing ones.</value>
   <data name="Agent_SubscriptionFailed" xml:space="preserve">
     <value>could not load subscription {0}: {1}</value>
   </data>
+  <data name="Agent_SubscriptionForeign" xml:space="preserve">
+    <value>subscription {0} is not from an AmneziaGeo panel: only AmneziaGeo subscriptions are added</value>
+  </data>
   <data name="Agent_SubscriptionAdded" xml:space="preserve">
     <value>subscription {0}: {1} configs</value>
   </data>

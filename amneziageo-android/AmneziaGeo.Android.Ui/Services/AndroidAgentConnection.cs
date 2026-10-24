@@ -4378,6 +4378,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var outcome = await Subscriptions().AddAsync(args, CancellationToken.None).ConfigureAwait(false);
         if (!outcome.Ack.Ok)
         {
+            if (outcome.Foreign)
+            {
+                _log.Warn("sub", $"subscription {outcome.Name} refused: {SubscriptionCodec.AddressName(args[0])} is not an AmneziaGeo panel");
+            }
+
             return outcome.Ack;
         }
 

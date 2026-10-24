@@ -1638,6 +1638,9 @@
   <data name="Agent_SubscriptionFailed" xml:space="preserve">
     <value>не удалось загрузить подписку {0}: {1}</value>
   </data>
+  <data name="Agent_SubscriptionForeign" xml:space="preserve">
+    <value>подписка {0} не от панели AmneziaGeo: добавляются только подписки AmneziaGeo</value>
+  </data>
   <data name="Agent_SubscriptionAdded" xml:space="preserve">
     <value>подписка {0}: конфигураций {1}</value>
   </data>

@@ -141,6 +141,19 @@ public static class SubscriptionCodec
     }
 
     /// <summary>
+    /// The header an AmneziaGeo panel marks its subscription answer with.
+    /// </summary>
+    public const string MarkHeader = "X-AmneziaGeo-Subscription";
+
+    /// <summary>
+    /// Whether the mark header names a format of the AmneziaGeo subscription answer.
+    /// </summary>
+    public static bool IsMarked(string? header)
+    {
+        return !string.IsNullOrWhiteSpace(header) && int.TryParse(header.Trim(), out var format) && format > 0;
+    }
+
+    /// <summary>
     /// Parses the Profile-Update-Interval header, in hours. Returns 0 when the panel names none.
     /// </summary>
     public static int ParseUpdateInterval(string? header)

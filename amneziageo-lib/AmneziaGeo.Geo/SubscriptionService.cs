@@ -16,6 +16,11 @@ public sealed record SubscriptionOutcome(IpcAck Ack, int Added, int Updated, int
     public IReadOnlyList<string> Dropped { get; init; } = [];
 
     /// <summary>
+    /// Адрес ответил не как панель AmneziaGeo.
+    /// </summary>
+    public bool Foreign { get; init; }
+
+    /// <summary>
     /// Ответ без единого изменения.
     /// </summary>
     public static SubscriptionOutcome Of(IpcAck ack)
@@ -56,12 +61,16 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
             return SubscriptionOutcome.Of(new IpcAck(false, IpcMessage.Key("Agent_SubscriptionNameTaken", name)));
         }
 
-        // Первое чтение проверяет адрес: подписка, которую не удалось прочитать, не заводится.
-        var result = await Refresher().RefreshAsync(new Subscription(name, url), soleName, ct).ConfigureAwait(false);
+        // Первое чтение проверяет адрес: подписка, которую не удалось прочитать или отдала не панель AmneziaGeo, не
+        // заводится.
+        var result = await Refresher().FirstReadAsync(new Subscription(name, url), soleName, ct).ConfigureAwait(false);
         if (!result.Ok)
         {
             await store.RemoveSubscriptionAsync(name, ct).ConfigureAwait(false);
-            return SubscriptionOutcome.Of(new IpcAck(false, IpcMessage.Key("Agent_SubscriptionFailed", name, result.Error)));
+            var refusal = result.Foreign
+                ? IpcMessage.Key("Agent_SubscriptionForeign", name)
+                : IpcMessage.Key("Agent_SubscriptionFailed", name, result.Error);
+            return SubscriptionOutcome.Of(new IpcAck(false, refusal)) with { Name = name, Foreign = result.Foreign };
         }
 
         return new SubscriptionOutcome(

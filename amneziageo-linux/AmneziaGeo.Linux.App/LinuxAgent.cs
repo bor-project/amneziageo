@@ -1273,6 +1273,11 @@ internal sealed class LinuxAgent : IDisposable
         var outcome = await Subscriptions().AddAsync(args, ct).ConfigureAwait(false);
         if (!outcome.Ack.Ok)
         {
+            if (outcome.Foreign)
+            {
+                _log.Warn("sub", $"subscription {outcome.Name} refused: {SubscriptionCodec.AddressName(args[0])} is not an AmneziaGeo panel");
+            }
+
             return outcome.Ack;
         }
 

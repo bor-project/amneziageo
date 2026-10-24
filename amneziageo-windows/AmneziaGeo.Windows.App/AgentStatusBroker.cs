@@ -417,6 +417,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             logger.LogInformation("subscription {Name} brought in {Added} configs", outcome.Name, outcome.Added);
         }
+        else if (outcome.Foreign)
+        {
+            logger.LogWarning("subscription {Name} refused: {Host} is not an AmneziaGeo panel", outcome.Name, SubscriptionCodec.AddressName(args[0]));
+        }
 
         return outcome.Ack;
     }

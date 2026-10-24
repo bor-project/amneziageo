@@ -49,6 +49,11 @@ internal sealed partial class AppDnsTracker : IDisposable
     public event Action<string>? NameLearned;
 
     /// <summary>
+    /// Raised when an answer starts waiting for the report of the asker of a name.
+    /// </summary>
+    public event Action<string>? Waiting;
+
+    /// <summary>
     /// ctor
     /// </summary>
     public AppDnsTracker(AppMatcher matcher, ILogger logger, string? sessionName = null, bool past = false)
@@ -124,6 +129,8 @@ internal sealed partial class AppDnsTracker : IDisposable
         {
             return true;
         }
+
+        Waiting?.Invoke(key);
 
         // The reader wakes with the system timer: finer ticks for the few ms of the wait.
         var raised = TimeBeginPeriod(WaitResolutionMs) == 0;

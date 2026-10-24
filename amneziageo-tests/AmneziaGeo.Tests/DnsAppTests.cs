@@ -24,12 +24,10 @@ public sealed class DnsAppTests
     public async Task AnAskOfSuchAProgramReportedWhileTheAnswerWaits_IsLookedUpBehindTheTunnel()
     {
         var (proxy, tracker, lent) = Tunneling(ThisProgram);
+        tracker.Waiting += _ => tracker.Report((uint)Environment.ProcessId, Name);
         using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        var answering = proxy.AnswerAsync(Query, patience.Token);
-        await Task.Delay(5);
-        tracker.Report((uint)Environment.ProcessId, Name);
-        var answer = await answering;
+        var answer = await proxy.AnswerAsync(Query, patience.Token);
 
         // The lookup took the resolver behind the tunnel, whatever that one answers here, and not the other tunnel
         // of the set.
@@ -85,12 +83,10 @@ public sealed class DnsAppTests
         tracker.NoteAsked(Name);
         var first = await proxy.AnswerAsync(Query, CancellationToken.None);
         await Task.Delay(150);
+        tracker.Waiting += _ => tracker.Report((uint)Environment.ProcessId, Name);
         using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-        var answering = proxy.AnswerAsync(Query, patience.Token);
-        await Task.Delay(5);
-        tracker.Report((uint)Environment.ProcessId, Name);
-        var answer = await answering;
+        var answer = await proxy.AnswerAsync(Query, patience.Token);
 
         Assert.Equal([LentAddress], DnsMessage.Addresses(first!).Select(address => address.ToString()));
         Assert.DoesNotContain(LentAddress, DnsMessage.Addresses(answer!).Select(address => address.ToString()));

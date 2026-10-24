@@ -144,11 +144,9 @@ public sealed class DnsPassTests
     {
         var applier = new PassApplier();
         var (proxy, tracker) = Passing(applier, ThisProgram);
+        tracker.Waiting += _ => tracker.Report((uint)Environment.ProcessId, Name);
 
-        var answering = proxy.AnswerAsync(Query, CancellationToken.None);
-        await Task.Delay(5);
-        tracker.Report((uint)Environment.ProcessId, Name);
-        var answer = await answering;
+        var answer = await proxy.AnswerAsync(Query, CancellationToken.None);
 
         Assert.Equal([Address], DnsMessage.Addresses(answer!).Select(address => address.ToString()));
         Assert.Equal([Address], applier.Added);

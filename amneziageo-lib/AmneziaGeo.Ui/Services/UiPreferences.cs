@@ -101,6 +101,16 @@ internal sealed class UiPreferences
     /// </summary>
     public string ProbePath { get; set; } = ProbePaths.Auto;
 
+    /// <summary>
+    /// Версия принятых условий; 0, пока их не принимали.
+    /// </summary>
+    public int AcceptedTerms { get; set; }
+
+    /// <summary>
+    /// День принятия условий, yyyy-MM-dd.
+    /// </summary>
+    public string AcceptedTermsOn { get; set; } = string.Empty;
+
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "AmneziaGeo",
@@ -177,6 +187,8 @@ internal sealed class UiPreferences
             ["skipped-config-updates"] = SkippedConfigUpdates,
             ["probe-upload"] = ProbeUploadUrl,
             ["probe-path"] = ProbePath,
+            ["accepted-terms"] = AcceptedTerms.ToString(CultureInfo.InvariantCulture),
+            ["accepted-terms-on"] = AcceptedTermsOn,
         };
     }
 
@@ -267,6 +279,17 @@ internal sealed class UiPreferences
             && long.TryParse(lastList, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId))
         {
             prefs.LastRoutingList = listId;
+        }
+
+        if (values.TryGetValue("accepted-terms", out var acceptedTerms)
+            && int.TryParse(acceptedTerms, NumberStyles.Integer, CultureInfo.InvariantCulture, out var termsVersion))
+        {
+            prefs.AcceptedTerms = termsVersion;
+        }
+
+        if (values.TryGetValue("accepted-terms-on", out var acceptedOn))
+        {
+            prefs.AcceptedTermsOn = acceptedOn;
         }
 
         return prefs;

@@ -33,6 +33,6 @@ Donations via **TRON (TRC20):** `TNHcrYqUv2pUfW7BEzYJyXfVk9wEJrs4FR`.
 
 ## License and credits
 
-[GPL-3.0 or later](LICENSE). Built on the [Amnezia VPN](https://github.com/amnezia-vpn) ecosystem; the AmneziaWG engine retains its authors' license.
+[GPL-3.0 or later](LICENSE). Built on the [Amnezia VPN](https://github.com/amnezia-vpn) ecosystem; the AmneziaWG engine retains its authors' license. The [terms of use](TERMS.md), the [privacy policy](PRIVACY.md) and the [third-party components](THIRD-PARTY.md) lie in the root of the repository; the application shows them on its first start and under About.
 
 Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). See the [code signing policy](https://bor-project.github.io/amneziageo/CODE_SIGNING.html) and [privacy policy](https://bor-project.github.io/amneziageo/PRIVACY.html).

@@ -367,6 +367,36 @@
   <data name="About_BuildType" xml:space="preserve">
     <value>Тип сборки</value>
   </data>
+  <data name="About_License" xml:space="preserve">
+    <value>Лицензия</value>
+  </data>
+  <data name="About_LicenseValue" xml:space="preserve">
+    <value>GNU GPL-3.0 или более поздняя</value>
+  </data>
+  <data name="About_Terms" xml:space="preserve">
+    <value>Условия использования</value>
+  </data>
+  <data name="About_Privacy" xml:space="preserve">
+    <value>Конфиденциальность</value>
+  </data>
+  <data name="About_ThirdParty" xml:space="preserve">
+    <value>Сторонние компоненты</value>
+  </data>
+  <data name="Terms_GateTitle" xml:space="preserve">
+    <value>Перед началом работы</value>
+  </data>
+  <data name="Terms_GateHint" xml:space="preserve">
+    <value>Прочитайте условия использования и сведения о конфиденциальности</value>
+  </data>
+  <data name="Terms_Accept" xml:space="preserve">
+    <value>Принимаю</value>
+  </data>
+  <data name="Terms_Quit" xml:space="preserve">
+    <value>Выйти</value>
+  </data>
+  <data name="Terms_AcceptedOn" xml:space="preserve">
+    <value>Принято {0}</value>
+  </data>
   <data name="Tray_Open" xml:space="preserve">
     <value>Открыть</value>
   </data>

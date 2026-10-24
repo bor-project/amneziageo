@@ -367,6 +367,36 @@
   <data name="About_BuildType" xml:space="preserve">
     <value>Build type</value>
   </data>
+  <data name="About_License" xml:space="preserve">
+    <value>License</value>
+  </data>
+  <data name="About_LicenseValue" xml:space="preserve">
+    <value>GNU GPL-3.0 or later</value>
+  </data>
+  <data name="About_Terms" xml:space="preserve">
+    <value>Terms of use</value>
+  </data>
+  <data name="About_Privacy" xml:space="preserve">
+    <value>Privacy</value>
+  </data>
+  <data name="About_ThirdParty" xml:space="preserve">
+    <value>Third-party components</value>
+  </data>
+  <data name="Terms_GateTitle" xml:space="preserve">
+    <value>Before you start</value>
+  </data>
+  <data name="Terms_GateHint" xml:space="preserve">
+    <value>Read the terms of use and the privacy notes</value>
+  </data>
+  <data name="Terms_Accept" xml:space="preserve">
+    <value>Accept</value>
+  </data>
+  <data name="Terms_Quit" xml:space="preserve">
+    <value>Quit</value>
+  </data>
+  <data name="Terms_AcceptedOn" xml:space="preserve">
+    <value>Accepted on {0}</value>
+  </data>
   <data name="Tray_Open" xml:space="preserve">
     <value>Open</value>
   </data>

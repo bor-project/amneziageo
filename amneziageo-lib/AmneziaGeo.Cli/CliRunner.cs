@@ -25,7 +25,17 @@ public static class CliRunner
             return Exit.Usage;
         }
 
-        Loc.Instance.ApplyStartupCulture(globals.Value("lang") ?? Environment.GetEnvironmentVariable("AMNEZIAGEO_LANG"));
+        var language = globals.Value("lang") ?? Environment.GetEnvironmentVariable("AMNEZIAGEO_LANG");
+        if (host.WindowLanguage is { } window)
+        {
+            // The window keeps its language: only this command answers in the one asked for.
+            CultureInfo.CurrentUICulture = Loc.CultureOf(language ?? window);
+        }
+        else
+        {
+            Loc.Instance.ApplyStartupCulture(language);
+        }
+
         Output.Json = globals.Has("json");
         Output.Quiet = globals.Has("quiet");
         TextInput.StandardInput = host.StandardInput;
@@ -34,6 +44,11 @@ public static class CliRunner
         if (globals.Has("version") || (rest.Count > 0 && rest[0] == "version"))
         {
             return await VersionAsync(host, ct).ConfigureAwait(false);
+        }
+
+        if (rest.Count > 0 && rest[0] == "about")
+        {
+            return await AboutAsync(host, ct).ConfigureAwait(false);
         }
 
         if (globals.Has("help") || globals.Has("h") || rest.Count == 0 || rest[0] == "help")
@@ -89,6 +104,9 @@ public static class CliRunner
               --quiet             print only what was asked for
               --help, -h          this help
               --version           client and agent version
+
+            about
+              about                             version, license, terms of use and privacy
 
             connection
               status                            what the agent runs and what it would run
@@ -249,6 +267,37 @@ public static class CliRunner
             }
 
             Output.Pairs([("client", client), ("agent", agent)]);
+            return Exit.Ok;
+        }
+        finally
+        {
+            (link as IDisposable)?.Dispose();
+        }
+    }
+
+    // Версия приложения от агента, без агента версия консоли; лицензия и ссылки на тексты.
+    private static async Task<int> AboutAsync(ICliHost host, CancellationToken ct)
+    {
+        const string site = "https://bor-project.github.io/amneziageo/";
+        const string license = "GPL-3.0-or-later";
+        const string source = "https://github.com/bor-project/amneziageo";
+        var link = await host.ConnectAsync(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+        try
+        {
+            var version = link?.Snapshot.AgentVersion is { Length: > 0 } agent
+                ? agent
+                : typeof(CliRunner).Assembly.GetName().Version?.ToString() ?? "0.0.0.0";
+            var page = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ru" ? ".ru.html" : ".html";
+            var terms = site + "TERMS" + page;
+            var privacy = site + "PRIVACY" + page;
+            var thirdParty = site + "THIRD-PARTY" + page;
+            if (Output.Json)
+            {
+                Output.AsJson(new { version, license, terms, privacy, thirdParty, source });
+                return Exit.Ok;
+            }
+
+            Output.Pairs([("version", version), ("license", license), ("terms", terms), ("privacy", privacy), ("third-party", thirdParty), ("source", source)]);
             return Exit.Ok;
         }
         finally

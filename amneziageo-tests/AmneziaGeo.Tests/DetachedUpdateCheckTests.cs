@@ -21,7 +21,7 @@ public sealed class DetachedUpdateCheckTests
     public void TheCheckOfAnOpenedWindow_AsksTheAgentToAnswerAtOnce()
     {
         var agent = new Agent();
-        var general = new MainWindowViewModel(agent, new UiPreferences()).General;
+        var general = new MainWindowViewModel(agent, new UiPreferences { AcceptedTerms = LegalTexts.Version }).General;
         general.BeginAutoUpdateChecks();
 
         general.Apply(new StatusSnapshot("1.10.10.0", null, []) { UpdateUrl = "https://releases.test/latest/download/update.json" });

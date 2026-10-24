@@ -33,6 +33,6 @@ Windows 7, 10 и 11 (x64 и ARM64), Linux (пакеты deb для amd64 и arm6
 
 ## Лицензия и благодарности
 
-[GPL-3.0 или новее](LICENSE). Проект построен на экосистеме [Amnezia VPN](https://github.com/amnezia-vpn); движок AmneziaWG используется на условиях лицензии его авторов.
+[GPL-3.0 или новее](LICENSE). Проект построен на экосистеме [Amnezia VPN](https://github.com/amnezia-vpn); движок AmneziaWG используется на условиях лицензии его авторов. [Условия использования](TERMS.ru.md), [конфиденциальность](PRIVACY.ru.md) и [сторонние компоненты](THIRD-PARTY.ru.md) лежат в корне репозитория; приложение показывает их при первом запуске и в разделе «О приложении».
 
-Бесплатная подпись кода предоставлена [SignPath.io](https://signpath.io/), сертификат - [SignPath Foundation](https://signpath.org/). Подробнее: [политика подписи кода](https://bor-project.github.io/amneziageo/CODE_SIGNING.html) и [политика конфиденциальности](https://bor-project.github.io/amneziageo/PRIVACY.html) на английском языке.
+Бесплатная подпись кода предоставлена [SignPath.io](https://signpath.io/), сертификат - [SignPath Foundation](https://signpath.org/). Подробнее: [политика подписи кода](https://bor-project.github.io/amneziageo/CODE_SIGNING.html) на английском языке и [политика конфиденциальности](https://bor-project.github.io/amneziageo/PRIVACY.ru.html).

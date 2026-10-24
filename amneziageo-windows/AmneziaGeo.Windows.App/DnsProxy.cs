@@ -1301,9 +1301,9 @@ internal sealed class DnsProxy
                 _logger.LogDebug("{Name}: a client of the access point is answered with {Stand}, so this machine carries what it opens", name, stand);
             }
 
-            // The client keeps the answer no longer than its routes live; with programs kept off the tunnel it keeps
-            // nothing, so every ask of theirs passes here.
-            respond(DnsMessage.CapTtl(response, _passDns is null ? _routeTtlSeconds : 0));
+            // The client keeps the answer no longer than its routes live; with programs the app rules name it keeps
+            // nothing, so every ask of theirs passes here and is decided for the program that asked.
+            respond(DnsMessage.CapTtl(response, _passDns is null && _appDns is null ? _routeTtlSeconds : 0));
         }
         catch (Exception)
         {

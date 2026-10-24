@@ -1,37 +1,31 @@
-# Privacy policy
+# AmneziaGeo privacy
 
-AmneziaGeo has no accounts, no telemetry and no analytics. The project runs no server of its own, nothing
-about you or your traffic reaches its authors, and the codebase carries no telemetry or crash-reporting
-library.
+Version 1, 24 October 2026
 
-## What the application connects to by itself
+AmneziaGeo has no accounts, no telemetry and no analytics. The project runs no servers of its own: nothing about you or your traffic reaches its authors. The code carries no telemetry or crash-reporting library.
 
-| Destination | When | Why |
-|---|---|---|
-| `github.com`, `api.github.com` | on an update check and on the download you start | read `update.json`, fetch the setup |
-| `github.com/Loyalsoldier/v2ray-rules-dat` | when the geo databases are refreshed | download `geoip.dat` and `geosite.dat` |
-| `github.com/runetfreedom/russia-blocked-geosite`, `github.com/runetfreedom/russia-blocked-geoip` | when the geo databases are refreshed | download `geosite-ru-only.dat` and `geoip-ru-only.dat` |
-| `github.com/jameszeroX/zkeen-ip` | when the geo databases are refreshed | download `zkeenip.dat` |
-| `raw.githubusercontent.com/bor-project/amneziageo-geo` | when the geo databases are refreshed | download `geoip.dat` and `geosite.dat` with the project's own `ag-` keys |
-| `speed.cloudflare.com` | only while you run the built-in speed probe | measure the channel |
-| the server from your own configuration | while the tunnel is up | carry your traffic |
+## Who the program exchanges data with
 
-Nothing else is contacted on the application's own initiative. Every other address is one your own traffic
-asked for.
+- The servers you added yourself. While the tunnel is up, your traffic goes through them. The program opens a subscription link on the schedule of the subscription refresh.
+- GitHub (api.github.com, github.com). Checks for new versions several times a day and on the "Check for updates" button. Downloads when you start one.
+- Sources of the geo databases. By default these are github.com (the Loyalsoldier, runetfreedom and jameszeroX sets) and raw.githubusercontent.com/bor-project/amneziageo-geo. The program checks and downloads the databases on a schedule, once every 24 hours. The sources can be changed.
+- Region detection (www.cloudflare.com/cdn-cgi/trace, api.country.is). The window asks for the country code when it picks routing presets and the tunnel is not up. The answer is the country code alone.
+- Speed probe (speed.cloudflare.com). Only when you run a probe yourself.
+- DNS over HTTPS (cloudflare-dns.com). Only when it is turned on in the settings.
+- Finding the cause of a drop. When the tunnel stops carrying traffic, the service checks, outside the tunnel, the gateway of the network, your server, GitHub and the sources of the geo databases to name the cause.
 
-## What stays on the machine
+Everything else that goes to the network is your own traffic.
 
-Configurations, private keys, routing rules and logs never leave the device:
+## What stays on the device
 
-- Windows: `C:\ProgramData\AmneziaGeo` (agent) and `%LOCALAPPDATA%\AmneziaGeo` (UI);
-- Linux: `/var/lib/amneziageo` (agent) and the user profile (UI);
-- Android: the application's private storage.
+Configurations, keys, routing rules, logs and the record of accepted terms are not sent anywhere:
 
-Logs are a local SQLite database. The diagnostics archive is built only when you ask for it, written where
-you choose, and never uploaded anywhere.
+- Windows: C:\ProgramData\AmneziaGeo (service) and %LOCALAPPDATA%\AmneziaGeo (window);
+- Linux: /var/lib/amneziageo (service) and the user profile (window);
+- Android: the private storage of the application.
+
+Logs are a local SQLite database. The diagnostics archive is built only on your command, saved where you say and uploaded nowhere.
 
 ## Uninstalling
 
-The Windows installer registers an uninstaller in "Apps & features", the deb packages uninstall through the
-package manager, the Android application uninstalls like any other. Uninstalling stops the service and
-removes the program files.
+Windows: "Apps & features". Linux: the package manager. Android: like any application. Uninstalling stops the service and removes the program files.

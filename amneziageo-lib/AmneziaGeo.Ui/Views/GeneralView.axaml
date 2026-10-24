@@ -128,6 +128,28 @@
                </Button>
              </StackPanel>
 
+             <StackPanel Spacing="2">
+               <TextBlock Text="{l:Tr About_License}" FontSize="13.5" />
+               <TextBlock Text="{l:Tr About_LicenseValue}" Classes="muted" FontSize="12.5"
+                          HorizontalAlignment="Left" TextWrapping="Wrap" />
+             </StackPanel>
+
+             <!-- Тексты открываются в окне, без браузера. -->
+             <StackPanel Spacing="0">
+               <Button Classes="linkbtn" FontSize="12.5" HorizontalAlignment="Left" Margin="-7,0,0,0"
+                       Command="{Binding OpenLegalCommand}" CommandParameter="TERMS">
+                 <TextBlock Text="{l:Tr About_Terms}" TextWrapping="Wrap" />
+               </Button>
+               <Button Classes="linkbtn" FontSize="12.5" HorizontalAlignment="Left" Margin="-7,0,0,0"
+                       Command="{Binding OpenLegalCommand}" CommandParameter="PRIVACY">
+                 <TextBlock Text="{l:Tr About_Privacy}" TextWrapping="Wrap" />
+               </Button>
+               <Button Classes="linkbtn" FontSize="12.5" HorizontalAlignment="Left" Margin="-7,0,0,0"
+                       Command="{Binding OpenLegalCommand}" CommandParameter="THIRD-PARTY">
+                 <TextBlock Text="{l:Tr About_ThirdParty}" TextWrapping="Wrap" />
+               </Button>
+             </StackPanel>
+
              <!-- Update sub-block: found -> downloading -> downloaded; installing is an explicit second click (#154). -->
              <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
                <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Margin="0,2,0,0" />

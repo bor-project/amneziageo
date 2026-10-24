@@ -23,6 +23,12 @@
     <EmbeddedResource Include="Services\ZoneRegions.txt" />
   </ItemGroup>
 
+  <!-- Условия, конфиденциальность и сторонние компоненты из корня репозитория: окно показывает их без браузера. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\TERMS.md;..\..\TERMS.ru.md;..\..\PRIVACY.md;..\..\PRIVACY.ru.md;..\..\THIRD-PARTY.md;..\..\THIRD-PARTY.ru.md"
+                      LogicalName="Legal.%(Filename)%(Extension)" WithCulture="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />

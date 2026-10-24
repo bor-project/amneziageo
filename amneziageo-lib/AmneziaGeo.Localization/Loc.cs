@@ -108,9 +108,14 @@ public sealed class Loc : INotifyPropertyChanged
 
     private void Apply(CultureInfo culture)
     {
+        var changed = !culture.Equals(Culture);
         Culture = culture;
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
+        if (!changed)
+        {
+            return;
+        }
 
         // "Item" refreshes {l:Tr} indexer bindings; ReflectionIndexerNode ignores empty and "Item[]".
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item"));

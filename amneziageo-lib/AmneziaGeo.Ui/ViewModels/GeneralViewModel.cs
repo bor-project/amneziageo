@@ -33,6 +33,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private DispatcherTimer? _autoUpdateTimer;
     private bool _autoCheckArmed;
 
+    // Проверки обновлений, отложенные до принятия условий.
+    private bool _autoChecksWanted;
+
     // The Linux and Android agents own the update: they download the package and hand it to the installer, so the
     // window only relays the commands and mirrors the state the snapshot carries.
     private readonly bool _agentUpdates = OperatingSystem.IsLinux() || OperatingSystem.IsAndroid();
@@ -486,10 +489,43 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             return;
         }
 
+        // До принятия условий окно само на сервер обновлений не ходит.
+        if (!LegalTexts.Accepted(_prefs))
+        {
+            _autoChecksWanted = true;
+            return;
+        }
+
         _autoCheckArmed = true;
         _autoUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
         _autoUpdateTimer.Tick += (_, _) => _ = SilentCheckUpdateAsync();
         _autoUpdateTimer.Start();
+    }
+
+    /// <summary>
+    /// Запускает проверки обновлений, отложенные до принятия условий.
+    /// </summary>
+    public void TermsAccepted()
+    {
+        if (!_autoChecksWanted)
+        {
+            return;
+        }
+
+        _autoChecksWanted = false;
+        BeginAutoUpdateChecks();
+        if (_autoCheckArmed && HasUpdateUrl)
+        {
+            _autoCheckArmed = false;
+            _ = SilentCheckUpdateAsync();
+        }
+    }
+
+    // Ссылка «О приложении» открывает текст в окне.
+    [RelayCommand]
+    private void OpenLegal(string document)
+    {
+        _host.ShowLegal(document);
     }
 
     // Asks the agent to check now without touching the status line: the resulting snapshot raises the update

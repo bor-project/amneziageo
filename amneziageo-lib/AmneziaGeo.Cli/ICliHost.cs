@@ -31,6 +31,11 @@ public interface ICliHost
     TextReader? StandardInput { get; }
 
     /// <summary>
+    /// Language token of the window the console runs inside; null where the console has a process of its own.
+    /// </summary>
+    string? WindowLanguage => null;
+
+    /// <summary>
     /// Reaches the agent and waits for its first snapshot; null when it stayed silent.
     /// </summary>
     Task<IAgentLink?> ConnectAsync(TimeSpan commandTimeout, TimeSpan connectWait, CancellationToken ct);

@@ -66,6 +66,37 @@ public sealed class DnsAppTests
         Assert.False(tracker.IsTunneled(Name));
     }
 
+    [Fact]
+    public async Task WithProgramsRoutedThroughTheTunnel_TheSystemKeepsNoAnswer()
+    {
+        var (proxy, tracker, _) = Tunneling();
+        tracker.NoteAsked(Name);
+
+        var answer = await proxy.AnswerAsync(Query, CancellationToken.None);
+
+        Assert.Equal(0, DnsMessage.MinTtl(answer!));
+    }
+
+    [WindowsFact("the wait for the asker raises the timer resolution through winmm")]
+    public async Task AnAskOfSuchAProgramAfterAnotherProgramGotTheName_IsLookedUpBehindTheTunnel()
+    {
+        var (proxy, tracker, lent) = Tunneling(ThisProgram);
+        tracker.NameLearned += proxy.InvalidateName;
+        tracker.NoteAsked(Name);
+        var first = await proxy.AnswerAsync(Query, CancellationToken.None);
+        await Task.Delay(150);
+        using var patience = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        var answering = proxy.AnswerAsync(Query, patience.Token);
+        await Task.Delay(5);
+        tracker.Report((uint)Environment.ProcessId, Name);
+        var answer = await answering;
+
+        Assert.Equal([LentAddress], DnsMessage.Addresses(first!).Select(address => address.ToString()));
+        Assert.DoesNotContain(LentAddress, DnsMessage.Addresses(answer!).Select(address => address.ToString()));
+        Assert.Equal(1, lent.Asked);
+    }
+
     // The rule that names the test host itself.
     private static string ThisProgram => $"path={Environment.ProcessPath}";
 

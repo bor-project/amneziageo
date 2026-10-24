@@ -61,6 +61,10 @@ public sealed partial class MainView : UserControl
             _vm.Home.PropertyChanged += OnHomePropertyChanged;
             _vm.Sheet.PropertyChanged += OnSheetPropertyChanged;
             ApplySettingsLayout();
+            if (_vm.ShowTermsGate)
+            {
+                FocusCurrentScreen();
+            }
         }
     }
 
@@ -318,9 +322,16 @@ public sealed partial class MainView : UserControl
         }
 
         if (e.PropertyName is nameof(MainWindowViewModel.IsHome)
-            or nameof(MainWindowViewModel.IsSettings))
+            or nameof(MainWindowViewModel.IsSettings)
+            or nameof(MainWindowViewModel.ShowTermsGate))
         {
             FocusCurrentScreen();
+        }
+
+        // Текст из «О приложении» открывается с начала, а не с прокрутки раздела, откуда пришли.
+        if (e.PropertyName is nameof(MainWindowViewModel.IsSettingsLegal) && _vm?.IsSettingsLegal == true)
+        {
+            Dispatcher.UIThread.Post(() => ContentScroll.Offset = default, DispatcherPriority.Loaded);
         }
     }
 
@@ -339,6 +350,13 @@ public sealed partial class MainView : UserControl
         {
             if (_vm != vm)
             {
+                return;
+            }
+
+            // Пульт и клавиатура начинают с текста условий: стрелки его листают.
+            if (vm.ShowTermsGate)
+            {
+                TermsScroll.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
                 return;
             }
 

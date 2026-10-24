@@ -106,10 +106,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsProbe))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsLegal))]
     [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private string _settingsSection = "config";
+
+    // Стоят ли поверх окна условия, которые ещё не приняты.
+    [ObservableProperty]
+    private bool _showTermsGate;
 
     /// <summary>
     /// ctor
@@ -136,6 +141,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             : new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         Probe = new ProbeSettingsViewModel(connection, prefs);
+        Gate = new LegalViewModel(prefs);
+        Legal = new LegalViewModel(prefs);
+        _showTermsGate = !LegalTexts.Accepted(prefs);
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
         UpdateActiveSection();
@@ -208,6 +216,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ProbeSettingsViewModel Probe { get; }
 
     /// <summary>
+    /// Условия на экране первого запуска.
+    /// </summary>
+    public LegalViewModel Gate { get; }
+
+    /// <summary>
+    /// Текст, открытый из «О приложении».
+    /// </summary>
+    public LegalViewModel Legal { get; }
+
+    /// <summary>
     /// Whether the home (connect) view is shown.
     /// </summary>
     public bool IsHome => Nav == "home";
@@ -258,6 +276,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     public bool IsSettingsProbe => SettingsSection == "probe";
 
+    public bool IsSettingsLegal => SettingsSection == "legal";
+
     /// <summary>
     /// Whether the floating app-update banner shows. Hidden only on the settings General page, which already
     /// carries the update section (#186); shown on home and every other settings section. A television carries
@@ -306,6 +326,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             }
             || IsSettingsSources
             || IsSettingsProbe
+            || IsSettingsLegal
             || (IsCompact && SettingsDetailOpen));
 
     /// <summary>
@@ -405,6 +426,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        // Текст открывается ссылкой из «О приложении» и возвращает туда же.
+        if (IsSettings && IsSettingsLegal)
+        {
+            SettingsSection = "general";
+            RefreshLogsActive();
+            return;
+        }
+
         if (IsCompact && SettingsDetailOpen)
         {
             SettingsDetailOpen = false;
@@ -447,7 +476,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var slash = view.IndexOf('/');
         var section = slash > 0 ? view[(slash + 1)..] : string.Empty;
-        if (section is "config" or "routing" or "connections" or "general" or "sources" or "logs" or "probe")
+        if (section is "config" or "routing" or "connections" or "general" or "sources" or "logs" or "probe" or "legal")
         {
             SettingsSection = section;
         }
@@ -513,11 +542,50 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshLogsActive();
     }
 
+    /// <summary>
+    /// Открывает текст из «О приложении».
+    /// </summary>
+    public void ShowLegal(string document)
+    {
+        Legal.Document = document;
+        Nav = "settings";
+        SettingsSection = "legal";
+        SettingsDetailOpen = true;
+        RefreshLogsActive();
+    }
+
     // Закрывает оболочку. Туннель не трогаем: он живёт своим сервисом и переживает закрытие интерфейса.
     [RelayCommand]
     private void Exit()
     {
         AppExitHost.Exit();
+    }
+
+    // Принятие условий открывает окно и запросы, которые его ждали.
+    [RelayCommand]
+    private void AcceptTerms()
+    {
+        LegalTexts.Accept(_prefs, DateTime.Now);
+        ShowTermsGate = false;
+        General.TermsAccepted();
+        Gate.Refresh();
+        Legal.Refresh();
+    }
+
+    // Отказ от условий закрывает окно; туннель живёт своей службой.
+    [RelayCommand]
+    private void DeclineTerms()
+    {
+        if (AppExitHost.IsAvailable)
+        {
+            AppExitHost.Exit();
+            return;
+        }
+
+        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.Shutdown();
+        }
     }
 
     /// <summary>

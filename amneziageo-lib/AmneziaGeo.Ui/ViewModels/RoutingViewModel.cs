@@ -192,8 +192,9 @@ internal partial class RoutingViewModel : ViewModelBase
     // Регион устройства: внешний адрес, сотовая сеть, часовой пояс, система. Ручной выбор он не трогает.
     private async Task DetectRegionAsync()
     {
+        // До принятия условий регион ищется без сети.
         var code = await RegionProbe.DetectAsync(
-            !string.Equals(_boundStatus, ConnectionStatus.Connected, StringComparison.Ordinal),
+            !string.Equals(_boundStatus, ConnectionStatus.Connected, StringComparison.Ordinal) && LegalTexts.Accepted(_prefs),
             CancellationToken.None);
 
         if (code.Length == 0 || _prefs.PresetRegions.Length > 0)

@@ -34,6 +34,7 @@
 
     <!-- HOME screen: gear left, centered title and the connect control. -->
     <Border x:Name="HomeCard" Classes="card" Padding="0" IsVisible="{Binding IsHome}" KeyDown="OnPaneKeyDown"
+            IsEnabled="{Binding !ShowTermsGate}"
             Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
       <DockPanel LastChildFill="True">
 
@@ -354,7 +355,7 @@
          over the section rail and content pane. -->
       <Border Classes="card" Height="48" Padding="12,0"
               Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHead}"
-              VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
+              VerticalAlignment="Top" IsVisible="{Binding IsSettings}" IsEnabled="{Binding !ShowTermsGate}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <!-- Back: compact section detail steps back to the rail, otherwise home. Every screen autosaves, so
                navigation is never locked; deletion is confirmed inline. -->
@@ -384,7 +385,7 @@
         </Grid>
       </Border>
 
-    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" RowDefinitions="48,*"
+    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" IsEnabled="{Binding !ShowTermsGate}" RowDefinitions="48,*"
           Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellBody}">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.
@@ -588,6 +589,16 @@
               </ContentControl.ContentTemplate>
             </ContentControl>
 
+            <!-- LEGAL: текст из «О приложении», шаг назад возвращает туда же. -->
+            <ContentControl IsVisible="{Binding IsSettingsLegal}" Content="{Binding Legal}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:LegalViewModel">
+                  <views:LegalPageView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+
             <!-- DIAGNOSTICS SECTION: the viewport (minus the Grid's 24px inset) so only the pane body scrolls,
                  and more than the viewport when the pane is too low for a readable body - then this screen
                  scrolls for the difference. The viewer holds the height, since only it knows what its head takes. -->
@@ -771,7 +782,7 @@
 
     <!-- Floating notification toasts (reconnect notice, app update); shown over home and settings. In the narrow
          layout the action of a toast stands under its text. -->
-    <StackPanel ZIndex="50" VerticalAlignment="Top" HorizontalAlignment="Center"
+    <StackPanel ZIndex="50" VerticalAlignment="Top" HorizontalAlignment="Center" IsEnabled="{Binding !ShowTermsGate}"
                 Margin="12,24,12,0" MaxWidth="560" Spacing="6">
 
       <Border IsVisible="{Binding Home.NoticeVisible}"
@@ -877,6 +888,45 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
         </StackPanel>
+      </Border>
+    </Panel>
+
+    <!-- Условия при первом запуске и после новой версии текста: окно за ними ждёт, пока их не примут. -->
+    <Panel ZIndex="90" Background="{DynamicResource AgBgBrush}" IsVisible="{Binding ShowTermsGate}">
+      <Border Classes="card" MaxWidth="760" Padding="20,16"
+              Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+          <TextBlock Grid.Row="0" Text="{l:Tr Terms_GateTitle}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Grid.Row="1" Text="{l:Tr Terms_GateHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
+          <Border Grid.Row="2" Background="{DynamicResource AgInsetBrush}" CornerRadius="9" Padding="3">
+            <UniformGrid Columns="2">
+              <Button Classes="seg" Classes.active="{Binding Gate.IsTerms}" Content="{l:Tr About_Terms}"
+                      Command="{Binding Gate.ShowCommand}" CommandParameter="TERMS" />
+              <Button Classes="seg" Classes.active="{Binding Gate.IsPrivacy}" Content="{l:Tr About_Privacy}"
+                      Command="{Binding Gate.ShowCommand}" CommandParameter="PRIVACY" />
+            </UniformGrid>
+          </Border>
+          <Border Grid.Row="3" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="8">
+            <ScrollViewer x:Name="TermsScroll" Focusable="True" HorizontalScrollBarVisibility="Disabled">
+              <views:LegalView DataContext="{Binding Gate}" Margin="14,10" />
+            </ScrollViewer>
+          </Border>
+          <!-- Широкое окно: версия слева, кнопки справа. -->
+          <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding !IsCompact}">
+            <TextBlock Grid.Column="0" Text="{Binding Gate.FooterLine}" Classes="muted" FontSize="12"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+            <Button Grid.Column="1" Classes="softbtn" Content="{l:Tr Terms_Quit}" Command="{Binding DeclineTermsCommand}" />
+            <Button Grid.Column="2" Classes="accent" Content="{l:Tr Terms_Accept}" Command="{Binding AcceptTermsCommand}" />
+          </Grid>
+          <!-- Телефон и ТВ: кнопки во всю ширину, «Принимаю» сверху. -->
+          <StackPanel Grid.Row="4" Spacing="8" IsVisible="{Binding IsCompact}">
+            <TextBlock Text="{Binding Gate.FooterLine}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            <Button Classes="accent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Content="{l:Tr Terms_Accept}" Command="{Binding AcceptTermsCommand}" />
+            <Button Classes="softbtn" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Content="{l:Tr Terms_Quit}" Command="{Binding DeclineTermsCommand}" />
+          </StackPanel>
+        </Grid>
       </Border>
     </Panel>
 

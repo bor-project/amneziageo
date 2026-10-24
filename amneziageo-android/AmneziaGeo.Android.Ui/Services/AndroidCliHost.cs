@@ -31,6 +31,9 @@ internal sealed class AndroidCliHost : ICliHost
     public TextReader? StandardInput => null;
 
     /// <inheritdoc/>
+    public string? WindowLanguage => UiPreferences.Load().Language;
+
+    /// <inheritdoc/>
     public async Task<IAgentLink?> ConnectAsync(TimeSpan commandTimeout, TimeSpan connectWait, CancellationToken ct)
     {
         var agent = AndroidAgentConnection.Current ?? new AndroidAgentConnection();

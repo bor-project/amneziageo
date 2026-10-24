@@ -53,7 +53,7 @@ internal static class AndroidBackgroundLimits
             limits.Add(new(BackgroundLimitKind.Notifications, Told(NotificationsOn(context))));
         }
 
-        if (_hasBatteryScreen ??= phone && Resolves(context, BatteryRequest(context)))
+        if (_hasBatteryScreen ??= phone && Resolves(context, BatterySettings()))
         {
             _batteryByVendor ??= Screen(context, BatteryRequest(context))?.PackageName == SecurityCenter;
             limits.Add(BackgroundLimit.Battery(BatteryFree(context), _batteryByVendor == true));
@@ -165,10 +165,10 @@ internal static class AndroidBackgroundLimits
         }
     }
 
-    // Спрашивает исключение из экономии батареи, а когда оно уже есть, открывает сведения о приложении.
+    // Открывает список исключений из экономии батареи, а когда исключение уже есть, сведения о приложении.
     private static void OpenBattery(Context context)
     {
-        Launch(BatteryFree(context) ? AppDetails(context) : BatteryRequest(context));
+        Launch(BatteryFree(context) ? AppDetails(context) : BatterySettings());
     }
 
     // Экран уведомлений приложения, а где его нет, экран сведений о приложении.
@@ -188,6 +188,12 @@ internal static class AndroidBackgroundLimits
     private static Intent BatteryRequest(Context context)
     {
         return new Intent(Settings.ActionRequestIgnoreBatteryOptimizations, PackageUri(context));
+    }
+
+    // Системный список исключений из экономии батареи.
+    private static Intent BatterySettings()
+    {
+        return new Intent(Settings.ActionIgnoreBatteryOptimizationSettings);
     }
 
     // Экран сведений о приложении.

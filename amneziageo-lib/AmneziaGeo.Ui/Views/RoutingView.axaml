@@ -497,7 +497,7 @@
             <TextBlock Text="{l:Tr Preset_RegionsHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
 
             <TextBox Classes="field" Text="{Binding RegionSearch, Mode=TwoWay}"
-                     Watermark="{l:Tr Preset_RegionSearch}" />
+                     PlaceholderText="{l:Tr Preset_RegionSearch}" />
 
             <StackPanel IsVisible="{Binding RegionsLoading}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
               <ProgressBar IsIndeterminate="{Binding RegionsLoading}" Width="150" HorizontalAlignment="Center" />

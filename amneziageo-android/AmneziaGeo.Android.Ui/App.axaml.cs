@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Android.Ui.Services;
@@ -46,116 +47,113 @@ public sealed partial class App : Avalonia.Application
     private static string Region(string? code) => code is { Length: 2 } text ? text.ToLowerInvariant() : string.Empty;
 
     private static UiPreferences? _preferences;
+    private static MainWindowViewModel? _viewModel;
     private AndroidAgentConnection? _connection;
-
-    /// <inheritdoc/>
-    public override void Initialize()
-    {
-        var clock = Stopwatch.StartNew();
-        AvaloniaXamlLoader.Load(this);
-        Stage("styles", clock);
-    }
+    private Control? _mainView;
 
     /// <inheritdoc/>
     public override void OnFrameworkInitializationCompleted()
     {
-        if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
+        // Окно строится у первой активности.
+        if (ApplicationLifetime is IActivityApplicationLifetime activities)
         {
-            var clock = Stopwatch.StartNew();
-
-            // Tell the shared UI which device it draws on, then drop the D-pad focus rings on a phone.
-            UiPlatform.IsTelevision = global::Android.App.Application.Context.PackageManager?
-                .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
-            UiPlatform.SupportsGeoPreview = false;
-            UiPlatform.UsesActionSheets = true;
-            UiPlatform.AgentMovesTunnel = true;
-            UiPlatform.HandScale = HandScale();
-            UiPlatform.NetworkRegion = NetworkRegion;
-            if (!UiPlatform.IsTelevision)
-            {
-                Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))
-                {
-                    Source = new Uri("avares://AmneziaGeo.Ui/Themes/FlatFocus.axaml"),
-                });
-            }
-
-            // Register the CameraX camera scanner so the config/routing import can scan QR codes.
-            AndroidQrScanning.Register();
-
-            // Hand an export to another application, and a QR to the clipboard, both as a file behind a link.
-            AndroidExport.Register();
-
-            // Offer an in-app exit: a TV has no window frame to close. Drops the task and the head with it, while
-            // the tunnel goes on running in its own process.
-            AppExitHost.Register(() => MainActivity.Current?.FinishAndRemoveTask());
-
-            // Name what the system lets the app do in the background.
-            AndroidBackgroundLimits.Register();
-
-            var prefs = UiPreferences.Load();
-            _preferences = prefs;
-            RequestedThemeVariant = prefs.Theme switch
-            {
-                "light" => ThemeVariant.Light,
-                "dark" => ThemeVariant.Dark,
-                _ => ThemeVariant.Default,
-            };
-            Loc.Instance.ApplyStartupCulture(prefs.Language);
-            Stage("preferences", clock);
-
-            // The console may have raised the agent of this process already: the window joins that one.
-            var connection = AndroidAgentConnection.Current ?? new AndroidAgentConnection();
-            _connection = connection;
-            var viewModel = new MainWindowViewModel(connection, prefs);
-            MainActivity.ShownChanged += viewModel.WindowShown;
-            MainActivity.Resumed += viewModel.General.Background.Reload;
-            Stage("view models", clock);
-
-            var mainView = new SharedMainView
-            {
-                DataContext = viewModel,
-            };
-            Stage("views", clock);
-
-            singleView.MainView = Framed(HandFrame.Enlarged(new MobileSelectHost(mainView), UiPlatform.HandScale));
-            Stage("host", clock);
-
-            // Brings the agent up after the first frame: opening the stores and projecting the first snapshot
-            // cost seconds on a TV, and home already stands on its loader until the agent answers.
-            Dispatcher.UIThread.Post(() =>
-            {
-                var agentClock = Stopwatch.StartNew();
-                viewModel.Start();
-                viewModel.General.BeginAutoUpdateChecks();
-                Stage("agent", agentClock);
-            }, DispatcherPriority.Background);
+            activities.MainViewFactory = MainView;
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    // Holds the head clear of the status and navigation bars. From target sdk 35 android lays the window edge to
-    // edge and leaves the inset to the application; the frame stands outside the scale, so it keeps the size the
-    // bars are drawn at.
+    // Окно одно на процесс: каждая активность получает тот же вид.
+    private Control MainView()
+    {
+        if (_mainView is { } built)
+        {
+            return built;
+        }
+
+        var clock = Stopwatch.StartNew();
+        WeightedSystemFonts.Register(FontManager.Current);
+        AvaloniaXamlLoader.Load(this);
+        Stage("styles", clock);
+
+        // Tell the shared UI which device it draws on, then drop the D-pad focus rings on a phone.
+        UiPlatform.IsTelevision = global::Android.App.Application.Context.PackageManager?
+            .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
+        UiPlatform.SupportsGeoPreview = false;
+        UiPlatform.UsesActionSheets = true;
+        UiPlatform.AgentMovesTunnel = true;
+        UiPlatform.HandScale = HandScale();
+        UiPlatform.NetworkRegion = NetworkRegion;
+        if (!UiPlatform.IsTelevision)
+        {
+            Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))
+            {
+                Source = new Uri("avares://AmneziaGeo.Ui/Themes/FlatFocus.axaml"),
+            });
+        }
+
+        // Register the CameraX camera scanner so the config/routing import can scan QR codes.
+        AndroidQrScanning.Register();
+
+        // Hand an export to another application, and a QR to the clipboard, both as a file behind a link.
+        AndroidExport.Register();
+
+        // Offer an in-app exit: a TV has no window frame to close. Drops the task and the head with it, while
+        // the tunnel goes on running in its own process.
+        AppExitHost.Register(() => MainActivity.Current?.FinishAndRemoveTask());
+
+        // Name what the system lets the app do in the background.
+        AndroidBackgroundLimits.Register();
+
+        var prefs = UiPreferences.Load();
+        _preferences = prefs;
+        RequestedThemeVariant = prefs.Theme switch
+        {
+            "light" => ThemeVariant.Light,
+            "dark" => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+        Loc.Instance.ApplyStartupCulture(prefs.Language);
+        Stage("preferences", clock);
+
+        // The console may have raised the agent of this process already: the window joins that one.
+        var connection = AndroidAgentConnection.Current ?? new AndroidAgentConnection();
+        _connection = connection;
+        var viewModel = new MainWindowViewModel(connection, prefs);
+        _viewModel = viewModel;
+        MainActivity.ShownChanged += viewModel.WindowShown;
+        MainActivity.Resumed += viewModel.General.Background.Reload;
+        Stage("view models", clock);
+
+        var mainView = new SharedMainView
+        {
+            DataContext = viewModel,
+        };
+        Stage("views", clock);
+
+        _mainView = Framed(HandFrame.Enlarged(new MobileSelectHost(mainView), UiPlatform.HandScale));
+        Stage("host", clock);
+
+        // Brings the agent up after the first frame: opening the stores and projecting the first snapshot
+        // cost seconds on a TV, and home already stands on its loader until the agent answers.
+        Dispatcher.UIThread.Post(() =>
+        {
+            var agentClock = Stopwatch.StartNew();
+            viewModel.Start();
+            viewModel.General.BeginAutoUpdateChecks();
+            Stage("agent", agentClock);
+        }, DispatcherPriority.Background);
+        return _mainView;
+    }
+
+    // Holds the head clear of the status and navigation bars: Avalonia pads the root it hosts by the bars, and the
+    // frame stands outside the scale, so it keeps the size the bars are drawn at.
     private static Control Framed(Control view)
     {
-        var frame = new Border
+        return new Border
         {
             Child = view,
         };
-
-        frame.AttachedToVisualTree += (_, _) =>
-        {
-            if (TopLevel.GetTopLevel(frame)?.InsetsManager is not { } insets)
-            {
-                return;
-            }
-
-            frame.Padding = insets.SafeAreaPadding;
-            insets.SafeAreaChanged += (_, changed) => frame.Padding = changed.SafeAreaPadding;
-        };
-
-        return frame;
     }
 
     // How much over the laid-out size the head is drawn on this device.
@@ -188,6 +186,14 @@ public sealed partial class App : Avalonia.Application
         {
             app.RequestedThemeVariant = variant;
         }
+    }
+
+    /// <summary>
+    /// Передаёт окну текст, пришедший от другой программы.
+    /// </summary>
+    internal static void ImportFromOutside(string text)
+    {
+        Dispatcher.UIThread.Post(() => _viewModel?.ImportFromOutside(text));
     }
 
     // Times one startup step into logcat: a weak TV spends seconds here and only the device shows which step.

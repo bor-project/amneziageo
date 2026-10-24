@@ -1,18 +1,11 @@
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
-using Avalonia;
 using Avalonia.Android;
-using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Controls.Presenters;
-using Avalonia.Media;
-using Avalonia.VisualTree;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using AmneziaGeo.Android.Engine;
 using AmneziaGeo.Android.Ui.Services;
-using AmneziaGeo.Ui.Services;
 
 namespace AmneziaGeo.Android.Ui;
 
@@ -29,7 +22,7 @@ namespace AmneziaGeo.Android.Ui;
     LaunchMode = LaunchMode.SingleTop,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 [IntentFilter(new[] { Intent.ActionMain }, Categories = new[] { "android.intent.category.LEANBACK_LAUNCHER" })]
-public sealed class MainActivity : AvaloniaMainActivity<App>
+public sealed class MainActivity : AvaloniaMainActivity
 {
     private const int VpnRequestCode = 0x7A11;
     private const int CameraRequestCode = 0x7A12;
@@ -61,58 +54,6 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     /// Whether the window is on the screen.
     /// </summary>
     public static bool Shown { get; private set; }
-
-    /// <summary>
-    /// Picks the drawing path, overridable by a `render` file holding software or vulkan next to the app data:
-    /// the Mali blobs in TV boxes leave stale pixels on screen, and only the device shows which path draws right.
-    /// </summary>
-    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
-    {
-        // Текст, и моноширинный тоже, берёт у системных шрифтов начертание запрошенного веса.
-        return base.CustomizeAppBuilder(builder)
-            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() })
-            .With(WeightedSystemFonts.Options("sans-serif", "monospace"))
-            .AfterPlatformServicesSetup(_ => WeightedSystemFonts.Register(FontManager.Current));
-    }
-
-    private static IReadOnlyList<AndroidRenderingMode> RenderingModes()
-    {
-        var requested = ReadRenderOverride();
-        if (string.Equals(requested, "software", StringComparison.OrdinalIgnoreCase))
-        {
-            return [AndroidRenderingMode.Software];
-        }
-
-        if (string.Equals(requested, "vulkan", StringComparison.OrdinalIgnoreCase))
-        {
-            return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
-        }
-
-        return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
-    }
-
-    private static string ReadRenderOverride()
-    {
-        try
-        {
-            var folder = global::Android.App.Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
-            if (folder is null)
-            {
-                return string.Empty;
-            }
-
-            var path = Path.Combine(folder, "render");
-            return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
-        }
-        catch (IOException)
-        {
-            return string.Empty;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return string.Empty;
-        }
-    }
 
     /// <summary>
     /// Launches the VpnService consent dialog and completes when the user answers.
@@ -193,6 +134,27 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         AndroidSystemBars.Attach(this);
         FrameRest.Attach();
         App.Stage("activity", clock);
+        if (savedInstanceState is null)
+        {
+            TakeImport(Intent);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        TakeImport(intent);
+    }
+
+    // Текст, который другая программа передала через ImportActivity.
+    private static void TakeImport(Intent? intent)
+    {
+        if (intent?.GetStringExtra(ImportActivity.TextExtra) is { Length: > 0 } text)
+        {
+            intent.RemoveExtra(ImportActivity.TextExtra);
+            App.ImportFromOutside(text);
+        }
     }
 
     /// <inheritdoc/>
@@ -271,30 +233,6 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         if (IsFinishing)
         {
             global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
-            return;
-        }
-
-        ReleaseSingleView();
-    }
-
-    // Frees the single view from the root going away: the next activity attaches the same instance, and a
-    // control that still has a parent is refused (#196). Avalonia must already be up, so this cannot move
-    // ahead of base.OnCreate - touching it earlier builds the shared dispatcher on a stub that runs nothing.
-    private static void ReleaseSingleView()
-    {
-        if (Avalonia.Application.Current?.ApplicationLifetime is not ISingleViewApplicationLifetime { MainView: { } view })
-        {
-            return;
-        }
-
-        if (view.GetVisualRoot() is ContentControl root)
-        {
-            root.Content = null;
-        }
-
-        if (view.GetVisualParent() is ContentPresenter presenter)
-        {
-            presenter.UpdateChild();
         }
     }
 

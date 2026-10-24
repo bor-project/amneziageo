@@ -71,30 +71,12 @@ internal static class FileDropBehavior
         e.Handled = true;
     }
 
-    // Новый DataTransfer-API с откатом на устаревший IDataObject.
-    private static bool HasFiles(DragEventArgs e)
-    {
-        if (e.DataTransfer.Contains(DataFormat.File))
-        {
-            return true;
-        }
-
-#pragma warning disable CS0618
-        return e.Data.Contains(DataFormats.Files);
-#pragma warning restore CS0618
-    }
+    private static bool HasFiles(DragEventArgs e) => e.DataTransfer.Contains(DataFormat.File);
 
     private static IReadOnlyList<string> ExtractPaths(DragEventArgs e)
     {
         var paths = new List<string>();
         Collect(e.DataTransfer.TryGetFiles(), paths);
-        if (paths.Count == 0)
-        {
-#pragma warning disable CS0618
-            Collect(e.Data.GetFiles(), paths);
-#pragma warning restore CS0618
-        }
-
         return paths;
     }
 

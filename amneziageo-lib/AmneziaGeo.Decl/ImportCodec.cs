@@ -21,6 +21,11 @@ public static class ImportCodec
     public readonly record struct Recognized(ImportKind Kind, string Address, VpnLinkCodec.Imported? Config);
 
     /// <summary>
+    /// Схема ссылки, которой страница подписки открывает приложение: amneziageo://import?url=адрес подписки.
+    /// </summary>
+    public const string AppScheme = "amneziageo";
+
+    /// <summary>
     /// Разбирает текст из файла, буфера обмена или поля ввода.
     /// </summary>
     public static Recognized Recognize(string? text)
@@ -45,6 +50,11 @@ public static class ImportCodec
             return new Recognized(ImportKind.Unknown, string.Empty, null);
         }
 
+        if (AppLinkAddress(trimmed) is { } address)
+        {
+            return new Recognized(ImportKind.Subscription, address, null);
+        }
+
         if (SubscriptionCodec.LooksLikeAddress(trimmed))
         {
             return new Recognized(ImportKind.Subscription, trimmed, null);
@@ -53,5 +63,27 @@ public static class ImportCodec
         return decode(trimmed) is { } imported
             ? new Recognized(ImportKind.Config, string.Empty, imported)
             : new Recognized(ImportKind.Unknown, string.Empty, null);
+    }
+
+    // Адрес подписки из ссылки приложения.
+    private static string? AppLinkAddress(string text)
+    {
+        if (!text.StartsWith(AppScheme + "://", StringComparison.OrdinalIgnoreCase)
+            || !Uri.TryCreate(text, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Host, "import", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&'))
+        {
+            if (pair.StartsWith("url=", StringComparison.Ordinal))
+            {
+                var address = Uri.UnescapeDataString(pair["url=".Length..]).Trim();
+                return SubscriptionCodec.LooksLikeAddress(address) ? address : null;
+            }
+        }
+
+        return null;
     }
 }

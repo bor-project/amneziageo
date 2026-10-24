@@ -156,7 +156,7 @@
                     service behind the link is not part of that path and stays open. -->
                <TextBox Grid.Column="0" Classes="field" Text="{Binding ProbeTarget, Mode=TwoWay}"
                         IsEnabled="{Binding ProbeFormEnabled}"
-                        Watermark="{l:Tr Probe_TargetWatermark}" />
+                        PlaceholderText="{l:Tr Probe_TargetWatermark}" />
                <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center"
                        Command="{Binding OpenProbeSettingsCommand}">
                  <StackPanel Orientation="Horizontal" Spacing="5">
@@ -224,7 +224,7 @@
           </Grid.Resources>
           <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
                    IsVisible="{Binding ShowSearch}"
-                   Watermark="{Binding SearchWatermark}">
+                   PlaceholderText="{Binding SearchWatermark}">
             <TextBox.InnerLeftContent>
               <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
                         Margin="10,0,4,0" Foreground="{DynamicResource AgMuted2Brush}"

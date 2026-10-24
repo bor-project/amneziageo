@@ -66,7 +66,7 @@
           <TextBlock Text="{l:Tr Main_ListNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
           <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}" Classes.locked="{Binding IsReadOnly}"
                    IsReadOnly="{Binding IsReadOnly}"
-                   Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
+                   Text="{Binding Name, Mode=TwoWay}" PlaceholderText="{l:Tr Main_ListNameWatermark}" />
           <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
@@ -180,7 +180,7 @@
               <StackPanel Spacing="8" IsVisible="{Binding ShowRuleInput}">
                 <Grid ColumnDefinitions="*,Auto">
                   <Panel Grid.Column="0">
-                    <TextBox x:Name="RuleBox" Classes="field" Watermark="{Binding RuleWatermark}"
+                    <TextBox x:Name="RuleBox" Classes="field" PlaceholderText="{Binding RuleWatermark}"
                              Text="{Binding RuleInput, Mode=TwoWay}">
                       <TextBox.InnerLeftContent>
                         <PathIcon Data="{StaticResource AgSearchGeometry}" Width="13" Height="13" Margin="10,0,0,0"

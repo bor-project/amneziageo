@@ -97,7 +97,7 @@ public sealed partial class MainView : UserControl
                     return;
                 }
 
-                if (_topLevel?.FocusManager?.GetFocusedElement() is Visual live && live.GetVisualRoot() is not null)
+                if (_topLevel?.FocusManager?.GetFocusedElement() is Visual live && TopLevel.GetTopLevel(live) is not null)
                 {
                     return;
                 }
@@ -252,7 +252,7 @@ public sealed partial class MainView : UserControl
         _topLevel?.FocusManager?.GetFocusedElement() is Control control
         && !ReferenceEquals(control, _topLevel)
         && control.IsEffectivelyVisible
-        && control.GetVisualRoot() is not null;
+        && TopLevel.GetTopLevel(control) is not null;
 
     // Android back button. Unhandled it finishes the activity, so settings would quit the app instead of
     // stepping back; the system still gets it from home.
@@ -526,40 +526,46 @@ public sealed partial class MainView : UserControl
             return false;
         }
 
-        var direction = forward ? NavigationDirection.Next : NavigationDirection.Previous;
-        var step = (IInputElement)focused;
-        for (var i = 0; i < 200; i++)
+        var stops = TabStops(pane);
+        var at = stops.IndexOf((Control)focused);
+        if (at < 0)
         {
-            if (KeyboardNavigationHandler.GetNext(step, direction) is not Control next)
-            {
-                return false;
-            }
+            return false;
+        }
 
-            if (pane.IsVisualAncestorOf(next))
+        for (var i = 1; i < stops.Count; i++)
+        {
+            var index = at + (forward ? i : -i);
+            if (index < 0 || index >= stops.Count)
             {
-                // A row is crossed by up and down and walked by left and right: a neighbour beside the control
-                // the key was pressed on is not a stop on the way out of the row.
-                if (Controls.PaneFocus.SharesRow(pane, focused, next))
+                // Off the pane: a trapped pane goes round to its own first stop.
+                if (!wrap)
                 {
-                    step = next;
-                    continue;
+                    return false;
                 }
 
-                next.BringIntoView();
-                return next.Focus(NavigationMethod.Directional);
+                index = (index + stops.Count) % stops.Count;
             }
 
-            // Off the pane: a trapped pane walks the rest of the cycle back to its own first stop.
-            if (!wrap)
+            // A row is crossed by up and down and walked by left and right: a neighbour beside the control the key
+            // was pressed on is not a stop on the way out of the row.
+            var next = stops[index];
+            if (Controls.PaneFocus.SharesRow(pane, focused, next))
             {
-                return false;
+                continue;
             }
 
-            step = next;
+            next.BringIntoView();
+            return next.Focus(NavigationMethod.Directional);
         }
 
         return false;
     }
+
+    // Стопы табуляции пана по порядку дерева.
+    private static List<Control> TabStops(Visual pane) =>
+        [.. pane.GetVisualDescendants().OfType<Control>().Where(control => control.Focusable
+            && KeyboardNavigation.GetIsTabStop(control) && control.IsEffectivelyVisible && control.IsEffectivelyEnabled)];
 
     // Content -> rail. A control on the pane's left edge hands the focus back to the section menu.
     private void OnContentKeyDown(object? sender, KeyEventArgs e)

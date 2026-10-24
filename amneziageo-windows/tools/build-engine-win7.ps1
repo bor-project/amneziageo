@@ -14,8 +14,8 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File build-engine-win7.ps1 -Upstream   # stock toolchain, for A/B
 #>
 param(
-    [string]$GoVersion = '1.25.12-1',
-    [string]$Sha256 = '01dde86e7b8e9d2e9617d68afb90af377e82da22509889402788f23971466fb0',
+    [string]$GoVersion = '1.27.2-1',
+    [string]$Sha256 = 'fdd3cc8d40e5d0fd8adfe1b720953842e4da7ef568800fab2ecdbf743d16703c',
     [string[]]$Arch = @('x64'),
     [switch]$Upstream,
     [switch]$Force
@@ -245,16 +245,18 @@ foreach ($a in $Arch) {
     $b = [IO.File]::ReadAllBytes($dll)
     $text = [Text.Encoding]::GetEncoding(28591).GetString($b)
     $bcrypt = $text.Contains('bcryptprimitives.dll')
-    if ($bcrypt) { $unsafe += $a }
+    # ProcessPrng of bcryptprimitives.dll is safe only beside the RtlGenRandom fallback (SystemFunction036)
+    $fallback = $text.Contains('SystemFunction036')
+    if ($bcrypt -and -not $fallback) { $unsafe += $a }
 
     Write-Host ("   {0}  {1:N0} bytes" -f $dll, $b.Length)
-    Write-Host ("   references bcryptprimitives.dll : {0}" -f $(if ($bcrypt) { 'YES - not Windows 7 safe' } else { 'no' }))
+    Write-Host ("   references bcryptprimitives.dll : {0}" -f $(if (-not $bcrypt) { 'no' } elseif ($fallback) { 'yes, falls back to RtlGenRandom' } else { 'YES - not Windows 7 safe' }))
     Write-Host ("   static imports: {0}" -f ((Get-ImportedDlls $b) -join ', '))
 }
 
 # A stock-Go build ships silently otherwise, and Windows 7 only fails at load time on the user's machine.
 if ($unsafe -and -not $Upstream) {
-    throw "not Windows 7 safe: $($unsafe -join ', ') import bcryptprimitives.dll, which Windows 7 does not have. The go-legacy-win7 toolchain was expected to be used - rerun with -Force to rebuild it."
+    throw "not Windows 7 safe: $($unsafe -join ', ') take ProcessPrng of bcryptprimitives.dll without the RtlGenRandom fallback, and Windows 7 has no ProcessPrng. The go-legacy-win7 toolchain was expected to be used - rerun with -Force to rebuild it."
 }
 
 Write-Host ''

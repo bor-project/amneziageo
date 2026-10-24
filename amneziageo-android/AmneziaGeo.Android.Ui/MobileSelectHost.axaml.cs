@@ -117,7 +117,7 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.AddHandler(LostFocusEvent, OnTopLevelLostFocus, RoutingStrategies.Bubble);
             _topLevel.AddHandler(PointerPressedEvent, OnTopLevelPointerPressed, RoutingStrategies.Tunnel);
             _topLevel.AddHandler(PointerMovedEvent, OnTopLevelPointerMoved, RoutingStrategies.Tunnel);
-            _topLevel.AddHandler(Gestures.ScrollGestureEvent, OnTopLevelScrollGesture, RoutingStrategies.Bubble, handledEventsToo: true);
+            _topLevel.AddHandler(InputElement.ScrollGestureEvent, OnTopLevelScrollGesture, RoutingStrategies.Bubble, handledEventsToo: true);
             _topLevel.AddHandler(PointerReleasedEvent, OnTopLevelPointerReleased, RoutingStrategies.Tunnel);
         }
 
@@ -143,7 +143,7 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.RemoveHandler(LostFocusEvent, OnTopLevelLostFocus);
             _topLevel.RemoveHandler(PointerPressedEvent, OnTopLevelPointerPressed);
             _topLevel.RemoveHandler(PointerMovedEvent, OnTopLevelPointerMoved);
-            _topLevel.RemoveHandler(Gestures.ScrollGestureEvent, OnTopLevelScrollGesture);
+            _topLevel.RemoveHandler(InputElement.ScrollGestureEvent, OnTopLevelScrollGesture);
             _topLevel.RemoveHandler(PointerReleasedEvent, OnTopLevelPointerReleased);
             _topLevel = null;
         }
@@ -339,7 +339,7 @@ internal sealed partial class MobileSelectHost : UserControl
     {
         _keyboardTarget = box;
         InputMethod.SetIsInputMethodEnabled(box, true);
-        _topLevel?.FocusManager?.ClearFocus();
+        _topLevel?.FocusManager?.Focus(null);
         box.Focus(NavigationMethod.Directional);
         _keyboardTarget = null;
     }
@@ -364,7 +364,7 @@ internal sealed partial class MobileSelectHost : UserControl
     {
         _keyboardTarget = box;
         InputMethod.SetIsInputMethodEnabled(box, false);
-        _topLevel?.FocusManager?.ClearFocus();
+        _topLevel?.FocusManager?.Focus(null);
         box.Focus(NavigationMethod.Directional);
         _keyboardTarget = null;
     }
@@ -434,19 +434,19 @@ internal sealed partial class MobileSelectHost : UserControl
             && !ReferenceEquals(_focusAtPress, box)
             && !InputMethod.GetIsInputMethodEnabled(box))
         {
-            _topLevel.FocusManager.ClearFocus();
+            _topLevel.FocusManager.Focus(null);
         }
     }
 
     // Whether the finger went past the tap size since the press.
     private bool IsDrag(PointerEventArgs e)
     {
-        var tap = _topLevel?.PlatformSettings?.GetTapSize(e.Pointer.Type) ?? new Size(10, 10);
+        var tap = _topLevel?.GetPlatformSettings()?.GetTapSize(e.Pointer.Type) ?? new Size(10, 10);
         var shift = e.GetPosition(_topLevel) - _pressPoint;
         return Math.Abs(shift.X) > tap.Width || Math.Abs(shift.Y) > tap.Height;
     }
 
-    private void OnTopLevelGotFocus(object? sender, GotFocusEventArgs e)
+    private void OnTopLevelGotFocus(object? sender, FocusChangedEventArgs e)
     {
         if (e.Source is not Control control || control is TopLevel)
         {
@@ -483,13 +483,13 @@ internal sealed partial class MobileSelectHost : UserControl
                 return;
             }
 
-            if (_lastFocus is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } && _lastFocus.GetVisualRoot() is not null)
+            if (_lastFocus is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } && TopLevel.GetTopLevel(_lastFocus) is not null)
             {
                 _lastFocus.Focus(NavigationMethod.Directional);
                 return;
             }
 
-            if (KeyboardNavigationHandler.GetNext(RootGrid, NavigationDirection.Next) is { } first)
+            if (FocusManager.FindFirstFocusableElement(RootGrid) is { } first)
             {
                 first.Focus(NavigationMethod.Directional);
             }
@@ -509,7 +509,7 @@ internal sealed partial class MobileSelectHost : UserControl
             return;
         }
 
-        if (!control.IsEffectivelyVisible || control.GetVisualRoot() is null)
+        if (!control.IsEffectivelyVisible || TopLevel.GetTopLevel(control) is null)
         {
             RecoverFocus(control);
         }
@@ -549,7 +549,7 @@ internal sealed partial class MobileSelectHost : UserControl
             return;
         }
 
-        if (control.IsEffectivelyVisible && control.GetVisualRoot() is not null)
+        if (control.IsEffectivelyVisible && TopLevel.GetTopLevel(control) is not null)
         {
             control.Focus(NavigationMethod.Directional);
         }
@@ -581,7 +581,7 @@ internal sealed partial class MobileSelectHost : UserControl
         }
 
         if (comboBox is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true }
-            && comboBox.GetVisualRoot() is not null)
+            && TopLevel.GetTopLevel(comboBox) is not null)
         {
             comboBox.Focus(NavigationMethod.Directional);
             return;
@@ -595,12 +595,12 @@ internal sealed partial class MobileSelectHost : UserControl
     {
         for (var scope = lost.GetVisualParent() as Control; scope is not null; scope = scope.GetVisualParent() as Control)
         {
-            if (!scope.IsEffectivelyVisible || scope.GetVisualRoot() is null)
+            if (!scope.IsEffectivelyVisible || TopLevel.GetTopLevel(scope) is null)
             {
                 continue;
             }
 
-            if (KeyboardNavigationHandler.GetNext(scope, NavigationDirection.Next) is { } next)
+            if (FocusManager.FindFirstFocusableElement(scope) is { } next)
             {
                 next.Focus(NavigationMethod.Directional);
                 return;
@@ -657,7 +657,7 @@ internal sealed partial class MobileSelectHost : UserControl
         }
         else
         {
-            top.FocusManager?.ClearFocus();
+            top.FocusManager?.Focus(null);
         }
 
         return true;
@@ -810,7 +810,7 @@ internal sealed partial class MobileSelectHost : UserControl
             },
         });
 
-        var search = new TextBox { Watermark = Loc.Instance.Get("AppPicker_Search"), Margin = new Thickness(0, 8, 0, 0) };
+        var search = new TextBox { PlaceholderText = Loc.Instance.Get("AppPicker_Search"), Margin = new Thickness(0, 8, 0, 0) };
         search.Classes.Add("field");
         search.TextChanged += (_, _) => picker.Query = search.Text ?? string.Empty;
 

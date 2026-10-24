@@ -180,7 +180,7 @@ internal sealed partial class RoutingCard : UserControl
         }
     }
 
-    private void OnCardGotFocus(object? sender, GotFocusEventArgs e)
+    private void OnCardGotFocus(object? sender, FocusChangedEventArgs e)
     {
         Pick();
     }

@@ -3,6 +3,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -225,7 +226,7 @@ internal sealed partial class ConfigView : UserControl
 
         var saved = await ExportActions.SaveBinaryAsync(
             this,
-            stream => qr.Save(stream),
+            stream => qr.Save(stream, PngBitmapEncoderOptions.Default),
             Loc.Instance.Get("QrCode_SaveTitle"),
             vm.ConfigName + ".png",
             "png",

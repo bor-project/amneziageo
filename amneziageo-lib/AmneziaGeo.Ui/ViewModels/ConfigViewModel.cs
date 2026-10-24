@@ -43,6 +43,9 @@ internal partial class ConfigViewModel : ViewModelBase
     private bool _catalogueKnown;
     private bool _enterDeferred;
 
+    // Текст другой программы, который ждёт каталога.
+    private string? _outsideText;
+
     // Rename baseline: the open config's persisted name; a differing ConfigRename saves on the section Save.
     private string _baseConfigRename = string.Empty;
 
@@ -897,6 +900,7 @@ internal partial class ConfigViewModel : ViewModelBase
         }
 
         _catalogueKnown = true;
+        TakeOutsideText();
         if (!_enterDeferred)
         {
             return;
@@ -907,6 +911,21 @@ internal partial class ConfigViewModel : ViewModelBase
         if (IsActiveSection)
         {
             EnterSection();
+        }
+    }
+
+    // Кладёт в черновик текст другой программы, пока раздел на экране.
+    private void TakeOutsideText()
+    {
+        if (_outsideText is not { } text)
+        {
+            return;
+        }
+
+        _outsideText = null;
+        if (IsActiveSection && _host.IsSettings)
+        {
+            ImportFromOutside(text);
         }
     }
 
@@ -1648,6 +1667,25 @@ internal partial class ConfigViewModel : ViewModelBase
 
         ApplyRecognized(recognized, text, null);
         return true;
+    }
+
+    /// <summary>
+    /// Открывает черновик под текст, переданный другой программой.
+    /// </summary>
+    public void ImportFromOutside(string text)
+    {
+        if (!_catalogueKnown)
+        {
+            _outsideText = text;
+            EnterSection();
+            return;
+        }
+
+        BeginImportDraft();
+        if (!ApplyScannedText(text))
+        {
+            ApplyImportText(text);
+        }
     }
 
     // Заполняет черновик разобранным текстом; нераспознанное остаётся в поле под сообщением.

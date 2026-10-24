@@ -18,7 +18,7 @@
         </Grid>
         <TextBlock Text="{Binding UploadHint}" Classes="muted" FontSize="12.5" TextWrapping="Wrap" />
         <TextBox Classes="field" Text="{Binding UploadUrl, Mode=TwoWay}"
-                 Watermark="{Binding UploadDefault}" />
+                 PlaceholderText="{Binding UploadDefault}" />
       </StackPanel>
     </Border>
   </StackPanel>

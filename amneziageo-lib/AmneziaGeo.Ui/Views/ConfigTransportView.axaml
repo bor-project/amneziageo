@@ -36,14 +36,14 @@
                   HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
                   Margin="0,0,0,10">
         <TextBlock Classes="label" Text="{l:Tr Main_ServerHostLabel}" />
-        <TextBox Classes="field" Text="{Binding WebSocketHost}" Watermark="{Binding WebSocketHostDefault}" />
+        <TextBox Classes="field" Text="{Binding WebSocketHost}" PlaceholderText="{Binding WebSocketHostDefault}" />
       </StackPanel>
       <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" ColumnDefinitions="Auto,*"
             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
             Margin="0,0,0,10">
         <StackPanel Grid.Column="0" Width="100" Spacing="2" Margin="0,0,12,0">
           <TextBlock Classes="label" Text="{l:Tr Main_ServerPortLabel}" />
-          <TextBox Classes="field" Text="{Binding WebSocketPort}" Watermark="{Binding WebSocketPortDefault}" />
+          <TextBox Classes="field" Text="{Binding WebSocketPort}" PlaceholderText="{Binding WebSocketPortDefault}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="2"
                     Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
@@ -63,7 +63,7 @@
           <TextBlock Classes="label" Text="{l:Tr Main_AccessTokenLabel}" />
           <Panel>
             <TextBox x:Name="TokenBox" Classes="field" Text="{Binding WebSocketToken}"
-                     PasswordChar="●" Padding="10,7,36,7" Watermark="{l:Tr Main_AccessTokenWatermark}" />
+                     PasswordChar="●" Padding="10,7,36,7" PlaceholderText="{l:Tr Main_AccessTokenWatermark}" />
             <Button Classes="icon" Click="OnToggleTokenReveal" MinWidth="0"
                     HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0">
               <PathIcon Data="{StaticResource AgEyeGeometry}" Width="15" Height="15" />
@@ -72,9 +72,9 @@
         </StackPanel>
         <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
           <TextBlock Classes="label" Text="{l:Tr Main_LoginLabel}" />
-          <TextBox Classes="field" Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
+          <TextBox Classes="field" Text="{Binding WebSocketUser}" PlaceholderText="{l:Tr Main_LoginWatermark}" />
           <TextBlock Classes="label" Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
-          <TextBox Classes="field" Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
+          <TextBox Classes="field" Text="{Binding WebSocketPassword}" PasswordChar="●" PlaceholderText="{l:Tr Main_PasswordWatermark}" />
         </StackPanel>
       </Panel>
     </Grid>
@@ -142,7 +142,7 @@
         </controls:AdaptiveComboBox>
         <TextBox Grid.Column="1" Classes="field" IsEnabled="{Binding !IsVpnDnsReadOnly}"
                  MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW220}"
-                 Text="{Binding VpnDnsText}" Watermark="{Binding VpnDnsWatermark}" />
+                 Text="{Binding VpnDnsText}" PlaceholderText="{Binding VpnDnsWatermark}" />
       </Grid>
     </Grid>
 

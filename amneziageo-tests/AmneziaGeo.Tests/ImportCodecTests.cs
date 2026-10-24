@@ -97,6 +97,34 @@ public sealed class ImportCodecTests
         Assert.Null(recognized.Config);
     }
 
+    [Fact]
+    public void AppLinkCarriesSubscription()
+    {
+        var recognized = ImportCodec.Recognize("amneziageo://import?url=https%3A%2F%2Fexample.net%3A2096%2Fsub%2Fabcdef");
+
+        Assert.Equal(ImportKind.Subscription, recognized.Kind);
+        Assert.Equal("https://example.net:2096/sub/abcdef", recognized.Address);
+    }
+
+    [Fact]
+    public void ScannedAppLinkWithAPlainAddressCarriesSubscription()
+    {
+        var recognized = ImportCodec.RecognizeQr("AmneziaGeo://import?url=https://example.net/sub/abcdef");
+
+        Assert.Equal(ImportKind.Subscription, recognized.Kind);
+        Assert.Equal("https://example.net/sub/abcdef", recognized.Address);
+    }
+
+    [Theory]
+    [InlineData("amneziageo://import")]
+    [InlineData("amneziageo://import?url=")]
+    [InlineData("amneziageo://import?url=ftp%3A%2F%2Fexample.net%2Fsub")]
+    [InlineData("amneziageo://open?url=https%3A%2F%2Fexample.net%2Fsub%2Fabcdef")]
+    public void AppLinkWithoutASubscriptionIsUnknown(string text)
+    {
+        Assert.Equal(ImportKind.Unknown, ImportCodec.Recognize(text).Kind);
+    }
+
     // Тело подписки - несколько ссылок строками; адресом оно не является.
     [Fact]
     public void MultilineBodyIsNotSubscriptionAddress()

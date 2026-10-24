@@ -241,10 +241,10 @@
                     <DataTemplate x:DataType="vm:ProxyAccountViewModel">
                       <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
                         <TextBox Grid.Column="0" Classes="field" Text="{Binding User, Mode=TwoWay}"
-                                 Watermark="{l:Tr General_ProxyUser}" />
+                                 PlaceholderText="{l:Tr General_ProxyUser}" />
                         <TextBox Grid.Column="1" Classes="field" Text="{Binding Password, Mode=TwoWay}"
                                  PasswordChar="●" RevealPassword="{Binding IsRevealed}"
-                                 Watermark="{l:Tr General_ProxyPassword}" />
+                                 PlaceholderText="{l:Tr General_ProxyPassword}" />
                         <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
                                 Command="{Binding ToggleRevealCommand}" ToolTip.Tip="{l:Tr General_ProxyRevealTooltip}">
                           <Panel>

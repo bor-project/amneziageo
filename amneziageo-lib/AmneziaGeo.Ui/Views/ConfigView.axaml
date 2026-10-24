@@ -328,7 +328,7 @@
             <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
             <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
                      Text="{Binding SectionConfigName, Mode=TwoWay}"
-                     Watermark="{l:Tr Main_ConfigNameWatermark}" />
+                     PlaceholderText="{l:Tr Main_ConfigNameWatermark}" />
             <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
                        Text="{l:Tr Main_RequiredEmptyWarning}" />
           </StackPanel>
@@ -362,7 +362,7 @@
                        ScrollViewer.VerticalScrollBarVisibility="Auto"
                        BorderThickness="0" Background="Transparent"
                        FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
-                       Watermark="[Interface]&#x0a;PrivateKey = ...&#x0a;Address = ...&#x0a;&#x0a;[Peer]&#x0a;PublicKey = ...&#x0a;Endpoint = host:port" />
+                       PlaceholderText="[Interface]&#x0a;PrivateKey = ...&#x0a;Address = ...&#x0a;&#x0a;[Peer]&#x0a;PublicKey = ...&#x0a;Endpoint = host:port" />
             </Border>
 
             <Panel IsVisible="{Binding IsImportCamera}">

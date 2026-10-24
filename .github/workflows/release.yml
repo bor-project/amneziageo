@@ -168,7 +168,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: amneziageo-android/amneziawg-go/go.mod
+          go-version: '1.27.x'
+          check-latest: true
           cache: false
 
       - name: Build the AmneziaWG daemon
@@ -236,7 +237,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: amneziageo-android/libamneziawg-go/go.mod
+          go-version: '1.27.x'
+          check-latest: true
           cache: false
 
       - name: Install the .NET Android workload

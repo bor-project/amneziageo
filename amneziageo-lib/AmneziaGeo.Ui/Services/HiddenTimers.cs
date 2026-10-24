@@ -44,7 +44,7 @@ internal static class HiddenTimers
     // Работающие таймеры диспетчера окна.
     private static List<DispatcherTimer> Running()
     {
-        var dispatcher = Dispatcher.UIThread;
+        var dispatcher = Dispatcher.CurrentDispatcher;
         return [.. dispatcher.GetType().GetFields(Any)
             .Select(field => field.GetValue(dispatcher))
             .OfType<IEnumerable<DispatcherTimer>>()

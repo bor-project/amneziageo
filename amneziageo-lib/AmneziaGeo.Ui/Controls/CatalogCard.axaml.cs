@@ -186,7 +186,7 @@ internal sealed partial class CatalogCard : UserControl
         }
     }
 
-    private void OnCardGotFocus(object? sender, GotFocusEventArgs e)
+    private void OnCardGotFocus(object? sender, FocusChangedEventArgs e)
     {
         Pick();
     }

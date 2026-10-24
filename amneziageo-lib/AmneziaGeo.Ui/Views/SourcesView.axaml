@@ -57,7 +57,7 @@
                      ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
            <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_GeoKindsHint}"
                       Margin="0,-2,0,0" />
-           <TextBox Classes="field" Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+           <TextBox Classes="field" Text="{Binding NewSourceUrl, Mode=TwoWay}" PlaceholderText="https://.../geosite.dat" />
            <Button Classes="accent" MinWidth="130" HorizontalAlignment="Left" Margin="0,2,0,0"
                    Command="{Binding AddSourceCommand}">
              <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
@@ -126,7 +126,7 @@
                            <controls:AdaptiveComboBox Grid.Row="0" Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
                                      ItemsSource="{Binding Kinds}" SelectedItem="{Binding EditKind, Mode=TwoWay}" />
                            <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Classes="field"
-                                    Text="{Binding EditUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+                                    Text="{Binding EditUrl, Mode=TwoWay}" PlaceholderText="https://.../geosite.dat" />
                          </Grid>
                          <Grid ColumnDefinitions="*,*" ColumnSpacing="6"
                                HorizontalAlignment="{Binding $parent[ItemsControl].((vm:SourcesViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">

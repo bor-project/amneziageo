@@ -5,7 +5,7 @@
 
 ARG DOTNET=10.0
 
-FROM --platform=$BUILDPLATFORM golang:1.25 AS engine
+FROM --platform=$BUILDPLATFORM golang:1.27 AS engine
 ARG TARGETARCH
 WORKDIR /src
 COPY amneziageo-android/amneziawg-go/ ./

@@ -15,7 +15,7 @@ AmneziaGeo is distributed under GPL-3.0 or later. It is built from the component
 ## Window and service
 
 - .NET (Microsoft, .NET Foundation): MIT.
-- Avalonia 11.3: MIT.
+- Avalonia 12.1: MIT.
 - SkiaSharp 3.119: MIT.
 - CommunityToolkit.Mvvm 8.4: MIT.
 - Microsoft.Data.Sqlite and Microsoft.Extensions 10.0: MIT.
@@ -23,9 +23,9 @@ AmneziaGeo is distributed under GPL-3.0 or later. It is built from the component
 - Serilog: Apache-2.0.
 - QRCoder 1.8: MIT.
 - ZXing.Net 0.16: Apache-2.0.
-- FlashCap 1.11: Apache-2.0.
+- FlashCap 1.12: Apache-2.0.
 - Terminal.Gui 2.4: MIT.
-- Tmds.DBus.Protocol 0.21: MIT.
+- Tmds.DBus.Protocol 0.95: MIT.
 - System.Management and Microsoft.Diagnostics.Tracing.TraceEvent: MIT.
 - AndroidX Camera and Core: Apache-2.0 and MIT.
 - WiX Toolset 5.0, the installer for Windows: MS-RL.

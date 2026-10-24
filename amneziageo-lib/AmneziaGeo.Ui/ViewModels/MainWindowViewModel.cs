@@ -116,6 +116,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _showTermsGate;
 
+    // Текст другой программы, который ждёт принятых условий.
+    private string? _outsideImport;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -611,6 +614,34 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsDetailOpen = true;
         Config.EnterImportSection();
         RefreshLogsActive();
+    }
+
+    /// <summary>
+    /// Открывает настройки конфигураций на черновике под текст, переданный другой программой: камерой, браузером.
+    /// </summary>
+    public void ImportFromOutside(string text)
+    {
+        if (ShowTermsGate)
+        {
+            _outsideImport = text;
+            return;
+        }
+
+        Nav = "settings";
+        SettingsSection = "config";
+        SettingsDetailOpen = true;
+        Config.ImportFromOutside(text);
+        RefreshLogsActive();
+    }
+
+    // Принятые условия пускают текст, который их ждал.
+    partial void OnShowTermsGateChanged(bool value)
+    {
+        if (!value && _outsideImport is { } text)
+        {
+            _outsideImport = null;
+            ImportFromOutside(text);
+        }
     }
 
     // Резолвит отказ агента в текст: агент шлёт ключи локализации, а не фразы.

@@ -113,9 +113,9 @@ internal static class ResolvedLink
     }
 
     // Opens a connection of its own to the system bus.
-    private static async Task<Connection> ConnectAsync()
+    private static async Task<DBusConnection> ConnectAsync()
     {
-        var connection = new Connection(Address.System!);
+        var connection = new DBusConnection(DBusAddress.System!);
         try
         {
             await connection.ConnectAsync().ConfigureAwait(false);
@@ -129,11 +129,11 @@ internal static class ResolvedLink
     }
 
     // Builds a call to the resolve1 manager.
-    private static MessageBuffer Resolve(Connection connection, string member, string signature, Arguments arguments) =>
+    private static MessageBuffer Resolve(DBusConnection connection, string member, string signature, Arguments arguments) =>
         Call(connection, ResolveService, ResolvePath, ResolveManager, member, signature, arguments);
 
     // Builds a method call.
-    private static MessageBuffer Call(Connection connection, string service, string path, string @interface, string member, string signature, Arguments arguments)
+    private static MessageBuffer Call(DBusConnection connection, string service, string path, string @interface, string member, string signature, Arguments arguments)
     {
         var writer = connection.GetMessageWriter();
         try

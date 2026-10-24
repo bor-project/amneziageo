@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 
@@ -175,7 +176,7 @@ internal static class ExportActions
     private static byte[] ToPng(Bitmap image)
     {
         using var buffer = new MemoryStream();
-        image.Save(buffer);
+        image.Save(buffer, PngBitmapEncoderOptions.Default);
         return buffer.ToArray();
     }
 

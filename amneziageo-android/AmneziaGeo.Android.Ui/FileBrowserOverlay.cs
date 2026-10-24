@@ -405,7 +405,7 @@ internal sealed class FileBrowserOverlay
         }
 
         // Hands focus back to whatever opened the browser, otherwise the remote has nothing to move from.
-        if (_caller is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } && _caller.GetVisualRoot() is not null)
+        if (_caller is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } && TopLevel.GetTopLevel(_caller) is not null)
         {
             _caller.Focus(NavigationMethod.Directional);
         }

@@ -5,6 +5,7 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -212,7 +213,7 @@ internal sealed partial class RoutingView : UserControl
         if (vm.IsTransferQr)
         {
             if (vm.RoutingQrImage is { } qr
-                && await ExportActions.SaveBinaryAsync(this, stream => qr.Save(stream), title, QrName(vm), "png", "PNG"))
+                && await ExportActions.SaveBinaryAsync(this, stream => qr.Save(stream, PngBitmapEncoderOptions.Default), title, QrName(vm), "png", "PNG"))
             {
                 vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
             }

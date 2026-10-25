@@ -17,7 +17,7 @@ public static class RoutingPlanStamp
     /// Returns the stamp of a list with its settings and the session around it.
     /// </summary>
     public static string Of(RoutingListStamp? list, RoutingSettings? settings, IReadOnlyList<string> inbound,
-        bool useRouter, bool perApp, int ttlSeconds)
+        bool useRouter, bool perApp, int ttlSeconds, int splitLimit)
     {
         var text = new StringBuilder();
         Number(text, Format);
@@ -36,6 +36,7 @@ public static class RoutingPlanStamp
             .Append('|').Append(useRouter)
             .Append('|').Append(perApp);
         Number(text, ttlSeconds);
+        Number(text, splitLimit);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 

@@ -3245,7 +3245,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var stamp = AppFinds.ExpandStamp(await ReadListStampAsync().ConfigureAwait(false), _appFinds);
         var settings = await ReadListSettingsAsync().ConfigureAwait(false);
         var split = AppSplit(stamp, settings, useRouter);
-        var mark = RoutingPlanStamp.Of(stamp, settings, InboundRanges(), useRouter, PerAppSupported, _routeTtl);
+        var mark = RoutingPlanStamp.Of(stamp, settings, InboundRanges(), useRouter, PerAppSupported, _routeTtl, _splitLimit);
         if (VpnBridge.PlanExists() && string.Equals(VpnBridge.ReadPlanStamp(), mark, StringComparison.Ordinal))
         {
             return (split.Mode, split.Packages, split.Bypass, false);

@@ -88,8 +88,8 @@ public sealed class RoutingPlanStampTests : IAsyncLifetime
         var settings = new RoutingSettings(7, "1.1.1.1", false);
 
         Assert.Equal(
-            RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300),
-            RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300));
+            RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300, 11000),
+            RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300, 11000));
     }
 
     [Fact]
@@ -97,21 +97,22 @@ public sealed class RoutingPlanStampTests : IAsyncLifetime
     {
         var list = new RoutingListStamp(7, "main", 3, [new GeoRule(GeoRuleKind.GeoSite, "category-ads")]);
         var settings = new RoutingSettings(7, "1.1.1.1", false);
-        var mark = RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300);
+        var mark = RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300, 11000);
 
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list with { Generation = 4 }, settings, ["10.9.9.1/32"], true, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings with { AllUdp = true }, ["10.9.9.1/32"], true, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings with { UseGlobalProxy = true }, ["10.9.9.1/32"], true, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings with { Exclusions = "8.8.8.8" }, ["10.9.9.1/32"], true, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.0/24"], true, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, [], true, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], false, true, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, false, 300));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 600));
-        Assert.NotEqual(mark, RoutingPlanStamp.Of(null, null, [], true, true, 300));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list with { Generation = 4 }, settings, ["10.9.9.1/32"], true, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings with { AllUdp = true }, ["10.9.9.1/32"], true, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings with { UseGlobalProxy = true }, ["10.9.9.1/32"], true, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings with { Exclusions = "8.8.8.8" }, ["10.9.9.1/32"], true, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.0/24"], true, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, [], true, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], false, true, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, false, 300, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 600, 11000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(list, settings, ["10.9.9.1/32"], true, true, 300, 30000));
+        Assert.NotEqual(mark, RoutingPlanStamp.Of(null, null, [], true, true, 300, 11000));
     }
 
-    private static string Mark(RoutingListStamp? list) => RoutingPlanStamp.Of(list, null, [], true, true, 300);
+    private static string Mark(RoutingListStamp? list) => RoutingPlanStamp.Of(list, null, [], true, true, 300, 11000);
 
     private static RoutingList List(string name, IReadOnlyList<GeoRule> rules, IReadOnlyList<string> routes, long id = 0) =>
         new(id, name, rules, routes, [], [], [], [], [], [], []);

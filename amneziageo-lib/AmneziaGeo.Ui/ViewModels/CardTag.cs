@@ -35,10 +35,14 @@ internal sealed partial class CardTag : ObservableObject
     [ObservableProperty]
     private bool _plain;
 
+    // Whether the label carries the mark of an alert before its text.
+    [ObservableProperty]
+    private bool _alert;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null, bool warn = false, bool plain = false)
+    public CardTag(string text, bool on, ICommand? command = null, bool bad = false, bool busy = false, string? hint = null, bool warn = false, bool plain = false, bool alert = false)
     {
         _text = text;
         _on = on;
@@ -48,6 +52,7 @@ internal sealed partial class CardTag : ObservableObject
         _hint = hint;
         _warn = warn;
         _plain = plain;
+        _alert = alert;
     }
 
     /// <summary>
@@ -90,5 +95,6 @@ internal sealed partial class CardTag : ObservableObject
         Hint = other.Hint;
         Warn = other.Warn;
         Plain = other.Plain;
+        Alert = other.Alert;
     }
 }

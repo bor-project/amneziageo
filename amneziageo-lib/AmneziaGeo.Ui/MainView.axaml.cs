@@ -149,6 +149,7 @@ public sealed partial class MainView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         _topLevel = TopLevel.GetTopLevel(this);
+        SitePages.Host = _topLevel;
         if (_topLevel is not null)
         {
             _topLevel.BackRequested += OnBackRequested;
@@ -173,6 +174,11 @@ public sealed partial class MainView : UserControl
             _topLevel.RemoveHandler(KeyDownEvent, OnWatchedKey);
             _topLevel.RemoveHandler(PointerPressedEvent, OnWatchedPress);
             _topLevel.PropertyChanged -= OnWindowChanged;
+            if (ReferenceEquals(SitePages.Host, _topLevel))
+            {
+                SitePages.Host = null;
+            }
+
             _topLevel = null;
         }
 

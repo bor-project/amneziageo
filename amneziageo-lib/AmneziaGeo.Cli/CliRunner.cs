@@ -153,7 +153,7 @@ public static class CliRunner
               routing order <id|name> [<id|name>...] the order they are listed in
               routing settings <id|name>
               routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>]
-                                          [--all-udp on|off] [--global-proxy on|off]
+                                          [--all-udp on|off] [--global-proxy off]
 
             A rule is "<role>|<token>" where role is proxy, direct or block, and token is
             geosite:<category>, geoip:<country>, domain:<name>, app:<id>, or an address/CIDR.
@@ -183,7 +183,9 @@ public static class CliRunner
               survive-reboot (on|off, come back connected after a reboot), periodic-reconnect-enabled (on|off),
               periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds,
               dns-transport (auto|plain|doh, how the resolver behind the tunnel is asked),
-              local-doh (auto|off|on, how the system is made to reach the name proxy).
+              local-doh (auto|off|on, how the system is made to reach the name proxy),
+              split-route-limit (1000..100000, Android: entries a list holds in the route table before the relay
+              decides, 11000 by default).
 
             local proxy
               proxy show                        where it listens and what it asks for

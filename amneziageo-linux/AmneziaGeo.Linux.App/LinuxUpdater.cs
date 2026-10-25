@@ -24,6 +24,7 @@ internal sealed class LinuxUpdater : IDisposable
 
     private readonly HttpClient _http;
     private readonly AgentLog _log;
+    private string _reading = string.Empty;
     private readonly Func<CancellationToken, Task> _push;
     private readonly string _directory = Path.Combine(AgentPaths.Root, "updates");
     private readonly Lock _gate = new();
@@ -171,7 +172,7 @@ internal sealed class LinuxUpdater : IDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _log.Error("update", "the release manifest could not be read", ex);
+            _log.Failure("update", "the release manifest could not be read", NetworkFailure.Address(_reading), ex);
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateServerUnavailable"));
         }
         finally
@@ -371,24 +372,33 @@ internal sealed class LinuxUpdater : IDisposable
     {
         if (AgentBuild.AllowPrerelease && UpdateFeed.TryGitHubRepo(Url, out var owner, out var repo))
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, UpdateFeed.ReleasesUrl(owner, repo));
+            _reading = UpdateFeed.ReleasesUrl(owner, repo);
+            using var request = new HttpRequestMessage(HttpMethod.Get, _reading);
             request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
             request.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             if (response.IsSuccessStatusCode
                 && UpdateFeed.SelectManifestUrl(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)) is { } picked
-                && UpdateFeed.ParseManifest(await _http.GetStringAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)
+                && UpdateFeed.ParseManifest(await ReadAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)
             {
                 return (prerelease, new Uri(picked));
             }
         }
 
-        var json = await _http.GetStringAsync(Url, ct).ConfigureAwait(false);
+        var json = await ReadAsync(Url, ct).ConfigureAwait(false);
         return UpdateFeed.ParseManifest(json) is { } manifest ? (manifest, new Uri(Url)) : null;
+    }
+
+    // Reads one address and keeps it for the row of a failure.
+    private Task<string> ReadAsync(string url, CancellationToken ct)
+    {
+        _reading = url;
+        return _http.GetStringAsync(url, ct);
     }
 
     private async Task RunDownloadAsync(IReadOnlyList<PendingAsset> assets, string version, CancellationToken ct)
     {
+        var reading = string.Empty;
         try
         {
             System.IO.Directory.CreateDirectory(_directory);
@@ -397,6 +407,7 @@ internal sealed class LinuxUpdater : IDisposable
             {
                 var index = i;
                 var asset = assets[index];
+                reading = asset.Url;
                 if (await VerifyAsync(asset, ct).ConfigureAwait(false))
                 {
                     continue;
@@ -427,7 +438,7 @@ internal sealed class LinuxUpdater : IDisposable
         {
             Failed = true;
             Percent = 0;
-            _log.Error("update", $"download of {version} failed", ex);
+            _log.Failure("update", $"download of {version} failed", NetworkFailure.Address(reading), ex);
         }
         finally
         {

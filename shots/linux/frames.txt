@@ -5,8 +5,7 @@ config-add          меню «Добавить» в каталоге
 config-page         страница конфигурации
 config-websocket    рецепт Discord: «Прокси» (WebSocket) на странице конфигурации
 routing-cards       карточка списка маршрутизации
-routing-new         новый список: режим и шаблон
-routing-modes       новый список: выбор режима VPN для приложений
+routing-new         новый список: шаблон
 routing-editor      редактор правил
 routing-suggest     подсказки при вводе правила
 routing-category    раскрытая запись geosite:youtube

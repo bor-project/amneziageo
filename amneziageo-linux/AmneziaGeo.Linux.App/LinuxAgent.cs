@@ -2801,7 +2801,7 @@ internal sealed class LinuxAgent : IDisposable
         }
         catch (Exception ex)
         {
-            _log.Error("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", ex);
+            _log.Failure("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", NetworkFailure.Address(source.Url), ex);
             return GeoUpdateChecker.Status.Unknown;
         }
     }
@@ -3142,7 +3142,7 @@ internal sealed class LinuxAgent : IDisposable
         }
         else
         {
-            _log.Error("agent", message, ex);
+            _log.Failure("agent", message, string.Empty, ex);
         }
     }
 

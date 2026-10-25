@@ -59,6 +59,62 @@ public sealed class NetworkFailureTests
     }
 
     [Fact]
+    public void AnAndroidAbortedRead_ReadsAsAborted()
+    {
+        var error = new WebException("Software caused connection abort", new Java.Net.SocketException("Software caused connection abort"));
+
+        Assert.Equal("the connection was aborted", NetworkFailure.Describe(error));
+    }
+
+    [Fact]
+    public void AnAndroidFailureOfAnotherKind_KeepsItsFirstLine()
+    {
+        var error = new WebException("Connection closed by peer\nat the far end");
+
+        Assert.Equal("the connection failed: Connection closed by peer", NetworkFailure.Describe(error));
+    }
+
+    [Fact]
+    public void AJavaSocketFailureOnItsOwn_IsTheNetworks()
+    {
+        Assert.Equal("the connection failed: Broken pipe", NetworkFailure.Describe(new Java.Net.SocketException("Broken pipe")));
+    }
+
+    [Fact]
+    public void ARowOfANetworkFailure_NamesWhatFailedTheCauseAndTheAddress()
+    {
+        var row = NetworkFailure.Row("'zkeenip' could not be checked", new WebException("Software caused connection abort"), "https://github.com/x");
+
+        Assert.Equal("'zkeenip' could not be checked: the connection was aborted; https://github.com/x", row);
+    }
+
+    [Fact]
+    public void ARowOfAFailureOutsideTheNetwork_IsNone()
+    {
+        Assert.Null(NetworkFailure.Row("the manifest could not be read", new JsonException("not json"), "https://github.com/x"));
+    }
+
+    [Fact]
+    public void AnAddress_DropsTheUserTheQueryAndTheFragment()
+    {
+        var address = NetworkFailure.Address("https://user:secret@github.com/jameszeroX/zkeen-ip/releases/latest/download/zkeenip.dat?token=x#part");
+
+        Assert.Equal("https://github.com/jameszeroX/zkeen-ip/releases/latest/download/zkeenip.dat", address);
+    }
+
+    [Fact]
+    public void AnAddressWithASecretPath_KeepsTheHostAndThePort()
+    {
+        Assert.Equal("https://panel.example:8443", NetworkFailure.Address("https://panel.example:8443/sub/abcdef", path: false));
+    }
+
+    [Fact]
+    public void NoAddress_IsEmpty()
+    {
+        Assert.Equal(string.Empty, NetworkFailure.Address("not an address"));
+    }
+
+    [Fact]
     public void AFailureOutsideTheNetwork_IsLeftToTheStack()
     {
         Assert.Null(NetworkFailure.Describe(new JsonException("the manifest is not json")));

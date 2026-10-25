@@ -334,6 +334,9 @@
                                     IsEnabled="{Binding !Routing.HomeRoutingLocked}"
                                     ToolTip.Tip="{Binding Routing.HomeRoutingTip}" ToolTip.ShowOnDisabled="True" />
                     </Grid>
+                    <!-- Включённый список ведёт через VPN всё, кроме выбранного. -->
+                    <controls:UnsafeListNotice IsVisible="{Binding Routing.HomeRoutingUnsafe}"
+                                               Text="{l:Tr Main_UnsafeListHome}" />
                   </StackPanel>
                 </StackPanel>
               </ScrollViewer>

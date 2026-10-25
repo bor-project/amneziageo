@@ -25,7 +25,13 @@
                 IsHitTestVisible="{Binding Interactive}" ToolTip.Tip="{Binding Hint}">
           <Border Classes="cardchip cardtag" Classes.off="{Binding !On}" Classes.bad="{Binding Bad}"
                   Classes.busy="{Binding Busy}" Classes.warn="{Binding Warn}">
-            <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <Grid ColumnDefinitions="Auto,*">
+              <PathIcon Grid.Column="0" Data="{DynamicResource AgAlertGeometry}" Width="12" Height="12"
+                        Margin="0,0,4,0" VerticalAlignment="Center" IsVisible="{Binding Alert}"
+                        Foreground="{DynamicResource AgWarnBrush}" />
+              <TextBlock Grid.Column="1" Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" />
+            </Grid>
           </Border>
         </Button>
       </DataTemplate>

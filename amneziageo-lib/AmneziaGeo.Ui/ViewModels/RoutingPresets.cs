@@ -31,21 +31,24 @@ internal static class RoutingPresets
     public const string AdsRule = "geosite:category-ads-all";
 
     /// <summary>
-    /// Заготовленные списки недоступных сервисов.
-    /// </summary>
-    public static readonly string[] ClosedRules = RoutingDefaults.Closed;
-
-    /// <summary>
     /// Наборы в порядке показа: сверху точечный, снизу самый грубый.
     /// </summary>
     public static readonly RoutingPreset[] All =
     [
         new(
+            "Apps",
+            RoutingDefaults.UnavailableApps,
+            [],
+            false,
+            false,
+            false,
+            false),
+        new(
             "Closed",
             RoutingDefaults.Unavailable,
             [],
             false,
-            true,
+            false,
             false,
             false),
         new(
@@ -67,9 +70,9 @@ internal static class RoutingPresets
     ];
 
     /// <summary>
-    /// Наборы режима в порядке показа.
+    /// Наборы, предлагаемые при создании списка, в порядке показа.
     /// </summary>
-    public static IEnumerable<RoutingPreset> Of(bool full) => All.Where(preset => preset.UseGlobalProxy == full);
+    public static IEnumerable<RoutingPreset> Offered => All.Where(preset => !preset.UseGlobalProxy);
 
     /// <summary>
     /// Страна устройства, без запроса разрешений.

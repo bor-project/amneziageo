@@ -572,7 +572,7 @@
     <value>The list doesn't fit: only {0} of {1} Direct ranges go direct, the rest go through the tunnel.</value>
   </data>
   <data name="RoutingEditor_RelayNotice" xml:space="preserve">
-    <value>The list is over 10,000 entries: every app sees the VPN. Add an app the VPN gets in the way of to Direct.</value>
+    <value>Entries in the list: {0} (ranges: {1}, names: {2}, a name counts as 8), over the threshold of {3}: every app sees the VPN. Add an app the VPN gets in the way of to Direct.</value>
   </data>
   <data name="RoutingEditor_RelayNoticeUdp" xml:space="preserve">
     <value>All UDP through the tunnel is on: every app sees the VPN. Add an app the VPN gets in the way of to Direct.</value>
@@ -2089,6 +2089,12 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Preset_ClosedHint" xml:space="preserve">
     <value>The VPN carries sites from a ready list, everything else goes direct.</value>
   </data>
+  <data name="Preset_AppsName" xml:space="preserve">
+    <value>Unavailable apps</value>
+  </data>
+  <data name="Preset_AppsHint" xml:space="preserve">
+    <value>The VPN carries the apps from a ready list entirely, everything else goes direct.</value>
+  </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Everything but the selected region</value>
   </data>
@@ -2353,6 +2359,21 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Main_CardTagReadOnly" xml:space="preserve">
     <value>Read-only</value>
+  </data>
+  <data name="Main_CardTagUnsafe" xml:space="preserve">
+    <value>Unsafe</value>
+  </data>
+  <data name="Main_CardTagUnsafeHint" xml:space="preserve">
+    <value>The list gives the server away: delete it and create a new one</value>
+  </data>
+  <data name="Main_UnsafeListHome" xml:space="preserve">
+    <value>The list sends everything except the selected through the VPN and gives the server away. Delete it and create a new one.</value>
+  </data>
+  <data name="Main_UnsafeListNotice" xml:space="preserve">
+    <value>The Everything except selected mode is gone: apps check blocked sites through the tunnel and learn the server address. Delete this list and create a new one with the sites and apps you need.</value>
+  </data>
+  <data name="Main_UnsafeListMore" xml:space="preserve">
+    <value>Learn more</value>
   </data>
   <data name="Main_ServerListsOnlyOf" xml:space="preserve">
     <value>The server of {0} allows none but its own routing lists</value>

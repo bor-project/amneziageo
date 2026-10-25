@@ -232,6 +232,34 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private bool _relayKnown;
 
     /// <summary>
+    /// What the list weighs against the threshold of the route table: its ranges, and eight entries a name.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
+    private int _relayWeight;
+
+    /// <summary>
+    /// Ranges the list holds.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
+    private int _relayRanges;
+
+    /// <summary>
+    /// Names the list holds.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
+    private int _relayNames;
+
+    /// <summary>
+    /// Entries the route table carries before the relay decides.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
+    private int _relayThreshold;
+
+    /// <summary>
     /// True when the relay carries the list and every application is shown the vpn.
     /// </summary>
     public bool ShowRelayNotice => !GlobalProxyActive && (RouteRelayed || (RelayKnown && AllUdpActive));
@@ -239,7 +267,9 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     /// <summary>
     /// Why the relay carries the list.
     /// </summary>
-    public string RelayNotice => Loc.Instance.Get(RouteRelayed ? "RoutingEditor_RelayNotice" : "RoutingEditor_RelayNoticeUdp");
+    public string RelayNotice => RouteRelayed
+        ? Loc.Instance.Get("RoutingEditor_RelayNotice", RelayWeight, RelayRanges, RelayNames, RelayThreshold)
+        : Loc.Instance.Get("RoutingEditor_RelayNoticeUdp");
 
     /// <summary>
     /// Asks the agent what the current rules turn into and holds the answer.
@@ -314,12 +344,16 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         RouteTotal = answer.Total;
         RouteTrims = answer.Trims;
         RelayKnown = answer.Relay >= 0;
+        RelayWeight = answer.Weight;
+        RelayRanges = answer.Ranges;
+        RelayNames = answer.Names;
+        RelayThreshold = answer.Threshold;
         RouteRelayed = answer.Relay > 0;
     }
 
     // Reads what the agent answers with; a malformed ack reads as no ceiling. The relay is -1 where the agent
     // says nothing about it.
-    private static (int Routes, int Limit, bool Trims, int Kept, int Total, int Relay) ParseBudget(string message)
+    internal static (int Routes, int Limit, bool Trims, int Kept, int Total, int Relay, int Ranges, int Names, int Weight, int Threshold) ParseBudget(string message)
     {
         try
         {
@@ -331,13 +365,18 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             var kept = root.TryGetProperty("kept", out var held) && held.TryGetInt32(out var holding) ? holding : 0;
             var total = root.TryGetProperty("total", out var all) && all.TryGetInt32(out var whole) ? whole : 0;
             var relay = root.TryGetProperty("relay", out var stand) && stand.TryGetInt32(out var standing) ? standing : -1;
-            return (routes, limit, trims, kept, total, relay);
+            return (routes, limit, trims, kept, total, relay, WholeField(root, "ranges"), WholeField(root, "names"),
+                WholeField(root, "weight"), WholeField(root, "threshold"));
         }
         catch (JsonException)
         {
-            return (0, 0, false, 0, 0, -1);
+            return (0, 0, false, 0, 0, -1, 0, 0, 0, 0);
         }
     }
+
+    // A whole number of the answer; 0 where the agent says nothing about it.
+    private static int WholeField(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var field) && field.TryGetInt32(out var number) ? number : 0;
 
     /// <summary>
     /// The Proxy bucket: tunneled while the global proxy is off.

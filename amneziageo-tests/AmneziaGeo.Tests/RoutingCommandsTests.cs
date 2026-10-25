@@ -6,11 +6,16 @@ namespace AmneziaGeo.Tests;
 
 /// <summary>
 /// A routing list holds a token once: adding it in another role moves it to that role, and an edit that changes
-/// nothing is not saved, so the running tunnel is not handed the same rules again.
+/// nothing is not saved, so the running tunnel is not handed the same rules again. A list is not turned to carry
+/// everything but the picked; one made so keeps its mode and is turned off.
 /// </summary>
 [Collection("Output")]
 public sealed class RoutingCommandsTests : IDisposable
 {
+    // Traffic settings of a list that tunnels only what it names, and of one made to carry everything.
+    private const string Split = """{"exclusions":"","allUdp":false,"mode":"split","useGlobalProxy":false}""";
+    private const string Full = """{"exclusions":"","allUdp":false,"mode":"full","useGlobalProxy":true}""";
+
     private readonly BufferConsoleSink _console = new();
 
     /// <summary>
@@ -49,8 +54,38 @@ public sealed class RoutingCommandsTests : IDisposable
         Assert.DoesNotContain(link.Sent, sent => sent[0] == IpcContract.OpSaveRoutingList);
     }
 
-    // Answers one snapshot holding the list "main", hands back its rules and writes down what was sent.
-    private sealed class Link(string rules) : IAgentLink
+    [Fact]
+    public async Task TurningAListToCarryEverythingButThePicked_IsRefused()
+    {
+        var link = new Link(string.Empty);
+
+        Assert.Equal(Exit.Usage, await RoutingCommands.RunAsync(link, ["configure", "main", "--global-proxy", "on"]));
+
+        Assert.DoesNotContain(link.Sent, sent => sent[0] == IpcContract.OpSetRoutingSettings);
+    }
+
+    [Fact]
+    public async Task AListMadeToCarryEverything_KeepsItsModeThroughAnEdit()
+    {
+        var link = new Link(string.Empty, Full);
+
+        Assert.Equal(Exit.Ok, await RoutingCommands.RunAsync(link, ["configure", "main", "--all-udp", "on"]));
+
+        Assert.Equal(new[] { IpcContract.OpSetRoutingSettings, "6", string.Empty, "on", "full", "on" }, link.Sent[^1]);
+    }
+
+    [Fact]
+    public async Task AListMadeToCarryEverything_IsTurnedOff()
+    {
+        var link = new Link(string.Empty, Full);
+
+        Assert.Equal(Exit.Ok, await RoutingCommands.RunAsync(link, ["configure", "main", "--global-proxy", "off"]));
+
+        Assert.Equal(new[] { IpcContract.OpSetRoutingSettings, "6", string.Empty, "off", "split", "off" }, link.Sent[^1]);
+    }
+
+    // Answers one snapshot holding the list "main", hands back its rules and settings and writes down what was sent.
+    private sealed class Link(string rules, string settings = Split) : IAgentLink
     {
         /// <inheritdoc/>
         public event Action<StatusSnapshot>? SnapshotReceived
@@ -71,9 +106,12 @@ public sealed class RoutingCommandsTests : IDisposable
         public Task<IpcAck> SendAsync(string op, params string[] args)
         {
             Sent.Add([op, .. args]);
-            return Task.FromResult(op == IpcContract.OpGetRoutingList
-                ? new IpcAck(true, rules)
-                : new IpcAck(true, string.Empty));
+            return Task.FromResult(op switch
+            {
+                IpcContract.OpGetRoutingList => new IpcAck(true, rules),
+                IpcContract.OpGetRoutingSettings => new IpcAck(true, settings),
+                _ => new IpcAck(true, string.Empty),
+            });
         }
     }
 }

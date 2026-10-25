@@ -93,20 +93,19 @@ internal sealed class AndroidAgentLog : IDisposable
     public Func<string>? Context { get; set; }
 
     /// <summary>
-    /// Logs a failed request: a network failure as one error row naming its cause and the state of the network,
-    /// with the exception a level lower; any other failure as an error with the exception.
+    /// Logs a failed request: a network failure as one error row naming its cause, the address and the state of the
+    /// network; any other failure as an error with the exception.
     /// </summary>
-    public void Failure(string source, string message, Exception error)
+    public void Failure(string source, string message, string address, Exception error)
     {
-        var cause = AmneziaGeo.Ipc.NetworkFailure.Describe(error);
-        if (cause is null)
+        var row = AmneziaGeo.Ipc.NetworkFailure.Row(message, error, address);
+        if (row is null)
         {
             Error(source, message, error);
             return;
         }
 
-        Agent(5, source, $"{message}: {cause}; {Situation()}");
-        Agent(2, source, $"{message}{Environment.NewLine}{error}");
+        Agent(5, source, $"{row}; {Situation()}");
     }
 
     /// <summary>

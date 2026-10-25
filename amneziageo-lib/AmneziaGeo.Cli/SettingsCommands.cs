@@ -66,6 +66,11 @@ internal static class SettingsCommands
             values.Add((SettingKeys.OtherVpn, snapshot.OtherVpn));
         }
 
+        if (snapshot.SplitRouteLimit > 0)
+        {
+            values.Add((SettingKeys.SplitRouteLimit, snapshot.SplitRouteLimit.ToString(CultureInfo.InvariantCulture)));
+        }
+
         if (Output.Json)
         {
             Output.AsJson(values.ToDictionary(pair => pair.Key, pair => pair.Value));
@@ -183,6 +188,16 @@ internal static class SettingsCommands
                 }
 
                 value = ttl.ToString(CultureInfo.InvariantCulture);
+                return true;
+
+            case SettingKeys.SplitRouteLimit:
+                if (!SettingKeys.TryParseSplitRouteLimit(raw, out var limit))
+                {
+                    error = $"{key} takes whole entries between {SettingKeys.SplitRouteLimitMin} and {SettingKeys.SplitRouteLimitMax}";
+                    return false;
+                }
+
+                value = limit.ToString(CultureInfo.InvariantCulture);
                 return true;
 
             default:

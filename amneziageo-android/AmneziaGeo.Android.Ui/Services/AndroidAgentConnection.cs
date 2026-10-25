@@ -59,6 +59,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Leaves the start-up rush to the interface before the first geo check goes out.
     private const int GeoStartDelaySeconds = 5;
     private const int GeoTickSeconds = 60;
+
+    // The pause before a source a scheduled check did not reach is asked again, and how many times.
+    private const int GeoRecheckMinutes = 10;
+    private const int GeoRechecks = 3;
     private const int MinGeoIntervalHours = 1;
     private const int MaxGeoIntervalHours = 24 * 7;
 
@@ -175,11 +179,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _localInTunnel;
     private string _tunnelNotice = TunnelNoticeModes.Full;
     private int _routeTtl = 300;
+    private int _splitLimit = SplitBudget.DefaultLimit;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
     private bool _subscriptionAutoRefresh = true;
     private int _subscriptionIntervalHours = DefaultSubscriptionIntervalHours;
     private DateTimeOffset _geoCheckedAt;
+    private readonly GeoRecheck _geoRecheck = new(TimeSpan.FromMinutes(GeoRecheckMinutes), GeoRechecks);
     private readonly CancellationTokenSource _geoChecks = new();
     private bool _alwaysOn;
     private bool _alwaysOnLockdown;
@@ -1454,6 +1460,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RouteLog: _routeLog,
             TunnelNotice: _tunnelNotice,
             RouteTtlSeconds: _routeTtl,
+            SplitRouteLimit: _splitLimit,
             GeoAutoCheck: _geoAutoCheck,
             GeoCheckIntervalHours: _geoCheckIntervalHours,
             SubscriptionAutoRefresh: _subscriptionAutoRefresh,
@@ -1988,11 +1995,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             await Task.Delay(TimeSpan.FromSeconds(GeoStartDelaySeconds), ct).ConfigureAwait(false);
             while (!ct.IsCancellationRequested)
             {
-                if (_geoAutoCheck
-                    && DateTimeOffset.UtcNow - _geoCheckedAt >= TimeSpan.FromHours(_geoCheckIntervalHours)
-                    && OnFreeLink())
+                var now = DateTimeOffset.UtcNow;
+                var again = _geoRecheck.Due(now);
+                var whole = now - _geoCheckedAt >= TimeSpan.FromHours(_geoCheckIntervalHours);
+                if (_geoAutoCheck && (whole || again.Count > 0) && OnFreeLink())
                 {
-                    await RunGeoCheckAsync().ConfigureAwait(false);
+                    await RunGeoCheckAsync(whole ? null : again).ConfigureAwait(false);
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(GeoTickSeconds), ct).ConfigureAwait(false);
@@ -2010,21 +2018,32 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // Asks every source whether its file changed and downloads the ones that did.
-    private async Task RunGeoCheckAsync()
+    // Asks every source, or the ones named, whether its file changed and downloads the ones that did.
+    private async Task RunGeoCheckAsync(IReadOnlyList<string>? only)
     {
         await EnsureInitAsync().ConfigureAwait(false);
         var stale = new List<GeoSource>();
-        foreach (var source in _geoSources.ToList())
+        var missed = new List<string>();
+        foreach (var source in _geoSources.Where(one => only is null || only.Contains(one.Name)).ToList())
         {
-            if (await CheckOneSourceAsync(source).ConfigureAwait(false) == GeoUpdateChecker.Status.Available)
+            var status = await CheckOneSourceAsync(source).ConfigureAwait(false);
+            if (status == GeoUpdateChecker.Status.Available)
             {
                 stale.Add(source);
             }
+            else if (status == GeoUpdateChecker.Status.Unknown)
+            {
+                missed.Add(source.Name);
+            }
         }
 
-        _geoCheckedAt = DateTimeOffset.UtcNow;
-        Save();
+        var now = DateTimeOffset.UtcNow;
+        _geoRecheck.Took(missed, now, only is null);
+        if (only is null)
+        {
+            _geoCheckedAt = now;
+            Save();
+        }
         if (stale.Count == 0)
         {
             await RefreshGeoSourcesAsync().ConfigureAwait(false);
@@ -2355,9 +2374,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (relayable)
         {
             var listed = draft.Routes.Count + draft.DirectRoutes.Count + draft.BlockRoutes.Count;
-            return new IpcAck(true, $"{{\"limit\":0,\"trims\":0,\"relay\":{(SplitBudget.Fits(listed, names) ? "0" : "1")}"
+            return new IpcAck(true, $"{{\"limit\":0,\"trims\":0,\"relay\":{(SplitBudget.Fits(listed, names, _splitLimit) ? "0" : "1")}"
                 + $",\"ranges\":{listed.ToString(CultureInfo.InvariantCulture)}"
-                + $",\"names\":{names.ToString(CultureInfo.InvariantCulture)}}}");
+                + $",\"names\":{names.ToString(CultureInfo.InvariantCulture)}"
+                + $",\"weight\":{SplitBudget.Weight(listed, names).ToString(CultureInfo.InvariantCulture)}"
+                + $",\"threshold\":{_splitLimit.ToString(CultureInfo.InvariantCulture)}}}");
         }
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
         // The tun keeps the direct ranges that do not fit and leaves out the widest, so a list over the budget still
@@ -3127,7 +3148,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
         else
         {
-            _log.Failure("agent", message, ex);
+            _log.Failure("agent", message, string.Empty, ex);
         }
     }
 
@@ -3260,10 +3281,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Whether the named applications are added to the rules by the relay rather than held as the allow list of the
     // tunnel: the relay stands only where the list outgrew the route table or carries every datagram, and only on
     // an android that names the owner of a connection.
-    private static bool Attributed(int routes, int names, RoutingSettings? settings) =>
-        PerAppSupported && SplitBudget.Relayed(routes, names, settings is { AllUdp: true, UseGlobalProxy: false });
+    private bool Attributed(int routes, int names, RoutingSettings? settings) =>
+        PerAppSupported && SplitBudget.Relayed(routes, names, settings is { AllUdp: true, UseGlobalProxy: false }, _splitLimit);
 
-    private static bool Attributed(RoutingList list, RoutingSettings? settings) =>
+    private bool Attributed(RoutingList list, RoutingSettings? settings) =>
         Attributed(list.Routes.Count + list.DirectRoutes.Count + list.BlockRoutes.Count,
             list.Domains.Count + list.DirectDomains.Count + list.BlockDomains.Count, settings);
 
@@ -3344,6 +3365,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             TunnelApps = perApp && attributed ? apps : [],
             UseRouter = useRouter,
+            SplitLimit = _splitLimit,
         };
 
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
@@ -3504,6 +3526,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _routeTtl = seconds;
             }
 
+            if (document.RootElement.TryGetProperty("SplitLimit", out var storedSplit)
+                && storedSplit.ValueKind == JsonValueKind.Number
+                && SettingKeys.TryParseSplitRouteLimit(storedSplit.GetRawText(), out var storedLimit))
+            {
+                _splitLimit = storedLimit;
+            }
+
             if (document.RootElement.TryGetProperty("GeoAutoCheck", out var geoAuto)
                 && geoAuto.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
@@ -3633,6 +3662,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"LocalInTunnel\":").Append(_localInTunnel ? "true" : "false");
             builder.Append(",\"TunnelNotice\":").Append(JsonSerializer.Serialize(_tunnelNotice));
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
+            builder.Append(",\"SplitLimit\":").Append(_splitLimit);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
             builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
             builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
@@ -3840,7 +3870,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
         catch (Exception ex)
         {
-            _log.Failure("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", ex);
+            _log.Failure("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", NetworkFailure.Address(source.Url), ex);
             return GeoUpdateChecker.Status.Unknown;
         }
     }
@@ -4650,7 +4680,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         return PerAppSupported
-            && SplitBudget.Relayed(summary.RouteCount, summary.DomainCount, summary is { AllUdp: true, UseGlobalProxy: false });
+            && SplitBudget.Relayed(summary.RouteCount, summary.DomainCount, summary is { AllUdp: true, UseGlobalProxy: false }, _splitLimit);
     }
 
     // The app set from the selected routing list's app:pkg rules, as the allow list the tunnel falls back to where
@@ -4670,7 +4700,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // What the app rules of a list do here: they add to the rules where the relay stands, and hold the tunnel to
     // themselves where it does not.
-    private static AppScope AppMode(RoutingList? list, RoutingSettings? settings, bool useRouter)
+    private AppScope AppMode(RoutingList? list, RoutingSettings? settings, bool useRouter)
     {
         if (!useRouter || settings is { UseGlobalProxy: true } || AppPackages(list?.Apps).Length == 0)
         {
@@ -4809,6 +4839,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     VpnBridge.RequestRouteTtl(Application.Context);
                 }
 
+                Save();
+                PushSnapshot();
+                return Ok();
+            case SettingKeys.SplitRouteLimit:
+                if (!SettingKeys.TryParseSplitRouteLimit(args[1], out var splitThreshold))
+                {
+                    return Fail();
+                }
+
+                _splitLimit = splitThreshold;
+                _restartRequired = true;
                 Save();
                 PushSnapshot();
                 return Ok();

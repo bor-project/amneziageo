@@ -572,7 +572,7 @@
     <value>Список не помещается целиком: напрямую пойдут только {0} из {1} диапазонов «Напрямую», остальные пойдут через туннель.</value>
   </data>
   <data name="RoutingEditor_RelayNotice" xml:space="preserve">
-    <value>Список больше 10 000 записей: VPN видят все приложения. Приложение, которому VPN мешает, добавьте в «Напрямую».</value>
+    <value>Записей в списке: {0} (диапазонов: {1}, имён: {2}, имя идёт за 8) - больше порога {3}: VPN видят все приложения. Приложение, которому VPN мешает, добавьте в «Напрямую».</value>
   </data>
   <data name="RoutingEditor_RelayNoticeUdp" xml:space="preserve">
     <value>Включён «Весь UDP через туннель»: VPN видят все приложения. Приложение, которому VPN мешает, добавьте в «Напрямую».</value>
@@ -2089,6 +2089,12 @@
   <data name="Preset_ClosedHint" xml:space="preserve">
     <value>Через VPN идут сайты из готового списка, остальное идёт напрямую.</value>
   </data>
+  <data name="Preset_AppsName" xml:space="preserve">
+    <value>Недоступные приложения</value>
+  </data>
+  <data name="Preset_AppsHint" xml:space="preserve">
+    <value>Приложения из готового списка идут через VPN целиком, остальное идёт напрямую.</value>
+  </data>
   <data name="Preset_AllButLocalName" xml:space="preserve">
     <value>Всё, кроме выбранного региона</value>
   </data>
@@ -2353,6 +2359,21 @@
   </data>
   <data name="Main_CardTagReadOnly" xml:space="preserve">
     <value>Только чтение</value>
+  </data>
+  <data name="Main_CardTagUnsafe" xml:space="preserve">
+    <value>Небезопасен</value>
+  </data>
+  <data name="Main_CardTagUnsafeHint" xml:space="preserve">
+    <value>Список раскрывает сервер: удалите его и создайте новый</value>
+  </data>
+  <data name="Main_UnsafeListHome" xml:space="preserve">
+    <value>Список ведёт через VPN всё, кроме выбранного, и раскрывает сервер. Удалите его и создайте новый.</value>
+  </data>
+  <data name="Main_UnsafeListNotice" xml:space="preserve">
+    <value>Режим «Всё, кроме выбранного» убран: российские приложения проверяют через туннель заблокированные сайты и узнают адрес сервера. Удалите этот список и создайте новый с нужными сайтами и приложениями.</value>
+  </data>
+  <data name="Main_UnsafeListMore" xml:space="preserve">
+    <value>Подробнее</value>
   </data>
   <data name="Main_ServerListsOnlyOf" xml:space="preserve">
     <value>Сервер конфигурации {0} разрешает только свои списки маршрутизации</value>

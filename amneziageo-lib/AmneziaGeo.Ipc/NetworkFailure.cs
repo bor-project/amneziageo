@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text;
@@ -26,7 +27,7 @@ public static partial class NetworkFailure
                 return cause;
             }
 
-            connection |= one is HttpRequestException or IOException or SocketException;
+            connection |= one is HttpRequestException or IOException or SocketException or WebException || Java(one);
         }
 
         if (error is HttpRequestException { StatusCode: { } status })
@@ -89,8 +90,44 @@ public static partial class NetworkFailure
             return "the connection was reset";
         }
 
+        if (message.Contains("ECONNABORTED", StringComparison.Ordinal) || message.Contains("connection abort", StringComparison.OrdinalIgnoreCase))
+        {
+            return "the connection was aborted";
+        }
+
         return null;
     }
+
+    /// <summary>
+    /// The row a failed request is logged with: what failed, the cause the network gave it and the address; null when
+    /// the network is not to blame and the stack says more.
+    /// </summary>
+    public static string? Row(string message, Exception error, string address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+
+        return Describe(error) is not { } cause ? null : address.Length == 0 ? $"{message}: {cause}" : $"{message}: {cause}; {address}";
+    }
+
+    /// <summary>
+    /// The address of a request for a log row: scheme, host, port and path, or without the path when it holds a
+    /// secret; never the user, the query or the fragment.
+    /// </summary>
+    public static string Address(string? url, bool path = true)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return string.Empty;
+        }
+
+        return uri.GetComponents(path ? UriComponents.SchemeAndServer | UriComponents.Path : UriComponents.SchemeAndServer, UriFormat.UriEscaped);
+    }
+
+    // Whether a link of the chain is a failure of the Java network stack the Android handler carries out.
+    private static bool Java(Exception one) =>
+        one.GetType().Namespace is { } space
+        && (space.StartsWith("Java.Net", StringComparison.Ordinal) || space.StartsWith("Java.IO", StringComparison.Ordinal)
+            || space.StartsWith("Javax.Net", StringComparison.Ordinal));
 
     private static string Socket(SocketError code)
     {

@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -49,7 +50,6 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     // Whether the list carries everything instead of its own rules.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ModeText))]
     [NotifyPropertyChangedFor(nameof(ShowProxyRules))]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useGlobalProxy;
@@ -106,11 +106,6 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string ActiveTip => Locked
         ? Loc.Instance.Get("Main_ServerListsOnlyOf", LockedBy)
         : Loc.Instance.Get("Main_CardActiveFlag");
-
-    /// <summary>
-    /// Режим списка строкой под его именем.
-    /// </summary>
-    public string ModeText => Loc.Instance.Get(UseGlobalProxy ? "Main_VpnModeFull" : "Main_VpnModeSelected");
 
     /// <summary>
     /// Стоит ли в строке состава счётчик правил туннеля.
@@ -175,14 +170,21 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public static bool AllUdpSupported => !OperatingSystem.IsAndroid() || OperatingSystem.IsAndroidVersionAtLeast(29);
 
     /// <summary>
-    /// Плашки карточки: только чтение у списка, который сервер не даёт править, обновление, когда сервер отдал
-    /// новую версию, и весь UDP у списка, который несёт только выбранное.
+    /// Плашки карточки: «Небезопасен» у списка, который ведёт через VPN всё, кроме выбранного, только чтение у
+    /// списка, который сервер не даёт править, обновление, когда сервер отдал новую версию, и весь UDP у списка,
+    /// который несёт только выбранное.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
         get
         {
             var wanted = new List<CardTag>();
+            if (UseGlobalProxy)
+            {
+                wanted.Add(new(Loc.Instance.Get("Main_CardTagUnsafe"), true, SitePages.FullModeCommand,
+                    hint: Loc.Instance.Get("Main_CardTagUnsafeHint"), warn: true, alert: true));
+            }
+
             if (ReadOnly)
             {
                 wanted.Add(new(Loc.Instance.Get("Main_CardTagReadOnly"), false, plain: true));
@@ -240,7 +242,6 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Detail));
-        OnPropertyChanged(nameof(ModeText));
         OnPropertyChanged(nameof(ProxyRulesText));
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));

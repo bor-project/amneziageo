@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Android.Engine;
 
@@ -26,6 +27,11 @@ public sealed record GeoRoutingPlan(
     /// Whether every connection gets its own verdict; off leaves every destination to the route table.
     /// </summary>
     public bool UseRouter { get; init; } = true;
+
+    /// <summary>
+    /// Entries a list that carries only what it names holds in the route table before the relay decides.
+    /// </summary>
+    public int SplitLimit { get; init; } = SplitBudget.DefaultLimit;
 
     /// <summary>
     /// Everything through the tunnel, nothing listed.

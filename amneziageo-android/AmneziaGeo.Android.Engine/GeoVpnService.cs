@@ -1672,15 +1672,18 @@ public sealed class GeoVpnService : VpnService
         if (!plan.FullTunnel)
         {
             var listed = plan.ProxyRoutes.Count + plan.DirectRoutes.Count + plan.BlockRoutes.Count;
-            if (SplitBudget.Fits(listed, names))
+            var weight = SplitBudget.Weight(listed, names);
+            if (SplitBudget.Fits(listed, names, plan.SplitLimit))
             {
-                Report($"{listed} range(s) and {names} name(s) fit the {SplitBudget.Limit} entries the route table "
+                Report($"the list weighs {weight} entries ({listed} range(s) and {names} name(s) at "
+                    + $"{SplitBudget.AddressesPerName} each), within the threshold of {plan.SplitLimit} the route table "
                     + "carries on its own, so the relay stays down and nothing crosses it");
                 return false;
             }
 
-            Report($"{listed} range(s) and {names} name(s) are more than the {SplitBudget.Limit} entries the route "
-                + "table carries on its own, so the relay decides the destinations instead");
+            Note("tunnel", $"the list weighs {weight} entries ({listed} range(s) and {names} name(s) at "
+                + $"{SplitBudget.AddressesPerName} each), more than the threshold of {plan.SplitLimit} the route table "
+                + $"carries on its own ({SettingKeys.SplitRouteLimit}), so the relay decides the destinations instead");
             return true;
         }
 

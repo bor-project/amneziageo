@@ -361,10 +361,10 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool ShowPresetRegion => SelectedTemplate?.Preset is { NeedsCountry: true };
 
     /// <summary>
-    /// Стоит ли у заголовка раздела бейдж с режимом списка.
+    /// Стоят ли у открытого списка метка «Небезопасен» и плашка: список ведёт через VPN всё, кроме выбранного.
     /// </summary>
-    public bool ShowListMode => RoutingSettings is not null && !SectionLoading
-        && (IsSectionImport ? IsImportDraft : EditRoutingList is not null);
+    public bool ShowListUnsafe => !SectionLoading
+        && (IsSectionImport ? IsImportDraft && RoutingSettings is { UseGlobalProxy: true } : EditRoutingList is { UseGlobalProxy: true });
 
     /// <summary>
     /// Стоит ли у заголовка раздела плашка новой версии открытого списка.
@@ -544,7 +544,7 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportDraft));
         OnPropertyChanged(nameof(ShowImportMethods));
         OnPropertyChanged(nameof(ShowImportFrame));
-        OnPropertyChanged(nameof(ShowListMode));
+        OnPropertyChanged(nameof(ShowListUnsafe));
         OnPropertyChanged(nameof(ShowListUpdate));
         OnPropertyChanged(nameof(ShowListReadOnly));
         OnPropertyChanged(nameof(ShowImportPresets));
@@ -722,6 +722,11 @@ internal partial class RoutingViewModel : ViewModelBase
     /// Почему тумблер открытого списка стоит на месте; пусто, пока он свободен.
     /// </summary>
     public string? OpenListLockTip => EditRoutingList is { Locked: true } open ? open.ActiveTip : null;
+
+    /// <summary>
+    /// Стоит ли под строкой главного экрана плашка: включённый список ведёт через VPN всё, кроме выбранного.
+    /// </summary>
+    public bool HomeRoutingUnsafe => CatalogueRow(SelectedRoutingListId) is { UseGlobalProxy: true };
 
     /// <summary>
     /// Имя списка в строке главного экрана.
@@ -1026,6 +1031,7 @@ internal partial class RoutingViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HomeRoutingOn));
         OnPropertyChanged(nameof(HomeRoutingList));
+        OnPropertyChanged(nameof(HomeRoutingUnsafe));
         OnPropertyChanged(nameof(HomeRoutingLocked));
         OnPropertyChanged(nameof(HomeRoutingTip));
     }
@@ -1177,7 +1183,7 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         SyncTrafficFlags();
-        OnPropertyChanged(nameof(ShowListMode));
+        OnPropertyChanged(nameof(ShowListUnsafe));
         OnPropertyChanged(nameof(ShowAllUdp));
         RefreshEditBar();
     }
@@ -1189,15 +1195,8 @@ internal partial class RoutingViewModel : ViewModelBase
         SyncTrafficFlags();
         if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.UseGlobalProxy))
         {
+            OnPropertyChanged(nameof(ShowListUnsafe));
             OnPropertyChanged(nameof(ShowAllUdp));
-            if (IsCreatingSectionRouting)
-            {
-                RebuildTemplates();
-                if (RoutingEditor is { GlobalProxyActive: false } draft)
-                {
-                    draft.SelectedRole = "proxy";
-                }
-            }
         }
 
         RefreshEditBar();
@@ -1396,6 +1395,7 @@ internal partial class RoutingViewModel : ViewModelBase
             ShowReadOnly(open, editor, reread);
         }
 
+        OnPropertyChanged(nameof(ShowListUnsafe));
         OnPropertyChanged(nameof(ShowListUpdate));
         OnPropertyChanged(nameof(ShowListReadOnly));
         OnPropertyChanged(nameof(ShowDeleteCard));
@@ -1553,16 +1553,15 @@ internal partial class RoutingViewModel : ViewModelBase
         BeginPresetImport();
     }
 
-    // Собирает шаблоны под режим черновика: наборы режима, свои правила, импорт; выбор остаётся на той же строке.
+    // Собирает шаблоны: наборы, свои правила, импорт; выбор остаётся на той же строке.
     private void RebuildTemplates()
     {
-        var full = RoutingSettings?.UseGlobalProxy ?? false;
         var picked = SelectedTemplate;
         _fillingTemplates = true;
         try
         {
             Templates.Clear();
-            foreach (var preset in RoutingPresets.Of(full))
+            foreach (var preset in RoutingPresets.Offered)
             {
                 Templates.Add(new RoutingTemplateItemViewModel(preset));
             }

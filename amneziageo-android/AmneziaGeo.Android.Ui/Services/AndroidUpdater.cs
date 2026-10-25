@@ -25,6 +25,7 @@ internal sealed class AndroidUpdater : IDisposable
 
     private readonly HttpClient _http;
     private readonly AndroidAgentLog _log;
+    private string _reading = string.Empty;
     private readonly Action _push;
     private readonly string _installed;
     private readonly string _directory;
@@ -158,7 +159,7 @@ internal sealed class AndroidUpdater : IDisposable
         }
         catch (Exception ex) when (ex is not System.OperationCanceledException)
         {
-            _log.Failure("update", "the release manifest could not be read", ex);
+            _log.Failure("update", "the release manifest could not be read", NetworkFailure.Address(_reading), ex);
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateServerUnavailable"));
         }
         finally
@@ -346,20 +347,28 @@ internal sealed class AndroidUpdater : IDisposable
     {
         if (AllowPrerelease && UpdateFeed.TryGitHubRepo(Url, out var owner, out var repo))
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, UpdateFeed.ReleasesUrl(owner, repo));
+            _reading = UpdateFeed.ReleasesUrl(owner, repo);
+            using var request = new HttpRequestMessage(HttpMethod.Get, _reading);
             request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
             request.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             if (response.IsSuccessStatusCode
                 && UpdateFeed.SelectManifestUrl(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)) is { } picked
-                && UpdateFeed.ParseManifest(await _http.GetStringAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)
+                && UpdateFeed.ParseManifest(await ReadAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)
             {
                 return (prerelease, new Uri(picked));
             }
         }
 
-        var json = await _http.GetStringAsync(Url, ct).ConfigureAwait(false);
+        var json = await ReadAsync(Url, ct).ConfigureAwait(false);
         return UpdateFeed.ParseManifest(json) is { } manifest ? (manifest, new Uri(Url)) : null;
+    }
+
+    // Reads one address and keeps it for the row of a failure.
+    private Task<string> ReadAsync(string url, CancellationToken ct)
+    {
+        _reading = url;
+        return _http.GetStringAsync(url, ct);
     }
 
     private async Task RunDownloadAsync(string url, string name, string version, string sha, CancellationToken ct)
@@ -395,7 +404,7 @@ internal sealed class AndroidUpdater : IDisposable
             Failed = true;
             Percent = 0;
             Remove(path);
-            _log.Failure("update", $"download of {version} failed", ex);
+            _log.Failure("update", $"download of {version} failed", NetworkFailure.Address(url), ex);
         }
         finally
         {

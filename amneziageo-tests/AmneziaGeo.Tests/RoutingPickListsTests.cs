@@ -59,7 +59,7 @@ public sealed class RoutingPickListsTests
         Assert.True(routing.ShowImportPresets);
         Assert.False(routing.ShowImportEditor);
         Assert.True(routing.IsImportPresets);
-        Assert.Equal("Closed", routing.SelectedTemplate?.Preset?.Key);
+        Assert.Equal("Apps", routing.SelectedTemplate?.Preset?.Key);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class RoutingPickListsTests
         Assert.True(routing.IsImportDraft);
         Assert.True(routing.ShowImportEditor);
         Assert.False(routing.ShowImportMethods);
-        Assert.Contains("geosite:ru-blocked", routing.RoutingEditor!.ProxyRules);
+        Assert.Contains("app:YouTube", routing.RoutingEditor!.ProxyRules);
     }
 
     [Fact]

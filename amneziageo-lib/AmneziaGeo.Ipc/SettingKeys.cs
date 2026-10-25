@@ -14,6 +14,21 @@ public static class SettingKeys
     public const string RouteTtl = "route-ttl-seconds";
 
     /// <summary>
+    /// Entries a list that carries only what it names holds in the route table of Android before the relay decides.
+    /// </summary>
+    public const string SplitRouteLimit = "split-route-limit";
+
+    /// <summary>
+    /// Lowest threshold of the route table, in entries.
+    /// </summary>
+    public const int SplitRouteLimitMin = 1_000;
+
+    /// <summary>
+    /// Highest threshold of the route table, in entries.
+    /// </summary>
+    public const int SplitRouteLimitMax = 100_000;
+
+    /// <summary>
     /// Whether several tunnels may be up at once.
     /// </summary>
     public const string MultiServer = "multi-server";
@@ -160,6 +175,15 @@ public static class SettingKeys
     public static bool TryParseRouteTtl(string? text, out int seconds)
     {
         return int.TryParse(text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out seconds);
+    }
+
+    /// <summary>
+    /// Reads a threshold of the route table: whole entries between 1000 and 100000.
+    /// </summary>
+    public static bool TryParseSplitRouteLimit(string? text, out int limit)
+    {
+        return int.TryParse(text?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out limit)
+            && limit is >= SplitRouteLimitMin and <= SplitRouteLimitMax;
     }
 
     /// <summary>

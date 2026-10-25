@@ -200,4 +200,10 @@ public sealed record StatusSnapshot(
     /// The programs the device found for each app:&lt;name&gt; of the routing lists, as app rule values; a name the
     /// device was never searched for is missing, one it found nothing for stands for none.
     /// </summary>
-    IReadOnlyDictionary<string, IReadOnlyList<string>>? FoundApps = null);
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? FoundApps = null,
+
+    /// <summary>
+    /// Entries a list that carries only what it names holds in the route table before the relay decides; 0 where the
+    /// platform takes no such threshold.
+    /// </summary>
+    int SplitRouteLimit = 0);

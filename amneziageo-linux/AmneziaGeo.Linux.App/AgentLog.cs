@@ -82,6 +82,22 @@ internal sealed class AgentLog : IDisposable
     }
 
     /// <summary>
+    /// Logs a failed request: a network failure as one error row naming its cause and the address; any other failure
+    /// as an error with the exception.
+    /// </summary>
+    public void Failure(string source, string message, string address, Exception error)
+    {
+        var row = AmneziaGeo.Ipc.NetworkFailure.Row(message, error, address);
+        if (row is null)
+        {
+            Error(source, message, error);
+            return;
+        }
+
+        Agent(5, source, row);
+    }
+
+    /// <summary>
     /// Stores one row whatever the capture floor is: a switchover is rare and is read before anything else.
     /// </summary>
     public void Note(string source, string message)

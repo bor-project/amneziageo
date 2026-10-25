@@ -81,7 +81,11 @@ public sealed record ConfigEntry(
     // Whether its server allows none but its own routing lists, which keeps the config on the routing list.
     bool ServerListsOnly = false,
     // Whether a server of ours answered for the config.
-    bool ServerOurs = false);
+    bool ServerOurs = false,
+    // Why the server of the config keeps the subscription of the config off, and what the fault is about; empty while
+    // it does not.
+    string SubscriptionFault = "",
+    string SubscriptionDetail = "");
 
 /// <summary>
 /// Terms both sides read the handshake age by.

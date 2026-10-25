@@ -8,6 +8,9 @@ namespace AmneziaGeo.Decl;
 /// <param name="Offered">The mark the server of a config named last, empty when it named none.</param>
 /// <param name="Pin">The SHA-256 of the certificate the server named for the address, empty for none.</param>
 /// <param name="FromHello">Whether the server of a config named the address, not the user.</param>
+/// <param name="Fault">Why the server of a config keeps the subscription off: a certificate not every client takes;
+/// empty while it does not.</param>
+/// <param name="FaultDetail">The date, the name or the authority the fault is about.</param>
 public sealed record Subscription(
     string Name,
     string Url,
@@ -22,7 +25,9 @@ public sealed record Subscription(
     string Revision = "",
     string Offered = "",
     string Pin = "",
-    bool FromHello = false)
+    bool FromHello = false,
+    string Fault = "",
+    string FaultDetail = "")
 {
     /// <summary>
     /// Whether the server holds another revision than the one read last.

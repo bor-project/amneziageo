@@ -158,6 +158,22 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AServerThatKeepsItsSubscriptionOff_SaysWhyOnTheSubscriptionUntilItHandsItOutAgain()
+    {
+        var replies = new Queue<HelloReply>([new HelloReply(Off("r1"), true), new HelloReply(Named("r1"), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+
+        var offer = await offers.AskAsync("office", Text, CancellationToken.None);
+        var off = Assert.Single(await _store.ListSubscriptionsAsync());
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        var back = Assert.Single(await _store.ListSubscriptionsAsync());
+
+        Assert.Equal(("certificate-expired", "2026-10-20"), (offer.Subscription()!.Fault, offer.Subscription()!.Detail));
+        Assert.Equal(("certificate-expired", "2026-10-20", string.Empty), (off.Fault, off.FaultDetail, off.Pin));
+        Assert.Equal((string.Empty, string.Empty, "ab12"), (back.Fault, back.FaultDetail, back.Pin));
+    }
+
+    [Fact]
     public async Task AnotherRevisionOfTheServer_MarksTheSubscriptionStale()
     {
         var replies = new Queue<HelloReply>([new HelloReply(Named("r1"), true), new HelloReply(Named("r2"), true)]);
@@ -507,6 +523,13 @@ public sealed class ServerOffersTests : IAsyncLifetime
         const string answer = """{"server":"amneziageo","version":"1","client":"c","features":{"subscription":{"url":"URL","revision":"REVISION","pin":"ab12"}}}""";
 
         return ServerOffer.Parse(answer.Replace("URL", url, StringComparison.Ordinal).Replace("REVISION", revision, StringComparison.Ordinal));
+    }
+
+    private static ServerOffer Off(string revision)
+    {
+        const string answer = """{"server":"amneziageo","version":"1","client":"c","features":{"subscription":{"url":"https://vpn.example:51820/sub/abc","revision":"REVISION","pin":"","fault":"certificate-expired","detail":"2026-10-20"}}}""";
+
+        return ServerOffer.Parse(answer.Replace("REVISION", revision, StringComparison.Ordinal));
     }
 
     private static ServerOffer Offer(int port, DateTimeOffset expires)

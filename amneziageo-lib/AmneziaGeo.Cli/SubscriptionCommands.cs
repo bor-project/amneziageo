@@ -66,7 +66,7 @@ internal static class SubscriptionCommands
                 Traffic(entry),
                 Moment(entry.ExpiresAt),
                 Moment(entry.CheckedAt),
-                entry.LastError.Length > 0 ? entry.LastError : entry.Stale ? "update" : "ok",
+                State(entry),
                 entry.Url,
             ])
             .ToList();
@@ -86,6 +86,15 @@ internal static class SubscriptionCommands
             return [];
         }
     }
+
+    // The state of a subscription in a word: kept off by its server, not read, waiting for an update, or fine.
+    private static string State(SubscriptionEntry entry) => entry switch
+    {
+        { Fault.Length: > 0 } => ("off: " + entry.Fault + " " + entry.FaultDetail).TrimEnd(),
+        { LastError.Length: > 0 } => entry.LastError,
+        { Stale: true } => "update",
+        _ => "ok",
+    };
 
     private static string Traffic(SubscriptionEntry entry)
     {

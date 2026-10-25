@@ -131,6 +131,13 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
     /// </summary>
     public Task<SubscriptionResult> RefreshAsync(Subscription subscription, CancellationToken ct)
     {
+        // Подписку, которую сервер держит выключенной, не читаем: ответа не будет.
+        if (subscription.Fault.Length > 0)
+        {
+            var reason = $"the server keeps the subscription off: {subscription.Fault} {subscription.FaultDetail}".TrimEnd();
+            return Task.FromResult(new SubscriptionResult(0, 0, 0, [], reason));
+        }
+
         return MergeAsync(subscription, null, false, ct);
     }
 

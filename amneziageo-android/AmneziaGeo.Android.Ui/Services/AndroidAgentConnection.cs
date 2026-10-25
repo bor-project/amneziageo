@@ -1665,6 +1665,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var shown = bound ? _linkNow : LinkNow.Unknown;
         var offer = _offered.GetValueOrDefault(name);
         var vpnDns = VpnDns.Showing(_dns.GetValueOrDefault(name), offer?.Dns(), WgConfigEditor.GetDns(config));
+        var offered = member is null ? null : offer?.Subscription();
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
             Mtu: transport?.Mtu ?? 0,
@@ -1703,7 +1704,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             DefaultDns: vpnDns.Default,
             DefaultDnsNetwork: vpnDns.DefaultNetwork,
             ServerListsOnly: offer?.PresetsOnly == true,
-            ServerOurs: offer?.Ours == true);
+            ServerOurs: offer?.Ours == true,
+            SubscriptionFault: offered?.Fault ?? string.Empty,
+            SubscriptionDetail: offered?.Detail ?? string.Empty);
     }
 
     private string StatusFor(string target)

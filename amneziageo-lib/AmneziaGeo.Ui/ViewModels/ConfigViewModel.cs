@@ -821,6 +821,8 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.Subscription = entry.Subscription;
             existing.SubscriptionGone = entry.SubscriptionGone;
             existing.SubscriptionStale = entry.SubscriptionStale;
+            existing.SubscriptionFault = entry.SubscriptionFault;
+            existing.SubscriptionFaultDetail = entry.SubscriptionDetail;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
@@ -1001,6 +1003,8 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.CheckedAt = entry.CheckedAt;
             existing.LastError = entry.LastError;
             existing.Offered = entry.Offered;
+            existing.Fault = entry.Fault;
+            existing.FaultDetail = entry.FaultDetail;
         }
 
         _subscriptionNames = [.. entries.Select(entry => entry.Name)];

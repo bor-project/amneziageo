@@ -20,4 +20,7 @@ public sealed record SubscriptionEntry(
     // Whether the server holds another revision than the one read last.
     bool Stale = false,
     // The revision the server named last, empty when it named none.
-    string Offered = "");
+    string Offered = "",
+    // Why the server keeps the subscription off, and what the fault is about; empty while it does not.
+    string Fault = "",
+    string FaultDetail = "");

@@ -2486,6 +2486,39 @@
   <data name="Main_SubscriptionInsecure" xml:space="preserve">
     <value>Адрес без шифрования: ключи из подписки передаются открытым текстом, их может перехватить кто угодно.</value>
   </data>
+  <data name="Main_SubscriptionOffTitle" xml:space="preserve">
+    <value>Подписка выключена</value>
+  </data>
+  <data name="Main_SubscriptionOffText" xml:space="preserve">
+    <value>Подписка этого сервера выключена: {0}. Конфигурация работает, обновлений из подписки не будет.</value>
+  </data>
+  <data name="Main_SubscriptionOffLine" xml:space="preserve">
+    <value>Подписка сервера выключена: {0}</value>
+  </data>
+  <data name="Main_CertificateMissing" xml:space="preserve">
+    <value>у сервера нет сертификата</value>
+  </data>
+  <data name="Main_CertificateUnreadable" xml:space="preserve">
+    <value>файл сертификата сервера не читается</value>
+  </data>
+  <data name="Main_CertificateExpired" xml:space="preserve">
+    <value>сертификат сервера истёк {0}</value>
+  </data>
+  <data name="Main_CertificateName" xml:space="preserve">
+    <value>сертификат сервера выдан не на {0}</value>
+  </data>
+  <data name="Main_CertificateSelfSigned" xml:space="preserve">
+    <value>сертификат сервера подписан сам собой</value>
+  </data>
+  <data name="Main_CertificateNoIntermediate" xml:space="preserve">
+    <value>сервер не отдаёт сертификат {0}, который выдал его сертификат</value>
+  </data>
+  <data name="Main_CertificateUntrusted" xml:space="preserve">
+    <value>цепочка сертификата сервера идёт к корню, которому не доверяют: {0}</value>
+  </data>
+  <data name="Main_CertificateOldAndroid" xml:space="preserve">
+    <value>цепочка сертификата сервера идёт к ISRG Root X2, которого нет в Android до 14</value>
+  </data>
   <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
     <value>Автообновление подписок</value>
   </data>

@@ -60,7 +60,9 @@ public static class SubscriptionBinding
                 Revision: offered.Revision,
                 Offered: offered.Revision,
                 Pin: offered.Pin,
-                FromHello: true)
+                FromHello: true,
+                Fault: offered.Fault,
+                FaultDetail: offered.Detail)
             : Marked(found, offered);
         await store.SaveSubscriptionAsync(subscription, ct).ConfigureAwait(false);
         await store.SaveSubscriptionMemberAsync(new SubscriptionMember(subscription.Name, remark, config), ct).ConfigureAwait(false);
@@ -89,6 +91,8 @@ public static class SubscriptionBinding
             Revision = subscription.Revision.Length > 0 ? subscription.Revision : offered.Revision,
             Offered = offered.Revision,
             Pin = offered.Pin,
+            Fault = offered.Fault,
+            FaultDetail = offered.Detail,
         };
     }
 

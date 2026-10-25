@@ -3493,6 +3493,7 @@ internal sealed class LinuxAgent : IDisposable
         var exclusions = await _store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
         var offer = await _offers.OfferAsync(name, text, ct).ConfigureAwait(false);
         var vpnDns = VpnDns.Showing(dns, offer.Dns(), WgConfigEditor.GetDns(text));
+        var offered = member is null ? null : offer.Subscription();
         var bound = string.Equals(name, _boundTarget, StringComparison.Ordinal);
         var handshake = bound ? _handshakeAge : -1;
         var reading = bound ? _link : LinkReading.Empty;
@@ -3542,7 +3543,9 @@ internal sealed class LinuxAgent : IDisposable
             vpnDns.Default,
             vpnDns.DefaultNetwork,
             offer.PresetsOnly,
-            offer.Ours);
+            offer.Ours,
+            offered?.Fault ?? string.Empty,
+            offered?.Detail ?? string.Empty);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

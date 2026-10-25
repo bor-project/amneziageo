@@ -307,6 +307,21 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
     }
 
     // Панель x-ui: тело в base64 и заголовки о профиле.
+    [Fact]
+    public async Task ASubscriptionItsServerKeepsOff_IsNotRead()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
+        var subscription = new Subscription("shop", "https://example.net/sub/a", Fault: "certificate-missing");
+        await _store.SaveSubscriptionAsync(subscription);
+
+        var result = await _refresher.RefreshAsync(subscription, CancellationToken.None);
+
+        Assert.Contains("certificate-missing", result.Error, StringComparison.Ordinal);
+        Assert.Null(_feed.Accept);
+        Assert.Empty(await _store.ListSubscriptionMembersAsync("shop"));
+        Assert.Equal("certificate-missing", Assert.Single(await _store.ListSubscriptionsAsync()).Fault);
+    }
+
     private sealed class Feed : HttpMessageHandler
     {
         public string Body { get; set; } = string.Empty;

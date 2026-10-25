@@ -57,11 +57,6 @@ internal static class UiPlatform
     public const double FontScaleCap = 1.15;
 
     /// <summary>
-    /// The region of the cellular network the device stands in, empty on a device without one.
-    /// </summary>
-    public static Func<string>? NetworkRegion { get; set; }
-
-    /// <summary>
     /// Scales a hand scale by the system font size, up to <see cref="FontScaleCap"/>.
     /// </summary>
     public static double WithFontScale(double scale, double fontScale)

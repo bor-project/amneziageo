@@ -10,11 +10,9 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// HTTP for geo sources. A request the machine refuses over its certificate is repeated without verifying
-/// the server, so a host whose certificate store or clock is out of date still receives the rule databases.
-/// A subscription is not such a source: it carries private keys, so it goes through <see cref="SendVerifiedAsync"/>
-/// and a certificate neither the machine nor a root the client carries proves stays an error there. Downloads of
-/// the application setup deliberately do not go through here either.
+/// HTTP for geo sources and subscriptions. A certificate the machine refuses is taken when it names the host asked and
+/// chains to a root the client carries; any other stays an error. Downloads of the application setup deliberately do
+/// not go through here.
 /// </summary>
 /// <param name="http">The client of the head.</param>
 /// <param name="logger">Where a rejected certificate of a geo source is told.</param>
@@ -28,12 +26,11 @@ public sealed class GeoHttp(
 {
     private readonly Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>>? _connect = connect;
     private readonly X509Certificate2Collection _roots = roots ?? CarriedRoots.Isrg;
-    private readonly Lazy<HttpClient> _unverified = new(CreateUnverified);
     private readonly ConcurrentDictionary<string, byte> _reported = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, HttpClient> _proven = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Sends a request, repeating it unverified when the certificate is rejected.
+    /// Sends a request, repeating it under the roots the client carries when the machine rejects the certificate.
     /// </summary>
     public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, HttpCompletionOption completion, CancellationToken ct)
     {
@@ -44,7 +41,7 @@ public sealed class GeoHttp(
         catch (HttpRequestException ex) when (IsCertificateFailure(ex))
         {
             Report(request.RequestUri?.ToString(), ex);
-            return await _unverified.Value.SendAsync(Clone(request), completion, ct).ConfigureAwait(false);
+            return await Proven(string.Empty).SendAsync(Clone(request), completion, ct).ConfigureAwait(false);
         }
     }
 
@@ -83,7 +80,7 @@ public sealed class GeoHttp(
     }
 
     /// <summary>
-    /// Downloads a small text file, repeating it unverified when the certificate is rejected.
+    /// Downloads a small text file, repeating it under the roots the client carries when the machine rejects the certificate.
     /// </summary>
     public async Task<string> GetStringAsync(string url, CancellationToken ct)
     {
@@ -94,18 +91,13 @@ public sealed class GeoHttp(
         catch (HttpRequestException ex) when (IsCertificateFailure(ex))
         {
             Report(url, ex);
-            return await _unverified.Value.GetStringAsync(url, ct).ConfigureAwait(false);
+            return await Proven(string.Empty).GetStringAsync(url, ct).ConfigureAwait(false);
         }
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (_unverified.IsValueCreated)
-        {
-            _unverified.Value.Dispose();
-        }
-
         foreach (var client in _proven.Values)
         {
             client.Dispose();
@@ -113,20 +105,10 @@ public sealed class GeoHttp(
     }
 
     // Tells a rejected certificate apart from a dead host or a refused port: only the former is worth
-    // retrying without verification, and a network failure retried that way would just fail twice.
+    // retrying under the carried roots, and a network failure retried that way would just fail twice.
     private static bool IsCertificateFailure(HttpRequestException ex)
     {
         return ex.HttpRequestError == HttpRequestError.SecureConnectionError || ex.InnerException is AuthenticationException;
-    }
-
-    private static HttpClient CreateUnverified()
-    {
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
-        };
-
-        return new HttpClient(handler);
     }
 
     // The client of the proven requests under a pin, or under none.
@@ -183,7 +165,7 @@ public sealed class GeoHttp(
 
         logger.LogWarning(
             ex,
-            "this machine rejected the certificate of {Host}; the rule database is taken from it anyway, with no proof of who served it - a substituted list would pass unnoticed, so check the clock and the root certificates here",
+            "this machine rejected the certificate of {Host}; it is asked again under the roots the client carries, so check the clock and the root certificates here",
             host);
     }
 }

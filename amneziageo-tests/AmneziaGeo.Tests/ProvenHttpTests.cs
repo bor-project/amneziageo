@@ -95,6 +95,30 @@ public sealed class ProvenHttpTests
         Assert.Equal(2, dialed);
     }
 
+    [Fact]
+    public async Task AGeoSourceUnderARootTheClientDoesNotCarry_IsNotTakenUnverified()
+    {
+        using var panel = new TlsPanel(body: "feed");
+        using var other = new TlsPanel();
+        using var http = new GeoHttp(new HttpClient(), NullLogger<GeoHttp>.Instance, roots: [other.Root]);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => http.GetStringAsync(panel.Url("/geoip.dat"), CancellationToken.None));
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => http.SendAsync(Get(panel), HttpCompletionOption.ResponseContentRead, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AGeoSourceTheMachineDoesNotProve_IsTakenUnderARootTheClientCarries()
+    {
+        using var panel = new TlsPanel(body: "feed");
+        using var http = new GeoHttp(new HttpClient(), NullLogger<GeoHttp>.Instance, roots: [panel.Root]);
+
+        using var response = await http.SendAsync(Get(panel), HttpCompletionOption.ResponseContentRead, CancellationToken.None);
+
+        Assert.Equal("feed", await response.Content.ReadAsStringAsync());
+        Assert.Equal("feed", await http.GetStringAsync(panel.Url("/geoip.dat"), CancellationToken.None));
+    }
+
     private static HttpRequestMessage Get(TlsPanel panel) => new(HttpMethod.Get, panel.Url("/sub/abc"));
 
     // The client of the head itself, which a request with a way handed must not touch.

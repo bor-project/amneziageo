@@ -17,12 +17,21 @@
   <!-- The all-files permission starts at API 30; older releases read shared storage through this one. -->
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-  <!-- Видеть все программы устройства: правило по приложению называет любую из них. -->
-  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
   <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
   <uses-feature android:name="android.software.leanback" android:required="false" />
   <uses-feature android:name="android.hardware.camera.any" android:required="false" />
   <queries>
+    <!-- Программы со значком запуска: правило по приложению называет любую из них. -->
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+    </intent>
+    <!-- Android Auto: значка запуска у него нет. -->
+    <package android:name="com.google.android.projection.gearhead" />
     <!-- Resolve the all-files-access screen before offering it. -->
     <intent>
       <action android:name="android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" />

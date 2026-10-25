@@ -10,11 +10,10 @@ public sealed partial class AppPickerRow : ObservableObject
     /// <summary>
     /// ctor
     /// </summary>
-    public AppPickerRow(string label, string package, bool isSystem, bool picked)
+    public AppPickerRow(string label, string package, bool picked)
     {
         Label = label;
         Package = package;
-        IsSystem = isSystem;
         Haystack = $"{label} {package}".ToLowerInvariant();
         _picked = picked;
     }
@@ -28,11 +27,6 @@ public sealed partial class AppPickerRow : ObservableObject
     /// Имя пакета.
     /// </summary>
     public string Package { get; }
-
-    /// <summary>
-    /// Системная ли это программа без значка запуска.
-    /// </summary>
-    public bool IsSystem { get; }
 
     /// <summary>
     /// Строка для поиска.

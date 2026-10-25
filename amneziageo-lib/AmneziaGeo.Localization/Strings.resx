@@ -322,23 +322,8 @@
   <data name="Background_Battery" xml:space="preserve">
     <value>Battery saver</value>
   </data>
-  <data name="Background_BatteryFree" xml:space="preserve">
-    <value>Does not restrict</value>
-  </data>
-  <data name="Background_BatteryLimits" xml:space="preserve">
-    <value>Restricts</value>
-  </data>
   <data name="Background_Autostart" xml:space="preserve">
     <value>Autostart</value>
-  </data>
-  <data name="Background_AutostartOn" xml:space="preserve">
-    <value>On</value>
-  </data>
-  <data name="Background_AutostartOff" xml:space="preserve">
-    <value>Off</value>
-  </data>
-  <data name="Background_Allow" xml:space="preserve">
-    <value>Allow</value>
   </data>
   <data name="Background_Configure" xml:space="preserve">
     <value>Configure</value>
@@ -351,9 +336,6 @@
   </data>
   <data name="Background_TunnelNoticeBrief" xml:space="preserve">
     <value>Brief</value>
-  </data>
-  <data name="Background_Open" xml:space="preserve">
-    <value>Open</value>
   </data>
   <data name="About_Section" xml:space="preserve">
     <value>About</value>
@@ -999,9 +981,6 @@
   </data>
   <data name="AppPicker_Search" xml:space="preserve">
     <value>Search apps</value>
-  </data>
-  <data name="AppPicker_System" xml:space="preserve">
-    <value>System</value>
   </data>
   <data name="AppPicker_Title" xml:space="preserve">
     <value>Applications</value>

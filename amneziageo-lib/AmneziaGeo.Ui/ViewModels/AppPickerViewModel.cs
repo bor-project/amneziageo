@@ -7,7 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Окно выбора приложений: строки, поиск и показ системных программ.
+/// Окно выбора приложений: строки и поиск.
 /// </summary>
 public sealed partial class AppPickerViewModel : ObservableObject
 {
@@ -23,18 +23,6 @@ public sealed partial class AppPickerViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     private string _query = string.Empty;
-
-    /// <summary>
-    /// Показаны ли системные программы без значка запуска.
-    /// </summary>
-    [ObservableProperty]
-    private bool _showSystem;
-
-    /// <summary>
-    /// Есть ли среди программ системные без значка запуска.
-    /// </summary>
-    [ObservableProperty]
-    private bool _hasSystem;
 
     /// <summary>
     /// Пакеты всех строк окна.
@@ -53,13 +41,10 @@ public sealed partial class AppPickerViewModel : ObservableObject
     {
         _rows.Clear();
         _rows.AddRange(rows);
-        HasSystem = _rows.Any(row => row.IsSystem);
         Refill();
     }
 
     partial void OnQueryChanged(string value) => Refill();
-
-    partial void OnShowSystemChanged(bool value) => Refill();
 
     // Собирает видимые строки заново.
     private void Refill()
@@ -73,13 +58,8 @@ public sealed partial class AppPickerViewModel : ObservableObject
     }
 
     // Видна ли строка при этом поиске.
-    private bool Shows(AppPickerRow row, string query)
+    private static bool Shows(AppPickerRow row, string query)
     {
-        if (query.Length > 0)
-        {
-            return row.Haystack.Contains(query, StringComparison.Ordinal);
-        }
-
-        return ShowSystem || !row.IsSystem || row.Picked;
+        return query.Length == 0 || row.Haystack.Contains(query, StringComparison.Ordinal);
     }
 }

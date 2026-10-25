@@ -814,10 +814,6 @@ internal sealed partial class MobileSelectHost : UserControl
         search.Classes.Add("field");
         search.TextChanged += (_, _) => picker.Query = search.Text ?? string.Empty;
 
-        var system = new SettingSwitchRow { Label = Loc.Instance.Get("AppPicker_System"), Margin = new Thickness(0, 6, 0, 0) };
-        system.Bind(SettingSwitchRow.IsCheckedProperty, new Binding(nameof(AppPickerViewModel.ShowSystem)) { Source = picker, Mode = BindingMode.TwoWay });
-        system.Bind(IsVisibleProperty, new Binding(nameof(AppPickerViewModel.HasSystem)) { Source = picker });
-
         var save = new Button { Content = Loc.Instance.Get("Main_SaveButton"), HorizontalAlignment = HorizontalAlignment.Stretch };
         save.Classes.Add("accent");
         save.Click += (_, _) =>
@@ -861,11 +857,9 @@ internal sealed partial class MobileSelectHost : UserControl
         var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(12) };
         DockPanel.SetDock(header, Dock.Top);
         DockPanel.SetDock(search, Dock.Top);
-        DockPanel.SetDock(system, Dock.Top);
         DockPanel.SetDock(actions, Dock.Bottom);
         panel.Children.Add(header);
         panel.Children.Add(search);
-        panel.Children.Add(system);
         panel.Children.Add(actions);
         panel.Children.Add(list);
 
@@ -885,7 +879,7 @@ internal sealed partial class MobileSelectHost : UserControl
         try
         {
             var apps = await Task.Run(() => AppCensus.List(context));
-            picker.Load(apps.Select(app => new AppPickerRow(app.Label, app.Package, app.IsSystem, chosen.Contains(app.Package))));
+            picker.Load(apps.Select(app => new AppPickerRow(app.Label, app.Package, chosen.Contains(app.Package))));
         }
         catch (Exception ex)
         {

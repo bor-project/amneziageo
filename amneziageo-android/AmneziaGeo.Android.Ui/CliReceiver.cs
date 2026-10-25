@@ -10,8 +10,10 @@ namespace AmneziaGeo.Android.Ui;
 /// <summary>
 /// Runs a console command that arrived as a broadcast and answers in the reply data.
 /// </summary>
+#if DEBUG
 [BroadcastReceiver(Name = "org.amneziageo.android.CliReceiver", Exported = true, Enabled = true, Permission = ShellPermission)]
 [IntentFilter([CliReceiver.Action])]
+#endif
 public sealed class CliReceiver : BroadcastReceiver
 {
     /// <summary>

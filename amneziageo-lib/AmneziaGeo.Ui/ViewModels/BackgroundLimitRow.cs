@@ -46,7 +46,6 @@ internal sealed partial class BackgroundLimitRow : ObservableObject
     [NotifyPropertyChangedFor(nameof(StateText))]
     [NotifyPropertyChangedFor(nameof(HasState))]
     [NotifyPropertyChangedFor(nameof(IsLimited))]
-    [NotifyPropertyChangedFor(nameof(ActionText))]
     private BackgroundLimitState _state;
 
     /// <summary>
@@ -60,9 +59,9 @@ internal sealed partial class BackgroundLimitRow : ObservableObject
     public string StateText => StateKey(Kind, State) is { Length: > 0 } key ? Loc.Instance.Get(key) : string.Empty;
 
     /// <summary>
-    /// Известно ли состояние.
+    /// Называет ли строка состояние.
     /// </summary>
-    public bool HasState => State != BackgroundLimitState.Unknown;
+    public bool HasState => StateText.Length > 0;
 
     /// <summary>
     /// Ограничивает ли система приложение.
@@ -72,7 +71,7 @@ internal sealed partial class BackgroundLimitRow : ObservableObject
     /// <summary>
     /// Подпись кнопки.
     /// </summary>
-    public string ActionText => Loc.Instance.Get(ActionKey(Kind, State));
+    public string ActionText => Loc.Instance.Get("Background_Configure");
 
     /// <summary>
     /// Перечитывает подписи на новом языке.
@@ -90,27 +89,13 @@ internal sealed partial class BackgroundLimitRow : ObservableObject
     };
 
     /// <summary>
-    /// Ключ слова состояния, пустой для неизвестного.
+    /// Ключ слова состояния: есть только у уведомлений.
     /// </summary>
     internal static string StateKey(BackgroundLimitKind kind, BackgroundLimitState state) => (kind, state) switch
     {
-        (_, BackgroundLimitState.Unknown) => string.Empty,
         (BackgroundLimitKind.Notifications, BackgroundLimitState.Limited) => "Background_NotificationsOff",
-        (BackgroundLimitKind.Notifications, _) => "Background_NotificationsOn",
-        (BackgroundLimitKind.Battery, BackgroundLimitState.Limited) => "Background_BatteryLimits",
-        (BackgroundLimitKind.Battery, _) => "Background_BatteryFree",
-        (_, BackgroundLimitState.Limited) => "Background_AutostartOff",
-        _ => "Background_AutostartOn",
-    };
-
-    /// <summary>
-    /// Ключ подписи кнопки.
-    /// </summary>
-    internal static string ActionKey(BackgroundLimitKind kind, BackgroundLimitState state) => (kind, state) switch
-    {
-        (BackgroundLimitKind.Notifications, BackgroundLimitState.Limited) => "Background_Allow",
-        (BackgroundLimitKind.Autostart, _) => "Background_Open",
-        _ => "Background_Configure",
+        (BackgroundLimitKind.Notifications, BackgroundLimitState.Free) => "Background_NotificationsOn",
+        _ => string.Empty,
     };
 
     [RelayCommand]

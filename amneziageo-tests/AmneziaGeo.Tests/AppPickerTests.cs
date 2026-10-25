@@ -6,26 +6,21 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The app picker keeps system programs without a launcher icon out of sight until asked, and saving it touches
-/// only the rules of the programs it offered.
+/// The app picker shows every program the device lets it see at once, and saving it touches only the rules of the
+/// programs it offered.
 /// </summary>
 public sealed class AppPickerTests
 {
     [Fact]
-    public void SystemPrograms_StayHiddenUntilAsked()
+    public void EveryProgram_IsShownAtOnce()
     {
         var picker = Picker();
-
-        Assert.Equal(["org.browser", "org.mail"], Shown(picker));
-        Assert.True(picker.HasSystem);
-
-        picker.ShowSystem = true;
 
         Assert.Equal(["org.auto", "org.browser", "org.downloads", "org.mail"], Shown(picker));
     }
 
     [Fact]
-    public void ASearch_LooksThroughSystemProgramsToo()
+    public void ASearch_FindsAProgramByItsName()
     {
         var picker = Picker();
 
@@ -42,24 +37,6 @@ public sealed class AppPickerTests
         picker.Query = "org.down";
 
         Assert.Equal(["org.downloads"], Shown(picker));
-    }
-
-    [Fact]
-    public void APickedSystemProgram_IsShownAnyway()
-    {
-        var picker = Picker("org.downloads");
-
-        Assert.Equal(["org.browser", "org.downloads", "org.mail"], Shown(picker));
-    }
-
-    [Fact]
-    public void WithoutSystemPrograms_ThereIsNothingToAskFor()
-    {
-        var picker = new AppPickerViewModel();
-
-        picker.Load([new AppPickerRow("Browser", "org.browser", false, false)]);
-
-        Assert.False(picker.HasSystem);
     }
 
     [Fact]
@@ -114,16 +91,16 @@ public sealed class AppPickerTests
         Assert.Equal(["app:pkg=org.mail"], editor.DirectRules);
     }
 
-    // A picker over two programs with a launcher icon and two system programs without one.
+    // A picker over four programs.
     private static AppPickerViewModel Picker(params string[] picked)
     {
         var picker = new AppPickerViewModel();
         picker.Load(
         [
-            new AppPickerRow("Auto", "org.auto", true, picked.Contains("org.auto")),
-            new AppPickerRow("Browser", "org.browser", false, picked.Contains("org.browser")),
-            new AppPickerRow("Download manager", "org.downloads", true, picked.Contains("org.downloads")),
-            new AppPickerRow("Mail", "org.mail", false, picked.Contains("org.mail")),
+            new AppPickerRow("Auto", "org.auto", picked.Contains("org.auto")),
+            new AppPickerRow("Browser", "org.browser", picked.Contains("org.browser")),
+            new AppPickerRow("Download manager", "org.downloads", picked.Contains("org.downloads")),
+            new AppPickerRow("Mail", "org.mail", picked.Contains("org.mail")),
         ]);
         return picker;
     }

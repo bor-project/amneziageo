@@ -6,8 +6,9 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// The background block of the general page lists the limits the platform names, each with its state in a word
-/// and a button that opens its system screen, and follows the platform when the window comes back.
+/// The background block of the general page lists the limits the platform names, the notifications with their
+/// state in a word, every row with a button that opens its system screen, and follows the platform when the window
+/// comes back.
 /// </summary>
 public sealed class BackgroundLimitsTests
 {
@@ -37,13 +38,13 @@ public sealed class BackgroundLimitsTests
     [Fact]
     public void AReload_FollowsTheStateAndKeepsTheRow()
     {
-        var platform = new Platform(new BackgroundLimit(BackgroundLimitKind.Battery, BackgroundLimitState.Limited));
+        var platform = new Platform(new BackgroundLimit(BackgroundLimitKind.Notifications, BackgroundLimitState.Limited));
         var block = platform.Block();
         var row = Assert.Single(block.Rows);
         var told = new List<string?>();
         row.PropertyChanged += (_, e) => told.Add(e.PropertyName);
 
-        platform.Limits = [new BackgroundLimit(BackgroundLimitKind.Battery, BackgroundLimitState.Free)];
+        platform.Limits = [new BackgroundLimit(BackgroundLimitKind.Notifications, BackgroundLimitState.Free)];
         block.Reload();
 
         Assert.Same(row, Assert.Single(block.Rows));
@@ -90,26 +91,48 @@ public sealed class BackgroundLimitsTests
     }
 
     [Theory]
-    [InlineData("Notifications", "Limited", "Background_NotificationsOff", "Background_Allow")]
-    [InlineData("Notifications", "Free", "Background_NotificationsOn", "Background_Configure")]
-    [InlineData("Battery", "Limited", "Background_BatteryLimits", "Background_Configure")]
-    [InlineData("Battery", "Free", "Background_BatteryFree", "Background_Configure")]
-    [InlineData("Autostart", "Limited", "Background_AutostartOff", "Background_Open")]
-    [InlineData("Autostart", "Free", "Background_AutostartOn", "Background_Open")]
-    public void ARow_SaysItsStateAndNamesItsButton(string kind, string state, string stateKey, string actionKey)
+    [InlineData("Notifications", "Limited")]
+    [InlineData("Notifications", "Free")]
+    [InlineData("Battery", "Limited")]
+    [InlineData("Battery", "Unknown")]
+    [InlineData("Autostart", "Limited")]
+    [InlineData("Autostart", "Unknown")]
+    public void EveryRow_OffersToConfigure(string kind, string state)
     {
         var row = new BackgroundLimitRow(Enum.Parse<BackgroundLimitKind>(kind), Enum.Parse<BackgroundLimitState>(state), _ => { });
 
-        Assert.True(row.HasState);
-        Assert.Equal(Loc.Instance.Get(stateKey), row.StateText);
-        Assert.Equal(Loc.Instance.Get(actionKey), row.ActionText);
+        Assert.Equal(Loc.Instance.Get("Background_Configure"), row.ActionText);
     }
 
     [Theory]
-    [InlineData("Notifications", "Background_Notifications", "Background_Configure")]
-    [InlineData("Battery", "Background_Battery", "Background_Configure")]
-    [InlineData("Autostart", "Background_Autostart", "Background_Open")]
-    public void ARowWhoseStateIsNotRead_KeepsItsNameAndItsButton(string kind, string nameKey, string actionKey)
+    [InlineData("Battery", "Limited")]
+    [InlineData("Battery", "Free")]
+    [InlineData("Autostart", "Limited")]
+    [InlineData("Autostart", "Free")]
+    public void TheBatteryAndAutostartRows_TellNoState(string kind, string state)
+    {
+        var row = new BackgroundLimitRow(Enum.Parse<BackgroundLimitKind>(kind), Enum.Parse<BackgroundLimitState>(state), _ => { });
+
+        Assert.False(row.HasState);
+        Assert.Equal(string.Empty, row.StateText);
+    }
+
+    [Theory]
+    [InlineData("Limited", "Background_NotificationsOff")]
+    [InlineData("Free", "Background_NotificationsOn")]
+    public void TheNotificationsRow_SaysItsState(string state, string stateKey)
+    {
+        var row = new BackgroundLimitRow(BackgroundLimitKind.Notifications, Enum.Parse<BackgroundLimitState>(state), _ => { });
+
+        Assert.True(row.HasState);
+        Assert.Equal(Loc.Instance.Get(stateKey), row.StateText);
+    }
+
+    [Theory]
+    [InlineData("Notifications", "Background_Notifications")]
+    [InlineData("Battery", "Background_Battery")]
+    [InlineData("Autostart", "Background_Autostart")]
+    public void ARowWhoseStateIsNotRead_KeepsItsNameAndItsButton(string kind, string nameKey)
     {
         var row = new BackgroundLimitRow(Enum.Parse<BackgroundLimitKind>(kind), BackgroundLimitState.Unknown, _ => { });
 
@@ -117,39 +140,7 @@ public sealed class BackgroundLimitsTests
         Assert.False(row.IsLimited);
         Assert.Equal(string.Empty, row.StateText);
         Assert.Equal(Loc.Instance.Get(nameKey), row.Name);
-        Assert.Equal(Loc.Instance.Get(actionKey), row.ActionText);
-    }
-
-    [Theory]
-    [InlineData(true, false, "Free")]
-    [InlineData(true, true, "Free")]
-    [InlineData(false, false, "Limited")]
-    [InlineData(false, true, "Unknown")]
-    public void TheBatterySaver_IsNotCalledLimitingWhereAVendorScreenTakesTheQuestion(bool exempt, bool vendorScreen, string state)
-    {
-        var limit = BackgroundLimit.Battery(exempt, vendorScreen);
-
-        Assert.Equal(BackgroundLimitKind.Battery, limit.Kind);
-        Assert.Equal(Enum.Parse<BackgroundLimitState>(state), limit.State);
-    }
-
-    [Fact]
-    public void TheBatteryRowOfAVendorScreen_SaysNothingUntilTheSystemExemptsTheApp()
-    {
-        var platform = new Platform(BackgroundLimit.Battery(false, true));
-        var block = platform.Block();
-        var row = Assert.Single(block.Rows);
-
-        Assert.False(row.HasState);
-        Assert.False(row.IsLimited);
-        Assert.Equal(string.Empty, row.StateText);
         Assert.Equal(Loc.Instance.Get("Background_Configure"), row.ActionText);
-
-        platform.Limits = [BackgroundLimit.Battery(true, true)];
-        block.Reload();
-
-        Assert.True(row.HasState);
-        Assert.Equal(Loc.Instance.Get("Background_BatteryFree"), row.StateText);
     }
 
     [Fact]
@@ -171,14 +162,8 @@ public sealed class BackgroundLimitsTests
     [InlineData("Background_NotificationsOn")]
     [InlineData("Background_NotificationsOff")]
     [InlineData("Background_Battery")]
-    [InlineData("Background_BatteryFree")]
-    [InlineData("Background_BatteryLimits")]
     [InlineData("Background_Autostart")]
-    [InlineData("Background_AutostartOn")]
-    [InlineData("Background_AutostartOff")]
-    [InlineData("Background_Allow")]
     [InlineData("Background_Configure")]
-    [InlineData("Background_Open")]
     public void EveryTextOfTheBlock_IsTranslated(string key)
     {
         var english = Loc.GetIn("en", key);

@@ -3,23 +3,19 @@ using Android.Content;
 using Android.Content.PM;
 using Android.OS;
 using Android.Provider;
-using Android.Runtime;
 using AndroidX.Core.App;
 using AmneziaGeo.Ui.Services;
 
 namespace AmneziaGeo.Android.Ui.Services;
 
 /// <summary>
-/// Читает, что система разрешает приложению в фоне, и открывает системные экраны этих разрешений.
+/// Называет ограничения фона на устройстве и открывает их системные экраны.
 /// </summary>
 internal static class AndroidBackgroundLimits
 {
     private const string Tag = "AmneziaGeo";
 
-    // Операция автозапуска в учёте разрешений MIUI.
-    private const int AutostartOp = 10008;
-
-    // Приложение MIUI с экранами автозапуска и экономии батареи.
+    // Приложение MIUI с экраном автозапуска.
     private const string SecurityCenter = "com.miui.securitycenter";
 
     private const string AutostartScreen = "com.miui.permcenter.autostart.AutoStartManagementActivity";
@@ -29,19 +25,13 @@ internal static class AndroidBackgroundLimits
     private static bool? _hasBatteryScreen;
     private static bool? _hasAutostartScreen;
 
-    // Вопрос об экономии батареи принимает экран MIUI.
-    private static bool? _batteryByVendor;
-
-    // Система не отдала состояние автозапуска.
-    private static bool _autostartUnread;
-
     /// <summary>
     /// Отдаёт окну ограничения этого устройства.
     /// </summary>
     public static void Register() => BackgroundLimitsBridge.Register(Read, Open);
 
     /// <summary>
-    /// Называет ограничения, которые есть на устройстве, и состояние каждого.
+    /// Называет ограничения, которые есть на устройстве; состояние - только у уведомлений.
     /// </summary>
     public static IReadOnlyList<BackgroundLimit> Read()
     {
@@ -55,13 +45,12 @@ internal static class AndroidBackgroundLimits
 
         if (_hasBatteryScreen ??= phone && Resolves(context, BatterySettings()))
         {
-            _batteryByVendor ??= Screen(context, BatteryRequest(context))?.PackageName == SecurityCenter;
-            limits.Add(BackgroundLimit.Battery(BatteryFree(context), _batteryByVendor == true));
+            limits.Add(new(BackgroundLimitKind.Battery, BackgroundLimitState.Unknown));
         }
 
         if (_hasAutostartScreen ??= Resolves(context, AutostartIntent()))
         {
-            limits.Add(new(BackgroundLimitKind.Autostart, Autostart(context)));
+            limits.Add(new(BackgroundLimitKind.Autostart, BackgroundLimitState.Unknown));
         }
 
         return limits;
@@ -79,7 +68,7 @@ internal static class AndroidBackgroundLimits
                 OpenNotifications(context);
                 break;
             case BackgroundLimitKind.Battery:
-                OpenBattery(context);
+                Launch(BatterySettings());
                 break;
             default:
                 Launch(AutostartIntent());
@@ -100,41 +89,6 @@ internal static class AndroidBackgroundLimits
     private static bool NotificationsOn(Context context)
     {
         return NotificationManagerCompat.From(context)?.AreNotificationsEnabled() ?? true;
-    }
-
-    // Стоит ли приложение в исключениях экономии батареи.
-    private static bool BatteryFree(Context context)
-    {
-        return context.GetSystemService(Context.PowerService) is PowerManager power
-            && power.IsIgnoringBatteryOptimizations(context.PackageName);
-    }
-
-    // Состояние автозапуска в учёте разрешений MIUI.
-    private static BackgroundLimitState Autostart(Context context)
-    {
-        if (_autostartUnread || context.GetSystemService(Context.AppOpsService) is not AppOpsManager ops)
-        {
-            return BackgroundLimitState.Unknown;
-        }
-
-        try
-        {
-            var check = JNIEnv.GetMethodID(ops.Class.Handle, "checkOpNoThrow", "(IILjava/lang/String;)I");
-            using var package = new Java.Lang.String(context.PackageName ?? string.Empty);
-            var mode = JNIEnv.CallIntMethod(ops.Handle, check, new JValue(AutostartOp), new JValue(Process.MyUid()), new JValue(package));
-            return mode switch
-            {
-                (int)AppOpsManagerMode.Allowed => BackgroundLimitState.Free,
-                (int)AppOpsManagerMode.Ignored => BackgroundLimitState.Limited,
-                _ => BackgroundLimitState.Unknown,
-            };
-        }
-        catch (Java.Lang.Throwable ex)
-        {
-            _autostartUnread = true;
-            global::Android.Util.Log.Warn(Tag, "reading the autostart state failed: " + ex);
-            return BackgroundLimitState.Unknown;
-        }
     }
 
     private static void OpenNotifications(Context context)
@@ -165,12 +119,6 @@ internal static class AndroidBackgroundLimits
         }
     }
 
-    // Открывает список исключений из экономии батареи, а когда исключение уже есть, сведения о приложении.
-    private static void OpenBattery(Context context)
-    {
-        Launch(BatteryFree(context) ? AppDetails(context) : BatterySettings());
-    }
-
     // Экран уведомлений приложения, а где его нет, экран сведений о приложении.
     private static Intent NotificationSettings(Context context)
     {
@@ -182,12 +130,6 @@ internal static class AndroidBackgroundLimits
         var intent = new Intent(Settings.ActionAppNotificationSettings);
         intent.PutExtra(Settings.ExtraAppPackage, context.PackageName);
         return intent;
-    }
-
-    // Вопрос системы об исключении из экономии батареи.
-    private static Intent BatteryRequest(Context context)
-    {
-        return new Intent(Settings.ActionRequestIgnoreBatteryOptimizations, PackageUri(context));
     }
 
     // Системный список исключений из экономии батареи.
@@ -218,21 +160,15 @@ internal static class AndroidBackgroundLimits
     // Есть ли на устройстве экран, который откроет это намерение.
     private static bool Resolves(Context context, Intent intent)
     {
-        return Screen(context, intent) is not null;
-    }
-
-    // Экран, который откроет это намерение.
-    private static ActivityInfo? Screen(Context context, Intent intent)
-    {
         if (context.PackageManager is not { } manager)
         {
-            return null;
+            return false;
         }
 
         var found = OperatingSystem.IsAndroidVersionAtLeast(33)
             ? manager.ResolveActivity(intent, PackageManager.ResolveInfoFlags.Of((long)PackageInfoFlags.MatchDefaultOnly))
             : manager.ResolveActivity(intent, PackageInfoFlags.MatchDefaultOnly);
-        return found?.ActivityInfo is { Exported: true } screen ? screen : null;
+        return found?.ActivityInfo is { Exported: true };
     }
 
     // Открывает экран поверх окна, а без окна отдельной задачей.

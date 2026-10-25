@@ -11,7 +11,7 @@ internal static class AppCensus
     /// <summary>
     /// Программа устройства.
     /// </summary>
-    internal sealed record Entry(string Label, string Package, bool IsSystem);
+    internal sealed record Entry(string Label, string Package);
 
     /// <summary>
     /// Перечисляет по именам программы со значком запуска или доступом в сеть, кроме этой.
@@ -29,18 +29,18 @@ internal static class AppCensus
         return [.. Installed(manager)
             .Where(info => info.PackageName is { Length: > 0 } package
                 && !string.Equals(package, own, StringComparison.Ordinal)
-                && (launchable.Contains(package) || AsksNetwork(info)))
-            .Select(info => new Entry(Label(info, manager), info.PackageName!, IsSystem(info) && !launchable.Contains(info.PackageName!)))
+                && (launchable.Contains(package) || HoldsNetwork(manager, package)))
+            .Select(info => new Entry(Label(info, manager), info.PackageName!))
             .OrderBy(entry => entry.Label, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(entry => entry.Package, StringComparer.Ordinal)];
     }
 
-    // Пакеты устройства с перечнем запрошенных разрешений.
+    // Пакеты устройства.
     private static IList<PackageInfo> Installed(PackageManager manager)
     {
         return OperatingSystem.IsAndroidVersionAtLeast(33)
-            ? manager.GetInstalledPackages(PackageManager.PackageInfoFlags.Of((long)PackageInfoFlags.Permissions))
-            : manager.GetInstalledPackages(PackageInfoFlags.Permissions);
+            ? manager.GetInstalledPackages(PackageManager.PackageInfoFlags.Of(0L))
+            : manager.GetInstalledPackages(default(PackageInfoFlags));
     }
 
     // Пакеты со значком запуска.
@@ -57,16 +57,10 @@ internal static class AppCensus
             .Select(package => package!)];
     }
 
-    // Просит ли пакет доступ в сеть.
-    private static bool AsksNetwork(PackageInfo info)
+    // Есть ли у пакета доступ в сеть.
+    private static bool HoldsNetwork(PackageManager manager, string package)
     {
-        return info.RequestedPermissions?.Contains(global::Android.Manifest.Permission.Internet) == true;
-    }
-
-    // Стоит ли пакет в системном разделе.
-    private static bool IsSystem(PackageInfo info)
-    {
-        return info.ApplicationInfo is { } application && (application.Flags & ApplicationInfoFlags.System) != 0;
+        return manager.CheckPermission(global::Android.Manifest.Permission.Internet, package) == Permission.Granted;
     }
 
     // Имя программы, а без него имя пакета.

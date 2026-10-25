@@ -85,11 +85,44 @@
   <data name="General_ShowNotificationsHint" xml:space="preserve">
     <value>Сообщать в трее о подключении, обновлениях приложения и баз.</value>
   </data>
-  <data name="General_AllowPrerelease" xml:space="preserve">
-    <value>Проверять предварительные версии</value>
+  <data name="General_UpdateChannel" xml:space="preserve">
+    <value>Канал обновлений</value>
   </data>
-  <data name="General_AllowPrereleaseHint" xml:space="preserve">
-    <value>Предлагать бета-сборки при проверке обновлений, не только стабильные релизы.</value>
+  <data name="General_ChannelStable" xml:space="preserve">
+    <value>Стабильный</value>
+  </data>
+  <data name="General_ChannelBeta" xml:space="preserve">
+    <value>Бета</value>
+  </data>
+  <data name="General_ChannelTest" xml:space="preserve">
+    <value>Тест</value>
+  </data>
+  <data name="Connections_UpdateSource" xml:space="preserve">
+    <value>Сервер обновлений</value>
+  </data>
+  <data name="Connections_UpdateSourceOrigin" xml:space="preserve">
+    <value>Откуда установлено ({0})</value>
+  </data>
+  <data name="Connections_UpdateSourceServer" xml:space="preserve">
+    <value>{0} «{1}»</value>
+  </data>
+  <data name="Connections_UpdateSourceRecommended" xml:space="preserve">
+    <value>{0} (рекомендован)</value>
+  </data>
+  <data name="Main_UpdateFaultHide" xml:space="preserve">
+    <value>Скрыть</value>
+  </data>
+  <data name="Agent_UpdateSourceUnreachable" xml:space="preserve">
+    <value>Сервер обновлений {0} не отвечает</value>
+  </data>
+  <data name="Agent_UpdateSourceNoRelease" xml:space="preserve">
+    <value>На сервере обновлений {0} нет выпуска канала</value>
+  </data>
+  <data name="Agent_UpdateSourceCertificate" xml:space="preserve">
+    <value>Сертификат сервера обновлений {0} не тот, что назвал сервер</value>
+  </data>
+  <data name="Agent_UpdateSourceGone" xml:space="preserve">
+    <value>Сервер {0} больше не раздаёт обновления, они берутся оттуда, откуда установлено приложение</value>
   </data>
   <data name="General_ProxySection" xml:space="preserve">
     <value>Подключения</value>

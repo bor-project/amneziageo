@@ -233,7 +233,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
         _log.Context = NetworkContext;
-        _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
+        _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion, UpdateServers, Save);
         _offers = new ServerOffers(
             _store,
             OfferNote,
@@ -1437,6 +1437,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var proxy = VpnBridge.ReadProxyState();
         var reach = ProxyReach(_proxyOptions.Enabled);
         LogProxyOffer(proxy.Running, reach);
+        var (updateSources, updateSource) = _updater.Sources();
 
         Latest = new StatusSnapshot(
             AgentVersion: AppVersion,
@@ -1471,6 +1472,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             UpdateSetupUrl: _updater.SetupUrl,
             UpdateDescription: _updater.Description,
             AllowPrerelease: _updater.AllowPrerelease,
+            UpdateChannel: _updater.Channel,
+            UpdateSources: updateSources,
+            UpdateSource: updateSource,
+            UpdateSourceError: _updater.Fault.Text,
+            UpdateSourceErrorSince: _updater.Fault.Since,
             UpdateSetupSha256: _updater.Sha256,
             UpdateSetupPath: _updater.SetupPath,
             UpdateDownloading: _updater.Downloading,
@@ -3027,6 +3033,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
     }
 
+    // The servers of the configurations that hand out the releases.
+    private IReadOnlyList<UpdateServer> UpdateServers()
+    {
+        var offered = _offered;
+        return UpdateSources.Servers(OrderedNames().Where(offered.ContainsKey).Select(name => (name, offered[name])));
+    }
+
+    // Reads another source or channel at once, so the window shows what it offers.
+    private void RecheckUpdate()
+    {
+        PushSnapshot();
+        _ = Task.Run(() => _updater.CheckAsync(true, CancellationToken.None), CancellationToken.None);
+    }
+
     // Reads what the servers of the configurations offer, as last kept.
     private async Task RefreshOffersAsync()
     {
@@ -3190,6 +3210,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             _loaded = true;
             Load();
+            if (_updater.Settle())
+            {
+                Save();
+            }
         }
     }
 
@@ -3516,7 +3540,27 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             if (document.RootElement.TryGetProperty("AllowPrerelease", out var prerelease)
                 && prerelease.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
-                _updater.AllowPrerelease = prerelease.ValueKind == JsonValueKind.True;
+                _updater.Channel = UpdateChannels.Of(prerelease.ValueKind == JsonValueKind.True);
+            }
+
+            if (document.RootElement.TryGetProperty("UpdateChannel", out var channel) && channel.ValueKind == JsonValueKind.String)
+            {
+                _updater.Channel = UpdateChannels.Of(channel.GetString(), _updater.Channel);
+            }
+
+            if (document.RootElement.TryGetProperty("UpdateSource", out var source) && source.ValueKind == JsonValueKind.String)
+            {
+                _updater.Choice = UpdateSources.Choice(source.GetString()) ?? string.Empty;
+            }
+
+            if (document.RootElement.TryGetProperty("UpdateOrigin", out var origin) && origin.ValueKind == JsonValueKind.String)
+            {
+                _updater.Origin = UpdateOrigin.Read(origin.GetString()) ?? UpdateOrigin.Baked;
+            }
+
+            if (document.RootElement.TryGetProperty("UpdateHanded", out var handed) && handed.ValueKind == JsonValueKind.String)
+            {
+                _updater.Handed = UpdateOrigin.Read(handed.GetString());
             }
 
             if (document.RootElement.TryGetProperty("RouteTtl", out var ttl)
@@ -3664,6 +3708,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"SplitLimit\":").Append(_splitLimit);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
+            builder.Append(",\"UpdateChannel\":").Append(JsonSerializer.Serialize(_updater.Channel));
+            builder.Append(",\"UpdateSource\":").Append(JsonSerializer.Serialize(_updater.Choice));
+            builder.Append(",\"UpdateOrigin\":").Append(JsonSerializer.Serialize(_updater.Origin.Write()));
+            builder.Append(",\"UpdateHanded\":").Append(JsonSerializer.Serialize(_updater.Handed?.Write() ?? string.Empty));
             builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
             builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
             builder.Append(",\"GeoCheckedAt\":").Append(JsonSerializer.Serialize(_geoCheckedAt.ToString("O", CultureInfo.InvariantCulture)));
@@ -4866,9 +4914,28 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 PushSnapshot();
                 return Ok();
             case "allow-prerelease":
-                _updater.AllowPrerelease = IsOn(args[1]);
+            case SettingKeys.UpdateChannel:
+                var channel = args[0] == SettingKeys.UpdateChannel
+                    ? UpdateChannels.Of(args[1], string.Empty)
+                    : UpdateChannels.Of(IsOn(args[1]));
+                if (channel.Length == 0)
+                {
+                    return Fail();
+                }
+
+                _updater.Channel = channel;
                 Save();
-                PushSnapshot();
+                RecheckUpdate();
+                return Ok();
+            case SettingKeys.UpdateSource:
+                if (UpdateSources.Choice(args[1]) is not { } choice)
+                {
+                    return Fail();
+                }
+
+                _updater.Choice = choice;
+                Save();
+                RecheckUpdate();
                 return Ok();
             case "geo-auto-check":
                 _geoAutoCheck = IsOn(args[1]);

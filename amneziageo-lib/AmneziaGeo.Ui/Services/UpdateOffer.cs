@@ -11,7 +11,8 @@ namespace AmneziaGeo.Ui.Services;
 /// <param name="Url">The address of the setup.</param>
 /// <param name="Sha256">The published digest of the setup, empty on a legacy manifest.</param>
 /// <param name="Asset">The entry of the setup in the manifest of the release, null where the manifest lists none.</param>
-internal sealed record UpdateOffer(bool Available, string Version, string Url, string Sha256, UpdateAsset? Asset)
+/// <param name="Pin">The SHA-256 of the certificate the server of the setup answers under, empty where the machine proves it.</param>
+internal sealed record UpdateOffer(bool Available, string Version, string Url, string Sha256, UpdateAsset? Asset, string Pin = "")
 {
     /// <summary>
     /// No offer.
@@ -33,6 +34,7 @@ internal sealed record UpdateOffer(bool Available, string Version, string Url, s
             snapshot.UpdateVersion,
             snapshot.UpdateSetupUrl,
             snapshot.UpdateSetupSha256,
-            snapshot.UpdateSetupAsset);
+            snapshot.UpdateSetupAsset,
+            snapshot.UpdateSetupPin);
     }
 }

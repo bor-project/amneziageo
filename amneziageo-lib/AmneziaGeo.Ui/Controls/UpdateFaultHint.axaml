@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             x:Class="AmneziaGeo.Ui.Controls.UpdateFaultHint"
+             x:CompileBindings="True"
+             x:DataType="vm:ConnectionViewModel"
+             IsVisible="{Binding ShowUpdateFault}">
+  <!-- Mark of the search for updates that failed at the server picked: it tells why and hides till the next failure. -->
+  <Button x:Name="MarkPart" Classes="icon" Padding="3" VerticalAlignment="Center"
+          Click="OnMarkClick" PointerEntered="OnMarkPointerEntered">
+    <PathIcon Data="{DynamicResource AgAlertGeometry}" Width="18" Height="18"
+              Foreground="{DynamicResource AgDownBrush}" />
+    <FlyoutBase.AttachedFlyout>
+      <Flyout Placement="BottomEdgeAlignedRight">
+        <StackPanel MaxWidth="240" Spacing="2">
+          <TextBlock Text="{Binding UpdateFaultText}" FontSize="12" TextWrapping="Wrap" />
+          <Button Classes="linkbtn" HorizontalAlignment="Left" Margin="-7,0,0,-4"
+                  Content="{l:Tr Main_UpdateFaultHide}" Click="OnHideClick" />
+        </StackPanel>
+      </Flyout>
+    </FlyoutBase.AttachedFlyout>
+  </Button>
+</UserControl>

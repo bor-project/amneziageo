@@ -244,6 +244,38 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// </summary>
     public bool ProxyAdmitsNobody => !ProxyAnonymous && !ProxyAccounts.Any(account => account.User.Trim().Length > 0);
 
+    // The sources of the releases as the agent last listed them, in the order of the options.
+    private IReadOnlyList<UpdateSourceEntry> _updateSources = [];
+
+    /// <summary>
+    /// The sources the releases of the client can be taken from, the one the installed copy came from first.
+    /// </summary>
+    public ObservableCollection<string> UpdateSourceOptions { get; } = [];
+
+    /// <summary>
+    /// The source the check reads.
+    /// </summary>
+    [ObservableProperty]
+    private int _selectedUpdateSourceIndex = -1;
+
+    /// <summary>
+    /// What kept the last check of a server from a release; empty while it went through.
+    /// </summary>
+    [ObservableProperty]
+    private string _updateSourceErrorText = string.Empty;
+
+    /// <summary>
+    /// Whether the platform takes a source of the releases.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateSourceOnPage))]
+    private bool _hasUpdateSources;
+
+    /// <summary>
+    /// Whether the source of the releases heads the page, where the platform has no tunnel tab to hold it.
+    /// </summary>
+    public bool UpdateSourceOnPage => HasUpdateSources && !CanConfigureConnection;
+
     /// <summary>
     /// Bands the access point may ask for.
     /// </summary>
@@ -574,7 +606,11 @@ internal partial class ConnectionsViewModel : ViewModelBase
         ApplyProxyAccounts(snapshot.ProxyCredentials);
         HotspotEnabled = ShareModes.CarriesWifi(snapshot.ShareMode);
         ApplyHotspotFields(snapshot);
+        ApplyUpdateSources(snapshot.UpdateSources ?? [], snapshot.UpdateSource);
         _suppressSettingPush = false;
+        UpdateSourceErrorText = IpcMessage.TryParse(snapshot.UpdateSourceError, out var faultKey, out var faultArgs)
+            ? Loc.Instance.Get(faultKey, faultArgs)
+            : snapshot.UpdateSourceError;
         if (!SubscriptionsShown && !SubscriptionAutoRefresh)
         {
             SubscriptionAutoRefresh = true;
@@ -590,6 +626,61 @@ internal partial class ConnectionsViewModel : ViewModelBase
         HotspotBandActual = snapshot.HotspotBandActual;
         HotspotClientCount = snapshot.HotspotClients;
         HotspotMaxClients = snapshot.HotspotMaxClients;
+    }
+
+    // Lists the sources the agent names and points the pick at the one the check reads; the options are written
+    // again only when what they say changed, so an open list does not lose its place on every snapshot.
+    private void ApplyUpdateSources(IReadOnlyList<UpdateSourceEntry> sources, string key)
+    {
+        var labels = sources.Select(UpdateSourceLabel).ToList();
+        if (!labels.SequenceEqual(UpdateSourceOptions))
+        {
+            UpdateSourceOptions.Clear();
+            foreach (var label in labels)
+            {
+                UpdateSourceOptions.Add(label);
+            }
+        }
+
+        _updateSources = sources;
+        HasUpdateSources = sources.Count > 0;
+        SelectedUpdateSourceIndex = IndexOfUpdateSource(key);
+    }
+
+    private int IndexOfUpdateSource(string key)
+    {
+        for (var i = 0; i < _updateSources.Count; i++)
+        {
+            if (string.Equals(_updateSources[i].Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return _updateSources.Count > 0 ? 0 : -1;
+    }
+
+    // The line of a source: the host and the config whose server names it; the origin says it is the one the
+    // installed copy came from, a server that asks to be taken says it is recommended.
+    private static string UpdateSourceLabel(UpdateSourceEntry entry)
+    {
+        var place = entry.Config.Length > 0
+            ? Loc.Instance.Get("Connections_UpdateSourceServer", entry.Host, entry.Config)
+            : entry.Host;
+        if (entry.Key == UpdateSources.OriginKey)
+        {
+            return Loc.Instance.Get("Connections_UpdateSourceOrigin", place);
+        }
+
+        return entry.Recommended ? Loc.Instance.Get("Connections_UpdateSourceRecommended", place) : place;
+    }
+
+    partial void OnSelectedUpdateSourceIndexChanged(int value)
+    {
+        if (!_suppressSettingPush && value >= 0 && value < _updateSources.Count)
+        {
+            _ = SetSettingAsync(SettingKeys.UpdateSource, _updateSources[value].Key);
+        }
     }
 
     partial void OnProxyEnabledChanged(bool value)
@@ -995,6 +1086,13 @@ internal partial class ConnectionsViewModel : ViewModelBase
             }
 
             SelectedBandIndex = band;
+            var source = SelectedUpdateSourceIndex;
+            for (var i = 0; i < UpdateSourceOptions.Count && i < _updateSources.Count; i++)
+            {
+                UpdateSourceOptions[i] = UpdateSourceLabel(_updateSources[i]);
+            }
+
+            SelectedUpdateSourceIndex = source;
         }
         finally
         {

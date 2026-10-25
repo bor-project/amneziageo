@@ -39,6 +39,17 @@ public static class SettingKeys
     public const string OtherVpn = "other-vpn";
 
     /// <summary>
+    /// The channel the releases of the client come in: stable, beta or test.
+    /// </summary>
+    public const string UpdateChannel = "update-channel";
+
+    /// <summary>
+    /// The source the releases of the client are taken from, picked by hand: origin or the address of a server; empty
+    /// while the servers decide.
+    /// </summary>
+    public const string UpdateSource = "update-source";
+
+    /// <summary>
     /// Whether a stream to a direct range leaves on a protected socket instead of riding the tunnel.
     /// </summary>
     public const string DirectTcp = "direct-tcp";

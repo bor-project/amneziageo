@@ -18,7 +18,6 @@ internal sealed class LinuxUpdater : IDisposable
     private const string GuiPackage = "amneziageo-gui";
     private const string TransientUnit = "amneziageo-update";
     private const string Platform = "linux";
-    private const string UserAgent = "AmneziaGeo-UpdateChecker";
 
     private static readonly string[] _packages = [CorePackage, GuiPackage];
 
@@ -26,6 +25,16 @@ internal sealed class LinuxUpdater : IDisposable
     private readonly AgentLog _log;
     private string _reading = string.Empty;
     private readonly Func<CancellationToken, Task> _push;
+    private readonly IStateStore _store;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<UpdateServer>>> _servers;
+
+    // The client the packages of the last release found are read with, under the pin of its source.
+    private HttpClient _files;
+    private UpdateRoute? _route;
+    private UpdateOrigin? _handed;
+
+    // The source and the channel the release on offer came from.
+    private (string Url, string Channel) _offeredBy = (string.Empty, string.Empty);
     private readonly string _directory = Path.Combine(AgentPaths.Root, "updates");
     private readonly Lock _gate = new();
 
@@ -41,17 +50,40 @@ internal sealed class LinuxUpdater : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public LinuxUpdater(HttpClient http, AgentLog log, Func<CancellationToken, Task> push)
+    public LinuxUpdater(HttpClient http, AgentLog log, Func<CancellationToken, Task> push, IStateStore store, Func<CancellationToken, Task<IReadOnlyList<UpdateServer>>> servers)
     {
         _http = http;
+        _files = http;
         _log = log;
         _push = push;
+        _store = store;
+        _servers = servers;
     }
 
     /// <summary>
     /// Update metadata URL baked into this build; empty hides the update section.
     /// </summary>
     public string Url => AgentBuild.UpdateUrl;
+
+    /// <summary>
+    /// The channel the releases come in.
+    /// </summary>
+    public string Channel { get; private set; } = UpdateChannels.Of(AgentBuild.AllowPrerelease);
+
+    /// <summary>
+    /// The source picked by hand: origin or the address of a server; empty while the servers decide.
+    /// </summary>
+    public string Choice { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Where the installed packages came from.
+    /// </summary>
+    public UpdateOrigin Origin { get; private set; } = UpdateOrigin.Baked;
+
+    /// <summary>
+    /// What kept the last check of a server from a release.
+    /// </summary>
+    public UpdateFault Fault { get; private set; } = UpdateFault.None;
 
     /// <summary>
     /// Whether the offered version differs from the installed one.
@@ -122,6 +154,65 @@ internal sealed class LinuxUpdater : IDisposable
     /// Whether apt is installing the downloaded packages.
     /// </summary>
     public bool Installing { get; private set; }
+
+    /// <summary>
+    /// Takes the channel, the source and the origin from the stored settings; the source that handed the packages
+    /// to apt becomes the origin once their version runs.
+    /// </summary>
+    public async Task LoadAsync(IReadOnlyDictionary<string, string> settings, CancellationToken ct)
+    {
+        Channel = UpdateChannels.Of(settings.GetValueOrDefault(SettingKeys.UpdateChannel), Channel);
+        Choice = UpdateSources.Choice(settings.GetValueOrDefault(SettingKeys.UpdateSource)) ?? string.Empty;
+        var kept = UpdateOrigin.Read(settings.GetValueOrDefault(UpdateSources.OriginSetting)) ?? UpdateOrigin.Baked;
+        var handed = UpdateOrigin.Read(settings.GetValueOrDefault(UpdateSources.HandedSetting));
+        (Origin, _handed) = UpdateSources.Settle(kept, handed, AgentBuild.Version);
+        if (!ReferenceEquals(_handed, handed))
+        {
+            await KeepOriginAsync(ct).ConfigureAwait(false);
+            _log.Info("update", $"the installed packages came from {(Origin.Server ? UpdateSources.HostOf(Origin.Url) : "the releases of the project")}");
+        }
+    }
+
+    /// <summary>
+    /// Takes the channel a word names; false for a word that names none.
+    /// </summary>
+    public async Task<bool> SetChannelAsync(string word, CancellationToken ct)
+    {
+        var channel = UpdateChannels.Of(word, string.Empty);
+        if (channel.Length == 0)
+        {
+            return false;
+        }
+
+        Channel = channel;
+        await _store.SetSettingAsync(SettingKeys.UpdateChannel, channel, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Takes the source a word names; false for a word that names none.
+    /// </summary>
+    public async Task<bool> SetSourceAsync(string word, CancellationToken ct)
+    {
+        if (UpdateSources.Choice(word) is not { } choice)
+        {
+            return false;
+        }
+
+        Choice = choice;
+        await _store.SetSettingAsync(SettingKeys.UpdateSource, choice, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// The sources the list shows and the key of the one a check reads; no list without a baked address.
+    /// </summary>
+    public (IReadOnlyList<UpdateSourceEntry>? Entries, string Key) Sources(IReadOnlyList<UpdateServer> servers)
+    {
+        return Url.Length == 0
+            ? (null, string.Empty)
+            : (UpdateSources.Entries(Url, Origin, servers), UpdateSources.Pick(Url, Origin, Choice, servers).Key);
+    }
 
     /// <summary>
     /// Reads the result the transient install unit left behind.
@@ -297,6 +388,12 @@ internal sealed class LinuxUpdater : IDisposable
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateNoTransientUnit", string.Join(' ', assets.Select(a => a.Path))));
         }
 
+        if (_route is { } route)
+        {
+            _handed = route.Handed(Version);
+            await KeepOriginAsync(ct).ConfigureAwait(false);
+        }
+
         var script = WriteApplyScript(assets);
         await Shell.RunAsync("systemctl", ct, "reset-failed", TransientUnit).ConfigureAwait(false);
         var (code, output) = await Shell.RunAsync(runner, ct, $"--unit={TransientUnit}", "--collect", "/bin/sh", script).ConfigureAwait(false);
@@ -345,10 +442,12 @@ internal sealed class LinuxUpdater : IDisposable
                 new Uri(release.BaseUrl, name).ToString(),
                 asset.Sha256 ?? string.Empty,
                 Path.Combine(_directory, name),
-                asset));
+                UpdateSources.Fitting(asset, _route!)!));
         }
 
         Version = release.Manifest.Version ?? string.Empty;
+        _files = UpdateSources.Pinned(_route!.Pin) ?? _http;
+        _offeredBy = (_route.Url, Channel);
         Description = release.Manifest.Description ?? string.Empty;
         Available = UpdateFeed.IsUpdate(Version, AgentBuild.Version);
         SetupUrl = assets[0].Url;
@@ -367,33 +466,61 @@ internal sealed class LinuxUpdater : IDisposable
             : new IpcAck(true, IpcMessage.Key("Agent_UpToDate"));
     }
 
-    // Newest release on the prerelease channel, the stable manifest otherwise.
-    private async Task<(UpdateManifest Manifest, Uri BaseUrl)?> FetchAsync(CancellationToken ct)
+    // The release the picked source offers on the channel; what kept a server from one is kept for the window.
+    private async Task<UpdateRelease?> FetchAsync(CancellationToken ct)
     {
-        if (AgentBuild.AllowPrerelease && UpdateFeed.TryGitHubRepo(Url, out var owner, out var repo))
+        var route = UpdateSources.Pick(Url, Origin, Choice, await _servers(ct).ConfigureAwait(false));
+        _route = route;
+        var release = default(UpdateRelease);
+        try
         {
-            _reading = UpdateFeed.ReleasesUrl(owner, repo);
-            using var request = new HttpRequestMessage(HttpMethod.Get, _reading);
-            request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
-            request.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
-            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode
-                && UpdateFeed.SelectManifestUrl(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)) is { } picked
-                && UpdateFeed.ParseManifest(await ReadAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)
-            {
-                return (prerelease, new Uri(picked));
-            }
+            release = await UpdateSources.FetchAsync(_http, route, Channel, url => _reading = url, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            NoteFault(route, false, ex);
+            ForgetForeign(route);
+            throw;
         }
 
-        var json = await ReadAsync(Url, ct).ConfigureAwait(false);
-        return UpdateFeed.ParseManifest(json) is { } manifest ? (manifest, new Uri(Url)) : null;
+        NoteFault(route, release is not null, null);
+        if (release is null)
+        {
+            ForgetForeign(route);
+        }
+
+        return release;
     }
 
-    // Reads one address and keeps it for the row of a failure.
-    private Task<string> ReadAsync(string url, CancellationToken ct)
+    // A check that found nothing keeps the offer only when it came from the same source on the same channel.
+    private void ForgetForeign(UpdateRoute route)
     {
-        _reading = url;
-        return _http.GetStringAsync(url, ct);
+        if (Version.Length == 0 || (string.Equals(_offeredBy.Url, route.Url, StringComparison.OrdinalIgnoreCase) && _offeredBy.Channel == Channel))
+        {
+            return;
+        }
+
+        Available = false;
+        Version = string.Empty;
+        Description = string.Empty;
+        SetupUrl = string.Empty;
+        Sha256 = string.Empty;
+        _assets = [];
+    }
+
+    // Keeps what kept the check of a server from a release; a new failure starts the mark of the window again.
+    private void NoteFault(UpdateRoute route, bool found, Exception? error)
+    {
+        var key = UpdateSources.FaultKey(route, found, error);
+        var text = key.Length == 0 ? string.Empty : IpcMessage.Key(key, key == UpdateSources.GoneKey ? route.Gone : route.Host);
+        Fault = UpdateSources.Next(Fault, text, DateTimeOffset.UtcNow);
+    }
+
+    // Records where the installed packages came from and the source that handed the last ones to apt.
+    private async Task KeepOriginAsync(CancellationToken ct)
+    {
+        await _store.SetSettingAsync(UpdateSources.OriginSetting, Origin.Write(), ct).ConfigureAwait(false);
+        await _store.SetSettingAsync(UpdateSources.HandedSetting, _handed?.Write() ?? string.Empty, ct).ConfigureAwait(false);
     }
 
     private async Task RunDownloadAsync(IReadOnlyList<PendingAsset> assets, string version, CancellationToken ct)
@@ -478,7 +605,7 @@ internal sealed class LinuxUpdater : IDisposable
             }
         }
 
-        await UpdateDownload.DownloadAsync(_http, new Uri(asset.Url), asset.Path, progress, ct).ConfigureAwait(false);
+        await UpdateDownload.DownloadAsync(_files, new Uri(asset.Url), asset.Path, progress, ct).ConfigureAwait(false);
         RemoveTree(asset);
     }
 
@@ -487,7 +614,7 @@ internal sealed class LinuxUpdater : IDisposable
     {
         var tree = TreeOf(asset);
         var count = await UpdatePatch
-            .FetchAsync(_http, new Uri(new Uri(asset.Url), patch.Name!), patch, [Path.Combine("/usr/lib", asset.Package)], tree, progress, ct)
+            .FetchAsync(_files, new Uri(new Uri(asset.Url), patch.Name!), patch, [Path.Combine("/usr/lib", asset.Package)], tree, progress, ct)
             .ConfigureAwait(false);
         var (code, output) = await TryRunAsync("dpkg-deb", ct, "--root-owner-group", "-Zgzip", "-z1", "--build", tree, asset.Path)
             .ConfigureAwait(false);

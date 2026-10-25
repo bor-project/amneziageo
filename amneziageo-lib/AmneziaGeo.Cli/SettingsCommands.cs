@@ -1,4 +1,5 @@
 using System.Globalization;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Cli;
@@ -69,6 +70,16 @@ internal static class SettingsCommands
         if (snapshot.SplitRouteLimit > 0)
         {
             values.Add((SettingKeys.SplitRouteLimit, snapshot.SplitRouteLimit.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (snapshot.UpdateChannel.Length > 0)
+        {
+            values.Add((SettingKeys.UpdateChannel, snapshot.UpdateChannel));
+        }
+
+        if (snapshot.UpdateSources is not null)
+        {
+            values.Add((SettingKeys.UpdateSource, snapshot.UpdateSource));
         }
 
         if (Output.Json)
@@ -188,6 +199,26 @@ internal static class SettingsCommands
                 }
 
                 value = ttl.ToString(CultureInfo.InvariantCulture);
+                return true;
+
+            case SettingKeys.UpdateChannel:
+                value = UpdateChannels.Of(raw, string.Empty);
+                if (value.Length == 0)
+                {
+                    error = $"{key} takes one of {string.Join(", ", UpdateChannels.All)}";
+                    return false;
+                }
+
+                return true;
+
+            case SettingKeys.UpdateSource:
+                if (UpdateSources.Choice(raw) is not { } choice)
+                {
+                    error = $"{key} takes {UpdateSources.OriginKey}, {UpdateSources.AutoWord} or the address of an update server";
+                    return false;
+                }
+
+                value = choice.Length == 0 ? UpdateSources.AutoWord : choice;
                 return true;
 
             case SettingKeys.SplitRouteLimit:

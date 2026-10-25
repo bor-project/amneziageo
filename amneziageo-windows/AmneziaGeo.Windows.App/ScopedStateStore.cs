@@ -21,6 +21,7 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
             "last-owner-root",
             "last-owner-target",
         };
+        keys.UnionWith(SettingsStore.OriginKeys);
         return keys;
     }
 

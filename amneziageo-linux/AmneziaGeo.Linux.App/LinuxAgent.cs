@@ -148,7 +148,7 @@ internal sealed class LinuxAgent : IDisposable
         _geo = new GeoConfigurator(_store, _geoFiles);
         _tunnel = new TunnelController(enginePath, interfaceName, log) { ServerAskedDown = ServerAskedDownAsync, FrontGone = FrontGoneAsync };
         _bundles = new BundleCommands(_store, _geo);
-        _updater = new LinuxUpdater(_httpClient, log, PushAsync);
+        _updater = new LinuxUpdater(_httpClient, log, PushAsync, _store, UpdateServersAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
         _hotspot = new LinuxHotspot(log, interfaceName);
         _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered, take: TakeLater);
@@ -191,6 +191,7 @@ internal sealed class LinuxAgent : IDisposable
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
         _updater.CollectInstallResult();
+        await _updater.LoadAsync(settings, ct).ConfigureAwait(false);
         _log.Info("agent", $"library {AgentPaths.Root}, target '{_selectedTarget ?? "(none)"}'");
         await BootUnit.SyncAsync(_surviveReboot, _log, ct).ConfigureAwait(false);
     }
@@ -400,6 +401,7 @@ internal sealed class LinuxAgent : IDisposable
                 s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy, s.Source, s.HasUpdate, s.ReadOnly))
             .ToList();
         var limit = await ServerListsLimitAsync(ct).ConfigureAwait(false);
+        var (updateSources, updateSource) = _updater.Sources(await UpdateServersAsync(ct).ConfigureAwait(false));
 
         return new StatusSnapshot(
             AgentVersion: AgentBuild.Version,
@@ -440,6 +442,12 @@ internal sealed class LinuxAgent : IDisposable
             UpdateChecking: _updater.Checking,
             UpdateCheckFailed: _updater.CheckFailed,
             UpdateInstalling: _updater.Installing,
+            AllowPrerelease: UpdateChannels.Prerelease(_updater.Channel),
+            UpdateChannel: _updater.Channel,
+            UpdateSources: updateSources,
+            UpdateSource: updateSource,
+            UpdateSourceError: _updater.Fault.Text,
+            UpdateSourceErrorSince: _updater.Fault.Since,
             ProxyEnabled: _proxyOptions.Enabled,
             ProxySocksPort: _proxyOptions.SocksPort,
             ProxyHttpPort: _proxyOptions.HttpPort,
@@ -2473,6 +2481,23 @@ internal sealed class LinuxAgent : IDisposable
                 await _store.SetSettingAsync(SettingKeys.HotspotHidden, IsOn(args[1]) ? "on" : "off", ct).ConfigureAwait(false);
                 await ApplyHotspotAsync(ct).ConfigureAwait(false);
                 break;
+            case SettingKeys.UpdateChannel:
+            case SettingKeys.UpdateSource:
+            case "allow-prerelease":
+                var taken = args[0] switch
+                {
+                    SettingKeys.UpdateSource => await _updater.SetSourceAsync(args[1], ct).ConfigureAwait(false),
+                    SettingKeys.UpdateChannel => await _updater.SetChannelAsync(args[1], ct).ConfigureAwait(false),
+                    _ => await _updater.SetChannelAsync(UpdateChannels.Of(IsOn(args[1])), ct).ConfigureAwait(false),
+                };
+                if (!taken)
+                {
+                    return Fail();
+                }
+
+                // Another source or channel is read at once, so the window shows what it offers.
+                _ = Task.Run(() => _updater.CheckAsync(true, CancellationToken.None), CancellationToken.None);
+                break;
             default:
                 await _store.SetSettingAsync(args[0], args[1], ct).ConfigureAwait(false);
                 break;
@@ -2480,6 +2505,19 @@ internal sealed class LinuxAgent : IDisposable
 
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    // The servers of the configs that hand out the releases.
+    private async Task<IReadOnlyList<UpdateServer>> UpdateServersAsync(CancellationToken ct)
+    {
+        var offers = new List<(string, ServerOffer)>();
+        foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false);
+            offers.Add((name, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false)));
+        }
+
+        return UpdateSources.Servers(offers);
     }
 
     // The access point as the stored settings leave it.

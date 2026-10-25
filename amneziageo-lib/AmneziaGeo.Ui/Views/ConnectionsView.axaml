@@ -22,6 +22,12 @@
     <Border Classes="sect">
       <StackPanel Spacing="12">
 
+        <!-- Без вкладки «Туннель» сервер обновлений открывает страницу. -->
+        <StackPanel Spacing="12" IsVisible="{Binding UpdateSourceOnPage}">
+          <controls:UpdateSourceRow />
+          <Border Classes="rowsep" />
+        </StackPanel>
+
         <!-- One area per subject: the tunnel itself, then each way out of this machine; an area this platform
              does not offer stays out of the list. -->
         <controls:AdaptiveComboBox Classes="field" IsVisible="{Binding HasConnectionTabs}"
@@ -89,6 +95,11 @@
             <controls:SettingSwitchRow Heading="True" Label="{l:Tr General_OtherVpn}"
                                        Description="{l:Tr General_OtherVpnHint}"
                                        IsChecked="{Binding OtherVpn, Mode=TwoWay}" />
+
+            <StackPanel Spacing="12" IsVisible="{Binding HasUpdateSources}">
+              <Border Classes="rowsep" />
+              <controls:UpdateSourceRow />
+            </StackPanel>
 
             <!-- Режим и его числа идут последними и за чертой: к остальным настройкам туннеля они не
                  относятся. -->

@@ -130,6 +130,7 @@
                                  TextAlignment="Center" TextWrapping="Wrap" VerticalAlignment="Center"
                                  Foreground="{Binding Home.ConnectStatusBrush}" />
                       <controls:RestartHint x:Name="HomeRestartHint" DataContext="{Binding Home}" />
+                      <controls:UpdateFaultHint DataContext="{Binding Home}" />
                     </StackPanel>
                     <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
                                TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectHintBrush}"

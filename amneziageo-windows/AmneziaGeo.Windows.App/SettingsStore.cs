@@ -35,7 +35,12 @@ internal sealed class SettingsStore(IStateStore store)
             ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
             SubscriptionAutoRefresh = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionAutoRefresh, defaults.SubscriptionAutoRefresh),
             SubscriptionRefreshIntervalHours = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval, defaults.SubscriptionRefreshIntervalHours),
-            AllowPrerelease = ReadBool(values, "allow-prerelease", defaults.AllowPrerelease),
+            UpdateChannel = AmneziaGeo.Decl.UpdateChannels.Of(
+                ReadText(values, AmneziaGeo.Ipc.SettingKeys.UpdateChannel, string.Empty),
+                AmneziaGeo.Decl.UpdateChannels.Of(ReadBool(values, "allow-prerelease", defaults.AllowPrerelease))),
+            UpdateSource = AmneziaGeo.Decl.UpdateSources.Choice(ReadText(values, AmneziaGeo.Ipc.SettingKeys.UpdateSource, string.Empty)) ?? string.Empty,
+            UpdateOrigin = AmneziaGeo.Decl.UpdateOrigin.Read(ReadText(values, AmneziaGeo.Decl.UpdateSources.OriginSetting, string.Empty)) ?? defaults.UpdateOrigin,
+            UpdateHanded = AmneziaGeo.Decl.UpdateOrigin.Read(ReadText(values, AmneziaGeo.Decl.UpdateSources.HandedSetting, string.Empty)),
             MultiServer = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.MultiServer, defaults.MultiServer),
             OtherVpn = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.OtherVpn, defaults.OtherVpn),
             BalanceIntervalSeconds = Math.Clamp(ReadInt(values, "balance-interval-seconds", defaults.BalanceIntervalSeconds), 5, 3600),
@@ -116,6 +121,41 @@ internal sealed class SettingsStore(IStateStore store)
             }
 
             await store.SetSettingAsync(key, AmneziaGeo.Ipc.ShareModes.Of(value), ct);
+            return true;
+        }
+
+        if (key == AmneziaGeo.Ipc.SettingKeys.UpdateChannel)
+        {
+            var channel = AmneziaGeo.Decl.UpdateChannels.Of(value, string.Empty);
+            if (channel.Length == 0)
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, channel, ct);
+            return true;
+        }
+
+        if (key == AmneziaGeo.Ipc.SettingKeys.UpdateSource)
+        {
+            if (AmneziaGeo.Decl.UpdateSources.Choice(value) is not { } choice)
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, choice, ct);
+            return true;
+        }
+
+        // The switch of the prereleases stands for the channel it picks.
+        if (key == "allow-prerelease")
+        {
+            if (!TryParseBool(value, out var prerelease))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(AmneziaGeo.Ipc.SettingKeys.UpdateChannel, AmneziaGeo.Decl.UpdateChannels.Of(prerelease), ct);
             return true;
         }
 
@@ -222,8 +262,26 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. TokenKeys, .. ShareKeys, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval];
+        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys, .. TokenKeys, .. ShareKeys, .. UpdateKeys, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval];
     }
+
+    /// <summary>
+    /// Records where the installed copy came from and the source that handed the last setup to the installer.
+    /// </summary>
+    public async Task SetOriginAsync(AmneziaGeo.Decl.UpdateOrigin origin, AmneziaGeo.Decl.UpdateOrigin? handed, CancellationToken ct = default)
+    {
+        await store.SetSettingAsync(AmneziaGeo.Decl.UpdateSources.OriginSetting, origin.Write(), ct);
+        await store.SetSettingAsync(AmneziaGeo.Decl.UpdateSources.HandedSetting, handed?.Write() ?? string.Empty, ct);
+    }
+
+    /// <summary>
+    /// The settings of the update source the agent keeps itself, apart from the ones the UI sets.
+    /// </summary>
+    public static IReadOnlyList<string> OriginKeys { get; } =
+        [AmneziaGeo.Decl.UpdateSources.OriginSetting, AmneziaGeo.Decl.UpdateSources.HandedSetting];
+
+    // The channel and the source of the releases, each with a rule of its own.
+    private static readonly string[] UpdateKeys = [AmneziaGeo.Ipc.SettingKeys.UpdateChannel, AmneziaGeo.Ipc.SettingKeys.UpdateSource];
 
     private static readonly string[] IntKeys =
         [AppSettings.RouteTtlKey, "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds", "balance-interval-seconds", "balance-strikes", "balance-margin-percent"];

@@ -21,6 +21,14 @@ public sealed record SpeedLeg(string Down, string Up);
 public sealed record OfferedSubscription(string Url, string Revision, string Pin);
 
 /// <summary>
+/// Where a server of ours hands out the releases of the client.
+/// </summary>
+/// <param name="Url">The address the manifests of the channels and the files lie under, ending in a slash.</param>
+/// <param name="Default">Whether the server asks to be taken for the updates while the device has picked none.</param>
+/// <param name="Pin">The SHA-256 of the certificate the address answers under, empty when it names none.</param>
+public sealed record OfferedUpdates(string Url, bool Default, string Pin);
+
+/// <summary>
 /// What a server of ours picked for the name servers of a config and where its resolver answers the config.
 /// </summary>
 /// <param name="Mode">What the client, its template or the server picked: routing, panel, network, own or endpoint.</param>
@@ -167,6 +175,11 @@ public sealed class ServerOffer
     /// The feature that names the name servers of the config and the resolver of the server.
     /// </summary>
     public const string DnsFeature = "dns";
+
+    /// <summary>
+    /// The feature that names where the server hands out the releases of the client.
+    /// </summary>
+    public const string UpdatesFeature = "updates";
 
     /// <summary>
     /// The most name servers one answer is taken with.
@@ -404,6 +417,22 @@ public sealed class ServerOffer
         }
 
         return new OfferedSubscription(url, Text(arguments, "revision"), Text(arguments, "pin"));
+    }
+
+    /// <summary>
+    /// Returns where the server hands out the releases of the client; null when it hands out none.
+    /// </summary>
+    public OfferedUpdates? Updates()
+    {
+        if (Arguments(UpdatesFeature) is not { } arguments
+            || UpdateSources.Base(Text(arguments, "url")) is not { } url)
+        {
+            return null;
+        }
+
+        var pin = Text(arguments, "pin").Trim().ToLowerInvariant();
+
+        return new OfferedUpdates(url, Flag(arguments, "default"), pin.Length == 64 && pin.All(char.IsAsciiHexDigit) ? pin : string.Empty);
     }
 
     /// <summary>

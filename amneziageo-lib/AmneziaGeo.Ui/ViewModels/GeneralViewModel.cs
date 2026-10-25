@@ -158,10 +158,16 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private BundleImportViewModel? _bundleImport;
 
     /// <summary>
-    /// Offer prerelease (beta) versions in the update check.
+    /// The channel the update check reads, in the order of <see cref="Channels"/>.
     /// </summary>
     [ObservableProperty]
-    private bool _allowPrerelease;
+    private int _selectedChannelIndex;
+
+    /// <summary>
+    /// The channels the releases come in, in the order they widen.
+    /// </summary>
+    public ObservableCollection<string> Channels { get; } =
+        [Loc.Instance.Get("General_ChannelStable"), Loc.Instance.Get("General_ChannelBeta"), Loc.Instance.Get("General_ChannelTest")];
 
     /// <summary>
     /// Блок «Работа в фоне».
@@ -321,7 +327,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         // Seed the update setting without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
-        AllowPrerelease = snapshot.AllowPrerelease;
+        SelectedChannelIndex = ChannelIndex(snapshot);
         _suppressSettingPush = false;
         NoticeChoice?.Apply(snapshot.TunnelNotice);
 
@@ -1094,12 +1100,20 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
-    partial void OnAllowPrereleaseChanged(bool value)
+    partial void OnSelectedChannelIndexChanged(int value)
     {
-        if (!_suppressSettingPush)
+        if (!_suppressSettingPush && value >= 0 && value < UpdateChannels.All.Count)
         {
-            _ = SetSettingAsync("allow-prerelease", value ? "on" : "off");
+            _ = SetSettingAsync(SettingKeys.UpdateChannel, UpdateChannels.All[value]);
         }
+    }
+
+    // The channel the agent reads; an agent that names none tells it by the switch of the prereleases.
+    private static int ChannelIndex(StatusSnapshot snapshot)
+    {
+        var channel = snapshot.UpdateChannel.Length > 0 ? snapshot.UpdateChannel : UpdateChannels.Of(snapshot.AllowPrerelease);
+        var index = UpdateChannels.All.ToList().IndexOf(channel);
+        return index < 0 ? 0 : index;
     }
 
     private async Task SetSettingAsync(string key, string value)
@@ -1112,6 +1126,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Replacing the selected item string resets the index-bound ComboBox to -1; capture and restore it.
         var language = SelectedLanguageIndex;
         var theme = SelectedThemeIndex;
+        var channel = SelectedChannelIndex;
 
         _syncingCombos = true;
         _suppressSettingPush = true;
@@ -1131,8 +1146,16 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 Themes[2] = Loc.Instance.Get("Theme_Dark");
             }
 
+            if (Channels.Count >= 3)
+            {
+                Channels[0] = Loc.Instance.Get("General_ChannelStable");
+                Channels[1] = Loc.Instance.Get("General_ChannelBeta");
+                Channels[2] = Loc.Instance.Get("General_ChannelTest");
+            }
+
             SelectedLanguageIndex = language;
             SelectedThemeIndex = theme;
+            SelectedChannelIndex = channel;
         }
         finally
         {
@@ -1235,7 +1258,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         Func<string, Task> note,
         CancellationToken ct)
     {
-        using var http = new HttpClient();
+        using var own = new HttpClient();
+        var http = UpdateSources.Pinned(offer.Pin) ?? own;
         var asset = offer.Asset;
         var address = new Uri(offer.Url);
         var setup = SetupName(offer.Url);

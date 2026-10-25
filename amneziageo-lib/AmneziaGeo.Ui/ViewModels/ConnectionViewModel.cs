@@ -121,6 +121,21 @@ internal partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     private bool _restartPending;
 
+    // What kept the last check of the update server from a release, empty while it went through.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowUpdateFault))]
+    private string _updateFaultText = string.Empty;
+
+    // When that failure began; hiding the mark holds it hidden until a new one begins.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowUpdateFault))]
+    private long _updateFaultSince;
+
+    /// <summary>
+    /// Whether the mark of a failed search for updates stands by the status.
+    /// </summary>
+    public bool ShowUpdateFault => UpdateFaultText.Length > 0 && UpdateFaultSince != _prefs.HiddenUpdateFault;
+
     // The last dial gave up; keeps a failed trace on the status surfaces until the next connect.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -661,6 +676,10 @@ internal partial class ConnectionViewModel : ViewModelBase
         RetryAttempt = snapshot.RetryAttempt;
         RestartPending = snapshot.RestartRequired;
         NamesUnrouted = snapshot.DnsUnreachable;
+        UpdateFaultText = IpcMessage.TryParse(snapshot.UpdateSourceError, out var faultKey, out var faultArgs)
+            ? Loc.Instance.Get(faultKey, faultArgs)
+            : snapshot.UpdateSourceError;
+        UpdateFaultSince = snapshot.UpdateSourceErrorSince;
         if (!ToggleInFlight && KnowsAsked(snapshot.Active))
         {
             IsTunnelActive = snapshot.Active;
@@ -1238,6 +1257,15 @@ internal partial class ConnectionViewModel : ViewModelBase
     // Reads every subscription again when the update is chosen under the warning.
     [RelayCommand]
     private Task UpdateConfigs() => _host.Config.RefreshAllSubscriptionsCommand.ExecuteAsync(null);
+
+    // Hides the mark of the failed search for updates till a new failure begins.
+    [RelayCommand]
+    private void HideUpdateFault()
+    {
+        _prefs.HiddenUpdateFault = UpdateFaultSince;
+        _prefs.Save();
+        OnPropertyChanged(nameof(ShowUpdateFault));
+    }
 
     // Hides the update warning till the servers name the next revisions.
     [RelayCommand]

@@ -92,6 +92,11 @@ internal sealed class UiPreferences
     public string SkippedConfigUpdates { get; set; } = string.Empty;
 
     /// <summary>
+    /// When the failure of the search for updates whose mark the home screen hid began; 0 while none was hidden.
+    /// </summary>
+    public long HiddenUpdateFault { get; set; }
+
+    /// <summary>
     /// Speed service the send leg of a probe uploads to; empty measures against the built-in one.
     /// </summary>
     public string ProbeUploadUrl { get; set; } = string.Empty;
@@ -185,6 +190,7 @@ internal sealed class UiPreferences
             ["region-auto"] = RegionAuto,
             ["shown-update"] = ShownUpdateVersion,
             ["skipped-config-updates"] = SkippedConfigUpdates,
+            ["hidden-update-fault"] = HiddenUpdateFault.ToString(CultureInfo.InvariantCulture),
             ["probe-upload"] = ProbeUploadUrl,
             ["probe-path"] = ProbePath,
             ["accepted-terms"] = AcceptedTerms.ToString(CultureInfo.InvariantCulture),
@@ -258,6 +264,12 @@ internal sealed class UiPreferences
         if (values.TryGetValue("skipped-config-updates", out var skippedUpdates))
         {
             prefs.SkippedConfigUpdates = skippedUpdates;
+        }
+
+        if (values.TryGetValue("hidden-update-fault", out var hiddenFault)
+            && long.TryParse(hiddenFault, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hiddenSince))
+        {
+            prefs.HiddenUpdateFault = hiddenSince;
         }
 
         if (values.TryGetValue("last-config", out var lastConfig))

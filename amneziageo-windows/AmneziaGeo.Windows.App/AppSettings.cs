@@ -48,9 +48,29 @@ internal sealed record AppSettings
     public static string BuildTarget => BakedBuildTarget;
 
     /// <summary>
-    /// Whether the update check offers prereleases; defaults to the baked channel, then user-toggleable.
+    /// Whether the update check offers prereleases.
     /// </summary>
-    public bool AllowPrerelease { get; init; } = BakedAllowPrerelease;
+    public bool AllowPrerelease => AmneziaGeo.Decl.UpdateChannels.Prerelease(UpdateChannel);
+
+    /// <summary>
+    /// The channel the releases come in; defaults to the baked channel, then the user's pick.
+    /// </summary>
+    public string UpdateChannel { get; init; } = AmneziaGeo.Decl.UpdateChannels.Of(BakedAllowPrerelease);
+
+    /// <summary>
+    /// The source of the releases picked by hand: origin or the address of a server; empty while the servers decide.
+    /// </summary>
+    public string UpdateSource { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Where the installed copy came from.
+    /// </summary>
+    public AmneziaGeo.Decl.UpdateOrigin UpdateOrigin { get; init; } = AmneziaGeo.Decl.UpdateOrigin.Baked;
+
+    /// <summary>
+    /// The source that handed the last setup to the installer, null while none is waiting to run.
+    /// </summary>
+    public AmneziaGeo.Decl.UpdateOrigin? UpdateHanded { get; init; }
 
     /// <summary>
     /// Setting key the route lifetime persists under.

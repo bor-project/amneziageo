@@ -206,4 +206,35 @@ public sealed record StatusSnapshot(
     /// Entries a list that carries only what it names holds in the route table before the relay decides; 0 where the
     /// platform takes no such threshold.
     /// </summary>
-    int SplitRouteLimit = 0);
+    int SplitRouteLimit = 0,
+
+    /// <summary>
+    /// The channel the releases come in: stable, beta or test; empty where the platform takes no such choice.
+    /// </summary>
+    string UpdateChannel = "",
+
+    /// <summary>
+    /// The sources the releases can be taken from, the one the installed copy came from first; null where the platform
+    /// takes no such choice.
+    /// </summary>
+    IReadOnlyList<AmneziaGeo.Decl.UpdateSourceEntry>? UpdateSources = null,
+
+    /// <summary>
+    /// The key of the source the check reads.
+    /// </summary>
+    string UpdateSource = "",
+
+    /// <summary>
+    /// What kept the last check of a server from a release, as a message of the agent; empty while it went through.
+    /// </summary>
+    string UpdateSourceError = "",
+
+    /// <summary>
+    /// When that began, in milliseconds of the Unix time; a new failure starts it again.
+    /// </summary>
+    long UpdateSourceErrorSince = 0,
+
+    /// <summary>
+    /// The SHA-256 of the certificate the server of the setup answers under, empty where the machine proves it.
+    /// </summary>
+    string UpdateSetupPin = "");

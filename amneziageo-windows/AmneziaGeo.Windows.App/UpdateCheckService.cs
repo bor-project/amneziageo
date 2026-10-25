@@ -4,12 +4,9 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Periodically checks the update URL for a new version.
+/// Periodically checks the source of the releases for a new version.
 /// </summary>
 internal sealed class UpdateCheckService(
-    SettingsStore settingsStore,
-    UpdateChecker checker,
-    UpdateState state,
     AgentStatusBroker broker,
     ILogger<UpdateCheckService> logger) : BackgroundService
 {
@@ -53,19 +50,5 @@ internal sealed class UpdateCheckService(
         }
     }
 
-    private async Task CheckOnceAsync(CancellationToken ct)
-    {
-        var settings = await settingsStore.LoadAsync(ct);
-        if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
-        {
-            return;
-        }
-
-        state.Latest = await checker.CheckAsync(
-            settings.UpdateUrl, CurrentVersion, AppSettings.BuildTarget, settings.AllowPrerelease, ct);
-        await broker.BroadcastIfChangedAsync(ct);
-    }
-
-    private static string CurrentVersion =>
-        typeof(UpdateCheckService).Assembly.GetName().Version?.ToString() ?? "0";
+    private Task CheckOnceAsync(CancellationToken ct) => broker.CheckUpdateOnTimerAsync(ct);
 }

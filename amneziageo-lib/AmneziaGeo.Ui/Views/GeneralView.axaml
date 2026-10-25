@@ -154,10 +154,16 @@
              <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
                <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Margin="0,2,0,0" />
                <TextBlock Text="{l:Tr Main_UpdateSection}" FontWeight="SemiBold" FontSize="13.5" />
-               <!-- Тумблер стоит в строке подписи: отдельная строка под ней стоила экрана на телефоне. -->
-               <controls:SettingSwitchRow Label="{l:Tr General_AllowPrerelease}"
-                                          Description="{l:Tr General_AllowPrereleaseHint}"
-                                          IsChecked="{Binding AllowPrerelease, Mode=TwoWay}" />
+               <!-- Канал обновлений; узкому телефону подпись встаёт над списком. -->
+               <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10">
+                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr General_UpdateChannel}" FontSize="13.5" VerticalAlignment="Center"
+                            Grid.ColumnSpan="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+                 <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                           Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}" Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                           Grid.ColumnSpan="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" Margin="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop4}"
+                           ItemsSource="{Binding Channels}"
+                           SelectedIndex="{Binding SelectedChannelIndex, Mode=TwoWay}" />
+               </Grid>
                <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold"
                           IsVisible="{Binding UpdateAvailable}" />
                <!-- The buttons stand under the status line. -->

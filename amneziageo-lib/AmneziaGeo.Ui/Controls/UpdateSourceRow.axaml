@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Controls.UpdateSourceRow"
+             x:CompileBindings="True"
+             x:DataType="vm:ConnectionsViewModel">
+  <!-- Откуда приходят обновления приложения: источник дистрибутива или сервер конфигурации. -->
+  <StackPanel Spacing="8">
+    <TextBlock Text="{l:Tr Connections_UpdateSource}" FontWeight="SemiBold" FontSize="15" />
+    <controls:AdaptiveComboBox Classes="field"
+              Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+              HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+              ItemsSource="{Binding UpdateSourceOptions}"
+              SelectedIndex="{Binding SelectedUpdateSourceIndex, Mode=TwoWay}" />
+    <TextBlock Text="{Binding UpdateSourceErrorText}" FontSize="12.5" TextWrapping="Wrap"
+               Foreground="{DynamicResource AgWarnBrush}"
+               IsVisible="{Binding UpdateSourceErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  </StackPanel>
+</UserControl>

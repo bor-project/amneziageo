@@ -18,7 +18,6 @@ namespace AmneziaGeo.Android.Ui.Services;
 internal sealed class AndroidUpdater : IDisposable
 {
     private const string Platform = "android";
-    private const string UserAgent = "AmneziaGeo-UpdateChecker";
     private const string SessionEntry = "package";
 
     private static readonly string _arch = UpdateFeed.AndroidArch(RuntimeInformation.ProcessArchitecture);
@@ -28,11 +27,20 @@ internal sealed class AndroidUpdater : IDisposable
     private string _reading = string.Empty;
     private readonly Action _push;
     private readonly string _installed;
+    private readonly Func<IReadOnlyList<UpdateServer>> _servers;
+    private readonly Action _keep;
     private readonly string _directory;
     private readonly Lock _gate = new();
 
     private string _name = string.Empty;
     private string _offeredVersion = string.Empty;
+    private UpdateRoute? _route;
+
+    // The source and the channel the release on offer came from.
+    private (string Url, string Channel) _offeredBy = (string.Empty, string.Empty);
+
+    // The client the package of the last release found is read with, under the pin of its source.
+    private HttpClient _files;
     private CancellationTokenSource? _download;
     private bool _disposed;
     private bool _applying;
@@ -40,12 +48,15 @@ internal sealed class AndroidUpdater : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public AndroidUpdater(HttpClient http, AndroidAgentLog log, Action push, string installed)
+    public AndroidUpdater(HttpClient http, AndroidAgentLog log, Action push, string installed, Func<IReadOnlyList<UpdateServer>> servers, Action keep)
     {
         _http = http;
+        _files = http;
         _log = log;
         _push = push;
         _installed = installed;
+        _servers = servers;
+        _keep = keep;
         _directory = System.IO.Path.Combine(
             Application.Context.CacheDir?.AbsolutePath ?? System.IO.Path.GetTempPath(),
             "updates");
@@ -61,7 +72,54 @@ internal sealed class AndroidUpdater : IDisposable
     /// <summary>
     /// Whether the check also offers prereleases.
     /// </summary>
-    public bool AllowPrerelease { get; set; } = AndroidBuild.AllowPrerelease;
+    public bool AllowPrerelease => UpdateChannels.Prerelease(Channel);
+
+    /// <summary>
+    /// The channel the releases come in.
+    /// </summary>
+    public string Channel { get; set; } = UpdateChannels.Of(AndroidBuild.AllowPrerelease);
+
+    /// <summary>
+    /// The source picked by hand: origin or the address of a server; empty while the servers decide.
+    /// </summary>
+    public string Choice { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Where the installed package came from.
+    /// </summary>
+    public UpdateOrigin Origin { get; set; } = UpdateOrigin.Baked;
+
+    /// <summary>
+    /// The source that handed the last package to the installer, null while none waits to run.
+    /// </summary>
+    public UpdateOrigin? Handed { get; set; }
+
+    /// <summary>
+    /// What kept the last check of a server from a release.
+    /// </summary>
+    public UpdateFault Fault { get; private set; } = UpdateFault.None;
+
+    /// <summary>
+    /// Makes the source that handed the package to the installer the origin once its version runs; answers whether
+    /// the origin changed.
+    /// </summary>
+    public bool Settle()
+    {
+        var handed = Handed;
+        (Origin, Handed) = UpdateSources.Settle(Origin, handed, _installed);
+        return !ReferenceEquals(Handed, handed);
+    }
+
+    /// <summary>
+    /// The sources the list shows and the key of the one a check reads; no list without a baked address.
+    /// </summary>
+    public (IReadOnlyList<UpdateSourceEntry>? Entries, string Key) Sources()
+    {
+        var servers = _servers();
+        return Url.Length == 0
+            ? (null, string.Empty)
+            : (UpdateSources.Entries(Url, Origin, servers), UpdateSources.Pick(Url, Origin, Choice, servers).Key);
+    }
 
     /// <summary>
     /// Whether the offered version differs from the installed one.
@@ -281,6 +339,12 @@ internal sealed class AndroidUpdater : IDisposable
         {
             Installing = true;
             Failed = false;
+            if (_route is { } route)
+            {
+                Handed = route.Handed(Version);
+                _keep();
+            }
+
             _push();
 
             // Установку начал человек из окна, поэтому после замены пакета окно возвращается.
@@ -317,6 +381,8 @@ internal sealed class AndroidUpdater : IDisposable
         Description = release.Manifest.Description ?? string.Empty;
         Available = UpdateFeed.IsUpdate(Version, _installed);
         SetupUrl = new Uri(release.BaseUrl, name).ToString();
+        _files = UpdateSources.Pinned(_route!.Pin) ?? _http;
+        _offeredBy = (_route.Url, Channel);
         Sha256 = asset.Sha256 ?? string.Empty;
         _name = name;
 
@@ -342,33 +408,55 @@ internal sealed class AndroidUpdater : IDisposable
             : new IpcAck(true, IpcMessage.Key("Agent_UpToDate"));
     }
 
-    // Newest release on the prerelease channel, the stable manifest otherwise.
-    private async Task<(UpdateManifest Manifest, Uri BaseUrl)?> FetchAsync(CancellationToken ct)
+    // The release the picked source offers on the channel; what kept a server from one is kept for the window.
+    private async Task<UpdateRelease?> FetchAsync(CancellationToken ct)
     {
-        if (AllowPrerelease && UpdateFeed.TryGitHubRepo(Url, out var owner, out var repo))
+        var route = UpdateSources.Pick(Url, Origin, Choice, _servers());
+        _route = route;
+        var release = default(UpdateRelease);
+        try
         {
-            _reading = UpdateFeed.ReleasesUrl(owner, repo);
-            using var request = new HttpRequestMessage(HttpMethod.Get, _reading);
-            request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
-            request.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
-            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode
-                && UpdateFeed.SelectManifestUrl(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)) is { } picked
-                && UpdateFeed.ParseManifest(await ReadAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)
-            {
-                return (prerelease, new Uri(picked));
-            }
+            release = await UpdateSources.FetchAsync(_http, route, Channel, url => _reading = url, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            NoteFault(route, false, ex);
+            ForgetForeign(route);
+            throw;
         }
 
-        var json = await ReadAsync(Url, ct).ConfigureAwait(false);
-        return UpdateFeed.ParseManifest(json) is { } manifest ? (manifest, new Uri(Url)) : null;
+        NoteFault(route, release is not null, null);
+        if (release is null)
+        {
+            ForgetForeign(route);
+        }
+
+        return release;
     }
 
-    // Reads one address and keeps it for the row of a failure.
-    private Task<string> ReadAsync(string url, CancellationToken ct)
+    // A check that found nothing keeps the offer only when it came from the same source on the same channel.
+    private void ForgetForeign(UpdateRoute route)
     {
-        _reading = url;
-        return _http.GetStringAsync(url, ct);
+        if (Version.Length == 0 || (string.Equals(_offeredBy.Url, route.Url, StringComparison.OrdinalIgnoreCase) && _offeredBy.Channel == Channel))
+        {
+            return;
+        }
+
+        Available = false;
+        Version = string.Empty;
+        Description = string.Empty;
+        SetupUrl = string.Empty;
+        Sha256 = string.Empty;
+        _name = string.Empty;
+        UpdateFound.Tell(Application.Context, string.Empty);
+    }
+
+    // Keeps what kept the check of a server from a release; a new failure starts the mark of the window again.
+    private void NoteFault(UpdateRoute route, bool found, Exception? error)
+    {
+        var key = UpdateSources.FaultKey(route, found, error);
+        var text = key.Length == 0 ? string.Empty : IpcMessage.Key(key, key == UpdateSources.GoneKey ? route.Gone : route.Host);
+        Fault = UpdateSources.Next(Fault, text, DateTimeOffset.UtcNow);
     }
 
     private async Task RunDownloadAsync(string url, string name, string version, string sha, CancellationToken ct)
@@ -433,7 +521,7 @@ internal sealed class AndroidUpdater : IDisposable
             request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
         }
 
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        using var response = await _files.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
 
         // Черновик длиннее самого пакета - он не от этого файла; начинаем заново.
         if (have > 0 && response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)

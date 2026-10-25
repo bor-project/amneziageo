@@ -89,6 +89,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // Serializes the update download-phase / cancel transitions, which arrive from concurrent pipe handlers.
     private readonly object _updateStateGate = new();
 
+    // What kept the last check of a server from a release, and when it began.
+    private UpdateFault _updateFault = UpdateFault.None;
+
     // The silent update check run off the command path.
     private readonly DetachedRun _detachedCheck = new();
 
@@ -2816,6 +2819,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 : new IpcAck(true, $"set {key}");
         }
 
+        // Another source or channel is read at once, so the window shows what it offers.
+        if (key is SettingKeys.UpdateSource or SettingKeys.UpdateChannel or "allow-prerelease")
+        {
+            logger.LogInformation("set setting {Key}", key);
+            _detachedCheck.Start(() => CheckDetachedAsync(ct));
+            return new IpcAck(true, $"set {key}");
+        }
+
         if (await AppliedAsync(key, ct).ConfigureAwait(false) is { } applied)
         {
             return applied;
@@ -2952,7 +2963,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var result = (Info: (UpdateInfo?)null, Faulted: true);
         try
         {
-            result = await TryCheckUpdateAsync(settings.UpdateUrl, ct);
+            result = await TryCheckUpdateAsync(ct);
         }
         finally
         {
@@ -2991,18 +3002,131 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         return new IpcAck(true, IpcMessage.Key("Agent_UpdateAvailable", result.Info.Version));
 
-        async Task<(UpdateInfo? Info, bool Faulted)> TryCheckUpdateAsync(string url, CancellationToken token)
+        async Task<(UpdateInfo? Info, bool Faulted)> TryCheckUpdateAsync(CancellationToken token)
         {
             try
             {
-                return (await updateChecker.CheckAsync(url, Version(), AppSettings.BuildTarget, settings.AllowPrerelease, token), false);
+                return (await FindUpdateAsync(settings, CurrentScope, token).ConfigureAwait(false), false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!token.IsCancellationRequested)
             {
                 logger.LogWarning(ex, "update check failed");
                 return (null, true);
             }
         }
+    }
+
+    /// <summary>
+    /// Checks the source of the releases on the timer of the service and offers what it found.
+    /// </summary>
+    public async Task CheckUpdateOnTimerAsync(CancellationToken ct)
+    {
+        var settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
+        {
+            return;
+        }
+
+        var info = await FindUpdateAsync(settings, CurrentScope, ct).ConfigureAwait(false);
+        lock (_updateStateGate)
+        {
+            updateState.Latest = info;
+        }
+
+        await BroadcastIfChangedAsync(ct).ConfigureAwait(false);
+    }
+
+    // Reads the release the picked source offers on the channel and keeps what kept a server from answering.
+    private async Task<UpdateInfo?> FindUpdateAsync(AppSettings settings, BrokerScope scope, CancellationToken ct)
+    {
+        var origin = await SettledOriginAsync(settings, ct).ConfigureAwait(false);
+        var route = UpdateSources.Pick(settings.UpdateUrl, origin, settings.UpdateSource, await UpdateServersAsync(scope, ct).ConfigureAwait(false));
+        var info = default(UpdateInfo);
+        try
+        {
+            info = await updateChecker.CheckAsync(route, settings.UpdateChannel, Version(), AppSettings.BuildTarget, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            NoteUpdateFault(route, false, ex);
+            DropForeignOffer(route, settings.UpdateChannel);
+            throw;
+        }
+
+        NoteUpdateFault(route, info is not null, null);
+        if (info is null)
+        {
+            DropForeignOffer(route, settings.UpdateChannel);
+        }
+
+        return info;
+    }
+
+    // A check that found nothing keeps the offer only when it came from the same source on the same channel.
+    private void DropForeignOffer(UpdateRoute route, string channel)
+    {
+        lock (_updateStateGate)
+        {
+            if (updateState.Latest is { } held && !held.CameFrom(route, channel))
+            {
+                updateState.Latest = null;
+            }
+        }
+    }
+
+    // The origin once the version running is known; the source that handed the setup becomes it after the install.
+    private async Task<UpdateOrigin> SettledOriginAsync(AppSettings settings, CancellationToken ct)
+    {
+        var (origin, handed) = UpdateSources.Settle(settings.UpdateOrigin, settings.UpdateHanded, Version());
+        if (!ReferenceEquals(handed, settings.UpdateHanded))
+        {
+            await settingsStore.SetOriginAsync(origin, handed, ct).ConfigureAwait(false);
+            logger.LogInformation("the installed copy came from {Source}", origin.Server ? UpdateSources.HostOf(origin.Url) : "the releases of the project");
+        }
+
+        return origin;
+    }
+
+    // The servers of the configs of a user that hand out the releases.
+    private static async Task<IReadOnlyList<UpdateServer>> UpdateServersAsync(BrokerScope scope, CancellationToken ct)
+    {
+        var offers = new List<(string, ServerOffer)>();
+        foreach (var name in await scope.ConfigRepo.ListAsync(ct).ConfigureAwait(false))
+        {
+            var text = await scope.ConfigRepo.ReadTextAsync(name, ct).ConfigureAwait(false);
+            offers.Add((name, await scope.Offers.OfferAsync(name, text, ct).ConfigureAwait(false)));
+        }
+
+        return UpdateSources.Servers(offers);
+    }
+
+    // Keeps what kept the check of a server from a release; a new failure starts the mark of the window again.
+    private void NoteUpdateFault(UpdateRoute route, bool found, Exception? error)
+    {
+        var key = UpdateSources.FaultKey(route, found, error);
+        var text = key.Length == 0 ? string.Empty : IpcMessage.Key(key, key == UpdateSources.GoneKey ? route.Gone : route.Host);
+        lock (_updateStateGate)
+        {
+            _updateFault = UpdateSources.Next(_updateFault, text, DateTimeOffset.UtcNow);
+        }
+
+        if (error is not null && route.Server)
+        {
+            logger.LogWarning(error, "the update server {Host} could not be read", route.Host);
+        }
+    }
+
+    // The source that handed the setup of a version to the window is recorded before the setup runs.
+    private async Task HandOverAsync(string version, CancellationToken ct)
+    {
+        var route = updateState.Latest?.Route;
+        if (route is null || version.Length == 0)
+        {
+            return;
+        }
+
+        var settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
+        await settingsStore.SetOriginAsync(settings.UpdateOrigin, route.Handed(version), ct).ConfigureAwait(false);
     }
 
     // Checks for an update silently off the command path.
@@ -3064,6 +3188,11 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         if (phaseChanged || percentChanged || hadCancel)
         {
             await BroadcastIfChangedAsync(ct);
+        }
+
+        if (newPhase == UpdateDownloadPhase.Downloaded && phaseChanged)
+        {
+            await HandOverAsync(version, ct).ConfigureAwait(false);
         }
 
         if (newPhase == UpdateDownloadPhase.Installing)
@@ -3258,6 +3387,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var stale = await SubscriptionBinding.StaleAsync(store, ct);
+        var offered = new List<(string, ServerOffer)>();
         foreach (var name in await configRepo.ListAsync(ct))
         {
             var configText = await configRepo.ReadTextAsync(name, ct);
@@ -3278,6 +3408,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var member = members.GetValueOrDefault(name);
             var offer = await scope.Offers.OfferAsync(name, configText, ct).ConfigureAwait(false);
             var vpnDns = VpnDns.Showing(configDns, offer.Dns(), WgConfigEditor.GetDns(configText));
+            offered.Add((name, offer));
             configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours));
         }
 
@@ -3308,6 +3439,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var update = updateState.Latest;
+        var updateServers = UpdateSources.Servers(offered);
+        var updateOrigin = UpdateSources.Settle(settings.UpdateOrigin, settings.UpdateHanded, Version()).Origin;
+        var updateRoute = UpdateSources.Pick(settings.UpdateUrl, updateOrigin, settings.UpdateSource, updateServers);
+        var updateFault = _updateFault;
         // A download only counts as ready when its version still matches the offered one, so a newer check
         // drops a setup downloaded for the previous version.
         var downloadedForCurrent = update is not null && updateState.ReadyFor(update.Version);
@@ -3385,7 +3520,13 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             ReconnectAlways: true,
             ServerListsOf: limit?.Config ?? string.Empty,
             ServerLists: limit?.Lists,
-            FoundApps: foundApps), scope, states);
+            FoundApps: foundApps,
+            UpdateChannel: settings.UpdateChannel,
+            UpdateSources: settings.UpdateUrl.Length > 0 ? UpdateSources.Entries(settings.UpdateUrl, updateOrigin, updateServers) : null,
+            UpdateSource: updateRoute.Key,
+            UpdateSourceError: updateFault.Text,
+            UpdateSourceErrorSince: updateFault.Since,
+            UpdateSetupPin: update?.Route?.Pin ?? string.Empty), scope, states);
     }
 
     /// <summary>

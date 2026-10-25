@@ -85,11 +85,44 @@
   <data name="General_ShowNotificationsHint" xml:space="preserve">
     <value>Tray notices about the connection and about app and database updates.</value>
   </data>
-  <data name="General_AllowPrerelease" xml:space="preserve">
-    <value>Check for prerelease versions</value>
+  <data name="General_UpdateChannel" xml:space="preserve">
+    <value>Update channel</value>
   </data>
-  <data name="General_AllowPrereleaseHint" xml:space="preserve">
-    <value>Offer beta builds in the update check, not only stable releases.</value>
+  <data name="General_ChannelStable" xml:space="preserve">
+    <value>Stable</value>
+  </data>
+  <data name="General_ChannelBeta" xml:space="preserve">
+    <value>Beta</value>
+  </data>
+  <data name="General_ChannelTest" xml:space="preserve">
+    <value>Test</value>
+  </data>
+  <data name="Connections_UpdateSource" xml:space="preserve">
+    <value>Update server</value>
+  </data>
+  <data name="Connections_UpdateSourceOrigin" xml:space="preserve">
+    <value>Where installed from ({0})</value>
+  </data>
+  <data name="Connections_UpdateSourceServer" xml:space="preserve">
+    <value>{0} “{1}”</value>
+  </data>
+  <data name="Connections_UpdateSourceRecommended" xml:space="preserve">
+    <value>{0} (recommended)</value>
+  </data>
+  <data name="Main_UpdateFaultHide" xml:space="preserve">
+    <value>Hide</value>
+  </data>
+  <data name="Agent_UpdateSourceUnreachable" xml:space="preserve">
+    <value>The update server {0} does not answer</value>
+  </data>
+  <data name="Agent_UpdateSourceNoRelease" xml:space="preserve">
+    <value>The update server {0} holds no release of the channel</value>
+  </data>
+  <data name="Agent_UpdateSourceCertificate" xml:space="preserve">
+    <value>The certificate of the update server {0} is not the one its server named</value>
+  </data>
+  <data name="Agent_UpdateSourceGone" xml:space="preserve">
+    <value>The server {0} no longer hands out updates; they come from where the app was installed</value>
   </data>
   <data name="General_ProxySection" xml:space="preserve">
     <value>Connections</value>

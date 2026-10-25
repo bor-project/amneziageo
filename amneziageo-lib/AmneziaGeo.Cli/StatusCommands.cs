@@ -1,4 +1,5 @@
 using System.Globalization;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Cli;
@@ -70,6 +71,16 @@ internal static class StatusCommands
             pairs.Add(("last failure", $"{snapshot.ConnectFailReason} {snapshot.ConnectFailDetail}".Trim()));
         }
 
+        if (snapshot.UpdateSources is { } sources)
+        {
+            pairs.Add(("update source", UpdateSourceLine(sources, snapshot.UpdateSource)));
+            pairs.Add(("update channel", snapshot.UpdateChannel));
+            if (snapshot.UpdateSourceError.Length > 0)
+            {
+                pairs.Add(("update error", AckText.Localize(snapshot.UpdateSourceError)));
+            }
+        }
+
         Output.Pairs(pairs);
 
         var rows = snapshot.Configs
@@ -115,6 +126,18 @@ internal static class StatusCommands
     {
         var upstream = snapshot.NameTransport.Length > 0 ? snapshot.NameTransport : "-";
         return snapshot.SystemNames.Length > 0 ? $"{upstream}, system asks by {snapshot.SystemNames}" : upstream;
+    }
+
+    // The source the check reads: its key with the host and the config it stands for.
+    private static string UpdateSourceLine(IReadOnlyList<UpdateSourceEntry> sources, string key)
+    {
+        var entry = sources.FirstOrDefault(source => string.Equals(source.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            return key.Length > 0 ? key : "-";
+        }
+
+        return entry.Config.Length > 0 ? $"{entry.Key} ({entry.Host}, {entry.Config})" : $"{entry.Key} ({entry.Host})";
     }
 
     private static string RoutingLabel(StatusSnapshot snapshot)

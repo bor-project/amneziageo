@@ -157,6 +157,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
     [NotifyPropertyChangedFor(nameof(FromSubscription))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOff))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOffText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionRefreshable))]
     private string _subscription = string.Empty;
 
     /// <summary>
@@ -169,6 +172,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     /// Держит ли сервер другую ревизию подписки, чем прочитанная последней.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionRefreshable))]
     private bool _subscriptionStale;
 
     /// <summary>
@@ -178,9 +182,42 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private bool _subscriptionRefreshing;
 
     /// <summary>
+    /// Почему сервер держит подписку выключенной: сертификат, который берут не все клиенты; пусто, пока не держит.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOff))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOffText))]
+    [NotifyPropertyChangedFor(nameof(SubscriptionRefreshable))]
+    private string _subscriptionFault = string.Empty;
+
+    /// <summary>
+    /// Дата, имя или удостоверяющий центр, о которых причина.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SubscriptionOffText))]
+    private string _subscriptionFaultDetail = string.Empty;
+
+    /// <summary>
     /// Ведётся ли конфигурация подпиской.
     /// </summary>
     public bool FromSubscription => Subscription.Length > 0;
+
+    /// <summary>
+    /// Держит ли сервер подписку конфигурации выключенной.
+    /// </summary>
+    public bool SubscriptionOff => FromSubscription && SubscriptionFault.Length > 0;
+
+    /// <summary>
+    /// Что сказать у знака «!» о выключенной подписке.
+    /// </summary>
+    public string SubscriptionOffText => SubscriptionOff
+        ? Loc.Instance.Get("Main_SubscriptionOffText", CertificateWords.Of(SubscriptionFault, SubscriptionFaultDetail))
+        : string.Empty;
+
+    /// <summary>
+    /// Можно ли перечитать подписку с карточки: сервер держит другую ревизию и не выключил подписку.
+    /// </summary>
+    public bool SubscriptionRefreshable => SubscriptionStale && !SubscriptionOff;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
@@ -317,6 +354,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     public virtual void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Tags));
+        OnPropertyChanged(nameof(SubscriptionOffText));
         OnPropertyChanged(nameof(CardActionText));
         OnPropertyChanged(nameof(ProbeText));
         OnPropertyChanged(nameof(CardSpeedText));

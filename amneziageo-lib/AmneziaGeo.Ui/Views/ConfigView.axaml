@@ -189,17 +189,23 @@
                 <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15"
                            VerticalAlignment="Center" />
                 <!-- Конфигурация из подписки: обновление перечитывает подписку целиком. -->
-                <Button Grid.Column="1" Classes="linkbtn" VerticalAlignment="Center" HorizontalAlignment="Right"
-                        IsVisible="{Binding HasOpenConfigSubscription}"
-                        IsEnabled="{Binding !OpenConfigSubscription.Busy}"
-                        Command="{Binding OpenConfigSubscription.RefreshCommand}"
-                        ToolTip.Tip="{Binding OpenConfigSubscription.Caption}">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <PathIcon Classes.spin="{Binding OpenConfigSubscription.Busy}"
-                              Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
-                    <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
-                  </StackPanel>
-                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center"
+                            HorizontalAlignment="Right">
+                  <controls:WarnMark VerticalAlignment="Center"
+                                     IsVisible="{Binding OpenConfigSubscription.IsOff, FallbackValue=False}"
+                                     Title="{l:Tr Main_SubscriptionOffTitle}" Text="{Binding OpenConfigSubscription.OffText}" />
+                  <Button Classes="linkbtn" VerticalAlignment="Center"
+                          IsVisible="{Binding HasOpenConfigSubscription}"
+                          IsEnabled="{Binding OpenConfigSubscription.Refreshable, FallbackValue=False}"
+                          Command="{Binding OpenConfigSubscription.RefreshCommand}"
+                          ToolTip.Tip="{Binding OpenConfigSubscription.Caption}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <PathIcon Classes.spin="{Binding OpenConfigSubscription.Busy}"
+                                Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14" />
+                      <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
               </Grid>
               <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
                        Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
@@ -214,6 +220,8 @@
                              HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding LastError}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
                              IsVisible="{Binding HasError}" />
+                  <TextBlock Text="{Binding OffLine}" Classes="fieldwarn" FontSize="11.5" TextWrapping="Wrap"
+                             IsVisible="{Binding IsOff}" />
                 </StackPanel>
               </StackPanel>
               <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"

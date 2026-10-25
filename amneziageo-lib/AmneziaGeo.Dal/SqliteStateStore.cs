@@ -408,6 +408,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await AddColumnAsync(connection, schema, "subscriptions", "pin", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
             await AddColumnAsync(connection, schema, "subscriptions", "from_hello", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
 
+            // Why the server of a config keeps the subscription off.
+            await AddColumnAsync(connection, schema, "subscriptions", "fault", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "subscriptions", "fault_detail", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
+
             // Whether the server keeps a list read-only, and the configuration whose server last handed the list out.
             await AddColumnAsync(connection, schema, "routing_list_origins", "read_only", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
             await AddColumnAsync(connection, schema, "routing_list_origins", "config", "TEXT NOT NULL DEFAULT ''", ct).ConfigureAwait(false);
@@ -1376,7 +1380,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     SELECT name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error,
-                           revision, offered, pin, from_hello
+                           revision, offered, pin, from_hello, fault, fault_detail
                     FROM subscriptions
                     ORDER BY name;
                     """;
@@ -1400,7 +1404,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                             reader.GetString(10),
                             reader.GetString(11),
                             reader.GetString(12),
-                            reader.GetInt64(13) != 0));
+                            reader.GetInt64(13) != 0,
+                            reader.GetString(14),
+                            reader.GetString(15)));
                     }
                 }
             }
@@ -1422,8 +1428,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO subscriptions (name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error, revision, offered, pin, from_hello, created_at, updated_at)
-                    VALUES ($name, $url, $title, $interval, $upload, $download, $total, $expires, $checked, $error, $revision, $offered, $pin, $hello, $updated, $updated)
+                    INSERT INTO subscriptions (name, url, title, interval_hours, upload, download, total, expires_at, checked_at, last_error, revision, offered, pin, from_hello, fault, fault_detail, created_at, updated_at)
+                    VALUES ($name, $url, $title, $interval, $upload, $download, $total, $expires, $checked, $error, $revision, $offered, $pin, $hello, $fault, $faultDetail, $updated, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         url            = excluded.url,
                         title          = excluded.title,
@@ -1438,6 +1444,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         offered        = excluded.offered,
                         pin            = excluded.pin,
                         from_hello     = excluded.from_hello,
+                        fault          = excluded.fault,
+                        fault_detail   = excluded.fault_detail,
                         updated_at     = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", subscription.Name);
@@ -1454,6 +1462,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$offered", subscription.Offered);
                 command.Parameters.AddWithValue("$pin", subscription.Pin);
                 command.Parameters.AddWithValue("$hello", subscription.FromHello ? 1 : 0);
+                command.Parameters.AddWithValue("$fault", subscription.Fault);
+                command.Parameters.AddWithValue("$faultDetail", subscription.FaultDetail);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

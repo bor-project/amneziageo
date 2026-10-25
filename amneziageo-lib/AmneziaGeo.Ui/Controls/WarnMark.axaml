@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AmneziaGeo.Ui.Controls.WarnMark"
+             VerticalAlignment="Center">
+  <!-- Знак «!» у того, что сервер держит выключенным: окно говорит почему. -->
+  <Button x:Name="MarkPart" Classes="icon" Padding="3" VerticalAlignment="Center"
+          Click="OnMarkClick" PointerEntered="OnMarkPointerEntered" Tapped="OnMarkTapped">
+    <Panel Width="16" Height="16">
+      <Ellipse Fill="{DynamicResource AgWarnSoftBrush}" />
+      <TextBlock Text="!" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AgWarnBrush}"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Panel>
+    <FlyoutBase.AttachedFlyout>
+      <Flyout Placement="BottomEdgeAlignedRight">
+        <StackPanel MaxWidth="320" Spacing="5">
+          <TextBlock x:Name="TitlePart" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock x:Name="TextPart" FontSize="12" TextWrapping="Wrap" />
+        </StackPanel>
+      </Flyout>
+    </FlyoutBase.AttachedFlyout>
+  </Button>
+</UserControl>

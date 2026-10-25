@@ -18,7 +18,10 @@ public sealed record SpeedLeg(string Down, string Up);
 /// <param name="Url">The address the subscription is read at.</param>
 /// <param name="Revision">The mark of what the subscription hands out now.</param>
 /// <param name="Pin">The SHA-256 of the certificate the address answers under, empty when it names none.</param>
-public sealed record OfferedSubscription(string Url, string Revision, string Pin);
+/// <param name="Fault">Why the server keeps the subscription off: a certificate not every client takes; empty while it
+/// does not.</param>
+/// <param name="Detail">The date, the name or the authority the fault is about.</param>
+public sealed record OfferedSubscription(string Url, string Revision, string Pin, string Fault = "", string Detail = "");
 
 /// <summary>
 /// Where a server of ours hands out the releases of the client.
@@ -416,7 +419,12 @@ public sealed class ServerOffer
             return null;
         }
 
-        return new OfferedSubscription(url, Text(arguments, "revision"), Text(arguments, "pin"));
+        return new OfferedSubscription(
+            url,
+            Text(arguments, "revision"),
+            Text(arguments, "pin"),
+            Text(arguments, "fault"),
+            Text(arguments, "detail"));
     }
 
     /// <summary>

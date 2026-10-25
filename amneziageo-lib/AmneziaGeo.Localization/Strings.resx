@@ -2486,6 +2486,39 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_SubscriptionInsecure" xml:space="preserve">
     <value>This address is not encrypted: the subscription keys travel in plain text and anyone on the way can read them.</value>
   </data>
+  <data name="Main_SubscriptionOffTitle" xml:space="preserve">
+    <value>The subscription is off</value>
+  </data>
+  <data name="Main_SubscriptionOffText" xml:space="preserve">
+    <value>The subscription of this server is off: {0}. The configuration works; the subscription brings no updates.</value>
+  </data>
+  <data name="Main_SubscriptionOffLine" xml:space="preserve">
+    <value>The subscription of the server is off: {0}</value>
+  </data>
+  <data name="Main_CertificateMissing" xml:space="preserve">
+    <value>the server holds no certificate</value>
+  </data>
+  <data name="Main_CertificateUnreadable" xml:space="preserve">
+    <value>the certificate file of the server does not read</value>
+  </data>
+  <data name="Main_CertificateExpired" xml:space="preserve">
+    <value>the certificate of the server ran out on {0}</value>
+  </data>
+  <data name="Main_CertificateName" xml:space="preserve">
+    <value>the certificate of the server is not issued for {0}</value>
+  </data>
+  <data name="Main_CertificateSelfSigned" xml:space="preserve">
+    <value>the certificate of the server is signed by itself</value>
+  </data>
+  <data name="Main_CertificateNoIntermediate" xml:space="preserve">
+    <value>the server does not send the certificate of {0} that issued its own</value>
+  </data>
+  <data name="Main_CertificateUntrusted" xml:space="preserve">
+    <value>the chain of the server certificate ends at a root nobody trusts: {0}</value>
+  </data>
+  <data name="Main_CertificateOldAndroid" xml:space="preserve">
+    <value>the chain of the server certificate ends at ISRG Root X2, which Android before 14 lacks</value>
+  </data>
   <data name="General_SubscriptionAutoRefresh" xml:space="preserve">
     <value>Subscription auto-refresh</value>
   </data>

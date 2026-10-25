@@ -85,10 +85,12 @@
             </StackPanel>
             <!-- Конфигурация из подписки: перечитать её прямо с карточки. Ссылка идёт следом за замерами и живёт,
                  пока сервер держит другую ревизию. -->
-            <Panel>
+            <StackPanel Orientation="Horizontal" Spacing="2">
+              <controls:WarnMark VerticalAlignment="Center" IsVisible="{Binding SubscriptionOff}"
+                                 Title="{l:Tr Main_SubscriptionOffTitle}" Text="{Binding SubscriptionOffText}" />
               <Button x:Name="RefreshPart" Classes="linkbtn" VerticalAlignment="Center"
                       IsVisible="{Binding FromSubscription}"
-                      IsEnabled="{Binding SubscriptionStale}"
+                      IsEnabled="{Binding SubscriptionRefreshable}"
                       Command="{Binding $parent[controls:CatalogCard].RefreshSubscriptionCommand}"
                       CommandParameter="{Binding}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -97,7 +99,7 @@
                   <TextBlock Text="{l:Tr Main_SubscriptionRefresh}" />
                 </StackPanel>
               </Button>
-            </Panel>
+            </StackPanel>
           </controls:TailRow>
         </Grid>
 

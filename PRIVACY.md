@@ -1,6 +1,6 @@
 # AmneziaGeo privacy
 
-Version 1, 24 October 2026
+Version 2, 25 October 2026
 
 AmneziaGeo has no accounts, no telemetry and no analytics. The project runs no servers of its own: nothing about you or your traffic reaches its authors. The code carries no telemetry or crash-reporting library.
 
@@ -8,6 +8,7 @@ AmneziaGeo has no accounts, no telemetry and no analytics. The project runs no s
 
 - The servers you added yourself. While the tunnel is up, your traffic goes through them. The program opens a subscription link on the schedule of the subscription refresh.
 - GitHub (api.github.com, github.com). Checks for new versions several times a day and on the "Check for updates" button. Downloads when you start one.
+- The update server of a server you added, instead of GitHub: when it is picked in "Connections" - "Update server" or recommended by your server and you have not picked another. The same checks and downloads, under a certificate the system trusts or the one your server named.
 - Sources of the geo databases. By default these are github.com (the Loyalsoldier, runetfreedom and jameszeroX sets) and raw.githubusercontent.com/bor-project/amneziageo-geo. The program checks and downloads the databases on a schedule, once every 24 hours. The sources can be changed.
 - Region detection (www.cloudflare.com/cdn-cgi/trace, api.country.is). The window asks for the country code when it picks routing presets and the tunnel is not up. The answer is the country code alone.
 - Speed probe (speed.cloudflare.com). Only when you run a probe yourself.

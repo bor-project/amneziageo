@@ -364,6 +364,11 @@ class Ui:
         while True:
             try:
                 self.dump()
+                accept = self.find_all(key="Terms_Accept", fresh=False) if self.windows else []
+                if accept:
+                    # Первый запуск окна на чистой библиотеке: условия принимаются, как это делает пользователь.
+                    self.tap(accept[0], wait=2)
+                    continue
                 if self.windows and self.is_home(fresh=False):
                     break
             except (TimeoutError, OSError, ValueError, RuntimeError):

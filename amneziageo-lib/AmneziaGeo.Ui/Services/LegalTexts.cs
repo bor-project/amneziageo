@@ -16,7 +16,7 @@ internal static partial class LegalTexts
     /// <summary>
     /// Версия условий и конфиденциальности, которую окно просит принять.
     /// </summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>
     /// Условия использования.

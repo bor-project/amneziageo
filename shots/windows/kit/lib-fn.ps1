@@ -121,6 +121,12 @@ function Reset-Ui {
     Start-Process -FilePath $Script:UiExe
     for ($i = 0; $i -lt 60 -and (Get-MainWindow) -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250 }
     Start-Sleep -Seconds 5
+    # Первый запуск окна новой версии условий: условия принимаются, как это делает пользователь.
+    $accept = Find-Element (T 'Terms_Accept') 'Button'
+    if ($accept) {
+        Invoke-Element $accept | Out-Null
+        Start-Sleep -Seconds 3
+    }
     Set-WindowBox 460 140 1000 760
     Start-Sleep -Seconds 1
 }
@@ -402,7 +408,8 @@ function Stop-Load {
 }
 
 function Get-StandParts {
-    $parts = @([regex]::Escape($env:USERNAME))
+    # Имя пользователя - отдельным словом: в адресе bor-project.github.io оно не прячется.
+    $parts = @('(?<![\w-])' + [regex]::Escape($env:USERNAME) + '(?![\w-])')
     $file = Join-Path $Script:Base 'mask.txt'
     if (-not (Test-Path $file)) { return $parts }
     foreach ($line in Get-Content -Encoding UTF8 $file) {

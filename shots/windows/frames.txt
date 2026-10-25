@@ -12,6 +12,8 @@ routing-advanced    маршрутизация, «Дополнительно»
 geo-sources         источники geo
 connections-tunnel  подключения, вкладка туннеля
 connections-proxy   подключения, вкладка прокси
+update-source       подключения, вкладка туннеля: открытый список «Сервер обновлений»
+update-fault        главный экран: знак ошибки проверки обновлений и окно с причиной
 diag-routes         журнал маршрутов с поиском youtube
 diag-active         активные подключения с поиском youtube
 diag-config         текущая конфигурация

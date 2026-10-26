@@ -228,7 +228,6 @@ public sealed class GeoVpnService : VpnService
     private int _handle = -1;
     private int _proxyPort;
     private ConnectivityManager? _connectivity;
-    private InetSocketAddress? _proxyEnd;
     private WsCarrier? _carrier;
 
     // How long a question to the server about where its websocket front stands may take.
@@ -995,7 +994,7 @@ public sealed class GeoVpnService : VpnService
             IReadOnlyList<string> pinned = [.. servers.Select(server => server + "/32")
                 .Concat((signal?.Routes ?? []).Where(route => !route.Contains(':', StringComparison.Ordinal)))
                 .Distinct(StringComparer.Ordinal)];
-            var relay = NeedsRelay(plan) ? new ProxyRelay(Carried(plan, resolved, pinned), Protect, Report, ResolveOwner, Refuse) : null;
+            var relay = NeedsRelay(plan) ? new ProxyRelay(Carried(plan, resolved, pinned), Protect, Report, RelayCaller, ResolveOwner, Refuse) : null;
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
             // Live tun replacement from Android 13.
@@ -2526,23 +2525,20 @@ public sealed class GeoVpnService : VpnService
         return GeoIpRanges.Format(network) + "/" + prefix;
     }
 
-    // Names the application behind a connection; null when the system will not tell. A stream handed over by the tun
-    // names the pair it was opened for, a proxy request names its loopback end. The manager, the proxy end of the
-    // pair and the packages a uid owns are held: each costs a round trip into another process, and none of them
-    // changes while the tunnel stands.
-    private string? ResolveOwner(System.Net.IPEndPoint peer, System.Net.IPEndPoint? destination)
+    // Names the application behind a stream handed over by the tun, by the pair it was opened for; null when the
+    // system will not tell. The manager and the packages a uid owns are held: each costs a round trip into another
+    // process, and neither changes while the tunnel stands.
+    private string? ResolveOwner(System.Net.IPEndPoint peer, System.Net.IPEndPoint destination)
     {
         try
         {
-            if (Build.VERSION.SdkInt < BuildVersionCodes.Q || (destination is null && _proxyPort == 0))
+            if (Build.VERSION.SdkInt < BuildVersionCodes.Q)
             {
                 return null;
             }
 
             var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
-            var remote = destination is null
-                ? _proxyEnd ??= new InetSocketAddress(ProxyHost, _proxyPort)
-                : new InetSocketAddress(destination.Address.ToString(), destination.Port);
+            var remote = new InetSocketAddress(destination.Address.ToString(), destination.Port);
             var local = new InetSocketAddress(peer.Address.ToString(), peer.Port);
             var uid = manager?.GetConnectionOwnerUid(TcpProtocol, local, remote) ?? -1;
             if (uid < 0)
@@ -2555,6 +2551,27 @@ public sealed class GeoVpnService : VpnService
         catch (Java.Lang.Exception)
         {
             return null;
+        }
+    }
+
+    // The uid behind the calling end of a connection to the relay; -1 when the system will not tell.
+    private int RelayCaller(System.Net.IPEndPoint peer, System.Net.IPEndPoint relay)
+    {
+        try
+        {
+            if (!OperatingSystem.IsAndroidVersionAtLeast(29))
+            {
+                return -1;
+            }
+
+            var manager = _connectivity ??= (ConnectivityManager?)GetSystemService(ConnectivityService);
+            var local = new InetSocketAddress(peer.Address.ToString(), peer.Port);
+            var remote = new InetSocketAddress(relay.Address.ToString(), relay.Port);
+            return manager?.GetConnectionOwnerUid(TcpProtocol, local, remote) ?? -1;
+        }
+        catch (Java.Lang.Exception)
+        {
+            return -1;
         }
     }
 
@@ -2681,6 +2698,12 @@ public sealed class GeoVpnService : VpnService
                 VpnBridge.WriteSessions(relay.Sessions());
                 var share = tunnel > 0 ? relay.Bytes * 100 / tunnel : 0;
                 Report($"{relay.Snapshot()}; tunnel {tunnel / 1024} KiB, relayed {share}%");
+                var strangers = relay.TakeStrangers();
+                if (strangers > 0)
+                {
+                    Report($"relay: {strangers} connection(s) not handed over by this application closed in "
+                        + $"{ReportIntervalMs / 1000} s");
+                }
             }
             else
             {
@@ -3944,7 +3967,6 @@ public sealed class GeoVpnService : VpnService
             _excluded = [];
             _liveTun = false;
             _proxyPort = 0;
-            _proxyEnd = null;
             _signal = null;
             _packages.Clear();
             _owners.Clear();

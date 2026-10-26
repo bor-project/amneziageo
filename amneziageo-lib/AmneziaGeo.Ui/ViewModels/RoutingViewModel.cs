@@ -87,6 +87,9 @@ internal partial class RoutingViewModel : ViewModelBase
     // What the agent last reported taking, so an editor built between snapshots opens on those values.
     private string _localDoh = string.Empty;
 
+    // Порог таблицы маршрутов из снимка агента; 0, где агент его не принимает.
+    private int _splitRouteLimit;
+
     [ObservableProperty]
     private bool _sectionLoading;
 
@@ -382,6 +385,16 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool ShowAllUdp => RoutingSettings is { UseGlobalProxy: false } && RoutingListSummaryViewModel.AllUdpSupported;
 
     /// <summary>
+    /// Стоит ли под переключателем всего UDP порог таблицы маршрутов: агент его принимает.
+    /// </summary>
+    public bool ShowSplitRouteLimit => ShowAllUdp && RoutingSettings is { ShowSplitRouteLimit: true };
+
+    /// <summary>
+    /// Стоит ли переключатель всего UDP без порога.
+    /// </summary>
+    public bool ShowUdpWithoutLimit => ShowAllUdp && !ShowSplitRouteLimit;
+
+    /// <summary>
     /// Показан ли экран выбора регионов.
     /// </summary>
     public bool ShowImportRegions => IsSectionImport && IsImportRegions && !ApplyingPreset;
@@ -638,8 +651,11 @@ internal partial class RoutingViewModel : ViewModelBase
         SelectedRoutingListId = snapshot.SelectedRoutingList;
         MarkSelectedList();
         _localDoh = snapshot.LocalDoh;
+        _splitRouteLimit = snapshot.SplitRouteLimit;
         RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
         RoutingSettings?.ApplyLocalDoh(_localDoh);
+        RoutingSettings?.ApplySplitRouteLimit(_splitRouteLimit);
+        RoutingEditor?.ApplyRelayThreshold(_splitRouteLimit);
     }
 
     /// <summary>
@@ -1180,12 +1196,21 @@ internal partial class RoutingViewModel : ViewModelBase
             newValue.PropertyChanged += OnEditPropertyChanged;
             newValue.DirtyChanged += OnEditScopeDirty;
             newValue.ApplyLocalDoh(_localDoh);
+            newValue.ApplySplitRouteLimit(_splitRouteLimit);
         }
 
         SyncTrafficFlags();
         OnPropertyChanged(nameof(ShowListUnsafe));
-        OnPropertyChanged(nameof(ShowAllUdp));
+        RaiseAdvancedRows();
         RefreshEditBar();
+    }
+
+    // Строки экрана «Дополнительно» и подпись его кнопки идут за режимом списка и за порогом агента.
+    private void RaiseAdvancedRows()
+    {
+        OnPropertyChanged(nameof(ShowAllUdp));
+        OnPropertyChanged(nameof(ShowSplitRouteLimit));
+        OnPropertyChanged(nameof(ShowUdpWithoutLimit));
     }
 
     // Any edit to the open list (a field or the rule set) clears a lingering delete line and refreshes the Save bar.
@@ -1196,7 +1221,11 @@ internal partial class RoutingViewModel : ViewModelBase
         if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.UseGlobalProxy))
         {
             OnPropertyChanged(nameof(ShowListUnsafe));
-            OnPropertyChanged(nameof(ShowAllUdp));
+            RaiseAdvancedRows();
+        }
+        else if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.ShowSplitRouteLimit))
+        {
+            RaiseAdvancedRows();
         }
 
         RefreshEditBar();

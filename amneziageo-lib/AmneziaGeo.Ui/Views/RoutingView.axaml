@@ -164,10 +164,12 @@
                   <StackPanel Grid.Column="0" Spacing="2">
                     <TextBlock Text="{l:Tr Main_AdvancedTitle}" FontWeight="SemiBold" FontSize="15"
                                TextWrapping="Wrap" />
-                    <!-- Подпись по составу экрана: с UDP или без него. -->
+                    <!-- Подпись по составу экрана: с UDP и порогом, с UDP или без него. -->
                     <Panel>
+                      <TextBlock Text="{l:Tr Main_AdvancedSubtitleLimit}" Classes="muted" FontSize="11.5"
+                                 TextWrapping="Wrap" IsVisible="{Binding ShowSplitRouteLimit}" />
                       <TextBlock Text="{l:Tr Main_AdvancedSubtitle}" Classes="muted" FontSize="11.5"
-                                 TextWrapping="Wrap" IsVisible="{Binding ShowAllUdp}" />
+                                 TextWrapping="Wrap" IsVisible="{Binding ShowUdpWithoutLimit}" />
                       <TextBlock Text="{l:Tr Main_AdvancedSubtitleFull}" Classes="muted" FontSize="11.5"
                                  TextWrapping="Wrap" IsVisible="{Binding !ShowAllUdp}" />
                     </Panel>
@@ -232,6 +234,28 @@
                                                Description="{l:Tr Main_AllUdpHint}"
                                                IsChecked="{Binding AllUdp, Mode=TwoWay}" SwitchEnabled="{Binding !ReadOnly}"
                                                HorizontalAlignment="Stretch" />
+
+                    <!-- Общая настройка агента: столько записей список держит в таблице маршрутов, дальше решает
+                         релей. -->
+                    <StackPanel Spacing="14" IsVisible="{Binding ShowSplitRouteLimit}">
+                      <Border Classes="rowsep" />
+                      <StackPanel Spacing="8">
+                        <StackPanel Spacing="2">
+                          <TextBlock Text="{l:Tr Main_SplitRouteLimitTitle}" FontWeight="SemiBold" FontSize="15"
+                                     TextWrapping="Wrap" />
+                          <TextBlock Text="{l:Tr Main_SplitRouteLimitHint}" Classes="muted" FontSize="11.5"
+                                     TextWrapping="Wrap" />
+                        </StackPanel>
+                        <TextBox Classes="field" Classes.invalid="{Binding SplitRouteLimitInvalid}" Width="150"
+                                 HorizontalAlignment="Left" controls:NumericInput.Maximum="999999"
+                                 Text="{Binding SplitRouteLimit, Mode=TwoWay}">
+                          <TextBox.InnerRightContent>
+                            <TextBlock Text="{l:Tr Main_SplitRouteLimitUnit}" Classes="muted" Margin="6,0,10,0"
+                                       VerticalAlignment="Center" IsHitTestVisible="False" />
+                          </TextBox.InnerRightContent>
+                        </TextBox>
+                      </StackPanel>
+                    </StackPanel>
 
                     <Border Classes="rowsep" />
                   </StackPanel>

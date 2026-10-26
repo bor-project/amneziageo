@@ -565,6 +565,15 @@
   <data name="Main_RouteTtlHint" xml:space="preserve">
     <value>How long an address stays cached</value>
   </data>
+  <data name="Main_SplitRouteLimitTitle" xml:space="preserve">
+    <value>Route table threshold</value>
+  </data>
+  <data name="Main_SplitRouteLimitHint" xml:space="preserve">
+    <value>How many entries a list keeps in the route table</value>
+  </data>
+  <data name="Main_SplitRouteLimitUnit" xml:space="preserve">
+    <value>entries</value>
+  </data>
   <data name="Main_LocalDohTitle" xml:space="preserve">
     <value>System DNS requests</value>
   </data>
@@ -2995,6 +3004,9 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Main_AdvancedSubtitleFull" xml:space="preserve">
     <value>Cache and export</value>
+  </data>
+  <data name="Main_AdvancedSubtitleLimit" xml:space="preserve">
+    <value>UDP, threshold, cache and export</value>
   </data>
   <data name="Notice_Attempt" xml:space="preserve">
     <value>attempt {0}</value>

@@ -107,11 +107,16 @@ public static class ServerHello
     }
 
     /// <summary>
-    /// Returns the address of the services of a point.
+    /// Returns the address of the services of a point: where they answer plain inside the tunnel, when it names that.
     /// </summary>
     public static string Origin(ServiceTarget point)
     {
         ArgumentNullException.ThrowIfNull(point);
+
+        if (point.Origin.Length > 0)
+        {
+            return point.Origin;
+        }
 
         var host = point.Host.Contains(':', StringComparison.Ordinal) ? $"[{point.Host}]" : point.Host;
 

@@ -240,9 +240,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             (point, ct) => ServerHello.AskAsync(point, PastTunnel.ConnectAsync, ct),
             geo: _geo,
             fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)),
-            take: (ids, ct) => Task.Run(() => TakeVersionsAsync(ids), ct));
+            take: (ids, ct) => Task.Run(() => TakeVersionsAsync(ids), ct),
+            carried: Carries);
         Current = this;
     }
+
+    // Whether the tunnel of a config is up now: the hello then goes inside it.
+    private bool Carries(string config) =>
+        _boundStatus == ConnectionStatus.Connected && string.Equals(_boundTarget, config, StringComparison.Ordinal);
 
     public void Start()
     {

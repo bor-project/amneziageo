@@ -43,6 +43,8 @@ public sealed class ServerOffers
     private readonly Action? _rerouted;
     private readonly Func<IReadOnlyList<long>, CancellationToken, Task>? _take;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
+    private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _askInside;
+    private readonly Func<string, bool>? _carried;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
     private readonly HashSet<string> _asking = new(StringComparer.Ordinal);
@@ -59,11 +61,15 @@ public sealed class ServerOffers
         GeoConfigurator? geo = null,
         Action<IReadOnlyList<GeoSource>>? fetch = null,
         Action? rerouted = null,
-        Func<IReadOnlyList<long>, CancellationToken, Task>? take = null)
+        Func<IReadOnlyList<long>, CancellationToken, Task>? take = null,
+        Func<string, bool>? carried = null,
+        Func<ServiceTarget, CancellationToken, Task<HelloReply>>? askInside = null)
     {
         _store = store;
         _note = note;
         _ask = ask ?? ServerHello.AskAsync;
+        _askInside = askInside ?? ServerHello.AskAsync;
+        _carried = carried;
         _time = time ?? TimeProvider.System;
         _geo = geo;
         _fetch = fetch;
@@ -221,7 +227,8 @@ public sealed class ServerOffers
 
         var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var reply = await _ask(point with { TakesSignal = transport?.AllowSignal ?? true }, ct).ConfigureAwait(false);
+        var asked = point with { TakesSignal = transport?.AllowSignal ?? true };
+        var reply = await InsideAsync(config, asked, kept, ct).ConfigureAwait(false) ?? await _ask(asked, ct).ConfigureAwait(false);
         var now = _time.GetUtcNow();
         if (!reply.Heard)
         {
@@ -278,6 +285,20 @@ public sealed class ServerOffers
         }
 
         return (offer, bound || listed || limited);
+    }
+
+    // Asks the server inside the tunnel, plain, while the tunnel of the config carries and the server named where it
+    // answers there; null when no server of ours answered there, so the question goes past the tunnel.
+    private async Task<HelloReply?> InsideAsync(string config, ServiceTarget point, KeptOffer? kept, CancellationToken ct)
+    {
+        if (kept?.Offer.Inside() is not { Length: > 0 } origin || _carried?.Invoke(config) != true)
+        {
+            return null;
+        }
+
+        var reply = await _askInside(point with { Origin = origin }, ct).ConfigureAwait(false);
+
+        return reply.Offer is { Ours: true } ? reply : null;
     }
 
     // Takes the geo sources and the routing lists the server hands out, has the files of the sources that came or

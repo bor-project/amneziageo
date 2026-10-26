@@ -565,6 +565,15 @@
   <data name="Main_RouteTtlHint" xml:space="preserve">
     <value>Сколько адрес хранится в кеше</value>
   </data>
+  <data name="Main_SplitRouteLimitTitle" xml:space="preserve">
+    <value>Порог таблицы маршрутов</value>
+  </data>
+  <data name="Main_SplitRouteLimitHint" xml:space="preserve">
+    <value>Сколько записей список держит в таблице маршрутов</value>
+  </data>
+  <data name="Main_SplitRouteLimitUnit" xml:space="preserve">
+    <value>записей</value>
+  </data>
   <data name="Main_LocalDohTitle" xml:space="preserve">
     <value>DNS-запросы системы</value>
   </data>
@@ -2995,6 +3004,9 @@
   </data>
   <data name="Main_AdvancedSubtitleFull" xml:space="preserve">
     <value>Кеш и экспорт</value>
+  </data>
+  <data name="Main_AdvancedSubtitleLimit" xml:space="preserve">
+    <value>UDP, порог, кеш и экспорт</value>
   </data>
   <data name="Notice_Attempt" xml:space="preserve">
     <value>попытка {0}</value>

@@ -185,6 +185,11 @@ public sealed class ServerOffer
     public const string UpdatesFeature = "updates";
 
     /// <summary>
+    /// The feature that names where the hello answers plain inside the tunnel.
+    /// </summary>
+    public const string InsideFeature = "inside";
+
+    /// <summary>
     /// The most name servers one answer is taken with.
     /// </summary>
     public const int MaxDnsServers = 8;
@@ -359,6 +364,23 @@ public sealed class ServerOffer
         var up = Text(leg, "up");
 
         return down.Length > 0 && up.Length > 0 ? new SpeedLeg(down, up) : null;
+    }
+
+    /// <summary>
+    /// Returns where the hello answers plain inside the tunnel: an address, not a name, over HTTP; empty where the
+    /// server names no such place.
+    /// </summary>
+    public string Inside()
+    {
+        if (Arguments(InsideFeature) is not { ValueKind: JsonValueKind.Object } arguments
+            || !Uri.TryCreate(Text(arguments, "origin"), UriKind.Absolute, out var origin)
+            || origin.Scheme != Uri.UriSchemeHttp
+            || !IPAddress.TryParse(origin.Host.Trim('[', ']'), out _))
+        {
+            return string.Empty;
+        }
+
+        return origin.GetLeftPart(UriPartial.Authority);
     }
 
     /// <summary>

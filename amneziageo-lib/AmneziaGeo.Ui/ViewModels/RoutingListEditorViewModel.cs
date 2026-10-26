@@ -272,6 +272,20 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         : Loc.Instance.Get("RoutingEditor_RelayNoticeUdp");
 
     /// <summary>
+    /// Asks again what the rules turn into when the threshold of the agent is no longer the one the answer held.
+    /// </summary>
+    public void ApplyRelayThreshold(int threshold)
+    {
+        if (!RelayKnown || threshold <= 0 || threshold == RelayThreshold)
+        {
+            return;
+        }
+
+        _budgetSignature = string.Empty;
+        _ = RefreshRouteBudgetAsync();
+    }
+
+    /// <summary>
     /// Asks the agent what the current rules turn into and holds the answer.
     /// </summary>
     public async Task RefreshRouteBudgetAsync()

@@ -19,6 +19,11 @@ public sealed record ServiceTarget(string Host, int Port, string PrivateKey, str
     public bool TakesSignal { get; init; } = true;
 
     /// <summary>
+    /// Where the services answer plain inside the tunnel; empty for the address of the Endpoint.
+    /// </summary>
+    public string Origin { get; init; } = string.Empty;
+
+    /// <summary>
     /// Returns the mark an answer of these services is kept under: the point and the keys, not the rest of the text.
     /// </summary>
     public string Mark() =>

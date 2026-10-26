@@ -151,8 +151,12 @@ internal sealed class LinuxAgent : IDisposable
         _updater = new LinuxUpdater(_httpClient, log, PushAsync, _store, UpdateServersAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
         _hotspot = new LinuxHotspot(log, interfaceName);
-        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered, take: TakeLater);
+        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered, take: TakeLater, carried: Carries);
     }
+
+    // Whether the tunnel of a config is up now: the hello then goes inside it.
+    private bool Carries(string config) =>
+        _tunnel.Running && _boundStatus == ConnectionStatus.Connected && string.Equals(_boundTarget, config, StringComparison.Ordinal);
 
     /// <summary>
     /// Raised when the state changed and the connected clients need a fresh snapshot.

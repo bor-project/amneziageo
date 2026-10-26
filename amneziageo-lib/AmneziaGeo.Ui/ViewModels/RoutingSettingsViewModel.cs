@@ -19,6 +19,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     private bool _baseAllUdp;
     private bool _baseUseGlobalProxy;
     private string _baseRouteTtl = "300";
+    private string _baseSplitRouteLimit = string.Empty;
     private int _baseLocalDohChoice;
 
     [ObservableProperty]
@@ -37,6 +38,23 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// Whether the entered lifetime is not a whole number of seconds in range.
     /// </summary>
     public bool RouteTtlInvalid => !TryParseTtl(RouteTtl, out _);
+
+    // Agent-wide as well: entries a list keeps in the route table before the relay decides. Empty until the agent
+    // reports it.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SplitRouteLimitInvalid))]
+    private string _splitRouteLimit = string.Empty;
+
+    /// <summary>
+    /// Whether the entered threshold is not a whole number of entries in range.
+    /// </summary>
+    public bool SplitRouteLimitInvalid => !SettingKeys.TryParseSplitRouteLimit(SplitRouteLimit, out _);
+
+    /// <summary>
+    /// Whether the agent takes a threshold of the route table.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showSplitRouteLimit;
 
     // Agent-wide: index into LocalDohModes.All.
     [ObservableProperty]
@@ -125,6 +143,13 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    // The threshold leaves on Save like the lifetime; the plan of the next session takes it.
+    partial void OnSplitRouteLimitChanged(string value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
+
     partial void OnLocalDohChoiceChanged(int value)
     {
         OnEdited();
@@ -152,6 +177,36 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         try
         {
             RouteTtl = text;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>
+    /// Seeds the threshold from the agent snapshot without pushing it back, leaving an uncommitted edit alone; 0 hides
+    /// the field.
+    /// </summary>
+    public void ApplySplitRouteLimit(int limit)
+    {
+        ShowSplitRouteLimit = limit > 0;
+        if (!ShowSplitRouteLimit || SplitRouteLimit != _baseSplitRouteLimit)
+        {
+            return;
+        }
+
+        var text = limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _baseSplitRouteLimit = text;
+        if (SplitRouteLimit == text)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            SplitRouteLimit = text;
         }
         finally
         {
@@ -223,6 +278,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         var dirty = AllUdp != _baseAllUdp
             || UseGlobalProxy != _baseUseGlobalProxy
             || RouteTtl != _baseRouteTtl
+            || SplitRouteLimit != _baseSplitRouteLimit
             || LocalDohChoice != _baseLocalDohChoice;
         if (dirty != IsDirty)
         {
@@ -232,7 +288,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     }
 
     /// <inheritdoc />
-    public bool CanCommit() => !RouteTtlInvalid;
+    public bool CanCommit() => !RouteTtlInvalid && !(ShowSplitRouteLimit && SplitRouteLimitInvalid);
 
     /// <inheritdoc />
     public void CaptureBaseline()
@@ -240,6 +296,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         _baseAllUdp = AllUdp;
         _baseUseGlobalProxy = UseGlobalProxy;
         _baseRouteTtl = RouteTtl;
+        _baseSplitRouteLimit = SplitRouteLimit;
         _baseLocalDohChoice = LocalDohChoice;
         if (IsDirty)
         {
@@ -257,6 +314,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             AllUdp = _baseAllUdp;
             UseGlobalProxy = _baseUseGlobalProxy;
             RouteTtl = _baseRouteTtl;
+            SplitRouteLimit = _baseSplitRouteLimit;
             LocalDohChoice = _baseLocalDohChoice;
             StatusMessage = string.Empty;
         }
@@ -313,9 +371,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// </summary>
     public async Task<bool> CommitAsync()
     {
-        // An unparseable lifetime never leaves: the field is already marked, and a rejected block would look like
-        // an agent failure instead of a typo.
-        if (!TryParseTtl(RouteTtl, out var ttl))
+        // An unparseable lifetime or threshold never leaves: the field is already marked, and a rejected block would
+        // look like an agent failure instead of a typo.
+        if (!TryParseTtl(RouteTtl, out var ttl) || (ShowSplitRouteLimit && SplitRouteLimitInvalid))
         {
             return false;
         }
@@ -344,6 +402,14 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             // Agent-wide, and live: the running tunnel adopts it without a reconnect.
             if (RouteTtl != _baseRouteTtl
                 && !await PushSettingAsync(SettingKeys.RouteTtl, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            {
+                return false;
+            }
+
+            // Agent-wide; the plan of the next session takes it.
+            if (ShowSplitRouteLimit && SplitRouteLimit != _baseSplitRouteLimit
+                && SettingKeys.TryParseSplitRouteLimit(SplitRouteLimit, out var limit)
+                && !await PushSettingAsync(SettingKeys.SplitRouteLimit, limit.ToString(System.Globalization.CultureInfo.InvariantCulture)))
             {
                 return false;
             }

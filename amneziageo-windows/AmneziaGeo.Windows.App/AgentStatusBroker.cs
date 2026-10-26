@@ -51,7 +51,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 geo: scopeGeo,
                 fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false),
                 rerouted: () => MarkRestartRequired(),
-                take: (ids, ct) => TakeVersionsAsync(made!, ids, ct));
+                take: (ids, ct) => TakeVersionsAsync(made!, ids, ct),
+                carried: IsRunningMember);
             made = new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), scopeGeo, offers);
             return made;
         });

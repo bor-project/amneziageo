@@ -262,6 +262,30 @@ function Open-ListEditor([int]$index = 0) {
     Start-Sleep -Milliseconds 1000
 }
 
+function Add-FullList {
+    $name = T 'Preset_AllButLocalName'
+    $region = ((Get-Language).Culture -split '-')[-1].ToLowerInvariant()
+    Remove-FullList
+    Invoke-Cli routing create $name "direct|geoip:$region" | Out-Null
+    Invoke-Cli routing configure $name --global-proxy on | Out-Null
+    Start-Sleep -Seconds 2
+    $name
+}
+
+function Remove-FullList {
+    $name = T 'Preset_AllButLocalName'
+    $was = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [Text.Encoding]::UTF8
+    try {
+        foreach ($list in @((Invoke-Cli --json routing list | Out-String | ConvertFrom-Json) | Where-Object { $_.name -eq $name })) {
+            Invoke-Cli routing remove $list.id | Out-Null
+        }
+    }
+    finally {
+        [Console]::OutputEncoding = $was
+    }
+}
+
 function Get-SwitchFor([string]$key) {
     $label = Find-Element (T $key)
     if (-not $label) { throw "not found: $key" }

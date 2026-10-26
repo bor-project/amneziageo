@@ -5,6 +5,6 @@ Reset-Ui
 Open-Section 'Main_RailRoutingTitle'
 Click-Id 'AddButton' | Out-Null
 Start-Sleep -Milliseconds 1500
-$ec = Open-Combo (Get-OfType 'ComboBox')[0]
+$ec = Open-Combo (Get-OfType 'ComboBox')[1]
 Save-Masked 'routing-new' -WithPopups
 $ec.Collapse()

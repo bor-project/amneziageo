@@ -48,9 +48,10 @@ def create_list(ui):
     before = lists(ui)
     ui.open_section("Main_RailRoutingTitle")
     ui.click(key="Main_AddButton", wait=2)
+    ui.pick(ui.after(ui.find(cls="TextBlock", key="Main_TemplateTitle"), cls="AdaptiveComboBox"), ui.T_all("Preset_ClosedName"))
     template = [node for node in ui.find_all(cls="TextBlock", key="Preset_ClosedName") if node.up("AdaptiveComboBox")]
     if not template:
-        raise RuntimeError("template is not the default one")
+        raise RuntimeError("template is not chosen")
     ui.click(key="Main_AddButton", wait=3)
     ui.click(key="Main_SaveButton", cls="AccessText", wait=3)
     added = [key for key in lists(ui) if key not in before]

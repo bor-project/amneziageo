@@ -4,6 +4,8 @@ config-catalog      каталог конфигураций
 config-add          меню «Добавить» в каталоге
 config-page         страница конфигурации
 routing-cards       карточка списка маршрутизации
+routing-warning     список «Всё, кроме выбранного»: метка и пояснение
+routing-modes       новый список: режим VPN для приложений
 routing-new         новый список: выбор шаблона
 routing-editor      редактор правил
 routing-suggest     подсказки при вводе правила

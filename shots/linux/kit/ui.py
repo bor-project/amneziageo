@@ -411,6 +411,30 @@ class Ui:
         card = self.scroll_into(lambda: self.find(cls="TextBlock", label=name, timeout=1), 160)
         self.tap(self.after(card, key="Main_CardSettingsLink", cls="Button"), wait=2)
 
+    REGIONS = {"ru": "ru", "en": "us"}
+
+    def full_list(self):
+        """Список «Всё, кроме выбранного» с именем шаблона на языке кадров: уже заведённый или свой на время кадра;
+        номер и признак своего."""
+        name = self.T("Preset_AllButLocalName")
+        held = [str(item["id"]) for item in self.status().get("routingLists", [])
+                if item.get("useGlobalProxy") and item["name"] == name]
+        if held:
+            return held[0], False
+        self.cli("routing", "create", name, "direct|geoip:%s" % self.REGIONS.get(self.lang, self.lang))
+        self.cli("routing", "configure", name, "--global-proxy", "on")
+        time.sleep(2)
+        made = [str(item["id"]) for item in self.status().get("routingLists", [])
+                if item.get("useGlobalProxy") and item["name"] == name]
+        if not made:
+            raise RuntimeError("the full list was not created")
+        return made[0], True
+
+    def drop_full_list(self, list_id, own):
+        """Удаляет свой список «Всё, кроме выбранного»; чужой остаётся."""
+        if own:
+            self.cli("routing", "remove", list_id)
+
     def status_list_name(self, list_id=None):
         status = self.status()
         wanted = str(list_id or self.docs_list or status.get("selectedRoutingList"))

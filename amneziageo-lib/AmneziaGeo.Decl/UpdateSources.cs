@@ -53,6 +53,37 @@ public static class UpdateChannels
     /// Whether a channel takes prereleases.
     /// </summary>
     public static bool Prerelease(string channel) => channel is Beta or Test;
+
+    /// <summary>
+    /// The place of a channel in the order they widen; any other word stands with the stable releases.
+    /// </summary>
+    public static int Rank(string channel) => channel switch
+    {
+        Beta => 1,
+        Test => 2,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// Whether a channel takes the releases of another.
+    /// </summary>
+    public static bool Takes(string channel, string release) => Rank(release) <= Rank(channel);
+
+    /// <summary>
+    /// The channel a release tag goes out on: a test suffix (v1.2.3.4-test.1) on the test channel, any other suffix or
+    /// a release marked prerelease on the betas.
+    /// </summary>
+    public static string OfTag(string? tag, bool prerelease)
+    {
+        var text = tag ?? string.Empty;
+        var suffix = text.IndexOf('-', StringComparison.Ordinal);
+        if (suffix < 0)
+        {
+            return prerelease ? Beta : Stable;
+        }
+
+        return text[(suffix + 1)..].StartsWith(Test, StringComparison.OrdinalIgnoreCase) ? Test : Beta;
+    }
 }
 
 /// <summary>
@@ -446,7 +477,7 @@ public static class UpdateSources
             request.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
             using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
             if (response.IsSuccessStatusCode
-                && UpdateFeed.SelectManifestUrl(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false)) is { } picked)
+                && UpdateFeed.SelectManifestUrl(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false), channel) is { } picked)
             {
                 reading(picked);
                 if (UpdateFeed.ParseManifest(await http.GetStringAsync(picked, ct).ConfigureAwait(false)) is { } prerelease)

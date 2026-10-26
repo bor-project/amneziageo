@@ -72,12 +72,15 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <!-- Prerelease channel toggle baked from installer.config.json (build-installer.ps1 passes
-       -p:AllowPrerelease). "1" => the update check also offers prereleases. Absent/"0" => stable only. -->
-  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+  <!-- The kind of the release (build-installer.ps1 passes -p:ReleaseChannel): stable, beta or test; the update
+       check starts out on its channel. -p:AllowPrerelease=1 stands for beta. -->
+  <PropertyGroup>
+    <ReleaseChannel Condition="'$(ReleaseChannel)' == '' and '$(AllowPrerelease)' == '1'">beta</ReleaseChannel>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ReleaseChannel)' != ''">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
-      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
-      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+      <_Parameter1>AmneziaGeo.ReleaseChannel</_Parameter1>
+      <_Parameter2>$(ReleaseChannel)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

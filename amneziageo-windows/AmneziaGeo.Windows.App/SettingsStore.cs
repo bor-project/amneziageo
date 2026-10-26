@@ -35,9 +35,7 @@ internal sealed class SettingsStore(IStateStore store)
             ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
             SubscriptionAutoRefresh = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionAutoRefresh, defaults.SubscriptionAutoRefresh),
             SubscriptionRefreshIntervalHours = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.SubscriptionRefreshInterval, defaults.SubscriptionRefreshIntervalHours),
-            UpdateChannel = AmneziaGeo.Decl.UpdateChannels.Of(
-                ReadText(values, AmneziaGeo.Ipc.SettingKeys.UpdateChannel, string.Empty),
-                AmneziaGeo.Decl.UpdateChannels.Of(ReadBool(values, "allow-prerelease", defaults.AllowPrerelease))),
+            UpdateChannel = ReadChannel(values, defaults.UpdateChannel),
             UpdateSource = AmneziaGeo.Decl.UpdateSources.Choice(ReadText(values, AmneziaGeo.Ipc.SettingKeys.UpdateSource, string.Empty)) ?? string.Empty,
             UpdateOrigin = AmneziaGeo.Decl.UpdateOrigin.Read(ReadText(values, AmneziaGeo.Decl.UpdateSources.OriginSetting, string.Empty)) ?? defaults.UpdateOrigin,
             UpdateHanded = AmneziaGeo.Decl.UpdateOrigin.Read(ReadText(values, AmneziaGeo.Decl.UpdateSources.HandedSetting, string.Empty)),
@@ -313,6 +311,14 @@ internal sealed class SettingsStore(IStateStore store)
 
     private static string ReadText(IReadOnlyDictionary<string, string> values, string key, string fallback)
         => values.TryGetValue(key, out var value) ? value : fallback;
+
+    // The channel picked by hand; the switch of the prereleases stands for the channel it picked.
+    private static string ReadChannel(IReadOnlyDictionary<string, string> values, string fallback)
+        => AmneziaGeo.Decl.UpdateChannels.Of(
+            ReadText(values, AmneziaGeo.Ipc.SettingKeys.UpdateChannel, string.Empty),
+            values.TryGetValue("allow-prerelease", out var value) && TryParseBool(value, out var prerelease)
+                ? AmneziaGeo.Decl.UpdateChannels.Of(prerelease)
+                : fallback);
 
     private static string ReadLogLevel(IReadOnlyDictionary<string, string> values, string fallback)
         => values.TryGetValue(LogLevelWatcher.SettingKey, out var value) && LogLevelController.IsValid(value) ? value : fallback;

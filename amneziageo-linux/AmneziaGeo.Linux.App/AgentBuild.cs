@@ -1,4 +1,5 @@
 using System.Reflection;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -18,9 +19,9 @@ internal static class AgentBuild
     public static string UpdateUrl { get; } = Metadata("AmneziaGeo.UpdateUrl");
 
     /// <summary>
-    /// Whether the update check also offers prereleases.
+    /// The channel of the kind of the release baked at build time.
     /// </summary>
-    public static bool AllowPrerelease { get; } = Metadata("AmneziaGeo.AllowPrerelease") == "1";
+    public static string Channel { get; } = UpdateChannels.Of(Metadata("AmneziaGeo.ReleaseChannel"), UpdateChannels.Stable);
 
     private static string Metadata(string key)
     {

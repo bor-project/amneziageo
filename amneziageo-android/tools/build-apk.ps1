@@ -10,7 +10,8 @@
   build stops with the submodule/build-engine instructions.
 
   Usage (on the build machine):
-    pwsh -File build-apk.ps1 [-c Release|Debug] [-v N.N.N.N] [-UpdateUrl <url>] [-Prerelease]
+    pwsh -File build-apk.ps1 [-c Release|Debug] [-v N.N.N.N] [-UpdateUrl <url>] [-Channel stable|beta|test]
+  -Channel is the kind of the release; beta and test carry the console over adb. -Prerelease is -Channel beta.
   The update URL is baked into the package: the application reads it to offer its own update.
   Signing takes the SDK debug key unless ANDROID_KEYSTORE names a keystore, in which case ANDROID_KEY_ALIAS,
   ANDROID_STORE_PASS and ANDROID_KEY_PASS have to be set as well; a debug-signed build never updates over a
@@ -23,6 +24,7 @@ param(
   [Alias('c')][ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
   [Alias('v')][string]$Version,
   [string]$UpdateUrl = 'https://github.com/bor-project/amneziageo/releases/latest/download/update.json',
+  [ValidateSet('', 'stable', 'beta', 'test')][string]$Channel = '',
   [switch]$Prerelease
 )
 
@@ -78,7 +80,7 @@ Write-Host '== build + sign APK =='
   "-p:ApplicationDisplayVersion=$version" `
   "-p:ApplicationVersion=$code" `
   "-p:UpdateUrl=$UpdateUrl" `
-  "-p:AllowPrerelease=$(if ($Prerelease) { '1' } else { '' })" `
+  "-p:ReleaseChannel=$(if ($Prerelease -and -not $Channel) { 'beta' } else { $Channel })" `
   @sign `
   -v minimal -nologo
 if ($LASTEXITCODE -ne 0) { throw "APK build failed ($LASTEXITCODE)" }

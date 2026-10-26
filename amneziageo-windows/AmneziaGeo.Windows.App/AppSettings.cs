@@ -28,14 +28,13 @@ internal sealed record AppSettings
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.BuildTarget")?.Value?.Trim() ?? string.Empty;
 
-    // Prerelease channel default baked from installer.config.json (allowPrerelease); "1" seeds the runtime
-    // toggle on. Once the user flips it in settings, the persisted value wins over this default.
-    private static readonly bool BakedAllowPrerelease =
-        string.Equals(
+    // The channel of the kind of the release baked at build time; the channel picked by hand wins over it.
+    private static readonly string BakedChannel =
+        AmneziaGeo.Decl.UpdateChannels.Of(
             Assembly.GetExecutingAssembly()
                 .GetCustomAttributes<AssemblyMetadataAttribute>()
-                .FirstOrDefault(a => a.Key == "AmneziaGeo.AllowPrerelease")?.Value?.Trim(),
-            "1", StringComparison.Ordinal);
+                .FirstOrDefault(a => a.Key == "AmneziaGeo.ReleaseChannel")?.Value,
+            AmneziaGeo.Decl.UpdateChannels.Stable);
 
     /// <summary>
     /// Engine version baked at build time.
@@ -55,7 +54,7 @@ internal sealed record AppSettings
     /// <summary>
     /// The channel the releases come in; defaults to the baked channel, then the user's pick.
     /// </summary>
-    public string UpdateChannel { get; init; } = AmneziaGeo.Decl.UpdateChannels.Of(BakedAllowPrerelease);
+    public string UpdateChannel { get; init; } = BakedChannel;
 
     /// <summary>
     /// The source of the releases picked by hand: origin or the address of a server; empty while the servers decide.

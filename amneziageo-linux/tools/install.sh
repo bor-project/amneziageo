@@ -19,7 +19,8 @@ usage: install.sh [options]
 
   --no-gui            install only the agent and the console client (headless server)
   --tag v1.2.3.4      install this release instead of the newest one
-  --prerelease        consider prereleases, not just the latest stable release
+  --prerelease        consider the betas, not just the latest stable release
+  --test              consider the test builds and the betas as well
   --repo owner/name   pull from another repository (default: $REPO)
   --keep              keep the downloaded packages in the working directory
   --shortcut <name>   put the short command <name> for amneziageo without asking
@@ -45,7 +46,8 @@ while [ $# -gt 0 ]; do
     --no-gui) WITH_GUI="no"; shift ;;
     --gui) WITH_GUI="yes"; shift ;;
     --tag) TAG="$2"; shift 2 ;;
-    --prerelease) PRERELEASE="yes"; shift ;;
+    --prerelease) PRERELEASE="beta"; shift ;;
+    --test) PRERELEASE="test"; shift ;;
     --repo) REPO="$2"; shift 2 ;;
     --keep) KEEP="yes"; shift ;;
     --shortcut) SHORTCUT="$2"; shift 2 ;;
@@ -90,12 +92,14 @@ fi
 
 api() { echo "https://api.github.com/repos/$REPO/$1"; }
 
-# Release to install: the named tag, the newest tag including prereleases, or the latest stable one.
+# Release to install: the named tag, the newest tag including the betas (and the test builds with --test), or the
+# latest stable one.
 if [ -n "$TAG" ]; then
   RELEASE="$(api "releases/tags/$TAG")"
-elif [ "$PRERELEASE" = "yes" ]; then
+elif [ "$PRERELEASE" != "no" ]; then
   fetch "$(api 'releases?per_page=20')" "$WORK/releases.json"
-  TAG="$(grep -o '"tag_name": *"[^"]*"' "$WORK/releases.json" | cut -d'"' -f4 | sort -V | tail -1)"
+  TAG="$(grep -o '"tag_name": *"[^"]*"' "$WORK/releases.json" | cut -d'"' -f4 \
+          | { if [ "$PRERELEASE" = "test" ]; then cat; else grep -v -- '-test' || true; fi; } | sort -V | tail -1)"
   if [ -z "$TAG" ]; then
     echo "$REPO has published no release" >&2
     exit 1

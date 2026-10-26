@@ -68,16 +68,16 @@ public static class UpdateFeed
     }
 
     /// <summary>
-    /// Takes the manifest of the highest released version; a stable release wins over a prerelease of the
-    /// same version.
+    /// Takes the manifest of the highest released version a channel takes; of the same version a stable release wins
+    /// over a beta and a beta over a test build.
     /// </summary>
-    public static string? SelectManifestUrl(string releasesJson)
+    public static string? SelectManifestUrl(string releasesJson, string channel)
     {
         var releases = JsonSerializer.Deserialize<List<GhRelease>>(releasesJson, _options);
         return releases?
-            .Where(r => r is { Draft: false, Assets: not null })
+            .Where(r => r is { Draft: false, Assets: not null } && UpdateChannels.Takes(channel, UpdateChannels.OfTag(r.TagName, r.Prerelease)))
             .OrderByDescending(r => TagVersion(r.TagName))
-            .ThenBy(r => r.Prerelease)
+            .ThenBy(r => UpdateChannels.Rank(UpdateChannels.OfTag(r.TagName, r.Prerelease)))
             .Select(r => r.Assets!
                 .FirstOrDefault(a => string.Equals(a.Name, "update.json", StringComparison.OrdinalIgnoreCase))?.Url)
             .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url));

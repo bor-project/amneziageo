@@ -68,7 +68,7 @@ internal sealed class LinuxUpdater : IDisposable
     /// <summary>
     /// The channel the releases come in.
     /// </summary>
-    public string Channel { get; private set; } = UpdateChannels.Of(AgentBuild.AllowPrerelease);
+    public string Channel { get; private set; } = AgentBuild.Channel;
 
     /// <summary>
     /// The source picked by hand: origin or the address of a server; empty while the servers decide.

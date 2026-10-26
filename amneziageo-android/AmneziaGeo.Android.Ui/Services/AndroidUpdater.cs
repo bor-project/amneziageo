@@ -77,7 +77,12 @@ internal sealed class AndroidUpdater : IDisposable
     /// <summary>
     /// The channel the releases come in.
     /// </summary>
-    public string Channel { get; set; } = UpdateChannels.Of(AndroidBuild.AllowPrerelease);
+    public string Channel => PickedChannel.Length > 0 ? PickedChannel : AndroidBuild.Channel;
+
+    /// <summary>
+    /// The channel picked by hand; empty while the kind of the build decides.
+    /// </summary>
+    public string PickedChannel { get; set; } = string.Empty;
 
     /// <summary>
     /// The source picked by hand: origin or the address of a server; empty while the servers decide.

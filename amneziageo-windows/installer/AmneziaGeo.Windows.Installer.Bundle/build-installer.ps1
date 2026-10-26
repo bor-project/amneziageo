@@ -21,7 +21,8 @@
   (arrays). Script flags override:
     -a,   -Arch x64,arm64     build only these arches, or all
     -p,   -Payload fdd,scd    build only these payload kinds, or all
-    -pre, -Prerelease         bake allowPrerelease=1 (beta channel) regardless of the config value
+    -ch,  -Channel <kind>     kind of the release: stable, beta or test; the update check starts on its channel
+    -pre, -Prerelease         the same as -Channel beta, regardless of the config value
     -u,   -UpdateUrl <url>    bake this update manifest regardless of the config value
     -nu,  -NoUpdates          bake no update manifest, so the build never offers an update
     -b,   -Earlier <folder>   folder with the installers of the release before; each variant gets its patch
@@ -61,6 +62,9 @@ param(
     # -SelfContained true,false is the older spelling of this axis; still bound, no longer documented.
     [Alias('p', 'SelfContained')]
     [string[]]$Payload,
+    [Alias('ch')]
+    [ValidateSet('', 'stable', 'beta', 'test')]
+    [string]$Channel,
     [Alias('pre', 'AllowPrerelease')]
     [switch]$Prerelease,
     [Alias('u')]
@@ -92,7 +96,8 @@ if ($Help) {
         '  -v,   -Version N.N.N.N    bundle and binary version',
         '  -a,   -Arch x64,arm64     arches to build, or all',
         '  -p,   -Payload fdd,scd    fdd = framework-dependent, scd = self-contained, or all',
-        '  -pre, -Prerelease         bake the beta update channel',
+        '  -ch,  -Channel <kind>     kind of the release: stable, beta or test',
+        '  -pre, -Prerelease         the same as -Channel beta',
         '  -u,   -UpdateUrl <url>    update manifest the build checks against',
         '  -nu,  -NoUpdates          build without updates',
         '  -b,   -Earlier <folder>   installers of the release before; each variant gets its patch from them',
@@ -174,11 +179,11 @@ $updateUrl = if ($NoUpdates) {
     ''
 }
 
-# Hidden channel toggle (not shown in the UI): installer.config.json -> allowPrerelease (0/1 or true/false),
-# overridable by -Prerelease (CI forces it on for prerelease tags so a beta build stays on the beta
-# channel). Baked into the app; "1" lets the update check offer prereleases. Default 0.
-$allowPre = if ($Prerelease) { '1' } elseif ($cfg -and $null -ne $cfg.allowPrerelease -and [bool]$cfg.allowPrerelease) { '1' } else { '0' }
-$prereleaseProps = @("-p:AllowPrerelease=$allowPre")
+# The kind of the release, baked into the app as the channel its update check starts on: -Channel (CI passes the
+# kind of the tag), else beta for -Prerelease or installer.config.json -> allowPrerelease (0/1 or true/false), else
+# stable.
+$releaseChannel = if ($Channel) { $Channel } elseif ($Prerelease) { 'beta' } elseif ($cfg -and $null -ne $cfg.allowPrerelease -and [bool]$cfg.allowPrerelease) { 'beta' } else { 'stable' }
+$channelProps = @("-p:ReleaseChannel=$releaseChannel")
 
 $iconAbs = ''
 if ($cfg -and $cfg.iconPath) {
@@ -231,7 +236,7 @@ foreach ($v in $variants) {
     Write-Host ("   - win-{0} {1} ({2})" -f $v.Arch, $(if ($v.SelfContained) { 'scd' } else { 'fdd' }), $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
 }
 $hasLocal = Test-Path (Join-Path $bundleDir 'installer.config.local.json')
-Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); allowPrerelease=$allowPre; signing=$(if ($signing) { 'on' } else { 'off' }) =="
+Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); channel=$releaseChannel; signing=$(if ($signing) { 'on' } else { 'off' }) =="
 if ($ListOnly) { return }
 
 # ---- Authenticode signing. Off unless -Sign (or a config signingCert) resolved a certificate. ----
@@ -409,7 +414,7 @@ function Build-Variant {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
     Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
-    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=$buildTarget" $updateProps $prereleaseProps $engineProps -o $stage
+    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=$buildTarget" $updateProps $channelProps $engineProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
 
     Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $rid, $kind) =="

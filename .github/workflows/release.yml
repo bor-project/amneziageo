@@ -24,13 +24,16 @@ permissions:
   contents: write   # attach the installers to the GitHub Release
 
 jobs:
-  # The release the patches of this one start from: the highest version below this tag, among the stable releases for
-  # a stable tag and among all of them for a prerelease one. Off a tag, or with no such release, the output is empty
-  # and the release goes out without patches.
+  # The kind of the release and the release the patches of this one start from. The kind comes from the tag:
+  # v1.2.3.4 is stable, v1.2.3.4-test.N a test build, any other suffix (v1.2.3.4-beta.N) a beta; off a tag it is
+  # stable. The release before is the highest version below this tag among the releases its channel takes: the stable
+  # ones for a stable tag, the stable ones and the betas for a beta, all of them for a test build. Off a tag, or with
+  # no such release, it is empty and the release goes out without patches.
   earlier:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
+      kind: ${{ steps.pick.outputs.kind }}
     steps:
       - name: Pick the release before
         id: pick
@@ -40,16 +43,25 @@ jobs:
         run: |
           set -uo pipefail
           tag=''
+          kind=stable
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            case "$GITHUB_REF_NAME" in
+              *-test*) kind=test ;;
+              *-*) kind=beta ;;
+            esac
             VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
             kinds='.[] | select(.draft | not)'
-            if [[ "$GITHUB_REF_NAME" != *-* ]]; then kinds="$kinds | select(.prerelease | not)"; fi
+            case "$kind" in
+              stable) kinds="$kinds | select(.prerelease | not)" ;;
+              beta) kinds="$kinds | select(.tag_name | contains(\"-test\") | not)" ;;
+            esac
             tag=$( { gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "$kinds | .tag_name" \
                        | while read -r t; do v="${t#v}"; v="${v%%-*}"; [ "$v" = "$VER" ] || printf '%s %s\n' "$v" "$t"; done
                      printf '%s @\n' "$VER"; } | sort -V -s -k1,1 | awk '$2 == "@" { print last; exit } { last = $2 }' ) || tag=''
           fi
-          echo "the release before: ${tag:-none}"
+          echo "the kind of the release: $kind, the release before: ${tag:-none}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
 
   build:
     needs: earlier
@@ -119,10 +131,8 @@ jobs:
             # Strip the leading v and any prerelease suffix (v1.2.3.4-beta.1 -> 1.2.3.4): the installer needs a
             # numeric N.N.N.N version; the -beta marker lives on the tag/release, not in the binaries.
             $ver = "$env:GITHUB_REF_NAME" -replace '^v','' -replace '-.*$',''
-            # A prerelease tag (v1.2.3.4-beta.1) bakes allowPrerelease=1 so the beta build stays on the beta
-            # channel instead of offering a downgrade to the stable latest.
-            $pre = [bool]("$env:GITHUB_REF_NAME" -match '-')
-            & $script ci -Version $ver -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }} -Prerelease:$pre @earlier
+            # The kind of the release is baked in, so the build stays on its channel.
+            & $script ci -Version $ver -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }} -Channel '${{ needs.earlier.outputs.kind }}' @earlier
           } else {
             & $script ci -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }}
           }
@@ -194,9 +204,9 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
             args+=(--version "$ver")
-            # A prerelease tag bakes the beta channel so the package does not offer the stable latest.
-            if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
           fi
+          # The kind of the release is baked in, so the package stays on its channel.
+          args+=(--channel '${{ needs.earlier.outputs.kind }}')
           amneziageo-linux/tools/build-deb.sh "${args[@]}"
 
       - name: Upload the packages
@@ -211,6 +221,7 @@ jobs:
   # One APK for all three ABIs and one per ABI, a third of the size, that the app's own update fetches. Release is
   # AOT-compiled: a weak TV box starts about twice as fast.
   build-android:
+    needs: earlier
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -279,8 +290,9 @@ jobs:
             ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
             args+=(--version "$ver")
           fi
-          # A prerelease tag bakes the beta channel so the package does not offer the stable latest.
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
+          # The kind of the release is baked in: the package stays on its channel, and a beta or a test build carries
+          # the console over adb.
+          args+=(--channel '${{ needs.earlier.outputs.kind }}')
           if [ -n "${{ matrix.abi }}" ]; then args+=(--abi "${{ matrix.abi }}"); fi
           amneziageo-android/tools/build-apk.sh "${args[@]}"
 
@@ -332,8 +344,8 @@ jobs:
 
   # Publishes the GitHub Release that the app's auto-update reads. update.json + the installers, packages
   # and the APKs, with the patches beside them, are attached as assets. A stable client polls
-  # https://github.com/<repo>/releases/latest/download/update.json; a prerelease (allowPrerelease) client
-  # finds the newest release via the releases API. Either way the client builds its own installer name
+  # https://github.com/<repo>/releases/latest/download/update.json; a beta or test client finds the newest
+  # release its channel takes via the releases API. Either way the client builds its own installer name
   # (AmneziaGeo-<version>-<its build target>.exe) from the manifest version, so each arch/payload downloads
   # its own file; `setup` stays as a legacy fallback. Runs on a tag push whether or not signing ran,
   # preferring signed installers and falling back to the unsigned ones.
@@ -379,11 +391,10 @@ jobs:
           setups=(release/AmneziaGeo-*-win-x64-fdd.exe)
           SETUP_NAME=''
           if [ ${#setups[@]} -gt 0 ]; then SETUP_NAME=$(basename "${setups[0]}"); fi
-          # Self-describing manifest: version + channel (stable vs prerelease from the tag) + an installers
-          # array (one per published asset: platform/arch/variant) so the check is scoped to the installed
+          # Self-describing manifest: version + channel (the kind of the release: stable, beta or test) + an
+          # installers array (one per published asset: platform/arch/variant) so the check is scoped to the installed
           # distribution. `setup` stays a legacy fallback; new clients build their own per-build name.
-          CHANNEL=stable
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then CHANNEL=prerelease; fi
+          CHANNEL='${{ needs.earlier.outputs.kind }}'
           # SHA-256 lets the client verify the downloaded file before it runs it. Beside a Windows installer or a
           # Debian package lies its patch from the release before, which the app's update on a machine with that
           # release fetches instead of the whole file; the asset's own sha256 stays ahead of the patch, as install.sh
@@ -496,7 +507,8 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           gh release delete "$TAG" --yes 2>/dev/null || true
-          # A suffixed tag (v1.2.3.4-beta.1) ships as a prerelease so it never becomes the stable "latest";
-          # only allowPrerelease builds discover it, via the GitHub releases API. Plain tags mark --latest.
+          # A suffixed tag (a beta v1.2.3.4-beta.1 or a test build v1.2.3.4-test.1) ships as a prerelease so it never
+          # becomes the stable "latest"; only beta and test builds discover it, via the GitHub releases API, each
+          # by the suffix of its channel. Plain tags mark --latest.
           if [[ "$TAG" == *-* ]]; then CHANNEL="--prerelease"; else CHANNEL="--latest"; fi
           gh release create "$TAG" $CHANNEL --title "AmneziaGeo ${TAG#v}" --notes-file notes.md release/*

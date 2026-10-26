@@ -33,7 +33,7 @@ internal sealed class UpdateChecker(HttpClient http)
     }
 
     // Release picking lives in the shared feed; both agents order the same way.
-    internal static string? SelectManifestUrl(string releasesJson) => UpdateFeed.SelectManifestUrl(releasesJson);
+    internal static string? SelectManifestUrl(string releasesJson, string channel) => UpdateFeed.SelectManifestUrl(releasesJson, channel);
 
     internal static UpdateInfo? BuildInfo(string json, Uri baseUrl, string currentVersion, string buildTarget)
     {

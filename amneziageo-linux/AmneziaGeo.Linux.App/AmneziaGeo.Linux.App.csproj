@@ -22,12 +22,15 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <!-- Prerelease channel baked from the tag (build-deb.sh passes -p:AllowPrerelease). "1" => the check also
-       offers prereleases, so a beta build stays on the beta channel. -->
-  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+  <!-- The kind of the release baked from the tag (build-deb.sh passes -p:ReleaseChannel): stable, beta or test; the
+       check starts out on its channel. -p:AllowPrerelease=1 stands for beta. -->
+  <PropertyGroup>
+    <ReleaseChannel Condition="'$(ReleaseChannel)' == '' and '$(AllowPrerelease)' == '1'">beta</ReleaseChannel>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ReleaseChannel)' != ''">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
-      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
-      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+      <_Parameter1>AmneziaGeo.ReleaseChannel</_Parameter1>
+      <_Parameter2>$(ReleaseChannel)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

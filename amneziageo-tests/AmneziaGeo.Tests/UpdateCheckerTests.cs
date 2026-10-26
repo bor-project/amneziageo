@@ -18,7 +18,7 @@ public sealed class UpdateCheckerTests
             Release("v1.0.17.2", "https://example.test/172/update.json"),
             Release("v1.0.17.1", "https://example.test/171/update.json"));
 
-        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json));
+        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
     }
 
     [Fact]
@@ -28,7 +28,7 @@ public sealed class UpdateCheckerTests
             Release("v1.0.18.0", "https://example.test/180/update.json", draft: true),
             Release("v1.0.17.2", "https://example.test/172/update.json"));
 
-        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json));
+        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class UpdateCheckerTests
             Release("v1.0.18.0"),
             Release("v1.0.17.2", "https://example.test/172/update.json"));
 
-        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json));
+        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class UpdateCheckerTests
             Release("v1.0.17.2-rc", "https://example.test/rc/update.json", prerelease: true),
             Release("v1.0.17.2", "https://example.test/172/update.json"));
 
-        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json));
+        Assert.Equal("https://example.test/172/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
     }
 
     [Fact]
@@ -58,13 +58,58 @@ public sealed class UpdateCheckerTests
             Release("v1.0.17.2", "https://example.test/172/update.json"),
             Release("v1.0.18.0-beta", "https://example.test/beta/update.json", prerelease: true));
 
-        Assert.Equal("https://example.test/beta/update.json", UpdateChecker.SelectManifestUrl(json));
+        Assert.Equal("https://example.test/beta/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
     }
 
     [Fact]
     public void ReturnsNullWhenNothingIsPublishable()
     {
-        Assert.Null(UpdateChecker.SelectManifestUrl("[]"));
+        Assert.Null(UpdateChecker.SelectManifestUrl("[]", UpdateChannels.Beta));
+    }
+
+    [Fact]
+    public void TheBetas_PassTheTestBuildsBy()
+    {
+        var json = Releases(
+            Release("v1.0.19.0-test.1", "https://example.test/test/update.json", prerelease: true),
+            Release("v1.0.18.0-beta.1", "https://example.test/beta/update.json", prerelease: true),
+            Release("v1.0.17.0", "https://example.test/170/update.json"));
+
+        Assert.Equal("https://example.test/beta/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
+        Assert.Equal("https://example.test/test/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Test));
+        Assert.Equal("https://example.test/170/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Stable));
+    }
+
+    [Fact]
+    public void ABeta_TakesAHigherStableRelease()
+    {
+        var json = Releases(
+            Release("v1.0.19.0", "https://example.test/190/update.json"),
+            Release("v1.0.18.0-beta.2", "https://example.test/beta/update.json", prerelease: true));
+
+        Assert.Equal("https://example.test/190/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Beta));
+    }
+
+    [Fact]
+    public void OfOneVersion_ABetaWinsOverATestBuild()
+    {
+        var json = Releases(
+            Release("v1.0.18.0-test.1", "https://example.test/test/update.json", prerelease: true),
+            Release("v1.0.18.0-beta.1", "https://example.test/beta/update.json", prerelease: true));
+
+        Assert.Equal("https://example.test/beta/update.json", UpdateChecker.SelectManifestUrl(json, UpdateChannels.Test));
+    }
+
+    [Theory]
+    [InlineData("v1.2.3.4", false, UpdateChannels.Stable)]
+    [InlineData("v1.2.3.4", true, UpdateChannels.Beta)]
+    [InlineData("v1.2.3.4-beta.1", true, UpdateChannels.Beta)]
+    [InlineData("v1.2.3.4-rc", true, UpdateChannels.Beta)]
+    [InlineData("v1.2.3.4-test.2", true, UpdateChannels.Test)]
+    [InlineData(null, false, UpdateChannels.Stable)]
+    public void TheChannelOfATag_IsReadOffItsSuffix(string? tag, bool prerelease, string channel)
+    {
+        Assert.Equal(channel, UpdateChannels.OfTag(tag, prerelease));
     }
 
     [Fact]

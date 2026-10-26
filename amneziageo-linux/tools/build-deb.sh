@@ -17,7 +17,7 @@ CONFIGURATION="Release"
 WITH_GUI="yes"
 # Release manifest the packaged agent checks itself against; empty leaves the update section hidden.
 UPDATE_URL="https://github.com/bor-project/amneziageo/releases/latest/download/update.json"
-PRERELEASE=""
+CHANNEL=""
 # Folder with the packages of the release before; empty builds no patch.
 EARLIER=""
 
@@ -31,7 +31,8 @@ usage: build-deb.sh [options]
   --debug             build the Debug configuration
   --no-gui            skip the amneziageo-gui package
   --update-url <url>  update manifest the agent checks against (empty turns the check off)
-  --prerelease        keep the build on the prerelease channel
+  --channel <kind>    kind of the release: stable, beta or test; the update check starts on its channel
+  --prerelease        the same as --channel beta
   --earlier <dir>     folder with the packages of the release before: beside every package lands its patch,
                       which the agent's update fetches instead of the package on a machine with that release
   --help              this help
@@ -53,12 +54,18 @@ while [ $# -gt 0 ]; do
     --debug) CONFIGURATION="Debug"; shift ;;
     --no-gui) WITH_GUI="no"; shift ;;
     --update-url) UPDATE_URL="$2"; shift 2 ;;
-    --prerelease) PRERELEASE="1"; shift ;;
+    --channel) CHANNEL="$2"; shift 2 ;;
+    --prerelease) CHANNEL="beta"; shift ;;
     --earlier) EARLIER="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+case "$CHANNEL" in
+  ''|stable|beta|test) ;;
+  *) echo "invalid channel '$CHANNEL' (expected stable, beta or test)" >&2; exit 2 ;;
+esac
 
 if [ -z "$VERSION" ]; then
   VERSION="0.0.1.$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
@@ -129,7 +136,7 @@ stage_core() {
       --self-contained true \
       -p:Version="$VERSION" \
       -p:UpdateUrl="$UPDATE_URL" \
-      -p:AllowPrerelease="$PRERELEASE" \
+      -p:ReleaseChannel="$CHANNEL" \
       -o "$libdir" \
       -v minimal \
       --nologo

@@ -26,14 +26,24 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <!-- Prerelease channel baked from the tag (the build scripts pass -p:AllowPrerelease). "1" => the check also
-       offers prereleases. -->
-  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+  <!-- The kind of the release baked from the tag (the build scripts pass -p:ReleaseChannel): stable, beta or test;
+       the check starts out on its channel. -p:AllowPrerelease=1 stands for beta. -->
+  <PropertyGroup>
+    <ReleaseChannel Condition="'$(ReleaseChannel)' == '' and '$(AllowPrerelease)' == '1'">beta</ReleaseChannel>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ReleaseChannel)' != ''">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
-      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
-      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+      <_Parameter1>AmneziaGeo.ReleaseChannel</_Parameter1>
+      <_Parameter2>$(ReleaseChannel)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <!-- The console over adb (CliReceiver) goes into Debug, the betas and the test builds; the stable releases
+       carry none. -->
+  <PropertyGroup>
+    <DebugCommands Condition="'$(DebugCommands)' == '' and ('$(Configuration)' == 'Debug' or '$(ReleaseChannel)' == 'beta' or '$(ReleaseChannel)' == 'test')">true</DebugCommands>
+    <DefineConstants Condition="'$(DebugCommands)' == 'true'">$(DefineConstants);DEBUG_COMMANDS</DefineConstants>
+  </PropertyGroup>
 
   <!-- Compiles every assembly ahead of time: the stock profile covers none of the Avalonia startup path, and
        a TV box spends about twenty seconds jitting it. -->

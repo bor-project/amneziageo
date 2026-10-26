@@ -15,7 +15,7 @@ CONFIGURATION="Release"
 VERSION=""
 ABIS=""
 UPDATE_URL="https://github.com/bor-project/amneziageo/releases/latest/download/update.json"
-PRERELEASE=""
+CHANNEL=""
 
 usage() {
   cat <<EOF
@@ -27,7 +27,8 @@ usage: build-apk.sh [options]
                       (default: every ABI the project declares);
                       one ABI names the APK after it: AmneziaGeo-<version>-android-arm64.apk
   --update-url <url>  update metadata baked into the package (default: $UPDATE_URL)
-  --prerelease        keep the build on the prerelease channel
+  --channel <kind>    kind of the release: stable, beta or test; beta and test carry the console over adb
+  --prerelease        the same as --channel beta
   --help              this help
 
 Both configurations install as-is; Release is AOT-compiled and starts about twice as fast on a weak TV,
@@ -42,7 +43,8 @@ while [ $# -gt 0 ]; do
     --version|-v) VERSION="$2"; shift 2 ;;
     --abi) ABIS="$(printf '%s' "$2" | tr ',' ';')"; shift 2 ;;
     --update-url) UPDATE_URL="$2"; shift 2 ;;
-    --prerelease) PRERELEASE="1"; shift ;;
+    --channel) CHANNEL="$2"; shift 2 ;;
+    --prerelease) CHANNEL="beta"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
@@ -51,6 +53,11 @@ done
 case "$CONFIGURATION" in
   Release|Debug) ;;
   *) echo "invalid configuration '$CONFIGURATION' (expected Release or Debug)" >&2; exit 2 ;;
+esac
+
+case "$CHANNEL" in
+  ''|stable|beta|test) ;;
+  *) echo "invalid channel '$CHANNEL' (expected stable, beta or test)" >&2; exit 2 ;;
 esac
 
 if [ -z "$VERSION" ]; then
@@ -88,7 +95,7 @@ args=(
   "-p:ApplicationDisplayVersion=$VERSION"
   "-p:ApplicationVersion=$CODE"
   "-p:UpdateUrl=$UPDATE_URL"
-  "-p:AllowPrerelease=$PRERELEASE"
+  "-p:ReleaseChannel=$CHANNEL"
 )
 
 if [ -n "$ABIS" ]; then

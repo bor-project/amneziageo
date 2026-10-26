@@ -100,14 +100,8 @@
   <data name="Connections_UpdateSource" xml:space="preserve">
     <value>Update server</value>
   </data>
-  <data name="Connections_UpdateSourceOrigin" xml:space="preserve">
-    <value>Where installed from ({0})</value>
-  </data>
-  <data name="Connections_UpdateSourceServer" xml:space="preserve">
-    <value>{0} “{1}”</value>
-  </data>
-  <data name="Connections_UpdateSourceRecommended" xml:space="preserve">
-    <value>{0} (recommended)</value>
+  <data name="Connections_UpdateSourceDefault" xml:space="preserve">
+    <value>Default</value>
   </data>
   <data name="Main_UpdateFaultHide" xml:space="preserve">
     <value>Hide</value>

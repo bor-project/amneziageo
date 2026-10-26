@@ -171,10 +171,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private int _selectedChannelIndex;
 
     /// <summary>
-    /// The channels the releases come in, in the order they widen.
+    /// The channels the build offers, in the order they widen.
     /// </summary>
-    public ObservableCollection<string> Channels { get; } =
-        [Loc.Instance.Get("General_ChannelStable"), Loc.Instance.Get("General_ChannelBeta"), Loc.Instance.Get("General_ChannelTest")];
+    public ObservableCollection<string> Channels { get; } = [.. UpdateChannels.All.Select(ChannelLabel)];
 
     /// <summary>
     /// Блок «Работа в фоне».
@@ -335,6 +334,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         // Seed the update setting without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
+        OfferChannels(UpdateChannels.Offered(snapshot.ReleaseChannel, ChannelOf(snapshot)));
         SelectedChannelIndex = ChannelIndex(snapshot);
         _suppressSettingPush = false;
         NoticeChoice?.Apply(snapshot.TunnelNotice);
@@ -1131,11 +1131,34 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     // The channel the agent reads; an agent that names none tells it by the switch of the prereleases.
+    private static string ChannelOf(StatusSnapshot snapshot) =>
+        snapshot.UpdateChannel.Length > 0 ? snapshot.UpdateChannel : UpdateChannels.Of(snapshot.AllowPrerelease);
+
     private static int ChannelIndex(StatusSnapshot snapshot)
     {
-        var channel = snapshot.UpdateChannel.Length > 0 ? snapshot.UpdateChannel : UpdateChannels.Of(snapshot.AllowPrerelease);
-        var index = UpdateChannels.All.ToList().IndexOf(channel);
+        var index = UpdateChannels.All.ToList().IndexOf(ChannelOf(snapshot));
         return index < 0 ? 0 : index;
+    }
+
+    private static string ChannelLabel(string channel) => channel switch
+    {
+        UpdateChannels.Beta => Loc.Instance.Get("General_ChannelBeta"),
+        UpdateChannels.Test => Loc.Instance.Get("General_ChannelTest"),
+        _ => Loc.Instance.Get("General_ChannelStable"),
+    };
+
+    // Lays the channels the build offers; the test channel leaves and comes back at the end of the list.
+    private void OfferChannels(IReadOnlyList<string> offered)
+    {
+        while (Channels.Count > offered.Count)
+        {
+            Channels.RemoveAt(Channels.Count - 1);
+        }
+
+        while (Channels.Count < offered.Count)
+        {
+            Channels.Add(ChannelLabel(offered[Channels.Count]));
+        }
     }
 
     private async Task SetSettingAsync(string key, string value)
@@ -1168,11 +1191,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 Themes[2] = Loc.Instance.Get("Theme_Dark");
             }
 
-            if (Channels.Count >= 3)
+            for (var i = 0; i < Channels.Count; i++)
             {
-                Channels[0] = Loc.Instance.Get("General_ChannelStable");
-                Channels[1] = Loc.Instance.Get("General_ChannelBeta");
-                Channels[2] = Loc.Instance.Get("General_ChannelTest");
+                Channels[i] = ChannelLabel(UpdateChannels.All[i]);
             }
 
             SelectedLanguageIndex = language;

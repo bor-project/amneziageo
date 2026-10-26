@@ -3524,6 +3524,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             ServerLists: limit?.Lists,
             FoundApps: foundApps,
             UpdateChannel: settings.UpdateChannel,
+            ReleaseChannel: AppSettings.ReleaseChannel,
             UpdateSources: settings.UpdateUrl.Length > 0 ? UpdateSources.Entries(settings.UpdateUrl, updateOrigin, updateServers) : null,
             UpdateSource: updateRoute.Key,
             UpdateSourceError: updateFault.Text,

@@ -14,7 +14,23 @@
               Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
               HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
               ItemsSource="{Binding UpdateSourceOptions}"
-              SelectedIndex="{Binding SelectedUpdateSourceIndex, Mode=TwoWay}" />
+              SelectedIndex="{Binding SelectedUpdateSourceIndex, Mode=TwoWay}">
+      <!-- Строка источника; у источника по умолчанию под ней адрес. -->
+      <controls:AdaptiveComboBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:UpdateSourceOption">
+          <StackPanel Spacing="1">
+            <TextBlock Text="{Binding Title}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Address}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                       IsVisible="{Binding HasAddress}" />
+          </StackPanel>
+        </DataTemplate>
+      </controls:AdaptiveComboBox.ItemTemplate>
+      <controls:AdaptiveComboBox.SelectionBoxItemTemplate>
+        <DataTemplate x:DataType="vm:UpdateSourceOption">
+          <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+        </DataTemplate>
+      </controls:AdaptiveComboBox.SelectionBoxItemTemplate>
+    </controls:AdaptiveComboBox>
     <TextBlock Text="{Binding UpdateSourceErrorText}" FontSize="12.5" TextWrapping="Wrap"
                Foreground="{DynamicResource AgWarnBrush}"
                IsVisible="{Binding UpdateSourceErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

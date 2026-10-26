@@ -448,6 +448,7 @@ internal sealed class LinuxAgent : IDisposable
             UpdateInstalling: _updater.Installing,
             AllowPrerelease: UpdateChannels.Prerelease(_updater.Channel),
             UpdateChannel: _updater.Channel,
+            ReleaseChannel: AgentBuild.ReleaseChannel,
             UpdateSources: updateSources,
             UpdateSource: updateSource,
             UpdateSourceError: _updater.Fault.Text,

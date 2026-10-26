@@ -28,13 +28,16 @@ internal sealed record AppSettings
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.BuildTarget")?.Value?.Trim() ?? string.Empty;
 
-    // The channel of the kind of the release baked at build time; the channel picked by hand wins over it.
-    private static readonly string BakedChannel =
+    // The kind of the release baked at build time, empty for a build of no kind.
+    private static readonly string BakedKind =
         AmneziaGeo.Decl.UpdateChannels.Of(
             Assembly.GetExecutingAssembly()
                 .GetCustomAttributes<AssemblyMetadataAttribute>()
                 .FirstOrDefault(a => a.Key == "AmneziaGeo.ReleaseChannel")?.Value,
-            AmneziaGeo.Decl.UpdateChannels.Stable);
+            string.Empty);
+
+    // The channel of the kind of the release baked at build time; the channel picked by hand wins over it.
+    private static readonly string BakedChannel = BakedKind.Length > 0 ? BakedKind : AmneziaGeo.Decl.UpdateChannels.Stable;
 
     /// <summary>
     /// Engine version baked at build time.
@@ -45,6 +48,11 @@ internal sealed record AppSettings
     /// Build target (win-<arch>-<fdd|scd>) baked at build time.
     /// </summary>
     public static string BuildTarget => BakedBuildTarget;
+
+    /// <summary>
+    /// The kind of the release baked at build time: stable, beta or test; empty for a build of no kind.
+    /// </summary>
+    public static string ReleaseChannel => BakedKind;
 
     /// <summary>
     /// Whether the update check offers prereleases.

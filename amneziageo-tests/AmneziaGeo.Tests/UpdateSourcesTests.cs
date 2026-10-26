@@ -116,15 +116,15 @@ public sealed class UpdateSourcesTests
 
         Assert.Equal(
             [
-                new UpdateSourceEntry(UpdateSources.OriginKey, "GitHub", string.Empty, false),
-                new UpdateSourceEntry(Home, "vpn.example.net:8443", "Дом", true),
-                new UpdateSourceEntry(Work, "srv.example.org", "Работа", false),
+                new UpdateSourceEntry(UpdateSources.OriginKey, "GitHub", string.Empty, false, "github.com/bor-project/amneziageo/releases"),
+                new UpdateSourceEntry(Home, "vpn.example.net:8443", "Дом", true, "vpn.example.net:8443/u7f3"),
+                new UpdateSourceEntry(Work, "srv.example.org", "Работа", false, "srv.example.org/updates"),
             ],
             UpdateSources.Entries(Baked, UpdateOrigin.Baked, servers));
         Assert.Equal(
             [
-                new UpdateSourceEntry(UpdateSources.OriginKey, "vpn.example.net:8443", "Дом", true),
-                new UpdateSourceEntry(Work, "srv.example.org", "Работа", false),
+                new UpdateSourceEntry(UpdateSources.OriginKey, "vpn.example.net:8443", "Дом", true, "vpn.example.net:8443/u7f3"),
+                new UpdateSourceEntry(Work, "srv.example.org", "Работа", false, "srv.example.org/updates"),
             ],
             UpdateSources.Entries(Baked, new UpdateOrigin(Home, HomePin, "1.11.0.904"), servers));
     }

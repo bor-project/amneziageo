@@ -250,7 +250,7 @@ internal partial class ConnectionsViewModel : ViewModelBase
     /// <summary>
     /// The sources the releases of the client can be taken from, the one the installed copy came from first.
     /// </summary>
-    public ObservableCollection<string> UpdateSourceOptions { get; } = [];
+    public ObservableCollection<UpdateSourceOption> UpdateSourceOptions { get; } = [];
 
     /// <summary>
     /// The source the check reads.
@@ -660,19 +660,15 @@ internal partial class ConnectionsViewModel : ViewModelBase
         return _updateSources.Count > 0 ? 0 : -1;
     }
 
-    // The line of a source: the host and the config whose server names it; the origin says it is the one the
-    // installed copy came from, a server that asks to be taken says it is recommended.
-    private static string UpdateSourceLabel(UpdateSourceEntry entry)
+    // The line of a source: the one the last update came from is the default with its address under it, any other
+    // says only its address.
+    private static UpdateSourceOption UpdateSourceLabel(UpdateSourceEntry entry)
     {
-        var place = entry.Config.Length > 0
-            ? Loc.Instance.Get("Connections_UpdateSourceServer", entry.Host, entry.Config)
-            : entry.Host;
-        if (entry.Key == UpdateSources.OriginKey)
-        {
-            return Loc.Instance.Get("Connections_UpdateSourceOrigin", place);
-        }
+        var address = entry.Address.Length > 0 ? entry.Address : entry.Host;
 
-        return entry.Recommended ? Loc.Instance.Get("Connections_UpdateSourceRecommended", place) : place;
+        return entry.Key == UpdateSources.OriginKey
+            ? new UpdateSourceOption(Loc.Instance.Get("Connections_UpdateSourceDefault"), address)
+            : new UpdateSourceOption(address, string.Empty);
     }
 
     partial void OnSelectedUpdateSourceIndexChanged(int value)

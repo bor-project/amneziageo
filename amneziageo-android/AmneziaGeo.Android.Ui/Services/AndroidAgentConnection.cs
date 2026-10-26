@@ -1481,6 +1481,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             UpdateDescription: _updater.Description,
             AllowPrerelease: _updater.AllowPrerelease,
             UpdateChannel: _updater.Channel,
+            ReleaseChannel: AndroidBuild.ReleaseChannel,
             UpdateSources: updateSources,
             UpdateSource: updateSource,
             UpdateSourceError: _updater.Fault.Text,

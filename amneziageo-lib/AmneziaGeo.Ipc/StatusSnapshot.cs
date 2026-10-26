@@ -214,6 +214,11 @@ public sealed record StatusSnapshot(
     string UpdateChannel = "",
 
     /// <summary>
+    /// The kind of the installed build: stable, beta or test; empty for a build of no kind.
+    /// </summary>
+    string ReleaseChannel = "",
+
+    /// <summary>
     /// The sources the releases can be taken from, the one the installed copy came from first; null where the platform
     /// takes no such choice.
     /// </summary>

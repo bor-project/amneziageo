@@ -1080,7 +1080,7 @@
           <Color x:Key="AgBorder">#e4e6ea</Color>
           <Color x:Key="AgBorder2">#d2d6dd</Color>
           <Color x:Key="AgFg">#181b20</Color>
-          <Color x:Key="AgMuted">#646c78</Color>
+          <Color x:Key="AgMuted">#474e59</Color>
           <Color x:Key="AgMuted2">#9aa1ab</Color>
           <Color x:Key="AgAccent">#2a6fdb</Color>
           <Color x:Key="AgAccentSoft">#1A2a6fdb</Color>
@@ -1099,7 +1099,7 @@
           <Color x:Key="AgBorder">#262b33</Color>
           <Color x:Key="AgBorder2">#343a45</Color>
           <Color x:Key="AgFg">#e8ebf0</Color>
-          <Color x:Key="AgMuted">#98a0ac</Color>
+          <Color x:Key="AgMuted">#bcc3ce</Color>
           <Color x:Key="AgMuted2">#5f6772</Color>
           <Color x:Key="AgAccent">#4d8df0</Color>
           <Color x:Key="AgAccentSoft">#294d8df0</Color>

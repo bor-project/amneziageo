@@ -14,9 +14,14 @@ internal static class AndroidBuild
     public static string UpdateUrl { get; } = Metadata("AmneziaGeo.UpdateUrl");
 
     /// <summary>
+    /// The kind of the release baked at build time: stable, beta or test; empty for a build of no kind.
+    /// </summary>
+    public static string ReleaseChannel { get; } = UpdateChannels.Of(Metadata("AmneziaGeo.ReleaseChannel"), string.Empty);
+
+    /// <summary>
     /// The channel of the kind of the release baked at build time.
     /// </summary>
-    public static string Channel { get; } = UpdateChannels.Of(Metadata("AmneziaGeo.ReleaseChannel"), UpdateChannels.Stable);
+    public static string Channel { get; } = ReleaseChannel.Length > 0 ? ReleaseChannel : UpdateChannels.Stable;
 
     private static string Metadata(string key)
     {

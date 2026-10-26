@@ -70,6 +70,15 @@ public static class UpdateChannels
     public static bool Takes(string channel, string release) => Rank(release) <= Rank(channel);
 
     /// <summary>
+    /// The channels a build offers to pick: a stable release and a beta leave the test channel out unless the device
+    /// reads it.
+    /// </summary>
+    /// <param name="kind">The kind of the build: stable, beta or test; empty for a build of no kind.</param>
+    /// <param name="picked">The channel the device reads.</param>
+    public static IReadOnlyList<string> Offered(string kind, string picked) =>
+        kind is Stable or Beta && picked != Test ? [Stable, Beta] : All;
+
+    /// <summary>
     /// The channel a release tag goes out on: a test suffix (v1.2.3.4-test.1) on the test channel, any other suffix or
     /// a release marked prerelease on the betas.
     /// </summary>
@@ -165,7 +174,8 @@ public sealed record UpdateOrigin(string Url, string Pin, string Version)
 /// <param name="Host">The host it answers at, GitHub for the releases of the project.</param>
 /// <param name="Config">The config whose server names it, empty for the releases of the project.</param>
 /// <param name="Recommended">Whether its server asks to be taken for the updates.</param>
-public sealed record UpdateSourceEntry(string Key, string Host, string Config, bool Recommended);
+/// <param name="Address">The address its releases lie under, as the list shows it.</param>
+public sealed record UpdateSourceEntry(string Key, string Host, string Config, bool Recommended, string Address = "");
 
 /// <summary>
 /// The source a check reads.
@@ -391,13 +401,13 @@ public static class UpdateSources
         var entries = new List<UpdateSourceEntry>
         {
             home is null
-                ? new UpdateSourceEntry(OriginKey, HostOf(baked), string.Empty, false)
-                : new UpdateSourceEntry(OriginKey, HostOf(home.Url), home.Config, home.Default),
+                ? new UpdateSourceEntry(OriginKey, HostOf(baked), string.Empty, false, AddressOf(baked))
+                : new UpdateSourceEntry(OriginKey, HostOf(home.Url), home.Config, home.Default, AddressOf(home.Url)),
         };
 
         entries.AddRange(servers
             .Where(server => !ReferenceEquals(server, home))
-            .Select(server => new UpdateSourceEntry(server.Url, HostOf(server.Url), server.Config, server.Default)));
+            .Select(server => new UpdateSourceEntry(server.Url, HostOf(server.Url), server.Config, server.Default, AddressOf(server.Url))));
 
         return entries;
     }
@@ -419,6 +429,27 @@ public static class UpdateSources
         }
 
         return address.IsDefaultPort ? address.Host : address.Authority;
+    }
+
+    /// <summary>
+    /// The address the releases lie under as the list shows it: the releases of the repository at GitHub, the address
+    /// of a server without its scheme.
+    /// </summary>
+    public static string AddressOf(string url)
+    {
+        if (UpdateFeed.TryGitHubRepo(url, out var owner, out var repo))
+        {
+            return $"github.com/{owner}/{repo}/releases";
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var address))
+        {
+            return url;
+        }
+
+        var host = address.IsDefaultPort ? address.Host : address.Authority;
+
+        return host + address.AbsolutePath.TrimEnd('/');
     }
 
     /// <summary>

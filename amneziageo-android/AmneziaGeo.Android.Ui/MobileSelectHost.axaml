@@ -27,6 +27,10 @@
     <Style Selector="Button.mobile-select-option ContentControl.mobile-select-content">
       <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
     </Style>
+    <!-- Вторая строка выбранного пункта светлая на заливке. -->
+    <Style Selector="Button.mobile-select-option.selected TextBlock.muted">
+      <Setter Property="Foreground" Value="#D9FFFFFF" />
+    </Style>
     <Style Selector="Button.mobile-select-option Ellipse.mobile-select-ring">
       <Setter Property="Stroke" Value="{DynamicResource AgBorder2Brush}" />
     </Style>

@@ -70,9 +70,9 @@ internal static class RoutingPresets
     ];
 
     /// <summary>
-    /// Наборы, предлагаемые при создании списка, в порядке показа.
+    /// Наборы режима в порядке показа.
     /// </summary>
-    public static IEnumerable<RoutingPreset> Offered => All.Where(preset => !preset.UseGlobalProxy);
+    public static IEnumerable<RoutingPreset> Of(bool full) => All.Where(preset => preset.UseGlobalProxy == full);
 
     /// <summary>
     /// Страна устройства, без запроса разрешений.

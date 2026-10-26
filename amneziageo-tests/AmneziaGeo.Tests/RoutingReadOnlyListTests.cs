@@ -14,31 +14,30 @@ namespace AmneziaGeo.Tests;
 public sealed class RoutingReadOnlyListTests
 {
     [Fact]
-    public void TheCardOfAReadOnlyList_NamesItBeforeItsModes()
+    public void TheCardOfAReadOnlyList_NamesIt()
     {
-        var card = new RoutingListSummaryViewModel { ReadOnly = true, AllUdp = true };
+        var card = new RoutingListSummaryViewModel { ReadOnly = true };
 
-        Assert.Equal([Loc.Instance.Get("Main_CardTagReadOnly"), Loc.Instance.Get("Main_CardTagUdp")], card.Tags.Select(tag => tag.Text));
-        Assert.NotEqual("Main_CardTagReadOnly", card.Tags[0].Text);
-        Assert.False(card.Tags[0].On);
-        Assert.False(card.Tags[0].Interactive);
-        Assert.True(card.Tags[0].Plain);
+        var tag = Assert.Single(card.Tags);
+
+        Assert.Equal(Loc.Instance.Get("Main_CardTagReadOnly"), tag.Text);
+        Assert.NotEqual("Main_CardTagReadOnly", tag.Text);
+        Assert.False(tag.On);
+        Assert.False(tag.Interactive);
+        Assert.True(tag.Plain);
     }
 
     [Fact]
-    public void TheUdpTagOfAReadOnlyList_ShowsTheModeOfTheServerAndFlipsNothing()
+    public void TheWarningOfAReadOnlyList_StandsBeforeItsNameAndOpensIt()
     {
         var card = new RoutingListSummaryViewModel { ReadOnly = true, AllUdp = true };
 
-        var udp = card.Tags[1];
-
-        Assert.True(udp.On);
-        Assert.False(udp.Interactive);
-        Assert.True(udp.Plain);
+        Assert.Equal([Loc.Instance.Get("Main_CardTagAllUdp"), Loc.Instance.Get("Main_CardTagReadOnly")], card.Tags.Select(tag => tag.Text));
+        Assert.True(card.Tags[0].Interactive);
     }
 
     [Fact]
-    public void AListTheServerOpens_FlipsItsUdpTagAgain()
+    public void AListTheServerOpens_LosesItsReadOnlyTag()
     {
         var card = new RoutingListSummaryViewModel { ReadOnly = true };
         var raised = new List<string?>();
@@ -47,9 +46,7 @@ public sealed class RoutingReadOnlyListTests
         card.ReadOnly = false;
 
         Assert.Contains(nameof(RoutingListSummaryViewModel.Tags), raised);
-        var udp = Assert.Single(card.Tags);
-        Assert.True(udp.Interactive);
-        Assert.False(udp.Plain);
+        Assert.Empty(card.Tags);
     }
 
     [Fact]

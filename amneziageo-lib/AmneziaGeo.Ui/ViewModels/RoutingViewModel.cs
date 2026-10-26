@@ -364,10 +364,25 @@ internal partial class RoutingViewModel : ViewModelBase
     public bool ShowPresetRegion => SelectedTemplate?.Preset is { NeedsCountry: true };
 
     /// <summary>
-    /// Стоят ли у открытого списка метка «Небезопасен» и плашка: список ведёт через VPN всё, кроме выбранного.
+    /// Стоит ли у заголовка раздела бейдж с режимом списка.
     /// </summary>
-    public bool ShowListUnsafe => !SectionLoading
-        && (IsSectionImport ? IsImportDraft && RoutingSettings is { UseGlobalProxy: true } : EditRoutingList is { UseGlobalProxy: true });
+    public bool ShowListMode => RoutingSettings is not null && !SectionLoading
+        && (IsSectionImport ? IsImportDraft : EditRoutingList is not null);
+
+    /// <summary>
+    /// Стоит ли у открытого списка предупреждение: через VPN идут все приложения или весь их UDP.
+    /// </summary>
+    public bool ShowListWarning => !SectionLoading && OpenListReach() is not ListReach.Named;
+
+    /// <summary>
+    /// Заголовок предупреждения открытого списка.
+    /// </summary>
+    public string ListWarningTitle => Loc.Instance.Get(OpenListReach() is ListReach.AllUdp ? "Main_AllUdpNoticeTitle" : "Main_AllAppsTitle");
+
+    /// <summary>
+    /// Текст предупреждения открытого списка: кто идёт через VPN и почему это важно.
+    /// </summary>
+    public string ListWarningText => Loc.Instance.Get(OpenListReach() is ListReach.AllUdp ? "Main_AllUdpNotice" : "Main_AllAppsNotice");
 
     /// <summary>
     /// Стоит ли у заголовка раздела плашка новой версии открытого списка.
@@ -557,7 +572,8 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportDraft));
         OnPropertyChanged(nameof(ShowImportMethods));
         OnPropertyChanged(nameof(ShowImportFrame));
-        OnPropertyChanged(nameof(ShowListUnsafe));
+        OnPropertyChanged(nameof(ShowListMode));
+        RaiseListWarning();
         OnPropertyChanged(nameof(ShowListUpdate));
         OnPropertyChanged(nameof(ShowListReadOnly));
         OnPropertyChanged(nameof(ShowImportPresets));
@@ -740,11 +756,6 @@ internal partial class RoutingViewModel : ViewModelBase
     public string? OpenListLockTip => EditRoutingList is { Locked: true } open ? open.ActiveTip : null;
 
     /// <summary>
-    /// Стоит ли под строкой главного экрана плашка: включённый список ведёт через VPN всё, кроме выбранного.
-    /// </summary>
-    public bool HomeRoutingUnsafe => CatalogueRow(SelectedRoutingListId) is { UseGlobalProxy: true };
-
-    /// <summary>
     /// Имя списка в строке главного экрана.
     /// </summary>
     public string HomeRoutingList => HasRoutingLists
@@ -787,27 +798,6 @@ internal partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(UseOpenList));
         _openListEcho = null;
         OnPropertyChanged(nameof(UseOpenList));
-    }
-
-    // Плашка UDP на карточке списка: тот же блок, что и в настройках списка.
-    private async Task<bool> SaveRoutingSettingsAsync(RoutingListSummaryViewModel item)
-    {
-        try
-        {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetRoutingSettings,
-            [
-                item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                string.Empty,
-                item.AllUdp ? "on" : "off",
-                item.UseGlobalProxy ? "full" : "split",
-                item.UseGlobalProxy ? "on" : "off",
-            ]));
-            return ack.Ok;
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TimeoutException)
-        {
-            return false;
-        }
     }
 
     // Плашка обновления на карточке списка: агент берёт версию, которую отдал сервер.
@@ -1047,7 +1037,6 @@ internal partial class RoutingViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HomeRoutingOn));
         OnPropertyChanged(nameof(HomeRoutingList));
-        OnPropertyChanged(nameof(HomeRoutingUnsafe));
         OnPropertyChanged(nameof(HomeRoutingLocked));
         OnPropertyChanged(nameof(HomeRoutingTip));
     }
@@ -1158,6 +1147,50 @@ internal partial class RoutingViewModel : ViewModelBase
         BuildSectionRoutingEditor(value.Id, value.Name, value.ReadOnly);
     }
 
+    // Предупреждение открытого списка идёт за режимом и UDP его карточки.
+    partial void OnEditRoutingListChanged(RoutingListSummaryViewModel? oldValue, RoutingListSummaryViewModel? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnOpenCardChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnOpenCardChanged;
+        }
+    }
+
+    private void OnOpenCardChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(RoutingListSummaryViewModel.UseGlobalProxy) or nameof(RoutingListSummaryViewModel.AllUdp))
+        {
+            RaiseListWarning();
+        }
+    }
+
+    // Что открытый список отдаёт туннелю сверх названного: черновик читается из своих настроек, сохранённый список
+    // из своей карточки.
+    private ListReach OpenListReach()
+    {
+        if (IsSectionImport)
+        {
+            return IsImportDraft && RoutingSettings is { } draft
+                ? RoutingListSummaryViewModel.ReachOf(draft.UseGlobalProxy, draft.AllUdp)
+                : ListReach.Named;
+        }
+
+        return EditRoutingList?.Reach ?? ListReach.Named;
+    }
+
+    // Предупреждение открытого списка.
+    private void RaiseListWarning()
+    {
+        OnPropertyChanged(nameof(ShowListWarning));
+        OnPropertyChanged(nameof(ListWarningTitle));
+        OnPropertyChanged(nameof(ListWarningText));
+    }
+
     // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror the
     // combo, subscribe the dirty signal, and re-hook the edit listeners that clear a stale "cannot delete" block.
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
@@ -1200,7 +1233,8 @@ internal partial class RoutingViewModel : ViewModelBase
         }
 
         SyncTrafficFlags();
-        OnPropertyChanged(nameof(ShowListUnsafe));
+        OnPropertyChanged(nameof(ShowListMode));
+        RaiseListWarning();
         RaiseAdvancedRows();
         RefreshEditBar();
     }
@@ -1220,8 +1254,20 @@ internal partial class RoutingViewModel : ViewModelBase
         SyncTrafficFlags();
         if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.UseGlobalProxy))
         {
-            OnPropertyChanged(nameof(ShowListUnsafe));
+            RaiseListWarning();
             RaiseAdvancedRows();
+            if (IsCreatingSectionRouting)
+            {
+                RebuildTemplates();
+                if (RoutingEditor is { GlobalProxyActive: false } draft)
+                {
+                    draft.SelectedRole = "proxy";
+                }
+            }
+        }
+        else if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.AllUdp))
+        {
+            RaiseListWarning();
         }
         else if (ReferenceEquals(sender, RoutingSettings) && e.PropertyName == nameof(RoutingSettingsViewModel.ShowSplitRouteLimit))
         {
@@ -1356,7 +1402,7 @@ internal partial class RoutingViewModel : ViewModelBase
                 existing = new RoutingListSummaryViewModel
                 {
                     Id = entry.Id,
-                    SaveSettings = SaveRoutingSettingsAsync,
+                    Open = OpenCard,
                     TakeUpdate = UpdateRoutingListAsync,
                 };
                 RoutingLists.Insert(Math.Min(i, RoutingLists.Count), existing);
@@ -1424,7 +1470,7 @@ internal partial class RoutingViewModel : ViewModelBase
             ShowReadOnly(open, editor, reread);
         }
 
-        OnPropertyChanged(nameof(ShowListUnsafe));
+        RaiseListWarning();
         OnPropertyChanged(nameof(ShowListUpdate));
         OnPropertyChanged(nameof(ShowListReadOnly));
         OnPropertyChanged(nameof(ShowDeleteCard));
@@ -1582,15 +1628,16 @@ internal partial class RoutingViewModel : ViewModelBase
         BeginPresetImport();
     }
 
-    // Собирает шаблоны: наборы, свои правила, импорт; выбор остаётся на той же строке.
+    // Собирает шаблоны под режим черновика: наборы режима, свои правила, импорт; выбор остаётся на той же строке.
     private void RebuildTemplates()
     {
+        var full = RoutingSettings?.UseGlobalProxy ?? false;
         var picked = SelectedTemplate;
         _fillingTemplates = true;
         try
         {
             Templates.Clear();
-            foreach (var preset in RoutingPresets.Offered)
+            foreach (var preset in RoutingPresets.Of(full))
             {
                 Templates.Add(new RoutingTemplateItemViewModel(preset));
             }

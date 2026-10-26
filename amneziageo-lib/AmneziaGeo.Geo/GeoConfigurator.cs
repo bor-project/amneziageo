@@ -80,6 +80,29 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         return MaterializeRoutingList(0, string.Empty, rules, index);
     }
 
+    /// <summary>
+    /// Unfolds each rule apart, in the order given, so the share each one brings to the route table is known.
+    /// </summary>
+    public async Task<IReadOnlyList<RuleUnfold>> UnfoldEachAsync(IReadOnlyList<GeoRule> rules, CancellationToken ct = default)
+    {
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct).ConfigureAwait(false), files);
+        var unfolded = new List<RuleUnfold>(rules.Count);
+        foreach (var rule in rules)
+        {
+            var (routes, domains, _) = GeoMaterializer.Materialize([rule], index);
+            unfolded.Add(new RuleUnfold(rule, routes, domains));
+        }
+
+        return unfolded;
+    }
+
+    /// <summary>
+    /// Unfolds each role-tagged rule token apart, so a draft is weighed before it is saved; a token that reads as no
+    /// rule is left out.
+    /// </summary>
+    public Task<IReadOnlyList<RuleUnfold>> UnfoldTokensAsync(IReadOnlyList<string> ruleTokens, CancellationToken ct = default) =>
+        UnfoldEachAsync([.. ruleTokens.Select(ParseRoleRule).OfType<GeoRule>()], ct);
+
     // Bumped whenever a rule token starts covering something else, so stored lists are rebuilt against the new
     // expansion instead of keeping what an older version wrote.
     private const string MaterializerVersion = "3";

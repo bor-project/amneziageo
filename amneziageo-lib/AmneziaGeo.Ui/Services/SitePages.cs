@@ -20,12 +20,12 @@ internal static class SitePages
     public static TopLevel? Host { get; set; }
 
     /// <summary>
-    /// Открывает раздел о том, почему убран режим «Всё, кроме выбранного».
+    /// Открывает раздел о том, какие приложения идут через VPN у списка «Всё, кроме выбранного» и со всем UDP.
     /// </summary>
     public static IAsyncRelayCommand FullModeCommand { get; } = new AsyncRelayCommand(() => OpenAsync(FullMode(Loc.Instance.Culture)));
 
     /// <summary>
-    /// Раздел о том, почему убран режим «Всё, кроме выбранного», на странице маршрутизации устройства и на языке окна.
+    /// Тот же раздел на странице маршрутизации устройства и на языке окна.
     /// </summary>
     public static string FullMode(CultureInfo culture)
     {

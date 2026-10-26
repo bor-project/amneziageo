@@ -153,7 +153,7 @@ public static class CliRunner
               routing order <id|name> [<id|name>...] the order they are listed in
               routing settings <id|name>
               routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>]
-                                          [--all-udp on|off] [--global-proxy off]
+                                          [--all-udp on|off] [--global-proxy on|off]
 
             A rule is "<role>|<token>" where role is proxy, direct or block, and token is
             geosite:<category>, geoip:<country>, domain:<name>, app:<id>, or an address/CIDR.

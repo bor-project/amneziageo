@@ -217,7 +217,7 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public string RouteTrimNotice => Loc.Instance.Get("RoutingEditor_RoutesTrimmed", RouteKept, RouteTotal);
 
     /// <summary>
-    /// True when the list outgrew the route table and the relay decides each connection.
+    /// True when a part of the list is decided on the fly and the relay decides each connection.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRelayNotice))]
@@ -260,16 +260,23 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private int _relayThreshold;
 
     /// <summary>
-    /// True when the relay carries the list and every application is shown the vpn.
+    /// Entries of the list decided on the fly: the rules heavier than half the threshold and what did not fit it.
     /// </summary>
-    public bool ShowRelayNotice => !GlobalProxyActive && (RouteRelayed || (RelayKnown && AllUdpActive));
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RelayNotice))]
+    private int _relayLive;
 
     /// <summary>
-    /// Why the relay carries the list.
+    /// True when the relay carries a part of a list that names what it tunnels, and every application is shown the
+    /// vpn; a list that tunnels every datagram says so on its own screen.
     /// </summary>
-    public string RelayNotice => RouteRelayed
-        ? Loc.Instance.Get("RoutingEditor_RelayNotice", RelayWeight, RelayRanges, RelayNames, RelayThreshold)
-        : Loc.Instance.Get("RoutingEditor_RelayNoticeUdp");
+    public bool ShowRelayNotice => !GlobalProxyActive && RouteRelayed;
+
+    /// <summary>
+    /// What the relay carries and why.
+    /// </summary>
+    public string RelayNotice =>
+        Loc.Instance.Get("RoutingEditor_RelayNotice", RelayWeight, RelayRanges, RelayNames, RelayThreshold, RelayLive);
 
     /// <summary>
     /// Asks again what the rules turn into when the threshold of the agent is no longer the one the answer held.
@@ -362,12 +369,13 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         RelayRanges = answer.Ranges;
         RelayNames = answer.Names;
         RelayThreshold = answer.Threshold;
+        RelayLive = answer.Live;
         RouteRelayed = answer.Relay > 0;
     }
 
     // Reads what the agent answers with; a malformed ack reads as no ceiling. The relay is -1 where the agent
     // says nothing about it.
-    internal static (int Routes, int Limit, bool Trims, int Kept, int Total, int Relay, int Ranges, int Names, int Weight, int Threshold) ParseBudget(string message)
+    internal static (int Routes, int Limit, bool Trims, int Kept, int Total, int Relay, int Ranges, int Names, int Weight, int Threshold, int Live) ParseBudget(string message)
     {
         try
         {
@@ -380,11 +388,11 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             var total = root.TryGetProperty("total", out var all) && all.TryGetInt32(out var whole) ? whole : 0;
             var relay = root.TryGetProperty("relay", out var stand) && stand.TryGetInt32(out var standing) ? standing : -1;
             return (routes, limit, trims, kept, total, relay, WholeField(root, "ranges"), WholeField(root, "names"),
-                WholeField(root, "weight"), WholeField(root, "threshold"));
+                WholeField(root, "weight"), WholeField(root, "threshold"), WholeField(root, "live"));
         }
         catch (JsonException)
         {
-            return (0, 0, false, 0, 0, -1, 0, 0, 0, 0);
+            return (0, 0, false, 0, 0, -1, 0, 0, 0, 0, 0);
         }
     }
 
@@ -431,8 +439,6 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 
     // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowRelayNotice))]
-    [NotifyPropertyChangedFor(nameof(RelayNotice))]
     private bool _allUdpActive;
 
     partial void OnGlobalProxyActiveChanged(bool value)

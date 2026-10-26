@@ -29,17 +29,15 @@
     <!-- Заголовок раздела: стоит и над каталогом, и над экранами открытого списка. -->
     <WrapPanel Grid.Row="0" ItemSpacing="10" LineSpacing="4">
       <TextBlock Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
-      <!-- Открытый список ведёт через VPN всё, кроме выбранного: метка ведёт на сайт. -->
-      <Button Classes="cardtagbtn" VerticalAlignment="Center" IsVisible="{Binding ShowListUnsafe}"
-              Command="{x:Static svc:SitePages.FullModeCommand}" ToolTip.Tip="{l:Tr Main_CardTagUnsafeHint}">
-        <Border Classes="cardchip cardtag warn">
-          <Grid ColumnDefinitions="Auto,*">
-            <PathIcon Grid.Column="0" Data="{DynamicResource AgAlertGeometry}" Width="12" Height="12"
-                      Margin="0,0,4,0" VerticalAlignment="Center" Foreground="{DynamicResource AgWarnBrush}" />
-            <TextBlock Grid.Column="1" Text="{l:Tr Main_CardTagUnsafe}" FontSize="12" FontWeight="SemiBold" />
-          </Grid>
-        </Border>
-      </Button>
+      <!-- Режим открытого списка. -->
+      <Border Classes="cardbadge" IsVisible="{Binding ShowListMode}">
+        <Panel DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+          <TextBlock Text="{l:Tr Main_VpnModeSelected}" FontSize="12" FontWeight="SemiBold"
+                     IsVisible="{Binding IsSelectedOnly}" />
+          <TextBlock Text="{l:Tr Main_VpnModeFull}" FontSize="12" FontWeight="SemiBold"
+                     IsVisible="{Binding UseGlobalProxy}" />
+        </Panel>
+      </Border>
       <!-- Открытый список сервер держит только для чтения. -->
       <Border Classes="cardchip cardtag off" IsVisible="{Binding ShowListReadOnly}">
         <TextBlock Text="{l:Tr Main_CardTagReadOnly}" FontSize="12" FontWeight="SemiBold" />
@@ -72,9 +70,9 @@
                  Margin="0,4,0,0" Text="{l:Tr Main_NoRoutingListsHint}" />
     </StackPanel>
 
-    <!-- Открытый список ведёт через VPN всё, кроме выбранного: почему он опасен и что с ним сделать. -->
-    <controls:UnsafeListNotice Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding ShowListUnsafe}"
-                               Text="{l:Tr Main_UnsafeListNotice}" />
+    <!-- Открытый список ведёт через VPN все приложения или весь их UDP: кто идёт через сервер и что с этим сделать. -->
+    <controls:ListWarning Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding ShowListWarning}"
+                          Title="{Binding ListWarningTitle}" Text="{Binding ListWarningText}" />
 
     <!-- Content: one section shown at a time. Up from its top row returns to the header, not to the window one. -->
     <Panel x:Name="Body" Grid.Row="2" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
@@ -267,7 +265,7 @@
                                  TextWrapping="Wrap" />
                       <TextBlock Text="{l:Tr Main_RouteTtlHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                     </StackPanel>
-                    <TextBox Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="112"
+                    <TextBox Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="150"
                              HorizontalAlignment="Left"
                              controls:NumericInput.Minimum="0" controls:NumericInput.Maximum="86400"
                              Text="{Binding RouteTtl, Mode=TwoWay}">
@@ -405,13 +403,34 @@
         </StackPanel>
       </controls:Later>
 
-      <!-- Новый список: шаблон выбирается списком, под ним форма шаблона; черновик набора или импорта - сам
-           редактор. -->
+      <!-- Новый список: режим и шаблон выбираются списками, под ними форма шаблона; черновик набора или импорта -
+           сам редактор. -->
       <controls:Later IsVisible="{Binding ShowImportFrame}">
         <Border Classes="sect">
           <StackPanel Spacing="14">
             <StackPanel Spacing="14" IsVisible="{Binding ShowImportMethods}">
-              <!-- Шаблон: готовый набор, свои правила или импорт. -->
+              <!-- Режим списка: весь трафик или только отмеченное. -->
+              <StackPanel Spacing="8" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+                <TextBlock Text="{l:Tr Main_VpnModeTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                <!-- Телефон открывает список шторкой снизу, десктоп выпадающим списком. -->
+                <controls:AdaptiveComboBox Classes="field" SelectedIndex="{Binding VpnModeIndex, Mode=TwoWay}"
+                    Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w290}"
+                    HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+                  <ComboBoxItem Content="{l:Tr Main_VpnModeSelected}" />
+                  <ComboBoxItem Content="{l:Tr Main_VpnModeFull}" />
+                </controls:AdaptiveComboBox>
+                <!-- Что делает выбранный режим. -->
+                <Panel Margin="0,-2,0,0">
+                  <TextBlock Text="{l:Tr Main_VpnModeHintSelected}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                             IsVisible="{Binding IsSelectedOnly}" />
+                  <TextBlock Text="{l:Tr Main_VpnModeHintFull}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                             IsVisible="{Binding UseGlobalProxy}" />
+                </Panel>
+              </StackPanel>
+
+              <Border Classes="rowsep" />
+
+              <!-- Шаблон: наборы выбранного режима, свои правила или импорт. -->
               <StackPanel Spacing="8">
                 <TextBlock Text="{l:Tr Main_TemplateTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
                 <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding Templates}"

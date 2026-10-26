@@ -4,8 +4,8 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// A list that carries only what it names stays on the route table up to the threshold of the settings and goes to
-/// the relay beyond; the threshold stands at 11000 until the settings name another.
+/// A list stays on the route table up to the threshold of the settings, counting every name as eight addresses; the
+/// threshold stands at 11000 until the settings name another.
 /// </summary>
 public sealed class SplitBudgetTests
 {
@@ -31,14 +31,5 @@ public sealed class SplitBudgetTests
     public void TheWeight_IsTheRangesAndEightAddressesAName()
     {
         Assert.Equal(1_048, SplitBudget.Weight(1_024, 3));
-    }
-
-    [Fact]
-    public void EveryDatagramOnTheTunnel_TakesTheRelayWhateverTheSize()
-    {
-        Assert.True(SplitBudget.Relayed(3, 0, true, SplitBudget.DefaultLimit));
-        Assert.False(SplitBudget.Relayed(3, 0, false, SplitBudget.DefaultLimit));
-        Assert.True(SplitBudget.Relayed(SplitBudget.DefaultLimit + 1, 0, false, SplitBudget.DefaultLimit));
-        Assert.False(SplitBudget.Relayed(SplitBudget.DefaultLimit + 1, 0, false, 16_000));
     }
 }

@@ -197,6 +197,8 @@ public sealed class GeoVpnService : VpnService
     private const int HotMax = 1024;
     // Decided addresses carried into the next session, and the file they wait in.
     private const string LiveFile = "live-cache.txt";
+    // The addresses the names the route table holds came back with, for the next connect of the same names.
+    private const string NamesFile = "names.txt";
     private const int LiveMax = 2048;
     private const int HotTtlSeconds = 3600;
     private const int KeepaliveSeconds = 25;
@@ -1005,9 +1007,16 @@ public sealed class GeoVpnService : VpnService
                 : [];
             // The network the device sits on stays inside the tun only where the engine sends it out itself.
             var carveLocal = !localInTunnel || _localCarveForced || !(directTcp || _proxyPort > 0);
-            // The names of the list are asked of the name servers of the tunnel once it carries.
-            var late = relay is null && plan.HasDomains && !vpnDnsNetwork;
-            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned, !late, networkDns).ConfigureAwait(false);
+            // The names the route table holds are asked of the name servers of the tunnel once it carries; until
+            // then the tun stands on the addresses they came back with last time.
+            var late = HeldNames(plan) > 0 && !vpnDnsNetwork;
+            var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned, !late, networkDns,
+                late ? KnownNames(plan) : null).ConfigureAwait(false);
+            if (!late && rules.Answers is { } answers)
+            {
+                KeepNames(plan, answers);
+            }
+
             _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
@@ -1193,13 +1202,19 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    // Asks the name servers of the tunnel for the names of the list and puts the tun around their addresses.
+    // Asks the name servers of the tunnel for the names the route table holds, puts the tun around their addresses
+    // and keeps them for the next connect.
     private async Task<DialOutcome?> SettleNamesAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, IReadOnlyList<string> hot, bool carveLocal, IReadOnlyList<string> pinned, int handle, CancellationToken ct)
     {
-        var rules = await MaterializeAsync(plan, config, servers, false, hot, !_liveTun, carveLocal, pinned).ConfigureAwait(false);
+        var rules = await MaterializeAsync(plan, config, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned).ConfigureAwait(false);
         if (_handle != handle || ct.IsCancellationRequested)
         {
             return DialOutcome.Raised;
+        }
+
+        if (rules.Answers is { } answers)
+        {
+            KeepNames(plan, answers);
         }
 
         if (rules.Tunneled.Count > RouteBudget.Max)
@@ -1239,10 +1254,54 @@ public sealed class GeoVpnService : VpnService
                 _verdicts = rules.Verdicts;
             }
 
-            _routed = RoutedReport(plan, rules);
+            if (_proxyPort == 0)
+            {
+                _routed = RoutedReport(plan, rules);
+            }
         }
 
         return null;
+    }
+
+    // How many names the route table holds.
+    private static int HeldNames(GeoRoutingPlan plan) =>
+        plan.Held(plan.ProxyDomains).Count + plan.Held(plan.DirectDomains).Count + plan.Held(plan.BlockDomains).Count;
+
+    // The key the answers of the names the route table holds are kept under.
+    private static string NamesKey(GeoRoutingPlan plan)
+    {
+        return NameCache.Key(Named(plan.Held(plan.ProxyDomains)), Named(plan.Held(plan.DirectDomains)), Named(plan.Held(plan.BlockDomains)));
+
+        static IEnumerable<string> Named(IReadOnlyList<GeoDomain> names) => names.Select(name => name.Kind + ":" + name.Value);
+    }
+
+    // The addresses the names the route table holds came back with at the last connect of the same names.
+    private NameAnswers? KnownNames(GeoRoutingPlan plan)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, NamesFile);
+            return System.IO.File.Exists(path) ? NameCache.Read(System.IO.File.ReadAllText(path), NamesKey(plan)) : null;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "reading the answers of the names failed: " + ex);
+            return null;
+        }
+    }
+
+    // Keeps the addresses the names the route table holds came back with for the next connect of the same names.
+    private void KeepNames(GeoRoutingPlan plan, NameAnswers answers)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FilesDir!.AbsolutePath!, NamesFile);
+            System.IO.File.WriteAllText(path, NameCache.Format(NamesKey(plan), answers));
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "keeping the answers of the names failed: " + ex);
+        }
     }
 
     // Hands out the tun the leak guard holds when the session needs the same one or one that differs in the
@@ -1589,7 +1648,8 @@ public sealed class GeoVpnService : VpnService
 
     /// <summary>
     /// The route lists a session is built from, the local networks it keeps out of the tun, the ranges it sends
-    /// direct and blocks, and the addresses of the last session it still sends direct.
+    /// direct and blocks, the addresses of the last session it still sends direct, and the addresses the names the
+    /// route table holds came back with.
     /// </summary>
     private readonly record struct Materialized(
         IReadOnlyList<string> Tunneled,
@@ -1598,7 +1658,8 @@ public sealed class GeoVpnService : VpnService
         string Verdicts,
         IReadOnlyList<string> Direct,
         IReadOnlyList<string> Blocked,
-        IReadOnlyList<string> Carried);
+        IReadOnlyList<string> Carried,
+        NameAnswers? Answers);
 
     // What the route table alone decides, as the journal reads it: the ranges handed to the tun and the engine.
     // Nothing is met here, so no row carries a clock.
@@ -1638,10 +1699,10 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Whether the session raises the relay. Every byte it carries crosses userspace twice, so it stands only where
-    // the route table cannot say the same thing: a list that outgrew the table, or every datagram on the tunnel. A
-    // list that carries only what it names holds to the table up to a fixed size whatever else it holds, so under
-    // it a vpn is shown to the named applications alone. A configuration can also refuse the relay outright, and
-    // then the route table decides alone.
+    // the route table cannot say the same thing: a part of the list decided on the fly, or every datagram on the
+    // tunnel. A list holds to the table up to a fixed size whatever else it holds, so under it a vpn is shown to the
+    // named applications alone. A configuration can also refuse the relay outright, and then the route table
+    // decides alone.
     private static bool NeedsRelay(GeoRoutingPlan plan)
     {
         if (!RouteBudget.Relayable)
@@ -1667,34 +1728,30 @@ public sealed class GeoVpnService : VpnService
             return true;
         }
 
-        var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
-        if (!plan.FullTunnel)
+        if (plan.Live)
         {
-            var listed = plan.ProxyRoutes.Count + plan.DirectRoutes.Count + plan.BlockRoutes.Count;
-            var weight = SplitBudget.Weight(listed, names);
-            if (SplitBudget.Fits(listed, names, plan.SplitLimit))
-            {
-                Report($"the list weighs {weight} entries ({listed} range(s) and {names} name(s) at "
-                    + $"{SplitBudget.AddressesPerName} each), within the threshold of {plan.SplitLimit} the route table "
-                    + "carries on its own, so the relay stays down and nothing crosses it");
-                return false;
-            }
-
-            Note("tunnel", $"the list weighs {weight} entries ({listed} range(s) and {names} name(s) at "
-                + $"{SplitBudget.AddressesPerName} each), more than the threshold of {plan.SplitLimit} the route table "
-                + $"carries on its own ({SettingKeys.SplitRouteLimit}), so the relay decides the destinations instead");
+            Note("tunnel", $"rules weighing {plan.LiveWeight} entries are decided on the fly: the ones heavier than half "
+                + $"the threshold of {plan.SplitLimit} ({SettingKeys.SplitRouteLimit}) and the ones past it, while the "
+                + $"route table holds the other {plan.HeldWeight}; the relay stands beside it");
             return true;
         }
 
-        var routes = SystemRoutes.Tunneled(plan.FullTunnel, plan.ProxyRoutes, plan.DirectRoutes, plan.BlockRoutes).Count;
-        if (RouteBudget.Fits(routes, names))
+        var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
+        var listed = plan.ProxyRoutes.Count + plan.DirectRoutes.Count + plan.BlockRoutes.Count;
+        if (plan.FullTunnel)
         {
-            Report($"{routes} route(s) carry the rules on their own, so the relay stays down and nothing crosses it");
-            return false;
+            var routes = SystemRoutes.Tunneled(plan.FullTunnel, plan.ProxyRoutes, plan.DirectRoutes, plan.BlockRoutes).Count;
+            if (!RouteBudget.Fits(routes, names))
+            {
+                Report($"{routes} route(s) are more than establish() takes, so the relay decides the destinations instead");
+                return true;
+            }
         }
 
-        Report($"{routes} route(s) are more than establish() takes, so the relay decides the destinations instead");
-        return true;
+        Report($"the list weighs {SplitBudget.Weight(listed, names)} entries ({listed} range(s) and {names} name(s) at "
+            + $"{SplitBudget.AddressesPerName} each), within the threshold of {plan.SplitLimit} the route table carries "
+            + "on its own, so the relay stays down and nothing crosses it");
+        return false;
     }
 
     // Parts the session tun is built from.
@@ -1711,20 +1768,22 @@ public sealed class GeoVpnService : VpnService
         int ProxyPort,
         bool LocalInside);
 
-    // Turns the rules into the two address lists a tunnel is built from. Behind the relay a destination is decided
-    // while the session runs, so no name is resolved at connect - the mode only says where a destination no rule
-    // named belongs. A route table holds addresses and not protocols, so the tun there carries every datagram
-    // except the direct ranges it leaves out. Without the relay a name has to become an address here and stay that
-    // way for the session: a route table cannot be edited once the tun is established. Of the addresses the last
-    // session sent direct, only the ones this list still sends direct are carried over; they leave the route table
-    // where the tun cannot leave them out by itself.
-    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool routed, bool carveLocal, IReadOnlyList<string> pinned, bool resolveNames = true, IReadOnlyList<string>? networkDns = null)
+    // Turns the rules into the two address lists a tunnel is built from. The part of the list the route table holds
+    // becomes addresses here and stays that way for the session, its names included: a route table cannot be edited
+    // once the tun is established, so the names are asked ahead, taken from the answers of the last connect, or left
+    // for the name servers of the tunnel. Behind the relay the rest of the list is decided while the session runs,
+    // and the mode only says where a destination no rule named belongs; a route table holds addresses and not
+    // protocols, so the tun there carries every datagram except the direct ranges it leaves out. Of the addresses the
+    // last session sent direct, only the ones this list still sends direct are carried over; they leave the route
+    // table where the tun cannot leave them out by itself.
+    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool routed, bool carveLocal, IReadOnlyList<string> pinned, bool resolveNames = true, IReadOnlyList<string>? networkDns = null, NameAnswers? known = null)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
 
-        // The direct ranges of the list, less the addresses that ride the tunnel whatever it says.
+        // The direct ranges of the list, less the addresses that ride the tunnel whatever it says; the ones the route
+        // table holds leave the tun.
         var listedDirect = Spared(plan.DirectRoutes, pinned);
-        var direct = relayed || !carveLocal ? new List<string>() : new List<string>(listedDirect);
+        var direct = carveLocal ? new List<string>(plan.Held(listedDirect)) : new List<string>();
         var block = new List<string>(plan.BlockRoutes);
 
         // The resolver rides the tunnel, so a query is answered where the traffic goes and not where the device sits.
@@ -1771,10 +1830,6 @@ public sealed class GeoVpnService : VpnService
             }
         }
 
-        // The engine decides the resolver and those networks as ranges of the list: behind the relay a split hands a
-        // datagram no rule names to its owner, and a query to the resolver would leave past the tunnel.
-        var listed = new List<string>(proxy);
-
         // Ranges the tun leaves out whatever the budget holds: the network the device sits on, and the addresses a
         // direct name resolved to.
         var kept = new List<string>();
@@ -1794,27 +1849,31 @@ public sealed class GeoVpnService : VpnService
                 + "leave it on a protected socket, so an application reaches the network the device sits on");
         }
 
+        // The names the route table holds; behind the relay the others are decided on contact.
+        var heldProxy = plan.Held(plan.ProxyDomains);
+        var heldDirect = plan.Held(plan.DirectDomains);
+        var heldBlock = plan.Held(plan.BlockDomains);
+        var heldNames = heldProxy.Count + heldDirect.Count + heldBlock.Count;
+
         if (relayed)
         {
-            Report($"{Mode(plan)} tunnel behind the local proxy: "
-                + $"{plan.ProxyRoutes.Count + plan.DirectRoutes.Count} range(s) and "
-                + $"{plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count} name rule(s) "
-                + $"decided on contact; a destination no rule names goes "
-                + $"{(plan.FullTunnel ? "through the tunnel" : "direct")}");
+            var liveRanges = plan.ProxyRoutes.Count + plan.DirectRoutes.Count
+                - plan.Held(plan.ProxyRoutes).Count - plan.Held(plan.DirectRoutes).Count;
+            var liveNames = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count - heldNames;
+            Report($"{Mode(plan)} tunnel behind the local proxy: {liveRanges} range(s) and {liveNames} name rule(s) "
+                + $"decided on contact; a destination no rule names goes {(plan.FullTunnel ? "through the tunnel" : "direct")}");
 
-            // A blocked name is refused on the stream that carries it. It is not resolved here: the answer would
-            // come from the resolver the device sits behind rather than the tunnel's, and a catalogue of names
-            // costs a query each before the tun is even up.
-            if (plan.BlockDomains.Count > 0)
+            // A blocked name decided on contact is refused on the stream that carries it.
+            if (plan.BlockDomains.Count > heldBlock.Count)
             {
-                Report($"{plan.BlockDomains.Count} blocked name(s) are refused on the relay; a datagram that never "
-                    + "reaches it is stopped by a blocked range alone");
+                Report($"{plan.BlockDomains.Count - heldBlock.Count} blocked name(s) are refused on the relay; a "
+                    + "datagram that never reaches it is stopped by a blocked range alone");
             }
 
-            // A direct range stays out of the route table: the shim decides it on the packet and sends the
-            // datagram on its own protected socket, so establish() carries the local subnets alone.
-            Report($"{plan.DirectRoutes.Count} direct range(s) are decided on the packet, so a datagram to one of "
-                + "them leaves on a protected socket while the table stays short");
+            // A direct range the route table does not hold stays out of it: the shim decides it on the packet and
+            // sends the datagram on its own protected socket.
+            Report($"{plan.DirectRoutes.Count - plan.Held(plan.DirectRoutes).Count} direct range(s) are decided on the "
+                + "packet, so a datagram to one of them leaves on a protected socket while the table stays short");
 
             if (plan.AllUdp)
             {
@@ -1827,34 +1886,53 @@ public sealed class GeoVpnService : VpnService
                     + "path off the route table");
             }
         }
-        else if (plan.HasDomains && !resolveNames)
-        {
-            Report($"{plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count} name rule(s) wait "
-                + "for the name servers of the tunnel");
-        }
-        else if (plan.HasDomains)
+
+        var answers = default(NameAnswers);
+        if (heldNames > 0 && resolveNames)
         {
             var clock = Stopwatch.StartNew();
             // The names become addresses under a deadline, so a catalogue of them cannot hold up the connect.
             using var budget = new CancellationTokenSource(NameBudgetMs);
             var resolver = new GeoDomainRouteResolver();
-            var names = plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count;
-            var named = await resolver.ResolveAsync(plan.DirectDomains, budget.Token).ConfigureAwait(false);
-            proxy.AddRange(await resolver.ResolveAsync(plan.ProxyDomains, budget.Token).ConfigureAwait(false));
-            if (carveLocal)
-            {
-                direct.AddRange(named);
-                kept.AddRange(named);
-            }
-            else
-            {
-                onPacket.AddRange(named);
-            }
-            block.AddRange(await resolver.ResolveAsync(plan.BlockDomains, budget.Token).ConfigureAwait(false));
-            Report($"{names} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms"
+            var named = await resolver.ResolveAsync(heldDirect, budget.Token).ConfigureAwait(false);
+            var tunneled = await resolver.ResolveAsync(heldProxy, budget.Token).ConfigureAwait(false);
+            var refused = await resolver.ResolveAsync(heldBlock, budget.Token).ConfigureAwait(false);
+            answers = new NameAnswers(tunneled, named, refused);
+            Report($"{heldNames} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms"
                 + (budget.IsCancellationRequested ? ", the rest ran out of their time" : string.Empty)
                 + "; a name that moves to another address will no longer match");
         }
+        else if (heldNames > 0 && known is not null)
+        {
+            answers = known;
+            Report($"{heldNames} name rule(s) start from the {known.Count} address(es) they came back with last time, "
+                + "and are asked again once the tunnel carries");
+        }
+        else if (heldNames > 0)
+        {
+            Report($"{heldNames} name rule(s) wait for the name servers of the tunnel");
+        }
+
+        if (answers is not null)
+        {
+            proxy.AddRange(answers.Proxy);
+            if (carveLocal)
+            {
+                direct.AddRange(answers.Direct);
+                kept.AddRange(answers.Direct);
+            }
+            else
+            {
+                onPacket.AddRange(answers.Direct);
+            }
+
+            block.AddRange(answers.Block);
+        }
+
+        // The engine decides the resolver, those networks and the names asked ahead as ranges of the list: behind the
+        // relay a split hands a datagram no rule names to its owner, and a query to the resolver would leave past the
+        // tunnel.
+        var listed = new List<string>(proxy);
 
         var decided = new List<string>(listedDirect);
         decided.AddRange(onPacket);
@@ -1879,29 +1957,30 @@ public sealed class GeoVpnService : VpnService
                 + "kernel carries them instead of the shim");
         }
 
-        var tunneled = SystemRoutes.Tunneled(plan.FullTunnel || relayed || !carveLocal, proxy, direct, block);
-        if (!relayed && tunneled.Count > RouteBudget.Max)
+        var whole = plan.FullTunnel || relayed || !carveLocal;
+        var routes = SystemRoutes.Tunneled(whole, proxy, direct, block);
+        if (routes.Count > RouteBudget.Max)
         {
             // establish() takes the table in one transaction, so the direct ranges leave it altogether and the
             // shim decides them on the packet instead.
             direct = new List<string>(kept);
-            tunneled = SystemRoutes.Tunneled(plan.FullTunnel, proxy, direct, block);
+            routes = SystemRoutes.Tunneled(whole, proxy, direct, block);
             Report($"{plan.DirectRoutes.Count} direct range(s) do not fit the {RouteBudget.Max} route(s) "
                 + "establish() takes, so they are decided on the packet");
         }
 
-        if (tunneled.Count == 0)
+        if (routes.Count == 0)
         {
             Report("the rules capture nothing, running the whole tunnel instead");
-            tunneled = ["0.0.0.0/0"];
+            routes = ["0.0.0.0/0"];
         }
 
         // A tun that carries everything needs a peer that carries everything, or a destination the rules never
         // named is dropped by the engine instead of leaving on a protected socket.
         var allowed = plan.FullTunnel || relayed || block.Count > 0 ? SystemRoutes.Allowed(block) : [];
-        Report($"{Mode(plan)}: {tunneled.Count} route(s) into the tunnel, {block.Count} range(s) blocked, "
+        Report($"{Mode(plan)}: {routes.Count} route(s) into the tunnel, {block.Count} range(s) blocked, "
             + $"peer carries {(allowed.Count == 0 ? "what the config says" : allowed.Count + " range(s)")}");
-        return new Materialized(tunneled, allowed, local, Verdicts(listed, decided, block), decided, block, carried);
+        return new Materialized(routes, allowed, local, Verdicts(listed, decided, block), decided, block, carried, answers);
     }
 
     // The ranges less the addresses pinned to the tunnel.

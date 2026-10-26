@@ -29,9 +29,62 @@ public sealed record GeoRoutingPlan(
     public bool UseRouter { get; init; } = true;
 
     /// <summary>
-    /// Entries a list that carries only what it names holds in the route table before the relay decides.
+    /// Entries a list holds in the route table before the relay decides.
     /// </summary>
     public int SplitLimit { get; init; } = SplitBudget.DefaultLimit;
+
+    /// <summary>
+    /// Whether a part of the list is decided on the fly: the rules heavier than half the threshold and the ones past it.
+    /// </summary>
+    public bool Live { get; init; }
+
+    /// <summary>
+    /// The ranges the route table holds where a part of the list is decided on the fly.
+    /// </summary>
+    public IReadOnlyList<string> HeldRoutes { get; init; } = [];
+
+    /// <summary>
+    /// The names asked ahead and held in the route table where a part of the list is decided on the fly.
+    /// </summary>
+    public IReadOnlyList<GeoDomain> HeldDomains { get; init; } = [];
+
+    /// <summary>
+    /// What the held part of the list weighs against the threshold.
+    /// </summary>
+    public int HeldWeight { get; init; }
+
+    /// <summary>
+    /// What the part decided on the fly weighs.
+    /// </summary>
+    public int LiveWeight { get; init; }
+
+    /// <summary>
+    /// The ranges of these the route table holds: all of them while nothing is decided on the fly.
+    /// </summary>
+    public IReadOnlyList<string> Held(IReadOnlyList<string> ranges)
+    {
+        if (!Live)
+        {
+            return ranges;
+        }
+
+        var held = new HashSet<string>(HeldRoutes, StringComparer.OrdinalIgnoreCase);
+        return [.. ranges.Where(held.Contains)];
+    }
+
+    /// <summary>
+    /// The names of these asked ahead and held in the route table: all of them while nothing is decided on the fly.
+    /// </summary>
+    public IReadOnlyList<GeoDomain> Held(IReadOnlyList<GeoDomain> names)
+    {
+        if (!Live)
+        {
+            return names;
+        }
+
+        var held = new HashSet<GeoDomain>(HeldDomains);
+        return [.. names.Where(held.Contains)];
+    }
 
     /// <summary>
     /// Everything through the tunnel, nothing listed.

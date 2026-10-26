@@ -180,6 +180,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _tunnelNotice = TunnelNoticeModes.Full;
     private int _routeTtl = 300;
     private int _splitLimit = SplitBudget.DefaultLimit;
+    // Whether the plan in force adds the named applications to the rules by connection; read off the plan when the
+    // process has not built one yet.
+    private bool? _planAttributed;
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
     private bool _subscriptionAutoRefresh = true;
@@ -2388,11 +2391,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (relayable)
         {
             var listed = draft.Routes.Count + draft.DirectRoutes.Count + draft.BlockRoutes.Count;
-            return new IpcAck(true, $"{{\"limit\":0,\"trims\":0,\"relay\":{(SplitBudget.Fits(listed, names, _splitLimit) ? "0" : "1")}"
+            var share = SplitBudget.Share([.. (await _geo.UnfoldTokensAsync([.. args.Skip(1)]).ConfigureAwait(false)).Select(rule => rule.Weight)], _splitLimit);
+            return new IpcAck(true, $"{{\"limit\":0,\"trims\":0,\"relay\":{(share.AnyLive ? "1" : "0")}"
                 + $",\"ranges\":{listed.ToString(CultureInfo.InvariantCulture)}"
                 + $",\"names\":{names.ToString(CultureInfo.InvariantCulture)}"
                 + $",\"weight\":{SplitBudget.Weight(listed, names).ToString(CultureInfo.InvariantCulture)}"
-                + $",\"threshold\":{_splitLimit.ToString(CultureInfo.InvariantCulture)}}}");
+                + $",\"threshold\":{_splitLimit.ToString(CultureInfo.InvariantCulture)}"
+                + $",\"live\":{share.LiveWeight.ToString(CultureInfo.InvariantCulture)}}}");
         }
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
         // The tun keeps the direct ranges that do not fit and leaves out the widest, so a list over the budget still
@@ -3280,11 +3285,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var mark = RoutingPlanStamp.Of(stamp, settings, InboundRanges(), useRouter, PerAppSupported, _routeTtl, _splitLimit);
         if (VpnBridge.PlanExists() && string.Equals(VpnBridge.ReadPlanStamp(), mark, StringComparison.Ordinal))
         {
+            _planAttributed ??= VpnBridge.ReadPlan().TunnelApps.Count > 0;
             return (split.Mode, split.Packages, split.Bypass, false);
         }
 
         VpnBridge.WritePlanStamp(string.Empty);
-        if (VpnBridge.WritePlan(await BuildPlanAsync(useRouter).ConfigureAwait(false)))
+        var plan = await BuildPlanAsync(useRouter).ConfigureAwait(false);
+        _planAttributed = plan.TunnelApps.Count > 0;
+        if (VpnBridge.WritePlan(plan))
         {
             VpnBridge.WritePlanStamp(mark);
         }
@@ -3309,16 +3317,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Соединение приписывается своему владельцу начиная с Android 10.
     private static bool PerAppSupported => Build.VERSION.SdkInt >= BuildVersionCodes.Q;
-
-    // Whether the named applications are added to the rules by the relay rather than held as the allow list of the
-    // tunnel: the relay stands only where the list outgrew the route table or carries every datagram, and only on
-    // an android that names the owner of a connection.
-    private bool Attributed(int routes, int names, RoutingSettings? settings) =>
-        PerAppSupported && SplitBudget.Relayed(routes, names, settings is { AllUdp: true, UseGlobalProxy: false }, _splitLimit);
-
-    private bool Attributed(RoutingList list, RoutingSettings? settings) =>
-        Attributed(list.Routes.Count + list.DirectRoutes.Count + list.BlockRoutes.Count,
-            list.Domains.Count + list.DirectDomains.Count + list.BlockDomains.Count, settings);
 
     // Приложения, которым отдан туннель, и те, что идут мимо него.
     private static (string Mode, string[] Packages, string[] Bypass) AppSplit(RoutingListStamp? list, RoutingSettings? settings, bool useRouter)
@@ -3371,19 +3369,45 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
         }
 
+        var excludedRoutes = new List<string>();
+        var excludedDomains = new List<GeoDomain>();
+        SplitExclusions(settings?.Exclusions, excludedRoutes, excludedDomains);
         var directRoutes = new List<string>(list.DirectRoutes);
+        directRoutes.AddRange(excludedRoutes);
         var directDomains = new List<GeoDomain>(list.DirectDomains);
-        SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
+        directDomains.AddRange(excludedDomains);
+
+        // The share of the route table: every rule weighed apart, in the order of the list, the exclusions of the
+        // settings last. A rule heavier than half the threshold and the ones past it are decided on the fly.
+        var unfolded = await _geo.UnfoldEachAsync(list.Rules).ConfigureAwait(false);
+        var weights = unfolded.Select(rule => rule.Weight).ToList();
+        weights.Add(SplitBudget.Weight(excludedRoutes.Count, excludedDomains.Count));
+        var share = SplitBudget.Share(weights, _splitLimit);
+        var heldRoutes = new List<string>(InboundRanges());
+        var heldDomains = new List<GeoDomain>();
+        for (var i = 0; i < unfolded.Count; i++)
+        {
+            if (share.Held[i])
+            {
+                heldRoutes.AddRange(unfolded[i].Routes);
+                heldDomains.AddRange(unfolded[i].Domains);
+            }
+        }
+
+        if (share.Held[^1])
+        {
+            heldRoutes.AddRange(excludedRoutes);
+            heldDomains.AddRange(excludedDomains);
+        }
 
         // An application the list names rides the tunnel wherever no rule decided for the destination: behind the
         // relay the owner of every connection is named, so the rules keep deciding for everyone and the
-        // applications only add to them. The relay stands only where the list outgrew the route table or carries
-        // every datagram; up to that the tunnel itself is restricted to the named applications, which is what the
-        // whole tunnel below stands for, and no other application is shown a vpn.
+        // applications only add to them. The relay stands only where a part of the list is decided on the fly or
+        // every datagram is carried; up to that the tunnel itself is restricted to the named applications, which is
+        // what the whole tunnel below stands for, and no other application is shown a vpn.
         var apps = AppPackages(list.Apps);
         var perApp = settings is not { UseGlobalProxy: true } && useRouter && apps.Length > 0;
-        var attributed = Attributed(proxyRoutes.Count + directRoutes.Count + list.BlockRoutes.Count,
-            list.Domains.Count + directDomains.Count + list.BlockDomains.Count, settings);
+        var attributed = PerAppSupported && (share.AnyLive || settings is { AllUdp: true, UseGlobalProxy: false });
         var plan = new GeoRoutingPlan(
             proxyRoutes,
             directRoutes,
@@ -3398,6 +3422,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             TunnelApps = perApp && attributed ? apps : [],
             UseRouter = useRouter,
             SplitLimit = _splitLimit,
+            Live = share.AnyLive,
+            HeldRoutes = share.AnyLive ? heldRoutes : [],
+            HeldDomains = share.AnyLive ? heldDomains : [],
+            HeldWeight = share.HeldWeight,
+            LiveWeight = share.LiveWeight,
         };
 
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
@@ -3410,7 +3439,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("geo", $"routing '{list.Name}': {plan.ProxyRoutes.Count}/{plan.DirectRoutes.Count}/{plan.BlockRoutes.Count} ranges, "
             + $"{plan.ProxyDomains.Count}/{plan.DirectDomains.Count}/{plan.BlockDomains.Count} names, "
             + ModeName(perApp ? apps.Length : 0, attributed, plan.FullTunnel)
-            + (plan.AllUdp ? ", all udp tunneled" : string.Empty));
+            + (plan.AllUdp ? ", all udp tunneled" : string.Empty)
+            + (share.AnyLive ? $", {share.LiveWeight} of {share.HeldWeight + share.LiveWeight} entries decided on the fly" : string.Empty));
         return plan;
     }
 
@@ -4719,18 +4749,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // Whether the applications the selected list names ride the tunnel by connection, under the relay: read off the
-    // catalogue, which counts the ranges and names of every bucket without unfolding the list.
-    private bool AttributedNow()
-    {
-        if (RoutedList is not { } listId || _routingSummaries?.FirstOrDefault(r => r.Id == listId) is not { } summary)
-        {
-            return false;
-        }
-
-        return PerAppSupported
-            && SplitBudget.Relayed(summary.RouteCount, summary.DomainCount, summary is { AllUdp: true, UseGlobalProxy: false }, _splitLimit);
-    }
+    // Whether the applications the selected list names ride the tunnel by connection, under the relay: the plan in
+    // force says so.
+    private bool AttributedNow() => RoutedList is not null && _planAttributed == true;
 
     // The app set from the selected routing list's app:pkg rules, as the allow list the tunnel falls back to where
     // a connection cannot be traced to its owner, and the set its Direct bucket names, which the tunnel leaves
@@ -4756,7 +4777,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return AppScope.None;
         }
 
-        return list is not null && Attributed(list, settings) ? AppScope.Additive : AppScope.Exclusive;
+        return list is not null && _planAttributed == true ? AppScope.Additive : AppScope.Exclusive;
     }
 
     // Whether the selected configuration decides connections on its own: the flag rides with the tunnel, not

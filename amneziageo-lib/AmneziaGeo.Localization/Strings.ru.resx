@@ -554,7 +554,7 @@
     <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Звонки, игры и видеосвязь идут через туннель, даже если их адресов нет в списке</value>
+    <value>Звонки, игры и видеосвязь идут через туннель, даже если их адресов нет в списке. UDP всех приложений пойдёт через сервер, в том числе тех, кому VPN не нужен: некоторые из них могут заметить VPN и узнать адрес сервера. Включая, вы принимаете это.</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
@@ -614,10 +614,7 @@
     <value>Список не помещается целиком: напрямую пойдут только {0} из {1} диапазонов «Напрямую», остальные пойдут через туннель.</value>
   </data>
   <data name="RoutingEditor_RelayNotice" xml:space="preserve">
-    <value>Записей в списке: {0} (диапазонов: {1}, имён: {2}, имя идёт за 8) - больше порога {3}: VPN видят все приложения. Приложение, которому VPN мешает, добавьте в «Напрямую».</value>
-  </data>
-  <data name="RoutingEditor_RelayNoticeUdp" xml:space="preserve">
-    <value>Включён «Весь UDP через туннель»: VPN видят все приложения. Приложение, которому VPN мешает, добавьте в «Напрямую».</value>
+    <value>Записей в списке: {0} (диапазонов: {1}, имён: {2}, имя идёт за 8), порог {3}: {4} из них решаются на лету - правила больше половины порога и то, что в порог не вошло. VPN видят все приложения; приложение, которому VPN мешает, добавьте в «Напрямую».</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
@@ -2384,9 +2381,6 @@
   <data name="Main_CardRulesBlock" xml:space="preserve">
     <value>{0} блок</value>
   </data>
-  <data name="Main_CardTagUdp" xml:space="preserve">
-    <value>Весь UDP через туннель</value>
-  </data>
   <data name="Main_CardTagMtu" xml:space="preserve">
     <value>MTU {0}</value>
   </data>
@@ -2402,19 +2396,25 @@
   <data name="Main_CardTagReadOnly" xml:space="preserve">
     <value>Только чтение</value>
   </data>
-  <data name="Main_CardTagUnsafe" xml:space="preserve">
-    <value>Небезопасен</value>
+  <data name="Main_CardTagAllApps" xml:space="preserve">
+    <value>Все приложения через VPN</value>
   </data>
-  <data name="Main_CardTagUnsafeHint" xml:space="preserve">
-    <value>Список раскрывает сервер: удалите его и создайте новый</value>
+  <data name="Main_CardTagAllUdp" xml:space="preserve">
+    <value>Весь UDP через VPN</value>
   </data>
-  <data name="Main_UnsafeListHome" xml:space="preserve">
-    <value>Список ведёт через VPN всё, кроме выбранного, и раскрывает сервер. Удалите его и создайте новый.</value>
+  <data name="Main_AllAppsTitle" xml:space="preserve">
+    <value>Через VPN идут все приложения</value>
   </data>
-  <data name="Main_UnsafeListNotice" xml:space="preserve">
-    <value>Режим «Всё, кроме выбранного» убран: российские приложения проверяют через туннель заблокированные сайты и узнают адрес сервера. Удалите этот список и создайте новый с нужными сайтами и приложениями.</value>
+  <data name="Main_AllAppsNotice" xml:space="preserve">
+    <value>Список ведёт через VPN всё, кроме записей «Напрямую». Через сервер пойдут и приложения, которым VPN не нужен: некоторые приложения могут заметить VPN, узнать адрес сервера или перестать работать. Добавьте такие приложения в «Напрямую».</value>
   </data>
-  <data name="Main_UnsafeListMore" xml:space="preserve">
+  <data name="Main_AllUdpNoticeTitle" xml:space="preserve">
+    <value>Весь UDP идёт через VPN</value>
+  </data>
+  <data name="Main_AllUdpNotice" xml:space="preserve">
+    <value>UDP всех приложений идёт через сервер, даже если их адресов нет в списке. Некоторые приложения могут заметить VPN и узнать адрес сервера.</value>
+  </data>
+  <data name="Main_ListWarningMore" xml:space="preserve">
     <value>Подробнее</value>
   </data>
   <data name="Main_ServerListsOnlyOf" xml:space="preserve">

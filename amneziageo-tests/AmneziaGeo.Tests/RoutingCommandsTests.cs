@@ -6,8 +6,8 @@ namespace AmneziaGeo.Tests;
 
 /// <summary>
 /// A routing list holds a token once: adding it in another role moves it to that role, and an edit that changes
-/// nothing is not saved, so the running tunnel is not handed the same rules again. A list is not turned to carry
-/// everything but the picked; one made so keeps its mode and is turned off.
+/// nothing is not saved, so the running tunnel is not handed the same rules again. A list is turned to carry
+/// everything but the picked and back, and keeps its mode through an edit.
 /// </summary>
 [Collection("Output")]
 public sealed class RoutingCommandsTests : IDisposable
@@ -55,13 +55,13 @@ public sealed class RoutingCommandsTests : IDisposable
     }
 
     [Fact]
-    public async Task TurningAListToCarryEverythingButThePicked_IsRefused()
+    public async Task AList_IsTurnedToCarryEverythingButThePicked()
     {
         var link = new Link(string.Empty);
 
-        Assert.Equal(Exit.Usage, await RoutingCommands.RunAsync(link, ["configure", "main", "--global-proxy", "on"]));
+        Assert.Equal(Exit.Ok, await RoutingCommands.RunAsync(link, ["configure", "main", "--global-proxy", "on"]));
 
-        Assert.DoesNotContain(link.Sent, sent => sent[0] == IpcContract.OpSetRoutingSettings);
+        Assert.Equal(new[] { IpcContract.OpSetRoutingSettings, "6", string.Empty, "off", "full", "on" }, link.Sent[^1]);
     }
 
     [Fact]

@@ -3,7 +3,6 @@ using Avalonia;
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
-using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -16,7 +15,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 {
     private readonly ObservableCollection<CardTag> _tags = [];
 
-    private AsyncRelayCommand? _toggleUdp;
+    private RelayCommand? _open;
 
     private AsyncRelayCommand? _update;
 
@@ -50,6 +49,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     // Whether the list carries everything instead of its own rules.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ModeText))]
     [NotifyPropertyChangedFor(nameof(ShowProxyRules))]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useGlobalProxy;
@@ -108,6 +108,16 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         : Loc.Instance.Get("Main_CardActiveFlag");
 
     /// <summary>
+    /// Режим списка строкой под его именем.
+    /// </summary>
+    public string ModeText => Loc.Instance.Get(UseGlobalProxy ? "Main_VpnModeFull" : "Main_VpnModeSelected");
+
+    /// <summary>
+    /// Что список отдаёт туннелю сверх названного в нём.
+    /// </summary>
+    public ListReach Reach => ReachOf(UseGlobalProxy, AllUdp);
+
+    /// <summary>
     /// Стоит ли в строке состава счётчик правил туннеля.
     /// </summary>
     public bool ShowProxyRules => !UseGlobalProxy || ProxyRuleCount > 0;
@@ -143,9 +153,9 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string ServerMarkText => Loc.Instance.Get("Main_ServerMarkList", Source);
 
     /// <summary>
-    /// Сохранение настроек списка: ставит владелец каталога, своей связи с агентом у строки нет.
+    /// Открытие списка: ставит владелец каталога.
     /// </summary>
-    public Func<RoutingListSummaryViewModel, Task<bool>>? SaveSettings { get; set; }
+    public Action<RoutingListSummaryViewModel>? Open { get; set; }
 
     /// <summary>
     /// Приём новой версии списка с сервера: ставит владелец каталога.
@@ -159,10 +169,9 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         _update ??= new AsyncRelayCommand(() => TakeUpdate?.Invoke(this) ?? Task.CompletedTask);
 
     /// <summary>
-    /// Переключает весь UDP с плашки карточки.
+    /// Открывает список с плашки предупреждения.
     /// </summary>
-    public IAsyncRelayCommand ToggleUdpCommand =>
-        _toggleUdp ??= new AsyncRelayCommand(() => ToggleAsync(() => AllUdp = !AllUdp));
+    public IRelayCommand OpenCommand => _open ??= new RelayCommand(() => Open?.Invoke(this));
 
     /// <summary>
     /// Несёт ли устройство весь UDP через туннель.
@@ -170,19 +179,24 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public static bool AllUdpSupported => !OperatingSystem.IsAndroid() || OperatingSystem.IsAndroidVersionAtLeast(29);
 
     /// <summary>
-    /// Плашки карточки: «Небезопасен» у списка, который ведёт через VPN всё, кроме выбранного, только чтение у
-    /// списка, который сервер не даёт править, обновление, когда сервер отдал новую версию, и весь UDP у списка,
-    /// который несёт только выбранное.
+    /// Что отдаёт туннелю список с таким режимом и UDP: весь UDP считается там, где устройство его несёт.
+    /// </summary>
+    public static ListReach ReachOf(bool useGlobalProxy, bool allUdp) =>
+        useGlobalProxy ? ListReach.AllApps : allUdp && AllUdpSupported ? ListReach.AllUdp : ListReach.Named;
+
+    /// <summary>
+    /// Плашки карточки: предупреждение у списка, который ведёт через VPN все приложения или весь их UDP (оно открывает
+    /// список), только чтение у списка, который сервер не даёт править, и обновление, когда сервер отдал новую версию.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
         get
         {
             var wanted = new List<CardTag>();
-            if (UseGlobalProxy)
+            if (Reach is not ListReach.Named)
             {
-                wanted.Add(new(Loc.Instance.Get("Main_CardTagUnsafe"), true, SitePages.FullModeCommand,
-                    hint: Loc.Instance.Get("Main_CardTagUnsafeHint"), warn: true, alert: true));
+                var text = Reach is ListReach.AllApps ? "Main_CardTagAllApps" : "Main_CardTagAllUdp";
+                wanted.Add(new(Loc.Instance.Get(text), true, OpenCommand, warn: true, alert: true));
             }
 
             if (ReadOnly)
@@ -195,28 +209,8 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
                 wanted.Add(new(Loc.Instance.Get("Main_CardTagUpdate"), true, UpdateCommand, warn: true));
             }
 
-            if (!UseGlobalProxy && AllUdpSupported)
-            {
-                wanted.Add(new(Loc.Instance.Get("Main_CardTagUdp"), AllUdp, ReadOnly ? null : ToggleUdpCommand, plain: ReadOnly));
-            }
-
             CardTag.Sync(_tags, wanted);
             return _tags;
-        }
-    }
-
-    // Переворачивает режим и отправляет строку; отказ агента возвращает плашку на место.
-    private async Task ToggleAsync(Action flip)
-    {
-        flip();
-        if (SaveSettings is not { } save)
-        {
-            return;
-        }
-
-        if (!await save(this))
-        {
-            flip();
         }
     }
 
@@ -242,6 +236,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(ModeText));
         OnPropertyChanged(nameof(ProxyRulesText));
         OnPropertyChanged(nameof(DirectRulesText));
         OnPropertyChanged(nameof(BlockRulesText));

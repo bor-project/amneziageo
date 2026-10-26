@@ -389,7 +389,7 @@ internal static class RoutingCommands
 
         if (flags.Positional.Count != 1)
         {
-            return Reply.Usage("usage: amneziageo routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>] [--all-udp on|off] [--global-proxy off]");
+            return Reply.Usage("usage: amneziageo routing configure <id|name> [--exclusions <a,b>] [--exclusions-file <p>] [--all-udp on|off] [--global-proxy on|off]");
         }
 
         if (Resolve(agent, flags.Positional[0]) is not { } list)
@@ -431,11 +431,6 @@ internal static class RoutingCommands
         if (flags.Value("global-proxy") is { } proxyToken && !Toggle.TryParse(proxyToken, out globalProxy))
         {
             return Reply.Usage("--global-proxy takes on or off");
-        }
-
-        if (globalProxy && !settings.UseGlobalProxy)
-        {
-            return Reply.Usage("--global-proxy on is gone: a list carries only what it names, a list made to carry everything is turned off with --global-proxy off");
         }
 
         return Reply.Report(await agent.SendAsync(

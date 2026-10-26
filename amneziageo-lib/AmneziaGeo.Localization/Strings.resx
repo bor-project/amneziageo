@@ -554,7 +554,7 @@
     <value>Line format: time · [level] · component · message.  Levels low to high: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Calls, games and video chat go through the tunnel even when their addresses are not in the list</value>
+    <value>Calls, games and video chat go through the tunnel even when their addresses are not in the list. UDP of every app goes through the server, apps that do not need the VPN as well: some of them may notice the VPN and learn the server address. By turning it on you accept this.</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>All UDP through the tunnel</value>
@@ -614,10 +614,7 @@
     <value>The list doesn't fit: only {0} of {1} Direct ranges go direct, the rest go through the tunnel.</value>
   </data>
   <data name="RoutingEditor_RelayNotice" xml:space="preserve">
-    <value>Entries in the list: {0} (ranges: {1}, names: {2}, a name counts as 8), over the threshold of {3}: every app sees the VPN. Add an app the VPN gets in the way of to Direct.</value>
-  </data>
-  <data name="RoutingEditor_RelayNoticeUdp" xml:space="preserve">
-    <value>All UDP through the tunnel is on: every app sees the VPN. Add an app the VPN gets in the way of to Direct.</value>
+    <value>Entries in the list: {0} (ranges: {1}, names: {2}, a name counts as 8), threshold {3}: {4} of them are decided on the fly - rules over half the threshold and what did not fit. Every app sees the VPN; add an app the VPN gets in the way of to Direct.</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>IPv6</value>
@@ -2384,9 +2381,6 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_CardRulesBlock" xml:space="preserve">
     <value>{0} blocked</value>
   </data>
-  <data name="Main_CardTagUdp" xml:space="preserve">
-    <value>All UDP through the tunnel</value>
-  </data>
   <data name="Main_CardTagMtu" xml:space="preserve">
     <value>MTU {0}</value>
   </data>
@@ -2402,19 +2396,25 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_CardTagReadOnly" xml:space="preserve">
     <value>Read-only</value>
   </data>
-  <data name="Main_CardTagUnsafe" xml:space="preserve">
-    <value>Unsafe</value>
+  <data name="Main_CardTagAllApps" xml:space="preserve">
+    <value>All apps through the VPN</value>
   </data>
-  <data name="Main_CardTagUnsafeHint" xml:space="preserve">
-    <value>The list gives the server away: delete it and create a new one</value>
+  <data name="Main_CardTagAllUdp" xml:space="preserve">
+    <value>All UDP through the VPN</value>
   </data>
-  <data name="Main_UnsafeListHome" xml:space="preserve">
-    <value>The list sends everything except the selected through the VPN and gives the server away. Delete it and create a new one.</value>
+  <data name="Main_AllAppsTitle" xml:space="preserve">
+    <value>Every app goes through the VPN</value>
   </data>
-  <data name="Main_UnsafeListNotice" xml:space="preserve">
-    <value>The Everything except selected mode is gone: apps check blocked sites through the tunnel and learn the server address. Delete this list and create a new one with the sites and apps you need.</value>
+  <data name="Main_AllAppsNotice" xml:space="preserve">
+    <value>The list sends everything through the VPN except the entries in Direct. Apps that do not need the VPN go through the server as well: some apps may notice the VPN, learn the server address or stop working. Add such apps to Direct.</value>
   </data>
-  <data name="Main_UnsafeListMore" xml:space="preserve">
+  <data name="Main_AllUdpNoticeTitle" xml:space="preserve">
+    <value>All UDP goes through the VPN</value>
+  </data>
+  <data name="Main_AllUdpNotice" xml:space="preserve">
+    <value>UDP of every app goes through the server even when its addresses are not in the list. Some apps may notice the VPN and learn the server address.</value>
+  </data>
+  <data name="Main_ListWarningMore" xml:space="preserve">
     <value>Learn more</value>
   </data>
   <data name="Main_ServerListsOnlyOf" xml:space="preserve">

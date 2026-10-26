@@ -372,7 +372,7 @@ internal partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Стоит ли у открытого списка предупреждение: через VPN идут все приложения или весь их UDP.
     /// </summary>
-    public bool ShowListWarning => !SectionLoading && OpenListReach() is not ListReach.Named;
+    public bool ShowListWarning => _prefs.RoutingWarnings && !SectionLoading && OpenListReach() is not ListReach.Named;
 
     /// <summary>
     /// Заголовок предупреждения открытого списка.
@@ -1183,6 +1183,19 @@ internal partial class RoutingViewModel : ViewModelBase
         return EditRoutingList?.Reach ?? ListReach.Named;
     }
 
+    /// <summary>
+    /// Ставит или снимает предупреждения карточек и открытого списка по настройке окна.
+    /// </summary>
+    public void ApplyWarnings()
+    {
+        foreach (var card in RoutingLists)
+        {
+            card.Warn = _prefs.RoutingWarnings;
+        }
+
+        RaiseListWarning();
+    }
+
     // Предупреждение открытого списка.
     private void RaiseListWarning()
     {
@@ -1402,6 +1415,7 @@ internal partial class RoutingViewModel : ViewModelBase
                 existing = new RoutingListSummaryViewModel
                 {
                     Id = entry.Id,
+                    Warn = _prefs.RoutingWarnings,
                     Open = OpenCard,
                     TakeUpdate = UpdateRoutingListAsync,
                 };

@@ -92,6 +92,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private int _selectedThemeIndex;
 
     [ObservableProperty]
+    private bool _routingWarnings;
+
+    [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
     // Raw engine version from the snapshot; empty renders the localized placeholder live on a language change.
@@ -210,6 +213,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Seed backing fields from prefs without echoing OnChanged.
         _selectedThemeIndex = IndexForTheme(prefs.Theme);
         _selectedLanguageIndex = IndexForLanguage(prefs.Language);
+        _routingWarnings = prefs.RoutingWarnings;
         NoticeChoice = OperatingSystem.IsAndroid() && !UiPlatform.IsTelevision
             ? new TunnelNoticeChoice(mode => _ = SetSettingAsync(SettingKeys.TunnelNotice, mode))
             : null;
@@ -1110,6 +1114,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             Application.Current.RequestedThemeVariant = ThemeVariantForIndex(value);
         }
+    }
+
+    partial void OnRoutingWarningsChanged(bool value)
+    {
+        _prefs.RoutingWarnings = value;
+        _prefs.Save();
     }
 
     partial void OnSelectedChannelIndexChanged(int value)

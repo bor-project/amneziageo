@@ -76,6 +76,11 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _readOnly;
 
+    // Whether the card warns of a list that sends more than its rules through the VPN.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
+    private bool _warn = true;
+
     [ObservableProperty]
     private bool _isSelected;
 
@@ -193,7 +198,7 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         get
         {
             var wanted = new List<CardTag>();
-            if (Reach is not ListReach.Named)
+            if (Warn && Reach is not ListReach.Named)
             {
                 var text = Reach is ListReach.AllApps ? "Main_CardTagAllApps" : "Main_CardTagAllUdp";
                 wanted.Add(new(Loc.Instance.Get(text), true, OpenCommand, warn: true, alert: true));

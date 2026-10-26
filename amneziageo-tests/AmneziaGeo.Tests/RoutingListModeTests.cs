@@ -382,6 +382,45 @@ public sealed class RoutingListModeTests
     }
 
     [Fact]
+    public void TheWarnings_StandUntilTheyAreTurnedOff()
+    {
+        Assert.True(new UiPreferences().RoutingWarnings);
+        Assert.True(new MainWindowViewModel(new Silent(), new UiPreferences()).General.RoutingWarnings);
+        Assert.False(new MainWindowViewModel(new Silent(), new UiPreferences { RoutingWarnings = false }).General.RoutingWarnings);
+    }
+
+    [Fact]
+    public void ACardWithTheWarningsOff_SaysNothingOfWhatItSends()
+    {
+        var card = new RoutingListSummaryViewModel { Id = 7, Name = "home", UseGlobalProxy = true, Warn = false };
+
+        Assert.Empty(card.Tags);
+    }
+
+    [Fact]
+    public async Task TurnedOffWarnings_LeaveTheCardsAndTheOpenListQuiet()
+    {
+        var prefs = new UiPreferences();
+        var routing = new MainWindowViewModel(new Silent(), prefs).Routing;
+        var card = new RoutingListSummaryViewModel { Id = 7, Name = "home", UseGlobalProxy = true };
+        routing.RoutingLists.Add(card);
+        routing.OpenCardCommand.Execute(card);
+        await Settled(routing);
+
+        prefs.RoutingWarnings = false;
+        routing.ApplyWarnings();
+
+        Assert.Empty(card.Tags);
+        Assert.False(routing.ShowListWarning);
+
+        prefs.RoutingWarnings = true;
+        routing.ApplyWarnings();
+
+        Assert.Equal([Loc.Instance.Get("Main_CardTagAllApps")], card.Tags.Select(tag => tag.Text));
+        Assert.True(routing.ShowListWarning);
+    }
+
+    [Fact]
     public void TheWarningOnACard_GoesWithTheModeOfTheList()
     {
         var card = new RoutingListSummaryViewModel { AllUdp = true };

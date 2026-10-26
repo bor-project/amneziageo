@@ -328,6 +328,12 @@
   <data name="General_Language" xml:space="preserve">
     <value>Interface language</value>
   </data>
+  <data name="General_RoutingWarnings" xml:space="preserve">
+    <value>Routing warnings</value>
+  </data>
+  <data name="General_RoutingWarningsTip" xml:space="preserve">
+    <value>The card label and the note of a list that sends every app or all UDP through the VPN</value>
+  </data>
   <data name="Lang_System" xml:space="preserve">
     <value>System</value>
   </data>

@@ -328,6 +328,12 @@
   <data name="General_Language" xml:space="preserve">
     <value>Язык интерфейса</value>
   </data>
+  <data name="General_RoutingWarnings" xml:space="preserve">
+    <value>Предупреждения о маршрутизации</value>
+  </data>
+  <data name="General_RoutingWarningsTip" xml:space="preserve">
+    <value>Метка на карточке и пояснение в списке, который ведёт через VPN все приложения или весь UDP</value>
+  </data>
   <data name="Lang_System" xml:space="preserve">
     <value>Системный</value>
   </data>

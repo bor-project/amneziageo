@@ -45,6 +45,13 @@
                          ItemsSource="{Binding Languages}"
                          SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
              </Grid>
+             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+               <TextBlock Grid.Column="0" Text="{l:Tr General_RoutingWarnings}" FontSize="13.5" TextWrapping="Wrap"
+                          VerticalAlignment="Center" />
+               <ToggleSwitch Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
+                             IsChecked="{Binding RoutingWarnings, Mode=TwoWay}"
+                             ToolTip.Tip="{l:Tr General_RoutingWarningsTip}" />
+             </Grid>
            </StackPanel>
 
            <!-- Работа в фоне: что система разрешает приложению без окна. -->

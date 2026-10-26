@@ -911,6 +911,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowHomeUpdate));
         }
 
+        if (e.PropertyName == nameof(GeneralViewModel.RoutingWarnings))
+        {
+            Routing.ApplyWarnings();
+        }
+
         if (e.PropertyName == nameof(GeneralViewModel.DownloadActive))
         {
             OnPropertyChanged(nameof(AppUpdateBannerVisible));

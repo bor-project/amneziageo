@@ -72,6 +72,11 @@ internal sealed class UiPreferences
     public bool AlwaysOnMode { get; set; }
 
     /// <summary>
+    /// Whether routing lists that send every app or all UDP through the VPN carry their warning.
+    /// </summary>
+    public bool RoutingWarnings { get; set; } = true;
+
+    /// <summary>
     /// Регионы наборов, коды через запятую.
     /// </summary>
     public string PresetRegions { get; set; } = string.Empty;
@@ -186,6 +191,7 @@ internal sealed class UiPreferences
             ["last-config"] = LastConfig,
             ["last-routing-list"] = LastRoutingList.ToString(CultureInfo.InvariantCulture),
             ["always-on-mode"] = AlwaysOnMode ? "1" : "0",
+            ["routing-warnings"] = RoutingWarnings ? "1" : "0",
             ["preset-regions"] = PresetRegions,
             ["region-auto"] = RegionAuto,
             ["shown-update"] = ShownUpdateVersion,
@@ -244,6 +250,11 @@ internal sealed class UiPreferences
         if (values.TryGetValue("always-on-mode", out var alwaysOn))
         {
             prefs.AlwaysOnMode = alwaysOn == "1";
+        }
+
+        if (values.TryGetValue("routing-warnings", out var warnings))
+        {
+            prefs.RoutingWarnings = warnings != "0";
         }
 
         if (values.TryGetValue("settings-section", out var section) && !string.IsNullOrEmpty(section))

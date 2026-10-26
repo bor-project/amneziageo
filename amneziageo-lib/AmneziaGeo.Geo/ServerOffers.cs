@@ -116,8 +116,8 @@ public sealed class ServerOffers
 
     /// <summary>
     /// Asks the servers of the configs in the background, one question per config at a time, a server of ours only
-    /// when its answer is <see cref="FreshFor"/> old or the pause after a question it did not answer ran out, and
-    /// names every config whose offer settles the tunnel otherwise now.
+    /// while it keeps the subscription off, when its answer is <see cref="FreshFor"/> old or the pause after a
+    /// question it did not answer ran out, and names every config whose offer settles the tunnel otherwise now.
     /// </summary>
     public void Warm(IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed = null)
     {
@@ -381,10 +381,15 @@ public sealed class ServerOffers
         }
     }
 
-    // Whether a server of ours is asked again: a day after its answer, or after a pause that doubles with every
-    // question in a row that got no answer of ours.
+    // Whether a server of ours is asked again: while it keeps the subscription off, a day after its answer, or after a
+    // pause that doubles with every question in a row that got no answer of ours.
     private bool Due(KeptOffer kept)
     {
+        if (kept.Offer.Subscription() is { Fault.Length: > 0 })
+        {
+            return true;
+        }
+
         var now = _time.GetUtcNow();
         if (kept.Misses == 0)
         {

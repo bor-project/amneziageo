@@ -174,6 +174,45 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AServerOfOursThatKeepsItsSubscriptionOff_IsAskedAgainWhenTheWindowOpens()
+    {
+        var replies = new Queue<HelloReply>([new HelloReply(Off("r1"), true), new HelloReply(Named("r1"), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        offers.Warm([("office", Text)], config =>
+        {
+            changed.TrySetResult(config);
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Empty(replies);
+        Assert.Equal(string.Empty, Assert.Single(await _store.ListSubscriptionsAsync()).Fault);
+    }
+
+    [Fact]
+    public async Task AServerOfOursThatKeepsItsSubscriptionOff_IsAskedAgainBehindTheConnect()
+    {
+        var replies = new Queue<HelloReply>([new HelloReply(Off("r1"), true), new HelloReply(Named("r1"), true)]);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
+        var changed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await offers.AskAsync("office", Text, CancellationToken.None);
+        var offer = await offers.BeforeConnectAsync("office", Text, config =>
+        {
+            changed.TrySetResult(config);
+            return Task.CompletedTask;
+        }, CancellationToken.None);
+
+        Assert.Equal("certificate-expired", offer.Subscription()!.Fault);
+        Assert.Equal("office", await changed.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Empty(replies);
+        Assert.Equal(string.Empty, Assert.Single(await _store.ListSubscriptionsAsync()).Fault);
+    }
+
+    [Fact]
     public async Task AnotherRevisionOfTheServer_MarksTheSubscriptionStale()
     {
         var replies = new Queue<HelloReply>([new HelloReply(Named("r1"), true), new HelloReply(Named("r2"), true)]);

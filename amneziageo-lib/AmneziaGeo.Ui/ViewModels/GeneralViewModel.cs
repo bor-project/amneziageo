@@ -30,6 +30,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string? _downloadedVersion;
     private CancellationTokenSource? _downloadCts;
     private CancellationTokenSource? _upToDateCts;
+
+    // The report of the download progress on its way to the agent and the percent it carries.
+    private Task _progressReport = Task.CompletedTask;
+    private int _reportedPercent;
     private DispatcherTimer? _autoUpdateTimer;
     private bool _autoCheckArmed;
 
@@ -663,6 +667,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _downloadCts = cts;
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
+        _reportedPercent = 0;
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
         await ReportDownloadAsync("downloading", 0, string.Empty, _offer.Version);
 
@@ -707,12 +712,19 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     // Advances the shared download percent and relays it to the agent so the tray menu tracks it too (#17). The
     // clamp keeps a jittery report from moving the bar backwards; the final 100 rides the "downloaded" report.
+    // The agent gets one report at a time, and only of a new percent.
     private void ReportDownloadProgress(int percent, string version)
     {
         // Hold the shown percent at 99 until the state flips to downloaded: the banner then swaps straight from
         // progress to Install with no dangling "100%" + Cancel and no blank tail while the partial is promoted.
         UpdateDownloadPercent = Math.Min(99, Math.Max(UpdateDownloadPercent, percent));
-        _ = ReportDownloadAsync("downloading", UpdateDownloadPercent, string.Empty, version);
+        if (!_progressReport.IsCompleted || UpdateDownloadPercent == _reportedPercent)
+        {
+            return;
+        }
+
+        _reportedPercent = UpdateDownloadPercent;
+        _progressReport = ReportDownloadAsync("downloading", UpdateDownloadPercent, string.Empty, version);
     }
 
     // Reports the setup download phase to the agent so the tray and every window share one state.

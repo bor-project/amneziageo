@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Ui.Services;
@@ -65,6 +66,33 @@ public sealed class UpdateOfferTests
     }
 
     [Fact]
+    public void TheProgressOfADownload_WaitsForTheAgentToTakeTheLastReport()
+    {
+        var (general, agent, _) = Window();
+        general.Apply(_first);
+        general.Fetch = Reporting;
+        agent.Busy = true;
+
+        Pump.Run(general.RunBackgroundDownloadAsync);
+
+        Assert.Equal(["downloading", "downloading", "downloaded"], agent.Phases);
+        Assert.Equal(["0", "1", "100"], agent.Percents);
+    }
+
+    [Fact]
+    public void TheProgressOfADownload_ReachesTheAgentOncePerPercent()
+    {
+        var (general, agent, _) = Window();
+        general.Apply(_first);
+        general.Fetch = Reporting;
+
+        Pump.Run(general.RunBackgroundDownloadAsync);
+
+        Assert.Equal([.. Enumerable.Range(0, 100).Select(p => p.ToString(System.Globalization.CultureInfo.InvariantCulture)), "100"], agent.Percents);
+        Assert.Equal("downloaded", agent.Phases[^1]);
+    }
+
+    [Fact]
     public void TheOfferOfASnapshot_IsOneValue()
     {
         var offer = UpdateOffer.Of(_second);
@@ -89,6 +117,21 @@ public sealed class UpdateOfferTests
         };
         return (general, agent, fetched);
     }
+
+    // A download off the window thread that reports each percent many times over, as the reads of the network do.
+    private static Task<string> Reporting(UpdateOffer offer, IProgress<int> progress, Func<string, Task> note, CancellationToken ct) =>
+        Task.Run(() =>
+        {
+            for (var percent = 1; percent <= 100; percent++)
+            {
+                for (var read = 0; read < 30; read++)
+                {
+                    progress.Report(percent);
+                }
+            }
+
+            return "/nowhere/" + offer.Version;
+        });
 
     // What the agent says of one release reached at one address: the setup, its digest and its patch.
     private static StatusSnapshot Offer(string folder, char digest, long size, string from)
@@ -130,7 +173,12 @@ public sealed class UpdateOfferTests
 
         public List<string> Versions { get; } = [];
 
+        public List<string> Percents { get; } = [];
+
         public Action? WhileDownloadStarts { get; set; }
+
+        // Leaves the reports of the download progress unanswered.
+        public bool Busy { get; set; }
 
         public void Start()
         {
@@ -142,10 +190,16 @@ public sealed class UpdateOfferTests
             {
                 Phases.Add(command.Args[0]);
                 Versions.Add(command.Args[3]);
+                Percents.Add(command.Args[1]);
                 if (WhileDownloadStarts is { } act)
                 {
                     WhileDownloadStarts = null;
                     act();
+                }
+
+                if (Busy && command.Args[0] == "downloading" && command.Args[1] != "0")
+                {
+                    return new TaskCompletionSource<IpcAck>().Task;
                 }
             }
 
@@ -156,6 +210,36 @@ public sealed class UpdateOfferTests
 
         public void Dispose()
         {
+        }
+    }
+
+    // Runs the posted work on one thread, as the dispatcher of the window does.
+    private sealed class Pump : SynchronizationContext
+    {
+        private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = [];
+
+        public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
+
+        public static void Run(Func<Task> work)
+        {
+            var pump = new Pump();
+            var previous = Current;
+            SetSynchronizationContext(pump);
+            try
+            {
+                var task = work();
+                task.ContinueWith(_ => pump._queue.CompleteAdding(), TaskScheduler.Default);
+                foreach (var (callback, state) in pump._queue.GetConsumingEnumerable())
+                {
+                    callback(state);
+                }
+
+                task.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
         }
     }
 }

@@ -59,7 +59,12 @@ public static class ConfigServices
     public static int Port(string? text) =>
         int.TryParse(Comment(text, Line), NumberStyles.None, CultureInfo.InvariantCulture, out var port) && port is >= 1 and <= 65535
             ? port
-            : Split(Value(text, "Endpoint")).Port;
+            : EndpointPort(text);
+
+    /// <summary>
+    /// Returns the port of the Endpoint of a config text; zero when it names none.
+    /// </summary>
+    public static int EndpointPort(string? text) => Split(Value(text, "Endpoint")).Port;
 
     /// <summary>
     /// Returns where the services of a config text answer and its keys; null when one of them is missing.

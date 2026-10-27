@@ -164,6 +164,11 @@ public static class PrivateNetworks
     }
 
     /// <summary>
+    /// Returns what tells whether an address lies inside one of the networks given.
+    /// </summary>
+    public static Func<string, bool> Beside(IReadOnlyList<string> local) => address => InsideLocal([address], local).Count > 0;
+
+    /// <summary>
     /// Returns the networks this machine stands in itself.
     /// </summary>
     public static IReadOnlyList<string> Local()

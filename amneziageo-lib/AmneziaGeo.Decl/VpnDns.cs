@@ -67,9 +67,10 @@ public static class VpnDns
 
     /// <summary>
     /// Returns where the names that go through the VPN are asked: the choice held for the config, then what the server
-    /// offers, then the DNS line of the config.
+    /// offers, then the DNS line of the config; a server of those two that lies in a network the device stands in
+    /// gives way to the resolver of the server.
     /// </summary>
-    public static VpnDnsPick Pick(ConfigDns? held, OfferedDns? offer, IReadOnlyList<string> line)
+    public static VpnDnsPick Pick(ConfigDns? held, OfferedDns? offer, IReadOnlyList<string> line, Func<string, bool>? local = null)
     {
         ArgumentNullException.ThrowIfNull(line);
 
@@ -89,7 +90,13 @@ public static class VpnDns
             return new VpnDnsPick(true, []);
         }
 
-        return new VpnDnsPick(false, offer is { Servers.Count: > 0 } ? offer.Servers : line);
+        var servers = offer is { Servers.Count: > 0 } ? offer.Servers : line;
+        if (local is not null && offer is { } server && HasV4(server.Resolver) && servers.Any(local))
+        {
+            return new VpnDnsPick(false, server.Resolver);
+        }
+
+        return new VpnDnsPick(false, servers);
     }
 
     /// <summary>
@@ -125,10 +132,10 @@ public static class VpnDns
     /// <summary>
     /// Returns what the interface shows of the choice held and of the default one.
     /// </summary>
-    public static VpnDnsShowing Showing(ConfigDns? held, OfferedDns? offer, IReadOnlyList<string> line)
+    public static VpnDnsShowing Showing(ConfigDns? held, OfferedDns? offer, IReadOnlyList<string> line, Func<string, bool>? local = null)
     {
-        var pick = Pick(held, offer, line);
-        var usual = Pick(null, offer, line);
+        var pick = Pick(held, offer, line, local);
+        var usual = Pick(null, offer, line, local);
 
         var server = offer is { } offered && HasV4(offered.Resolver) ? string.Join(", ", offered.Resolver) : string.Empty;
 

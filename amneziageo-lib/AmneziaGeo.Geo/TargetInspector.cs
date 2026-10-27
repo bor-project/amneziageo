@@ -104,19 +104,13 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
             return new Claim(RoleToken.None, string.Empty);
         }
 
-        if (new DomainMatcher(list.BlockDomains).Match(host) is { } blocked)
+        return NameRules.Of(list).Match(host) switch
         {
-            return new Claim(RoleToken.Block, Entry(blocked));
-        }
-
-        if (new DomainMatcher(list.DirectDomains).Match(host) is { } direct)
-        {
-            return new Claim(RoleToken.Direct, Entry(direct));
-        }
-
-        return new DomainMatcher(list.Domains).Match(host) is { } proxied
-            ? new Claim(RoleToken.Proxy, Entry(proxied))
-            : new Claim(RoleToken.None, string.Empty);
+            { Verdict: RouteVerdict.Block } blocked => new Claim(RoleToken.Block, Entry(blocked)),
+            { Verdict: RouteVerdict.Direct } direct => new Claim(RoleToken.Direct, Entry(direct)),
+            { Verdict: RouteVerdict.Proxy } proxied => new Claim(RoleToken.Proxy, Entry(proxied)),
+            _ => new Claim(RoleToken.None, string.Empty),
+        };
     }
 
     /// <summary>
@@ -430,7 +424,7 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
         };
     }
 
-    private static string Entry(DomainMatcher.GeoMatch match)
+    private static string Entry(NameMatch match)
     {
         return GeoConfigurator.FormatDomain(new GeoDomain(match.Kind, match.Value));
     }

@@ -206,7 +206,7 @@ internal sealed class TunnelController : IDisposable
         var split = routing.Split && routing.HasRules;
         var hasRules = routing.HasRules;
         routing = AroundLocal(routing);
-        var vpnDns = VpnDns.Pick(options.Dns, options.Offer?.Dns(), WgConfigEditor.GetDns(resolved));
+        var vpnDns = VpnDns.Pick(options.Dns, options.Offer?.Dns(), WgConfigEditor.GetDns(resolved), Beside());
         var tunnelResolvers = TunnelResolvers(vpnDns.Network ? [] : vpnDns.Servers);
 
         // The resolver asked over HTTPS rides the tunnel as well, or its answers are no safer than the plain ones; the
@@ -668,7 +668,10 @@ internal sealed class TunnelController : IDisposable
     // Refuses the ranges the list blocks, apart from what the connection itself stands on.
     private async Task RefuseAsync(RoutingCache cache, TunnelRouting routing, CancellationToken ct)
     {
-        await BlockFirewall.ApplyAsync(SteeringRules.Refused(routing.BlockRoutes, Kept(cache)), _log, ct).ConfigureAwait(false);
+        var refused = SteeringRules.Refused(routing.BlockRoutes, Kept(cache));
+        var standing = await BlockFirewall.ApplyAsync(refused, _log, ct).ConfigureAwait(false);
+        var marked = _apps?.CarriesApplications == true || (!_split && routing.DirectApps.Count > 0);
+        _standingBasis?.Applier.Refuse(standing && marked ? refused : []);
     }
 
     // Lays the ranges the list keeps direct past a tunnel that carries everything; a held address they no longer
@@ -721,6 +724,12 @@ internal sealed class TunnelController : IDisposable
         _inboundBlocked = false;
         await InboundFirewall.RemoveAsync(ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Returns what tells whether an address lies in a network this machine stands in, past the interface of the
+    /// tunnel.
+    /// </summary>
+    public Func<string, bool> Beside() => PrivateNetworks.Beside(PrivateNetworks.Local(_iface));
 
     // The list with its tunnel ranges cut around the networks this machine stands in.
     private TunnelRouting AroundLocal(TunnelRouting routing)

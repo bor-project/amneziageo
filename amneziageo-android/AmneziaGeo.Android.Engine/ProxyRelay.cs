@@ -37,9 +37,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     // Buffers of the streams in flight; no more than this many wait for the next stream.
     private static readonly ArrayPool<byte> _pumpBuffers = ArrayPool<byte>.Create(BufferSize, PumpBuffersKept);
 
-    private readonly DomainMatcher _proxyNames;
-    private readonly DomainMatcher _directNames;
-    private readonly DomainMatcher _blockNames;
+    private readonly NameRules _names;
     private readonly GeoIpRanges _proxyRanges;
     private readonly GeoIpRanges _directRanges;
     private readonly GeoIpRanges _blockRanges;
@@ -73,9 +71,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
     /// </summary>
     public ProxyRelay(GeoRoutingPlan plan, Func<int, bool> protect, Action<string> log, Func<IPEndPoint, IPEndPoint, int> caller, Func<IPEndPoint, IPEndPoint, string?>? owner, Action<IPAddress>? refuse = null)
     {
-        _proxyNames = new DomainMatcher(plan.ProxyDomains);
-        _directNames = new DomainMatcher(plan.DirectDomains);
-        _blockNames = new DomainMatcher(plan.BlockDomains);
+        _names = new NameRules(plan.ProxyDomains, plan.DirectDomains, plan.BlockDomains);
         _proxyRanges = GeoIpRanges.Build(plan.ProxyRoutes);
         _directRanges = GeoIpRanges.Build(plan.DirectRoutes);
         _blockRanges = GeoIpRanges.Build(plan.BlockRoutes);
@@ -293,9 +289,14 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         };
     }
 
-    // What settled the destination: a name rule first, then a range, then the application it belongs to.
+    // What settled the destination: the application it belongs to first, then a name rule, then a range.
     private string ReasonOf(Entry entry)
     {
+        if (entry.App.Length > 0 && _apps.Contains(entry.App))
+        {
+            return LiveSession.ReasonApp;
+        }
+
         if (ByName(entry.Host) != RouteVerdict.None)
         {
             return LiveSession.ReasonName;
@@ -306,7 +307,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             return LiveSession.ReasonRange;
         }
 
-        return entry.App.Length > 0 && _apps.Contains(entry.App) ? LiveSession.ReasonApp : LiveSession.ReasonNone;
+        return LiveSession.ReasonNone;
     }
 
     private static string Word(RouteVerdict verdict)
@@ -320,17 +321,16 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         };
     }
 
-    // Turns an undecided destination into an action: an application the list names rides the tunnel, and the tunnel
-    // flag says where what no rule named belongs for everyone else. A rule that decided wins over both, so a
-    // destination the list sends direct stays direct even for a named application.
+    // Turns a destination into an action: an application the list names rides the tunnel whatever the rules say of
+    // the destination, a rule that decided sends everyone else, and the tunnel flag says where the rest belongs.
     private RouteVerdict Effective(RouteVerdict verdict, string app)
     {
-        if (verdict != RouteVerdict.None)
+        if (app.Length > 0 && _apps.Contains(app))
         {
-            return verdict;
+            return RouteVerdict.Proxy;
         }
 
-        return app.Length > 0 && _apps.Contains(app) ? RouteVerdict.Proxy : _undecided;
+        return verdict != RouteVerdict.None ? verdict : _undecided;
     }
 
     private async Task AcceptAsync(Socket listener, CancellationToken ct)
@@ -384,7 +384,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 
             entry = Touch(request.Host);
             var app = NoteOwner(entry, request);
-            if (entry.Verdict == RouteVerdict.Block)
+            if (Effective(entry.Verdict, app) == RouteVerdict.Block)
             {
                 Interlocked.Increment(ref _blocked);
                 // The stream names the address behind the blocked name, so a datagram to it is refused as well.
@@ -493,7 +493,8 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
             var index = (Volatile.Read(ref entry.Preferred) + step) % addresses.Count;
             var address = addresses[index];
             var verdict = Classify(entry.Verdict, address);
-            if (verdict == RouteVerdict.Block)
+            var way = Effective(verdict, app);
+            if (way == RouteVerdict.Block)
             {
                 entry.Verdict = RouteVerdict.Block;
                 return null;
@@ -501,7 +502,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
             Hold(socket);
-            if (Effective(verdict, app) == RouteVerdict.Direct)
+            if (way == RouteVerdict.Direct)
             {
                 _protect(socket.Handle.ToInt32());
             }
@@ -561,8 +562,8 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         }
     }
 
-    // Block wins over direct, direct over proxy - the precedence the whole router follows. A name that already
-    // decided keeps its verdict; an address only decides what the name left open.
+    // A name that already decided keeps its verdict; an address only decides what the name left open, by the one set
+    // of the list that holds it.
     private RouteVerdict Classify(RouteVerdict byName, IPAddress address)
     {
         if (byName != RouteVerdict.None)
@@ -588,20 +589,7 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         return _proxyRanges.Contains(value) ? RouteVerdict.Proxy : RouteVerdict.None;
     }
 
-    private RouteVerdict ByName(string host)
-    {
-        if (_blockNames.IsTunneled(host))
-        {
-            return RouteVerdict.Block;
-        }
-
-        if (_directNames.IsTunneled(host))
-        {
-            return RouteVerdict.Direct;
-        }
-
-        return _proxyNames.IsTunneled(host) ? RouteVerdict.Proxy : RouteVerdict.None;
-    }
+    private RouteVerdict ByName(string host) => _names.Verdict(host);
 
     // Takes the entry a destination holds, deciding it on first contact and extending its life on every later one.
     private Entry Touch(string host)
@@ -691,14 +679,13 @@ internal sealed class ProxyRelay : IProxyOutbound, IDisposable
         }
     }
 
-    // Names the application behind a loopback connection. The answer places a destination no rule named, so there it
-    // is asked per connection: two applications share a destination and only the owner says which this one is. A
-    // destination a rule decided takes the name for the display alone and asks once, because every answer costs two
-    // round trips into the system.
+    // Names the application behind a loopback connection. While the list names applications the answer places every
+    // destination, so it is asked per connection: two applications share a destination and only the owner says which
+    // this one is. A list without applications takes the name for the display alone and asks once, because every
+    // answer costs two round trips into the system.
     private string NoteOwner(Entry entry, Request request)
     {
-        if (_owner is null
-            || (entry.App.Length > 0 && (_apps.Count == 0 || entry.Verdict != RouteVerdict.None)))
+        if (_owner is null || (entry.App.Length > 0 && _apps.Count == 0))
         {
             return entry.App;
         }

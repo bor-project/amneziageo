@@ -7,7 +7,7 @@ using Xunit;
 namespace AmneziaGeo.Tests;
 
 /// <summary>
-/// Из пересекающихся правил адреса решает более узкое, при равных - «Напрямую».
+/// Из пересекающихся правил адреса решает более узкое, при равных - блок, потом «Напрямую».
 /// </summary>
 public sealed class RangeClaimsTests : IAsyncLifetime
 {
@@ -49,7 +49,7 @@ public sealed class RangeClaimsTests : IAsyncLifetime
     [Fact]
     public void ANarrowerTunnelRange_CutsItsHoleInTheDirectRange()
     {
-        var direct = GeoIpRanges.Build(RangeClaims.CarveDirect(["10.0.0.0/8"], ["10.8.2.0/24"]));
+        var direct = GeoIpRanges.Build(RangeClaims.Settle(["10.8.2.0/24"], ["10.0.0.0/8"], []).Direct);
 
         Assert.False(direct.Contains(Address("10.8.2.5")));
         Assert.True(direct.Contains(Address("10.8.3.1")));
@@ -60,19 +60,19 @@ public sealed class RangeClaimsTests : IAsyncLifetime
     [Fact]
     public void AWiderTunnelRange_LeavesTheDirectRangeWhole()
     {
-        Assert.Equal(["10.8.2.0/24"], RangeClaims.CarveDirect(["10.8.2.0/24"], ["10.0.0.0/8"]));
+        Assert.Equal(["10.8.2.0/24"], RangeClaims.Settle(["10.0.0.0/8"], ["10.8.2.0/24"], []).Direct);
     }
 
     [Fact]
     public void TheSameRangeInBothBuckets_StaysDirect()
     {
-        Assert.Equal(["192.168.1.0/24"], RangeClaims.CarveDirect(["192.168.1.0/24"], ["192.168.1.0/24"]));
+        Assert.Equal(["192.168.1.0/24"], RangeClaims.Settle(["192.168.1.0/24"], ["192.168.1.0/24"], []).Direct);
     }
 
     [Fact]
     public void NestedRules_AreDecidedByTheNarrowest()
     {
-        var direct = GeoIpRanges.Build(RangeClaims.CarveDirect(["10.0.0.0/8", "10.8.2.0/24"], ["10.8.0.0/16", "10.8.2.128/25"]));
+        var direct = GeoIpRanges.Build(RangeClaims.Settle(["10.8.0.0/16", "10.8.2.128/25"], ["10.0.0.0/8", "10.8.2.0/24"], []).Direct);
 
         Assert.True(direct.Contains(Address("10.9.0.1")));
         Assert.False(direct.Contains(Address("10.8.3.5")));
@@ -83,7 +83,7 @@ public sealed class RangeClaimsTests : IAsyncLifetime
     [Fact]
     public void AHostOfTheTunnel_LeavesTheRestOfTheNetworkDirect()
     {
-        var carved = RangeClaims.CarveDirect(["0.0.0.0/0"], ["1.1.1.1"]);
+        var carved = RangeClaims.Settle(["1.1.1.1"], ["0.0.0.0/0"], []).Direct;
 
         Assert.Equal(32, carved.Count);
         Assert.False(GeoIpRanges.Build(carved).Contains(Address("1.1.1.1")));
@@ -93,7 +93,7 @@ public sealed class RangeClaimsTests : IAsyncLifetime
     [Fact]
     public void AnEntryOfAnotherFamily_IsCarriedThrough()
     {
-        Assert.Equal(["fd00::/8", "10.128.0.0/9"], RangeClaims.CarveDirect(["fd00::/8", "10.0.0.0/8"], ["10.0.0.0/9"]));
+        Assert.Equal(["fd00::/8", "10.128.0.0/9"], RangeClaims.Settle(["10.0.0.0/9"], ["fd00::/8", "10.0.0.0/8"], []).Direct);
     }
 
     [Fact]

@@ -83,6 +83,26 @@ public sealed class VpnDnsTests : IAsyncLifetime
     }
 
     [Fact]
+    public void AServerInANetworkTheDeviceStandsIn_GivesWayToTheResolverOfTheServer()
+    {
+        var beside = PrivateNetworks.Beside(["192.168.0.0/22"]);
+        var routing = new OfferedDns("routing", ["192.168.1.1"], ["10.9.9.1"]);
+        var silent = new OfferedDns("routing", ["192.168.1.1"], []);
+        var unnamed = new OfferedDns("routing", [], ["10.9.9.1"]);
+        string[] home = ["192.168.1.1"];
+
+        Assert.Equal(["10.9.9.1"], VpnDns.Pick(null, routing, Line, beside).Servers);
+        Assert.Equal(["10.9.9.1"], VpnDns.Pick(null, unnamed, home, beside).Servers);
+        Assert.Equal(["192.168.1.1"], VpnDns.Pick(null, routing, Line).Servers);
+        Assert.Equal(["192.168.1.1"], VpnDns.Pick(null, routing, Line, PrivateNetworks.Beside(["10.0.2.0/24"])).Servers);
+        Assert.Equal(["192.168.1.1"], VpnDns.Pick(null, silent, Line, beside).Servers);
+        Assert.Equal(home, VpnDns.Pick(null, null, home, beside).Servers);
+        Assert.Equal(["192.168.1.1"], VpnDns.Pick(Held(VpnDnsMode.Own, "192.168.1.1"), routing, Line, beside).Servers);
+        Assert.True(VpnDns.Pick(null, new OfferedDns("network", [], ["10.9.9.1"]), home, beside).Network);
+        Assert.Equal("10.9.9.1", VpnDns.Showing(null, routing, Line, beside).Shown);
+    }
+
+    [Fact]
     public void TheWordsOfTheChoice_ReadBackAndTheOddAddressesAreNamed()
     {
         foreach (var mode in Enum.GetValues<VpnDnsMode>())

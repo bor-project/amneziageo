@@ -101,20 +101,17 @@ internal sealed class DnsProxy
     private const int MaxBypassEntries = 8192;
     // Volatile: read on the hot query path, replaced on the poll thread; the matcher is immutable.
     private volatile IReadOnlyList<GeoDomain> _domains;
-    private volatile DomainMatcher _matcher;
+    // One decision over the three buckets: the narrowest rule that holds a name.
+    private volatile NameRules _names;
     // Names another tunnel of the set carries: which one owns a name, and how it is asked to carry it. Both
     // stay empty on a machine that keeps one tunnel.
     private volatile Func<string, string?>? _lentOwner;
     private volatile Func<string, string, Task<IReadOnlyList<string>>>? _lentCarry;
     // Block bucket: names refused with NXDOMAIN before any tunnel/bypass decision; never tunneled or resolved.
     private volatile IReadOnlyList<GeoDomain> _blockDomains;
-    private volatile DomainMatcher _blockMatcher;
-    private volatile bool _hasBlockDomains;
     // Direct bucket on its own, next to the local suffixes it is merged into for resolution: only these names
     // settle a Direct verdict for their addresses, a suffix of your own network settles nothing.
     private volatile IReadOnlyList<GeoDomain> _directDomains;
-    private volatile DomainMatcher _directMatcher;
-    private volatile bool _hasDirectDomains;
     // The resolver of the names through the tunnel: the one the config picks, or the own network's where the config
     // leaves the names to it, which then follows the network the machine is on.
     private volatile IPAddress _tunnelUpstream;
@@ -175,13 +172,9 @@ internal sealed class DnsProxy
         _passDns = passDns;
         _routing = routing;
         _domains = domains;
-        _matcher = new DomainMatcher(domains);
         _blockDomains = blockDomains;
-        _blockMatcher = new DomainMatcher(blockDomains);
-        _hasBlockDomains = blockDomains.Count > 0;
         _directDomains = directDomains;
-        _directMatcher = new DomainMatcher(directDomains);
-        _hasDirectDomains = directDomains.Count > 0;
+        _names = new NameRules(domains, directDomains, blockDomains);
         _tunnelUpstream = tunnelUpstream;
         _tunnelUpstreamSecondary = tunnelSecondary;
         _localUpstream = localUpstream;
@@ -463,11 +456,8 @@ internal sealed class DnsProxy
             }
 
             _blockDomains = blockDomains;
-            _blockMatcher = new DomainMatcher(blockDomains);
-            _hasBlockDomains = blockDomains.Count > 0;
             _directDomains = directDomains;
-            _directMatcher = new DomainMatcher(directDomains);
-            _hasDirectDomains = directDomains.Count > 0;
+            _names = new NameRules(_domains, directDomains, blockDomains);
             _localDomains = locals;
 
             // Drop cached answers and the negative cache: a name refused or kept local now may hold a verdict from
@@ -552,23 +542,9 @@ internal sealed class DnsProxy
     }
 
     /// <summary>
-    /// What the name rules settle for a name. Block wins over Direct, Direct over the tunnel - the same order the
-    /// ranges are read in, so a name and an address covering each other never give two answers.
+    /// What the name rules settle for a name: the narrowest rule that holds it.
     /// </summary>
-    public RouteVerdict NameVerdict(string name)
-    {
-        if (_hasBlockDomains && _blockMatcher.IsTunneled(name))
-        {
-            return RouteVerdict.Block;
-        }
-
-        if (_hasDirectDomains && _directMatcher.IsTunneled(name))
-        {
-            return RouteVerdict.Direct;
-        }
-
-        return _matcher.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
-    }
+    public RouteVerdict NameVerdict(string name) => _names.Verdict(name);
 
     /// <summary>
     /// The verdict a name hands the addresses it answers with; a name of the own network keeps them on that network.
@@ -754,7 +730,7 @@ internal sealed class DnsProxy
             return NamePath.Lan;
         }
 
-        return _hasDirectDomains && _directMatcher.IsTunneled(name) ? NamePath.Direct : NamePath.Open;
+        return _names.Verdict(name) == RouteVerdict.Direct ? NamePath.Direct : NamePath.Open;
     }
 
     // Suffixes as the local check wants them: trimmed, dotless at the ends, lower case.
@@ -783,8 +759,8 @@ internal sealed class DnsProxy
     public bool UpdateDomains(IReadOnlyList<GeoDomain> domains, CancellationToken ct)
     {
         var previous = _domains;
-        _matcher = new DomainMatcher(domains);
         _domains = domains;
+        _names = new NameRules(domains, _directDomains, _blockDomains);
 
         // Drop cached answers: a newly matched name may have a pre-match entry from the local resolver.
         _cache.Clear();
@@ -1011,7 +987,7 @@ internal sealed class DnsProxy
 
             // Block bucket wins over everything: a matched name is refused (NXDOMAIN) before any tunnel/bypass
             // decision, so it never resolves and its connection is dropped.
-            if (_hasBlockDomains && name is not null && _blockMatcher.IsTunneled(name))
+            if (name is not null && _names.Verdict(name) == RouteVerdict.Block)
             {
                 var blocked = DnsMessage.BuildNxDomain(query);
                 respond(blocked);
@@ -1052,7 +1028,9 @@ internal sealed class DnsProxy
             var appDns = name is not null && !kept && _appDns is not null && await AskedByAsync(_appDns, name, started).ConfigureAwait(false);
 
             // Matched names resolve via the clean tunnel resolver; others use the local resolver.
-            var geoMatch = !kept && !bypassed && name is not null ? _matcher.Match(name) : null;
+            var geoMatch = !kept && !bypassed && name is not null && _names.Match(name) is { Verdict: RouteVerdict.Proxy } rule
+                ? new DomainMatcher.GeoMatch(rule.Kind, rule.Value)
+                : (DomainMatcher.GeoMatch?)null;
             var matched = geoMatch is not null || appDns;
 
             // A name no rule here matches may still be named by a rule riding another tunnel of the set. This

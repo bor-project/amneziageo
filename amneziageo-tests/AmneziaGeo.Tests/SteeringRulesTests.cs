@@ -12,6 +12,9 @@ public sealed class SteeringRulesTests
 {
     private const string Rule = "    ct direction original ip daddr @proxied ip daddr != @spared meta mark set 0x51820\n";
 
+    // The mark of the applications a list names: one of their own, and the chain leaves them alone after it.
+    private const string Apps = "    socket cgroupv2 level 1 \"amneziageo\" meta mark set 0x51823 return\n";
+
     [Fact]
     public void Carried_LeavesOutTheDirectAndTheBlockedRanges()
     {
@@ -96,7 +99,7 @@ public sealed class SteeringRulesTests
 
         Assert.DoesNotContain("set ", text.Replace("mark set", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.DoesNotContain("@proxied", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("return", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("return", text.Replace(Apps, string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -104,8 +107,36 @@ public sealed class SteeringRulesTests
     {
         var text = SteeringRules.Marks("awg0", "amneziageo", ["198.18.10.0/25"], true, "192.0.2.1");
 
-        var cgroup = text.IndexOf("    socket cgroupv2 level 1 \"amneziageo\" meta mark set 0x51820\n", StringComparison.Ordinal);
-        Assert.InRange(cgroup, 0, text.IndexOf("return", StringComparison.Ordinal));
+        var cgroup = text.IndexOf(Apps, StringComparison.Ordinal);
+        Assert.InRange(cgroup, 0, text.IndexOf("oifname \"lo\" return", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Marks_TheApplicationsTakeAMarkOfTheirOwnBeforeTheDirectRangesAreLetBy()
+    {
+        var text = SteeringRules.Marks("awg0", "amneziageo", ["198.18.10.0/25"], true, "192.0.2.1", [], ["10.0.0.0/8"]);
+
+        var cgroup = text.IndexOf(Apps, StringComparison.Ordinal);
+        Assert.InRange(cgroup, 0, text.IndexOf("    ip daddr @direct return\n", StringComparison.Ordinal));
+        Assert.DoesNotContain("\"amneziageo\" meta mark set 0x51820", text, StringComparison.Ordinal);
+        Assert.Contains("    meta mark 0x51823 oifname \"awg0\" masquerade\n", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Marks_WithoutApplicationsTheirMarkIsLeftOut()
+    {
+        var text = SteeringRules.Marks("awg0", null, ["198.18.10.0/25"], true, "192.0.2.1");
+
+        Assert.DoesNotContain("0x51823", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Refusals_LetTheApplicationsAListNamesBy()
+    {
+        var text = SteeringRules.Refusals(["10.1.0.0/16"]);
+
+        var named = text.IndexOf("    meta mark { 0x51823, 0x51822 } accept\n", StringComparison.Ordinal);
+        Assert.InRange(named, 0, text.IndexOf("reject", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -199,13 +230,13 @@ public sealed class SteeringRulesTests
     }
 
     [Fact]
-    public void Marks_ADirectRangeIsLetByBeforeAnApplicationOrADatagramIsMarked()
+    public void Marks_ADirectRangeIsLetByBeforeADatagramIsMarked_AfterTheApplicationsAre()
     {
         var text = SteeringRules.Marks("awg0", "amneziageo", [], true, "192.0.2.1", null, ["198.18.10.128/25"]);
 
         Assert.Contains("  set direct {\n    type ipv4_addr\n    flags interval\n    elements = { 198.18.10.128/25 }\n  }\n", text, StringComparison.Ordinal);
         var let = text.IndexOf("    ip daddr @direct return\n", StringComparison.Ordinal);
-        Assert.InRange(let, 0, text.IndexOf("    socket cgroupv2 level 1 \"amneziageo\" meta mark set 0x51820\n", StringComparison.Ordinal));
+        Assert.InRange(text.IndexOf(Apps, StringComparison.Ordinal), 0, let);
         Assert.InRange(let, 0, text.IndexOf("    meta l4proto udp meta mark set 0x51820\n", StringComparison.Ordinal));
     }
 
@@ -219,13 +250,13 @@ public sealed class SteeringRulesTests
     }
 
     [Fact]
-    public void Marks_AnAddressANameKeepsDirectIsLetByBeforeAnApplicationOrADatagramIsMarked()
+    public void Marks_AnAddressANameKeepsDirectIsLetByBeforeADatagramIsMarked_AfterTheApplicationsAre()
     {
         var text = SteeringRules.Marks("awg0", "amneziageo", [], true, "192.0.2.1", ["198.18.30.6"], []);
 
         Assert.Contains("  set spared {\n    type ipv4_addr\n    elements = { 198.18.30.6 }\n  }\n", text, StringComparison.Ordinal);
         var let = text.IndexOf("    ip daddr @spared return\n", StringComparison.Ordinal);
-        Assert.InRange(let, 0, text.IndexOf("    socket cgroupv2 level 1 \"amneziageo\" meta mark set 0x51820\n", StringComparison.Ordinal));
+        Assert.InRange(text.IndexOf(Apps, StringComparison.Ordinal), 0, let);
         Assert.InRange(let, 0, text.IndexOf("    meta l4proto udp meta mark set 0x51820\n", StringComparison.Ordinal));
     }
 

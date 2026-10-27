@@ -594,6 +594,22 @@ func (d *verdictTun) ours(packet []byte) bool {
 	return d.whose(packet, protoTcp) == owners.Self
 }
 
+// Шлёт ли пакет приложение из правил: такое приложение сильнее правил по адресу.
+func (d *verdictTun) named(packet []byte) bool {
+	if d.relay.Load() <= 0 || len(packet) < 28 {
+		return false
+	}
+
+	switch packet[9] {
+	case syscall.IPPROTO_TCP:
+		return d.whose(packet, protoTcp) == owners.Named
+	case syscall.IPPROTO_UDP:
+		return d.whose(packet, protoUdp) == owners.Named
+	}
+
+	return false
+}
+
 // Чьё это соединение, как его называет хост; ответ держится по потоку, пока тот идёт.
 func (d *verdictTun) whose(packet []byte, proto uint8) int {
 	head := int(packet[0]&0x0f) * 4
@@ -721,13 +737,22 @@ func (d *verdictTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 			}
 			switch v {
 			case verdictBlock:
-				d.blocked.Add(1)
-				continue
+				// Приложение из правил сильнее блока по адресу: его поток решает релей, датаграмма едет туннелем.
+				packet := bufs[i][offset : offset+sizes[i]]
+				if !d.named(packet) {
+					d.blocked.Add(1)
+					continue
+				}
+
+				if d.stream(packet) {
+					d.passed.Add(1)
+					continue
+				}
 			case verdictDirect:
 				// Поток решается в релее, если тот поднят; иначе датаграмма и поток уходят со своих
-				// защищённых сокетов.
+				// защищённых сокетов. Датаграмма приложения из правил едет туннелем.
 				packet := bufs[i][offset : offset+sizes[i]]
-				if d.stream(packet) || d.aside(packet) {
+				if d.stream(packet) || (!d.named(packet) && d.aside(packet)) {
 					d.passed.Add(1)
 					continue
 				}

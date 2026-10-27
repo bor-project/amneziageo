@@ -4,38 +4,40 @@ using System.Numerics;
 namespace AmneziaGeo.Routing;
 
 /// <summary>
-/// Settles which of two overlapping address rules decides: the narrower range, and the direct one on a tie.
+/// Settles which of overlapping address rules decides: the narrower range, and on the same range the block, then the
+/// direct one, then the tunnel.
 /// </summary>
 public static class RangeClaims
 {
     /// <summary>
-    /// The direct ranges without every tunnel range that lies inside one of them and is narrower than it.
+    /// The three sets with every narrower range of another set cut out of the range it lies in and a range two sets
+    /// share left to the stronger one, so no address falls into two sets.
     /// </summary>
-    public static IReadOnlyList<string> CarveDirect(IReadOnlyList<string> direct, IReadOnlyList<string> proxy)
+    public static (IReadOnlyList<string> Proxy, IReadOnlyList<string> Direct, IReadOnlyList<string> Block) Settle(
+        IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block)
     {
-        if (direct.Count == 0)
+        var proxySpans = Parse(proxy);
+        var directSpans = Parse(direct);
+        var blockSpans = Parse(block);
+        return (
+            Carve(proxy, [.. directSpans, .. blockSpans], Keys(directSpans, blockSpans)),
+            Carve(direct, [.. proxySpans, .. blockSpans], Keys(blockSpans)),
+            Carve(block, [.. proxySpans, .. directSpans], []));
+    }
+
+    // The ranges of one set less the narrower ranges of the others inside them; a range a stronger set holds as well
+    // is dropped.
+    private static IReadOnlyList<string> Carve(IReadOnlyList<string> entries, List<(uint Start, uint End, int Bits)> others, HashSet<(uint, int)> stronger)
+    {
+        if (entries.Count == 0 || others.Count == 0)
         {
-            return direct;
+            return entries;
         }
 
-        var inner = new List<(uint Start, uint End, int Bits)>(proxy.Count);
-        foreach (var entry in proxy)
-        {
-            if (GeoIpRanges.TryParse(entry, out var start, out var end, out var bits))
-            {
-                inner.Add((start, end, bits));
-            }
-        }
-
-        if (inner.Count == 0)
-        {
-            return direct;
-        }
-
-        inner.Sort(static (a, b) => a.Start != b.Start ? a.Start.CompareTo(b.Start) : a.Bits.CompareTo(b.Bits));
-        var carved = new List<string>(direct.Count);
+        others.Sort(static (a, b) => a.Start != b.Start ? a.Start.CompareTo(b.Start) : a.Bits.CompareTo(b.Bits));
+        var carved = new List<string>(entries.Count);
         var cut = false;
-        foreach (var entry in direct)
+        foreach (var entry in entries)
         {
             if (!GeoIpRanges.TryParse(entry, out var start, out var end, out var bits))
             {
@@ -43,7 +45,13 @@ public static class RangeClaims
                 continue;
             }
 
-            var holes = Holes(inner, start, end, bits);
+            if (stronger.Contains((start, bits)))
+            {
+                cut = true;
+                continue;
+            }
+
+            var holes = Holes(others, start, end, bits);
             if (holes.Count == 0)
             {
                 carved.Add(entry);
@@ -54,33 +62,61 @@ public static class RangeClaims
             AddPieces(carved, start, end, holes);
         }
 
-        return cut ? carved : direct;
+        return cut ? carved : entries;
     }
 
-    // The tunnel ranges inside the direct one and narrower than it, low to high.
-    private static List<(uint Start, uint End)> Holes(List<(uint Start, uint End, int Bits)> inner, uint start, uint end, int bits)
+    private static List<(uint Start, uint End, int Bits)> Parse(IReadOnlyList<string> entries)
+    {
+        var spans = new List<(uint Start, uint End, int Bits)>(entries.Count);
+        foreach (var entry in entries)
+        {
+            if (GeoIpRanges.TryParse(entry, out var start, out var end, out var bits))
+            {
+                spans.Add((start, end, bits));
+            }
+        }
+
+        return spans;
+    }
+
+    private static HashSet<(uint, int)> Keys(params List<(uint Start, uint End, int Bits)>[] sets)
+    {
+        var keys = new HashSet<(uint, int)>();
+        foreach (var set in sets)
+        {
+            foreach (var (start, _, bits) in set)
+            {
+                keys.Add((start, bits));
+            }
+        }
+
+        return keys;
+    }
+
+    // The ranges of the other sets inside this one and narrower than it, low to high.
+    private static List<(uint Start, uint End)> Holes(List<(uint Start, uint End, int Bits)> others, uint start, uint end, int bits)
     {
         var holes = new List<(uint Start, uint End)>();
-        for (var at = LowerBound(inner, start); at < inner.Count && inner[at].Start <= end; at++)
+        for (var at = LowerBound(others, start); at < others.Count && others[at].Start <= end; at++)
         {
-            if (inner[at].Bits > bits)
+            if (others[at].Bits > bits)
             {
-                holes.Add((inner[at].Start, inner[at].End));
+                holes.Add((others[at].Start, others[at].End));
             }
         }
 
         return holes;
     }
 
-    // The first tunnel range starting at the address or above it.
-    private static int LowerBound(List<(uint Start, uint End, int Bits)> inner, uint start)
+    // The first range starting at the address or above it.
+    private static int LowerBound(List<(uint Start, uint End, int Bits)> others, uint start)
     {
         var low = 0;
-        var high = inner.Count;
+        var high = others.Count;
         while (low < high)
         {
             var mid = low + ((high - low) / 2);
-            if (inner[mid].Start < start)
+            if (others[mid].Start < start)
             {
                 low = mid + 1;
             }
@@ -93,7 +129,7 @@ public static class RangeClaims
         return low;
     }
 
-    // The direct range less its holes, as the fewest prefixes that cover it.
+    // The range less its holes, as the fewest prefixes that cover it.
     private static void AddPieces(List<string> carved, uint start, uint end, List<(uint Start, uint End)> holes)
     {
         var head = (ulong)start;

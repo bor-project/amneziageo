@@ -109,6 +109,8 @@ public sealed class RoutingCache
     private GeoIpRanges _pinned;
     // The tunnel adapter's own addresses, which a packet never leaves this machine for.
     private FrozenSet<uint> _own = FrozenSet<uint>.Empty;
+    // The networks this machine stands in that a range of the list covers.
+    private GeoIpRanges _local = GeoIpRanges.Build([]);
     private IReadOnlyList<string> _pinnedRoutes;
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
@@ -303,6 +305,15 @@ public sealed class RoutingCache
     public RouteVerdict Classify(IPAddress address)
     {
         return GeoIpRanges.TryToNumeric(address, out var value) ? Classify(value) : RouteVerdict.None;
+    }
+
+    /// <summary>
+    /// Names the networks this machine stands in that a range of the list covers: an application rule leaves their
+    /// addresses on the path of the machine.
+    /// </summary>
+    public void Stand(IReadOnlyList<string> networks)
+    {
+        Volatile.Write(ref _local, GeoIpRanges.Build(networks));
     }
 
     /// <summary>
@@ -1039,13 +1050,15 @@ public sealed class RoutingCache
     }
 
     // Moves an already-decided destination onto the side an app rule claims it for, the tunnel in a split and the
-    // physical path under a tunnel that carries everything: what the old plan installed is released first, so a
-    // permit out the physical path never outlives the decision that replaced it.
+    // physical path under a tunnel that carries everything, whatever a range or a name decided before; a block
+    // stays. What the old plan installed is released first, so a permit out the physical path never outlives the
+    // decision that replaced it.
     private void Promote(Entry entry, long now)
     {
         var wanted = CarriesEverything ? RoutePlan.Bypass : RoutePlan.Tunnel;
-        if (entry.Plan == wanted || entry.Plan is RoutePlan.Tunnel or RoutePlan.Drop or RoutePlan.External
-            || entry.Verdict is RouteVerdict.Direct || (CarriesEverything && entry.Verdict is RouteVerdict.Proxy))
+        if (entry.Plan == wanted || entry.Plan is RoutePlan.Drop or RoutePlan.External
+            || (!CarriesEverything && entry.Plan is RoutePlan.Tunnel)
+            || Volatile.Read(ref _local).Contains(entry.Numeric))
         {
             if (!Installed(entry))
             {
@@ -1684,9 +1697,11 @@ public sealed class RoutingCache
     // that does not carry the default takes a route of its own for what its rules name.
     // Split: nothing rides the tunnel until a destination earns it, and the physical path is blocked until a
     // verdict exists - so Proxy earns the tunnel, Block stays dropped, and everything else earns a permit.
-    // app: claimed by an app rule. Block still wins, and so does an explicit Direct range - the user pinned that
-    // destination to the physical path on purpose. Under a tunnel that carries everything the claim is of an
-    // application the list keeps direct: its destination leaves past the tunnel unless a rule by address names it.
+    // app: claimed by an app rule, which outranks a range and a name: in a split its destination rides the tunnel
+    // where a direct rule names it too, and under a tunnel that carries everything the claim is of an application
+    // the list keeps direct, whose destination leaves past the tunnel where a rule sends it through. A block still
+    // wins: the route of the address stands for every program of the machine, and so would a lifted block. A network
+    // this machine stands in keeps the path of the machine for an application too.
     private RoutePlan Decide(RuleSet rules, RouteVerdict verdict, uint address, bool app = false)
     {
         if (verdict == RouteVerdict.Block)
@@ -1694,9 +1709,11 @@ public sealed class RoutingCache
             return RoutePlan.Drop;
         }
 
+        app = app && !Volatile.Read(ref _local).Contains(address);
+
         if (!_split)
         {
-            if (verdict == RouteVerdict.Direct)
+            if (verdict == RouteVerdict.Direct || (app && _carriesDefault))
             {
                 return RoutePlan.Bypass;
             }
@@ -1713,10 +1730,10 @@ public sealed class RoutingCache
                 return verdict == RouteVerdict.Proxy || app ? RoutePlan.Tunnel : RoutePlan.None;
             }
 
-            return app && verdict == RouteVerdict.None ? RoutePlan.Bypass : RoutePlan.None;
+            return RoutePlan.None;
         }
 
-        if (verdict == RouteVerdict.Direct)
+        if (verdict == RouteVerdict.Direct && !app)
         {
             return RoutePlan.Permit;
         }

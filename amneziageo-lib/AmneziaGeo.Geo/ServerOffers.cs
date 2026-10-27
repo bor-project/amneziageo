@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Net;
+using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
@@ -45,6 +48,7 @@ public sealed class ServerOffers
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _askInside;
     private readonly Func<string, bool>? _carried;
+    private readonly Func<string, CancellationToken, Task<string?>>? _dialed;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
     private readonly HashSet<string> _asking = new(StringComparer.Ordinal);
@@ -63,13 +67,15 @@ public sealed class ServerOffers
         Action? rerouted = null,
         Func<IReadOnlyList<long>, CancellationToken, Task>? take = null,
         Func<string, bool>? carried = null,
-        Func<ServiceTarget, CancellationToken, Task<HelloReply>>? askInside = null)
+        Func<ServiceTarget, CancellationToken, Task<HelloReply>>? askInside = null,
+        Func<string, CancellationToken, Task<string?>>? dialed = null)
     {
         _store = store;
         _note = note;
         _ask = ask ?? ServerHello.AskAsync;
         _askInside = askInside ?? ServerHello.AskAsync;
         _carried = carried;
+        _dialed = dialed;
         _time = time ?? TimeProvider.System;
         _geo = geo;
         _fetch = fetch;
@@ -228,7 +234,8 @@ public sealed class ServerOffers
         var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var asked = point with { TakesSignal = transport?.AllowSignal ?? true };
-        var reply = await InsideAsync(config, asked, kept, ct).ConfigureAwait(false) ?? await _ask(asked, ct).ConfigureAwait(false);
+        var reply = await InsideAsync(config, asked, kept, ct).ConfigureAwait(false)
+            ?? await OutsideAsync(config, asked, kept, text, ct).ConfigureAwait(false);
         var now = _time.GetUtcNow();
         if (!reply.Heard)
         {
@@ -287,16 +294,65 @@ public sealed class ServerOffers
         return (offer, bound || listed || limited);
     }
 
-    // Asks the server inside the tunnel, plain, while the tunnel of the config carries and the server named where it
-    // answers there; null when no server of ours answered there, so the question goes past the tunnel.
+    // Asks the server inside the tunnel, while the tunnel of the config carries and the server named where it answers
+    // there; null when no server of ours answered there, so the question goes past the tunnel.
     private async Task<HelloReply?> InsideAsync(string config, ServiceTarget point, KeptOffer? kept, CancellationToken ct)
     {
-        if (kept?.Offer.Inside() is not { Length: > 0 } origin || _carried?.Invoke(config) != true)
+        if (kept is null || _carried?.Invoke(config) != true)
+        {
+            return null;
+        }
+
+        var origin = kept.Offer.Inside() is { Length: > 0 } plain ? plain : kept.Offer.ServicesInside();
+        if (origin.Length == 0)
         {
             return null;
         }
 
         var reply = await _askInside(point with { Origin = origin }, ct).ConfigureAwait(false);
+
+        return reply.Offer is { Ours: true } ? reply : null;
+    }
+
+    // Asks the services past the tunnel at the port the server last named, then at the one of the text, then at the
+    // port of the Endpoint, and once inside the tunnel at the address it dials where none answered as a server of
+    // ours. The first answer of a server of ours holds, else the first that told anything.
+    private async Task<HelloReply> OutsideAsync(string config, ServiceTarget point, KeptOffer? kept, string? text, CancellationToken ct)
+    {
+        var told = default(HelloReply);
+        foreach (var port in Ports(kept, point, text))
+        {
+            var reply = await _ask(point with { Port = port }, ct).ConfigureAwait(false);
+            if (reply.Offer is { Ours: true })
+            {
+                return reply;
+            }
+
+            told ??= reply.Heard ? reply : null;
+        }
+
+        return await DialedAsync(config, point, ct).ConfigureAwait(false) ?? told ?? new HelloReply(null, false);
+    }
+
+    // The ports the services are asked at past the tunnel, the one the server last named first.
+    private static IReadOnlyList<int> Ports(KeptOffer? kept, ServiceTarget point, string? text) =>
+        [.. new[] { kept?.Offer.ServicesPort() ?? 0, point.Port, ConfigServices.EndpointPort(text) }.Where(port => port > 0).Distinct()];
+
+    // Asks once inside the tunnel at the address it dials, under TLS at the port of the text, while it carries; null
+    // when no server of ours answered there.
+    private async Task<HelloReply?> DialedAsync(string config, ServiceTarget point, CancellationToken ct)
+    {
+        if (_dialed is null
+            || _carried?.Invoke(config) != true
+            || await _dialed(config, ct).ConfigureAwait(false) is not { } dialed
+            || !IPAddress.TryParse(dialed, out var address))
+        {
+            return null;
+        }
+
+        var host = address.AddressFamily == AddressFamily.InterNetworkV6 ? $"[{address}]" : address.ToString();
+        var reply = await _askInside(point with { Origin = string.Create(CultureInfo.InvariantCulture, $"https://{host}:{point.Port}") }, ct)
+            .ConfigureAwait(false);
 
         return reply.Offer is { Ours: true } ? reply : null;
     }

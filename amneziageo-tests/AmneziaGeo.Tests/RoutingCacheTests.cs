@@ -14,6 +14,8 @@ public sealed class RoutingCacheTests
 {
     private const string YandexRange = "77.88.32.0/19";
     private const string YandexAddress = "77.88.55.242";
+    private const string LanRange = "192.168.77.0/24";
+    private const string LanAddress = "192.168.77.20";
 
     private sealed class FakeApplier : IRouteApplier
     {
@@ -502,15 +504,55 @@ public sealed class RoutingCacheTests
     }
 
     [Fact]
-    public void InSplit_AppOwnedDestinationInADirectRange_StaysOffTheTunnel()
+    public void InSplit_AppOwnedDestinationInADirectRange_TakesTheTunnel()
     {
         var applier = new FakeApplier { Generation = 1 };
         var cache = Cache(applier, split: true, direct: [YandexRange]);
 
         cache.Note(Numeric(YandexAddress), app: true);
 
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+        Assert.Empty(applier.Permitted);
+    }
+
+    [Fact]
+    public void InSplit_AppClaimsADestinationADirectRangeAlreadyPermitted_ItTakesTheTunnel()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: [YandexRange]);
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Single(applier.Deleted);
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+    }
+
+    [Fact]
+    public void InSplit_AppOwnedDestinationInANetworkTheMachineStandsIn_KeepsTheMachinesPath()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: [LanRange]);
+        cache.Stand([LanRange]);
+
+        cache.Note(Numeric(LanAddress), app: true);
+
         Assert.Empty(applier.Tunneled);
-        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
+        Assert.Equal(new[] { Numeric(LanAddress) }, applier.Permitted);
+    }
+
+    [Fact]
+    public void InSplit_AppClaimsAnAddressOfANetworkTheMachineStandsIn_ItKeepsTheMachinesPath()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: [LanRange]);
+        cache.Stand([LanRange]);
+        cache.Note(IPAddress.Parse(LanAddress));
+
+        cache.Note(Numeric(LanAddress), app: true);
+
+        Assert.Empty(applier.Deleted);
+        Assert.Empty(applier.Tunneled);
     }
 
     [Fact]
@@ -593,7 +635,7 @@ public sealed class RoutingCacheTests
     }
 
     [Fact]
-    public void UnderAFullTunnel_ADestinationARuleSendsThroughTheTunnel_StaysThereForAnApplicationKeptDirect()
+    public void UnderAFullTunnel_ADestinationARuleSendsThroughTheTunnel_LeavesPastItForAnApplicationKeptDirect()
     {
         var applier = new FakeApplier { Generation = 1 };
         var cache = Cache(applier, split: false, proxy: [YandexRange]);
@@ -601,8 +643,8 @@ public sealed class RoutingCacheTests
         cache.Note(Numeric(YandexAddress), app: true);
         cache.Note(Numeric(YandexAddress), app: true);
 
-        Assert.Empty(applier.Added);
-        Assert.Empty(applier.Permitted);
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
     }
 
     [Fact]

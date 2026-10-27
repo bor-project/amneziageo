@@ -29,6 +29,7 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     private readonly object _sync = new();
     private AppTunnel? _apps;
     private Func<uint, RouteVerdict>? _verdicts;
+    private GeoIpRanges _refused = GeoIpRanges.Build([]);
     private int _generation = 1;
     private int _endpointWarned;
 
@@ -84,6 +85,14 @@ internal sealed class LinuxRouteApplier : IRouteApplier
     }
 
     /// <summary>
+    /// Hands over the ranges the firewall refuses from the first packet while applications of the list pass it.
+    /// </summary>
+    public void Refuse(IReadOnlyList<string> ranges)
+    {
+        Volatile.Write(ref _refused, GeoIpRanges.Build(ranges));
+    }
+
+    /// <summary>
     /// Permits one host address through the physical path; nothing to install, that path carries no kill-switch.
     /// </summary>
     public bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation)
@@ -124,6 +133,13 @@ internal sealed class LinuxRouteApplier : IRouteApplier
         }
 
         _apps?.Steer(address, host, null, null, true);
+        // The firewall refuses the address and lets the applications of the list by, which a blackhole would not.
+        if (Volatile.Read(ref _refused).Contains(address))
+        {
+            outId = 0;
+            return true;
+        }
+
         return Ip("route", "replace", "blackhole", host);
     }
 

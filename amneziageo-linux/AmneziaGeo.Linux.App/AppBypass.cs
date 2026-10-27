@@ -7,8 +7,8 @@ namespace AmneziaGeo.Linux.App;
 /// <summary>
 /// Keeps the named applications past a tunnel that carries everything. The kernel does the steering: the processes
 /// live in a cgroup, a netfilter rule marks what its sockets send, and the mark selects the routes of the machine
-/// narrower than a half of the address space and then a table whose default is the hop the machine reaches the
-/// internet over. Own cgroup, netfilter table, routing table and rules; those of other software are never touched.
+/// narrower than a half of the address space that lead past the tunnel and then a table whose default is the hop the
+/// machine reaches the internet over. Own cgroup, netfilter table, routing table and rules; those of other software are never touched.
 /// </summary>
 internal sealed class AppBypass : IDisposable
 {
@@ -18,6 +18,8 @@ internal sealed class AppBypass : IDisposable
     public const string Table = "51822";
 
     private const string Mark = SteeringRules.DirectMark;
+    // The interface group of the tunnel, whose routes the mark passes over.
+    private const string TunnelGroup = "51822";
     private const int OwnRulePriority = 5050;
     private const int HopRulePriority = 5051;
     private const string FilterRoot = "/proc/sys/net/ipv4/conf";
@@ -125,7 +127,8 @@ internal sealed class AppBypass : IDisposable
 
         string[][] steps =
         [
-            ["-4", "rule", "add", "fwmark", Mark, "lookup", SteeringRules.MainTable, "suppress_prefixlength", "1", "priority", Priority(OwnRulePriority)],
+            ["link", "set", "dev", _iface, "group", TunnelGroup],
+            ["-4", "rule", "add", "fwmark", Mark, "lookup", SteeringRules.MainTable, "suppress_prefixlength", "1", "suppress_ifgroup", TunnelGroup, "priority", Priority(OwnRulePriority)],
             ["-4", "rule", "add", "fwmark", Mark, "lookup", Table, "priority", Priority(HopRulePriority)],
             ["-4", "route", "replace", "default", "via", _gateway, "dev", _device, "table", Table],
         ];
@@ -220,7 +223,7 @@ internal sealed class AppBypass : IDisposable
 
         string[][] steps =
         [
-            ["-6", "rule", "add", "fwmark", Mark, "lookup", SteeringRules.MainTable, "suppress_prefixlength", "1", "priority", Priority(OwnRulePriority)],
+            ["-6", "rule", "add", "fwmark", Mark, "lookup", SteeringRules.MainTable, "suppress_prefixlength", "1", "suppress_ifgroup", TunnelGroup, "priority", Priority(OwnRulePriority)],
             ["-6", "rule", "add", "fwmark", Mark, "lookup", Table, "priority", Priority(HopRulePriority)],
             SixDefault(six.Via, hop),
         ];

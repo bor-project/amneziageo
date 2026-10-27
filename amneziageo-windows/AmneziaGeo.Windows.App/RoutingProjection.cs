@@ -48,8 +48,9 @@ internal static class RoutingProjection
             logger.LogInformation("{Config} carries {Kept} of the {Total} rule(s) of '{List}'; the rest go where their address or its fallback sends them", config, share.Count, list.Rules.Count, list.Name);
             var projected = await geo.MaterializeDraftAsync([.. share.Select(GeoConfigurator.FormatWithRole)], ct).ConfigureAwait(false);
 
-            // The tunnel ranges of the whole list stay cut out of the direct ones, whichever tunnel carries them.
-            list = projected with { Id = list.Id, Name = list.Name, DirectRoutes = RangeClaims.CarveDirect(projected.DirectRoutes, list.Routes) };
+            // The tunnel ranges of the whole list keep their holes in the direct and blocked ones, whichever tunnel carries them.
+            var (_, direct, blocked) = RangeClaims.Settle(list.Routes, projected.DirectRoutes, projected.BlockRoutes);
+            list = projected with { Id = list.Id, Name = list.Name, DirectRoutes = direct, BlockRoutes = blocked };
         }
 
         await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps,

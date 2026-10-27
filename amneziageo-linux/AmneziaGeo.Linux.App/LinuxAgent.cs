@@ -151,7 +151,14 @@ internal sealed class LinuxAgent : IDisposable
         _updater = new LinuxUpdater(_httpClient, log, PushAsync, _store, UpdateServersAsync);
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
         _hotspot = new LinuxHotspot(log, interfaceName);
-        _offers = new ServerOffers(_store, OfferNote, geo: _geo, fetch: FetchOffered, take: TakeLater, carried: Carries);
+        _offers = new ServerOffers(
+            _store,
+            OfferNote,
+            geo: _geo,
+            fetch: FetchOffered,
+            take: TakeLater,
+            carried: Carries,
+            dialed: (config, _) => Task.FromResult(Carries(config) ? _tunnel.EndpointAddress : null));
     }
 
     // Whether the tunnel of a config is up now: the hello then goes inside it.
@@ -3497,7 +3504,7 @@ internal sealed class LinuxAgent : IDisposable
         var dns = await _store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
         var exclusions = await _store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
         var offer = await _offers.OfferAsync(name, text, ct).ConfigureAwait(false);
-        var vpnDns = VpnDns.Showing(dns, offer.Dns(), WgConfigEditor.GetDns(text));
+        var vpnDns = VpnDns.Showing(dns, offer.Dns(), WgConfigEditor.GetDns(text), _tunnel.Beside());
         var offered = member is null ? null : offer.Subscription();
         var bound = string.Equals(name, _boundTarget, StringComparison.Ordinal);
         var handshake = bound ? _handshakeAge : -1;

@@ -24,9 +24,7 @@ internal sealed class DnsRouter : IDisposable
 
     private readonly bool _split;
     private readonly bool _stripV6;
-    private volatile DomainMatcher _proxyDomains;
-    private volatile DomainMatcher _directDomains;
-    private volatile DomainMatcher _blockDomains;
+    private volatile NameRules _rules;
     private readonly IReadOnlyList<IPAddress> _tunnelResolvers;
     private volatile IReadOnlyList<IPAddress> _lanResolvers;
     // The resolvers another VPN or network answers the names under its suffixes with, the longest suffix first.
@@ -55,9 +53,7 @@ internal sealed class DnsRouter : IDisposable
     {
         _split = routing.Split;
         _stripV6 = stripV6;
-        _proxyDomains = new DomainMatcher(routing.ProxyDomains);
-        _directDomains = new DomainMatcher(routing.DirectDomains);
-        _blockDomains = new DomainMatcher(routing.BlockDomains);
+        _rules = new NameRules(routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains);
         _tunnelResolvers = tunnelResolvers;
         _lanResolvers = lanResolvers;
         _network = network;
@@ -108,9 +104,7 @@ internal sealed class DnsRouter : IDisposable
     /// </summary>
     public void ApplyRules(TunnelRouting routing)
     {
-        _proxyDomains = new DomainMatcher(routing.ProxyDomains);
-        _directDomains = new DomainMatcher(routing.DirectDomains);
-        _blockDomains = new DomainMatcher(routing.BlockDomains);
+        _rules = new NameRules(routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains);
         _log.Info("dns", $"name rules reloaded: {routing.ProxyDomains.Count} tunneled, {routing.DirectDomains.Count} direct, {routing.BlockDomains.Count} refused");
     }
 
@@ -400,21 +394,8 @@ internal sealed class DnsRouter : IDisposable
         _names[address] = name;
     }
 
-    // Direct wins over proxy on an overlap, and a blocked name is refused before either.
-    private RouteVerdict Decide(string name)
-    {
-        if (_blockDomains.IsTunneled(name))
-        {
-            return RouteVerdict.Block;
-        }
-
-        if (_directDomains.IsTunneled(name))
-        {
-            return RouteVerdict.Direct;
-        }
-
-        return _proxyDomains.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
-    }
+    // The narrowest rule that holds the name decides it.
+    private RouteVerdict Decide(string name) => _rules.Verdict(name);
 
     /// <summary>
     /// The transport the resolvers behind the tunnel are reached over, and why that one.

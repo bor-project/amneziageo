@@ -695,10 +695,11 @@ public sealed class GeoVpnService : VpnService
     // them otherwise.
     private bool Refit(TunShape shape, int handle, IReadOnlyList<string> joined)
     {
+        var around = Spared(joined, Pinned(shape.Servers, _signal));
         if (shape.LocalInside)
         {
             var verdicts = new StringBuilder(_verdicts);
-            foreach (var subnet in joined)
+            foreach (var subnet in around)
             {
                 verdicts.Append(subnet).Append("=direct\n");
             }
@@ -718,7 +719,7 @@ public sealed class GeoVpnService : VpnService
             return true;
         }
 
-        var routes = SystemRoutes.Without(shape.Routes, joined);
+        var routes = SystemRoutes.Without(shape.Routes, around);
         var next = shape with { Routes = routes };
         if (routes.Count == 0
             || (shape.ProxyPort == 0 && routes.Count > RouteBudget.Max)
@@ -992,10 +993,7 @@ public sealed class GeoVpnService : VpnService
                 Report("the names through the tunnel are left to the network of this device: the tunnel names no DNS of its own");
             }
 
-            // The resolvers and the way back to the server that sends the signal to disconnect ride the tunnel.
-            IReadOnlyList<string> pinned = [.. servers.Select(server => server + "/32")
-                .Concat((signal?.Routes ?? []).Where(route => !route.Contains(':', StringComparison.Ordinal)))
-                .Distinct(StringComparer.Ordinal)];
+            var pinned = Pinned(servers, signal);
             var relay = NeedsRelay(plan) ? new ProxyRelay(Carried(plan, resolved, pinned), Protect, Report, RelayCaller, ResolveOwner, Refuse) : null;
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
@@ -1781,9 +1779,10 @@ public sealed class GeoVpnService : VpnService
         var proxy = new List<string>(plan.ProxyRoutes);
 
         // The direct ranges of the list, less the addresses that ride the tunnel whatever it says; the ones the route
-        // table holds leave the tun.
+        // table holds leave the tun, unless the relay carries an application of the list, whose rule outranks them.
         var listedDirect = Spared(plan.DirectRoutes, pinned);
-        var direct = carveLocal ? new List<string>(plan.Held(listedDirect)) : new List<string>();
+        var appsFirst = relayed && plan.TunnelApps.Count > 0;
+        var direct = carveLocal && !appsFirst ? new List<string>(plan.Held(listedDirect)) : new List<string>();
         var block = new List<string>(plan.BlockRoutes);
 
         // The resolver rides the tunnel, so a query is answered where the traffic goes and not where the device sits.
@@ -1836,14 +1835,23 @@ public sealed class GeoVpnService : VpnService
 
         // Ranges the tun carries while the engine sends them out itself.
         var onPacket = new List<string>();
+
+        // The network the device sits on, less the addresses that ride the tunnel whatever it is.
+        var around = Spared(local, pinned);
         if (carveLocal)
         {
-            direct.AddRange(local);
-            kept.AddRange(local);
+            direct.AddRange(around);
+            kept.AddRange(around);
+            if (appsFirst && listedDirect.Count > 0)
+            {
+                onPacket.AddRange(listedDirect);
+                Report($"{listedDirect.Count} direct range(s) stay inside the tun and leave it on a protected socket, so "
+                    + "an application the list names reaches them through the tunnel");
+            }
         }
         else
         {
-            onPacket.AddRange(local);
+            onPacket.AddRange(around);
             onPacket.AddRange(listedDirect);
             Report($"{local.Count + plan.DirectRoutes.Count} local and direct range(s) stay inside the tun and "
                 + "leave it on a protected socket, so an application reaches the network the device sits on");
@@ -1916,7 +1924,7 @@ public sealed class GeoVpnService : VpnService
         if (answers is not null)
         {
             proxy.AddRange(answers.Proxy);
-            if (carveLocal)
+            if (carveLocal && !appsFirst)
             {
                 direct.AddRange(answers.Direct);
                 kept.AddRange(answers.Direct);
@@ -1982,6 +1990,15 @@ public sealed class GeoVpnService : VpnService
             + $"peer carries {(allowed.Count == 0 ? "what the config says" : allowed.Count + " range(s)")}");
         return new Materialized(routes, allowed, local, Verdicts(listed, decided, block), decided, block, carried, answers);
     }
+
+    // The addresses that ride the tunnel whatever the network around the device: the resolvers and the way back to the
+    // server that sends the signal to disconnect.
+    private static IReadOnlyList<string> Pinned(IReadOnlyList<string> servers, SignalPlace? signal) =>
+    [
+        .. servers.Select(server => server + "/32")
+            .Concat((signal?.Routes ?? []).Where(route => !route.Contains(':', StringComparison.Ordinal)))
+            .Distinct(StringComparer.Ordinal),
+    ];
 
     // The ranges less the addresses pinned to the tunnel.
     private static IReadOnlyList<string> Spared(IReadOnlyList<string> ranges, IReadOnlyList<string> pinned)

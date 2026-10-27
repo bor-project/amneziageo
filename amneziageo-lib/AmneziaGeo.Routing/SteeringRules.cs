@@ -50,6 +50,11 @@ public static class SteeringRules
     public const string DirectMark = "0x51822";
 
     /// <summary>
+    /// The mark that selects the routing table of the applications a list carries through the tunnel.
+    /// </summary>
+    public const string AppMark = "0x51823";
+
+    /// <summary>
     /// The table the applications a list keeps past the tunnel are marked in.
     /// </summary>
     public const string DirectTable = "amneziageo-direct";
@@ -83,9 +88,9 @@ public static class SteeringRules
 
     /// <summary>
     /// The table that marks what the tunnel carries past the routes of the machine and rewrites its source: the
-    /// processes of a cgroup, what the machine opens toward the ranges of a list, every datagram. Null ranges leave
-    /// the set of them out; the spared addresses stay off the mark of the ranges; the direct ranges, where given,
-    /// take no mark at all, and neither do the spared addresses then.
+    /// processes of a cgroup with a mark of their own whatever they open, what the machine opens toward the ranges of
+    /// a list, every datagram. Null ranges leave the set of them out; the spared addresses stay off the mark of the
+    /// ranges; the direct ranges, where given, take no other mark at all, and neither do the spared addresses then.
     /// </summary>
     public static string Marks(string iface, string? cgroup, IReadOnlyList<string>? ranges, bool allUdp, string? endpoint, IReadOnlyList<string>? spared = null, IReadOnlyList<string>? direct = null)
     {
@@ -108,15 +113,15 @@ public static class SteeringRules
 
         text.Append("  chain apps {\n");
         text.Append("    type route hook output priority mangle; policy accept;\n");
+        if (cgroup is { Length: > 0 })
+        {
+            text.Append("    socket cgroupv2 level 1 \"").Append(cgroup).Append("\" meta mark set ").Append(AppMark).Append(" return\n");
+        }
+
         if (direct is not null)
         {
             text.Append("    ip daddr @").Append(Direct).Append(" return\n");
             text.Append("    ip daddr @").Append(Spared).Append(" return\n");
-        }
-
-        if (cgroup is { Length: > 0 })
-        {
-            text.Append("    socket cgroupv2 level 1 \"").Append(cgroup).Append("\" meta mark set ").Append(Mark).Append('\n');
         }
 
         if (ranges is not null || allUdp)
@@ -148,6 +153,11 @@ public static class SteeringRules
         text.Append("  chain source {\n");
         text.Append("    type nat hook postrouting priority srcnat; policy accept;\n");
         text.Append("    meta mark ").Append(Mark).Append(" oifname \"").Append(iface).Append("\" masquerade\n");
+        if (cgroup is { Length: > 0 })
+        {
+            text.Append("    meta mark ").Append(AppMark).Append(" oifname \"").Append(iface).Append("\" masquerade\n");
+        }
+
         text.Append("  }\n");
         text.Append("}\n");
 
@@ -256,7 +266,8 @@ public static class SteeringRules
     }
 
     /// <summary>
-    /// The table that refuses what leaves the machine for the ranges, in place of the one that stood.
+    /// The table that refuses what leaves the machine for the ranges, in place of the one that stood; the applications
+    /// a list names go where their own rule sends them.
     /// </summary>
     public static string Refusals(IReadOnlyList<string> ranges)
     {
@@ -268,6 +279,7 @@ public static class SteeringRules
         text.Append("  chain output {\n");
         text.Append("    type filter hook output priority filter; policy accept;\n");
         text.Append("    oifname \"lo\" accept\n");
+        text.Append("    meta mark { ").Append(AppMark).Append(", ").Append(DirectMark).Append(" } accept\n");
         text.Append("    ip daddr @").Append(Blocked).Append(" reject with icmpx type admin-prohibited\n");
         text.Append("  }\n");
         text.Append("}\n");

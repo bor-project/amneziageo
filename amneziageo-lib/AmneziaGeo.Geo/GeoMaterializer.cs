@@ -24,7 +24,7 @@ public static class GeoMaterializer
                     routes.Add(rule.Value);
                     break;
                 case GeoRuleKind.Domain:
-                    domains.Add(new GeoDomain(GeoDomainKind.Domain, rule.Value));
+                    domains.Add(new GeoDomain(GeoDomainKind.Domain, rule.Value, Named: true));
                     break;
                 case GeoRuleKind.GeoIp:
                 case GeoRuleKind.GeoSite:

@@ -7,8 +7,9 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Where a session handed over by the gateway goes. The pair it was opened for names the program behind it, so a
-/// rule on that program decides the whole session, and nothing of another program goes with it. An address rule
-/// outranks the program: a range the rules named is answered before the owner is asked at all. The way out is
+/// rule on that program decides the whole session, and nothing of another program goes with it. The program
+/// outranks an address rule, a block too: only a session of a program no rule names is decided by the ranges. The
+/// way out is
 /// pinned to an interface rather than left to the routing table, or a session meant to leave the tunnel would come
 /// back into the adapter it was terminated on.
 /// </summary>
@@ -40,12 +41,14 @@ internal sealed class GatewayProxyOutbound(
             }
 
             var numeric = Numeric(address);
-            if (block.Contains(numeric))
+            var pid = source is null || owner is null ? (uint?)null : TcpTableProbe.OwnerOf(source, new IPEndPoint(address, port));
+            var named = pid is { } id ? Named(id) : null;
+            if (named is null && block.Contains(numeric))
             {
                 return (null, ProxyOutcome.Blocked);
             }
 
-            var tunnelled = Tunnelled(numeric, source, new IPEndPoint(address, port));
+            var tunnelled = named ?? Tunnelled(numeric, pid);
             var link = await OpenAsync(address, port, tunnelled, ct).ConfigureAwait(false);
             if (link is not null)
             {
@@ -56,25 +59,23 @@ internal sealed class GatewayProxyOutbound(
         return (null, ProxyOutcome.Failed);
     }
 
-    // Whether this destination rides the tunnel: an address rule answers first, and only a destination no rule
-    // named is decided by the program that opened the session.
-    private bool Tunnelled(uint address, IPEndPoint? source, IPEndPoint destination)
+    // Whether a session of a program no rule names rides the tunnel: a range of the rules answers, then the policy
+    // for such a program.
+    private bool Tunnelled(uint address, uint? pid)
     {
         if (proxy.Contains(address))
         {
             return true;
         }
 
-        if (direct.Contains(address) || source is null || owner is null)
+        if (direct.Contains(address) || pid is not { } id)
         {
             return false;
         }
 
-        var pid = TcpTableProbe.OwnerOf(source, destination);
-        var carried = Side(pid);
-        logger.LogDebug("the session {Source} to {Destination} belongs to pid {Pid} and {Verdict}",
-            source, destination, pid, carried ? "rides the tunnel" : "leaves past it");
-        return carried;
+        logger.LogDebug("nothing names the program behind pid {Pid}, so its traffic {Verdict}", id,
+            unknownRidesTunnel ? "rides the tunnel" : "leaves past it");
+        return unknownRidesTunnel;
     }
 
     // Opens the destination on the interface the verdict names.
@@ -111,7 +112,9 @@ internal sealed class GatewayProxyOutbound(
         }
 
         var numeric = Numeric(destination.Address);
-        if (block.Contains(numeric))
+        var pid = source is null || owner is null ? (uint?)null : TcpTableProbe.OwnerOfDatagram(source);
+        var named = pid is { } id ? Named(id) : null;
+        if (named is null && block.Contains(numeric))
         {
             return null;
         }
@@ -119,7 +122,7 @@ internal sealed class GatewayProxyOutbound(
         var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         try
         {
-            var index = Carried(numeric, source) ? tunnelInterface() : physicalInterface();
+            var index = (named ?? Tunnelled(numeric, pid)) ? tunnelInterface() : physicalInterface();
             if (index > 0)
             {
                 UnicastInterface.Pin(socket, index);
@@ -135,38 +138,17 @@ internal sealed class GatewayProxyOutbound(
         }
     }
 
-    // Whether a flow rides the tunnel: an address rule answers first, then the program that holds the socket.
-    private bool Carried(uint address, IPEndPoint? source)
+    // The side a rule on the program behind a pid sends it; null where no rule names the program.
+    private bool? Named(uint pid)
     {
-        if (proxy.Contains(address))
+        var side = owner!(pid);
+        if (side is { } known)
         {
-            return true;
+            logger.LogDebug("pid {Pid} is of a program the rules name, so its session {Verdict} whatever its address", pid,
+                known ? "rides the tunnel" : "leaves past it");
         }
 
-        if (direct.Contains(address) || source is null || owner is null)
-        {
-            return false;
-        }
-
-        var pid = TcpTableProbe.OwnerOfDatagram(source);
-        var carried = Side(pid);
-        logger.LogDebug("the flow from {Source} belongs to pid {Pid} and {Verdict}", source, pid,
-            carried ? "rides the tunnel" : "leaves past it");
-        return carried;
-    }
-
-    // The side a pid takes: what the rules say about its program, or the policy while nothing names it. A program
-    // that lived for milliseconds is gone before its first datagram is asked about.
-    private bool Side(uint pid)
-    {
-        if (owner!(pid) is { } known)
-        {
-            return known;
-        }
-
-        logger.LogDebug("nothing names the program behind pid {Pid}, so its traffic {Verdict}", pid,
-            unknownRidesTunnel ? "rides the tunnel" : "leaves past it");
-        return unknownRidesTunnel;
+        return side;
     }
 
     private static async Task<IReadOnlyList<IPAddress>> ResolveAsync(string host, CancellationToken ct)

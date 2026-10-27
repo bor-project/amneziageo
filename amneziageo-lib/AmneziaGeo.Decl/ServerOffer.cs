@@ -190,6 +190,11 @@ public sealed class ServerOffer
     public const string InsideFeature = "inside";
 
     /// <summary>
+    /// The feature that names where the services of the server answer at its host and inside the tunnel.
+    /// </summary>
+    public const string ServicesFeature = "services";
+
+    /// <summary>
     /// The most name servers one answer is taken with.
     /// </summary>
     public const int MaxDnsServers = 8;
@@ -375,6 +380,35 @@ public sealed class ServerOffer
         if (Arguments(InsideFeature) is not { ValueKind: JsonValueKind.Object } arguments
             || !Uri.TryCreate(Text(arguments, "origin"), UriKind.Absolute, out var origin)
             || origin.Scheme != Uri.UriSchemeHttp
+            || !IPAddress.TryParse(origin.Host.Trim('[', ']'), out _))
+        {
+            return string.Empty;
+        }
+
+        return origin.GetLeftPart(UriPartial.Authority);
+    }
+
+    /// <summary>
+    /// Returns the TCP port the services answer on at the host of the server; zero where the server names none.
+    /// </summary>
+    public int ServicesPort() =>
+        Arguments(ServicesFeature) is { ValueKind: JsonValueKind.Object } arguments
+        && arguments.TryGetProperty("port", out var port)
+        && port.ValueKind == JsonValueKind.Number
+        && port.TryGetInt32(out var number)
+        && number is >= 1 and <= 65535
+            ? number
+            : 0;
+
+    /// <summary>
+    /// Returns where the services answer inside the tunnel: an address, not a name, over HTTP or HTTPS; empty where
+    /// the server names no such place.
+    /// </summary>
+    public string ServicesInside()
+    {
+        if (Arguments(ServicesFeature) is not { ValueKind: JsonValueKind.Object } arguments
+            || !Uri.TryCreate(Text(arguments, "inside"), UriKind.Absolute, out var origin)
+            || (origin.Scheme != Uri.UriSchemeHttp && origin.Scheme != Uri.UriSchemeHttps)
             || !IPAddress.TryParse(origin.Host.Trim('[', ']'), out _))
         {
             return string.Empty;

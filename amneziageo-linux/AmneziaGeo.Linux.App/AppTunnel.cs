@@ -9,8 +9,9 @@ namespace AmneziaGeo.Linux.App;
 /// Carries the named applications through the tunnel and nothing else of theirs past it, every outbound datagram
 /// of the machine where all UDP is asked for, and whatever the machine opens toward the ranges a list sends
 /// through the tunnel. The kernel does the steering: the processes live in a cgroup, a netfilter rule marks what
-/// leaves it, and the mark selects a routing table whose default is the tunnel. A destination the rules decided
-/// keeps its own route in that table, so an address rule outranks an application rule, and the ranges a list
+/// leaves it, and the mark selects a routing table of their own that holds the tunnel and the local networks alone,
+/// so an application rule outranks every rule of an address, a block too. The marks of the ranges and of the
+/// datagrams select another table, where a destination the rules decided keeps its own route and the ranges a list
 /// keeps direct take no mark at all. What stays outside the cgroup is untouched, which is what tells this apart
 /// from routing an application's addresses for the whole machine.
 /// </summary>
@@ -18,7 +19,9 @@ internal sealed class AppTunnel : IDisposable
 {
     private const string CgroupName = "amneziageo";
     private const string Table = "51820";
+    private const string AppTable = "51823";
     private const string Mark = SteeringRules.Mark;
+    private const string AppMark = SteeringRules.AppMark;
     private const string NftTable = SteeringRules.Table;
     private const int RulePriority = 5000;
 
@@ -48,8 +51,9 @@ internal sealed class AppTunnel : IDisposable
         _ranges = ranges;
         _carried = GeoIpRanges.Build(ranges ?? []);
         _spared.UnionWith(spared.Where(_carried.Contains));
-        // The mark of the ranges leaves the direct ones out by itself; the other two take them unless told.
-        _past = images.Empty && !allUdp ? null : past;
+        // The mark of the ranges leaves the direct ones out by itself and the applications go to every address; the
+        // datagrams take them unless told.
+        _past = allUdp ? past : null;
         _passed = GeoIpRanges.Build(_past ?? []);
         _allUdp = allUdp;
         _endpoint = endpoint;
@@ -62,7 +66,7 @@ internal sealed class AppTunnel : IDisposable
     /// and the datagram path where all UDP is asked for; null when none is asked for, the kernel offers no unified
     /// cgroups, or netfilter refuses the mark. Null ranges stand for a tunnel that carries everything; the spared
     /// addresses are the ones a name already holds off the tunnel; the ranges past it are the ones the list keeps
-    /// direct, which neither an application nor a datagram is carried to.
+    /// direct, which no datagram is carried to.
     /// </summary>
     public static async Task<AppTunnel?> TryStartAsync(string interfaceName, IReadOnlyList<string> apps, IReadOnlyList<string> named, IReadOnlyList<string>? ranges, IEnumerable<uint> spared, IReadOnlyList<string> past, bool allUdp, string? endpoint, AgentLog log, CancellationToken ct)
     {
@@ -89,7 +93,7 @@ internal sealed class AppTunnel : IDisposable
         if (!images.Empty)
         {
             tunnel._group.Watch();
-            log.Info("apps", $"{images.Count} application(s) ride {interfaceName} by cgroup, and their traffic alone");
+            log.Info("apps", $"{images.Count} application(s) ride {interfaceName} by cgroup with all of their traffic, whatever the list says of the addresses, and theirs alone");
         }
 
         if (allUdp)
@@ -104,16 +108,15 @@ internal sealed class AppTunnel : IDisposable
 
         if (tunnel._past is { Count: > 0 } direct)
         {
-            log.Info("routing", $"neither an application nor a datagram is carried to the {direct.Count} direct range(s) of the list");
+            log.Info("routing", $"no datagram is carried to the {direct.Count} direct range(s) of the list");
         }
 
         return tunnel;
     }
 
     /// <summary>
-    /// Puts one destination an address rule named into the table the carried applications route by, so an address
-    /// rule outranks the application rules for them as well. A destination no rule named keeps the tunnel, which is
-    /// what the application rule asked for.
+    /// Puts one destination an address rule named into the table the marks of the ranges and of the datagrams route
+    /// by; the applications route by a table of their own and keep the tunnel.
     /// </summary>
     public void Steer(uint address, string destination, string? via, string? device, bool blocked)
     {
@@ -189,6 +192,11 @@ internal sealed class AppTunnel : IDisposable
 
         return true;
     }
+
+    /// <summary>
+    /// Whether applications of the list ride the tunnel by the cgroup.
+    /// </summary>
+    public bool CarriesApplications => _up && !_images.Empty;
 
     /// <summary>
     /// Whether the mark of the ranges carries the address: a range of the list covers it and no name spares it.
@@ -275,6 +283,10 @@ internal sealed class AppTunnel : IDisposable
         await Shell.RunAsync("ip", CancellationToken.None, "-6", "rule", "del", "fwmark", Mark, "lookup", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", CancellationToken.None, "route", "flush", "table", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", CancellationToken.None, "-6", "route", "flush", "table", Table).ConfigureAwait(false);
+        await Shell.RunAsync("ip", CancellationToken.None, "rule", "del", "fwmark", AppMark, "lookup", AppTable).ConfigureAwait(false);
+        await Shell.RunAsync("ip", CancellationToken.None, "-6", "rule", "del", "fwmark", AppMark, "lookup", AppTable).ConfigureAwait(false);
+        await Shell.RunAsync("ip", CancellationToken.None, "route", "flush", "table", AppTable).ConfigureAwait(false);
+        await Shell.RunAsync("ip", CancellationToken.None, "-6", "route", "flush", "table", AppTable).ConfigureAwait(false);
         _group.Remove();
     }
 
@@ -321,6 +333,10 @@ internal sealed class AppTunnel : IDisposable
         await Shell.RunAsync("ip", ct, "-6", "rule", "del", "fwmark", Mark, "lookup", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", ct, "route", "flush", "table", Table).ConfigureAwait(false);
         await Shell.RunAsync("ip", ct, "-6", "route", "flush", "table", Table).ConfigureAwait(false);
+        await Shell.RunAsync("ip", ct, "rule", "del", "fwmark", AppMark, "lookup", AppTable).ConfigureAwait(false);
+        await Shell.RunAsync("ip", ct, "-6", "rule", "del", "fwmark", AppMark, "lookup", AppTable).ConfigureAwait(false);
+        await Shell.RunAsync("ip", ct, "route", "flush", "table", AppTable).ConfigureAwait(false);
+        await Shell.RunAsync("ip", ct, "-6", "route", "flush", "table", AppTable).ConfigureAwait(false);
         await Shell.RunAsync("nft", ct, "delete", "table", "inet", NftTable).ConfigureAwait(false);
 
         if (!await MarkAsync(ct).ConfigureAwait(false))
@@ -336,7 +352,7 @@ internal sealed class AppTunnel : IDisposable
             return false;
         }
 
-        await CarveAsync(ct, "-4").ConfigureAwait(false);
+        await CarveAsync(ct, "-4", Table, false).ConfigureAwait(false);
         var route = await Shell.RunAsync("ip", ct, "route", "replace", "default", "dev", _iface, "table", Table).ConfigureAwait(false);
         if (route.ExitCode != 0)
         {
@@ -344,12 +360,44 @@ internal sealed class AppTunnel : IDisposable
             return false;
         }
 
+        if (!_images.Empty && !await RaiseAppsAsync(ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         Loosen();
 
         // The ranges of a list are of the fourth family alone.
-        if (!_images.Empty || _allUdp)
+        if (_allUdp)
         {
-            await SixAsync(ct).ConfigureAwait(false);
+            await SixAsync(ct, Mark, Table, false).ConfigureAwait(false);
+        }
+
+        if (!_images.Empty)
+        {
+            await SixAsync(ct, AppMark, AppTable, true).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    // The table of the applications: the tunnel and the networks the machine reaches without it, nothing a rule laid.
+    private async Task<bool> RaiseAppsAsync(CancellationToken ct)
+    {
+        var rule = await Shell.RunAsync("ip", ct, "rule", "add", "fwmark", AppMark, "lookup", AppTable,
+            "priority", RulePriority.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
+        if (rule.ExitCode != 0)
+        {
+            _log.Warn("apps", $"the routing rule of the applications was refused: {rule.Output}");
+            return false;
+        }
+
+        await CarveAsync(ct, "-4", AppTable, true).ConfigureAwait(false);
+        var route = await Shell.RunAsync("ip", ct, "route", "replace", "default", "dev", _iface, "table", AppTable).ConfigureAwait(false);
+        if (route.ExitCode != 0)
+        {
+            _log.Warn("apps", $"the default of the table of the applications was refused: {route.Output}");
+            return false;
         }
 
         return true;
@@ -379,9 +427,9 @@ internal sealed class AppTunnel : IDisposable
 
     // The sixth family takes the same mark, so it needs the same table: the tunnel where the tunnel carries it, and
     // a wall where it does not. Left alone it would walk out the physical link while the fourth rides the tunnel.
-    private async Task SixAsync(CancellationToken ct)
+    private async Task SixAsync(CancellationToken ct, string mark, string table, bool local)
     {
-        var rule = await Shell.RunAsync("ip", ct, "-6", "rule", "add", "fwmark", Mark, "lookup", Table,
+        var rule = await Shell.RunAsync("ip", ct, "-6", "rule", "add", "fwmark", mark, "lookup", table,
             "priority", RulePriority.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
         if (rule.ExitCode != 0)
         {
@@ -389,12 +437,12 @@ internal sealed class AppTunnel : IDisposable
             return;
         }
 
-        await CarveAsync(ct, "-6").ConfigureAwait(false);
+        await CarveAsync(ct, "-6", table, local).ConfigureAwait(false);
         var carried = await Shell.RunAsync("ip", ct, "-6", "address", "show", "dev", _iface, "scope", "global").ConfigureAwait(false);
         var tunnelled = carried.ExitCode == 0 && carried.Output.Contains("inet6", StringComparison.Ordinal);
         var route = tunnelled
-            ? await Shell.RunAsync("ip", ct, "-6", "route", "replace", "default", "dev", _iface, "table", Table).ConfigureAwait(false)
-            : await Shell.RunAsync("ip", ct, "-6", "route", "replace", "unreachable", "default", "table", Table).ConfigureAwait(false);
+            ? await Shell.RunAsync("ip", ct, "-6", "route", "replace", "default", "dev", _iface, "table", table).ConfigureAwait(false)
+            : await Shell.RunAsync("ip", ct, "-6", "route", "replace", "unreachable", "default", "table", table).ConfigureAwait(false);
         if (route.ExitCode != 0)
         {
             _log.Warn("apps", $"the sixth family of the application table was refused: {route.Output}");
@@ -496,9 +544,10 @@ internal sealed class AppTunnel : IDisposable
         }
     }
 
-    // Copies what the machine reaches without a default into the application table, or the carried processes lose
-    // the local networks the moment their default becomes the tunnel.
-    private async Task CarveAsync(CancellationToken ct, string family)
+    // Copies what the machine reaches without a default into a table whose default is the tunnel, or the marked
+    // processes lose the local networks the moment their default becomes the tunnel. The local copy leaves out the
+    // host routes and the walls the rules laid.
+    private async Task CarveAsync(CancellationToken ct, string family, string table, bool local)
     {
         var (code, output) = await Shell.RunAsync("ip", ct, family, "route", "show", "table", "main").ConfigureAwait(false);
         if (code != 0)
@@ -507,7 +556,8 @@ internal sealed class AppTunnel : IDisposable
         }
         foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (line.StartsWith("default", StringComparison.Ordinal) || line.Contains(_iface, StringComparison.Ordinal))
+            if (line.StartsWith("default", StringComparison.Ordinal) || line.Contains(_iface, StringComparison.Ordinal)
+                || (local && !Local(line)))
             {
                 continue;
             }
@@ -515,8 +565,20 @@ internal sealed class AppTunnel : IDisposable
             var args = new List<string> { family, "route", "replace" };
             args.AddRange(line.Split(' ', StringSplitOptions.RemoveEmptyEntries));
             args.Add("table");
-            args.Add(Table);
+            args.Add(table);
             await Shell.RunAsync("ip", ct, [.. args]).ConfigureAwait(false);
         }
+    }
+
+    // A network the machine stands in or reaches through a hop of its own, not a host route or a wall.
+    private static bool Local(string line)
+    {
+        var head = line.Split(' ', 2)[0];
+        if (head is "blackhole" or "unreachable" or "prohibit" or "throw")
+        {
+            return false;
+        }
+
+        return head.Contains('/', StringComparison.Ordinal) || line.Contains("scope link", StringComparison.Ordinal);
     }
 }

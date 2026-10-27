@@ -44,6 +44,26 @@ internal static class PastTunnel
         return await DialAsync(point, null, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns the first address of a host as the network under the tunnel resolves it, IPv4 first, the usual way
+    /// where the device sits on no such network; null where it resolves to none.
+    /// </summary>
+    public static async Task<IPAddress?> AddressAsync(string host, CancellationToken ct)
+    {
+        try
+        {
+            var found = await ResolveAsync(host, AndroidNetworks.Under(Application.Context), ct).ConfigureAwait(false);
+
+            return found.Count > 0 ? found[0] : null;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is IOException or SocketException or OperationCanceledException)
+        {
+            global::Android.Util.Log.Info(Tag, $"{host} does not resolve under the tunnel: {ex.Message}");
+
+            return null;
+        }
+    }
+
     // Connects to the first address of a host that takes the connection, on the network given or the usual way.
     private static async Task<Stream> DialAsync(DnsEndPoint point, Network? network, CancellationToken ct)
     {

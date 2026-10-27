@@ -105,7 +105,7 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 
     // Bumped whenever a rule token starts covering something else, so stored lists are rebuilt against the new
     // expansion instead of keeping what an older version wrote.
-    private const string MaterializerVersion = "3";
+    private const string MaterializerVersion = "4";
 
     private const string MaterializerVersionKey = "geo-materializer";
 
@@ -159,9 +159,9 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         var direct = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Direct).ToList(), index);
         var block = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Block).ToList(), index);
 
-        // Tunnel ranges inside a wider direct range are cut out of it.
-        return new RoutingList(id, name, rules, proxy.Routes, proxy.Domains, proxy.Apps,
-            RangeClaims.CarveDirect(direct.Routes, proxy.Routes), direct.Domains, direct.Apps, block.Routes, block.Domains);
+        var (proxyRoutes, directRoutes, blockRoutes) = RangeClaims.Settle(proxy.Routes, direct.Routes, block.Routes);
+        return new RoutingList(id, name, rules, proxyRoutes, proxy.Domains, proxy.Apps,
+            directRoutes, direct.Domains, direct.Apps, blockRoutes, block.Domains);
     }
 
     /// <summary>

@@ -56,7 +56,7 @@ public sealed class RuleUnfoldTests : IAsyncLifetime
 
         Assert.Equal([1, 8, 0, 1], unfolded.Select(rule => rule.Weight));
         Assert.Equal(["10.0.0.0/8"], unfolded[0].Routes);
-        Assert.Equal([new GeoDomain(GeoDomainKind.Domain, "ya.ru")], unfolded[1].Domains);
+        Assert.Equal([new GeoDomain(GeoDomainKind.Domain, "ya.ru", Named: true)], unfolded[1].Domains);
         Assert.Equal(RouteRole.Direct, unfolded[1].Rule.Role);
         Assert.Equal(RouteRole.Block, unfolded[3].Rule.Role);
     }

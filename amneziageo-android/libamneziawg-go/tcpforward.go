@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 
 	"github.com/bor-project/amneziageo/libamneziawg-go/pump"
+	"github.com/bor-project/amneziageo/libamneziawg-go/streams"
 )
 
 // Столько ждём ответа той стороны.
@@ -98,8 +99,12 @@ func newTcpForwarder(w tun2Writer, mtu int, protect *atomic.Pointer[func(int) bo
 	return f, nil
 }
 
-// Отдаёт сегмент своему стеку; отказ возвращает пакет вызывающему.
+// Отдаёт сегмент своему стеку, если поток его; иначе пакет возвращается вызывающему.
 func (f *tcpForwarder) send(packet []byte) bool {
+	if !streams.Held(f.stack, tcpNic, packet) {
+		return false
+	}
+
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(packet)})
 	f.link.InjectInbound(ipv4.ProtocolNumber, pkt)
 	pkt.DecRef()

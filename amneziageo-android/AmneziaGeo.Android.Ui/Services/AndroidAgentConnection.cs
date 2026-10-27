@@ -69,6 +69,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Seconds between two looks at whose subscription interval has run out.
     private const int SubscriptionTickSeconds = 900;
     private const int DefaultSubscriptionIntervalHours = 12;
+
+    // How long the networks the device stands in are taken as read for the window.
+    private const int LocalReadMs = 10_000;
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
@@ -89,6 +92,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // The name servers of each config: what the names through the tunnel are asked of.
     private IReadOnlyDictionary<string, ConfigDns> _dns = new Dictionary<string, ConfigDns>(StringComparer.Ordinal);
     private IReadOnlyDictionary<string, ServerOffer> _offered = new Dictionary<string, ServerOffer>(StringComparer.Ordinal);
+
+    // The networks the device stands in, as the window last read them, and when.
+    private IReadOnlyList<string> _localNets = [];
+    private long _localReadAt;
 
     // The limit the server of the configuration standing up sets on the routing lists, as last read.
     private ListsLimit? _serverLists;
@@ -244,13 +251,36 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             geo: _geo,
             fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)),
             take: (ids, ct) => Task.Run(() => TakeVersionsAsync(ids), ct),
-            carried: Carries);
+            carried: Carries,
+            dialed: DialedAsync);
         Current = this;
     }
 
     // Whether the tunnel of a config is up now: the hello then goes inside it.
     private bool Carries(string config) =>
         _boundStatus == ConnectionStatus.Connected && string.Equals(_boundTarget, config, StringComparison.Ordinal);
+
+    // Returns the address the tunnel of a config dials, as the network under the tunnel names its server.
+    private async Task<string?> DialedAsync(string config, CancellationToken ct)
+    {
+        var host = ConfigServices.Host(_configs.GetValueOrDefault(config));
+
+        return host.Length == 0 ? null : (await PastTunnel.AddressAsync(host, ct).ConfigureAwait(false))?.ToString();
+    }
+
+    // Tells whether an address lies in a network the device stands in; the window takes the networks it read within
+    // the last ten seconds, a connect reads them anew.
+    private Func<string, bool> Beside(bool fresh = false)
+    {
+        var now = System.Environment.TickCount64;
+        if (fresh || _localReadAt == 0 || now - _localReadAt > LocalReadMs)
+        {
+            _localNets = [.. GeoVpnService.LocalSubnets()];
+            _localReadAt = now;
+        }
+
+        return PrivateNetworks.Beside(_localNets);
+    }
 
     public void Start()
     {
@@ -745,7 +775,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
             TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
             [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase],
-            VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText)));
+            VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true)));
         return new IpcAck(true, "connecting");
     }
 
@@ -1673,7 +1703,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var member = _members.GetValueOrDefault(name);
         var shown = bound ? _linkNow : LinkNow.Unknown;
         var offer = _offered.GetValueOrDefault(name);
-        var vpnDns = VpnDns.Showing(_dns.GetValueOrDefault(name), offer?.Dns(), WgConfigEditor.GetDns(config));
+        var vpnDns = VpnDns.Showing(_dns.GetValueOrDefault(name), offer?.Dns(), WgConfigEditor.GetDns(config), Beside());
         var offered = member is null ? null : offer?.Subscription();
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
@@ -3403,12 +3433,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         // An application the list names rides the tunnel wherever no rule decided for the destination: behind the
         // relay the owner of every connection is named, so the rules keep deciding for everyone and the
-        // applications only add to them. The relay stands only where a part of the list is decided on the fly or
-        // every datagram is carried; up to that the tunnel itself is restricted to the named applications, which is
-        // what the whole tunnel below stands for, and no other application is shown a vpn.
+        // applications only add to them. The relay stands where the list carries or blocks anything of its own, a
+        // part of it is decided on the fly or every datagram is carried; a list of applications alone restricts the
+        // tunnel itself to them, which is what the whole tunnel below stands for, and no other application is shown
+        // a vpn.
         var apps = AppPackages(list.Apps);
         var perApp = settings is not { UseGlobalProxy: true } && useRouter && apps.Length > 0;
-        var attributed = PerAppSupported && (share.AnyLive || settings is { AllUdp: true, UseGlobalProxy: false });
+        var own = proxyRoutes.Count + list.Domains.Count + list.BlockRoutes.Count + list.BlockDomains.Count > 0;
+        var attributed = PerAppSupported && (own || share.AnyLive || settings is { AllUdp: true, UseGlobalProxy: false });
+        if (perApp && own && !PerAppSupported)
+        {
+            _log.Warn("geo", $"routing '{list.Name}': this Android names no owner of a connection, so the rules of the "
+                + "list ride with its applications alone");
+        }
         var plan = new GeoRoutingPlan(
             proxyRoutes,
             directRoutes,
@@ -3492,7 +3529,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
             else
             {
-                domains.Add(new GeoDomain(GeoDomainKind.Domain, token));
+                domains.Add(new GeoDomain(GeoDomainKind.Domain, token, Named: true));
             }
         }
     }

@@ -316,7 +316,7 @@ internal sealed class TunnelRunner(
         // the config DNS, reached through the tunnel; add its /32 to routes. The network of the machine answers them
         // past the tunnel where the config picks it.
         var lanResolvers = dns.CaptureUpstream();
-        var vpnDns = VpnDns.Pick(await store.GetConfigDnsAsync(name), offer.Dns(), ConfigResolvers(config));
+        var vpnDns = VpnDns.Pick(await store.GetConfigDnsAsync(name), offer.Dns(), ConfigResolvers(config), PrivateNetworks.Beside(routes.LocalSubnets()));
         var configDns = vpnDns.Network ? lanResolvers : V4(vpnDns.Servers);
         var echoes = vpnDns.Network ? TunnelResolvers([]) : TunnelResolvers(configDns);
         var tunnelResolver = vpnDns.Network && lanResolvers.Count > 0 ? lanResolvers : echoes;
@@ -672,6 +672,7 @@ internal sealed class TunnelRunner(
         pinnedRoutes.AddRange(inboundReturn);
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, proxyRanges, listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), pinnedRoutes, duties.CarriesDefault);
         routing.Spare(TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config)));
+        routing.Stand(aroundLocal.Kept);
         // What the previous session used most is taken back from the store: the verdicts an address settled are
         // taken again under the list in force now, and each takes its path with the connection.
         routing.SetMemory(new StoredRouteMemory(store, name, geoSplit ? apps : passApps, domains, directDomains, blockDomains));
@@ -2193,6 +2194,7 @@ internal sealed class TunnelRunner(
             var named = ApplyAppRules(routing, edited, tunnelName);
             var standing = Restand(routing, tunnelName, edited, aroundLocal.Carried);
             IReadOnlyList<string> tunneled = standing is { Networks.Count: > 0 } ? [.. aroundLocal.Carried, .. standing.Networks] : aroundLocal.Carried;
+            routing.Stand(aroundLocal.Kept);
             routing.Rebuild(tunneled, [.. current.DirectRoutes, .. aroundLocal.Kept], current.BlockRoutes);
             var opened = Opens(tunneled);
             if (named || opened)

@@ -893,8 +893,8 @@
     </Panel>
 
     <!-- Условия при первом запуске и после новой версии текста: окно за ними ждёт, пока их не примут. -->
-    <Panel ZIndex="90" Background="{DynamicResource AgBgBrush}" IsVisible="{Binding ShowTermsGate}">
-      <Border Classes="card" MaxWidth="760" Padding="20,16"
+    <Panel ZIndex="90" Background="{DynamicResource AgPanelBrush}" IsVisible="{Binding ShowTermsGate}">
+      <Border MaxWidth="760" Padding="20,16"
               Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
         <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
           <TextBlock Grid.Row="0" Text="{l:Tr Terms_GateTitle}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -911,11 +911,9 @@
               </Button>
             </controls:SegmentRow>
           </Border>
-          <Border Grid.Row="3" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="8">
-            <ScrollViewer x:Name="TermsScroll" Focusable="True" HorizontalScrollBarVisibility="Disabled">
-              <views:LegalView DataContext="{Binding Gate}" Margin="14,10" />
-            </ScrollViewer>
-          </Border>
+          <ScrollViewer Grid.Row="3" x:Name="TermsScroll" Focusable="True" HorizontalScrollBarVisibility="Disabled">
+            <views:LegalView DataContext="{Binding Gate}" Margin="0,4,14,4" />
+          </ScrollViewer>
           <!-- Широкое окно: версия слева, кнопки справа. -->
           <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding !IsCompact}">
             <TextBlock Grid.Column="0" Text="{Binding Gate.FooterLine}" Classes="muted" FontSize="12"

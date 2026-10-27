@@ -38,10 +38,10 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <!-- The console over adb (CliReceiver) goes into Debug, the betas and the test builds; the stable releases
+  <!-- The console over adb (CliReceiver) goes into Debug and the test releases; the betas and the stable releases
        carry none. -->
   <PropertyGroup>
-    <DebugCommands Condition="'$(DebugCommands)' == '' and ('$(Configuration)' == 'Debug' or '$(ReleaseChannel)' == 'beta' or '$(ReleaseChannel)' == 'test')">true</DebugCommands>
+    <DebugCommands Condition="'$(DebugCommands)' == '' and ('$(Configuration)' == 'Debug' or '$(ReleaseChannel)' == 'test')">true</DebugCommands>
     <DefineConstants Condition="'$(DebugCommands)' == 'true'">$(DefineConstants);DEBUG_COMMANDS</DefineConstants>
   </PropertyGroup>
 

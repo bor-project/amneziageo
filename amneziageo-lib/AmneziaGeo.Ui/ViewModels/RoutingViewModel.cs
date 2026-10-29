@@ -914,6 +914,21 @@ internal partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Открывает «Дополнительно» списка, карточку которого нажали с плашки предупреждения UDP.
+    /// </summary>
+    [RelayCommand]
+    private void OpenCardAdvanced(RoutingListSummaryViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        ManageSection = RoutingSection.Advanced;
+        EditRoutingList = item;
+    }
+
+    /// <summary>
     /// Применяет список карточки или снимает применение, не открывая его настройки.
     /// </summary>
     [RelayCommand]
@@ -1417,6 +1432,7 @@ internal partial class RoutingViewModel : ViewModelBase
                     Id = entry.Id,
                     Warn = _prefs.RoutingWarnings,
                     Open = OpenCard,
+                    OpenAdvanced = OpenCardAdvanced,
                     TakeUpdate = UpdateRoutingListAsync,
                 };
                 RoutingLists.Insert(Math.Min(i, RoutingLists.Count), existing);

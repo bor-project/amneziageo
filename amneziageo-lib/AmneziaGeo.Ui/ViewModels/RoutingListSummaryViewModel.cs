@@ -17,6 +17,8 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
 
     private RelayCommand? _open;
 
+    private RelayCommand? _openAdvanced;
+
     private AsyncRelayCommand? _update;
 
     [ObservableProperty]
@@ -163,6 +165,11 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public Action<RoutingListSummaryViewModel>? Open { get; set; }
 
     /// <summary>
+    /// Открытие списка сразу в «Дополнительно»: ставит владелец каталога.
+    /// </summary>
+    public Action<RoutingListSummaryViewModel>? OpenAdvanced { get; set; }
+
+    /// <summary>
     /// Приём новой версии списка с сервера: ставит владелец каталога.
     /// </summary>
     public Func<RoutingListSummaryViewModel, Task>? TakeUpdate { get; set; }
@@ -179,6 +186,11 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public IRelayCommand OpenCommand => _open ??= new RelayCommand(() => Open?.Invoke(this));
 
     /// <summary>
+    /// Открывает «Дополнительно» списка с плашки предупреждения UDP.
+    /// </summary>
+    public IRelayCommand OpenAdvancedCommand => _openAdvanced ??= new RelayCommand(() => OpenAdvanced?.Invoke(this));
+
+    /// <summary>
     /// Несёт ли устройство весь UDP через туннель.
     /// </summary>
     public static bool AllUdpSupported => !OperatingSystem.IsAndroid() || OperatingSystem.IsAndroidVersionAtLeast(29);
@@ -190,8 +202,9 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
         useGlobalProxy ? ListReach.AllApps : allUdp && AllUdpSupported ? ListReach.AllUdp : ListReach.Named;
 
     /// <summary>
-    /// Плашки карточки: предупреждение у списка, который ведёт через VPN все приложения или весь их UDP (оно открывает
-    /// список), только чтение у списка, который сервер не даёт править, и обновление, когда сервер отдал новую версию.
+    /// Плашки карточки: предупреждение у списка, который ведёт через VPN все приложения или весь их UDP (все
+    /// приложения открывают настройки списка, весь UDP - его «Дополнительно»), только чтение у списка, который
+    /// сервер не даёт править, и обновление, когда сервер отдал новую версию.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
@@ -200,8 +213,9 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
             var wanted = new List<CardTag>();
             if (Warn && Reach is not ListReach.Named)
             {
-                var text = Reach is ListReach.AllApps ? "Main_CardTagAllApps" : "Main_CardTagAllUdp";
-                wanted.Add(new(Loc.Instance.Get(text), true, OpenCommand, warn: true, alert: true));
+                var allUdp = Reach is ListReach.AllUdp;
+                var text = allUdp ? "Main_CardTagAllUdp" : "Main_CardTagAllApps";
+                wanted.Add(new(Loc.Instance.Get(text), true, allUdp ? OpenAdvancedCommand : OpenCommand, warn: true, alert: true));
             }
 
             if (ReadOnly)

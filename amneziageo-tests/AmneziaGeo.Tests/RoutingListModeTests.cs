@@ -374,6 +374,33 @@ public sealed class RoutingListModeTests
     }
 
     [Fact]
+    public void TheUdpWarningOnACard_OpensItsAdvanced()
+    {
+        var card = new RoutingListSummaryViewModel { AllUdp = true };
+        var opened = default(RoutingListSummaryViewModel);
+        card.OpenAdvanced = item => opened = item;
+
+        card.Tags[0].Command!.Execute(null);
+
+        Assert.Same(card, opened);
+    }
+
+    [Fact]
+    public async Task TheUdpWarningOnACardOfTheCatalogue_OpensTheAdvancedOfItsList()
+    {
+        var routing = new MainWindowViewModel(new Silent(), new UiPreferences { PresetRegions = "de" }).Routing;
+        routing.Apply(new StatusSnapshot("1", null, [],
+            RoutingLists: [new RoutingListEntry(7, "office", 1, 1, 1, AllUdp: true)],
+            BoundStatus: ConnectionStatus.Connected));
+
+        routing.RoutingLists[0].Tags[0].Command!.Execute(null);
+        await Settled(routing);
+
+        Assert.True(routing.IsSectionAdvanced);
+        Assert.True(routing.ShowAllUdp);
+    }
+
+    [Fact]
     public void TheWarningOnACard_StandsBeforeTheUpdate()
     {
         var card = new RoutingListSummaryViewModel { HasUpdate = true, AllUdp = true };

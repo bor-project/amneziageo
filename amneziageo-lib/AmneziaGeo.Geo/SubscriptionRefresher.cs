@@ -174,6 +174,17 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
         }
 
         var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
+
+        // Тело без узлов при уже заведённых конфигурациях - мусор вместо подписки: каталог не трогаем.
+        if (snapshot.Configs.Count == 0 && members.Count > 0)
+        {
+            var reason = "the subscription holds no nodes";
+            await store.SaveSubscriptionAsync(
+                subscription with { CheckedAt = DateTimeOffset.UtcNow, LastError = reason },
+                ct).ConfigureAwait(false);
+            return new SubscriptionResult(0, 0, 0, [], reason);
+        }
+
         var names = await library.NamesAsync(ct).ConfigureAwait(false);
         var texts = await TextsAsync(members, names, ct).ConfigureAwait(false);
         var plan = SubscriptionMerge.Plan(snapshot.Configs, members, names, texts, soleName);

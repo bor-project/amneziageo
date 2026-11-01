@@ -290,6 +290,41 @@ public sealed class SubscriptionRefreshTests : IAsyncLifetime
         Assert.Empty(_library.Names);
     }
 
+    [Fact]
+    public async Task BodyWithoutNodesOnALaterRead_LeavesTheConfigsAndSetsTheReason()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"), Config("AmneziaWG 2 -laptop"));
+        await _refresher.RefreshAsync(Fresh(), default);
+        _feed.Body = "<html>the middleman answers instead of the panel</html>";
+
+        var result = await _refresher.RefreshAsync(await Stored(), default);
+
+        Assert.False(result.Ok);
+        Assert.Equal(0, result.Gone);
+        Assert.Equal(["AmneziaWG-3.1-phone", "AmneziaWG-2-laptop"], _library.Names);
+        Assert.Empty(_library.Dropped);
+        Assert.Equal(result.Error, (await Stored()).LastError);
+        Assert.All(await _store.ListSubscriptionMembersAsync("myvpn"), member => Assert.True(member.Present));
+    }
+
+    [Fact]
+    public async Task GoodReadAfterAnEmptyOne_RefreshesAndClearsTheReason()
+    {
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone"));
+        await _refresher.RefreshAsync(Fresh(), default);
+        _feed.Body = string.Empty;
+        await _refresher.RefreshAsync(await Stored(), default);
+        Assert.NotEqual(string.Empty, (await Stored()).LastError);
+        _feed.Body = Body(Config("AmneziaWG 3.1 -phone", "example.net:51999"));
+
+        var result = await _refresher.RefreshAsync(await Stored(), default);
+
+        Assert.True(result.Ok);
+        Assert.Equal(1, result.Updated);
+        Assert.Equal(string.Empty, (await Stored()).LastError);
+        Assert.Contains("51999", _library.Text("AmneziaWG-3.1-phone"));
+    }
+
     private async Task<Subscription> Stored()
     {
         return (await _store.ListSubscriptionsAsync())[0];

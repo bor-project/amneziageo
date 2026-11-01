@@ -38,6 +38,28 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- Engine version baked at build time from the bundled amneziawg-go submodule (AndroidBuild reads
+       it back as AmneziaGeo.EngineVersion and the agent reports it over IPC). -p:AmneziaEngineVersion
+       bakes it deterministically without depending on git state; git's output is taken only on a clean
+       exit and a single token, so a tag-less checkout falls through to empty and the window shows
+       n/a rather than garbage. -->
+  <Target Name="BakeEngineVersion" BeforeTargets="GetAssemblyAttributes;CoreGenerateAssemblyInfo">
+    <Exec Condition="'$(AmneziaEngineVersion)' == ''" Command="git -C &quot;$(MSBuildProjectDirectory)/../amneziawg-go&quot; describe --tags" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_AwgDescribe" />
+      <Output TaskParameter="ExitCode" PropertyName="_AwgDescribeExit" />
+    </Exec>
+    <PropertyGroup>
+      <_AmneziaEngineVersion>$(AmneziaEngineVersion)</_AmneziaEngineVersion>
+      <_AmneziaEngineVersion Condition="'$(_AmneziaEngineVersion)' == '' and '$(_AwgDescribeExit)' == '0' and '$(_AwgDescribe.Trim())' != '' and !$(_AwgDescribe.Trim().Contains(' '))">$(_AwgDescribe.Trim())</_AmneziaEngineVersion>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(_AmneziaEngineVersion)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+        <_Parameter1>AmneziaGeo.EngineVersion</_Parameter1>
+        <_Parameter2>$(_AmneziaEngineVersion)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
   <!-- The console over adb (CliReceiver) goes into Debug and the test releases; the betas and the stable releases
        carry none. -->
   <PropertyGroup>

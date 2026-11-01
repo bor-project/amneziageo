@@ -1494,7 +1494,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RetryAttempt: _retryAttempt,
             PeriodicReconnect: true,
             PeriodicReconnectIntervalSeconds: ConnectRetry.CeilingSeconds,
-            EngineVersion: string.Empty,
+            EngineVersion: AndroidBuild.EngineVersion,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
             TunnelNotice: _tunnelNotice,

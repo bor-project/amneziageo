@@ -19,6 +19,11 @@ internal static class AndroidBuild
     public static string ReleaseChannel { get; } = UpdateChannels.Of(Metadata("AmneziaGeo.ReleaseChannel"), string.Empty);
 
     /// <summary>
+    /// Engine version baked at build time from the amneziawg-go submodule; empty when unbaked.
+    /// </summary>
+    public static string EngineVersion { get; } = Metadata("AmneziaGeo.EngineVersion");
+
+    /// <summary>
     /// The channel of the kind of the release baked at build time.
     /// </summary>
     public static string Channel { get; } = ReleaseChannel.Length > 0 ? ReleaseChannel : UpdateChannels.Stable;

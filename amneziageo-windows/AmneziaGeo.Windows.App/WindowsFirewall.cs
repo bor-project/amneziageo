@@ -66,6 +66,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private int _generation;
     // The tunnel adapters let through the block, and the filters holding each one open.
     private readonly Dictionary<uint, List<ulong>> _alongside = [];
+
+    // The adapter of the access point's gateway, and the filters holding it open.
+    private readonly Dictionary<uint, List<ulong>> _gateway = [];
     // The adapters of other VPNs let through the block, and the filters holding each one open.
     private readonly Dictionary<uint, List<ulong>> _others = [];
     // The servers of other VPNs let through the block by address, and the filters holding each one open.
@@ -166,6 +169,14 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     // gateway adapter terminates them and this process opens the name again, which the leak
                     // protection already permits. Without this the first packet of every client is dropped here.
                     PermitV4Cidr(engine, HotspotNames.Prefix);
+
+                    // The clients of the access point sit in the range the sharing hands out, and what this
+                    // machine answers them leaves through the adapter of the point; no other range here covers it.
+                    var clients = HotspotGateway.ScopeRange();
+                    if (clients is not null)
+                    {
+                        PermitV4Cidr(engine, clients);
+                    }
                     if (dualStack)
                     {
                         PermitLanV6(engine);
@@ -569,6 +580,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         FwpmEngineClose0(_engine);
         _engine = IntPtr.Zero;
         _alongside.Clear();
+        _gateway.Clear();
         _others.Clear();
         _otherServers.Clear();
         _offTunnel.Clear();
@@ -1096,6 +1108,25 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         lock (_gate)
         {
             return _engine == IntPtr.Zero ? (0, 0) : SquareAdaptersLocked(_alongside, interfaces, "Permit tunnel interface alongside");
+        }
+    }
+
+    /// <summary>
+    /// Squares the adapter of the access point's gateway with the one given; null takes it back out. The sharing
+    /// hands the clients of the point to that adapter through this protection, and its index moves with every
+    /// raise of the gateway. Returns how many were let through and how many were taken back.
+    /// </summary>
+    public (int Added, int Removed) PermitGateway(uint? index)
+    {
+        lock (_gate)
+        {
+            if (_engine == IntPtr.Zero)
+            {
+                return (0, 0);
+            }
+
+            var wanted = index is { } one ? [one] : Array.Empty<uint>();
+            return SquareAdaptersLocked(_gateway, wanted, "Permit the gateway of the access point");
         }
     }
 

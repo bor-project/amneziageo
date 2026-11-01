@@ -19,8 +19,10 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
     // Polls between two readings of the tethering stack while no point of ours stands.
     private const int ProbeTicks = 6;
 
-    // Polls the sharing is given to settle on the connection asked for before the point is raised again.
-    private const int StaleTicks = 2;
+    // Polls the sharing is given to settle on the connection asked for before the point is raised again. The
+    // gateway of a tunnel swap is gone for a few seconds and back, and a point raised again on every such blink
+    // drops its clients and wears the sharing stack down, so only a carrier that stays wrong this long moves it.
+    private const int StaleTicks = 6;
 
     // Times the point is raised again over a sharing that will not move, before it is only reported.
     private const int StaleRepairs = 3;
@@ -33,7 +35,11 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
 
     // Service the sharing runs as, and the port its resolver answers on.
     private const string SharingService = "SharedAccess";
-    private const int Domain = 53;
+
+    // Polls between two askings of the sharing, so a sharing that is slow to answer is not asked every tick, and
+    // polls a sharing that has just been raised is given before it is asked at all.
+    private const int ResolveTicks = 6;
+    private const int SettleTicks = 3;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private HotspotOptions _applied = new();
@@ -42,6 +48,8 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
     private int _repairs;
     private int _wedge;
     private int _recycles;
+    private int _resolveTicks;
+    private bool _wasRunning;
 
     // Name the point of this agent carries. A point under any other name was raised by the user through Windows
     // itself and is never touched here.
@@ -127,44 +135,50 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
             Take(state);
             var carrier = WindowsTethering.Carrier();
             var moved = Running && _raisedSsid.Length > 0 && !string.Equals(carrier, _carrier, StringComparison.Ordinal);
-            if (!Running || _raisedSsid.Length == 0 || Carried(carrier))
+            if (moved)
+            {
+                logger.LogDebug("the sharing stands over '{Carrier}' while '{Wanted}' is away; a gateway that comes back takes it over without the point being touched", carrier, _carrier);
+            }
+
+            if (!Running || _raisedSsid.Length == 0 || (Carried(carrier) && !moved))
             {
                 _stale = 0;
                 _repairs = 0;
             }
-            else if (!moved)
+            else
             {
                 _stale++;
             }
 
-            var resolves = Resolving();
-            if (!Running || _raisedSsid.Length == 0 || resolves)
+            if (Running && !_wasRunning)
+            {
+                _resolveTicks = SettleTicks;
+            }
+
+            var resolves = await ResolvesAsync(ct).ConfigureAwait(false);
+            _wasRunning = Running;
+            if (!Running || _raisedSsid.Length == 0 || resolves is true)
             {
                 _wedge = 0;
-                if (resolves)
+                if (resolves is true)
                 {
                     _recycles = 0;
                 }
             }
-            else
+            else if (resolves is false)
             {
                 _wedge++;
             }
 
             var stuck = _stale >= StaleTicks && _repairs < StaleRepairs;
             var wedged = _wedge >= WedgeTicks && _recycles < WedgeRepairs;
-            if (wanted != _applied || Running != wanted.Wanted || moved || stuck || wedged)
+            if (wanted != _applied || Running != wanted.Wanted || stuck || wedged)
             {
-                if (moved)
-                {
-                    logger.LogInformation("the access point moves onto '{Carrier}', so what its clients send takes the path this machine's own traffic takes", carrier);
-                }
-
                 if (stuck)
                 {
                     _stale = 0;
                     _repairs++;
-                    logger.LogWarning("the sharing is not carried over '{Carrier}' but over the connection the point stood on before, so its clients leave past the rules of this machine; the point is raised again", carrier);
+                    logger.LogWarning("the sharing has stood over '{Carrier}' instead of '{Wanted}' for too long, so its clients leave past the rules of this machine; the point is raised again over the gateway", carrier, _carrier);
                 }
 
                 if (wedged)
@@ -317,30 +331,33 @@ internal sealed class WindowsHotspotService(SettingsStore settings, RouteManager
             .Any(nic => nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211);
     }
 
-    // Whether the clients of the point are handed a resolver. It answers them on the address the sharing
-    // hands out, and that port is held there by whoever answers - the sharing itself, the proxy of this
-    // machine, or a listener on every address; wedged, nothing holds it and their names go nowhere while
-    // bare addresses still travel.
-    private static bool Resolving()
+    // Whether the clients of the point are handed a resolver. It is told by the sharing itself: asked for a lease,
+    // the sharing answers with the offer its clients get, and that offer names the resolver. Wedged, it answers
+    // nothing while the point stands, and the clients keep their addresses without a resolver - bare addresses
+    // still travel, names go nowhere.
+    private async Task<bool?> ResolvesAsync(CancellationToken ct)
     {
-        var point = IPAddress.TryParse(HotspotGateway.Scope(), out var scope) ? scope : null;
-        foreach (var listener in IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners())
+        if (!Running || _raisedSsid.Length == 0)
         {
-            if (listener.Port != Domain)
-            {
-                continue;
-            }
-
-            if (listener.Address.IsIPv6LinkLocal
-                || listener.Address.Equals(IPAddress.Any)
-                || listener.Address.Equals(IPAddress.IPv6Any)
-                || (point is not null && listener.Address.Equals(point)))
-            {
-                return true;
-            }
+            _resolveTicks = 0;
+            return true;
         }
 
-        return false;
+        if (_resolveTicks > 0)
+        {
+            _resolveTicks--;
+            return null;
+        }
+
+        _resolveTicks = ResolveTicks;
+        var resolves = !IPAddress.TryParse(HotspotGateway.Scope(), out var scope)
+            || await HotspotDhcpProbe.OffersResolverAsync(scope, ct).ConfigureAwait(false);
+        if (!resolves)
+        {
+            logger.LogWarning("the sharing offers the clients of the point no resolver, so their names go nowhere while bare addresses still travel");
+        }
+
+        return resolves;
     }
 
     // Whether the sharing carries the point out over the connection named. Raising the point over a

@@ -152,6 +152,8 @@ internal sealed class DnsProxy
     private HotspotNames? _clientNames;
     // Socket on the address the access point hands its clients. A query arriving there is a client's.
     private UdpClient? _clientServer;
+    // Address the serving socket stands on.
+    private IPAddress? _clientAddress;
 
     // How the resolver behind the tunnel is asked, and the transport that answered last.
     private readonly NameUpstream _tunnelAsk;
@@ -322,6 +324,7 @@ internal sealed class DnsProxy
             server.Client.IOControl(SioUdpConnReset, new byte[4], null);
             _clientNames = names;
             _clientServer = server;
+            _clientAddress = address;
             var thread = new Thread(() => ServeOne(server, clients: true))
             {
                 IsBackground = true,
@@ -359,7 +362,37 @@ internal sealed class DnsProxy
 
         _clientNames?.Clear();
         _clientNames = null;
+        _clientAddress = null;
         server.Dispose();
+    }
+
+    /// <summary>
+    /// Whether the clients of the access point are still answered for names; asks the serving socket itself the
+    /// one question it answers on the spot.
+    /// </summary>
+    public bool AnswersClients()
+    {
+        var server = _clientServer;
+        var address = _clientAddress;
+        if (server is null || address is null)
+        {
+            return false;
+        }
+
+        using var ask = new UdpClient();
+        ask.Client.ReceiveTimeout = 700;
+        try
+        {
+            var query = DnsMessage.BuildQuery(HealthName, TypeA);
+            ask.Send(query, query.Length, address.ToString(), 53);
+            var from = new IPEndPoint(IPAddress.Any, 0);
+            ask.Receive(ref from);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>

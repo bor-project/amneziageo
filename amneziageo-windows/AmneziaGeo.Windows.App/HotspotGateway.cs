@@ -16,7 +16,7 @@ namespace AmneziaGeo.Windows.App;
 /// a socket of this machine, which the routing table then carries exactly as it carries this machine's own
 /// traffic. It stands only while the access point does.
 /// </summary>
-internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxyOutbound outbound, int mtu, Action<IPAddress> note, ILogger<HotspotGateway> logger, SubstitutedAddresses? substituted = null) : IDisposable
+internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, WindowsFirewall firewall, IProxyOutbound outbound, int mtu, Action<IPAddress> note, ILogger<HotspotGateway> logger, SubstitutedAddresses? substituted = null) : IDisposable
 {
     private const string AdapterName = "AmneziaGeo Gateway";
     // Address the adapter answers on.
@@ -39,6 +39,7 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
     private IPAddress? _served;
     private uint? _carried;
     private bool _reported;
+    private int _servingMisses;
     // Addresses the system got in place of real ones that are routed into the gateway, and the adapter they are on.
     private readonly HashSet<IPAddress> _taken = [];
     private readonly Lock _takenGate = new();
@@ -94,6 +95,10 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
                 Raise();
             }
 
+            // The leak protection lets the gateway's adapter through by index, and the index moves with every
+            // raise of the gateway, so the permit follows every pass.
+            firewall.PermitGateway(_process is null ? null : routes.FindInterfaceIndex(AdapterName));
+
             if (_process is null)
             {
                 return;
@@ -117,6 +122,24 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
             {
                 proxy.StopServingClients();
                 _served = proxy.ServeClients(point, _names) ? point : null;
+                _servingMisses = 0;
+            }
+
+            // A swap of the tunnel session can leave the serving socket held by a loop nothing feeds; asked the
+            // one question it answers on the spot, a serving that stays silent is taken up again.
+            if (_served is not null)
+            {
+                if (proxy.AnswersClients())
+                {
+                    _servingMisses = 0;
+                }
+                else if (++_servingMisses >= 3)
+                {
+                    logger.LogWarning("the clients of the access point were left without answers for names, so the serving is taken up again");
+                    proxy.StopServingClients();
+                    _served = null;
+                    _servingMisses = 0;
+                }
             }
         }
         catch (Exception ex)
@@ -410,5 +433,19 @@ internal sealed class HotspotGateway(DnsProxy proxy, RouteManager routes, IProxy
         {
             return DefaultScope;
         }
+    }
+
+    /// <summary>
+    /// Range the sharing keeps the clients of the access point in; null while the scope is not a plain IPv4 address.
+    /// </summary>
+    internal static string? ScopeRange()
+    {
+        if (!IPAddress.TryParse(Scope(), out var scope))
+        {
+            return null;
+        }
+
+        var octets = scope.GetAddressBytes();
+        return octets.Length == 4 ? $"{octets[0]}.{octets[1]}.{octets[2]}.0/24" : null;
     }
 }

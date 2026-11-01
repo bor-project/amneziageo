@@ -922,7 +922,7 @@ internal sealed class TunnelRunner(
                 loggerFactory.CreateLogger<NamedProxyOutbound>());
             substituted.Added += Admit;
             proxy.SetSubstituted(substituted);
-            var gateway = new HotspotGateway(proxy, routes, outbound, effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>(), substituted);
+            var gateway = new HotspotGateway(proxy, routes, firewall, outbound, effectiveMtu, routing.Note, loggerFactory.CreateLogger<HotspotGateway>(), substituted);
             sessionCts.Token.Register(gateway.Dispose);
             _ = Task.Run(() => gateway.RunAsync(sessionCts.Token));
         }

@@ -408,7 +408,8 @@ internal sealed class TunnelRunner(
         // The private networks the configuration itself reaches, less the ones this machine stands in.
         var ownNetworks = geoSplit ? PrivateNetworks.ForTunnel(config, routes.LocalSubnets()) : [];
         // The ranges the list keeps on the adapter beside the infrastructure.
-        var standing = StandingRanges.Of(carriedRoutes, activeList?.Rules ?? geo?.Rules ?? [], geoSplit, inboundRoutes.Count > 0, ownNetworks, resolverRoutes);
+        var listRules = activeList?.Rules ?? geo?.Rules ?? [];
+        var standing = StandingRanges.Of(carriedRoutes, listRules, geoSplit, inboundRoutes.Count > 0, ownNetworks, resolverRoutes);
         var inboundReturn = standing.Return;
         foreach (var route in inboundReturn)
         {
@@ -445,6 +446,15 @@ internal sealed class TunnelRunner(
 
         // The networks of the configuration that no rule of the list speaks about.
         var configNetworks = standing.Networks;
+
+        // A direct or block rule holds a network of the configuration off the tunnel on purpose: say so, or the
+        // network going quiet by IP looks like a fault of the tunnel.
+        var heldOff = ownNetworks.Where(network => PrivateNetworks.Overlaps(network,
+            [.. GeoMaterializer.NamedRanges(listRules, RouteRole.Direct), .. GeoMaterializer.NamedRanges(listRules, RouteRole.Block)])).ToList();
+        if (heldOff.Count > 0)
+        {
+            logger.LogInformation("{Name}: {Ranges} stay off the tunnel: a direct or block rule of the list names them, so they keep the physical path", name, string.Join(", ", heldOff));
+        }
 
         if (configNetworks.Count > 0)
         {

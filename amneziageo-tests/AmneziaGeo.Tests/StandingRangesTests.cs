@@ -59,6 +59,34 @@ public sealed class StandingRangesTests
     }
 
     [Fact]
+    public void AProxyRuleTheTunnelDoesNotCarry_LeavesTheNetworkToTheConfiguration()
+    {
+        var standing = StandingRanges.Of([], [Cidr("192.168.50.0/24"), Cidr("10.90.0.0/24")], split: true, inbound: false, ["192.168.50.0/24", "10.90.0.0/24"], new HashSet<string>());
+
+        Assert.Equal(["192.168.50.0/24", "10.90.0.0/24"], standing.Networks);
+        Assert.Empty(standing.Named);
+        Assert.Equal(["192.168.50.0/24", "10.90.0.0/24"], standing.All);
+    }
+
+    [Fact]
+    public void AProxyRuleTheTunnelCarries_TakesTheNetworkUnderItsOwnName()
+    {
+        var standing = StandingRanges.Of(["192.168.50.0/24", "1.2.3.0/24"], [Cidr("192.168.50.0/24")], split: true, inbound: false, ["192.168.50.0/24"], new HashSet<string>());
+
+        Assert.Equal(["192.168.50.0/24"], standing.Named);
+        Assert.Empty(standing.Networks);
+    }
+
+    [Fact]
+    public void ADirectRuleHoldsTheNetworkOffEvenWhenAProxyRuleNamesItToo()
+    {
+        var standing = StandingRanges.Of([], [Cidr("192.168.50.0/24"), Cidr("192.168.50.0/25", RouteRole.Direct)], split: true, inbound: false, ["192.168.50.0/24"], new HashSet<string>());
+
+        Assert.Empty(standing.Networks);
+        Assert.Empty(standing.Named);
+    }
+
+    [Fact]
     public void AFullTunnel_KeepsOnlyTheWayBack()
     {
         var standing = StandingRanges.Of(["10.80.0.0/16"], [Cidr("10.80.0.0/16")], split: false, inbound: true, ["192.168.50.0/24"], new HashSet<string>());

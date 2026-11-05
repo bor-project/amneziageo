@@ -282,7 +282,7 @@ public sealed class AppNamesTests : IAsyncLifetime
         Assert.Null(ShellLink.Target(new byte[0x20]));
     }
 
-    [Fact]
+    [WindowsFact("the programs of the machine are read from the registry Windows keeps")]
     public void ThePrograms_OfThisMachineAreListedWithoutFailing()
     {
         var programs = InstalledPrograms.List(null);

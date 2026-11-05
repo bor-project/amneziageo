@@ -19,7 +19,9 @@ public sealed record StandingRanges(IReadOnlyList<string> Return, IReadOnlyList<
 
     /// <summary>
     /// Works the ranges out from the share of the list the tunnel carries, the rules of the list and the networks
-    /// the configuration reaches; a range of the infrastructure is left out.
+    /// the configuration reaches; a range of the infrastructure is left out. A network a direct or block rule names
+    /// stays off the tunnel; one a proxy rule names stands with it while the tunnel carries the rule, and on its
+    /// own when the tunnel does not, so the networks of the configuration keep a route of their own.
     /// </summary>
     public static StandingRanges Of(IReadOnlyList<string> carried, IReadOnlyList<GeoRule> rules, bool split, bool inbound, IReadOnlyList<string> ownNetworks, IReadOnlyCollection<string> infrastructure)
     {
@@ -31,8 +33,10 @@ public sealed record StandingRanges(IReadOnlyList<string> Return, IReadOnlyList<
         }
 
         var named = Take(GeoMaterializer.NamedRanges(rules, RouteRole.Proxy, carried), taken);
-        var listNamed = GeoMaterializer.NamedRanges(rules);
-        var networks = Take(ownNetworks.Where(network => !PrivateNetworks.Overlaps(network, listNamed)), taken);
+        IReadOnlyList<string> keptOff = [.. GeoMaterializer.NamedRanges(rules, RouteRole.Direct), .. GeoMaterializer.NamedRanges(rules, RouteRole.Block)];
+        var networks = Take(ownNetworks.Where(network =>
+            !PrivateNetworks.Overlaps(network, keptOff)
+            && !PrivateNetworks.Overlaps(network, named)), taken);
         return new StandingRanges(returned, named, networks);
     }
 

@@ -10,7 +10,7 @@ namespace AmneziaGeo.Dal;
 /// <summary>
 /// SQLite-backed state store.
 /// </summary>
-public sealed class SqliteStateStore(string databasePath) : IStateStore
+public sealed partial class SqliteStateStore(string databasePath) : IStateStore
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
     {
@@ -146,6 +146,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         allow_signal INTEGER NOT NULL DEFAULT 1,
                         hold_traffic INTEGER NOT NULL DEFAULT 1,
                         updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS transport_proxy_state (
+                        id       INTEGER PRIMARY KEY CHECK(id = 1),
+                        revision INTEGER NOT NULL,
+                        payload  TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS config_dns (

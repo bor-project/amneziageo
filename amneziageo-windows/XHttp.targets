@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <XHttpArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</XHttpArch>
+    <XHttpArch Condition="'$(XHttpArch)' == ''">x64</XHttpArch>
+    <_XHttpDirectory>$(MSBuildThisFileDirectory).deps\xray\26.10.31\$(XHttpArch)</_XHttpDirectory>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(_XHttpDirectory)\xray.exe')">
+    <None Include="$(_XHttpDirectory)\xray.exe" Link="xray.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(_XHttpDirectory)\LICENSE" Link="licenses\xray\LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(_XHttpDirectory)\README.md" Link="licenses\xray\README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="EnsureXHttpRuntime" BeforeTargets="PrepareForPublish">
+    <Error Condition="!Exists('$(_XHttpDirectory)\xray.exe') or !Exists('$(_XHttpDirectory)\LICENSE') or !Exists('$(_XHttpDirectory)\README.md')"
+           Text="Xray 26.10.31 for $(XHttpArch) is missing. Run powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\tools\fetch-xray.ps1 -Arch $(XHttpArch)." />
+  </Target>
+</Project>

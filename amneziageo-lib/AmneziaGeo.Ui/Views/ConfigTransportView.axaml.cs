@@ -29,9 +29,4 @@ internal sealed partial class ConfigTransportView : UserControl
         }
     }
 
-    // Toggle masking of the access-token field.
-    private void OnToggleTokenReveal(object? sender, RoutedEventArgs e)
-    {
-        TokenBox.RevealPassword = !TokenBox.RevealPassword;
-    }
 }

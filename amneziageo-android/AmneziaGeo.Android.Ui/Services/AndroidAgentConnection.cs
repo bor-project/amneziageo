@@ -75,6 +75,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
+    private IReadOnlyList<TransportProxySummary> _transportProxies = [];
+    private IReadOnlyDictionary<string, TransportProxySelection> _transportSelections = new Dictionary<string, TransportProxySelection>();
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
     private readonly AndroidGeoFileStore _geoFiles;
@@ -237,6 +239,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var geoFiles = new AndroidGeoFileStore(System.IO.Path.Combine(dir, "geo"));
         _geoFiles = geoFiles;
         _store = new SqliteStateStore(System.IO.Path.Combine(dir, "state.db"));
+        TransportProxyCatalog.For(_store, _ => Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>(_configs, StringComparer.Ordinal)));
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance, PastTunnel.ConnectAsync);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, geoFiles);
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
@@ -404,6 +407,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private async Task<IpcAck> DispatchAsync(IpcCommand command)
     {
+        if (command.Op is IpcContract.OpListTransportProxies or IpcContract.OpGetTransportProxy
+            or IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy
+            or IpcContract.OpSelectTransportProxy or IpcContract.OpProbeTransportProxy)
+        {
+            await EnsureInitAsync().ConfigureAwait(false);
+            var proxyAck = (await TransportProxyCommands.TryExecuteAsync(_store, command, probe: ProbeTransportAsync).ConfigureAwait(false))!;
+            if (proxyAck.Ok && _active && command.Op is IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy or IpcContract.OpSelectTransportProxy)
+            {
+                _restartRequired = true;
+            }
+
+            await RefreshTransportProxiesAsync().ConfigureAwait(false);
+            PushSnapshot();
+            return proxyAck;
+        }
+
         var args = command.Args;
         switch (command.Op)
         {
@@ -720,6 +739,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         // A tunnel connected on another configuration stays until the server of this one answers.
         var live = _active && VpnBridge.IsRunning(Application.Context);
+        var beforeTarget = _boundTarget;
+        var beforeStatus = _boundStatus;
+        var beforeDialWanted = _dialWanted;
         var standing = SwitchGuard.Standing(live, _boundStatus, _boundTarget, configName);
         var restart = _restartRequired;
         _raiseOwed = false;
@@ -740,6 +762,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // The server is asked what it offers before the plan and the tunnel take its word.
         var offer = await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
         await RefreshOffersAsync().ConfigureAwait(false);
+        var selectedProxy = await SelectedProxyAsync(configName).ConfigureAwait(false);
+        if (selectedProxy.Fault.Length > 0)
+        {
+            _active = live;
+            _boundTarget = live ? beforeTarget : configName;
+            _boundStatus = live ? beforeStatus : ConnectionStatus.Failed;
+            _dialWanted = live && beforeDialWanted;
+            _restartRequired = restart;
+            SetConnectFailure(nameof(ConnectFailureReason.UnderlayUnreachable), selectedProxy.Fault);
+            Save();
+            PushSnapshot();
+            return new IpcAck(false, IpcMessage.Key("Proxies_RequestFailed"));
+        }
 
         // A list the server put in use joins the plan of this connect, and the lists it handed out show at once.
         if (await TakeStorePickAsync().ConfigureAwait(false))
@@ -751,7 +786,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
-        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText).ConfigureAwait(false)))
+        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText, selectedProxy.Proxy).ConfigureAwait(false)))
         {
             return Kept(configName, standing, restart);
         }
@@ -766,7 +801,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         var words = await NoticeWordsAsync().ConfigureAwait(false);
         _downNotice = DownKey(configName, words);
-        var front = Front(configName, configText);
+        var front = selectedProxy.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy.Proxy) : (WsEndpoint?)null;
         _handedFront = front;
         _frontHanded = true;
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
@@ -775,17 +810,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
             TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
             [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase],
-            VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true)));
+            VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true)), selectedProxy: selectedProxy.Proxy);
         return new IpcAck(true, "connecting");
     }
 
     // Hands the server of a configuration to the tunnel, which dials it past itself, and waits for its word; a
     // tunnel that says nothing leaves the verdict unknown.
-    private async Task<string> AskedAsync(string name, string text)
+    private async Task<string> AskedAsync(string name, string text, ResolvedTransportProxy? selectedProxy)
     {
-        var front = Front(name, text);
+        var front = selectedProxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy) : (WsEndpoint?)null;
         VpnBridge.ClearSwitchResult();
-        VpnBridge.WriteSwitch(new SwitchRequest(text, name, front?.Address(), front?.Port ?? 0, front?.Offered ?? false, EngineLogLevel(_logLevel)));
+        VpnBridge.WriteSwitch(new SwitchRequest(text, name, front?.Address(), front?.Port ?? 0, front?.Offered ?? false, EngineLogLevel(_logLevel), selectedProxy));
         VpnBridge.RequestSwitch(Application.Context);
         var said = await SwitchGuard
             .AwaitAsync(VpnBridge.ReadSwitchResult, SwitchWaitMs, ProbePollMs, pause => Task.Delay(pause))
@@ -845,7 +880,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null, string[]? bases = null, VpnDnsPick? vpnDns = null)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null, string[]? bases = null, VpnDnsPick? vpnDns = null, ResolvedTransportProxy? selectedProxy = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -903,6 +938,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraMtuMode, (int)transport.MtuMode);
             intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
             intent.PutExtra(GeoVpnService.ExtraHoldTraffic, transport.HoldTraffic);
+        }
+
+        if (selectedProxy is not null)
+        {
+            intent.PutExtra(GeoVpnService.ExtraTransportProxy, JsonSerializer.Serialize(selectedProxy));
         }
 
         if (front is { } carried)
@@ -1540,7 +1580,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyClients: proxy.Clients,
             ServerListsOf: ShownServerLists?.Config ?? string.Empty,
             ServerLists: ShownServerLists?.Lists,
-            FoundApps: _appFinds);
+            FoundApps: _appFinds,
+            TransportProxies: _transportProxies);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1745,7 +1786,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ServerListsOnly: offer?.PresetsOnly == true,
             ServerOurs: offer?.Ours == true,
             SubscriptionFault: offered?.Fault ?? string.Empty,
-            SubscriptionDetail: offered?.Detail ?? string.Empty);
+            SubscriptionDetail: offered?.Detail ?? string.Empty,
+            TransportProxy: _transportSelections.GetValueOrDefault(name)?.Reference,
+            TransportProxyChosen: _transportSelections.ContainsKey(name));
     }
 
     private string StatusFor(string target)
@@ -2644,7 +2687,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
 
             var transport = await _store.GetConfigTransportAsync(name).ConfigureAwait(false);
-            configBlocks.Add(new PortableBundle.ConfigBlock(
+            configBlocks.Add(await new PortableBundle.ConfigBlock(
                 name,
                 text,
                 transport is null
@@ -2662,7 +2705,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.UseRouting,
                         transport.AllowSignal,
                         transport.HoldTraffic),
-                null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)));
+                null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)).WithTransportProxyAsync(_store, name).ConfigureAwait(false));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -2764,6 +2807,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 {
                     _configs[block.Name] = block.ConfigText;
                     await ApplyTransportAsync(block.Name, block.Transport).ConfigureAwait(false);
+                    await block.ApplyTransportProxyAsync(_store, block.Name, CancellationToken.None).ConfigureAwait(false);
                     await (block with { Dns = null }).ApplyDnsAsync(_store, block.Name, CancellationToken.None).ConfigureAwait(false);
                 }
 
@@ -2781,6 +2825,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _configs[finalName] = block.ConfigText;
             importedConfigs[block.Name] = finalName;
             await ApplyTransportAsync(finalName, block.Transport).ConfigureAwait(false);
+            await block.ApplyTransportProxyAsync(_store, finalName, CancellationToken.None).ConfigureAwait(false);
             await (block with { Dns = null }).ApplyDnsAsync(_store, finalName, CancellationToken.None).ConfigureAwait(false);
         }
 
@@ -2955,7 +3000,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
         }
 
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true)).ConfigureAwait(false);
+        var proxies = TransportProxyCatalog.For(_store);
+        await proxies.EnsureSelectionAsync(args[0]).ConfigureAwait(false);
+        var updated = new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true);
+        await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
+        await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy").ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
         {
             _restartRequired = true;
@@ -3101,6 +3150,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _offered = offered;
+        await RefreshTransportProxiesAsync().ConfigureAwait(false);
+    }
+
+    private async Task RefreshTransportProxiesAsync()
+    {
+        _transportProxies = await TransportProxyCatalog.For(_store).ListAsync().ConfigureAwait(false);
+        _transportSelections = (await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).Selections
+            .ToDictionary(one => one.Config, StringComparer.Ordinal);
     }
 
     // Every configuration with its text, for their servers to be asked what they offer.
@@ -3143,15 +3200,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
-        RedialForFront(config);
+        await RedialForFrontAsync().ConfigureAwait(false);
     }
 
     // Dials the tunnel again when it stands dialing a websocket front the server of its configuration no longer names.
-    private void RedialForFront(string config)
+    private async Task RedialForFrontAsync()
     {
-        var dialing = _frontHanded && _dialWanted && _active && _boundStatus == ConnectionStatus.Connecting
-            && string.Equals(_boundTarget, config, StringComparison.Ordinal);
-        if (!_configs.TryGetValue(config, out var text) || !FrontRedial.Wanted(dialing, _handedFront, Front(config, text)))
+        var config = _boundTarget;
+        var dialing = _frontHanded && _dialWanted && _active && _boundStatus == ConnectionStatus.Connecting;
+        if (!dialing || config is null || !_configs.ContainsKey(config))
+        {
+            return;
+        }
+
+        var selected = await SelectedProxyAsync(config).ConfigureAwait(false);
+        var front = selected.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selected.Proxy) : (WsEndpoint?)null;
+        if (selected.Fault.Length > 0 || !FrontRedial.Wanted(dialing, _handedFront, front))
         {
             return;
         }
@@ -3217,8 +3281,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // The websocket front the tunnel of a configuration is carried to, while it is asked for.
-    private WsEndpoint? Front(string name, string text) =>
-        _transports.GetValueOrDefault(name) is { UseWebSocket: true } transport ? WsEndpoint.Of(text, _offered.GetValueOrDefault(name), transport) : null;
+    private async Task<(ResolvedTransportProxy? Proxy, string Fault)> SelectedProxyAsync(string name)
+    {
+        try
+        {
+            return (await TransportProxyCatalog.For(_store).ResolveAsync(name).ConfigureAwait(false), "");
+        }
+        catch (Exception ex) when (ex is TransportProxyFault or InvalidDataException or JsonException)
+        {
+            _log.Error("agent", "the selected transport proxy could not be resolved", ex);
+            return (null, ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid");
+        }
+    }
+
+    private Task<TransportProxyProbeResult> ProbeTransportAsync(CatalogTransportProxy record, CancellationToken ct) =>
+        TransportProxyProbes.CheckAsync(record, ct, PastTunnel.AddressAsync, PastTunnel.BypassProxy, PastTunnel.ConnectProxyAsync,
+            record.Legacy ? _configs.GetValueOrDefault(record.LegacyPublisher) : null);
 
     // What the server of the selected configuration offers; it is asked again behind the answer.
     private async Task<IpcAck> ServerOfferAsync()
@@ -3870,6 +3948,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             await _store.SaveTunnelGeoAsync(geo with { Name = destination }).ConfigureAwait(false);
         }
 
+        await TransportProxyPortability.ApplyAsync(_store, destination,
+            await TransportProxyPortability.ExportAsync(_store, source).ConfigureAwait(false)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
@@ -4737,6 +4817,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             await DropAsync(name, ct).ConfigureAwait(false);
             await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
+            await ConfigForget.CarryAsync(agent._store, name, ct).ConfigureAwait(false);
         }
     }
 

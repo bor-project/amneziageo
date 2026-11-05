@@ -109,6 +109,8 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraWsOffered = "ws-offered";
 
+    public const string ExtraTransportProxy = "transport-proxy";
+
     /// <summary>
     /// IPv6 opt-in extra. Off by default: a peer that hands out an address but routes no IPv6 turns every
     /// v6-capable name into a stall, and a family the tun does not carry is unreachable rather than leaked.
@@ -231,6 +233,7 @@ public sealed class GeoVpnService : VpnService
     private int _proxyPort;
     private ConnectivityManager? _connectivity;
     private WsCarrier? _carrier;
+    private XHttpEngine? _xhttp;
 
     // How long a question to the server about where its websocket front stands may take.
     private const int FrontAskWaitMs = 15_000;
@@ -409,7 +412,13 @@ public sealed class GeoVpnService : VpnService
 
         // Always-on starts the tunnel with a bare intent and the head is not there to fill it: what the last
         // connect ran on comes off the disk instead.
-        var carried = FromIntent(intent);
+        var (carried, invalidProxy) = Carried(intent);
+        if (invalidProxy)
+        {
+            Teardown(VpnStage.Failed, "bad-proxy", nameof(ConnectFailureReason.TransportRejected));
+            return StartCommandResult.NotSticky;
+        }
+
         var request = carried ?? VpnBridge.ReadRequest();
         if (request is null)
         {
@@ -645,6 +654,12 @@ public sealed class GeoVpnService : VpnService
         }
 
         _recovery.Reset();
+        if (_xhttp is not null || VpnBridge.ReadRequest()?.TransportProxy is not null)
+        {
+            Reraise("the network under the transport proxy changed; raising the session again");
+            return;
+        }
+
         var shape = _shape;
         if (shape is null)
         {
@@ -782,7 +797,7 @@ public sealed class GeoVpnService : VpnService
             _ => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
                 request.MtuMode, request.Ipv6, request.WsHost, request.WsPort, request.WsOffered, request.EngineLog,
                 request.DirectTcp, request.ExcludeRoutes, request.BypassApps, request.LocalInTunnel, signal, repair, ct,
-                request.VpnDns, request.VpnDnsNetwork),
+                request.VpnDns, request.VpnDnsNetwork, request.TransportProxy),
             PauseAsync,
             () => Tell($"this device is on no network, so {request.Name} is not dialled; it is dialled as soon as one is there"),
             () => Tell($"a network is there, so {request.Name} is dialled"),
@@ -954,7 +969,7 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Raises the session once and tells what the attempt ended with.
-    private async Task<DialOutcome> BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, SignalPlace? signal, bool repair, CancellationToken ct, string[]? vpnDns = null, bool vpnDnsNetwork = false)
+    private async Task<DialOutcome> BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, int mtuMode, bool ipv6, string? wsHost, int wsPort, bool wsOffered, int engineLog, bool directTcp, bool excludeRoutes, string[]? bypassApps, bool localInTunnel, SignalPlace? signal, bool repair, CancellationToken ct, string[]? vpnDns = null, bool vpnDnsNetwork = false, ResolvedTransportProxy? transportProxy = null)
     {
         try
         {
@@ -963,13 +978,14 @@ public sealed class GeoVpnService : VpnService
             Past(true);
             // Makes the peer answer on its own, so a quiet link is neither dropped by the provider nor mistaken
             // for a live one.
-            var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
+            var resolved = WgConfigEditor.EnsurePersistentKeepalive(transportProxy is null ? ResolveEndpoint(config) : config, KeepaliveSeconds);
             // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
             var underlay = resolved;
-            var carrier = StartCarrier(config, wsHost, wsPort, wsOffered, name);
+            var carrier = StartCarrier(config, wsHost, wsPort, wsOffered, name, transportProxy);
             if (carrier is not null)
             {
-                _carrier = carrier;
+                _carrier = carrier.WebSocket;
+                _xhttp = carrier.XHttp;
                 resolved = WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
             }
             else
@@ -1090,7 +1106,7 @@ public sealed class GeoVpnService : VpnService
                     + "leaves the tun again");
                 _localCarveForced = true;
                 return await BringUpAsync(plan, config, name, appMode, appList, mtu, mtuMode, ipv6, wsHost, wsPort, wsOffered,
-                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, signal, repair, ct, vpnDns, vpnDnsNetwork).ConfigureAwait(false);
+                    engineLog, directTcp, excludeRoutes, bypassApps, localInTunnel, signal, repair, ct, vpnDns, vpnDnsNetwork, transportProxy).ConfigureAwait(false);
             }
 
             // All UDP on the tunnel leaves no datagram to the owner check.
@@ -1574,13 +1590,13 @@ public sealed class GeoVpnService : VpnService
     // Whether the server of a configuration answers a handshake; null when it could not be asked.
     private bool? Answers(SwitchRequest request)
     {
-        var resolved = Resolved(request.Config);
+        var resolved = request.TransportProxy is null ? Resolved(request.Config) : WgConfigEditor.EnsurePersistentKeepalive(request.Config, KeepaliveSeconds);
         if (resolved is null)
         {
             return false;
         }
 
-        var carrier = StartCarrier(request.Config, request.WsHost, request.WsPort, request.WsOffered);
+        var carrier = StartCarrier(request.Config, request.WsHost, request.WsPort, request.WsOffered, transportProxy: request.TransportProxy);
         try
         {
             var dialled = carrier is null ? resolved : WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
@@ -1639,6 +1655,12 @@ public sealed class GeoVpnService : VpnService
     // Names the causes worth telling apart; the rest stay unclassified and get the generic notice.
     private static ConnectFailureReason ReasonFor(Exception ex)
     {
+        if (ex is TransportProxyFault fault)
+        {
+            return fault.Code is "proxy-dns-failed" or "proxy-network-missing" or "proxy-stopping" or "proxy-start-failed"
+                ? ConnectFailureReason.UnderlayUnreachable : ConnectFailureReason.TransportRejected;
+        }
+
         return ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException
             ? ConnectFailureReason.EngineUnavailable
             : ConnectFailureReason.Unknown;
@@ -3022,6 +3044,11 @@ public sealed class GeoVpnService : VpnService
 
         // A carried tunnel dials its carrier on the loopback, where another port changes nothing: its carrier opens
         // another websocket beside the one in use instead.
+        if (_xhttp is not null)
+        {
+            return Reraise($"{_recovery.Reason}; raising the XHTTP session again");
+        }
+
         if (_carrier is { } carrier)
         {
             var renewed = carrier.Renew();
@@ -3500,8 +3527,13 @@ public sealed class GeoVpnService : VpnService
     // offers, which takes the token of the config, else at the address the head passes. The front is resolved
     // here, while the machine still answers lookups of its own, and the carrier's socket is excused from the
     // tunnel, or it would be asked to carry itself.
-    private WsCarrier? StartCarrier(string config, string? host, int port, bool offered, string? name = null)
+    private TransportCarrier? StartCarrier(string config, string? host, int port, bool offered, string? name = null, ResolvedTransportProxy? transportProxy = null)
     {
+        if (transportProxy is { } selected)
+        {
+            return StartSelectedCarrier(config, selected, name);
+        }
+
         if (string.IsNullOrEmpty(host) || port <= 0)
         {
             return null;
@@ -3530,7 +3562,88 @@ public sealed class GeoVpnService : VpnService
             name is null ? null : () => FrontGone(name));
         _reach = (parsed, front.Port);
         Report($"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
-        return carrier;
+        return new TransportCarrier(carrier, carrier.LocalPort, carrier);
+    }
+
+    private sealed record TransportCarrier(IDisposable Lifetime, int LocalPort, WsCarrier? WebSocket = null, XHttpEngine? XHttp = null) : IDisposable
+    {
+        public void Dispose() => Lifetime.Dispose();
+    }
+
+    private TransportCarrier StartSelectedCarrier(string config, ResolvedTransportProxy selected, string? name)
+    {
+        if (selected.Record?.Proxy is not { } proxy || selected.TargetPort is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(selected.TargetHost))
+        {
+            throw new TransportProxyFault("bad-proxy");
+        }
+
+        var address = ResolvePhysical(proxy.Host);
+        if (name is not null)
+        {
+            _reach = (address, proxy.Port);
+        }
+
+        if (proxy.Transport == "websocket")
+        {
+            var front = WsEndpoint.From(selected);
+            var carrier = WsCarrier.Start(front, address, selected.TargetPort,
+                front.Offered ? ServiceToken.HeaderOf(config) : null,
+                socket => Protect(socket.Handle.ToInt32()),
+                (message, ex) => Report(ex is null ? message : $"{message}: {ex.GetType().Name}"));
+            return new TransportCarrier(carrier, carrier.LocalPort, carrier);
+        }
+
+        if (proxy.Transport == "xhttp")
+        {
+            using var reservation = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, ProtocolType.Udp);
+            reservation.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
+            var localPort = ((System.Net.IPEndPoint)reservation.LocalEndPoint!).Port;
+            var profile = XHttpProfile.Create(selected, localPort, address);
+            reservation.Close();
+            var carrier = XHttpEngine.Start(profile, localPort, Protect);
+            return new TransportCarrier(carrier, localPort, XHttp: carrier);
+        }
+
+        throw new TransportProxyFault("bad-transport");
+    }
+
+    private System.Net.IPAddress ResolvePhysical(string host)
+    {
+        if (System.Net.IPAddress.TryParse(host, out var literal))
+        {
+            return literal;
+        }
+
+        var network = AndroidNetworks.Under(this) ?? throw new TransportProxyFault("proxy-network-missing");
+        var addresses = network.GetAllByName(host)
+            .Select(address => System.Net.IPAddress.TryParse(address.HostAddress, out var parsed) ? parsed : null)
+            .Where(address => address is not null)
+            .OrderBy(address => address!.AddressFamily == AddressFamily.InterNetwork ? 0 : 1);
+        return addresses.FirstOrDefault() ?? throw new TransportProxyFault("proxy-dns-failed");
+    }
+
+    private static ResolvedTransportProxy? ReadTransportProxy(Intent intent)
+    {
+        var payload = intent.GetStringExtra(ExtraTransportProxy);
+        return payload is null ? null : System.Text.Json.JsonSerializer.Deserialize<ResolvedTransportProxy>(payload)
+            ?? throw new TransportProxyFault("bad-proxy");
+    }
+
+    private static (VpnRequest? Request, bool InvalidProxy) Carried(Intent? intent)
+    {
+        try
+        {
+            return (FromIntent(intent), false);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (null, true);
+        }
+        catch (TransportProxyFault)
+        {
+            return (null, true);
+        }
     }
 
     // Asks the server of a configuration past the tunnel, at the address its front was dialled at, where its websocket
@@ -3580,7 +3693,7 @@ public sealed class GeoVpnService : VpnService
     private void FrontGone(string name)
     {
         var request = VpnBridge.ReadRequest();
-        if (request is not { WsHost.Length: > 0 } || !string.Equals(request.Name, name, StringComparison.Ordinal))
+        if (request is not { WsHost.Length: > 0 } || request.TransportProxy is not null || !string.Equals(request.Name, name, StringComparison.Ordinal))
         {
             return;
         }
@@ -3837,7 +3950,8 @@ public sealed class GeoVpnService : VpnService
             intent.GetStringArrayExtra(ExtraBases),
             intent.GetBooleanExtra(ExtraHoldTraffic, true),
             intent.GetStringArrayExtra(ExtraVpnDns),
-            intent.GetBooleanExtra(ExtraVpnDnsNetwork, false));
+            intent.GetBooleanExtra(ExtraVpnDnsNetwork, false),
+            ReadTransportProxy(intent));
     }
 
     // The stop the user asked for: what it takes down must not come back with always-on or after a kill.
@@ -4074,6 +4188,8 @@ public sealed class GeoVpnService : VpnService
 
             _carrier?.Dispose();
             _carrier = null;
+            _xhttp?.Dispose();
+            _xhttp = null;
             if (_handle >= 0)
             {
                 KeepHotDirect();

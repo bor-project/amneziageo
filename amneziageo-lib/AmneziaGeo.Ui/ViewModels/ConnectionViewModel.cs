@@ -1578,14 +1578,18 @@ internal partial class ConnectionViewModel : ViewModelBase
     // Maps the agent's classified failure reason to a localized notice.
     private static string ConnectFailureNotice(StatusSnapshot snapshot)
     {
+        var detail = snapshot.ConnectFailDetail.StartsWith("proxy-", StringComparison.Ordinal)
+            || snapshot.ConnectFailDetail.StartsWith("xhttp-", StringComparison.Ordinal)
+            || snapshot.ConnectFailDetail is "bad-proxy" or "bad-endpoint"
+            ? TransportProxyWords.Fault(snapshot.ConnectFailDetail) : snapshot.ConnectFailDetail;
         if (KeptOnAnother(snapshot))
         {
-            return Loc.Instance.Get("MainVm_NoticeSwitchKept", snapshot.ConnectFailDetail, snapshot.BoundTarget);
+            return Loc.Instance.Get("MainVm_NoticeSwitchKept", detail, snapshot.BoundTarget);
         }
 
         var key = ConnectFailureKey(snapshot.ConnectFailReason);
         return NoticeUsesDetail(key)
-            ? Loc.Instance.Get(key, snapshot.ConnectFailDetail)
+            ? Loc.Instance.Get(key, detail)
             : Loc.Instance.Get(key);
     }
 

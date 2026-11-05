@@ -5,6 +5,7 @@
 
   <!-- gateway.exe: arch mapping + not-built guard. -->
   <Import Project="..\Gateway.targets" />
+  <Import Project="..\XHttp.targets" />
 
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />

@@ -486,7 +486,8 @@ internal sealed class LinuxAgent : IDisposable
             DnsTransport: _dnsTransport,
             ServerListsOf: limit?.Config ?? string.Empty,
             ServerLists: limit?.Lists,
-            FoundApps: await AppFinds.ReadAsync(_store, ct).ConfigureAwait(false));
+            FoundApps: await AppFinds.ReadAsync(_store, ct).ConfigureAwait(false),
+            TransportProxies: await TransportProxyCatalog.For(_store).ListAsync(ct).ConfigureAwait(false));
     }
 
     // One proxy setting on top of the ones in force.
@@ -862,6 +863,17 @@ internal sealed class LinuxAgent : IDisposable
 
     private async Task<IpcAck> RunAsync(IpcCommand command, CancellationToken ct)
     {
+        if (await TransportProxyCommands.TryExecuteAsync(_store, command, ct).ConfigureAwait(false) is { } proxyAck)
+        {
+            if (proxyAck.Ok && command.Op is IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy or IpcContract.OpSelectTransportProxy)
+            {
+                _restartRequired = _tunnel.Running;
+            }
+
+            await PushAsync(ct).ConfigureAwait(false);
+            return proxyAck;
+        }
+
         var args = command.Args;
         switch (command.Op)
         {
@@ -1139,10 +1151,14 @@ internal sealed class LinuxAgent : IDisposable
         _hold.Dialled();
         _recovery.Held = _hold.Active;
         _heldUnanswered = false;
-        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with { Offer = offer, Dns = configDns };
+        var pickedProxy = await ResolveTransportAsync(configName, ct).ConfigureAwait(false);
+        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with
+        {
+            Offer = offer, Dns = configDns, Proxy = pickedProxy.Proxy, ProxyChosen = true,
+        };
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         _tunnel.FrontAsker = Asker(configName, config);
-        var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
+        var failure = pickedProxy.Refusal ?? await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is { } refusal)
         {
             _connectFailed = true;
@@ -1193,7 +1209,26 @@ internal sealed class LinuxAgent : IDisposable
 
     // Asks the server of a config where the websocket front of its tunnel stands now.
     private Func<CancellationToken, Task<WsEndpoint?>> Asker(string name, string text) =>
-        session => _offers.FrontAsync(name, text, session);
+        async session =>
+        {
+            await _offers.AskAsync(name, text, session).ConfigureAwait(false);
+            var selected = await TransportProxyCatalog.For(_store).ResolveAsync(name, session).ConfigureAwait(false);
+            return selected?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selected) : null;
+        };
+
+    private async Task<(ResolvedTransportProxy? Proxy, TunnelFailure? Refusal)> ResolveTransportAsync(string name, CancellationToken ct)
+    {
+        try
+        {
+            return (await TransportProxyCatalog.For(_store).ResolveAsync(name, ct).ConfigureAwait(false), null);
+        }
+        catch (Exception ex) when (ex is TransportProxyFault or InvalidDataException or JsonException)
+        {
+            _log.Error("tunnel", "the selected transport proxy could not be resolved", ex);
+            return (null, new TunnelFailure(ConnectFailureReason.UnderlayUnreachable,
+                ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid"));
+        }
+    }
 
     // Dials the session again when its server offers no websocket front any more, so the tunnel goes without one.
     private Task FrontGoneAsync()
@@ -1460,6 +1495,7 @@ internal sealed class LinuxAgent : IDisposable
             await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
             await agent._store.RemoveConfigDnsAsync(name, ct).ConfigureAwait(false);
             await agent._store.RemoveConfigExclusionsAsync(name, ct).ConfigureAwait(false);
+            await ConfigForget.CarryAsync(agent._store, name, ct).ConfigureAwait(false);
         }
     }
 
@@ -1661,6 +1697,8 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await _store.SaveConfigAsync(args[1], source, ct).ConfigureAwait(false);
+        await TransportProxyPortability.ApplyAsync(_store, args[1],
+            await TransportProxyPortability.ExportAsync(_store, args[0], ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1809,7 +1847,10 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true);
+        var proxies = TransportProxyCatalog.For(_store);
+        await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
+        await proxies.LegacySettingsAsync(args[0], stored, transport, args.Count > 11 && args[11] == "legacy", ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
             await ApplyInboundAsync(args[0], transport, ct).ConfigureAwait(false);
@@ -3557,7 +3598,9 @@ internal sealed class LinuxAgent : IDisposable
             offer.PresetsOnly,
             offer.Ours,
             offered?.Fault ?? string.Empty,
-            offered?.Detail ?? string.Empty);
+            offered?.Detail ?? string.Empty,
+            (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).Reference,
+            true);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

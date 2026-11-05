@@ -721,9 +721,14 @@ internal partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Разбирает снимок. Машине с одним туннелем в нём нужны только конфигурации.
     /// </summary>
+    private IReadOnlyList<TransportProxySummary> _transportProxies = [];
+    private IReadOnlyDictionary<string, ConfigEntry> _transportEntries = new Dictionary<string, ConfigEntry>();
+
     public virtual void Apply(StatusSnapshot snapshot)
     {
+        _transportProxies = snapshot.TransportProxies ?? _transportProxies;
         Apply(snapshot.Configs);
+        SectionTransport?.ApplyProxyCatalog(_transportProxies, null, false);
     }
 
     // Строка каталога. Режим ставит свою.
@@ -737,6 +742,7 @@ internal partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public void Apply(IReadOnlyList<ConfigEntry> entries)
     {
+        _transportEntries = entries.ToDictionary(one => one.Name, StringComparer.Ordinal);
         // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
         // every snapshot push would regenerate every row's controls, flickering the list each tick even
         // though usually only the status field moves during a connect. Update the existing rows instead.
@@ -1228,6 +1234,7 @@ internal partial class ConfigViewModel : ViewModelBase
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false, item?.HoldTraffic ?? true, item?.VpnDnsMode ?? VpnDnsMode.Default, item?.VpnDns ?? string.Empty, item?.VpnDnsShown ?? string.Empty, item?.VpnDnsNetwork ?? false, item?.ServerDns ?? string.Empty, item?.DefaultDns ?? string.Empty, item?.DefaultDnsNetwork ?? false);
         ConfigTransport.ServerListsOnly = item?.ServerListsOnly ?? false;
         ConfigTransport.ServerOurs = item?.ServerOurs ?? false;
+        SeedProxyChoice(ConfigTransport);
         RefreshEditBar();
     }
 
@@ -1245,12 +1252,19 @@ internal partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        SeedProxyChoice(transport);
         transport.WebSocketOpen = item.WebSocketOffered;
         transport.WebSocketManual = item.WebSocketManual;
         transport.SignalOffered = item.SignalOffered;
         transport.ServerListsOnly = item.ServerListsOnly;
         transport.ServerOurs = item.ServerOurs;
         transport.Settled(item.VpnDnsShown, item.VpnDnsNetwork, item.ServerDns, item.DefaultDns, item.DefaultDnsNetwork);
+    }
+
+    private void SeedProxyChoice(ConfigTransportViewModel transport)
+    {
+        _transportEntries.TryGetValue(transport.ConfigName, out var entry);
+        transport.ApplyProxyCatalog(_transportProxies, entry?.TransportProxy, entry?.TransportProxyChosen ?? false);
     }
 
     // Subscribe the open-config editors' dirty signal so the footer Save/Cancel bar tracks their state.
@@ -1605,8 +1619,12 @@ internal partial class ConfigViewModel : ViewModelBase
 
     // Transport editor of a config that does not exist yet: defaults, and the front of the settings until its
     // server is asked.
-    private ConfigTransportViewModel NewSectionTransport() =>
-        new(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true);
+    private ConfigTransportViewModel NewSectionTransport()
+    {
+        var transport = new ConfigTransportViewModel(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true);
+        transport.ApplyProxyCatalog(_transportProxies, null, false);
+        return transport;
+    }
 
     // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()

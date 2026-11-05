@@ -23,6 +23,7 @@ project.lock.json
 
 # Native engine output
 *.so
+.deps/
 
 # Configurations handed to the container
 docker/configs/

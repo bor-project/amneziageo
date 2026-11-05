@@ -101,6 +101,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
     [NotifyPropertyChangedFor(nameof(IsSettingsRouting))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsProxies))]
     [NotifyPropertyChangedFor(nameof(IsSettingsConnections))]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
@@ -136,6 +137,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Routing = AppFeatures.MultiServer
             ? new FleetRoutingViewModel(this, connection, prefs)
             : new RoutingViewModel(this, connection, prefs);
+        Proxies = new TransportProxiesViewModel(this, connection);
         Connections = AppFeatures.MultiServer
             ? new FleetConnectionsViewModel(connection)
             : new ConnectionsViewModel(connection);
@@ -153,6 +155,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         General.PropertyChanged += OnGeneralPropertyChanged;
         Config.PropertyChanged += OnSectionBarChanged;
         Routing.PropertyChanged += OnSectionBarChanged;
+        Proxies.PropertyChanged += OnSectionBarChanged;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
@@ -202,6 +205,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Routing screen.
     /// </summary>
     public RoutingViewModel Routing { get; }
+
+    public TransportProxiesViewModel Proxies { get; }
 
     /// <summary>
     /// Connections screen: the tunnel settings, the proxy and the access point.
@@ -269,6 +274,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     public bool IsSettingsRouting => SettingsSection == "routing";
 
+    public bool IsSettingsProxies => SettingsSection == "proxies";
+
     public bool IsSettingsConnections => SettingsSection == "connections";
 
     public bool IsSettingsGeneral => SettingsSection == "general";
@@ -325,6 +332,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             {
                 "config" => Config.IsSectionImport || Config.IsConfigManage,
                 "routing" => Routing.IsSectionImport || Routing.EditRoutingList is not null,
+                "proxies" => Proxies.ShowEditor || Proxies.IsLoading,
                 _ => false,
             }
             || IsSettingsSources
@@ -335,7 +343,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Whether the reconnect offer belongs in the section footer: the editable sections carry it there.
     /// </summary>
-    public bool ReconnectPromptInSection => ShowContent && SettingsSection is "config" or "routing";
+    public bool ReconnectPromptInSection => ShowContent && SettingsSection is "config" or "routing" or "proxies";
 
     /// <summary>
     /// Whether the section footer offers the reconnect that applies the saved settings: it takes the strip once
@@ -345,7 +353,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         && !_reconnectDeferred
         && ReconnectPromptInSection
         && !Config.ShowSaveBar
-        && !Routing.ShowSaveBar;
+        && !Routing.ShowSaveBar
+        && !Proxies.ShowSaveBar;
 
     /// <summary>
     /// Re-arms the footer reconnect offer, so a save asks again after an earlier one was put off.
@@ -401,6 +410,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Config.AbandonCreate();
         Routing.AbandonCreate();
         Routing.LeaveSection();
+        Proxies.LeaveSection();
         RefreshLogsActive();
     }
 
@@ -452,6 +462,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         "config" => Config.TryNavigateBack(),
         "routing" => Routing.TryNavigateBack(),
+        "proxies" => Proxies.TryNavigateBack(),
         _ => false,
     };
 
@@ -479,7 +490,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var slash = view.IndexOf('/');
         var section = slash > 0 ? view[(slash + 1)..] : string.Empty;
-        if (section is "config" or "routing" or "connections" or "general" or "sources" or "logs" or "probe" or "legal")
+        if (section is "config" or "routing" or "proxies" or "connections" or "general" or "sources" or "logs" or "probe" or "legal")
         {
             SettingsSection = section;
         }
@@ -666,6 +677,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Routing.CancelSectionCommand.Execute(null);
         }
 
+        if (Proxies.HasUnsavedChanges)
+        {
+            Proxies.CancelSectionCommand.Execute(null);
+        }
+
         if (Connections.HotspotDirty)
         {
             Connections.CancelSectionCommand.Execute(null);
@@ -679,7 +695,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         var section = SectionHasUnsaved(SettingsSection)
             ? SettingsSection
-            : new[] { "config", "routing", "connections" }.FirstOrDefault(SectionHasUnsaved);
+            : new[] { "config", "routing", "proxies", "connections" }.FirstOrDefault(SectionHasUnsaved);
         if (section is null)
         {
             return;
@@ -704,6 +720,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             places.Add(Place("Main_RailRoutingTitle", Routing.UnsavedName));
         }
 
+        if (Proxies.HasUnsavedChanges)
+        {
+            places.Add(Place("Proxies_Title", Proxies.UnsavedName));
+        }
+
         if (Connections.HotspotDirty)
         {
             places.Add(Place("Main_RailConnectionsTitle", Loc.Instance.Get("General_HotspotEnabled")));
@@ -717,6 +738,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         "config" => Config.HasUnsavedChanges,
         "routing" => Routing.HasUnsavedChanges,
+        "proxies" => Proxies.HasUnsavedChanges,
         "connections" => Connections.HotspotDirty,
         _ => false,
     };
@@ -755,6 +777,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Fill an empty Routing / Config section with the first available item so it never opens on a blank editor.
     private void SelectSectionDefault(string section)
     {
+        if (section == "proxies")
+        {
+            Proxies.EnterSection();
+        }
+
         if (section == "routing")
         {
             Routing.EnterSection();
@@ -859,6 +886,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // the section being left, so a stale red error does not linger on return (#3/#4).
         Config.ConfigDeletePending = false;
         Routing.RoutingDeletePending = false;
+        Proxies.DeletePending = false;
         if (Routing.RoutingEditor is { } editor)
         {
             editor.ClearPending = false;
@@ -881,6 +909,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Routing.LeaveSection();
         }
 
+        if (value != "proxies")
+        {
+            Proxies.LeaveSection();
+        }
+
         // Entering the probe section asks where the speed is measured; the answer lands after the screen is up.
         if (value == "probe")
         {
@@ -900,6 +933,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         Config.IsActiveSection = SettingsSection == "config";
         Routing.IsActiveSection = SettingsSection == "routing";
+        Proxies.IsActiveSection = SettingsSection == "proxies";
         Connections.IsActiveSection = SettingsSection == "connections";
     }
 
@@ -928,9 +962,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Re-gate the footer reconnect offer when a section's Save bar takes or frees the strip.
     private void OnSectionBarChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ConfigViewModel.ShowSaveBar))
+        if (e.PropertyName is nameof(ConfigViewModel.ShowSaveBar) or nameof(TransportProxiesViewModel.ShowEditor) or nameof(TransportProxiesViewModel.IsLoading))
         {
             OnPropertyChanged(nameof(ShowReconnectBar));
+            OnPropertyChanged(nameof(SettingsStepsBack));
         }
     }
 
@@ -970,6 +1005,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Home.Reset();
             Config.Reset();
             Routing.Reset();
+            Proxies.Reset();
             Sources.Reset();
             Diagnostics.Reset();
             HasConfigs = false;
@@ -987,6 +1023,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Config.Apply(snapshot);
         FleetSolo = ConfigFleet is not { } fleet || fleet.Standing.Count < 2;
         Routing.Apply(snapshot);
+        Proxies.Apply(snapshot);
         Sources.Apply(snapshot);
         HasConfigs = Config.Configs.Count > 0;
         Config.NotifyHostFlagsChanged();

@@ -64,6 +64,29 @@ internal static class PastTunnel
         }
     }
 
+    /// <summary>
+    /// Connects a proxy check through the physical network.
+    /// </summary>
+    public static async ValueTask<Stream> ConnectProxyAsync(DnsEndPoint point, CancellationToken ct)
+    {
+        var network = AndroidNetworks.Under(Application.Context) ?? throw new IOException("The physical network is unavailable.");
+        return await DialAsync(point, network, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Binds a proxy socket to the physical network.
+    /// </summary>
+    public static bool BypassProxy(Socket socket)
+    {
+        if (AndroidNetworks.Under(Application.Context) is not { } network)
+        {
+            return false;
+        }
+
+        Bind(network, socket);
+        return true;
+    }
+
     // Connects to the first address of a host that takes the connection, on the network given or the usual way.
     private static async Task<Stream> DialAsync(DnsEndPoint point, Network? network, CancellationToken ct)
     {

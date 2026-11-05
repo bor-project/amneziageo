@@ -1,0 +1,124 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             x:Class="AmneziaGeo.Ui.Views.TransportProxiesView"
+             x:DataType="vm:TransportProxiesViewModel" x:CompileBindings="True">
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
+    <Grid x:Name="CatalogueHeader" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <TextBlock Classes="section" Text="{l:Tr Proxies_Title}" VerticalAlignment="Center" />
+      <Button x:Name="AddButton" Grid.Column="1" Classes="methodpick" Content="{l:Tr Main_AddButton}"
+              Command="{Binding AddCommand}" IsVisible="{Binding IsCatalogue}" />
+    </Grid>
+    <TextBlock Grid.Row="1" Text="{Binding StatusMessage}" Classes="fieldwarn" TextWrapping="Wrap"
+               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <Panel Grid.Row="2" x:Name="Body" KeyDown="OnBodyKeyDown">
+      <ScrollViewer x:Name="CatalogueScroll" IsVisible="{Binding IsCatalogue}"
+                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+          <TextBlock Text="{l:Tr Proxies_Empty}" Classes="muted" IsVisible="{Binding IsEmpty}" />
+          <ItemsControl x:Name="Cards" ItemsSource="{Binding Items}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="{Binding CatalogColumns}" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:TransportProxyItemViewModel">
+                <Button Classes="serverrow" HorizontalContentAlignment="Stretch" Margin="0,0,8,8"
+                        Command="{Binding $parent[UserControl].((vm:TransportProxiesViewModel)DataContext).OpenCardCommand}"
+                        CommandParameter="{Binding}">
+                  <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="14,12,14,0">
+                      <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Grid.Column="1" Text="{Binding Transport}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Row="1" Text="{Binding Address}" Classes="muted" FontSize="12.5"
+                               Margin="14,0" TextWrapping="Wrap" />
+                    <Border Grid.Row="2" Classes="cardfoot" Padding="14,8">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBlock Text="{Binding Source}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="1" Text="{Binding Availability}" Classes="muted" FontSize="12"
+                                   Classes.fieldwarn="{Binding Unavailable}" />
+                      </Grid>
+                    </Border>
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+      <ProgressBar IsIndeterminate="{Binding IsLoading}" IsVisible="{Binding IsLoading}" Width="150" HorizontalAlignment="Center" />
+      <ScrollViewer x:Name="EditorScroll" IsVisible="{Binding ShowEditor}"
+                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="14">
+          <ContentControl Content="{Binding Editor}" HorizontalContentAlignment="Stretch">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:TransportProxyEditorViewModel">
+                <Border Classes="sect" IsEnabled="{Binding !IsBusy}">
+                  <Grid x:Name="ProxyFieldsHost">
+                  <StackPanel Spacing="14" MaxWidth="620" HorizontalAlignment="Left"
+                              Width="{Binding #ProxyFieldsHost.Bounds.Width}">
+                    <TextBlock Text="{Binding Source}" Classes="muted" TextWrapping="Wrap" />
+                    <StackPanel Spacing="2" MaxWidth="620" HorizontalAlignment="Stretch">
+                      <TextBlock Classes="label" Text="{l:Tr Proxies_Name}" />
+                      <TextBox x:Name="ProxyName" Classes="field" Text="{Binding Name}" MaxLength="64" IsReadOnly="{Binding !Editable}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2" MaxWidth="620" HorizontalAlignment="Stretch">
+                      <TextBlock Classes="label" Text="{l:Tr Proxies_Transport}" />
+                      <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding Transports}" SelectedIndex="{Binding TransportIndex, Mode=TwoWay}"
+                                                 IsEnabled="{Binding ModernEditable}" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <Grid ColumnDefinitions="*,100" ColumnSpacing="12" MaxWidth="620">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="label" Text="{l:Tr Proxies_Host}" />
+                        <TextBox Classes="field" Text="{Binding Host}" IsReadOnly="{Binding !Editable}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Classes="label" Text="{l:Tr Main_ServerPortLabel}" />
+                        <TextBox Classes="field" Text="{Binding Port}" IsReadOnly="{Binding !Editable}" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Spacing="2" MaxWidth="620">
+                      <TextBlock Classes="label" Text="{l:Tr Proxies_Path}" />
+                      <TextBox Classes="field" Text="{Binding Path}" IsReadOnly="{Binding !Editable}" />
+                    </StackPanel>
+                    <StackPanel Spacing="14" IsVisible="{Binding ShowTls}" MaxWidth="620">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="label" Text="SNI" />
+                        <TextBox Classes="field" Text="{Binding ServerName}" PlaceholderText="{Binding Host}" IsReadOnly="{Binding !ModernEditable}" />
+                      </StackPanel>
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="label" Text="{l:Tr Proxies_Pin}" />
+                        <TextBox Classes="field" Text="{Binding Pin}" IsReadOnly="{Binding !ModernEditable}" />
+                      </StackPanel>
+                    </StackPanel>
+                    <StackPanel Spacing="2" IsVisible="{Binding ShowCredential}" MaxWidth="620">
+                      <TextBlock Classes="label" Text="{Binding CredentialLabel}" />
+                      <TextBox Classes="field" Text="{Binding Credential}" PasswordChar="●" IsReadOnly="{Binding !Editable}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Availability}" Classes="muted" />
+                    <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" TextWrapping="Wrap"
+                               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+          <Button Classes="methodpick" Content="{l:Tr Proxies_Check}" Command="{Binding ProbeCommand}" IsEnabled="{Binding CanProbe}" HorizontalAlignment="Left" />
+          <ProgressBar IsVisible="{Binding IsProbing}" IsIndeterminate="{Binding IsProbing}" />
+          <Border Classes="sect" IsVisible="{Binding CanDelete}">
+            <StackPanel Spacing="10">
+              <Button Classes="methodpick" Content="{l:Tr Proxies_Delete}" Command="{Binding RequestDeleteCommand}" IsVisible="{Binding !DeletePending}" HorizontalAlignment="Left" />
+              <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding DeletePending}">
+                <Button Classes="methodpick" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelDeleteCommand}" />
+                <Button Classes="accent" Content="{l:Tr Proxies_Delete}" Command="{Binding DeleteCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Panel>
+  </Grid>
+</UserControl>

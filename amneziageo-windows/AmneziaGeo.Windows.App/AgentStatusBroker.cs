@@ -250,6 +250,19 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     {
         try
         {
+            if (await TransportProxyCommands.TryExecuteAsync(store, command, ct).ConfigureAwait(false) is { } proxyAck)
+            {
+                if (proxyAck.Ok && command.Op is IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy or IpcContract.OpSelectTransportProxy)
+                {
+                    foreach (var member in RunningMembers())
+                    {
+                        MarkRestartRequired(member);
+                    }
+                }
+
+                return proxyAck;
+            }
+
             return command.Op switch
             {
                 IpcContract.OpAddConfig => await AskServersAsync(await AddConfigAsync(command.Args, ct), ct),
@@ -678,6 +691,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         await configRepo.CopyAsync(source, destination, ct);
+        await TransportProxyPortability.ApplyAsync(store, destination,
+            await TransportProxyPortability.ExportAsync(store, source, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         logger.LogInformation("copied config {Source} -> {Dest}", source, destination);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
     }
@@ -802,7 +817,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             var dns = await store.GetConfigDnsAsync(name, ct);
             var exclusions = await store.GetConfigExclusionsAsync(name, ct);
-            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns));
+            configBlocks.Add(await new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns).WithTransportProxyAsync(store, name, ct).ConfigureAwait(false));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -1035,6 +1050,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     private async Task ApplyConfigDataAsync(string name, PortableBundle.ConfigBlock block, CancellationToken ct)
     {
         await block.ApplyDnsAsync(store, name, ct);
+        await block.ApplyTransportProxyAsync(store, name, ct).ConfigureAwait(false);
 
         if (block.Exclusions is { } exclusions)
         {
@@ -1192,7 +1208,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var updated = new ConfigTransport(args[0], on, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true);
+        var proxies = TransportProxyCatalog.For(store);
+        await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
         await store.SetConfigTransportAsync(updated, ct);
+        await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy", ct).ConfigureAwait(false);
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
@@ -3378,6 +3397,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var link = boundState is not null ? control.Link : LinkReading.Empty;
         var now = boundState is not null ? control.Now : LinkNow.Unknown;
 
+        var transportProxies = await TransportProxyCatalog.For(store).ListAsync(ct).ConfigureAwait(false);
+        var proxyState = await store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
         var defaultExclusions = default(string);
@@ -3411,7 +3432,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var vpnDns = VpnDns.Showing(configDns, offer.Dns(), WgConfigEditor.GetDns(configText), PrivateNetworks.Beside(routes.LocalSubnets()));
             offered.Add((name, offer));
             var offeredSubscription = member is null ? null : offer.Subscription();
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty, proxyState.Selections.Single(one => one.Config == name).Reference, true));
         }
 
         var routingLists = new List<RoutingListEntry>();
@@ -3529,7 +3550,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             UpdateSource: updateRoute.Key,
             UpdateSourceError: updateFault.Text,
             UpdateSourceErrorSince: updateFault.Since,
-            UpdateSetupPin: update?.Route?.Pin ?? string.Empty), scope, states);
+            UpdateSetupPin: update?.Route?.Pin ?? string.Empty,
+            TransportProxies: transportProxies), scope, states);
     }
 
     /// <summary>

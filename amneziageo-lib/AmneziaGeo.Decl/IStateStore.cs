@@ -66,18 +66,6 @@ public interface IStateStore
     Task RemoveConfigTransportAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the common transport proxy catalog.
-    /// </summary>
-    Task<TransportProxyState> GetTransportProxyStateAsync(CancellationToken ct = default) =>
-        TransportProxyStateFallback.ReadAsync(this, ct);
-
-    /// <summary>
-    /// Replaces the catalog at the expected revision.
-    /// </summary>
-    Task<bool> TrySaveTransportProxyStateAsync(TransportProxyState state, long expectedRevision, CancellationToken ct = default) =>
-        TransportProxyStateFallback.SaveAsync(this, state, expectedRevision, ct);
-
-    /// <summary>
     /// Returns the config's preferred DNS, or null when none (auto-detect).
     /// </summary>
     Task<ConfigDns?> GetConfigDnsAsync(string name, CancellationToken ct = default);

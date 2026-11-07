@@ -16,9 +16,9 @@ public static class PortableBundle
     public const string FormatTag = "amneziageo-bundle";
 
     /// <summary>
-    /// The version 3 schema for explicit transport proxy selections.
+    /// The bundle schema version this build writes and can read.
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions _options = new()
     {
@@ -43,7 +43,7 @@ public static class PortableBundle
         string? ActiveRoutingListId = null);
 
     /// <summary>
-    /// A standalone config and its network, routing and transport settings.
+    /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.
     /// </summary>
     public sealed record ConfigBlock(
         string Name,
@@ -53,21 +53,8 @@ public static class PortableBundle
         string? Dns = null,
         string? Exclusions = null,
         string? VpnDnsMode = null,
-        string? VpnDns = null,
-        ProxySelectionBlock? TransportProxy = null)
+        string? VpnDns = null)
     {
-        /// <summary>
-        /// Adds the configuration's explicit proxy choice.
-        /// </summary>
-        public async Task<ConfigBlock> WithTransportProxyAsync(IStateStore store, string name, CancellationToken ct = default) =>
-            this with { TransportProxy = await TransportProxyPortability.ExportAsync(store, name, ct).ConfigureAwait(false) };
-
-        /// <summary>
-        /// Applies the configuration's explicit proxy choice.
-        /// </summary>
-        public Task ApplyTransportProxyAsync(IStateStore store, string name, CancellationToken ct = default) =>
-            TransportProxyPortability.ApplyAsync(store, name, TransportProxy, ct);
-
         /// <summary>
         /// Returns the block of a config with its name servers of the names that go through the VPN, none where it
         /// holds the choice of the server.

@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|proxy|mtu|inbound|routing|signal|hold|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|mtu|inbound|routing|signal|hold|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -43,7 +43,6 @@ internal static class ConfigCommands
             "vpn-dns" => await VpnDnsAsync(agent, rest).ConfigureAwait(false),
             "exclusions" => await ExclusionsAsync(agent, rest).ConfigureAwait(false),
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),
-            "proxy" => await TransportProxyCommands.SelectAsync(agent, rest).ConfigureAwait(false),
             "mtu" => await MtuAsync(agent, rest).ConfigureAwait(false),
             "inbound" => await InboundAsync(agent, rest).ConfigureAwait(false),
             "routing" => await RoutingAsync(agent, rest).ConfigureAwait(false),
@@ -69,7 +68,7 @@ internal static class ConfigCommands
                 config.Name,
                 config.Endpoint.Length > 0 ? config.Endpoint : "-",
                 config.GeoSplit ? $"on ({config.Rules.Count.ToString(CultureInfo.InvariantCulture)})" : "off",
-                Proxy(config),
+                config.WebSocket ? Front(config) : "-",
                 config.Dns.Length > 0 ? config.Dns : "-",
                 VpnDnsCell(config),
                 Inbound(config),
@@ -80,14 +79,9 @@ internal static class ConfigCommands
             ])
             .ToList();
 
-        Output.Table(["NAME", "ENDPOINT", "GEO", "PROXY", "DNS", "VPN DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], rows, "no configurations yet");
+        Output.Table(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "VPN DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], rows, "no configurations yet");
         return Exit.Ok;
     }
-
-    // Names the selected proxy.
-    private static string Proxy(ConfigEntry config) => config.TransportProxyChosen
-        ? config.TransportProxy is { } reference ? reference.Source + "/" + reference.Id : "none"
-        : config.WebSocket ? Front(config) : "-";
 
     // Names the websocket front the tunnel is carried to, or says that the server offers none.
     private static string Front(ConfigEntry config) =>
@@ -324,8 +318,7 @@ internal static class ConfigCommands
             Toggle.Text(stored?.InboundNetwork ?? false),
             Toggle.Text(stored?.UseRouting ?? true),
             port,
-            host,
-            "legacy").ConfigureAwait(false));
+            host).ConfigureAwait(false));
     }
 
     // The size travels with the rest of the transport, so the stored fields are resent untouched beside it.

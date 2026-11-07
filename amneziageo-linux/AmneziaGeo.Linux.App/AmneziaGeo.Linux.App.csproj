@@ -2,7 +2,6 @@
 
   <!-- Builds amneziawg-go and stages the daemon binary next to the agent. -->
   <Import Project="..\Engine.targets" />
-  <Import Project="..\XHttp.targets" />
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>

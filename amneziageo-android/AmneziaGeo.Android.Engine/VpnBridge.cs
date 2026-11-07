@@ -35,8 +35,7 @@ public sealed record VpnRequest(
     string[]? Bases = null,
     bool HoldTraffic = true,
     string[]? VpnDns = null,
-    bool VpnDnsNetwork = false,
-    ResolvedTransportProxy? TransportProxy = null);
+    bool VpnDnsNetwork = false);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that
@@ -53,8 +52,7 @@ public sealed record CardsRequest(IReadOnlyList<SweepServer> Servers, bool Carri
 /// The configuration the head wants the tunnel to move to while another one is connected. The tunnel asks its
 /// server first: only the process of the tunnel dials past the tunnel.
 /// </summary>
-public sealed record SwitchRequest(string Config, string Name, string? WsHost, int WsPort, bool WsOffered, int EngineLog = 1,
-    ResolvedTransportProxy? TransportProxy = null);
+public sealed record SwitchRequest(string Config, string Name, string? WsHost, int WsPort, bool WsOffered, int EngineLog = 1);
 
 /// <summary>
 /// Carries the routing rules and the tunnel stage between the head and the tunnel, which run in separate

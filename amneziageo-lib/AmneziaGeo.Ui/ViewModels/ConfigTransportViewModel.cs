@@ -351,7 +351,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _webSocketPort = shownPort > 0 ? shownPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
 
         // Seeded (backing fields set, no OnChanged fired): this state is the clean baseline (#143).
-        ApplyProxyCatalog([], null, false);
         CaptureBaseline();
     }
 
@@ -503,7 +502,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         // Any edit clears a stale validation / status line (#3).
         StatusMessage = string.Empty;
 
-        var dirty = ProxySelectionDirty || UseWebSocket != _baseUseWebSocket
+        var dirty = UseWebSocket != _baseUseWebSocket
             || !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
             || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
             || AuthMode != _baseAuthMode
@@ -530,7 +529,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public void CaptureBaseline()
     {
-        CaptureProxyBaseline();
         _baseUseWebSocket = UseWebSocket;
         _baseWebSocketHost = WebSocketHost ?? string.Empty;
         _baseWebSocketPort = WebSocketPort ?? string.Empty;
@@ -561,7 +559,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _applying = true;
         try
         {
-            RevertProxyChoice();
             UseWebSocket = _baseUseWebSocket;
             WebSocketHost = _baseWebSocketHost;
             WebSocketPort = _baseWebSocketPort;
@@ -733,16 +730,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             {
                 var mode = (Decl.VpnDnsMode)VpnDnsMode;
                 ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConfigVpnDns, [ConfigName, Decl.VpnDns.NameOf(mode), mode == Decl.VpnDnsMode.Own ? VpnDns.Trim() : string.Empty]));
-            }
-
-            if (ack.Ok && ProxySelectionDirty)
-            {
-                ack = await CommitProxyChoiceAsync();
-                if (!ack.Ok)
-                {
-                    StatusMessage = TransportProxyWords.Fault(ack.Message);
-                    return false;
-                }
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).

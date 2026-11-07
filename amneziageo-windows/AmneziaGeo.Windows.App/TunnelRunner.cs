@@ -175,23 +175,55 @@ internal sealed class TunnelRunner(
         var duties = TunnelDuties.Parse(await store.GetSettingAsync(TunnelPaths.DutiesKey(name)));
         _duties = duties;
 
-        var transport = await store.GetConfigTransportAsync(name).ConfigureAwait(false);
+        // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it. The front is
+        // the one the server offered when the agent asked it before this connect, else the one the config names,
+        // else the one of the settings.
+        var transport = await store.GetConfigTransportAsync(name);
         var offer = await ServerOfferStore.ReadAsync(store, name, config, CancellationToken.None).ConfigureAwait(false);
-        var selectedProxy = await ResolveProxyAsync(name).ConfigureAwait(false);
-        var useCarrier = selectedProxy is not null;
-        var front = selectedProxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy) : default(WsEndpoint?);
-        var legacyCarrier = front is not null && selectedProxy!.Record.Legacy && File.Exists(TunnelPaths.WsTunnelExe());
-        var wsServerIp = useCarrier
-            ? await ResolveHostV4Async(selectedProxy!.Record.Proxy.Host).ConfigureAwait(false)
-                ?? throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The selected proxy has no reachable IPv4 address.")
-            : null;
-        var effectiveMtu = MtuPlan.ResolveForLink(transport, config);
-        if (selectedProxy is not null)
+        var front = transport?.UseWebSocket == true ? WsEndpoint.Of(config, offer, transport) : null;
+        var useWebSocket = front is not null;
+        if (transport?.UseWebSocket == true && front is null)
         {
-            logger.LogDebug("{Name}: the tunnel uses {Transport} at {Host}:{Port} for {Target}:{TargetPort}",
-                name, selectedProxy.Record.Proxy.Transport, selectedProxy.Record.Proxy.Host, selectedProxy.Record.Proxy.Port,
-                selectedProxy.TargetHost, selectedProxy.TargetPort);
+            logger.LogWarning("{Name} asks for the websocket carrier but its server offers no front; connecting over plain UDP instead, which a filtering provider may block", name);
         }
+
+        var effectiveMtu = MtuPlan.ResolveForLink(transport, config);
+        string? wsHost = null;
+        var wsPort = 0;
+        var wsTargetPort = 0;
+        var wsPathPrefix = string.Empty;
+        var wsCredentials = string.Empty;
+        var wsOffered = false;
+        IPAddress? wsServerIp = null;
+        if (useWebSocket)
+        {
+            var parsed = ParseEndpoint(WgConfigEditor.GetEndpoint(config));
+            if (parsed is null)
+            {
+                logger.LogWarning("{Name} asks for the websocket carrier but its Endpoint is missing or malformed; connecting over plain UDP instead, which a filtering provider may block", name);
+                useWebSocket = false;
+            }
+            else
+            {
+                var (_, endpointPort) = parsed.Value;
+                wsTargetPort = endpointPort;
+                wsHost = front!.Value.Host;
+                wsPort = front.Value.Port;
+                wsPathPrefix = front.Value.PathPrefix;
+                wsCredentials = front.Value.Credentials;
+                wsOffered = front.Value.Offered;
+                wsServerIp = ResolveHostV4(wsHost);
+            }
+        }
+
+        if (useWebSocket)
+        {
+            // Log only that a path token is set, never its value - path/credentials are secrets.
+            logger.LogDebug("{Name}: the tunnel will be carried inside a websocket to {Host}:{Port} (path token set: {HasPath}) and handed to port {Target} on the server",
+                name, wsHost, wsPort, wsPathPrefix.Length > 0, wsTargetPort);
+        }
+
+        WsTunnelTransport? wsTransport = null;
 
         var geo = await store.GetActiveTunnelGeoAsync(name);
         // The ranges of this tunnel's share, cut around the networks this machine stands in.
@@ -290,8 +322,8 @@ internal sealed class TunnelRunner(
         var tunnelResolver = vpnDns.Network && lanResolvers.Count > 0 ? lanResolvers : echoes;
         // Resolvers take this tunnel only while it looks names up itself; the ones of the network never do.
         var routedResolvers = vpnDns.Network
-            ? RoutedResolvers(echoes, false, false, useCarrier)
-            : RoutedResolvers(tunnelResolver, duties.HoldsResolver, trackDomains, useCarrier);
+            ? RoutedResolvers(echoes, false, false, useWebSocket)
+            : RoutedResolvers(tunnelResolver, duties.HoldsResolver, trackDomains, useWebSocket);
         if (vpnDns.Network)
         {
             logger.LogInformation("{Name}: the names through the tunnel are asked of the network of this machine, {Resolvers}, past the tunnel", name, string.Join(", ", tunnelResolver));
@@ -464,8 +496,8 @@ internal sealed class TunnelRunner(
         }
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
-        logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried by a transport proxy: {Carrier} [{Elapsed} ms in]",
-            name, allowedIps.Count, effectiveMtu, useCarrier, connectSw.ElapsedMilliseconds);
+        logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried in a websocket: {Ws} [{Elapsed} ms in]",
+            name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
 
         // All-UDP catch-all (split-only); from the routing list or the global setting.
         var allUdp = TakesAllUdp(geoSplit, duties.CarriesDefault, routingSettings?.AllUdp, appSettings.TunnelAllUdp);
@@ -508,17 +540,17 @@ internal sealed class TunnelRunner(
         {
             logger.LogInformation("names ending in {Suffixes} belong to your own network, so they keep resolving there and never go through the tunnel", string.Join(", ", exclusionDomains.Skip(parsedExclusionDomains.Count)));
         }
-        // Keeps the proxy name on the physical resolver.
-        if (selectedProxy is not null && !IPAddress.TryParse(selectedProxy.Record.Proxy.Host, out _))
+        // Resolve the wstunnel host via the LAN resolver - the tunnel isn't up yet.
+        if (useWebSocket && wsHost is not null && !IPAddress.TryParse(wsHost, out _))
         {
-            exclusionDomains.Add(selectedProxy.Record.Proxy.Host);
+            exclusionDomains.Add(wsHost);
         }
 
         // Plain-UDP endpoint: pin it to an IP resolved via the still-clean LAN resolver so the engine does no
         // DNS at bring-up - full tunnel would otherwise resolve the host through the not-yet-up tunnel and die
         // with "No such host". The stored config keeps the hostname; only this in-memory copy carries the IP.
         // Keep the host on-LAN too, so if it stays a hostname the engine resolves it off-tunnel.
-        if (!useCarrier && ParseEndpoint(WgConfigEditor.GetEndpoint(config)) is { } endpointParts
+        if (!useWebSocket && ParseEndpoint(WgConfigEditor.GetEndpoint(config)) is { } endpointParts
             && !IPAddress.TryParse(endpointParts.Host, out _))
         {
             if (!exclusionDomains.Contains(endpointParts.Host))
@@ -540,7 +572,7 @@ internal sealed class TunnelRunner(
 
         // Probe for the underlay hop. Read from the endpoint because it keeps an explicit off-tunnel route, so the
         // lookup still answers with the physical gateway after the tunnel's default halves are installed.
-        var underlayProbe = useCarrier ? wsServerIp : TunnelEndpoint.Resolve(config);
+        var underlayProbe = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
 
         // Bypass floor = the connected subnets, always: a full tunnel with the kill-switch must never
         // blackhole the local LAN, and a split tunnel honours the same manual list. Stored exclusions add to
@@ -770,7 +802,7 @@ internal sealed class TunnelRunner(
                 keptOut,
                 effectiveMtu,
                 loggerFactory.CreateLogger<AppGateway>());
-            if (_appGateway is not null && WgConfigEditor.GetPeerPublicKey(config) is { } peerKey)
+            if (_appGateway is not null && WgConfigEditor.GetPeerPublicKey(config) is { } carrier)
             {
                 // A session taken onto the adapter leaves through the tunnel without the cache having decided its
                 // address first, so the peer has to accept what was never advertised for it. The engine answers only
@@ -781,7 +813,7 @@ internal sealed class TunnelRunner(
                     {
                         try
                         {
-                            uapi.AddAllowedIps(TunnelDevice.NameOf(name), peerKey, ["0.0.0.0/0"]);
+                            uapi.AddAllowedIps(TunnelDevice.NameOf(name), carrier, ["0.0.0.0/0"]);
                             logger.LogInformation("{Name}: the peer carries every destination while the applications ride their own adapter", name);
                             return;
                         }
@@ -1041,9 +1073,8 @@ internal sealed class TunnelRunner(
         // The signal of the server reaches the port the agent listens on, from the server alone.
         var signalOpened = signal is not null && InboundFirewall.AllowSignal(name, signal, logger);
 
-        // Permits the selected carrier executable.
-        var underlayAppPath = selectedProxy?.Record.Proxy.Transport == "xhttp" ? XHttpProcess.ExecutablePath
-            : legacyCarrier ? TunnelPaths.WsTunnelExe() : useCarrier ? Environment.ProcessPath : null;
+        // Whitelist wstunnel under the kill-switch.
+        var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
         _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, transport?.AllowInbound != true, signal, otherVpns, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
@@ -1074,60 +1105,60 @@ internal sealed class TunnelRunner(
             _ = Task.Run(() => flowTracker.RunAsync(sessionCts.Token));
         }
 
-        var carrier = default(TransportCarrier);
+        // Start wstunnel last so a failure can't orphan it.
+        if (useWebSocket)
+        {
+            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials,
+                wsOffered ? ServiceToken.HeaderOf(config) : null, TunnelPaths.WsHeadersFile(name),
+                line => RecordRejection(name, line), (dialed, stop) => MovedFrontAsync(name, original, dialed, stop),
+                loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
+            if (wsTransport is null)
+            {
+                throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, $"WebSocket transport (wstunnel) failed to start for {name}");
+            }
+
+            config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{wsTransport.LocalPort}");
+            logger.LogInformation("{Name}: the websocket carrier is up and the tunnel now dials it locally on port {Port}, so to the provider this looks like ordinary web traffic", name, wsTransport.LocalPort);
+        }
+
+        config = WgConfigEditor.SetMtu(config, effectiveMtu);
+        // Keep the peer handshake/NAT state warm so a lossy underlay doesn't let the session age out into a
+        // forced re-dial; only injected when the imported config didn't already specify its own keepalive.
+        config = WgConfigEditor.EnsurePersistentKeepalive(config, DefaultKeepaliveSeconds);
+        logger.LogInformation("{Name}: packet size set to {Mtu} and a keepalive every {Keepalive}s, so a quiet link is not dropped by the provider", name, effectiveMtu, DefaultKeepaliveSeconds);
+
+        // Leaves out the fields the engine has no parser for.
+        config = WgConfigEditor.RemoveInterfaceFields(config, WireGuardEngine.UnknownFields, out var unknown);
+        if (unknown.Count > 0)
+        {
+            logger.LogWarning("{Name}: the tunnel engine of this build does not know {Fields}, so they were left out of the config it is given; a server that requires them will not answer", name, string.Join(", ", unknown));
+        }
+
+        // A carrier that stops carrying leaves the session standing, so the link is measured from inside the tunnel
+        // and the carrier re-dialled on what the echoes say - the tunnel, its routes and its DNS all stay up.
+        if (wsTransport is not null)
+        {
+            // The config's own DNS is gone from it by now, so the resolvers come from what was read out of it
+            // earlier: those are the addresses the tunnel is given routes to, and an echo needs one of them.
+            var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), echoes), CarrierWatchdog.EchoIntervalMs, echo: TunnelEcho.From(WgConfigEditor.GetAddresses(config)));
+            var watchdog = new CarrierWatchdog(wsTransport, uapi, probe, name, loggerFactory.CreateLogger<CarrierWatchdog>());
+            _ = Task.Run(() => probe.RunAsync(sessionCts.Token));
+            _ = Task.Run(() => watchdog.RunAsync(sessionCts.Token));
+        }
+
+        logger.LogInformation("{Name}: everything is prepared in {Elapsed} ms, starting the tunnel", name, connectSw.ElapsedMilliseconds);
+        var adapterAddresses = TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config));
+        routes.LeaveToSystem(adapterAddresses);
+        _ = Task.Run(() => TunnelAddressCheck.RunAsync(name, TunnelDevice.NameOf(name), adapterAddresses, logger, sessionCts.Token), CancellationToken.None);
+
         try
         {
-            carrier = await StartCarrierAsync(name, selectedProxy, front, wsServerIp, legacyCarrier, config, original, sessionCts.Token).ConfigureAwait(false);
-            var wsTransport = carrier?.Legacy;
-            if (carrier is not null)
-            {
-                config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{carrier.LocalPort}");
-                logger.LogInformation("{Name}: the transport carrier listens locally on port {Port}", name, carrier.LocalPort);
-                if (carrier.XHttp is { } xhttp)
-                {
-                    _ = WatchXHttpAsync(name, xhttp, sessionCts.Token);
-                }
-            }
-
-            config = WgConfigEditor.SetMtu(config, effectiveMtu);
-            // Keep the peer handshake/NAT state warm so a lossy underlay doesn't let the session age out into a
-            // forced re-dial; only injected when the imported config didn't already specify its own keepalive.
-            config = WgConfigEditor.EnsurePersistentKeepalive(config, DefaultKeepaliveSeconds);
-            logger.LogInformation("{Name}: packet size set to {Mtu} and a keepalive every {Keepalive}s, so a quiet link is not dropped by the provider", name, effectiveMtu, DefaultKeepaliveSeconds);
-
-            // Leaves out the fields the engine has no parser for.
-            config = WgConfigEditor.RemoveInterfaceFields(config, WireGuardEngine.UnknownFields, out var unknown);
-            if (unknown.Count > 0)
-            {
-                logger.LogWarning("{Name}: the tunnel engine of this build does not know {Fields}, so they were left out of the config it is given; a server that requires them will not answer", name, string.Join(", ", unknown));
-            }
-
-            // A carrier that stops carrying leaves the session standing, so the link is measured from inside the tunnel
-            // and the carrier re-dialled on what the echoes say - the tunnel, its routes and its DNS all stay up.
-            if (wsTransport is not null)
-            {
-                // The config's own DNS is gone from it by now, so the resolvers come from what was read out of it
-                // earlier: those are the addresses the tunnel is given routes to, and an echo needs one of them.
-                var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), echoes), CarrierWatchdog.EchoIntervalMs, echo: TunnelEcho.From(WgConfigEditor.GetAddresses(config)));
-                var watchdog = new CarrierWatchdog(wsTransport, uapi, probe, name, loggerFactory.CreateLogger<CarrierWatchdog>());
-                _ = Task.Run(() => probe.RunAsync(sessionCts.Token));
-                _ = Task.Run(() => watchdog.RunAsync(sessionCts.Token));
-            }
-
-            logger.LogInformation("{Name}: everything is prepared in {Elapsed} ms, starting the tunnel", name, connectSw.ElapsedMilliseconds);
-            var adapterAddresses = TunnelAddressCheck.Expected(WgConfigEditor.GetAddresses(config));
-            routes.LeaveToSystem(adapterAddresses);
-            _ = Task.Run(() => TunnelAddressCheck.RunAsync(name, TunnelDevice.NameOf(name), adapterAddresses, logger, sessionCts.Token), CancellationToken.None);
-
-            try
-            {
-                WireGuardEngine.RunTunnelService(config, TunnelDevice.NameOf(name));
-                await ReportEngineExitAsync(name).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not ConnectFailureException)
-            {
-                throw new ConnectFailureException(ConnectFailureReason.AdapterStartFailed, ex.Message, ex);
-            }
+            WireGuardEngine.RunTunnelService(config, TunnelDevice.NameOf(name));
+            await ReportEngineExitAsync(name).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not ConnectFailureException)
+        {
+            throw new ConnectFailureException(ConnectFailureReason.AdapterStartFailed, ex.Message, ex);
         }
         finally
         {
@@ -1160,9 +1191,9 @@ internal sealed class TunnelRunner(
             });
             cleanup.Run("the firewall protection", firewall.Disable);
 
-            if (carrier is not null)
+            if (wsTransport is not null)
             {
-                await cleanup.RunAsync("the transport carrier", () => carrier.DisposeAsync().AsTask()).ConfigureAwait(false);
+                await cleanup.RunAsync("the websocket carrier", async () => await wsTransport.DisposeAsync());
             }
 
             if (applied)
@@ -1211,156 +1242,6 @@ internal sealed class TunnelRunner(
             }
 
             cleanup.Done();
-        }
-    }
-
-    private async Task<ResolvedTransportProxy?> ResolveProxyAsync(string name)
-    {
-        try
-        {
-            return await TransportProxyCatalog.For(store).ResolveAsync(name).ConfigureAwait(false);
-        }
-        catch (TransportProxyFault ex)
-        {
-            throw new ConnectFailureException(ConnectFailureReason.TransportRejected, ex.Code, ex);
-        }
-    }
-
-    private async Task<TransportCarrier?> StartCarrierAsync(string name, ResolvedTransportProxy? selected, WsEndpoint? front,
-        IPAddress? address, bool legacy, string config, string original, CancellationToken ct)
-    {
-        if (selected is null)
-        {
-            return null;
-        }
-
-        if (address is null)
-        {
-            throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The proxy address is missing.");
-        }
-
-        if (!WsCarrier.LoopbackCarries())
-        {
-            throw new ConnectFailureException(ConnectFailureReason.LoopbackBlocked, "The local UDP carrier is blocked.");
-        }
-
-        if (selected.Record.Proxy.Transport == "xhttp")
-        {
-            try
-            {
-                var process = await XHttpProcess.StartAsync(selected, address, ct, Note).ConfigureAwait(false);
-                return new TransportCarrier(xhttp: process);
-            }
-            catch (Exception ex) when (ex is TransportProxyFault or System.ComponentModel.Win32Exception or IOException)
-            {
-                throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The XHTTP carrier did not start.", ex);
-            }
-        }
-
-        if (front is not { } named)
-        {
-            throw new ConnectFailureException(ConnectFailureReason.TransportRejected, "The selected proxy transport is unsupported.");
-        }
-
-        var token = named.Offered ? ServiceToken.HeaderOf(config) : null;
-        if (legacy)
-        {
-            var carried = await WsTunnelTransport.StartAsync(named.Host, named.Port, selected.TargetPort, named.PathPrefix, named.Credentials,
-                token, TunnelPaths.WsHeadersFile(name), line => RecordRejection(name, line),
-                (dialed, stop) => MovedFrontAsync(name, original, dialed, stop), loggerFactory.CreateLogger<WsTunnelTransport>(), ct).ConfigureAwait(false);
-            return carried is null
-                ? throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The WebSocket carrier did not start.")
-                : new TransportCarrier(legacy: carried);
-        }
-
-        var probe = await WsCarrier.ProbeAsync(named, address, selected.TargetPort, token, null, ct).ConfigureAwait(false);
-        if (probe.Outcome != WsFrontOutcome.Ok)
-        {
-            var reason = probe.Outcome is WsFrontOutcome.Tls or WsFrontOutcome.Refused
-                ? ConnectFailureReason.TransportRejected : ConnectFailureReason.UnderlayUnreachable;
-            throw new ConnectFailureException(reason, $"The WebSocket carrier did not connect: {probe.Outcome}.");
-        }
-
-        return new TransportCarrier(websocket: WsCarrier.Start(named, address, selected.TargetPort, token, null, Note));
-
-        void Note(string message, Exception? error)
-        {
-            if (error is not null)
-            {
-                logger.LogWarning(error, "{Name}: {Message}", name, message);
-            }
-            else
-            {
-                logger.LogDebug("{Name}: {Message}", name, message);
-            }
-        }
-    }
-
-    private async Task WatchXHttpAsync(string name, XHttpProcess process, CancellationToken ct)
-    {
-        try
-        {
-            var code = await process.Completion.WaitAsync(ct).ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested();
-            await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), $"The XHTTP carrier stopped with exit code {code}.", ct).ConfigureAwait(false);
-            await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(name), nameof(ConnectFailureReason.UnderlayUnreachable), ct).ConfigureAwait(false);
-            var manager = new ServiceManager();
-            for (var attempt = 0; attempt < 10 && manager.QueryState(name) is not ("STOPPED" or "ABSENT"); attempt++)
-            {
-                ct.ThrowIfCancellationRequested();
-                manager.StopQuiet(name);
-                await Task.Delay(500, ct).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "{Name}: the stopped XHTTP carrier could not end its tunnel", name);
-        }
-    }
-
-    private sealed class TransportCarrier : IAsyncDisposable
-    {
-        private readonly WsCarrier? _websocket;
-        private readonly object _gate = new();
-        private Task? _stopping;
-        public WsTunnelTransport? Legacy { get; }
-        public XHttpProcess? XHttp { get; }
-        public int LocalPort => Legacy?.LocalPort ?? _websocket?.LocalPort ?? XHttp!.LocalPort;
-
-        /// <summary>
-        /// ctor
-        /// </summary>
-        public TransportCarrier(WsTunnelTransport? legacy = null, WsCarrier? websocket = null, XHttpProcess? xhttp = null)
-        {
-            Legacy = legacy;
-            _websocket = websocket;
-            XHttp = xhttp;
-        }
-
-        /// <inheritdoc/>
-        public ValueTask DisposeAsync()
-        {
-            lock (_gate)
-            {
-                return new ValueTask(_stopping ??= StopAsync());
-            }
-        }
-
-        private async Task StopAsync()
-        {
-            _websocket?.Dispose();
-            if (Legacy is not null)
-            {
-                await Legacy.DisposeAsync().ConfigureAwait(false);
-            }
-
-            if (XHttp is not null)
-            {
-                await XHttp.DisposeAsync().ConfigureAwait(false);
-            }
         }
     }
 

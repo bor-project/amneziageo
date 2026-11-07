@@ -115,7 +115,7 @@ func (f *tcpForwarder) send(packet []byte) bool {
 func (f *tcpForwarder) drain() {
 	for {
 		pkt := f.link.ReadContext(f.ctx)
-		if pkt == nil {
+		if pkt.IsNil() {
 			return
 		}
 

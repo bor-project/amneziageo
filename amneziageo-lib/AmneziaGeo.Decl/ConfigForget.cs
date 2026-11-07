@@ -10,8 +10,6 @@ public static class ConfigForget
     /// </summary>
     public static async Task CarryAsync(IStateStore store, string name, CancellationToken ct = default)
     {
-        await ServerOfferStore.ForgetAsync(store, name, ct).ConfigureAwait(false);
-        await TransportProxyCatalog.For(store).ForgetAsync(name, ct).ConfigureAwait(false);
         var members = await store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false);
         var own = members.Where(member => string.Equals(member.ConfigName, name, StringComparison.Ordinal)).ToList();
         foreach (var member in own)

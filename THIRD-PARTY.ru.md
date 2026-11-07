@@ -10,7 +10,6 @@ AmneziaGeo распространяется по лицензии GPL-3.0 или
 - sing-tun и sing (nekohasekai, SagerNet): GPL-3.0 или более поздняя.
 - gVisor (Google): Apache-2.0.
 - wstunnel (Erèbe): BSD-3-Clause.
-- Xray-core 26.10.31 (XTLS): MPL-2.0.
 - Go и golang.org/x (авторы Go): BSD-3-Clause.
 
 ## Окно и служба

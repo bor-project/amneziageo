@@ -68,7 +68,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
             var dns = await store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
             var exclusions = await store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
-            configBlocks.Add(await new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns).WithTransportProxyAsync(store, name, ct).ConfigureAwait(false));
+            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -239,7 +239,6 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         }
 
         await block.ApplyDnsAsync(store, name, ct).ConfigureAwait(false);
-        await block.ApplyTransportProxyAsync(store, name, ct).ConfigureAwait(false);
 
         if (block.Exclusions is { } exclusions)
         {

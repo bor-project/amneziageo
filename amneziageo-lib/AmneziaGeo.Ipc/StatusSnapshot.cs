@@ -242,5 +242,4 @@ public sealed record StatusSnapshot(
     /// <summary>
     /// The SHA-256 of the certificate the server of the setup answers under, empty where the machine proves it.
     /// </summary>
-    string UpdateSetupPin = "",
-    IReadOnlyList<AmneziaGeo.Decl.TransportProxySummary>? TransportProxies = null);
+    string UpdateSetupPin = "");

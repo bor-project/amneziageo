@@ -413,7 +413,6 @@ function Build-Variant {
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-    & (Join-Path $win 'tools\fetch-xray.ps1') -Arch $Arch
     Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
     dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=$buildTarget" $updateProps $channelProps $engineProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }

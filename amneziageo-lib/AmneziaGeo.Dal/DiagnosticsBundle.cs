@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using AmneziaGeo.Decl;
 
@@ -41,11 +42,22 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
     private static readonly Regex WsUrlPathToken =
         new(@"(?i)(wss?://(?:[^/@\s]+@)?[^/@\s]+)/\S+");
 
-    // Strip wstunnel credential flags and generic credential/password labels.
+    // Masks credential flags and labels.
     private static readonly Regex CredentialFlag =
         new(@"(?i)(--http-upgrade-credentials[=\s]+)\S+");
     private static readonly Regex CredentialLabel =
-        new(@"(?i)((?:credentials|password|passwd)\s*[=:]\s*)\S+");
+        new(@"(?i)(\b(?:credentials?|password|passwd|(?:access[_ -]?|refresh[_ -]?)?token|uuid|vless[_ -]?(?:id|user))\s*[=:]\s*)\S+");
+    private static readonly Regex Authorization =
+        new(@"(?i)(\bauthorization\s*:\s*(?:bearer|basic)\s+|\bbearer\s+|authorization\.bearer\.)[a-z0-9._~+/=\-]+");
+    private static readonly Regex VlessUrlCredential =
+        new(@"(?i)(vless://)[^@/\s]+@");
+    private static readonly Regex JsonStringProperty =
+        new("""(?<key>"(?:\\.|[^"\\])*")(?<separator>\s*:\s*)(?<value>"(?:\\.|[^"\\])*")""");
+    private static readonly HashSet<string> JsonSecretNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "credential", "credentials", "password", "passwd", "privateKey", "private_key", "presharedKey", "preshared_key",
+        "identityKey", "token", "accessToken", "access_token", "refreshToken", "refresh_token", "authorization", "uuid",
+    };
 
     // The structured log tables and their file names inside the archive.
     private static readonly (string Table, string Entry)[] LogTables =
@@ -156,12 +168,44 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
     /// </summary>
     public static string Redact(string text)
     {
+        text = JsonStringProperty.Replace(text, RedactJsonProperty);
         text = KeyMaterial.Replace(text, "$1[REDACTED]");
         text = UrlCredentials.Replace(text, "$1[REDACTED]@");
+        text = VlessUrlCredential.Replace(text, "$1[REDACTED]@");
         text = WsUrlPathToken.Replace(text, "$1/[REDACTED]");
         text = CredentialFlag.Replace(text, "$1[REDACTED]");
         text = CredentialLabel.Replace(text, "$1[REDACTED]");
+        text = Authorization.Replace(text, "$1[REDACTED]");
         return text;
+    }
+
+    private static string RedactJsonProperty(Match match)
+    {
+        try
+        {
+            var key = JsonSerializer.Deserialize<string>(match.Groups["key"].Value) ?? "";
+            var uuid = key.Equals("id", StringComparison.OrdinalIgnoreCase)
+                && Guid.TryParse(JsonSerializer.Deserialize<string>(match.Groups["value"].Value), out _);
+            return JsonSecretNames.Contains(key) || uuid
+                ? match.Groups["key"].Value + match.Groups["separator"].Value + "\"[REDACTED]\""
+                : match.Value;
+        }
+        catch (JsonException)
+        {
+            return match.Value;
+        }
+    }
+
+    private async Task<TransportProxyState?> ProxyStateAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or JsonException)
+        {
+            return null;
+        }
     }
 
     // The library: every config with its transport, geo, dns and exclusions, then the routing lists with their rules.
@@ -169,6 +213,12 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
     {
         var sb = new StringBuilder();
         var configs = library?.Names ?? await store.ListConfigNamesAsync(ct).ConfigureAwait(false);
+        var proxies = await ProxyStateAsync(ct).ConfigureAwait(false);
+        if (proxies is null)
+        {
+            sb.AppendLine("[transport proxies] catalog-unreadable");
+        }
+
         sb.AppendLine($"[configs] ({configs.Count})");
         foreach (var config in configs)
         {
@@ -179,7 +229,18 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
             var mtu = transport is { Mtu: > 0 } ? transport.Mtu.ToString(CultureInfo.InvariantCulture) : "default";
             sb.AppendLine($"    mtu:        {mtu}");
             sb.AppendLine($"    server:     {(offer.Ours ? $"ours {offer.Version}, offers {string.Join(", ", offer.Features.Keys)}" : "not ours or not asked")}");
-            if (transport?.UseWebSocket == true)
+            var selection = proxies?.Selections.FirstOrDefault(one => one.Config == config);
+            if (proxies is null)
+            {
+                sb.AppendLine("    transport:  catalog-unreadable");
+            }
+            else if (selection is not null)
+            {
+                sb.AppendLine(selection.Reference is { } reference
+                    ? $"    transport:  proxy {reference.Source}/{reference.Id}"
+                    : "    transport:  none (plain UDP)");
+            }
+            else if (transport?.UseWebSocket == true)
             {
                 sb.AppendLine(WsEndpoint.Of(text, offer, transport) is { } front
                     ? $"    websocket:  on -> {front.Display()} ({WsEndpoint.SourceOf(text, offer).ToString().ToLowerInvariant()})"

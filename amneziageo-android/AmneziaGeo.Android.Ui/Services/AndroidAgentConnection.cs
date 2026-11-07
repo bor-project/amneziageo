@@ -25,6 +25,8 @@ namespace AmneziaGeo.Android.Ui.Services;
 internal sealed class AndroidAgentConnection : IAgentConnection
 {
     private readonly Dictionary<string, string> _configs = new(StringComparer.Ordinal);
+    private readonly ConfigNameClaims _configNames;
+    private readonly object _saveGate = new();
 
     // The order the list is shown in; the store file keeps it as the order its config map is written in.
     private List<string> _order = [];
@@ -75,6 +77,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
+    private IReadOnlyList<TransportProxySummary> _transportProxies = [];
+    private IReadOnlyDictionary<string, TransportProxySelection> _transportSelections = new Dictionary<string, TransportProxySelection>();
+    private readonly SemaphoreSlim _transportRefreshGate = new(1, 1);
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
     private readonly AndroidGeoFileStore _geoFiles;
@@ -136,6 +141,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private string? _selectedTarget;
     private long? _selectedRoutingList;
+    private ConfigRoutingMemory _routingChoices = new();
 
     // What the notification of a tunnel taken down was last told, so the same is not posted again.
     private string _downNotice = string.Empty;
@@ -152,13 +158,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private DateTimeOffset _churnSince;
     private bool _active;
     private bool _restartRequired;
+    private string _restartSessionId = string.Empty;
 
     // Просил ли пользователь быть подключённым: держится через падения связи и гаснет только по отбою.
     private bool _dialWanted;
-
-    // The websocket front the dial that stands was handed, and whether it was handed one yet.
-    private WsEndpoint? _handedFront;
-    private bool _frontHanded;
 
     // Сколько ждать остановки туннеля перед подъёмом заново.
     private const int RestartTickMs = 100;
@@ -232,11 +235,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     /// </summary>
     public AndroidAgentConnection()
     {
+        _configNames = new ConfigNameClaims(_configs);
         var dir = Application.Context.FilesDir?.AbsolutePath ?? ".";
         _storePath = System.IO.Path.Combine(dir, "agent.json");
         var geoFiles = new AndroidGeoFileStore(System.IO.Path.Combine(dir, "geo"));
         _geoFiles = geoFiles;
         _store = new SqliteStateStore(System.IO.Path.Combine(dir, "state.db"));
+        TransportProxyCatalog.For(_store, _ => Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>(_configs, StringComparer.Ordinal)));
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance, PastTunnel.ConnectAsync);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, geoFiles);
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
@@ -404,11 +409,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private async Task<IpcAck> DispatchAsync(IpcCommand command)
     {
+        if (command.Op is IpcContract.OpListTransportProxies or IpcContract.OpGetTransportProxy
+            or IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy
+            or IpcContract.OpSelectTransportProxy or IpcContract.OpProbeTransportProxy)
+        {
+            await EnsureInitAsync().ConfigureAwait(false);
+            var proxyAck = (await TransportProxyCommands.TryExecuteAsync(_store, command, probe: ProbeTransportAsync,
+                running: _active && _boundTarget is { Length: > 0 } ? [_boundTarget] : [],
+                changed: config =>
+                {
+                    if (_active && _boundTarget == config)
+                    {
+                        RequireRestart();
+                    }
+                }, actual: _active && _boundTarget is { Length: > 0 } actualTargetName && VpnBridge.ReadRunningTransport(actualTargetName) is { } actualTransport
+                    ? new Dictionary<string, RunningTransportProxy>(StringComparer.Ordinal) { [actualTargetName] = actualTransport } : null).ConfigureAwait(false))!;
+
+            await RefreshTransportProxiesAsync().ConfigureAwait(false);
+            PushSnapshot();
+            return proxyAck;
+        }
+
         var args = command.Args;
         switch (command.Op)
         {
             case IpcContract.OpImportConfig:
             case IpcContract.OpEditConfig:
+            {
                 if (args.Count < 2)
                 {
                     return Fail();
@@ -420,24 +447,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     return rejected;
                 }
 
-                // Import creates; replacing the text of an existing configuration is edit-config.
-                if (command.Op == IpcContract.OpImportConfig && _configs.ContainsKey(args[0]))
+                await EnsureInitAsync().ConfigureAwait(false);
+                using var importedName = TryClaimConfigNames([args[0]], out var importBusy);
+                if (importedName is null || !importedName.Write(args[0], args[1], command.Op == IpcContract.OpImportConfig))
                 {
-                    return new IpcAck(false, IpcMessage.Key("Agent_ConfigNameTaken", args[0]));
+                    return new IpcAck(false, IpcMessage.Key("Agent_ConfigNameTaken", importBusy ?? args[0]));
                 }
-
-                _configs[args[0]] = args[1];
 
                 // A first import is ready to dial: it takes the selection while there is none.
                 if (command.Op == IpcContract.OpImportConfig && _selectedTarget is null)
                 {
-                    _selectedTarget = args[0];
+                    SelectTarget(args[0]);
                 }
 
                 Save();
                 PushSnapshot();
                 _offers.Warm([(args[0], _configs.GetValueOrDefault(args[0]))], OfferChangedAsync);
                 return Ok();
+            }
 
             // One head, one process: presence needs no announcing here; the servers are asked what they offer.
             case IpcContract.OpAttachUi:
@@ -670,12 +697,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (desired == "disconnect")
         {
             _dialWanted = false;
-            _frontHanded = false;
             _raiseOwed = false;
             _watch.Dropped();
             Save();
             _log.Info("agent", "disconnect requested");
 
+            VpnBridge.ClearRequest();
             // Stops through a broadcast: a head in the background is barred from starting the service.
             if (VpnBridge.IsRunning(Application.Context))
             {
@@ -683,8 +710,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
             else
             {
-                // The tunnel is not there to drop the session it left on the disk.
-                VpnBridge.ClearRequest();
                 OnVpnStateChanged(VpnStage.Disconnected, null);
             }
 
@@ -700,8 +725,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "nothing selected");
         }
 
+        await EnsureInitAsync().ConfigureAwait(false);
         var configName = _selectedTarget;
-        if (!_configs.TryGetValue(configName, out var configText))
+        if (configName is null)
+        {
+            return Fail();
+        }
+
+        using var claimed = TryClaimConfigNames([configName], out var busy);
+        if (claimed is null)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", busy ?? configName));
+        }
+
+        if (claimed.Read(configName) is not { } configText)
         {
             SetConnectFailure(nameof(ConnectFailureReason.ConfigMissing), configName);
             _log.Error("agent", $"connect refused: configuration '{configName}' is gone");
@@ -718,8 +755,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "vpn permission denied");
         }
 
+        if (_selectedTarget != configName)
+        {
+            return Fail();
+        }
+
         // A tunnel connected on another configuration stays until the server of this one answers.
         var live = _active && VpnBridge.IsRunning(Application.Context);
+        var beforeTarget = _boundTarget;
+        var beforeStatus = _boundStatus;
+        var beforeDialWanted = _dialWanted;
         var standing = SwitchGuard.Standing(live, _boundStatus, _boundTarget, configName);
         var restart = _restartRequired;
         _raiseOwed = false;
@@ -727,7 +772,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _retryAttempt = 0;
         _restartRequired = false;
         _dialWanted = true;
-        _frontHanded = false;
         _watch.Asked(live);
         Save();
         // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
@@ -740,6 +784,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // The server is asked what it offers before the plan and the tunnel take its word.
         var offer = await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
         await RefreshOffersAsync().ConfigureAwait(false);
+        var selectedProxy = await SelectedProxyAsync(configName).ConfigureAwait(false);
+        if (selectedProxy.Fault.Length > 0)
+        {
+            _active = live;
+            _boundTarget = live ? beforeTarget : configName;
+            _boundStatus = live ? beforeStatus : ConnectionStatus.Failed;
+            _dialWanted = live && beforeDialWanted;
+            _restartRequired = restart;
+            SetConnectFailure(nameof(ConnectFailureReason.UnderlayUnreachable), selectedProxy.Fault);
+            Save();
+            PushSnapshot();
+            return new IpcAck(false, IpcMessage.Key("Proxies_RequestFailed"));
+        }
 
         // A list the server put in use joins the plan of this connect, and the lists it handed out show at once.
         if (await TakeStorePickAsync().ConfigureAwait(false))
@@ -751,12 +808,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
-        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText).ConfigureAwait(false)))
+        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText, selectedProxy.Proxy).ConfigureAwait(false)))
         {
             return Kept(configName, standing, restart);
         }
 
-        var useRouter = RouterEnabled();
+        var useRouter = RouterEnabled(configName);
 
         // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
         var planStarted = System.Environment.TickCount64;
@@ -766,26 +823,60 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         var words = await NoticeWordsAsync().ConfigureAwait(false);
         _downNotice = DownKey(configName, words);
-        var front = Front(configName, configText);
-        _handedFront = front;
-        _frontHanded = true;
-        StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
+        var front = selectedProxy.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy.Proxy) : (WsEndpoint?)null;
+        var dns = VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true));
+        if (_selectedTarget != configName || claimed.Read(configName) != configText)
+        {
+            if (_boundTarget == configName && _boundStatus == ConnectionStatus.Connecting)
+            {
+                _active = live;
+                _boundTarget = live ? beforeTarget : null;
+                _boundStatus = live ? beforeStatus : ConnectionStatus.Disconnected;
+                _dialWanted = live && beforeDialWanted;
+                _restartRequired = restart;
+                Save();
+                PushSnapshot();
+            }
+
+            return Fail();
+        }
+
+        var started = StartService(GeoVpnService.ActionConnect, configText, configName,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
-            _excludeRoutes, session.Bypass, _localInTunnel, JsonSerializer.Serialize(words),
+            _excludeRoutes, session.Bypass, _localInTunnel, words,
             TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
             [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase],
-            VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true)));
+            dns, selectedProxy: selectedProxy.Proxy);
+        if (!started.Started)
+        {
+            if (started.Restored && _boundTarget == configName && _boundStatus == ConnectionStatus.Connecting)
+            {
+                _active = live;
+                _boundTarget = live ? beforeTarget : null;
+                _boundStatus = live ? beforeStatus : ConnectionStatus.Failed;
+                _dialWanted = beforeDialWanted;
+                _restartRequired = restart;
+            }
+
+            TakeTunnelStage();
+            SyncTunnelState();
+            SetConnectFailure(nameof(ConnectFailureReason.ServiceStartFailed), configName);
+            Save();
+            PushSnapshot();
+            return new IpcAck(false, IpcMessage.Key("Proxies_RequestFailed"));
+        }
+
         return new IpcAck(true, "connecting");
     }
 
     // Hands the server of a configuration to the tunnel, which dials it past itself, and waits for its word; a
     // tunnel that says nothing leaves the verdict unknown.
-    private async Task<string> AskedAsync(string name, string text)
+    private async Task<string> AskedAsync(string name, string text, ResolvedTransportProxy? selectedProxy)
     {
-        var front = Front(name, text);
+        var front = selectedProxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy) : (WsEndpoint?)null;
         VpnBridge.ClearSwitchResult();
-        VpnBridge.WriteSwitch(new SwitchRequest(text, name, front?.Address(), front?.Port ?? 0, front?.Offered ?? false, EngineLogLevel(_logLevel)));
+        VpnBridge.WriteSwitch(new SwitchRequest(text, name, front?.Address(), front?.Port ?? 0, front?.Offered ?? false, EngineLogLevel(_logLevel), selectedProxy));
         VpnBridge.RequestSwitch(Application.Context);
         var said = await SwitchGuard
             .AwaitAsync(VpnBridge.ReadSwitchResult, SwitchWaitMs, ProbePollMs, pause => Task.Delay(pause))
@@ -802,7 +893,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (string.Equals(_selectedTarget, asked, StringComparison.Ordinal))
         {
             Journal(SwitchLog.Config(asked, standing));
-            _selectedTarget = standing;
+            SelectTarget(standing);
         }
 
         _boundStatus = ConnectionStatus.Connected;
@@ -845,7 +936,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         };
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, string? notice = null, SignalPlace? signal = null, string[]? bases = null, VpnDnsPick? vpnDns = null)
+    private static (bool Started, bool Restored) StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, WsEndpoint? front, bool foreground, int engineLog = 1, bool directTcp = true, bool excludeRoutes = false, string[]? bypassPkgs = null, bool localInTunnel = false, NoticeWords? notice = null, SignalPlace? signal = null, string[]? bases = null, VpnDnsPick? vpnDns = null, ResolvedTransportProxy? selectedProxy = null)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -877,7 +968,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         intent.PutExtra(GeoVpnService.ExtraLocalInTunnel, localInTunnel);
         if (notice is not null)
         {
-            intent.PutExtra(GeoVpnService.ExtraNotice, notice);
+            intent.PutExtra(GeoVpnService.ExtraNotice, JsonSerializer.Serialize(notice));
         }
 
         if (signal is not null)
@@ -905,6 +996,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraHoldTraffic, transport.HoldTraffic);
         }
 
+        if (selectedProxy is not null)
+        {
+            intent.PutExtra(GeoVpnService.ExtraTransportProxy, JsonSerializer.Serialize(selectedProxy));
+        }
+
         if (front is { } carried)
         {
             intent.PutExtra(GeoVpnService.ExtraWsHost, carried.Address());
@@ -912,13 +1008,40 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraWsOffered, carried.Offered);
         }
 
-        if (foreground && Build.VERSION.SdkInt >= BuildVersionCodes.O)
+        var requested = new VpnRequest(config ?? string.Empty, name ?? "AmneziaGeo",
+            appMode is not null && appPkgs is { Length: > 0 } ? appMode : null,
+            appMode is not null && appPkgs is { Length: > 0 } ? appPkgs : null,
+            transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, front?.Address(), front?.Port ?? 0,
+            engineLog, transport is null ? 0 : (int)transport.MtuMode, directTcp, excludeRoutes,
+            bypassPkgs is { Length: > 0 } ? bypassPkgs : null, localInTunnel, front?.Offered ?? false,
+            notice, signal?.Port ?? 0, signal is null ? null : [.. signal.Sources],
+            bases is { Length: > 0 } ? bases : null, transport?.HoldTraffic ?? true,
+            vpnDns is null ? null : [.. vpnDns.Servers], vpnDns?.Network ?? false, selectedProxy);
+        var staged = VpnBridge.TryStageRequest(requested);
+        if (staged.Request is not { } wanted)
         {
-            context.StartForegroundService(intent);
+            return (false, staged.Restored);
         }
-        else
+
+        intent.PutExtra(GeoVpnService.ExtraSessionId, wanted.SessionId);
+        try
         {
-            context.StartService(intent);
+            if (foreground && Build.VERSION.SdkInt >= BuildVersionCodes.O)
+            {
+                context.StartForegroundService(intent);
+            }
+            else
+            {
+                context.StartService(intent);
+            }
+
+            return (true, false);
+        }
+        catch (Exception ex)
+        {
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("AndroidAgent", error, "dispatching the wanted session failed");
+            return (false, VpnBridge.TryRestoreStagedRequest(wanted.SessionId, staged.Previous));
         }
     }
 
@@ -926,9 +1049,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task<NoticeWords> NoticeWordsAsync()
     {
         var language = UiPreferences.Load().Language;
-        var takes = _selectedTarget is not { Length: > 0 } name
+        var target = ConfigRoutingMemory.ConnectionTarget(_selectedTarget, _boundTarget, _active);
+        var takes = target is not { Length: > 0 } name
             || ConfigRouting.Allowed(_transports.GetValueOrDefault(name));
-        var list = takes ? await ListNameAsync(_selectedRoutingList).ConfigureAwait(false) ?? string.Empty : string.Empty;
+        var list = takes ? await ListNameAsync(_routingChoices.For(target)).ConfigureAwait(false) ?? string.Empty : string.Empty;
         var lists = takes && (list.Length > 0 || await AnyListAsync().ConfigureAwait(false));
         return new NoticeWords(
             Loc.GetIn(language, "Status_Connected"),
@@ -1030,6 +1154,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _watch.Heard();
         _boundStatus = told.Stage == VpnStage.Connected ? ConnectionStatus.Connected : ConnectionStatus.Connecting;
         _boundTarget = told.Detail.Length > 0 ? told.Detail : _selectedTarget;
+        RestoreRestartRequirement();
         global::Android.Util.Log.Info("AndroidAgent", $"the head comes up on the stage the tunnel wrote: {told.Stage} {_boundTarget}");
     }
 
@@ -1062,7 +1187,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (_watch.Due(_active, StillWanted(), System.Environment.TickCount64))
         {
             _log.Note("agent", "the window is back on the screen; the session that went with the tunnel process is raised again");
-            _ = SetConnectionAsync("connect");
+            ResumeRunning();
+        }
+    }
+
+    // Resumes the durable session after its process exits.
+    private void ResumeRunning()
+    {
+        if (_disposed || !_dialWanted || VpnBridge.ReadRequest() is not { } request)
+        {
+            return;
+        }
+
+        _raiseOwed = false;
+        _watch.Asked(false);
+        _active = true;
+        _boundStatus = ConnectionStatus.Connecting;
+        _boundTarget = request.Name;
+        PushSnapshot();
+        var context = Application.Context;
+        var intent = new Intent(context, typeof(GeoVpnService));
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+        {
+            context.StartForegroundService(intent);
+        }
+        else
+        {
+            context.StartService(intent);
         }
     }
 
@@ -1145,7 +1296,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         switch (taken)
         {
             case TunnelGoneStep.Raise:
-                _ = SetConnectionAsync("connect");
+                ResumeRunning();
                 break;
             case TunnelGoneStep.GiveUp:
                 SetConnectFailure(nameof(ConnectFailureReason.ServiceStartFailed), "the tunnel process keeps dying");
@@ -1265,7 +1416,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             case VpnStage.Connecting:
                 _active = true;
-                _restartRequired = false;
                 _boundStatus = ConnectionStatus.Connecting;
                 _boundTarget = session;
                 break;
@@ -1283,6 +1433,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case VpnStage.Disconnected:
                 _active = false;
                 _restartRequired = false;
+                _restartSessionId = string.Empty;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
                 _handshakeUnix = 0;
@@ -1293,6 +1444,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case VpnStage.Failed:
                 _active = false;
                 _restartRequired = false;
+                _restartSessionId = string.Empty;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
                 _handshakeUnix = 0;
@@ -1302,22 +1454,48 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 break;
         }
 
+        if (_active)
+        {
+            RestoreRestartRequirement();
+        }
+
         LogVpnStage(stage, detail);
         PushSnapshot();
+        if (_active)
+        {
+            _ = RefreshRunningTransportLaterAsync();
+        }
+
         if (again)
         {
             AskDialed(session);
         }
     }
 
-    // A dial inside a websocket that goes on to another attempt has the server of its configuration asked again.
+    // Asks the publishers of a retrying session again.
     private void AskDialed(string? config)
     {
-        if (config is { Length: > 0 } && _frontHanded && _configs.TryGetValue(config, out var text)
-            && _transports.GetValueOrDefault(config) is { UseWebSocket: true })
+        var request = VpnBridge.ReadRequest();
+        if (request is null || request.Name != config)
         {
-            _offers.Warm([(config, text)], OfferChangedAsync);
+            return;
         }
+
+        var selected = request.TransportProxy;
+        var front = TransportProxyRefresh.LegacyFront(request.WsHost, request.WsPort, request.WsOffered);
+        if (selected is { Record.Local: true } || selected is null && front is null)
+        {
+            return;
+        }
+
+        var targets = new List<(string Config, string? Text)> { (request.Name, request.Config) };
+        if (selected is { Publisher.Length: > 0 } && selected.Publisher != request.Name
+            && _configs.TryGetValue(selected.Publisher, out var publisher))
+        {
+            targets.Add((selected.Publisher, publisher));
+        }
+
+        _offers.Warm(targets, OfferChangedAsync);
     }
 
     // Opens the system screen carrying the always-on switch; no application may set always-on for itself.
@@ -1458,9 +1636,31 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         if (_active && RoutedList == listId)
         {
-            _restartRequired = true;
+            RequireRestart();
             _log.Info("agent", "the edited routing list applies on the next connect");
         }
+    }
+
+    private void RequireRestart()
+    {
+        _restartRequired = true;
+        if (_active && _boundTarget is { Length: > 0 } name && VpnBridge.MarkRestartRequired(name) is { } sessionId)
+        {
+            _restartSessionId = sessionId;
+        }
+    }
+
+    private void RestoreRestartRequirement()
+    {
+        if (!_active || _boundTarget is not { Length: > 0 } name || VpnBridge.ReadRestartRequirement(name) is not { } held)
+        {
+            return;
+        }
+
+        _restartRequired = _restartSessionId.Length == 0 || held.SessionId == _restartSessionId
+            ? _restartRequired || held.Required
+            : held.Required;
+        _restartSessionId = held.SessionId;
     }
 
     private void PushSnapshot()
@@ -1540,7 +1740,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyClients: proxy.Clients,
             ServerListsOf: ShownServerLists?.Config ?? string.Empty,
             ServerLists: ShownServerLists?.Lists,
-            FoundApps: _appFinds);
+            FoundApps: _appFinds,
+            TransportProxies: _transportProxies);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1745,7 +1946,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ServerListsOnly: offer?.PresetsOnly == true,
             ServerOurs: offer?.Ours == true,
             SubscriptionFault: offered?.Fault ?? string.Empty,
-            SubscriptionDetail: offered?.Detail ?? string.Empty);
+            SubscriptionDetail: offered?.Detail ?? string.Empty,
+            TransportProxy: _transportSelections.GetValueOrDefault(name)?.Reference,
+            TransportProxyChosen: _transportSelections.ContainsKey(name),
+            RunningTransport: bound ? VpnBridge.ReadRunningTransport(name) : null);
     }
 
     private string StatusFor(string target)
@@ -1766,6 +1970,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("agent", "android agent started");
         _ = Task.Run(() => CrashLog.ReportPastExits(_log));
         await _store.InitializeAsync().ConfigureAwait(false);
+        await ConfigRouting.SelectListAsync(_store, null, _routingChoices.Default).ConfigureAwait(false);
+        foreach (var name in _configs.Keys.ToArray())
+        {
+            await ConfigRouting.SelectListAsync(_store, name, _routingChoices.For(name)).ConfigureAwait(false);
+        }
         await GeoDefaults.SeedAsync(_store, _geoFiles, null, CancellationToken.None).ConfigureAwait(false);
         await RematerializeIfStaleAsync().ConfigureAwait(false);
         await TakeStorePickAsync().ConfigureAwait(false);
@@ -2025,7 +2234,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (before is not null && routed is { } listId && !_restartRequired
             && !SameCarry(before, await _store.GetRoutingListAsync(listId).ConfigureAwait(false)))
         {
-            _restartRequired = true;
+            RequireRestart();
             _log.Info("agent", "the refreshed rule databases change what the routing list carries; they apply on the next connect");
         }
 
@@ -2223,13 +2432,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var limit = await ServerListsOnly.OfAsync(_store, config, text, CancellationToken.None).ConfigureAwait(false);
-        if (ServerListsOnly.Switch(limit, _selectedRoutingList) is not { } pick)
+        var inUse = _routingChoices.For(config);
+        if (ServerListsOnly.Switch(limit, inUse) is not { } pick)
         {
             return routed;
         }
 
-        Journal(SwitchLog.RoutingList(await ListNameAsync(_selectedRoutingList).ConfigureAwait(false), await ListNameAsync(pick).ConfigureAwait(false)));
-        _selectedRoutingList = pick;
+        Journal(SwitchLog.RoutingList(await ListNameAsync(inUse).ConfigureAwait(false), await ListNameAsync(pick).ConfigureAwait(false)));
+        _routingChoices.Remember(config, pick);
+        await ConfigRouting.SelectListAsync(_store, config, pick).ConfigureAwait(false);
+        if (string.Equals(config, _selectedTarget, StringComparison.Ordinal))
+        {
+            _selectedRoutingList = pick;
+        }
+
         Save();
         _log.Info("agent", $"{config}: its server allows none but its own routing lists; routing list {pick} is put in use");
 
@@ -2362,6 +2578,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (id == 0 && lists.Count == 0)
         {
             _selectedRoutingList = savedId;
+            await ConfigRouting.SelectListAsync(_store, _selectedTarget, savedId).ConfigureAwait(false);
             Save();
         }
 
@@ -2483,13 +2700,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveRoutingListAsync(id).ConfigureAwait(false);
         MarkRoutingChanged(id);
+        _routingChoices.RemoveList(id);
 
         // Turns routing off when the removed list was the selected one.
         if (_selectedRoutingList == id)
         {
             _selectedRoutingList = null;
-            Save();
         }
+        Save();
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
@@ -2644,7 +2862,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
 
             var transport = await _store.GetConfigTransportAsync(name).ConfigureAwait(false);
-            configBlocks.Add(new PortableBundle.ConfigBlock(
+            configBlocks.Add(await new PortableBundle.ConfigBlock(
                 name,
                 text,
                 transport is null
@@ -2662,7 +2880,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.UseRouting,
                         transport.AllowSignal,
                         transport.HoldTraffic),
-                null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)));
+                null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)).WithTransportProxyAsync(_store, name).ConfigureAwait(false));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -2742,6 +2960,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
+        var planned = new List<(string Name, bool Apply, bool Created)>();
+        using var claimed = _configNames.TryAcquirePlanned((current, taken) =>
+        {
+            var names = new List<string>();
+            foreach (var block in bundle.Configs)
+            {
+                if (current.ContainsKey(block.Name) && policy != "new")
+                {
+                    planned.Add((block.Name, policy != "skip", false));
+                    names.Add(block.Name);
+                    continue;
+                }
+
+                var name = FreeName(block.Name, taken, "Конфигурация");
+                taken.Add(name);
+                current[name] = block.ConfigText;
+                planned.Add((name, true, true));
+                names.Add(name);
+            }
+
+            return names;
+        }, out var busy);
+        if (claimed is null)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", busy ?? string.Empty));
+        }
+
         try
         {
             await EnsureGeoFilesAsync().ConfigureAwait(false);
@@ -2751,37 +2996,32 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var existingLists = await _store.ListRoutingListsAsync().ConfigureAwait(false);
-        var configNames = new HashSet<string>(_configs.Keys, StringComparer.Ordinal);
         var renames = new List<string>();
         var importedConfigs = new Dictionary<string, string>(StringComparer.Ordinal);
         var importedLists = new List<(PortableBundle.RoutingBlock Block, long Id)>();
 
-        foreach (var block in bundle.Configs)
+        for (var index = 0; index < bundle.Configs.Count; index++)
         {
-            if (_configs.ContainsKey(block.Name) && policy != "new")
+            var block = bundle.Configs[index];
+            var picked = planned[index];
+            if (picked.Apply)
             {
-                if (policy != "skip")
+                if (!claimed.Write(picked.Name, block.ConfigText, picked.Created))
                 {
-                    _configs[block.Name] = block.ConfigText;
-                    await ApplyTransportAsync(block.Name, block.Transport).ConfigureAwait(false);
-                    await (block with { Dns = null }).ApplyDnsAsync(_store, block.Name, CancellationToken.None).ConfigureAwait(false);
+                    return Fail();
                 }
 
-                importedConfigs[block.Name] = block.Name;
-                continue;
+                await ApplyTransportAsync(picked.Name, block.Transport).ConfigureAwait(false);
+                await block.ApplyTransportProxyAsync(_store, picked.Name, CancellationToken.None).ConfigureAwait(false);
+                await (block with { Dns = null }).ApplyDnsAsync(_store, picked.Name, CancellationToken.None).ConfigureAwait(false);
             }
 
-            var finalName = FreeName(block.Name, configNames, "Конфигурация");
-            configNames.Add(finalName);
-            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
+            if (picked.Created && !string.Equals(picked.Name, block.Name, StringComparison.Ordinal))
             {
-                renames.Add($"«{block.Name}» → «{finalName}»");
+                renames.Add($"«{block.Name}» → «{picked.Name}»");
             }
 
-            _configs[finalName] = block.ConfigText;
-            importedConfigs[block.Name] = finalName;
-            await ApplyTransportAsync(finalName, block.Transport).ConfigureAwait(false);
-            await (block with { Dns = null }).ApplyDnsAsync(_store, finalName, CancellationToken.None).ConfigureAwait(false);
+            importedConfigs[block.Name] = picked.Name;
         }
 
         foreach (var block in bundle.RoutingLists)
@@ -2816,6 +3056,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         RestoreBundleSelection(bundle, importedConfigs, importedLists);
+        await ConfigRouting.SelectListAsync(_store, _selectedTarget, _selectedRoutingList).ConfigureAwait(false);
         Save();
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
@@ -2854,7 +3095,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             && bundle.ActiveConfig is { Length: > 0 } config
             && configs.TryGetValue(config, out var name))
         {
-            _selectedTarget = name;
+            SelectTarget(name);
             _log.Info("agent", $"the bundle's server is selected again: {name}");
         }
 
@@ -2955,11 +3196,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, Loc.Instance.Get("Transport_InvalidHost"));
         }
 
-        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true)).ConfigureAwait(false);
-        if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && useRouting != (previous?.UseRouting ?? true))
+        var proxies = TransportProxyCatalog.For(_store);
+        await proxies.EnsureSelectionAsync(args[0]).ConfigureAwait(false);
+        var proxyChanges = await TransportProxyChanges.CaptureAsync(_store,
+            _active && _boundTarget == args[0] ? [args[0]] : []).ConfigureAwait(false);
+        var updated = new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true);
+        await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
+        await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy").ConfigureAwait(false);
+        if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal)
+            && (ConfigTransportChanges.RequiresRestart(previous, updated)
+                || (await proxyChanges.ChangedAsync().ConfigureAwait(false)).Count > 0))
         {
-            _restartRequired = true;
-            _log.Info("agent", "the routing switch applies on the next connect");
+            RequireRestart();
+            _log.Info("agent", "the edited transport applies on the next connect");
         }
 
         await RefreshTransportsAsync().ConfigureAwait(false);
@@ -2981,7 +3230,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.SetConfigTransportAsync(previous with { AllowSignal = allowed }).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && allowed != previous.AllowSignal)
         {
-            _restartRequired = true;
+            RequireRestart();
             _log.Info("agent", "the signal switch applies on the next connect");
         }
 
@@ -3017,7 +3266,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             || (servers is not null && !string.Equals(servers, previous?.VpnServers ?? string.Empty, StringComparison.Ordinal));
         if (moved && _active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal))
         {
-            _restartRequired = true;
+            RequireRestart();
             _log.Info("agent", "the name servers of the names through the tunnel apply on the next connect");
         }
 
@@ -3039,7 +3288,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.SetConfigTransportAsync(previous with { HoldTraffic = hold }).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && hold != previous.HoldTraffic)
         {
-            _restartRequired = true;
+            RequireRestart();
             _log.Info("agent", "the hold of the traffic applies on the next connect");
         }
 
@@ -3101,6 +3350,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _offered = offered;
+        await RefreshTransportProxiesAsync().ConfigureAwait(false);
+    }
+
+    private async Task RefreshTransportProxiesAsync()
+    {
+        _transportProxies = await TransportProxyCatalog.For(_store).ListAsync().ConfigureAwait(false);
+        _transportSelections = (await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).Selections
+            .ToDictionary(one => one.Config, StringComparer.Ordinal);
     }
 
     // Every configuration with its text, for their servers to be asked what they offer.
@@ -3126,58 +3383,91 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return ack;
     }
 
-    // A server that offers the tunnel something else now shows it in the next snapshot, and a tunnel dialing
-    // another websocket front than it names is dialed again.
+    // Refreshes the publications and the running transport.
     private async Task OfferChangedAsync(string config)
     {
         await RefreshOffersAsync().ConfigureAwait(false);
+        await RefreshRunningTransportAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+        var pickedList = await ConfigRouting.SelectedListAsync(_store, config).ConfigureAwait(false);
+        _routingChoices.Remember(config, pickedList);
+        if (string.Equals(config, _selectedTarget, StringComparison.Ordinal))
+        {
+            _selectedRoutingList = pickedList;
+        }
+        Save();
         await TakeStorePickAsync().ConfigureAwait(false);
         FindAppsLater();
         if (_active && string.Equals(_boundTarget, config, StringComparison.Ordinal) && await KeepServerListsAsync(config).ConfigureAwait(false))
         {
-            _restartRequired = true;
+            RequireRestart();
             _log.Info("agent", "the routing list the server allows applies on the next connect");
         }
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
-        RedialForFront(config);
     }
 
-    // Dials the tunnel again when it stands dialing a websocket front the server of its configuration no longer names.
-    private void RedialForFront(string config)
+    private async Task RefreshRunningTransportAsync()
     {
-        var dialing = _frontHanded && _dialWanted && _active && _boundStatus == ConnectionStatus.Connecting
-            && string.Equals(_boundTarget, config, StringComparison.Ordinal);
-        if (!_configs.TryGetValue(config, out var text) || !FrontRedial.Wanted(dialing, _handedFront, Front(config, text)))
+        await _transportRefreshGate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            return;
-        }
+            var request = VpnBridge.ReadRequest();
+            if (_disposed || !_active || request is null || !string.Equals(request.Name, _boundTarget, StringComparison.Ordinal))
+            {
+                return;
+            }
 
-        _frontHanded = false;
-        _log.Info("agent", $"{config}: its server names another websocket front than the one the tunnel dials; the tunnel is dialed again");
-        _ = RestartTunnelAsync();
+            var refresh = await TransportProxyRefresh.CreateAsync(_store, request.SessionId, request.Name,
+                request.Config, request.TransportProxy).ConfigureAwait(false);
+            if (refresh is null && request.TransportProxy is null
+                && TransportProxyRefresh.LegacyFront(request.WsHost, request.WsPort, request.WsOffered) is { } front)
+            {
+                var offer = await _offers.OfferAsync(request.Name, request.Config, CancellationToken.None).ConfigureAwait(false);
+                refresh = TransportProxyRefresh.CreateLegacy(request.SessionId, request.Name, request.Config,
+                    request.TransportProxy, front, offer);
+            }
+
+            if (refresh is not null && VpnBridge.WriteTransportRefresh(refresh))
+            {
+                VpnBridge.RequestTransportRefresh(Application.Context);
+            }
+        }
+        finally
+        {
+            _transportRefreshGate.Release();
+        }
     }
 
-    // A list the store side puts in picks itself in the store, where this agent keeps no pick: it takes the pick over
-    // while it has none of its own, and clears it there either way, so a pick the owner drops does not come back.
-    // Returns whether it took the pick over.
+    private async Task RefreshRunningTransportLaterAsync()
+    {
+        try
+        {
+            await RefreshRunningTransportAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "the running transport definition was not refreshed", ex);
+        }
+    }
+
+    // Takes the selected configuration's stored routing list.
     private async Task<bool> TakeStorePickAsync()
     {
-        if (await _store.GetSelectedRoutingListAsync().ConfigureAwait(false) is not { } picked)
+        if (await ConfigRouting.SelectedListAsync(_store, _selectedTarget).ConfigureAwait(false) is not { } picked)
         {
             return false;
         }
 
-        await _store.SetSelectedRoutingListAsync(null).ConfigureAwait(false);
         if (_selectedRoutingList is not null || !(await _store.ListRoutingListsAsync().ConfigureAwait(false)).Any(list => list.Id == picked))
         {
             return false;
         }
 
         _selectedRoutingList = picked;
+        _routingChoices.Remember(_selectedTarget, picked);
         Save();
         MarkRoutingChanged(picked);
 
@@ -3217,8 +3507,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // The websocket front the tunnel of a configuration is carried to, while it is asked for.
-    private WsEndpoint? Front(string name, string text) =>
-        _transports.GetValueOrDefault(name) is { UseWebSocket: true } transport ? WsEndpoint.Of(text, _offered.GetValueOrDefault(name), transport) : null;
+    private async Task<(ResolvedTransportProxy? Proxy, string Fault)> SelectedProxyAsync(string name)
+    {
+        try
+        {
+            return (await TransportProxyCatalog.For(_store).ResolveAsync(name).ConfigureAwait(false), "");
+        }
+        catch (Exception ex) when (ex is TransportProxyFault or InvalidDataException or JsonException)
+        {
+            _log.Error("agent", "the selected transport proxy could not be resolved", ex);
+            return (null, ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid");
+        }
+    }
+
+    private Task<TransportProxyProbeResult> ProbeTransportAsync(CatalogTransportProxy record, CancellationToken ct) =>
+        TransportProxyProbes.CheckAsync(record, ct, PastTunnel.AddressAsync, PastTunnel.BypassProxy, PastTunnel.ConnectProxyAsync,
+            record.Legacy ? _configs.GetValueOrDefault(record.LegacyPublisher) : null);
 
     // What the server of the selected configuration offers; it is asked again behind the answer.
     private async Task<IpcAck> ServerOfferAsync()
@@ -3273,15 +3577,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _stale = await SubscriptionBinding.StaleAsync(_store, CancellationToken.None).ConfigureAwait(false);
     }
 
-    // Picks the routing list every config uses. Args: list id, or "none" to turn routing off.
+    // Stores the selected configuration's routing list.
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args)
     {
+        await EnsureInitAsync().ConfigureAwait(false);
         var listArg = args.Count > 0 ? args[0] : "none";
         var picked = string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
             || !long.TryParse(listArg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId)
                 ? null
                 : (long?)listId;
-        if (ServerListsOnly.Refusal(await ServerListsLimitAsync().ConfigureAwait(false), picked) is { } refusal)
+        if (picked is { } id && await _store.GetRoutingListStampAsync(id).ConfigureAwait(false) is null)
+        {
+            return Fail();
+        }
+
+        var limit = _selectedTarget is null ? null : await ServerListsOnly.OfAsync(_store, _selectedTarget, _configs.GetValueOrDefault(_selectedTarget), CancellationToken.None).ConfigureAwait(false);
+        if (ServerListsOnly.Refusal(limit, picked) is { } refusal)
         {
             return refusal;
         }
@@ -3295,9 +3606,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var same = picked == _selectedRoutingList && !_restartRequired;
         Journal(SwitchLog.RoutingList(names.From, names.To));
         _selectedRoutingList = picked;
+        _routingChoices.Remember(_selectedTarget, picked);
+        await ConfigRouting.SelectListAsync(_store, _selectedTarget, picked).ConfigureAwait(false);
         Save();
         PushSnapshot();
-        if (_active && !same)
+        if (_active && !same && string.Equals(_selectedTarget, _boundTarget, StringComparison.Ordinal))
         {
             _ = SetConnectionAsync("connect");
         }
@@ -3331,12 +3644,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return (split.Mode, split.Packages, split.Bypass, true);
     }
 
-    // Выбранный список, если выбранная конфигурация его берёт.
-    private long? RoutedList =>
-        _selectedTarget is { Length: > 0 } name
-        && !ConfigRouting.Allowed(_transports.GetValueOrDefault(name))
-            ? null
-            : _selectedRoutingList;
+    // Возвращает список маршрутизации текущего соединения.
+    private long? RoutedList => _routingChoices.ForConnection(_selectedTarget, _boundTarget, _active, _transports);
 
     // Поколение и правила выбранного списка, без развёрнутых корзин.
     private async Task<RoutingListStamp?> ReadListStampAsync() =>
@@ -3701,6 +4010,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             {
                 _selectedTarget = target;
             }
+
+            _routingChoices = document.RootElement.TryGetProperty("ConfigRouting", out var choices)
+                && choices.ValueKind == JsonValueKind.Object
+                    ? JsonSerializer.Deserialize<ConfigRoutingMemory>(choices.GetRawText()) ?? new ConfigRoutingMemory { Default = _selectedRoutingList }
+                    : new ConfigRoutingMemory { Default = _selectedRoutingList };
+            _routingChoices.Seed(_configs.Keys);
+            _selectedRoutingList = _routingChoices.For(_selectedTarget);
         }
         catch (Exception)
         {
@@ -3762,39 +4078,67 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    private void Save()
+    private void Save() => TrySave();
+
+    private bool TrySave()
     {
-        try
+        lock (_saveGate)
         {
-            var builder = new System.Text.StringBuilder();
-            builder.Append("{\"Configs\":");
-            AppendMap(builder, OrderedNames(), _configs);
-            builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
-            builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
-            builder.Append(",\"DirectTcp\":").Append(_directTcp ? "true" : "false");
-            builder.Append(",\"ExcludeRoutes\":").Append(_excludeRoutes ? "true" : "false");
-            builder.Append(",\"LocalInTunnel\":").Append(_localInTunnel ? "true" : "false");
-            builder.Append(",\"TunnelNotice\":").Append(JsonSerializer.Serialize(_tunnelNotice));
-            builder.Append(",\"RouteTtl\":").Append(_routeTtl);
-            builder.Append(",\"SplitLimit\":").Append(_splitLimit);
-            builder.Append(",\"UpdateChannel\":").Append(JsonSerializer.Serialize(_updater.PickedChannel));
-            builder.Append(",\"UpdateSource\":").Append(JsonSerializer.Serialize(_updater.Choice));
-            builder.Append(",\"UpdateOrigin\":").Append(JsonSerializer.Serialize(_updater.Origin.Write()));
-            builder.Append(",\"UpdateHanded\":").Append(JsonSerializer.Serialize(_updater.Handed?.Write() ?? string.Empty));
-            builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
-            builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
-            builder.Append(",\"GeoCheckedAt\":").Append(JsonSerializer.Serialize(_geoCheckedAt.ToString("O", CultureInfo.InvariantCulture)));
-            builder.Append(",\"SubscriptionAutoRefresh\":").Append(_subscriptionAutoRefresh ? "true" : "false");
-            builder.Append(",\"SubscriptionInterval\":").Append(_subscriptionIntervalHours);
-            builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
-            builder.Append(",\"DialWanted\":").Append(_dialWanted ? "true" : "false");
-            builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
-            builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
-            builder.Append('}');
-            System.IO.File.WriteAllText(_storePath, builder.ToString());
-        }
-        catch (Exception)
-        {
+            try
+            {
+                var saved = _configNames.Snapshot(configs =>
+                {
+                    _routingChoices.Remember(_selectedTarget, _selectedRoutingList);
+                    _routingChoices.Seed(configs.Keys);
+                    var names = _order.Where(configs.ContainsKey).ToList();
+                    names.AddRange(configs.Keys.Where(name => !names.Contains(name)));
+                    return new
+                    {
+                        Configs = configs,
+                        Names = names,
+                        Selected = _selectedTarget,
+                        Routing = _selectedRoutingList,
+                        Choices = new ConfigRoutingMemory
+                        {
+                            Default = _routingChoices.Default,
+                            Choices = new Dictionary<string, long?>(_routingChoices.Choices, StringComparer.Ordinal),
+                        },
+                    };
+                });
+                var builder = new System.Text.StringBuilder();
+                builder.Append("{\"Configs\":");
+                AppendMap(builder, saved.Names, saved.Configs);
+                builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
+                builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
+                builder.Append(",\"DirectTcp\":").Append(_directTcp ? "true" : "false");
+                builder.Append(",\"ExcludeRoutes\":").Append(_excludeRoutes ? "true" : "false");
+                builder.Append(",\"LocalInTunnel\":").Append(_localInTunnel ? "true" : "false");
+                builder.Append(",\"TunnelNotice\":").Append(JsonSerializer.Serialize(_tunnelNotice));
+                builder.Append(",\"RouteTtl\":").Append(_routeTtl);
+                builder.Append(",\"SplitLimit\":").Append(_splitLimit);
+                builder.Append(",\"UpdateChannel\":").Append(JsonSerializer.Serialize(_updater.PickedChannel));
+                builder.Append(",\"UpdateSource\":").Append(JsonSerializer.Serialize(_updater.Choice));
+                builder.Append(",\"UpdateOrigin\":").Append(JsonSerializer.Serialize(_updater.Origin.Write()));
+                builder.Append(",\"UpdateHanded\":").Append(JsonSerializer.Serialize(_updater.Handed?.Write() ?? string.Empty));
+                builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
+                builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
+                builder.Append(",\"GeoCheckedAt\":").Append(JsonSerializer.Serialize(_geoCheckedAt.ToString("O", CultureInfo.InvariantCulture)));
+                builder.Append(",\"SubscriptionAutoRefresh\":").Append(_subscriptionAutoRefresh ? "true" : "false");
+                builder.Append(",\"SubscriptionInterval\":").Append(_subscriptionIntervalHours);
+                builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
+                builder.Append(",\"DialWanted\":").Append(_dialWanted ? "true" : "false");
+                builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(saved.Selected));
+                builder.Append(",\"SelectedRouting\":").Append(saved.Routing?.ToString(CultureInfo.InvariantCulture) ?? "null");
+                builder.Append(",\"ConfigRouting\":").Append(JsonSerializer.Serialize(saved.Choices));
+                builder.Append('}');
+                System.IO.File.WriteAllText(_storePath, builder.ToString());
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.Error("agent", "saving the Android state failed", ex);
+                return false;
+            }
         }
     }
 
@@ -3845,21 +4189,28 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Fail();
         }
 
+        await EnsureInitAsync().ConfigureAwait(false);
         var source = args[0];
         var destination = args[1].Trim();
-        if (!_configs.TryGetValue(source, out var text))
+        using var claimed = TryClaimConfigNames([source, destination], out var busy);
+        if (claimed is null)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", busy ?? destination));
+        }
+
+        if (claimed.Read(source) is not { } text)
         {
             return Fail();
         }
 
-        if (_configs.ContainsKey(destination))
+        if (!claimed.Write(destination, text, true))
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", destination));
         }
 
-        _configs[destination] = text;
+        _routingChoices.Remember(destination, _routingChoices.For(source));
         Save();
-        await EnsureInitAsync().ConfigureAwait(false);
+        await ConfigRouting.SelectListAsync(_store, destination, _routingChoices.For(source)).ConfigureAwait(false);
         if (await _store.GetConfigTransportAsync(source).ConfigureAwait(false) is { } transport)
         {
             await _store.SetConfigTransportAsync(transport with { Name = destination }).ConfigureAwait(false);
@@ -3870,6 +4221,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             await _store.SaveTunnelGeoAsync(geo with { Name = destination }).ConfigureAwait(false);
         }
 
+        await TransportProxyPortability.ApplyAsync(_store, destination,
+            await TransportProxyPortability.ExportAsync(_store, source).ConfigureAwait(false)).ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
@@ -4197,7 +4550,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             : null;
         var full = settings?.UseGlobalProxy ?? false;
         // Without a list the tun carries everything, so nothing is left outside it to be put back in.
-        return (new TargetInspector(list, !full, AppMode(list, settings, RouterEnabled())), routed is null || full);
+        return (new TargetInspector(list, !full, AppMode(list, settings,
+            RouterEnabled(ConfigRoutingMemory.ConnectionTarget(_selectedTarget, _boundTarget, _active)))), routed is null || full);
     }
 
     // Measures one destination over the path asked for. The tun fixes its routes at establish, so the tunnel
@@ -4433,7 +4787,38 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
-    private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args)
+    private ConfigNameClaims.Lease? TryClaimConfigNames(string[] names, out string? busy)
+    {
+        EnsureLoaded();
+        return _configNames.TryAcquire(names, out busy);
+    }
+
+    private ConfigNameClaims.Lease ClaimConfigNamesOrThrow(params string[] names)
+    {
+        return TryClaimConfigNames(names, out var busy)
+            ?? throw new InvalidOperationException(Loc.Instance.Get("Agent_NameTaken", busy ?? names[0]));
+    }
+
+    private bool PendingConnectForRename(string oldName, string newName)
+    {
+        if (!_active || !_dialWanted || _boundTarget is not { } bound
+            || (bound != oldName && bound != newName))
+        {
+            return false;
+        }
+
+        var wanted = VpnBridge.ReadRequest();
+        if (wanted is null || wanted.Name != bound || wanted.SessionId.Length == 0)
+        {
+            return false;
+        }
+
+        return VpnBridge.ReadRunningSession(bound)?.SessionId != wanted.SessionId;
+    }
+
+    private Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args) => RenameConfigCoreAsync(args);
+
+    private async Task<IpcAck> RenameConfigCoreAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
         {
@@ -4447,33 +4832,152 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Ok();
         }
 
-        if (!_configs.TryGetValue(oldName, out var value))
+        await EnsureInitAsync().ConfigureAwait(false);
+        using var claimed = TryClaimConfigNames([oldName, newName], out var busy);
+        if (claimed is null)
+        {
+            return new IpcAck(false, Loc.Instance.Get("Agent_NameTaken", busy ?? newName));
+        }
+
+        if (claimed.Read(oldName) is null)
         {
             return new IpcAck(false, Loc.Instance.Get("Agent_ConfigUnknown", oldName));
         }
 
-        if (_configs.ContainsKey(newName))
+        if (claimed.Read(newName) is not null)
         {
             return new IpcAck(false, Loc.Instance.Get("Agent_NameTaken", newName));
         }
 
-        _configs.Remove(oldName);
-        _configs[newName] = value;
-
-        // A rename keeps the row where it stands.
-        var place = _order.IndexOf(oldName);
-        if (place >= 0)
+        if (PendingConnectForRename(oldName, newName))
         {
-            _order[place] = newName;
+            return Fail();
         }
 
-        RetargetSelection(oldName, newName);
-        Save();
-        await EnsureInitAsync().ConfigureAwait(false);
-        await ConfigRename.CarryAsync(_store, oldName, newName).ConfigureAwait(false);
-        await RefreshTransportsAsync().ConfigureAwait(false);
-        PushSnapshot();
-        return Ok();
+        var running = _active && string.Equals(_boundTarget, oldName, StringComparison.Ordinal);
+        var accepted = running ? VpnBridge.ReadRunningSession(oldName) : null;
+        if (running && accepted is null)
+        {
+            _log.Warn("agent", "the running configuration has no accepted session for rename");
+            return Fail();
+        }
+
+        if (accepted is not null && !await RenameAcceptedSessionAsync(accepted.SessionId, oldName, newName).ConfigureAwait(false))
+        {
+            await RestoreAcceptedNameAsync(accepted.SessionId, oldName).ConfigureAwait(false);
+            return Fail();
+        }
+
+        var carryAttempted = false;
+        var moved = false;
+        try
+        {
+            carryAttempted = true;
+            await ConfigRename.CarryAsync(_store, oldName, newName).ConfigureAwait(false);
+            RenameLocalConfig(claimed, oldName, newName, true);
+            moved = true;
+            if (!TrySave())
+            {
+                throw new IOException("The renamed configuration was not saved.");
+            }
+
+            await RefreshTransportsAsync().ConfigureAwait(false);
+            PushSnapshot();
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "renaming the configuration failed", ex);
+            var restored = accepted is null || await RestoreAcceptedNameAsync(accepted.SessionId, oldName).ConfigureAwait(false);
+            if (moved)
+            {
+                RenameLocalConfig(claimed, newName, oldName, restored);
+            }
+
+            if (carryAttempted)
+            {
+                try
+                {
+                    await ConfigRename.CarryAsync(_store, newName, oldName).ConfigureAwait(false);
+                }
+                catch (Exception rollbackError)
+                {
+                    _log.Error("agent", "restoring the configuration state after rename failed", rollbackError);
+                }
+            }
+
+            TrySave();
+            PushSnapshot();
+            return Fail();
+        }
+    }
+
+    private void RenameLocalConfig(ConfigNameClaims.Lease claimed, string oldName, string newName, bool moveBound)
+    {
+        if (!claimed.Move(oldName, newName, () =>
+        {
+            var place = _order.IndexOf(oldName);
+            if (place >= 0)
+            {
+                _order[place] = newName;
+            }
+
+            RetargetSelection(oldName, newName, moveBound);
+        }))
+        {
+            throw new InvalidOperationException("The configuration rename claim is no longer valid.");
+        }
+    }
+
+    private async Task<bool> RenameAcceptedSessionAsync(string sessionId, string oldName, string newName)
+    {
+        var rename = new VpnSessionRename(Guid.NewGuid().ToString("N"), sessionId, oldName, newName);
+        if (!VpnBridge.WriteSessionRename(rename))
+        {
+            return false;
+        }
+
+        try
+        {
+            VpnBridge.RequestSessionRename(Application.Context);
+            var due = System.Environment.TickCount64 + 3000;
+            while (System.Environment.TickCount64 < due)
+            {
+                if (VpnBridge.ReadSessionRenameAck(rename) is { } ack)
+                {
+                    return ack.Applied;
+                }
+
+                await Task.Delay(ProbePollMs).ConfigureAwait(false);
+            }
+
+            _log.Warn("agent", "the running session did not acknowledge its rename");
+            return false;
+        }
+        finally
+        {
+            VpnBridge.ClearSessionRename(rename);
+        }
+    }
+
+    private async Task<bool> RestoreAcceptedNameAsync(string sessionId, string oldName)
+    {
+        var current = VpnBridge.ReadRunningSessionById(sessionId);
+        if (current is not null
+            && await RenameAcceptedSessionAsync(sessionId, current.Name, oldName).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        _log.Warn("agent", "the accepted session name was not restored after rename failure");
+        if (_active && VpnBridge.ReadRunningSessionById(sessionId) is { } remaining)
+        {
+            _boundTarget = remaining.Name;
+            RestoreRestartRequirement();
+            PushSnapshot();
+        }
+
+        return false;
     }
 
     // Binds the next connect to a config; an empty name leaves none selected.
@@ -4492,7 +4996,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         Journal(SwitchLog.Config(_selectedTarget, name));
-        _selectedTarget = name;
+        SelectTarget(name);
         Save();
         PushSnapshot();
         return Ok();
@@ -4540,7 +5044,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (_selectedTarget is null
             && await Subscriptions().MembersAsync(outcome.Name, CancellationToken.None).ConfigureAwait(false) is [var first, ..])
         {
-            _selectedTarget = first;
+            SelectTarget(first);
         }
 
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
@@ -4656,7 +5160,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // Выбор успели увести на другую конфигурацию - переподключение остаётся за пользователем.
         if (!string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
         {
-            _restartRequired = true;
+            RequireRestart();
             return;
         }
 
@@ -4696,7 +5200,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         public Task<IReadOnlyCollection<string>> NamesAsync(CancellationToken ct)
         {
-            return Task.FromResult<IReadOnlyCollection<string>>([.. agent._configs.Keys]);
+            agent.EnsureLoaded();
+            return Task.FromResult<IReadOnlyCollection<string>>(agent._configNames.Names());
         }
 
         public Task<string?> TextAsync(string name, CancellationToken ct)
@@ -4706,37 +5211,39 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         public Task AddAsync(string name, string confText, CancellationToken ct)
         {
-            agent._configs[name] = confText;
+            using var claimed = agent.ClaimConfigNamesOrThrow(name);
+            if (!claimed.Write(name, confText, true))
+            {
+                throw new InvalidOperationException(Loc.Instance.Get("Agent_NameTaken", name));
+            }
+
             return Task.CompletedTask;
         }
 
         public Task EditAsync(string name, string confText, CancellationToken ct)
         {
-            agent._configs[name] = confText;
+            using var claimed = agent.ClaimConfigNamesOrThrow(name);
+            if (!claimed.Write(name, confText))
+            {
+                throw new InvalidOperationException(Loc.Instance.Get("Agent_NameTaken", name));
+            }
+
             return Task.CompletedTask;
         }
 
         public Task DropAsync(string name, CancellationToken ct)
         {
-            agent._configs.Remove(name);
-            if (string.Equals(name, agent._selectedTarget, StringComparison.Ordinal))
-            {
-                agent._selectedTarget = null;
-            }
-
-            // Always-on raises the last session on its own: a config that is gone must not come back with it.
-            if (VpnBridge.ReadRequest() is { } stored && string.Equals(name, stored.Name, StringComparison.Ordinal))
-            {
-                VpnBridge.ClearRequest();
-            }
-
+            using var claimed = agent.ClaimConfigNamesOrThrow(name);
+            agent.DropLocalConfig(claimed, name);
             return Task.CompletedTask;
         }
 
         public async Task RemoveAsync(string name, CancellationToken ct)
         {
-            await DropAsync(name, ct).ConfigureAwait(false);
+            using var claimed = agent.ClaimConfigNamesOrThrow(name);
+            agent.DropLocalConfig(claimed, name);
             await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
+            await ConfigForget.CarryAsync(agent._store, name, ct).ConfigureAwait(false);
         }
     }
 
@@ -4747,25 +5254,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Fail();
         }
 
+        await EnsureInitAsync().ConfigureAwait(false);
+        using var claimed = TryClaimConfigNames([args[0]], out var busy);
+        if (claimed is null)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", busy ?? args[0]));
+        }
+
         if (_active && string.Equals(args[0], _boundTarget, StringComparison.Ordinal))
         {
             return new IpcAck(false, $"config {args[0]} is running; disconnect first");
         }
 
-        _configs.Remove(args[0]);
-        if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
-        {
-            _selectedTarget = null;
-        }
-
-        // Always-on raises the last session on its own: a config that is gone must not come back with it.
-        if (VpnBridge.ReadRequest() is { } stored && string.Equals(args[0], stored.Name, StringComparison.Ordinal))
-        {
-            VpnBridge.ClearRequest();
-        }
+        DropLocalConfig(claimed, args[0]);
 
         Save();
-        await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveConfigTransportAsync(args[0]).ConfigureAwait(false);
         await ConfigForget.CarryAsync(_store, args[0]).ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
@@ -4774,17 +5277,46 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
-    private void RetargetSelection(string oldName, string newName)
+    private void DropLocalConfig(ConfigNameClaims.Lease claimed, string name)
     {
+        if (!claimed.Drop(name, () =>
+        {
+            if (string.Equals(name, _selectedTarget, StringComparison.Ordinal))
+            {
+                SelectTarget(null);
+            }
+
+            _routingChoices.Choices.Remove(name);
+        }))
+        {
+            throw new InvalidOperationException("The configuration removal claim is no longer valid.");
+        }
+
+        if (VpnBridge.ReadRequest() is { } stored && string.Equals(name, stored.Name, StringComparison.Ordinal))
+        {
+            VpnBridge.ClearRequest();
+        }
+    }
+
+    private void RetargetSelection(string oldName, string newName, bool moveBound = true)
+    {
+        _routingChoices.Rename(oldName, newName);
         if (string.Equals(_selectedTarget, oldName, StringComparison.Ordinal))
         {
             _selectedTarget = newName;
         }
 
-        if (string.Equals(_boundTarget, oldName, StringComparison.Ordinal))
+        if (moveBound && string.Equals(_boundTarget, oldName, StringComparison.Ordinal))
         {
             _boundTarget = newName;
         }
+    }
+
+    private void SelectTarget(string? name)
+    {
+        _routingChoices.Remember(_selectedTarget, _selectedRoutingList);
+        _selectedTarget = name;
+        _selectedRoutingList = _routingChoices.For(name);
     }
 
     // Whether the applications the selected list names ride the tunnel by connection, under the relay: the plan in
@@ -4818,10 +5350,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return list is not null && _planAttributed == true ? AppScope.Additive : AppScope.Exclusive;
     }
 
-    // Whether the selected configuration decides connections on its own: the flag rides with the tunnel, not
-    // with the rules, and a configuration that never said otherwise does.
-    private bool RouterEnabled() =>
-        _selectedTarget is not { Length: > 0 } name || _transports.GetValueOrDefault(name)?.UseRouter != false;
+    // Возвращает режим обработки соединений конфигурации.
+    private bool RouterEnabled(string? target = null) =>
+        (target ?? _selectedTarget) is not { Length: > 0 } name || _transports.GetValueOrDefault(name)?.UseRouter != false;
 
     // The packages a routing list names, without the marker they are stored under.
     private static string[] AppPackages(IReadOnlyList<string>? apps)
@@ -4918,19 +5449,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return Ok();
             case SettingKeys.DirectTcp:
                 _directTcp = IsOn(args[1]);
-                _restartRequired = true;
+                RequireRestart();
                 Save();
                 PushSnapshot();
                 return Ok();
             case SettingKeys.ExcludeRoutes:
                 _excludeRoutes = IsOn(args[1]);
-                _restartRequired = true;
+                RequireRestart();
                 Save();
                 PushSnapshot();
                 return Ok();
             case SettingKeys.LocalInTunnel:
                 _localInTunnel = IsOn(args[1]);
-                _restartRequired = true;
+                RequireRestart();
                 Save();
                 PushSnapshot();
                 return Ok();
@@ -4957,7 +5488,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 }
 
                 _splitLimit = splitThreshold;
-                _restartRequired = true;
+                RequireRestart();
                 Save();
                 PushSnapshot();
                 return Ok();

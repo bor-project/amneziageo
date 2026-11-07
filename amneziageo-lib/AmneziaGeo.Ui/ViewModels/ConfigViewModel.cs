@@ -185,6 +185,21 @@ internal partial class ConfigViewModel : ViewModelBase
 
     private void OnCultureChanged()
     {
+        foreach (var row in Configs)
+        {
+            row.RefreshTransportProxyWords();
+        }
+
+        if (ConfigTransport is { } proxyTransport)
+        {
+            SeedProxyChoice(proxyTransport);
+        }
+
+        if (SectionTransport is { } draftTransport)
+        {
+            draftTransport.ApplyProxyCatalog(_transportProxies, null, false);
+        }
+
         foreach (var config in Configs)
         {
             config.RefreshLocalizedLabels();
@@ -721,9 +736,14 @@ internal partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Разбирает снимок. Машине с одним туннелем в нём нужны только конфигурации.
     /// </summary>
+    private IReadOnlyList<TransportProxySummary> _transportProxies = [];
+    private IReadOnlyDictionary<string, ConfigEntry> _transportEntries = new Dictionary<string, ConfigEntry>();
+
     public virtual void Apply(StatusSnapshot snapshot)
     {
+        _transportProxies = snapshot.TransportProxies ?? _transportProxies;
         Apply(snapshot.Configs);
+        SectionTransport?.ApplyProxyCatalog(_transportProxies, null, false);
     }
 
     // Строка каталога. Режим ставит свою.
@@ -737,6 +757,7 @@ internal partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public void Apply(IReadOnlyList<ConfigEntry> entries)
     {
+        _transportEntries = entries.ToDictionary(one => one.Name, StringComparer.Ordinal);
         // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
         // every snapshot push would regenerate every row's controls, flickering the list each tick even
         // though usually only the status field moves during a connect. Update the existing rows instead.
@@ -823,6 +844,7 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.SubscriptionStale = entry.SubscriptionStale;
             existing.SubscriptionFault = entry.SubscriptionFault;
             existing.SubscriptionFaultDetail = entry.SubscriptionDetail;
+            existing.ApplyTransportProxy(entry, _transportProxies);
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
@@ -1228,6 +1250,7 @@ internal partial class ConfigViewModel : ViewModelBase
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false, item?.HoldTraffic ?? true, item?.VpnDnsMode ?? VpnDnsMode.Default, item?.VpnDns ?? string.Empty, item?.VpnDnsShown ?? string.Empty, item?.VpnDnsNetwork ?? false, item?.ServerDns ?? string.Empty, item?.DefaultDns ?? string.Empty, item?.DefaultDnsNetwork ?? false);
         ConfigTransport.ServerListsOnly = item?.ServerListsOnly ?? false;
         ConfigTransport.ServerOurs = item?.ServerOurs ?? false;
+        SeedProxyChoice(ConfigTransport);
         RefreshEditBar();
     }
 
@@ -1245,6 +1268,7 @@ internal partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        SeedProxyChoice(transport);
         transport.WebSocketOpen = item.WebSocketOffered;
         transport.WebSocketManual = item.WebSocketManual;
         transport.SignalOffered = item.SignalOffered;
@@ -1252,6 +1276,34 @@ internal partial class ConfigViewModel : ViewModelBase
         transport.ServerOurs = item.ServerOurs;
         transport.Settled(item.VpnDnsShown, item.VpnDnsNetwork, item.ServerDns, item.DefaultDns, item.DefaultDnsNetwork);
     }
+
+    private void SeedProxyChoice(ConfigTransportViewModel transport)
+    {
+        _transportEntries.TryGetValue(transport.ConfigName, out var entry);
+        transport.ApplyProxyCatalog(_transportProxies, entry?.TransportProxy, entry?.TransportProxyChosen ?? false);
+        transport.ApplyRunningProxy(entry?.RunningTransport, entry is not null && Running(entry.Status));
+    }
+
+    internal bool UsesRunningProxy(ProxyReference? reference) => reference is not null
+        && _transportEntries.Values.Any(entry => (entry.RunningTransport is { } actual ? actual.Reference : entry.TransportProxy) == reference
+            && Running(entry.Status));
+
+    internal bool RunningProxyTargetChanged(ProxyReference? reference, Func<string, int, bool> changed) => reference is not null
+        && _transportEntries.Values.Where(entry => (entry.RunningTransport is { } actual ? actual.Reference : entry.TransportProxy) == reference
+            && Running(entry.Status)).Any(entry =>
+        {
+            if (entry.RunningTransport is { } actual)
+            {
+                return changed(actual.TargetHost, actual.TargetPort);
+            }
+
+            var config = "[Peer]\nEndpoint = " + entry.Endpoint;
+            return changed(ConfigServices.Host(config), ConfigServices.EndpointPort(config));
+        });
+
+    private bool IsRunningConfig(string config) => _transportEntries.TryGetValue(config, out var entry) && Running(entry.Status);
+
+    private static bool Running(string status) => status is ConnectionStatus.Connected or ConnectionStatus.Connecting;
 
     // Subscribe the open-config editors' dirty signal so the footer Save/Cancel bar tracks their state.
     partial void OnConfigExportChanged(ExportDialogViewModel? oldValue, ExportDialogViewModel? newValue)
@@ -1274,6 +1326,7 @@ internal partial class ConfigViewModel : ViewModelBase
         if (oldValue is not null)
         {
             oldValue.DirtyChanged -= OnEditScopeDirty;
+            oldValue.OpenProxyRequested -= OpenTransportProxy;
             oldValue.ProbeChanged -= OnEditScopeDirty;
             oldValue.CancelProbe();
         }
@@ -1281,22 +1334,28 @@ internal partial class ConfigViewModel : ViewModelBase
         if (newValue is not null)
         {
             newValue.DirtyChanged += OnEditScopeDirty;
+            newValue.OpenProxyRequested += OpenTransportProxy;
             newValue.ProbeChanged += OnEditScopeDirty;
         }
 
         RefreshEditBar();
     }
 
+    private void OpenTransportProxy(ProxyReference reference) => _host.ShowTransportProxy(reference, OpenConfig);
+    private void OpenDraftTransportProxy(ProxyReference reference) => _host.ShowTransportProxy(reference, string.Empty);
+
     partial void OnSectionTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
     {
         if (oldValue is not null)
         {
+            oldValue.OpenProxyRequested -= OpenDraftTransportProxy;
             oldValue.ProbeChanged -= OnEditScopeDirty;
             oldValue.CancelProbe();
         }
 
         if (newValue is not null)
         {
+            newValue.OpenProxyRequested += OpenDraftTransportProxy;
             newValue.ProbeChanged += OnEditScopeDirty;
         }
 
@@ -1328,6 +1387,7 @@ internal partial class ConfigViewModel : ViewModelBase
         {
             SeedSectionNameFromConfig(imported);
             SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty, WsEndpoint.FrontOf(imported.ConfText));
+            SectionTransport?.SeedProxyTarget(imported.ConfText);
             return;
         }
 
@@ -1605,8 +1665,12 @@ internal partial class ConfigViewModel : ViewModelBase
 
     // Transport editor of a config that does not exist yet: defaults, and the front of the settings until its
     // server is asked.
-    private ConfigTransportViewModel NewSectionTransport() =>
-        new(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true);
+    private ConfigTransportViewModel NewSectionTransport()
+    {
+        var transport = new ConfigTransportViewModel(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true);
+        transport.ApplyProxyCatalog(_transportProxies, null, false);
+        return transport;
+    }
 
     // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()
@@ -1732,7 +1796,6 @@ internal partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private async Task SaveSection()
     {
-        _host.ArmReconnectPrompt();
         if (IsCreatingSectionConfig)
         {
             await SaveSectionConfig();
@@ -1768,14 +1831,23 @@ internal partial class ConfigViewModel : ViewModelBase
             return;
         }
 
-        if (ConfigExport is { IsDirty: true } export && !await export.CommitAsync())
+        if (ConfigExport is { IsDirty: true } export)
         {
-            RefreshEditBar();
-            return;
+            if (!await export.CommitAsync())
+            {
+                RefreshEditBar();
+                return;
+            }
+
+            if (IsRunningConfig(OpenConfig))
+            {
+                _host.ArmReconnectPrompt();
+            }
         }
 
         if (ConfigTransport is { IsDirty: true } transport)
         {
+            var reconnect = transport.ConnectionChanged && IsRunningConfig(OpenConfig);
             if (!await transport.CommitAsync())
             {
                 RefreshEditBar();
@@ -1783,6 +1855,10 @@ internal partial class ConfigViewModel : ViewModelBase
             }
 
             transport.CaptureBaseline();
+            if (reconnect)
+            {
+                _host.ArmReconnectPrompt();
+            }
         }
 
         if (RenameDirty && !await CommitConfigRenameAsync())

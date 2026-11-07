@@ -125,6 +125,10 @@ EOF
 fi
 
 have="$("$go_bin" env GOVERSION | sed 's/^go//')"
+if [ "$have" != '1.27.3' ]; then
+  echo 'Android native build requires Go 1.27.3' >&2
+  exit 1
+fi
 if [ -n "$required" ] && [ "$(printf '%s\n%s\n' "$required" "$have" | sort -V | head -1)" != "$required" ]; then
   echo "Go $have at $go_bin is older than the $required required by $MODULE/go.mod" >&2
   exit 1
@@ -134,6 +138,17 @@ echo
 echo "== toolchain: $("$go_bin" version) =="
 echo "   NDK $NDK (API $API)"
 
+cd "$MODULE"
+export PATH="$(dirname "$go_bin"):$PATH"
+export GOTOOLCHAIN="local"
+export GOAMD64="v1"
+export GOARM64="v8.0"
+export GOFIPS140="off"
+overlay_dir="$MODULE/.local/xray-overlay"
+"$go_bin" run ./internal/xrayoverlay -output "$overlay_dir"
+overlay="$overlay_dir/overlay.json"
+modfile="$overlay_dir/native.go.mod"
+native_fingerprint="$("$go_bin" run ./internal/xrayoverlay -fingerprint)"
 export GOOS="android"
 # without this a go.mod toolchain bump would silently download another Go
 export GOTOOLCHAIN="local"
@@ -149,7 +164,7 @@ for abi in $ABIS; do
   mkdir -p "$out_dir"
 
   # Go on android keeps the memory it frees until the system takes it back; this makes it leave at once.
-  godebug="$(GOARCH="$(goarch_of "$abi")" "$go_bin" list -f '{{.DefaultGODEBUG}}' .)"
+  godebug="$(GOARCH="$(goarch_of "$abi")" "$go_bin" list -modfile "$modfile" -overlay "$overlay" -f '{{.DefaultGODEBUG}}' .)"
   godebug="${godebug:+$godebug,}madvdontneed=1"
 
   echo "== building $abi/libamneziawg-go.so =="
@@ -157,8 +172,9 @@ for abi in $ABIS; do
   GOARM="$([ "$abi" = "armeabi-v7a" ] && echo 7 || echo '')" \
   CC="$NDK_BIN/$triple$API-clang" \
   CXX="$NDK_BIN/$triple$API-clang++" \
-    "$go_bin" build -buildmode c-shared -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath \
+    "$go_bin" build -modfile "$modfile" -overlay "$overlay" -buildmode c-shared -buildvcs=false -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath \
       -o "$out_dir/libamneziawg-go.so"
+  printf '%s\n' "$native_fingerprint" > "$out_dir/native-source.sha256"
 
   rm -f "$out_dir/libamneziawg-go.h"
 done
@@ -188,7 +204,7 @@ for abi in $ABIS; do
   missing=""
   for symbol in wgTurnOn wgTurnOff wgGetConfig wgRenew wgSetVerdicts wgPrepareSwap wgSwapTun wgSetVerdictTtl \
     wgTunnelStats wgSetTcpDirect wgSetRelay wgLiveAddresses wgPreloadLive wgRebind wgProbe wgMemory \
-    wgReturnMemory; do
+    wgReturnMemory agXHttpStart agXHttpStop; do
     grep -qa "$symbol" "$so" || missing="$missing $symbol"
   done
   if [ -n "$missing" ]; then

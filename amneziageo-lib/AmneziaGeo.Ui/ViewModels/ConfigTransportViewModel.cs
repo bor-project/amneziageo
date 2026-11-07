@@ -351,6 +351,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _webSocketPort = shownPort > 0 ? shownPort.ToString(CultureInfo.InvariantCulture) : string.Empty;
 
         // Seeded (backing fields set, no OnChanged fired): this state is the clean baseline (#143).
+        ApplyProxyCatalog([], null, false);
         CaptureBaseline();
     }
 
@@ -489,6 +490,26 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
+    public bool ConnectionChanged => SelectedProxyChoice?.Reference != _baseProxyReference
+        || UseWebSocket != _baseUseWebSocket
+        || MtuMode != _baseMtuMode
+        || MtuMode == (int)Decl.MtuMode.Custom && !string.Equals(Mtu.Trim(), _baseMtu.Trim(), StringComparison.Ordinal)
+        || UseIpv6 != _baseUseIpv6
+        || UseRouter != _baseUseRouter
+        || AllowInbound != _baseAllowInbound
+        || UseRouting != _baseUseRouting
+        || AllowSignal != _baseAllowSignal
+        || HoldTraffic != _baseHoldTraffic
+        || VpnDnsMode != _baseVpnDnsMode
+        || VpnDnsMode == (int)Decl.VpnDnsMode.Own && !string.Equals(VpnDns.Trim(), _baseVpnDns.Trim(), StringComparison.Ordinal)
+        || !_baseProxyChosen && UseWebSocket && WebSocketManual
+            && (!string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
+                || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
+                || AuthMode != _baseAuthMode
+                || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
+                || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
+                || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal));
+
     /// <inheritdoc />
     public event EventHandler? DirtyChanged;
 
@@ -502,7 +523,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         // Any edit clears a stale validation / status line (#3).
         StatusMessage = string.Empty;
 
-        var dirty = UseWebSocket != _baseUseWebSocket
+        var dirty = ProxySelectionDirty || UseWebSocket != _baseUseWebSocket
             || !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
             || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
             || AuthMode != _baseAuthMode
@@ -529,6 +550,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public void CaptureBaseline()
     {
+        CaptureProxyBaseline();
         _baseUseWebSocket = UseWebSocket;
         _baseWebSocketHost = WebSocketHost ?? string.Empty;
         _baseWebSocketPort = WebSocketPort ?? string.Empty;
@@ -559,6 +581,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _applying = true;
         try
         {
+            RevertProxyChoice();
             UseWebSocket = _baseUseWebSocket;
             WebSocketHost = _baseWebSocketHost;
             WebSocketPort = _baseWebSocketPort;
@@ -730,6 +753,16 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             {
                 var mode = (Decl.VpnDnsMode)VpnDnsMode;
                 ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConfigVpnDns, [ConfigName, Decl.VpnDns.NameOf(mode), mode == Decl.VpnDnsMode.Own ? VpnDns.Trim() : string.Empty]));
+            }
+
+            if (ack.Ok && ProxySelectionDirty)
+            {
+                ack = await CommitProxyChoiceAsync();
+                if (!ack.Ok)
+                {
+                    StatusMessage = TransportProxyWords.Fault(ack.Message);
+                    return false;
+                }
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).

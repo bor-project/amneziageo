@@ -163,6 +163,13 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task RemoveConfigTransportAsync(string name, CancellationToken ct = default) => user.RemoveConfigTransportAsync(name, ct);
 
     /// <inheritdoc/>
+    public Task<TransportProxyState> GetTransportProxyStateAsync(CancellationToken ct = default) => user.GetTransportProxyStateAsync(ct);
+
+    /// <inheritdoc/>
+    public Task<bool> TrySaveTransportProxyStateAsync(TransportProxyState state, long expectedRevision, CancellationToken ct = default)
+        => user.TrySaveTransportProxyStateAsync(state, expectedRevision, ct);
+
+    /// <inheritdoc/>
     public Task<ConfigDns?> GetConfigDnsAsync(string name, CancellationToken ct = default) => user.GetConfigDnsAsync(name, ct);
 
     /// <inheritdoc/>

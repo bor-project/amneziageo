@@ -14,7 +14,7 @@ public sealed record StatusSnapshot(
     string BoundStatus = ConnectionStatus.Disconnected,
     bool RestartRequired = false,
     string? SelectedTarget = null,
-    // Routing list every config uses; null routes everything through the tunnel.
+    // Routing list selected for SelectedTarget.
     long? SelectedRoutingList = null,
     IReadOnlyList<SourceEntry>? Sources = null,
     string UpdateUrl = "",
@@ -242,4 +242,5 @@ public sealed record StatusSnapshot(
     /// <summary>
     /// The SHA-256 of the certificate the server of the setup answers under, empty where the machine proves it.
     /// </summary>
-    string UpdateSetupPin = "");
+    string UpdateSetupPin = "",
+    IReadOnlyList<AmneziaGeo.Decl.TransportProxySummary>? TransportProxies = null);

@@ -1,0 +1,704 @@
+--- a/app/proxyman/inbound/worker.go
++++ b/app/proxyman/inbound/worker.go
+@@ -15,6 +15,7 @@
+ 	"github.com/xtls/xray-core/common/session"
+ 	"github.com/xtls/xray-core/common/signal/done"
+ 	"github.com/xtls/xray-core/common/task"
++	"github.com/xtls/xray-core/common/udppressure"
+ 	"github.com/xtls/xray-core/features/routing"
+ 	"github.com/xtls/xray-core/features/stats"
+ 	"github.com/xtls/xray-core/proxy"
+@@ -270,6 +271,7 @@
+ 	uplinkCounter   stats.Counter
+ 	downlinkCounter stats.Counter
+ 
++	pressure   *udppressure.Reporter
+ 	checker    *task.Periodic
+ 	activeConn map[connID]*udpConn
+ 
+@@ -286,7 +288,9 @@
+ 		return conn, true
+ 	}
+ 
+-	pReader, pWriter := pipe.New(pipe.DiscardOverflow(), pipe.WithSizeLimit(16*1024))
++	pReader, pWriter := pipe.New(pipe.DiscardOverflow(), pipe.WithSizeLimit(256*1024), pipe.WithDiscardReporter(func(packets, bytes int32) {
++		w.pressure.Drop(udppressure.Pipe, uint64(packets), uint64(bytes), 256*1024)
++	}))
+ 	conn := &udpConn{
+ 		reader: pReader,
+ 		writer: pWriter,
+@@ -411,9 +415,14 @@
+ }
+ 
+ func (w *udpWorker) Start() error {
++	w.pressure = udppressure.New(w.ctx, func(event udppressure.Event) {
++		errors.LogWarning(w.ctx, event.String())
++	})
+ 	w.activeConn = make(map[connID]*udpConn, 16)
+ 	ctx := context.Background()
+-	h, err := udp.ListenUDP(ctx, w.address, w.port, w.stream, udp.HubCapacity(256))
++	h, err := udp.ListenUDP(ctx, w.address, w.port, w.stream, udp.HubCapacity(256), udp.HubDiscardReporter(func(packets, bytes int32) {
++		w.pressure.Drop(udppressure.Hub, uint64(packets), uint64(bytes), 256)
++	}))
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -431,6 +440,7 @@
+ }
+ 
+ func (w *udpWorker) Close() error {
++	w.pressure.Close()
+ 	w.Lock()
+ 	defer w.Unlock()
+ 
+--- /dev/null
++++ b/common/udppressure/reporter.go
+@@ -0,0 +1,214 @@
++package udppressure
++
++import (
++	"context"
++	"encoding/json"
++	"math"
++	"sync"
++	"time"
++)
++
++const Marker = "AG_UDP_PRESSURE "
++const Interval = 10 * time.Second
++
++type Stage string
++
++const (
++	Pipe Stage = "pipe"
++	Hub  Stage = "hub"
++)
++
++type Event struct {
++	Version         int    `json:"v"`
++	Stage           Stage  `json:"stage"`
++	DroppedPackets  uint64 `json:"droppedPackets"`
++	DroppedBytes    uint64 `json:"droppedBytes"`
++	TotalPackets    uint64 `json:"totalPackets"`
++	TotalBytes      uint64 `json:"totalBytes"`
++	CapacityBytes   uint64 `json:"capacityBytes"`
++	CapacityPackets uint64 `json:"capacityPackets"`
++}
++
++func (e Event) String() string {
++	data, _ := json.Marshal(e)
++	return Marker + string(data)
++}
++
++type Sink func(Event)
++type contextKey struct{}
++
++func WithSink(ctx context.Context, sink Sink) context.Context {
++	return context.WithValue(ctx, contextKey{}, sink)
++}
++
++type counters struct {
++	packets, bytes, totalPackets, totalBytes, capacity uint64
++	next                                               time.Time
++}
++
++type Reporter struct {
++	mu      sync.Mutex
++	stages  [2]counters
++	sink    Sink
++	ctx     context.Context
++	wake    chan struct{}
++	stop    chan struct{}
++	done    chan struct{}
++	started bool
++	closed  bool
++}
++
++func New(ctx context.Context, fallback Sink) *Reporter {
++	if ctx == nil {
++		ctx = context.Background()
++	}
++	if sink, ok := ctx.Value(contextKey{}).(Sink); ok && sink != nil {
++		fallback = sink
++	}
++	return &Reporter{sink: fallback, ctx: ctx, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{})}
++}
++
++func add(left, right uint64) uint64 {
++	if right > math.MaxUint64-left {
++		return math.MaxUint64
++	}
++	return left + right
++}
++
++func stageIndex(stage Stage) int {
++	switch stage {
++	case Pipe:
++		return 0
++	case Hub:
++		return 1
++	default:
++		return -1
++	}
++}
++
++func (r *Reporter) Drop(stage Stage, packets, bytes, capacity uint64) {
++	index := stageIndex(stage)
++	if r == nil || index < 0 || packets == 0 || capacity == 0 || r.ctx.Err() != nil {
++		return
++	}
++	r.mu.Lock()
++	if r.closed || r.sink == nil {
++		r.mu.Unlock()
++		return
++	}
++	current := &r.stages[index]
++	current.packets = add(current.packets, packets)
++	current.bytes = add(current.bytes, bytes)
++	current.totalPackets = add(current.totalPackets, packets)
++	current.totalBytes = add(current.totalBytes, bytes)
++	current.capacity = capacity
++	if !r.started {
++		r.started = true
++		go r.run()
++	}
++	r.mu.Unlock()
++	select {
++	case r.wake <- struct{}{}:
++	default:
++	}
++}
++
++func (r *Reporter) collect(now time.Time) ([]Event, time.Duration) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.closed {
++		return nil, 0
++	}
++	var events []Event
++	var wait time.Duration
++	for index := range r.stages {
++		current := &r.stages[index]
++		if current.packets == 0 {
++			continue
++		}
++		if !current.next.IsZero() && now.Before(current.next) {
++			delay := current.next.Sub(now)
++			if wait == 0 || delay < wait {
++				wait = delay
++			}
++			continue
++		}
++		event := Event{Version: 1, Stage: Pipe, DroppedPackets: current.packets, DroppedBytes: current.bytes, TotalPackets: current.totalPackets, TotalBytes: current.totalBytes, CapacityBytes: current.capacity}
++		if index == 1 {
++			event.Stage = Hub
++			event.CapacityBytes = 0
++			event.CapacityPackets = current.capacity
++		}
++		events = append(events, event)
++		current.packets, current.bytes = 0, 0
++		current.next = now.Add(Interval)
++	}
++	return events, wait
++}
++
++func (r *Reporter) deliver(event Event) {
++	r.mu.Lock()
++	if r.closed {
++		r.mu.Unlock()
++		return
++	}
++	sink := r.sink
++	r.mu.Unlock()
++	sink(event)
++}
++
++func (r *Reporter) run() {
++	defer close(r.done)
++	timer := time.NewTimer(time.Hour)
++	if !timer.Stop() {
++		<-timer.C
++	}
++	defer timer.Stop()
++	var deadline <-chan time.Time
++	for {
++		select {
++		case <-r.stop:
++			return
++		case <-r.ctx.Done():
++			r.Close()
++			return
++		case <-r.wake:
++		case <-deadline:
++		}
++		events, wait := r.collect(time.Now())
++		for _, event := range events {
++			r.deliver(event)
++		}
++		if !timer.Stop() {
++			select {
++			case <-timer.C:
++			default:
++			}
++		}
++		deadline = nil
++		if wait > 0 {
++			timer.Reset(wait)
++			deadline = timer.C
++		}
++	}
++}
++
++func (r *Reporter) Close() {
++	if r == nil {
++		return
++	}
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.closed {
++		return
++	}
++	r.closed = true
++	close(r.stop)
++	if !r.started {
++		close(r.done)
++	}
++}
++
++func (r *Reporter) Done() <-chan struct{} {
++	return r.done
++}
+--- /dev/null
++++ b/common/udppressure/reporter_test.go
+@@ -0,0 +1,183 @@
++package udppressure
++
++import (
++	"context"
++	"encoding/json"
++	"math"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++)
++
++func TestIdleReporterDoesNotStartWorker(t *testing.T) {
++	r := New(context.Background(), func(Event) { t.Error("idle callback") })
++	if r.started {
++		t.Fatal("idle reporter started")
++	}
++	r.Close()
++	select {
++	case <-r.Done():
++	default:
++		t.Fatal("idle reporter did not close")
++	}
++}
++
++func TestDropStateRatesStagesAndTotals(t *testing.T) {
++	r := New(context.Background(), func(Event) {})
++	r.started = true
++	now := time.Unix(1000, 0)
++	r.Drop(Pipe, 2, 200, 262144)
++	first, wait := r.collect(now)
++	if len(first) != 1 || wait != 0 || first[0].DroppedPackets != 2 || first[0].TotalBytes != 200 || first[0].CapacityPackets != 0 {
++		t.Fatalf("first = %+v, wait = %v", first, wait)
++	}
++	r.Drop(Pipe, 3, 300, 262144)
++	r.Drop(Hub, 1, 40, 256)
++	next, wait := r.collect(now.Add(5 * time.Second))
++	if len(next) != 1 || next[0].Stage != Hub || next[0].CapacityBytes != 0 || next[0].CapacityPackets != 256 || wait != 5*time.Second {
++		t.Fatalf("independent stages = %+v, wait = %v", next, wait)
++	}
++	last, wait := r.collect(now.Add(10 * time.Second))
++	if len(last) != 1 || last[0].Stage != Pipe || last[0].DroppedPackets != 3 || last[0].TotalPackets != 5 || last[0].TotalBytes != 500 || wait != 0 {
++		t.Fatalf("aggregated = %+v, wait = %v", last, wait)
++	}
++}
++
++func TestBlockedSinkDoesNotBlockDropOrClose(t *testing.T) {
++	entered := make(chan struct{})
++	release := make(chan struct{})
++	var calls int
++	r := New(context.Background(), func(Event) {
++		calls++
++		close(entered)
++		<-release
++	})
++	r.Drop(Pipe, 1, 1, 262144)
++	select {
++	case <-entered:
++	case <-time.After(time.Second):
++		t.Fatal("first event not emitted")
++	}
++	added := make(chan struct{})
++	go func() {
++		for i := 0; i < 1000; i++ {
++			r.Drop(Pipe, 1, 100, 262144)
++		}
++		r.Close()
++		close(added)
++	}()
++	select {
++	case <-added:
++	case <-time.After(time.Second):
++		close(release)
++		t.Fatal("producer or Close blocked on sink")
++	}
++	r.Drop(Hub, 1, 1, 256)
++	close(release)
++	select {
++	case <-r.Done():
++	case <-time.After(time.Second):
++		t.Fatal("reporter did not retire")
++	}
++	if calls != 1 {
++		t.Fatalf("late callbacks: %d", calls)
++	}
++}
++
++func TestContextSinksStayPerInstance(t *testing.T) {
++	a, b := make(chan Event, 1), make(chan Event, 1)
++	one := New(WithSink(context.Background(), func(e Event) { a <- e }), func(Event) { t.Error("fallback used") })
++	two := New(WithSink(context.Background(), func(e Event) { b <- e }), func(Event) { t.Error("fallback used") })
++	one.Drop(Pipe, 1, 11, 262144)
++	select {
++	case event := <-a:
++		if event.DroppedBytes != 11 {
++			t.Fatal("first owner mismatch")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("first sink absent")
++	}
++	one.Close()
++	<-one.Done()
++	one.Drop(Pipe, 1, 99, 262144)
++	two.Drop(Hub, 1, 22, 256)
++	select {
++	case event := <-b:
++		if event.Stage != Hub || event.DroppedBytes != 22 {
++			t.Fatal("second owner mismatch")
++		}
++	case <-time.After(time.Second):
++		t.Fatal("closing first disabled second")
++	}
++	two.Close()
++	<-two.Done()
++	select {
++	case <-a:
++		t.Fatal("retired sink received new event")
++	default:
++	}
++}
++
++func TestCancelledNilAndInvalidDropsHaveNoWorker(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	for _, r := range []*Reporter{New(ctx, func(Event) {}), New(context.Background(), nil)} {
++		r.Drop(Pipe, 1, 100, 262144)
++		r.Drop(Stage("invalid"), 1, 100, 262144)
++		r.Drop(Pipe, 0, 100, 262144)
++		r.Drop(Pipe, 1, 100, 0)
++		if r.started {
++			t.Fatal("invalid drop started worker")
++		}
++		r.Close()
++	}
++	var nilReporter *Reporter
++	nilReporter.Drop(Pipe, 1, 1, 1)
++	nilReporter.Close()
++}
++
++func TestCounterSaturationAndNumericWire(t *testing.T) {
++	if add(math.MaxUint64-1, 2) != math.MaxUint64 {
++		t.Fatal("counter wrapped")
++	}
++	line := (Event{Version: 1, Stage: Pipe, DroppedPackets: 1, DroppedBytes: 100, TotalPackets: 2, TotalBytes: 200, CapacityBytes: 262144}).String()
++	if !strings.HasPrefix(line, Marker) {
++		t.Fatal("marker absent")
++	}
++	var fields map[string]interface{}
++	if err := json.Unmarshal([]byte(strings.TrimPrefix(line, Marker)), &fields); err != nil || len(fields) != 8 {
++		t.Fatalf("wire fields = %#v, err = %v", fields, err)
++	}
++	for key, value := range fields {
++		if key == "stage" {
++			if value != "pipe" {
++				t.Fatal("stage differs")
++			}
++		} else if _, ok := value.(float64); !ok {
++			t.Fatalf("nonnumeric field %s", key)
++		}
++	}
++}
++
++func TestConcurrentDropsAndClose(t *testing.T) {
++	r := New(context.Background(), func(Event) {})
++	var workers sync.WaitGroup
++	for i := 0; i < 8; i++ {
++		workers.Add(1)
++		go func() {
++			defer workers.Done()
++			for n := 0; n < 1000; n++ {
++				r.Drop(Pipe, 1, 100, 262144)
++				r.Drop(Hub, 1, 100, 256)
++			}
++		}()
++	}
++	workers.Wait()
++	r.Close()
++	select {
++	case <-r.Done():
++	case <-time.After(time.Second):
++		t.Fatal("concurrent reporter did not stop")
++	}
++}
+--- /dev/null
++++ b/transport/internet/udp/discard_reporter_test.go
+@@ -0,0 +1,49 @@
++package udp
++
++import (
++	"testing"
++
++	"github.com/xtls/xray-core/common/buf"
++)
++
++func TestHubDiscardReportsDatagramBeforeRelease(t *testing.T) {
++	h := &Hub{}
++	calls := 0
++	HubDiscardReporter(func(packets, bytes int32) {
++		calls++
++		if packets != 1 || bytes != 7 {
++			t.Fatalf("hub discard %d/%d", packets, bytes)
++		}
++	})(h)
++	packet := buf.New()
++	packet.Extend(7)
++	h.discard(packet)
++	if calls != 1 {
++		t.Fatalf("callback count %d", calls)
++	}
++}
++
++func TestHubNilReporterPreservesRelease(t *testing.T) {
++	packet := buf.New()
++	packet.Extend(7)
++	(&Hub{}).discard(packet)
++}
++
++func TestHubReporterPanicReleasesDatagramAndPropagates(t *testing.T) {
++	marker := &struct{}{}
++	h := &Hub{}
++	HubDiscardReporter(func(int32, int32) { panic(marker) })(h)
++	packet := buf.New()
++	packet.Extend(7)
++	var caught interface{}
++	func() {
++		defer func() { caught = recover() }()
++		h.discard(packet)
++	}()
++	if caught != marker {
++		t.Fatal("callback panic contract changed")
++	}
++	if packet.Len() != 0 {
++		t.Fatal("panicking hub callback retained discarded buffer")
++	}
++}
+--- a/transport/internet/udp/hub.go
++++ b/transport/internet/udp/hub.go
+@@ -18,6 +18,12 @@
+ 	}
+ }
+ 
++func HubDiscardReporter(reporter func(packets, bytes int32)) HubOption {
++	return func(h *Hub) {
++		h.discardReporter = reporter
++	}
++}
++
+ func HubReceiveOriginalDestination(r bool) HubOption {
+ 	return func(h *Hub) {
+ 		h.recvOrigDest = r
+@@ -25,11 +31,12 @@
+ }
+ 
+ type Hub struct {
+-	conn         net.PacketConn
+-	udpConn      *net.UDPConn
+-	cache        chan *udp.Packet
+-	capacity     int
+-	recvOrigDest bool
++	conn            net.PacketConn
++	udpConn         *net.UDPConn
++	cache           chan *udp.Packet
++	capacity        int
++	recvOrigDest    bool
++	discardReporter func(packets, bytes int32)
+ }
+ 
+ func ListenUDP(ctx context.Context, address net.Address, port net.Port, streamSettings *internet.MemoryStreamConfig, options ...HubOption) (*Hub, error) {
+@@ -140,9 +147,16 @@
+ 		select {
+ 		case c <- payload:
+ 		default:
+-			buffer.Release()
++			h.discard(buffer)
+ 			payload.Payload = nil
+ 		}
++	}
++}
++
++func (h *Hub) discard(buffer *buf.Buffer) {
++	defer buffer.Release()
++	if h.discardReporter != nil {
++		h.discardReporter(1, buffer.Len())
+ 	}
+ }
+ 
+--- /dev/null
++++ b/transport/pipe/discard_reporter_test.go
+@@ -0,0 +1,94 @@
++package pipe
++
++import (
++	"testing"
++	"time"
++
++	"github.com/xtls/xray-core/common/buf"
++)
++
++func pressureBuffer(size int32) *buf.Buffer {
++	b := buf.New()
++	b.Extend(size)
++	return b
++}
++
++func TestDiscardReporterRunsOutsidePipeLock(t *testing.T) {
++	var reader *Reader
++	calls := make(chan [2]int32, 1)
++	var writer *Writer
++	reader, writer = New(DiscardOverflow(), WithSizeLimit(0), WithDiscardReporter(func(packets, bytes int32) {
++		queued, err := reader.ReadMultiBufferTimeout(time.Second)
++		if err != nil {
++			t.Error(err)
++		}
++		buf.ReleaseMulti(queued)
++		calls <- [2]int32{packets, bytes}
++	}))
++	if err := writer.WriteMultiBuffer(buf.MultiBuffer{pressureBuffer(1)}); err != nil {
++		t.Fatal(err)
++	}
++	done := make(chan error, 1)
++	go func() { done <- writer.WriteMultiBuffer(buf.MultiBuffer{pressureBuffer(3)}) }()
++	select {
++	case err := <-done:
++		if err != nil {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("discard callback retained pipe lock")
++	}
++	if got := <-calls; got != [2]int32{1, 3} {
++		t.Fatalf("discard = %v", got)
++	}
++	writer.Close()
++	reader.Interrupt()
++}
++
++func TestNilDiscardReporterPreservesDiscardResult(t *testing.T) {
++	reader, writer := New(DiscardOverflow(), WithSizeLimit(0))
++	defer reader.Interrupt()
++	if err := writer.WriteMultiBuffer(buf.MultiBuffer{pressureBuffer(1)}); err != nil {
++		t.Fatal(err)
++	}
++	if err := writer.WriteMultiBuffer(buf.MultiBuffer{pressureBuffer(3)}); err != nil {
++		t.Fatalf("legacy discard result: %v", err)
++	}
++	queued, err := reader.ReadMultiBufferTimeout(time.Second)
++	defer buf.ReleaseMulti(queued)
++	if err != nil || queued.Len() != 1 {
++		t.Fatalf("queued=%d err=%v", queued.Len(), err)
++	}
++}
++
++func TestEmptyAndClosedWritesDoNotReportOverflow(t *testing.T) {
++	calls := 0
++	_, writer := New(DiscardOverflow(), WithSizeLimit(0), WithDiscardReporter(func(int32, int32) { calls++ }))
++	writer.WriteMultiBuffer(nil)
++	writer.Close()
++	if err := writer.WriteMultiBuffer(buf.MultiBuffer{pressureBuffer(3)}); err == nil {
++		t.Fatal("closed write succeeded")
++	}
++	if calls != 0 {
++		t.Fatal("non-overflow counted")
++	}
++}
++
++func TestDiscardReporterPanicReleasesDatagramAndPropagates(t *testing.T) {
++	marker := &struct{}{}
++	reader, writer := New(DiscardOverflow(), WithSizeLimit(0), WithDiscardReporter(func(int32, int32) { panic(marker) }))
++	defer reader.Interrupt()
++	writer.WriteMultiBuffer(buf.MultiBuffer{pressureBuffer(1)})
++	dropped := pressureBuffer(3)
++	var caught interface{}
++	func() {
++		defer func() { caught = recover() }()
++		writer.WriteMultiBuffer(buf.MultiBuffer{dropped})
++	}()
++	if caught != marker {
++		t.Fatal("callback panic contract changed")
++	}
++	if dropped.Len() != 0 {
++		t.Fatal("panicking callback retained discarded buffer")
++	}
++}
+--- a/transport/pipe/impl.go
++++ b/transport/pipe/impl.go
+@@ -23,6 +23,7 @@
+ type pipeOption struct {
+ 	limit           int32 // maximum buffer size in bytes
+ 	discardOverflow bool
++	discardReporter func(packets, bytes int32)
+ }
+ 
+ func (o *pipeOption) isFull(curSize int32) bool {
+@@ -155,7 +156,7 @@
+ 
+ 		if err == errBufferFull {
+ 			if p.option.discardOverflow {
+-				buf.ReleaseMulti(mb)
++				p.discard(mb)
+ 				return nil
+ 			}
+ 			select {
+@@ -173,6 +174,13 @@
+ 	}
+ }
+ 
++func (p *pipe) discard(mb buf.MultiBuffer) {
++	defer buf.ReleaseMulti(mb)
++	if p.option.discardReporter != nil {
++		p.option.discardReporter(int32(len(mb)), mb.Len())
++	}
++}
++
+ func (p *pipe) Close() error {
+ 	p.Lock()
+ 	defer p.Unlock()
+--- a/transport/pipe/pipe.go
++++ b/transport/pipe/pipe.go
+@@ -29,6 +29,12 @@
+ func DiscardOverflow() Option {
+ 	return func(opt *pipeOption) {
+ 		opt.discardOverflow = true
++	}
++}
++
++func WithDiscardReporter(reporter func(packets, bytes int32)) Option {
++	return func(opt *pipeOption) {
++		opt.discardReporter = reporter
+ 	}
+ }
+ 

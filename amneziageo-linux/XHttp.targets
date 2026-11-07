@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <XHttpArch Condition="'$(RuntimeIdentifier)' == 'linux-arm64' or ('$(RuntimeIdentifier)' == '' and '$(NETCoreSdkRuntimeIdentifier)' == 'linux-arm64')">arm64</XHttpArch>
+    <XHttpArch Condition="'$(XHttpArch)' == ''">x64</XHttpArch>
+    <XrayCacheRoot>$(MSBuildThisFileDirectory).deps/xray</XrayCacheRoot>
+    <XrayTargetOS>linux</XrayTargetOS>
+    <XrayTargetArch Condition="'$(XHttpArch)' == 'arm64'">arm64</XrayTargetArch>
+    <XrayTargetArch Condition="'$(XrayTargetArch)' == ''">amd64</XrayTargetArch>
+    <XrayExecutable>xray</XrayExecutable>
+  </PropertyGroup>
+  <Import Project="../tools/xray-build/XrayRuntime.targets" />
+</Project>

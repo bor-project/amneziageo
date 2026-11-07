@@ -5,6 +5,7 @@
 
   <!-- gateway.exe: arch mapping + not-built guard. -->
   <Import Project="..\Gateway.targets" />
+  <Import Project="..\XHttp.targets" />
 
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
@@ -23,11 +24,7 @@
   <ItemGroup>
     <None Include="..\amneziawg-windows\$(TunnelArch)\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\amneziawg-windows\.deps\wintun\bin\$(WintunArch)\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
-    <!-- wstunnel client (erebe/wstunnel v10): the UDP-over-TCP transport launched per tunnel when a
-         config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it.
-         Built by tools\build-wstunnel.ps1 with the C runtime linked in, so it runs without the VC++ Redistributable.
-         x64-only for now; an arm64 build ships without it (WebSocket transport unavailable) until an
-         arm64 wstunnel is added. -->
+    <!-- Bundles the legacy WebSocket client for x64. -->
     <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
     <!-- gateway.exe: the adapter and userspace stack the shared access point's clients are carried through,
          so what they open is opened again by this machine under its own routing. Built by

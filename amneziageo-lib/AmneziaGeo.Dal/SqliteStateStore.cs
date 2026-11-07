@@ -10,7 +10,7 @@ namespace AmneziaGeo.Dal;
 /// <summary>
 /// SQLite-backed state store.
 /// </summary>
-public sealed class SqliteStateStore(string databasePath) : IStateStore
+public sealed partial class SqliteStateStore(string databasePath) : IStateStore
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
     {
@@ -146,6 +146,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         allow_signal INTEGER NOT NULL DEFAULT 1,
                         hold_traffic INTEGER NOT NULL DEFAULT 1,
                         updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS transport_proxy_state (
+                        id       INTEGER PRIMARY KEY CHECK(id = 1),
+                        revision INTEGER NOT NULL,
+                        payload  TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS config_dns (
@@ -418,7 +424,29 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
+            await MigrateRoutingSelectionsAsync(connection, ct).ConfigureAwait(false);
+
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task MigrateRoutingSelectionsAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText =
+                """
+                INSERT OR IGNORE INTO settings (key, value, updated_at)
+                SELECT $default, COALESCE((SELECT value FROM settings WHERE key = $legacy), ''), $updated;
+                INSERT OR IGNORE INTO settings (key, value, updated_at)
+                SELECT $prefix || name, (SELECT value FROM settings WHERE key = $default), $updated FROM configs;
+                """;
+            command.Parameters.AddWithValue("$default", StateKeys.ConfigRoutingDefault);
+            command.Parameters.AddWithValue("$legacy", StateKeys.SelectedRoutingList);
+            command.Parameters.AddWithValue("$prefix", StateKeys.ConfigRoutingPrefix);
+            command.Parameters.AddWithValue("$updated", Timestamp());
+            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
 
@@ -2237,8 +2265,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "DELETE FROM configs WHERE name = $name;";
+                command.CommandText = "DELETE FROM configs WHERE name = $name; DELETE FROM settings WHERE key = $routing;";
                 command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$routing", ConfigRouting.SelectionKey(name));
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -2804,8 +2833,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 {
                     // Turns routing off when the removed list was the selected one.
                     clearSelection.Transaction = transaction;
-                    clearSelection.CommandText = "UPDATE settings SET value = '', updated_at = $updated WHERE key = $key AND value = $id;";
+                    clearSelection.CommandText = "UPDATE settings SET value = '', updated_at = $updated WHERE (key = $key OR key = $default OR substr(key, 1, length($prefix)) = $prefix) AND value = $id;";
                     clearSelection.Parameters.AddWithValue("$key", StateKeys.SelectedRoutingList);
+                    clearSelection.Parameters.AddWithValue("$default", StateKeys.ConfigRoutingDefault);
+                    clearSelection.Parameters.AddWithValue("$prefix", StateKeys.ConfigRoutingPrefix);
                     clearSelection.Parameters.AddWithValue("$id", id.ToString(CultureInfo.InvariantCulture));
                     clearSelection.Parameters.AddWithValue("$updated", Timestamp());
                     await clearSelection.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -3151,10 +3182,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public Task SetSelectedRoutingListAsync(long? routingListId, CancellationToken ct = default)
+    public async Task SetSelectedRoutingListAsync(long? routingListId, CancellationToken ct = default)
     {
         var value = routingListId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-        return SetSettingAsync(StateKeys.SelectedRoutingList, value, ct);
+        await SetSettingAsync(StateKeys.SelectedRoutingList, value, ct).ConfigureAwait(false);
+        await SetSettingAsync(StateKeys.ConfigRoutingDefault, value, ct).ConfigureAwait(false);
     }
 
     private static async Task<RoutingList?> ReadRoutingListAsync(SqliteConnection connection, string whereClause, string keyParam, object keyValue, CancellationToken ct)

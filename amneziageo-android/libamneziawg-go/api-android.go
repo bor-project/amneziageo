@@ -68,6 +68,10 @@ func androidLog(prio C.int, tag *C.char, message string) {
 	C.free(unsafe.Pointer(cmessage))
 }
 
+func warnXHttpPressure(message string) {
+	androidLog(C.ANDROID_LOG_WARN, logTagText, message)
+}
+
 func newAndroidLogger(level int) *device.Logger {
 	tag := logTagText
 	logger := &device.Logger{Verbosef: device.DiscardLogf, Errorf: device.DiscardLogf}

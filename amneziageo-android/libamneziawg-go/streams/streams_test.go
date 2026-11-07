@@ -96,7 +96,7 @@ func answer(t *testing.T, link *channel.Endpoint, packet []byte) header.TCP {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out := link.ReadContext(ctx)
-	if out.IsNil() {
+	if out == nil {
 		t.Fatal("the stack did not answer")
 	}
 

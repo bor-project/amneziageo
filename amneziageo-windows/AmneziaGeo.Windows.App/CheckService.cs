@@ -379,7 +379,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     {
         var listId = await store.GetActiveRoutingListIdAsync(config, ct).ConfigureAwait(false)
             ?? (await ConfigRouting.AllowedAsync(store, config, ct).ConfigureAwait(false)
-                ? await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false)
+                ? await ConfigRouting.SelectedListAsync(store, config, ct).ConfigureAwait(false)
                 : null);
         var list = listId is long id && await store.GetRoutingListAsync(id, ct).ConfigureAwait(false) is { } stored
             ? await AppFinds.ExpandListAsync(store, stored, ct).ConfigureAwait(false)

@@ -178,7 +178,7 @@ internal sealed partial class MobileSelectHost : UserControl
 
             var content = item;
             var template = comboBox.ItemTemplate;
-            var enabled = true;
+            var enabled = item is not IAdaptiveSelectOption option || option.IsSelectable;
 
             if (item is ComboBoxItem comboBoxItem)
             {
@@ -253,8 +253,9 @@ internal sealed partial class MobileSelectHost : UserControl
 
             SelectOverlay.Opacity = 1;
             _sheetTransform.Y = 0;
-            _selectedRow?.BringIntoView();
-            _selectedRow?.Focus(NavigationMethod.Directional);
+            var target = SheetFocusTarget();
+            target?.BringIntoView();
+            target?.Focus(NavigationMethod.Directional);
         }, DispatcherPriority.Render);
     }
 
@@ -269,6 +270,12 @@ internal sealed partial class MobileSelectHost : UserControl
         ring.Classes.Add("mobile-select-ring");
         return ring;
     }
+
+    private Control? SheetFocusTarget() =>
+        _sheetFocus is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } ? _sheetFocus
+            : _selectedRow is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } ? _selectedRow
+            : OptionsPanel.Children.OfType<Control>().FirstOrDefault(one => one.Focusable
+                && one.IsEffectivelyVisible && one.IsEffectivelyEnabled);
 
     private void Select(int index)
     {
@@ -463,7 +470,7 @@ internal sealed partial class MobileSelectHost : UserControl
             }
             else
             {
-                (_sheetFocus ?? _selectedRow)?.Focus(NavigationMethod.Directional);
+                SheetFocusTarget()?.Focus(NavigationMethod.Directional);
             }
 
             return;

@@ -36,6 +36,9 @@ internal sealed class TunnelController : IDisposable
     private readonly AgentLog _log;
     private AwgDaemon? _daemon;
     private WsCarrier? _carrier;
+    private XHttpProcess? _xhttp;
+    private ResolvedTransportProxy? _proxySelection;
+    private IPAddress? _proxyAddress;
     private DnsRouter? _dns;
     private RoutingCache? _cache;
     private IReadOnlyList<string> _configNetworks = [];
@@ -117,6 +120,11 @@ internal sealed class TunnelController : IDisposable
     public bool Running => _daemon is { Running: true };
 
     /// <summary>
+    /// Transport of the running session.
+    /// </summary>
+    public RunningTransportProxy? RunningTransport { get; private set; }
+
+    /// <summary>
     /// How the running tunnel routes traffic.
     /// </summary>
     public string Mode { get; private set; } = "(down)";
@@ -169,8 +177,10 @@ internal sealed class TunnelController : IDisposable
     /// </summary>
     public async Task<TunnelFailure?> UpAsync(string configText, TunnelRouting routing, TunnelOptions options, CancellationToken ct)
     {
-        var front = options.Transport?.UseWebSocket == true ? WsEndpoint.Of(configText, options.Offer, options.Transport) : null;
-        var carried = front is not null;
+        var front = options.ProxyChosen
+            ? options.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(options.Proxy) : (WsEndpoint?)null
+            : options.Transport?.UseWebSocket == true ? WsEndpoint.Of(configText, options.Offer, options.Transport) : null;
+        var carried = front is not null || options.Proxy?.Record.Proxy.Transport == "xhttp";
         var blocker = Preflight(carried);
         if (blocker is { } refused)
         {
@@ -179,7 +189,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         var (resolved, endpointIp) = await ResolveEndpointAsync(configText, _log, ct).ConfigureAwait(false);
-        var carrier = await CarrierAsync(front, configText, ct).ConfigureAwait(false);
+        using var carrier = await CarrierAsync(front, options.Proxy, options.ProxyChosen, configText, ct).ConfigureAwait(false);
         if (carrier.Refusal is { } refusal)
         {
             _log.Warn("tunnel", $"connect refused: {refusal.Detail}");
@@ -188,12 +198,12 @@ internal sealed class TunnelController : IDisposable
 
         // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
         var underlay = resolved;
-        if (carrier.Started is { } started)
+        if (carrier.LocalPort > 0)
         {
             // The engine dials the carrier instead of the server, and the address that has to stay outside the
             // tunnel is the front's, not the endpoint's.
             endpointIp = carrier.Address;
-            resolved = WgConfigEditor.SetEndpoint(resolved, $"{Loopback}:{started.LocalPort}");
+            resolved = WgConfigEditor.SetEndpoint(resolved, $"{Loopback}:{carrier.LocalPort}");
         }
         else if (endpointIp is null && WgConfigEditor.GetEndpoint(configText) is { Length: > 0 } named)
         {
@@ -265,141 +275,157 @@ internal sealed class TunnelController : IDisposable
         var uapi = WgQuickToUapi.Convert(config);
         if (uapi is null)
         {
-            carrier.Started?.Dispose();
             return Refused("the configuration carries no usable [Interface] PrivateKey");
         }
 
         await DownAsync(ct).ConfigureAwait(false);
-        _carrier = carrier.Started;
-
-        // Read before the tunnel routes land, while the machine's own path is the only one there is.
-        var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
-        var lanResolvers = options.LocalResolvers.Count > 0 ? options.LocalResolvers : LanResolvers(hop.Via);
-
-        // The servers of the other VPNs stay reachable past this tunnel, like its own.
-        _others = new OtherVpns(lanResolvers, _log);
-        await _others.LayServerRoutesAsync(hop.Via, hop.Dev, ct).ConfigureAwait(false);
-
-        // The network of the machine answers the names through the tunnel past it where the config picks it; a range of a
-        // split list may cover its resolvers as well.
-        _networkResolvers = vpnDns.Network
-            ? [.. lanResolvers.Where(server => server.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(server)).Select(server => $"{server}/32")]
-            : [];
-        routing = WithNetworkResolvers(routing);
-
-        var daemon = new AwgDaemon(_enginePath, _iface);
+        var raised = false;
         try
         {
-            daemon.Start();
-            if (daemon.ReclaimedOrphan)
-            {
-                _log.Warn("tunnel", $"{_iface} was still held by the engine of a run that was killed; it is taken back");
-            }
+            _carrier = carrier.WebSocket;
+            _xhttp = carrier.XHttp;
+            _proxySelection = options.Proxy;
+            RunningTransport = RunningTransportProxy.From(options.Proxy, configText);
+            _proxyAddress = IPAddress.TryParse(carrier.Address, out var carrierAddress) ? carrierAddress : null;
+            carrier.Taken = true;
 
-            if (!await WaitForSocketAsync(daemon, ct).ConfigureAwait(false))
+            // Read before the tunnel routes land, while the machine's own path is the only one there is.
+            var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
+            var lanResolvers = options.LocalResolvers.Count > 0 ? options.LocalResolvers : LanResolvers(hop.Via);
+
+            // The servers of the other VPNs stay reachable past this tunnel, like its own.
+            _others = new OtherVpns(lanResolvers, _log);
+            await _others.LayServerRoutesAsync(hop.Via, hop.Dev, ct).ConfigureAwait(false);
+
+            // The network of the machine answers the names through the tunnel past it where the config picks it; a range of a
+            // split list may cover its resolvers as well.
+            _networkResolvers = vpnDns.Network
+                ? [.. lanResolvers.Where(server => server.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(server)).Select(server => $"{server}/32")]
+                : [];
+            routing = WithNetworkResolvers(routing);
+
+            var daemon = new AwgDaemon(_enginePath, _iface);
+            try
             {
+                daemon.Start();
+                if (daemon.ReclaimedOrphan)
+                {
+                    _log.Warn("tunnel", $"{_iface} was still held by the engine of a run that was killed; it is taken back");
+                }
+
+                if (!await WaitForSocketAsync(daemon, ct).ConfigureAwait(false))
+                {
+                    daemon.Dispose();
+                    return Refused($"amneziawg-go did not open {daemon.SocketPath}; its output is on the agent console");
+                }
+
+                await daemon.ConfigureAsync(uapi, ct).ConfigureAwait(false);
+                _daemon = daemon;
+                _log.Info("tunnel", $"{_iface} configured, endpoint {endpointIp ?? "(none)"}");
+            }
+            catch (Exception ex)
+            {
+                _log.Error("tunnel", "engine start failed", ex);
                 daemon.Dispose();
-                return Refused($"amneziawg-go did not open {daemon.SocketPath}; its output is on the agent console");
+                return Refused($"engine start failed: {ex.Message}");
             }
 
-            await daemon.ConfigureAsync(uapi, ct).ConfigureAwait(false);
-            _daemon = daemon;
-            _log.Info("tunnel", $"{_iface} configured, endpoint {endpointIp ?? "(none)"}");
+            // Past this point the engine and its routes stand: whatever fails takes them down with it, so a refused
+            // connect never leaves a tunnel that carries traffic under no rules.
+            try
+            {
+                var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport, underlay), ct).ConfigureAwait(false);
+                if (failure is not null)
+                {
+                    await DownAsync(ct).ConfigureAwait(false);
+                    return Refused(failure);
+                }
+
+                // Inbound access off holds the tunnel off this machine; with it on the ranges above carry it and no table stands.
+                _inboundBlocked = options.Transport?.AllowInbound != true
+                    && await InboundFirewall.ApplyAsync(_iface, signal, _log, ct).ConfigureAwait(false);
+
+                // In a container the connections that come in beside the tunnel are answered the way they came.
+                _returnRouted = ContainerHost.Detected && hop is ({ } via, { } dev)
+                    && await ReturnPath.ApplyAsync(_iface, via, dev, _log, ct).ConfigureAwait(false);
+
+                Advertised = allowedIps;
+                _sessionConfig = configText;
+                Mode = split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
+                RoutingMode = Token(split, hasRules);
+                ListName = routing.ListName;
+                _split = split;
+                var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
+                _standingBasis = new StandingBasis(ownNetworks, resolverRanges, [.. resolverRoutes.Select(server => server.ToString())], applier);
+                _inboundRoutes = inboundRoutes;
+                _signal = signal;
+                _signalRoutes = signalRoutes;
+                _standing = standing;
+                _standingRoutes = [.. inboundRoutes, .. signalRoutes, .. standing.All];
+                // All UDP belongs to a split: a full tunnel already carries every datagram.
+                var allUdp = split && routing.AllUdp;
+                // The ranges of the list take the mark in a split alone: a full tunnel already carries them.
+                var marked = split ? SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes) : null;
+                // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
+                // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
+                IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. signalRoutes, .. inboundReturn];
+                var past = SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, endpointIp is null ? pinned : [.. pinned, endpointIp]);
+                _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
+                    [.. routing.DirectRoutes, .. routing.BlockRoutes], marked, [], past, allUdp, endpointIp, _log, ct).ConfigureAwait(false);
+                _appRules = routing.TunnelApps;
+                _allUdp = allUdp && _apps is not null;
+                applier.Attach(_apps);
+                if (_apps is not null && !applier.CarryEverything())
+                {
+                    _log.Warn("apps", "the peer would not take the whole range, so the applications reach only what the rules "
+                        + "already advertised");
+                }
+                // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
+                // In a split the far end of a connection this machine took in earns no route: its answers go back the way
+                // the connection came.
+                var cache = new RoutingCache(applier, new ProcNet(split), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), pinned, directStanding: !split);
+                cache.Spare(WgConfigEditor.GetAddresses(config).Select(Host).OfType<IPAddress>());
+                _cache = cache;
+                applier.Follow(cache.Classify);
+                _peerAddress = endpointIp;
+                await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
+                // A split leaves the direct ranges on the path of the machine as it is.
+                _direct = !split && hop is ({ } gateway, { } device) ? new DirectPath(gateway, device, _log) : null;
+                await PassAsync(cache, routing, ct).ConfigureAwait(false);
+                _bypass = await BypassAsync(routing, split, hop, ct).ConfigureAwait(false);
+                _bypassRules = split ? [] : routing.DirectApps;
+                if (_memory is { } memory)
+                {
+                    cache.SetMemory(memory);
+                }
+
+                _sessionCts = new CancellationTokenSource();
+                _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
+                if (signal is not null)
+                {
+                    var session = _sessionCts.Token;
+                    _ = Task.Run(() => ServerSignal.ListenAsync(signal, () => AskedDownAsync(session), Note, session));
+                }
+
+                StartNameRouter(routing with { Split = split }, allowedIps, vpnDns.Network && lanResolvers.Count > 0 ? lanResolvers : tunnelResolvers, lanResolvers, options.DnsTransport, vpnDns.Network);
+                var ranges = cache.RangeCounts;
+                _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
+                raised = true;
+                return null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Error("tunnel", "routing setup failed; the tunnel is taken down", ex);
+                await DownAsync(CancellationToken.None).ConfigureAwait(false);
+                return Refused($"routing setup failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            _log.Error("tunnel", "engine start failed", ex);
-            daemon.Dispose();
-            return Refused($"engine start failed: {ex.Message}");
-        }
-
-        // Past this point the engine and its routes stand: whatever fails takes them down with it, so a refused
-        // connect never leaves a tunnel that carries traffic under no rules.
-        try
-        {
-            var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, MtuPlan.ResolveForLink(options.Transport, underlay), ct).ConfigureAwait(false);
-            if (failure is not null)
+            if (!raised)
             {
-                await DownAsync(ct).ConfigureAwait(false);
-                return Refused(failure);
+                await DownAsync(CancellationToken.None).ConfigureAwait(false);
             }
-
-            // Inbound access off holds the tunnel off this machine; with it on the ranges above carry it and no table stands.
-            _inboundBlocked = options.Transport?.AllowInbound != true
-                && await InboundFirewall.ApplyAsync(_iface, signal, _log, ct).ConfigureAwait(false);
-
-            // In a container the connections that come in beside the tunnel are answered the way they came.
-            _returnRouted = ContainerHost.Detected && hop is ({ } via, { } dev)
-                && await ReturnPath.ApplyAsync(_iface, via, dev, _log, ct).ConfigureAwait(false);
-
-            Advertised = allowedIps;
-            _sessionConfig = configText;
-            Mode = split ? $"split ({routing.ListName})" : hasRules ? $"full ({routing.ListName})" : "full";
-            RoutingMode = Token(split, hasRules);
-            ListName = routing.ListName;
-            _split = split;
-            var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
-            _standingBasis = new StandingBasis(ownNetworks, resolverRanges, [.. resolverRoutes.Select(server => server.ToString())], applier);
-            _inboundRoutes = inboundRoutes;
-            _signal = signal;
-            _signalRoutes = signalRoutes;
-            _standing = standing;
-            _standingRoutes = [.. inboundRoutes, .. signalRoutes, .. standing.All];
-            // All UDP belongs to a split: a full tunnel already carries every datagram.
-            var allUdp = split && routing.AllUdp;
-            // The ranges of the list take the mark in a split alone: a full tunnel already carries them.
-            var marked = split ? SteeringRules.Carried(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes) : null;
-            // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
-            // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
-            IReadOnlyList<string> pinned = [.. resolverRoutes.Select(server => server.ToString()), .. inboundRoutes, .. signalRoutes, .. inboundReturn];
-            var past = SteeringRules.Bypassed(routing.DirectRoutes, routing.BlockRoutes, endpointIp is null ? pinned : [.. pinned, endpointIp]);
-            _apps = await AppTunnel.TryStartAsync(_iface, routing.TunnelApps,
-                [.. routing.DirectRoutes, .. routing.BlockRoutes], marked, [], past, allUdp, endpointIp, _log, ct).ConfigureAwait(false);
-            _appRules = routing.TunnelApps;
-            _allUdp = allUdp && _apps is not null;
-            applier.Attach(_apps);
-            if (_apps is not null && !applier.CarryEverything())
-            {
-                _log.Warn("apps", "the peer would not take the whole range, so the applications reach only what the rules "
-                    + "already advertised");
-            }
-            // Hands the cache what the previous session used most; loading and writing back happen on its own loop.
-            // In a split the far end of a connection this machine took in earns no route: its answers go back the way
-            // the connection came.
-            var cache = new RoutingCache(applier, new ProcNet(split), split, Proxied(routing), routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), pinned, directStanding: !split);
-            cache.Spare(WgConfigEditor.GetAddresses(config).Select(Host).OfType<IPAddress>());
-            _cache = cache;
-            applier.Follow(cache.Classify);
-            _peerAddress = endpointIp;
-            await RefuseAsync(cache, routing, ct).ConfigureAwait(false);
-            // A split leaves the direct ranges on the path of the machine as it is.
-            _direct = !split && hop is ({ } gateway, { } device) ? new DirectPath(gateway, device, _log) : null;
-            await PassAsync(cache, routing, ct).ConfigureAwait(false);
-            _bypass = await BypassAsync(routing, split, hop, ct).ConfigureAwait(false);
-            _bypassRules = split ? [] : routing.DirectApps;
-            if (_memory is { } memory)
-            {
-                cache.SetMemory(memory);
-            }
-
-            _sessionCts = new CancellationTokenSource();
-            _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
-            if (signal is not null)
-            {
-                var session = _sessionCts.Token;
-                _ = Task.Run(() => ServerSignal.ListenAsync(signal, () => AskedDownAsync(session), Note, session));
-            }
-
-            StartNameRouter(routing with { Split = split }, allowedIps, vpnDns.Network && lanResolvers.Count > 0 ? lanResolvers : tunnelResolvers, lanResolvers, options.DnsTransport, vpnDns.Network);
-            var ranges = cache.RangeCounts;
-            _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
-            return null;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _log.Error("tunnel", "routing setup failed; the tunnel is taken down", ex);
-            await DownAsync(CancellationToken.None).ConfigureAwait(false);
-            return Refused($"routing setup failed: {ex.Message}");
         }
     }
 
@@ -421,7 +447,7 @@ internal sealed class TunnelController : IDisposable
     /// <summary>
     /// Whether the tunnel is carried inside a websocket.
     /// </summary>
-    public bool Carried => _carrier is not null;
+    public bool Carried => _carrier is not null || _xhttp is not null;
 
     /// <summary>
     /// Binds the tunnel socket to another source port, leaving the session, its routes and its DNS standing. A
@@ -434,6 +460,39 @@ internal sealed class TunnelController : IDisposable
         if (_daemon is not { Running: true } daemon)
         {
             return false;
+        }
+
+        if (_xhttp is { } previous && _proxySelection is { } selected && _proxyAddress is { } address)
+        {
+            var replacement = default(XHttpProcess);
+            try
+            {
+                await TransportProxyProbes.EnsureTargetAsync(selected, address, ct).ConfigureAwait(false);
+                replacement = await XHttpProcess.StartAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false);
+                var peer = PeerKeyHex(_sessionConfig);
+                if (string.IsNullOrEmpty(peer))
+                {
+                    throw new TransportProxyFault("bad-endpoint");
+                }
+
+                await daemon.ConfigureAsync($"public_key={peer}\nendpoint={Loopback}:{replacement.LocalPort}\n", ct).ConfigureAwait(false);
+                _xhttp = replacement;
+                replacement = null;
+                await previous.DisposeAsync().ConfigureAwait(false);
+                return true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Error("tunnel", "the XHTTP carrier could not be restarted", ex);
+                return false;
+            }
+            finally
+            {
+                if (replacement is not null)
+                {
+                    await replacement.DisposeAsync().ConfigureAwait(false);
+                }
+            }
         }
 
         if (_carrier is { } carrier)
@@ -464,7 +523,7 @@ internal sealed class TunnelController : IDisposable
     /// </summary>
     public async Task<bool> RepointAsync(CancellationToken ct, bool repin = false)
     {
-        if (_daemon is not { Running: true } daemon || _carrier is not null || _sessionConfig.Length == 0)
+        if (_daemon is not { Running: true } daemon || Carried || _sessionConfig.Length == 0)
         {
             return false;
         }
@@ -790,6 +849,21 @@ internal sealed class TunnelController : IDisposable
     /// </summary>
     public async Task DownAsync(CancellationToken ct = default)
     {
+        if (_carrier is { } carrier)
+        {
+            _carrier = null;
+            carrier.Dispose();
+        }
+
+        if (_xhttp is { } xhttp)
+        {
+            _xhttp = null;
+            await xhttp.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _proxySelection = null;
+        RunningTransport = null;
+        _proxyAddress = null;
         if (_sessionCts is { } cts)
         {
             _sessionCts = null;
@@ -862,12 +936,6 @@ internal sealed class TunnelController : IDisposable
             _pinnedEndpoint = null;
             _pinnedHop = null;
             await Shell.RunAsync("ip", ct, "route", "del", pinned).ConfigureAwait(false);
-        }
-
-        if (_carrier is { } carrier)
-        {
-            _carrier = null;
-            carrier.Dispose();
         }
 
         if (_daemon is { } daemon)
@@ -1135,37 +1203,95 @@ internal sealed class TunnelController : IDisposable
     // in web traffic the network lets through. Only the front a server of ours offers takes the token of the
     // config. The front is resolved here, before the tunnel takes over the machine's routes, because a lookup
     // made afterwards would travel inside the tunnel it is meant to open.
-    private async Task<(WsCarrier? Started, string? Address, TunnelFailure? Refusal)> CarrierAsync(WsEndpoint? offered, string configText, CancellationToken ct)
+    private async Task<PendingCarrier> CarrierAsync(WsEndpoint? offered, ResolvedTransportProxy? selected,
+        bool chosen, string configText, CancellationToken ct)
     {
+        if (selected?.Record.Proxy.Transport == "xhttp")
+        {
+            var address = await ResolveHostAsync(selected.Record.Proxy.Host, ct).ConfigureAwait(false);
+            if (address is null)
+            {
+                return new PendingCarrier(refusal: Refused("proxy-no-address"));
+            }
+
+            try
+            {
+                await TransportProxyProbes.EnsureTargetAsync(selected, address, ct).ConfigureAwait(false);
+                return new PendingCarrier(xhttp: await XHttpProcess.StartAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false), address: address.ToString());
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Error("tunnel", "the XHTTP carrier could not start", ex);
+                return new PendingCarrier(refusal: ex is TransportProxyFault { Code: "proxy-target-denied" or "bad-proxy-target" } fault
+                    ? new TunnelFailure(ConnectFailureReason.TransportRejected, fault.Code)
+                    : Refused(ex is TransportProxyFault failure ? failure.Code : "xhttp-runtime-start"));
+            }
+        }
+
         if (offered is not { } front)
         {
-            return (null, null, null);
+            return new PendingCarrier();
         }
 
-        var endpoint = WgConfigEditor.GetEndpoint(configText) ?? string.Empty;
-        var colon = endpoint.LastIndexOf(':');
-        if (colon <= 0 || !int.TryParse(endpoint[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetPort))
+        var targetPort = selected?.TargetPort ?? ConfigServices.EndpointPort(configText);
+        if (targetPort is < 1 or > 65535)
         {
-            return (null, null, Refused("this configuration asks to be carried inside a websocket, but its Endpoint names no port"));
+            return new PendingCarrier(refusal: Refused("bad-endpoint"));
         }
 
-        var address = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
-        if (address is null)
+        var frontAddress = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
+        if (frontAddress is null)
         {
-            return (null, null, Refused($"the websocket front {front.Display()} has no address to dial"));
+            return new PendingCarrier(refusal: Refused("proxy-no-address"));
         }
 
-        var carrier = WsCarrier.Start(
-            front,
-            address,
-            targetPort,
-            front.Offered ? ServiceToken.HeaderOf(configText) : null,
-            null,
-            Note,
-            front.Offered ? FrontAsker : null,
-            Gone);
-        _log.Info("tunnel", $"the tunnel is carried inside a websocket to {front.Display()}; the engine dials it on {Loopback}:{carrier.LocalPort}");
-        return (carrier, address.ToString(), null);
+        if (selected is not null)
+        {
+            try
+            {
+                await TransportProxyProbes.EnsureTargetAsync(selected, frontAddress, ct).ConfigureAwait(false);
+            }
+            catch (TransportProxyFault ex)
+            {
+                return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.TransportRejected, ex.Code));
+            }
+        }
+
+        var carrier = WsCarrier.Start(front, frontAddress, targetPort,
+            front.Offered ? ServiceToken.HeaderOf(configText) : null, null, Note,
+            chosen || front.Offered ? FrontAsker : null, chosen ? null : Gone);
+        _log.Info("tunnel", $"the tunnel is carried inside a websocket to {front.Display()}; the engine dials {Loopback}:{carrier.LocalPort}");
+        return new PendingCarrier(carrier, address: frontAddress.ToString());
+    }
+
+    private sealed class PendingCarrier : IDisposable
+    {
+        public WsCarrier? WebSocket { get; }
+        public XHttpProcess? XHttp { get; }
+        public string? Address { get; }
+        public TunnelFailure? Refusal { get; }
+        public bool Taken { get; set; }
+        public int LocalPort => WebSocket?.LocalPort ?? XHttp?.LocalPort ?? 0;
+
+        /// <summary>
+        /// ctor
+        /// </summary>
+        public PendingCarrier(WsCarrier? websocket = null, XHttpProcess? xhttp = null, string? address = null, TunnelFailure? refusal = null)
+        {
+            WebSocket = websocket;
+            XHttp = xhttp;
+            Address = address;
+            Refusal = refusal;
+        }
+
+        public void Dispose()
+        {
+            if (!Taken)
+            {
+                WebSocket?.Dispose();
+                XHttp?.Dispose();
+            }
+        }
     }
 
     // Hands the news that the server offers no websocket front any more on to whoever dials the session again.
@@ -1176,6 +1302,11 @@ internal sealed class TunnelController : IDisposable
         ServerAskedDown?.Invoke(session) ?? Task.CompletedTask;
 
     // What the carrier and the listener of the signal have to say, at the level their news deserves.
+    private void Pressure(XHttpPressure value)
+    {
+        _log.Warn("tunnel", $"XHTTP UDP {value.Stage} queue discarded {value.DroppedPackets} packets ({value.DroppedBytes} bytes); totals {value.TotalPackets} packets ({value.TotalBytes} bytes).");
+    }
+
     private void Note(string message, Exception? ex)
     {
         if (ex is null)

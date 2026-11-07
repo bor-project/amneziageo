@@ -118,6 +118,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
 
         await store.SaveConfigAsync(destination, text, ct);
+        await ConfigRouting.SelectListAsync(store, destination, await ConfigRouting.SelectedListAsync(store, source, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
         var geo = await store.GetTunnelGeoAsync(source, ct);
         if (geo is not null)

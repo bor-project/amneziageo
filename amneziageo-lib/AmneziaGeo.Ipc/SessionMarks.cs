@@ -45,6 +45,20 @@ public sealed class SessionMarks
     }
 
     /// <summary>
+    /// Renames the session marks.
+    /// </summary>
+    public void Rename(string oldName, string newName)
+    {
+        lock (_gate)
+        {
+            if (_name == oldName)
+            {
+                _name = newName;
+            }
+        }
+    }
+
+    /// <summary>
     /// Notes that the tunnel went down to be raised again.
     /// </summary>
     public void Dropped(long unixMs)

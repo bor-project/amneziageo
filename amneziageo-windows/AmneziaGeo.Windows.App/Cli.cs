@@ -488,7 +488,7 @@ internal sealed class Cli(
     private int StopTunnel(string name)
     {
         var code = serviceManager.Stop(name);
-        reconciler.Reconcile();
+        reconciler.Reconcile(name);
         return code;
     }
 
@@ -627,7 +627,7 @@ internal sealed class Cli(
             listId = routingList.Id;
         }
 
-        await store.SetSelectedRoutingListAsync(listId);
+        await ConfigRouting.SelectCurrentListAsync(store, listId).ConfigureAwait(false);
         Console.WriteLine($"routing: {(listId is null ? "off" : list)}");
         return 0;
     }

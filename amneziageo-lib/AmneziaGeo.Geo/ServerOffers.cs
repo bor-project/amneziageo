@@ -51,6 +51,7 @@ public sealed class ServerOffers
     private readonly Func<string, CancellationToken, Task<string?>>? _dialed;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
+    private readonly TransportProxyCatalog _transportProxies;
     private readonly HashSet<string> _asking = new(StringComparer.Ordinal);
     private readonly object _lock = new();
 
@@ -68,7 +69,8 @@ public sealed class ServerOffers
         Func<IReadOnlyList<long>, CancellationToken, Task>? take = null,
         Func<string, bool>? carried = null,
         Func<ServiceTarget, CancellationToken, Task<HelloReply>>? askInside = null,
-        Func<string, CancellationToken, Task<string?>>? dialed = null)
+        Func<string, CancellationToken, Task<string?>>? dialed = null,
+        TransportProxyCatalog? transportProxies = null)
     {
         _store = store;
         _note = note;
@@ -81,6 +83,7 @@ public sealed class ServerOffers
         _fetch = fetch;
         _rerouted = rerouted;
         _take = take;
+        _transportProxies = transportProxies ?? TransportProxyCatalog.For(store);
     }
 
     /// <summary>
@@ -273,6 +276,7 @@ public sealed class ServerOffers
             return (kept.Offer, false);
         }
 
+        var proxies = offer.Ours && await KeepProxiesAsync(config, text, point, offer, ct).ConfigureAwait(false);
         await ServerOfferStore.WriteAsync(_store, config, point, offer, now, ct).ConfigureAwait(false);
         if (offer.Ours != (kept?.Offer.Ours ?? false))
         {
@@ -291,7 +295,21 @@ public sealed class ServerOffers
                 : $"{config}: the server allows any routing list again", null);
         }
 
-        return (offer, bound || listed || limited);
+        return (offer, bound || listed || limited || proxies);
+    }
+
+    // Updates the verified proxy catalog.
+    private async Task<bool> KeepProxiesAsync(string config, string? text, ServiceTarget point, ServerOffer offer, CancellationToken ct)
+    {
+        if (!await _transportProxies.HasConfigurationAsync(config, ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var before = (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Revision;
+        await _transportProxies.EnsureSelectionAsync(config, ct).ConfigureAwait(false);
+        var changed = await _transportProxies.SynchronizeAsync(config, point, offer, ConfigServices.EndpointPort(text), ct).ConfigureAwait(false);
+        return changed || before != (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Revision;
     }
 
     // Asks the server inside the tunnel, while the tunnel of the config carries and the server named where it answers

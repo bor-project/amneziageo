@@ -150,6 +150,11 @@ public sealed class ServerOffer
     public const string WebSocketFeature = "websocket";
 
     /// <summary>
+    /// The feature that publishes transport proxies.
+    /// </summary>
+    public const string ProxiesFeature = "proxies";
+
+    /// <summary>
     /// The feature that measures the speed of the way to the server.
     /// </summary>
     public const string SpeedFeature = "speed";
@@ -251,7 +256,7 @@ public sealed class ServerOffer
         _features = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var (name, arguments) in features)
         {
-            if (arguments.ValueKind == JsonValueKind.Object)
+            if (arguments.ValueKind == JsonValueKind.Object || name == ProxiesFeature)
             {
                 _features[name] = arguments.Clone();
             }
@@ -277,6 +282,17 @@ public sealed class ServerOffer
     /// The arguments of every feature, by name.
     /// </summary>
     public IReadOnlyDictionary<string, JsonElement> Features => _features;
+
+    /// <summary>
+    /// Whether the server publishes a proxy catalog.
+    /// </summary>
+    public bool HasProxyCatalog => _features.ContainsKey(ProxiesFeature);
+
+    /// <summary>
+    /// The published proxy catalog.
+    /// </summary>
+    public OfferedProxyCatalog? ProxyCatalog =>
+        Arguments(ProxiesFeature) is { } body ? OfferedProxyCatalog.Read(body) : null;
 
     /// <summary>
     /// Whether a server of ours answered.
@@ -605,7 +621,27 @@ public sealed class ServerOffer
 
         return Ours == other.Ours
             && WebSocketPort == other.WebSocketPort
-            && string.Equals(WebSocketPath, other.WebSocketPath, StringComparison.Ordinal);
+            && string.Equals(WebSocketPath, other.WebSocketPath, StringComparison.Ordinal)
+            && string.Equals(ProxyMeaning(), other.ProxyMeaning(), StringComparison.Ordinal);
+    }
+
+    private string ProxyMeaning()
+    {
+        if (!HasProxyCatalog)
+        {
+            return "absent";
+        }
+
+        if (ProxyCatalog is not { } catalog)
+        {
+            return "invalid";
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            catalog.Version, catalog.Source, catalog.Items,
+            PublicKey = catalog.Proof?.PublicKey, Issuer = catalog.Proof?.Issuer,
+        });
     }
 
     /// <summary>

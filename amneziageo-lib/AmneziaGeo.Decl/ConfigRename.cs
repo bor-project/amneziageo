@@ -11,6 +11,8 @@ public static class ConfigRename
     /// </summary>
     public static async Task CarryAsync(IStateStore store, string oldName, string newName, CancellationToken ct = default)
     {
+        await ConfigRouting.RenameListAsync(store, oldName, newName, ct).ConfigureAwait(false);
+
         var geo = await store.GetTunnelGeoAsync(oldName, ct).ConfigureAwait(false);
         if (geo is not null)
         {
@@ -26,6 +28,7 @@ public static class ConfigRename
         }
 
         await ServerOfferStore.MoveAsync(store, oldName, newName, ct).ConfigureAwait(false);
+        await TransportProxyCatalog.For(store).RenameAsync(oldName, newName, ct).ConfigureAwait(false);
 
         var dns = await store.GetConfigDnsAsync(oldName, ct).ConfigureAwait(false);
         if (dns is not null)

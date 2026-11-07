@@ -21,7 +21,7 @@ internal static class RoutingProjection
             return;
         }
 
-        var listId = await store.GetSelectedRoutingListAsync(ct);
+        var listId = await ConfigRouting.SelectedListAsync(store, config, ct).ConfigureAwait(false);
         if (listId is null)
         {
             // No list picked: project full tunnel, override config set-geo.

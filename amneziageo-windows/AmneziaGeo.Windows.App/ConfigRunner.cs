@@ -1021,7 +1021,9 @@ internal sealed class ConfigRunner(
             return null;
         }
 
-        return _recovery.Sample(moved, Environment.TickCount64);
+        var carried = Carried(member);
+        return _recovery.Sample(moved, Environment.TickCount64, rebindOnSilence: !carried,
+            deadSeconds: carried ? LinkRecovery.CarrierDeadSeconds : LinkRecovery.DeadSeconds);
     }
 
     // Repairs the link without taking the session down: another source port for a NAT that has dropped the

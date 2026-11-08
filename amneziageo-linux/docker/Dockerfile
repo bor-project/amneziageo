@@ -22,7 +22,7 @@ COPY amneziageo-android/amneziawg-go/go.mod amneziageo-android/amneziawg-go/
 COPY --from=engine /out/amneziawg-go amneziageo-android/amneziawg-go/
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl python3 \
- && bash amneziageo-linux/tools/fetch-xray.sh "$TARGETARCH" \
+ && bash amneziageo-linux/tools/build-http-get.sh "$TARGETARCH" \
  && rm -rf /var/lib/apt/lists/*
 RUN case "$TARGETARCH" in \
       amd64) rid=linux-x64 ;; \
@@ -41,7 +41,7 @@ RUN apt-get update \
 COPY --from=agent /out/ /opt/amneziageo/
 COPY --chmod=755 amneziageo-linux/docker/entrypoint.sh /usr/local/bin/amneziageo-entrypoint
 COPY --chmod=755 amneziageo-linux/docker/bootstrap.sh /usr/local/bin/amneziageo-bootstrap
-RUN chmod 0755 /opt/amneziageo/xray \
+RUN chmod 0755 /opt/amneziageo/http-get-proxy \
  && ln -s /opt/amneziageo/amneziageo /usr/local/bin/amneziageo \
  && mkdir -p /etc/amneziageo/configs
 ENV AMNEZIAGEO_DATA=/var/lib/amneziageo \

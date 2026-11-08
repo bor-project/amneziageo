@@ -2,11 +2,11 @@
   <PropertyGroup>
     <XHttpArch Condition="'$(RuntimeIdentifier)' == 'linux-arm64' or ('$(RuntimeIdentifier)' == '' and '$(NETCoreSdkRuntimeIdentifier)' == 'linux-arm64')">arm64</XHttpArch>
     <XHttpArch Condition="'$(XHttpArch)' == ''">x64</XHttpArch>
-    <XrayCacheRoot>$(MSBuildThisFileDirectory).deps/xray</XrayCacheRoot>
-    <XrayTargetOS>linux</XrayTargetOS>
-    <XrayTargetArch Condition="'$(XHttpArch)' == 'arm64'">arm64</XrayTargetArch>
-    <XrayTargetArch Condition="'$(XrayTargetArch)' == ''">amd64</XrayTargetArch>
-    <XrayExecutable>xray</XrayExecutable>
+    <HttpGetCacheRoot>$(MSBuildThisFileDirectory).deps/http-get</HttpGetCacheRoot>
+    <HttpGetTargetOS>linux</HttpGetTargetOS>
+    <HttpGetTargetArch Condition="'$(XHttpArch)' == 'arm64'">arm64</HttpGetTargetArch>
+    <HttpGetTargetArch Condition="'$(HttpGetTargetArch)' == ''">amd64</HttpGetTargetArch>
+    <HttpGetExecutable>http-get-proxy</HttpGetExecutable>
   </PropertyGroup>
-  <Import Project="../tools/xray-build/XrayRuntime.targets" />
+  <Import Project="../tools/http-get-build/HttpGetRuntime.targets" />
 </Project>

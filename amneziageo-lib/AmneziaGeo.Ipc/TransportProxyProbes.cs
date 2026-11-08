@@ -69,7 +69,7 @@ public static class TransportProxyProbes
                 && answer.TryGetProperty("port", out var echoedPort) && echoedPort.TryGetInt32(out var port) && port == target.Port
                 ? new TransportProxyProbeResult(TransportProxyAvailability.Available) : Failed("proxy-bad-answer");
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or SocketException
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
             return Failed(ex is AuthenticationException ? "proxy-tls"
@@ -194,7 +194,7 @@ public static class TransportProxyProbes
                 && result.RootElement.TryGetProperty("running", out var running) && running.ValueKind == JsonValueKind.True
                 ? new TransportProxyProbeResult(TransportProxyAvailability.Available) : Failed("proxy-bad-answer");
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or SocketException
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
             return Failed(ex is AuthenticationException ? "proxy-tls"

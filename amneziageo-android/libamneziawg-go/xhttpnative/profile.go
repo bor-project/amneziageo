@@ -8,20 +8,6 @@ import (
 	"net"
 	"regexp"
 	"strings"
-
-	"github.com/xtls/xray-core/app/dispatcher"
-	xlog "github.com/xtls/xray-core/app/log"
-	"github.com/xtls/xray-core/app/proxyman"
-	xnet "github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/common/serial"
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/proxy/dokodemo"
-	"github.com/xtls/xray-core/proxy/vless"
-	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
-	"github.com/xtls/xray-core/transport/internet"
-	"github.com/xtls/xray-core/transport/internet/splithttp"
-	"github.com/xtls/xray-core/transport/internet/tls"
 )
 
 var ErrProfile = errors.New("xhttp-bad-profile")
@@ -99,11 +85,14 @@ func validateProfile(data []byte) ([]byte, error) {
 		return nil, ErrProfile
 	}
 	stream := outbound.Stream
-	if outbound.Protocol != "vless" || net.ParseIP(outbound.Settings.Address) == nil || !validPort(outbound.Settings.Port) || !uuid.MatchString(outbound.Settings.ID) || outbound.Settings.Encryption != "none" || stream.Network != "xhttp" || stream.Security != "tls" {
+	if outbound.Protocol != "vless" || net.ParseIP(outbound.Settings.Address) == nil || !validPort(outbound.Settings.Port) || !uuid.MatchString(outbound.Settings.ID) || outbound.Settings.Encryption != "none" || stream.Network != "xhttp" || (stream.Security != "tls" && stream.Security != "none") {
 		return nil, ErrProfile
 	}
 	tls := stream.TLS
-	if !validHost(tls.Name) || len(tls.ALPN) != 1 || tls.ALPN[0] != "h2" || tls.Fingerprint != "unsafe" {
+	if stream.Security == "none" && (tls.Name != "" || len(tls.ALPN) != 0 || tls.Fingerprint != "" || tls.Pin != "") {
+		return nil, ErrProfile
+	}
+	if stream.Security == "tls" && (!validHost(tls.Name) || len(tls.ALPN) != 1 || tls.ALPN[0] != "h2" || tls.Fingerprint != "unsafe") {
 		return nil, ErrProfile
 	}
 	if tls.Pin != "" {
@@ -131,51 +120,4 @@ func validateProfile(data []byte) ([]byte, error) {
 func validPort(value int) bool { return value > 0 && value <= 65535 }
 func validHost(value string) bool {
 	return value != "" && len(value) <= 253 && !strings.ContainsAny(value, "\r\n\t /\\@?#") && (net.ParseIP(value) != nil || !strings.Contains(value, ":"))
-}
-
-func buildConfig(data []byte) (*core.Config, error) {
-	var value profile
-	if err := json.Unmarshal(data, &value); err != nil {
-		return nil, ErrProfile
-	}
-	inbound, outbound := value.Inbounds[0], value.Outbounds[0]
-	stream := outbound.Stream
-	tlsSettings := &tls.Config{ServerName: stream.TLS.Name, NextProtocol: []string{"h2"}, Fingerprint: "unsafe"}
-	if stream.TLS.Pin != "" {
-		pin, _ := hex.DecodeString(stream.TLS.Pin)
-		tlsSettings.PinnedPeerCertSha256 = [][]byte{pin}
-	}
-	tlsMessage := serial.ToTypedMessage(tlsSettings)
-	extra := stream.XHTTP.Extra
-	interval := func(value int) *splithttp.RangeConfig {
-		return &splithttp.RangeConfig{From: int32(value), To: int32(value)}
-	}
-	xhttp := &splithttp.Config{
-		Host: stream.XHTTP.Host, Path: stream.XHTTP.Path, Mode: "packet-up",
-		UplinkHTTPMethod: "GET", UplinkDataPlacement: "header", UplinkDataKey: "X-Data",
-		UplinkChunkSize: interval(extra.Chunk), ScMaxEachPostBytes: interval(extra.Max),
-		ScMinPostsIntervalMs: interval(extra.Interval), XPaddingBytes: interval(100),
-		Xmux: &splithttp.XmuxConfig{MaxConnections: interval(3), HMaxRequestTimes: &splithttp.RangeConfig{From: 600, To: 900}, HMaxReusableSecs: &splithttp.RangeConfig{From: 1800, To: 3000}},
-	}
-	address := func(host string) *xnet.IPOrDomain { return xnet.NewIPOrDomain(xnet.ParseAddress(host)) }
-	return &core.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(&xlog.Config{ErrorLogType: xlog.LogType_None, AccessLogType: xlog.LogType_None}),
-			serial.ToTypedMessage(&dispatcher.Config{}), serial.ToTypedMessage(&proxyman.OutboundConfig{}), serial.ToTypedMessage(&proxyman.InboundConfig{}),
-		},
-		Inbound: []*core.InboundHandlerConfig{{Tag: inbound.Tag,
-			ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{Listen: address("127.0.0.1"), PortList: &xnet.PortList{Range: []*xnet.PortRange{{From: uint32(inbound.Port), To: uint32(inbound.Port)}}}}),
-			ProxySettings:    serial.ToTypedMessage(&dokodemo.Config{AllowedNetworks: []xnet.Network{xnet.Network_UDP}, RewriteAddress: address(inbound.Settings.Address), RewritePort: uint32(inbound.Settings.Port)}),
-		}},
-		Outbound: []*core.OutboundHandlerConfig{{Tag: outbound.Tag,
-			SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{StreamSettings: &internet.StreamConfig{
-				ProtocolName: "splithttp", SecurityType: tlsMessage.Type, SecuritySettings: []*serial.TypedMessage{tlsMessage},
-				TransportSettings: []*internet.TransportConfig{{ProtocolName: "splithttp", Settings: serial.ToTypedMessage(xhttp)}},
-			}}),
-			ProxySettings: serial.ToTypedMessage(&vlessout.Config{Vnext: &protocol.ServerEndpoint{
-				Address: address(outbound.Settings.Address), Port: uint32(outbound.Settings.Port),
-				User: &protocol.User{Account: serial.ToTypedMessage(&vless.Account{Id: outbound.Settings.ID, Encryption: "none"})},
-			}}),
-		}},
-	}, nil
 }

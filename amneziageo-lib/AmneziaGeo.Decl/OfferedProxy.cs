@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace AmneziaGeo.Decl;
 
@@ -28,7 +29,8 @@ public sealed record OfferedXHttp(
     int ScMaxEachPostBytes = 2048,
     int ScMinPostsIntervalMs = 1,
     int UplinkChunkSize = 2048,
-    string XPaddingBytes = "100-100");
+    string XPaddingBytes = "100-100",
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Scheme = null);
 
 /// <summary>
 /// Describes a public transport proxy.
@@ -112,7 +114,8 @@ public sealed record OfferedProxyCatalog(int Version, string Source, IReadOnlyLi
             || proxy.Transport == "xhttp" && proxy.Auth.Scheme == "vless" && Guid.TryParse(proxy.Auth.Credential, out var user) && user != Guid.Empty
                 && proxy.Xhttp is { Mode: "packet-up", UplinkHttpMethod: "GET", UplinkDataPlacement: "header", HttpVersion: "2",
                     ScMaxEachPostBytes: > 0 and <= 2048, ScMinPostsIntervalMs: >= 1 and <= 1000,
-                    UplinkChunkSize: > 0 and <= 2048, XPaddingBytes: "100-100" });
+                    UplinkChunkSize: > 0 and <= 2048, XPaddingBytes: "100-100", Scheme: null or "https" or "http" }
+                && (proxy.Xhttp.Scheme != "http" || proxy.Tls.Pin.Length == 0));
 }
 
 /// <summary>

@@ -41,7 +41,7 @@ public sealed class XHttpPressureTests
     {
         var line = Wire();
         yield return [""];
-        yield return ["Xray 26.10.31 started"];
+        yield return ["unrelated carrier started"];
         yield return ["[Info] app/proxyman/inbound: " + line];
         yield return ["[Warning] proxy/vless/outbound: " + line];
         yield return [new string(' ', 1025) + line];

@@ -44,7 +44,7 @@
                 var extension = Path.GetExtension(file).ToLowerInvariant();
                 var name = Path.GetFileName(file);
                 if (extension != ".go" && extension != ".s" && extension != ".c" && extension != ".h"
-                    && name != "go.mod" && name != "go.sum" && name != "native_pool.go.txt")
+                    && name != "go.mod" && name != "go.sum")
                 {
                     continue;
                 }
@@ -53,25 +53,12 @@
             }
         }
 
-        var shared = Path.GetFullPath(Path.Combine(root, "..", "tools", "xray-build"));
-        foreach (var file in Directory.EnumerateFiles(shared, "*", SearchOption.AllDirectories))
-        {
-            var name = Path.GetFileName(file);
-            if (Path.GetExtension(file) != ".go" && name != "go.mod" && name != "go.sum" && name != "manifest.txt"
-                && name != "udp-worker-queue.patch" && name != "SOURCE.md")
-            {
-                continue;
-            }
-
-            files["shared/xray-build/" + file.Substring(shared.TrimEnd(Path.DirectorySeparatorChar).Length + 1).Replace('\\', '/')] = file;
-        }
-
         foreach (var name in new[] { "tools/build-engine-android.ps1", "tools/build-engine-android.sh" })
         {
             files[name] = Path.Combine(root, name);
         }
 
-        var text = new StringBuilder("amneziageo.android-native.v2\n");
+        var text = new StringBuilder("amneziageo.android-native.v3\n");
         using (var hash = SHA256.Create())
         {
             foreach (var file in files)

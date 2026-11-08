@@ -10,7 +10,7 @@ using Microsoft.Win32.SafeHandles;
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
-/// Owns one Xray UDP carrier.
+/// Owns one HTTP GET UDP carrier.
 /// </summary>
 public sealed class XHttpProcess : IDisposable, IAsyncDisposable
 {
@@ -46,7 +46,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
     public int LocalPort { get; }
     public int ProcessId { get; }
     public Task<int> Completion { get; }
-    public static string ExecutablePath => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "xray.exe" : "xray");
+    public static string ExecutablePath => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "http-get-proxy.exe" : "http-get-proxy");
 
     /// <summary>
     /// Reports whether the owned child is running.
@@ -96,7 +96,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
         await CheckVersionAsync(executable, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         reservation.Dispose();
-        var (process, job) = StartOwned(Command(executable, "run", "-format", "json", "-c", "stdin:"));
+        var (process, job) = StartOwned(Command(executable));
         var carrier = new XHttpProcess(process, job, port, note, pressure);
         try
         {
@@ -146,12 +146,6 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
             start.ArgumentList.Add(argument);
         }
 
-        foreach (var key in start.Environment.Keys.Where(one => one.StartsWith("XRAY_", StringComparison.OrdinalIgnoreCase)
-            || one.StartsWith("V2RAY_", StringComparison.OrdinalIgnoreCase)).ToArray())
-        {
-            start.Environment.Remove(key);
-        }
-
         return start;
     }
 
@@ -170,7 +164,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
                 await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
                 var version = await output.ConfigureAwait(false);
                 await errors.ConfigureAwait(false);
-                if (process.ExitCode != 0 || !version.StartsWith("Xray " + XHttpProfile.Version + " ", StringComparison.Ordinal))
+                if (process.ExitCode != 0 || !version.StartsWith("HTTP GET 1 ", StringComparison.Ordinal))
                 {
                     throw new TransportProxyFault("xhttp-runtime-version");
                 }
@@ -215,7 +209,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
     {
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
-            if (line.Contains("Xray " + XHttpProfile.Version + " started", StringComparison.Ordinal))
+            if (line.Contains("HTTP GET 1 started", StringComparison.Ordinal))
             {
                 _ready.TrySetResult();
             }

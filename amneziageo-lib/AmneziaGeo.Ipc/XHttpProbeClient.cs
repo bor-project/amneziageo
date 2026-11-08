@@ -30,6 +30,11 @@ internal static class XHttpProbeClient
     internal static async Task<Response> SendAsync(OfferedProxy proxy, string nonce,
         Func<DnsEndPoint, CancellationToken, ValueTask<Stream>> connect, CancellationToken ct, ProxyDestination? target = null)
     {
+        if (proxy.Transport == "xhttp")
+        {
+            return await HttpGetProbeClient.SendAsync(proxy, nonce, connect, ct, target).ConfigureAwait(false);
+        }
+
         var connection = await connect(new DnsEndPoint(proxy.Host, proxy.Port), ct).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         using (var tls = new SslStream(connection, leaveInnerStreamOpen: true))

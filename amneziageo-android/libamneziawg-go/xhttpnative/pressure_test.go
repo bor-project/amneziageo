@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xtls/xray-core/common/udppressure"
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/udppressure"
 )
 
 func TestPressureOwnerRetirementIsLocal(t *testing.T) {

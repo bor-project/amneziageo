@@ -43,7 +43,7 @@ public sealed class XHttpProcessTests
         Assert.Equal("xhttp-runtime-missing", fault.Code);
     }
 
-    [WindowsFact("the system executable rejects the Xray version request")]
+    [WindowsFact("the system executable rejects the HTTP GET version request")]
     public async Task ADifferentExecutable_CannotReplaceThePinnedRuntime()
     {
         var other = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe");
@@ -104,7 +104,7 @@ public sealed class XHttpProcessTests
 }
 
 /// <summary>
-/// Selects tests with a bundled Xray runtime.
+/// Selects tests with a bundled HTTP GET runtime.
 /// </summary>
 public sealed class XHttpRuntimeFactAttribute : FactAttribute
 {
@@ -116,7 +116,7 @@ public sealed class XHttpRuntimeFactAttribute : FactAttribute
     {
         if (!File.Exists(XHttpProcess.ExecutablePath))
         {
-            Skip = "needs the pinned Xray runtime from fetch-xray.ps1";
+            Skip = "needs the HTTP GET runtime from build-http-get.ps1";
         }
     }
 }

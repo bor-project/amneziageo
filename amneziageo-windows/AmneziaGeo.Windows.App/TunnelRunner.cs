@@ -276,12 +276,10 @@ internal sealed class TunnelRunner(
         var trackDomains = domains.Count > 0 && (geoSplit || !duties.CarriesDefault);
 
         // App tracking only in split mode.
-        var trackApps = geoSplit && (apps.Count > 0 || namesApps);
+        var trackApps = geoSplit;
 
         // The applications the list keeps direct leave past the tunnel that carries the machine.
-        IReadOnlyList<string> passApps = !geoSplit && duties.CarriesDefault ? activeList?.DirectApps ?? [] : [];
-        var passNames = !geoSplit && duties.CarriesDefault && namesApps;
-        _appRole = geoSplit ? RouteRole.Proxy : duties.CarriesDefault ? RouteRole.Direct : (RouteRole?)null;
+        var passApps = (geoSplit || duties.CarriesDefault ? activeList?.DirectApps : null) ?? Array.Empty<string>();
 
         var appSettings = await settings.LoadAsync();
 
@@ -698,60 +696,32 @@ internal sealed class TunnelRunner(
             }
         }
 
-        // App matcher, built before the proxy so per-app DNS can consult it: resolves whether a PID belongs to
-        // the app rules. The DNS-Client tracker marks names queried by matched apps for tunnel resolution.
-        AppMatcher? matcher = null;
-        AppDnsTracker? appDns = null;
-        AppDnsTracker? passDns = null;
+        _processImages = new ProcessImages();
+        var matcher = default(AppMatcher);
+        var appDns = default(AppDnsTracker);
+        var passDns = default(AppDnsTracker);
         if (trackApps && tracker is not null)
         {
-            // The image of every program is held from its start, so one that ends before its traffic is decided is
-            // matched by the rules all the same.
-            _processImages = new ProcessImages();
-            var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>(), _processImages);
-            if (candidate.HasMatchers || namesApps)
-            {
-                matcher = candidate;
-                _appMatcher = candidate;
-                candidate.ReportRuleProblems();
-                appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>(), WatchSession.Name(WatchSession.Names, duties.CarriesDefault, TunnelDevice.NameOf(name)));
-                // A matched app's destination is dropped before anything observes it, so the drop itself is where
-                // the app rule has to be applied: its remotes take the tunnel instead of a permit.
-                routing.SetAppMatch(matcher.MatchesDevicePath);
-                // The same rule over the connection table: a half-open attempt is seen there whether or not the
-                // firewall reported its drop, and one already permitted outside is moved back onto the tunnel.
-                liveDestinations.SetAppMatch(matcher.MatchPids);
-            }
-            else
-            {
-                _processImages = null;
-            }
+            matcher = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>(), _processImages);
+            _appMatcher = matcher;
+            matcher.ReportRuleProblems();
+            appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>(), WatchSession.Name(WatchSession.Names, duties.CarriesDefault, TunnelDevice.NameOf(name)));
+            routing.SetAppMatch(matcher.MatchesDevicePath);
+            liveDestinations.SetAppMatch(matcher.MatchPids);
         }
-        else if (passApps.Count > 0 || passNames)
+
+        if (geoSplit || duties.CarriesDefault)
         {
-            _processImages = new ProcessImages();
-            var candidate = new AppMatcher(passApps, loggerFactory.CreateLogger<AppMatcher>(), _processImages, past: true);
-            if (candidate.HasMatchers || passNames)
-            {
-                matcher = candidate;
-                _appMatcher = candidate;
-                candidate.ReportRuleProblems();
-                // The cache takes the claim of such an application from a dropped packet, from the connection table
-                // and from the connection events alike, and what the application opened through the tunnel before
-                // its route stood is closed, so it opens again past the tunnel.
-                routing.SetAppMatch(matcher.MatchesDevicePath);
-                liveDestinations.SetAppMatch(matcher.MatchPids);
-                routing.AppDestination += address => synReset.AbortOwnedThroughTunnel([address], candidate.MatchPids);
-                // The ask of such an application is reported as it looks a name up, so the answer routes the name's
-                // addresses past the tunnel before the application opens them.
-                passDns = new AppDnsTracker(candidate, loggerFactory.CreateLogger<AppDnsTracker>(), WatchSession.Name(WatchSession.Names, duties.CarriesDefault, TunnelDevice.NameOf(name)), past: true);
-                logger.LogInformation("{Name}: {Count} rule(s) keep applications past the tunnel: each address one of them opens takes a route of its own while it is in use, and that route holds for every program of this machine", name, passApps.Count);
-            }
-            else
-            {
-                _processImages = null;
-            }
+            var directMatcher = new AppMatcher(passApps, loggerFactory.CreateLogger<AppMatcher>(), _processImages, past: true);
+            _directAppMatcher = directMatcher;
+            directMatcher.ReportRuleProblems();
+            routing.SetDirectAppMatch(directMatcher.MatchesDevicePath);
+            liveDestinations.SetDirectAppMatch(directMatcher.MatchPids);
+            routing.AppDestination += address => synReset.AbortOwnedThroughTunnel([address], directMatcher.MatchPids);
+            passDns = new AppDnsTracker(directMatcher, loggerFactory.CreateLogger<AppDnsTracker>(), WatchSession.Name(WatchSession.Names + "-direct", duties.CarriesDefault, TunnelDevice.NameOf(name)), past: true);
         }
+
+        _blockAppMatcher = new AppMatcher(ApplicationRules(activeList, RouteRole.Block), loggerFactory.CreateLogger<AppMatcher>(), _processImages);
 
         // Sessions of the named applications are taken onto an adapter of their own, where each is decided knowing
         // which program opened it. A routing table names no program, so this is the only place the rule can hold
@@ -1071,7 +1041,8 @@ internal sealed class TunnelRunner(
                 address => substituted.Contains(address) || routes.HeldByAnother(address, TunnelInterface()),
                 Addresses([.. localResolver, .. lanResolvers]),
                 WatchSession.Name(WatchSession.Flows, duties.CarriesDefault, TunnelDevice.NameOf(name)),
-                address => routes.HolderOf(address, TunnelInterface()) is { } holder ? peers.FirstOrDefault(peer => routes.FindTunnelIndex(peer) == holder) : null);
+                address => routes.HolderOf(address, TunnelInterface()) is { } holder ? peers.FirstOrDefault(peer => routes.FindTunnelIndex(peer) == holder) : null,
+                _directAppMatcher, routing is null ? null : routing.NoteDirectApplication);
             flows = flowTracker;
             // A released destination must lose its dedupe record too, or the next packet to it is skipped and the
             // route never comes back.
@@ -1080,8 +1051,15 @@ internal sealed class TunnelRunner(
         }
 
         var carrier = default(TransportCarrier);
+        var blockRefresh = Task.CompletedTask;
         try
         {
+            if (!firewall.BlockApplications(_blockAppMatcher.FilterTargets()))
+            {
+                throw new InvalidOperationException("Application blocking rules could not be applied");
+            }
+
+            blockRefresh = RefreshApplicationBlocksAsync(_blockAppMatcher, sessionCts.Token);
             carrier = await StartCarrierAsync(name, selectedProxy, front, wsServerIp, legacyCarrier, config, original, sessionCts.Token).ConfigureAwait(false);
             var wsTransport = carrier?.Legacy;
             if (carrier is not null)
@@ -1148,6 +1126,8 @@ internal sealed class TunnelRunner(
                 _appGateway?.Dispose();
                 _appGateway = null;
                 _appMatcher = null;
+                _directAppMatcher = null;
+                _blockAppMatcher = null;
                 _processImages = null;
             });
             if (routing is not null)
@@ -1163,6 +1143,7 @@ internal sealed class TunnelRunner(
                 // The queued withdrawals go with the device, which closed with the service.
                 uapi.DropWithdrawals();
             });
+            await cleanup.RunAsync("the application block refresh", () => blockRefresh).ConfigureAwait(false);
             cleanup.Run("the firewall protection", firewall.Disable);
 
             if (carrier is not null)
@@ -2143,10 +2124,8 @@ internal sealed class TunnelRunner(
     private AppGateway? _appGateway;
     // The matcher the running session routes applications by, so an edited rule reaches it without a reconnect.
     private AppMatcher? _appMatcher;
-
-    // The bucket whose applications this tunnel acts on: the tunnel one in a split, the direct one where it
-    // carries the machine, none where the default belongs to another tunnel.
-    private RouteRole? _appRole;
+    private AppMatcher? _directAppMatcher;
+    private AppMatcher? _blockAppMatcher;
 
     // The ranges that stay open on the tunnel adapter to the programs the list keeps direct: the ones the
     // connection itself holds there, and those with what the rules send through the tunnel.
@@ -2378,7 +2357,7 @@ internal sealed class TunnelRunner(
     // itself sends through the tunnel.
     private void KeepOffTunnel(string tunnelName)
     {
-        if (_appRole != RouteRole.Direct || _appMatcher is not { } matcher)
+        if (_directAppMatcher is not { } matcher)
         {
             return;
         }
@@ -2406,42 +2385,47 @@ internal sealed class TunnelRunner(
         return true;
     }
 
-    // Puts the edited rules by application in force on the running tunnel; true when the programs they name have
-    // changed. The trackers they drive are raised at bring-up only, so rules added to a tunnel that connected
-    // without any wait for a reconnect and are named here.
+    private static IReadOnlyList<string> ApplicationRules(RoutingList? list, RouteRole role)
+    {
+        return list?.Rules.Where(rule => rule.Kind == GeoRuleKind.App && rule.Role == role).Select(rule => rule.Value).ToList() ?? [];
+    }
+
     private bool ApplyAppRules(RoutingCache routing, RoutingList? list, string tunnelName)
     {
-        if (_appRole is not { } role)
+        var changed = _appMatcher?.Reload(ApplicationRules(list, RouteRole.Proxy)) == true;
+        changed |= _directAppMatcher?.Reload(ApplicationRules(list, RouteRole.Direct)) == true;
+        changed |= _blockAppMatcher?.Reload(ApplicationRules(list, RouteRole.Block)) == true;
+        if (!changed)
         {
             return false;
         }
 
-        var apps = list?.Rules.Where(rule => rule.Kind == GeoRuleKind.App && rule.Role == role).Select(rule => rule.Value).ToList() ?? [];
-        if (_appMatcher is not { } matcher)
+        if (_blockAppMatcher is { } blocked && !firewall.BlockApplications(blocked.FilterTargets()))
         {
-            if (apps.Count > 0)
-            {
-                logger.LogWarning("{Tunnel}: rules by application were added to a tunnel that connected without any, so they start working only after it is reconnected", tunnelName);
-            }
-
-            return false;
+            throw new InvalidOperationException("Application blocking rules could not be applied");
         }
 
-        if (!matcher.Reload(apps))
-        {
-            return false;
-        }
-
-        // A name the applications asked for before the edit may be answered from a cache that the rules no longer agree with.
+        routing.ReleaseApplicationClaims();
         dns.FlushCache();
-        if (role == RouteRole.Direct)
-        {
-            var released = routing.ReleasePassed();
-            logger.LogDebug("{Tunnel}: {Released} address(es) the applications kept direct had taken past the tunnel are decided again", tunnelName, released);
-        }
-
-        logger.LogInformation("{Tunnel}: {Count} rule(s) by application are in force without reconnecting", tunnelName, apps.Count);
+        logger.LogInformation("{Tunnel}: application rules are in force without reconnecting", tunnelName);
         return true;
+    }
+
+    private async Task RefreshApplicationBlocksAsync(AppMatcher matcher, CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                firewall.BlockApplications(matcher.FilterTargets());
+            }
+        }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+        {
+            logger.LogDebug(ex, "application block refresh ended");
+        }
     }
 
     // The bring-up facts the standing ranges are worked out from: the mode, the configuration's own networks, the

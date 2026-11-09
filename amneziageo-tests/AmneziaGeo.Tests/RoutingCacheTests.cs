@@ -12,6 +12,86 @@ namespace AmneziaGeo.Tests;
 /// </summary>
 public sealed class RoutingCacheTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DirectApplication_OverridesProxyAndKeepsItsClaim(bool split)
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split, proxy: [YandexRange], hot: 10);
+        var address = Numeric(YandexAddress);
+        cache.Note(address);
+        cache.NoteDirectApplication(address);
+        Assert.Contains(YandexAddress, applier.Added);
+        cache.Note(address, true);
+        cache.Note(address, RouteVerdict.Proxy);
+        Assert.Single(applier.Added);
+        Assert.Empty(applier.Removed);
+        Assert.Empty(cache.Hot());
+
+        cache.ReleaseApplicationClaims();
+        Assert.Contains(YandexAddress, applier.Removed);
+    }
+
+    [Fact]
+    public void DirectApplication_KeepsRangeBlocksAndFollowsLiveEdits()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, true, block: [YandexRange]);
+        cache.NoteDirectApplication(Numeric(YandexAddress));
+        Assert.Empty(applier.Added);
+        Assert.Single(applier.Dropped);
+
+        cache.Rebuild([], [], []);
+        Assert.Contains(YandexAddress, applier.Added);
+        cache.Rebuild([], [], [YandexRange]);
+        Assert.Contains(YandexAddress, applier.Removed);
+        Assert.Equal(2, applier.Dropped.Count);
+    }
+
+    [Fact]
+    public void DirectApplication_BypassesAnAdoptedProxyDestination()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, true, proxy: [YandexRange]);
+        cache.Adopt([IPAddress.Parse(YandexAddress)]);
+        cache.NoteDirectApplication(Numeric(YandexAddress));
+        Assert.Contains(YandexAddress, applier.Added);
+        cache.Adopt([IPAddress.Parse(YandexAddress)]);
+        cache.Note(Numeric(YandexAddress), RouteVerdict.Proxy);
+        Assert.Single(applier.Added);
+        Assert.Empty(applier.Removed);
+    }
+
+    [Fact]
+    public void DirectApplication_RestoresItsClaimAfterMeasurement()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, true, proxy: [YandexRange]);
+        cache.NoteDirectApplication(Numeric(YandexAddress));
+        var forced = cache.Force(IPAddress.Parse(YandexAddress), RouteVerdict.Proxy);
+        Assert.NotNull(forced);
+        Assert.Contains(YandexAddress, applier.Removed);
+        cache.Unforce(forced);
+        Assert.Equal(2, applier.Added.Count);
+        cache.Note(Numeric(YandexAddress), RouteVerdict.Proxy);
+        Assert.Single(applier.Removed);
+    }
+
+    [Fact]
+    public async Task DirectApplication_DroppedDatagramSkipsTheAllUdpRule()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, true);
+        var datagrams = 0;
+        cache.SetDatagramRule(_ => { datagrams++; return true; });
+        cache.SetDirectAppMatch(image => image == "direct.exe");
+        cache.Report(IPAddress.Parse(YandexAddress), "direct.exe", true);
+        await PumpAsync(cache, () => applier.Added.Count == 1).ConfigureAwait(false);
+        Assert.Single(applier.Added);
+        Assert.Equal(0, datagrams);
+    }
+
     private const string YandexRange = "77.88.32.0/19";
     private const string YandexAddress = "77.88.55.242";
     private const string LanRange = "192.168.77.0/24";

@@ -18,6 +18,12 @@ internal sealed class TcpTableProbe : ILiveDestinations
     private static readonly uint OwnProcessId = (uint)Environment.ProcessId;
 
     private volatile Func<IReadOnlyCollection<uint>, HashSet<uint>>? _matchPids;
+    private volatile Func<IReadOnlyCollection<uint>, HashSet<uint>>? _directPids;
+
+    public void SetDirectAppMatch(Func<IReadOnlyCollection<uint>, HashSet<uint>>? match)
+    {
+        _directPids = match;
+    }
 
     /// <summary>
     /// Attaches the app-rule filter over PIDs; without it nothing is attributed to an app.
@@ -157,6 +163,7 @@ internal sealed class TcpTableProbe : ILiveDestinations
         var owners = new List<(uint Pid, uint Address)>();
         var pids = new HashSet<uint>();
         var match = _matchPids;
+        var direct = _directPids;
         var size = 0;
         GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
         if (size <= 0)
@@ -187,7 +194,7 @@ internal sealed class TcpTableProbe : ILiveDestinations
                 }
 
                 remotes.Add(value);
-                if (match is null)
+                if (match is null && direct is null)
                 {
                     continue;
                 }
@@ -207,7 +214,10 @@ internal sealed class TcpTableProbe : ILiveDestinations
             Marshal.FreeHGlobal(buffer);
         }
 
-        return new LiveDestinations(remotes, Attribute(match, owners, pids));
+        return new LiveDestinations(remotes, Attribute(match, owners, pids))
+        {
+            DirectApp = Attribute(direct, owners, pids),
+        };
     }
 
     // Resolves the owning PIDs against the app rules in one pass and collects their destinations.

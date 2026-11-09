@@ -960,10 +960,10 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsAndroid();
 
     /// <summary>
-    /// True while the application method is pickable: the Proxy bucket of a list that tunnels only what it names,
-    /// the Direct bucket where an application can be kept out of the tunnel altogether.
+    /// Offers applications for the active bucket.
     /// </summary>
-    public bool CanAddApps => (IsProxyRole && !GlobalProxyActive) || (IsDirectRole && (GlobalProxyActive || OperatingSystem.IsAndroid()));
+    public bool CanAddApps => (OperatingSystem.IsWindows() && SelectedRole is "direct" or "block")
+        || (IsProxyRole && !GlobalProxyActive) || (IsDirectRole && (GlobalProxyActive || OperatingSystem.IsAndroid()));
 
     /// <summary>
     /// Application method caption, empty where the platform runs no app rules.
@@ -1083,25 +1083,32 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         var held = new HashSet<string>(Rules.Select(AppPathToken.NormalizeAppRule), StringComparer.OrdinalIgnoreCase);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var matches = new List<RoutingSuggestionViewModel>();
-        foreach (var group in _appGroups)
+        foreach (var path in _pathSuggestions)
         {
-            foreach (var candidate in group.Where(c => Names(c, query)))
+            if (!held.Contains(path.Token) && seen.Add(path.Token))
             {
-                var token = AppPathToken.NormalizeAppRule(candidate.Token);
-                if (held.Contains(token) || !seen.Add(token))
-                {
-                    continue;
-                }
-
-                matches.Add(new RoutingSuggestionViewModel(token, candidate.Display));
-                if (matches.Count == SuggestionLimit)
-                {
-                    return matches;
-                }
+                var description = path.Missing
+                    ? Loc.Instance.Get("Main_RuleAppMissing", RuleToken.Describe(path.Token))
+                    : RuleToken.Describe(path.Token);
+                matches.Add(new RoutingSuggestionViewModel(path.Token, description, path.Missing));
             }
         }
 
-        return matches;
+        foreach (var candidate in _appGroups.SelectMany(group => group).Where(candidate => Names(candidate, query)))
+        {
+            var token = AppPathToken.NormalizeAppRule(candidate.Token);
+            if (SelectedRole == "block" && token.StartsWith("app:svc=", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!held.Contains(token) && seen.Add(token))
+            {
+                matches.Add(new RoutingSuggestionViewModel(token, candidate.Display));
+            }
+        }
+
+        return matches.OrderBy(match => RoutingPathSuggestions.IsExecutable(match.Token) ? 0 : 1).Take(SuggestionLimit).ToList();
     }
 
     // Matches the name and the path alike: both get typed.
@@ -1109,7 +1116,39 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
         candidate.Display.Contains(query, StringComparison.OrdinalIgnoreCase)
         || candidate.Token.Contains(query, StringComparison.OrdinalIgnoreCase);
 
-    partial void OnRuleInputChanged(string value) => UpdateMatchedSuggestions();
+    private IReadOnlyList<RoutingPathSuggestions.Match> _pathSuggestions = [];
+    private int _pathQueryVersion;
+
+    partial void OnRuleInputChanged(string value)
+    {
+        _pathSuggestions = [];
+        UpdateMatchedSuggestions();
+        _ = RefreshPathSuggestionsAsync(value);
+    }
+
+    private async Task RefreshPathSuggestionsAsync(string input)
+    {
+        var version = ++_pathQueryVersion;
+        if (!IsAppMethod || !IsAppSourcePath || input.Length == 0)
+        {
+            return;
+        }
+
+        await Task.Delay(120);
+        if (version != _pathQueryVersion)
+        {
+            return;
+        }
+
+        var matches = await Task.Run(() => RoutingPathSuggestions.Find(input, SuggestionLimit));
+        if (version != _pathQueryVersion || !IsAppMethod)
+        {
+            return;
+        }
+
+        _pathSuggestions = matches;
+        UpdateMatchedSuggestions();
+    }
 
     partial void OnGeoSuggestionsChanged(IReadOnlyList<string> value) => UpdateMatchedSuggestions();
 
@@ -1721,12 +1760,17 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
     private async Task LoadAppsAsync()
     {
         var running = await LoadRunningAsync();
-        var installed = await Task.Run(InstalledApps.List);
+        var installed = await LoadInstalledAppsAsync();
         _appGroups.Clear();
         _appGroups.Add(running);
         _appGroups.Add(installed);
         UpdateMatchedSuggestions();
     }
+
+    /// <summary>
+    /// Lists installed applications.
+    /// </summary>
+    protected virtual Task<IReadOnlyList<AppCandidate>> LoadInstalledAppsAsync() => Task.Run(InstalledApps.List);
 
     private async Task<IReadOnlyList<AppCandidate>> LoadRunningAsync()
     {
@@ -1748,17 +1792,12 @@ internal partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
             var kind = fields[0];
             var label = fields[1];
             var value = fields[2];
-            string token;
-            string display;
-            if (string.Equals(kind, "service", StringComparison.Ordinal))
+            var service = string.Equals(kind, "service", StringComparison.Ordinal);
+            var token = service ? $"app:svc={value}" : OperatingSystem.IsLinux() ? $"app:path={value}" : Folder(value);
+            var display = Loc.Instance.Get(service ? "RoutingEditor_AppKindService" : "RoutingEditor_AppKindApplication", label);
+            if (!service && OperatingSystem.IsWindows())
             {
-                token = $"app:svc={value}";
-                display = Loc.Instance.Get("RoutingEditor_AppKindService", label);
-            }
-            else
-            {
-                token = OperatingSystem.IsLinux() ? $"app:path={value}" : Folder(value);
-                display = Loc.Instance.Get("RoutingEditor_AppKindApplication", label);
+                candidates.Add(new AppCandidate(display, $"app:path={value}"));
             }
 
             candidates.Add(new AppCandidate(display, token));

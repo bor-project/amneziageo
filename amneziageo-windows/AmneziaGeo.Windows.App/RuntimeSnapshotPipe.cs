@@ -11,6 +11,7 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal static class RuntimeSnapshotPipe
 {
+    public const string OpCancelStartup = "cancel-start";
     private const int ConnectTimeoutMs = 1500;
     // More than one instance, so a caller never meets the gap between one connection closing and the next opening.
     private const int MaxInstances = 4;
@@ -178,6 +179,25 @@ internal static class RuntimeSnapshotPipe
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Cancels a tunnel's pending startup.
+    /// </summary>
+    public static async Task CancelStartupAsync(string tunnel, ILogger logger)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        try
+        {
+            using var client = new NamedPipeClientStream(".", Name(tunnel), PipeDirection.InOut, PipeOptions.Asynchronous);
+            await client.ConnectAsync(deadline.Token).ConfigureAwait(false);
+            await client.WriteAsync(Encoding.UTF8.GetBytes(OpCancelStartup + "\n"), deadline.Token).ConfigureAwait(false);
+            await client.FlushAsync(deadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or UnauthorizedAccessException)
+        {
+            logger.LogDebug(ex, "startup cancellation did not reach {Tunnel}", tunnel);
+        }
     }
 
     // Raw bytes, no StreamWriter: the answer ends when the server closes its side, and a writer disposed after that

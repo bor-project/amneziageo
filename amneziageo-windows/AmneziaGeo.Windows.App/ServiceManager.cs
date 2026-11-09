@@ -151,6 +151,48 @@ internal sealed class ServiceManager
     }
 
     /// <summary>
+    /// Starts a tunnel service until cancelled.
+    /// </summary>
+    public async Task<int> StartQuietAsync(string name, CancellationToken ct)
+    {
+        var start = new ProcessStartInfo("sc.exe")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        start.ArgumentList.Add("start");
+        start.ArgumentList.Add(TunnelPaths.ServiceName(name));
+        using var process = Process.Start(ChildOutput.OfSystem(start))!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        try
+        {
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            return process.ExitCode;
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill();
+            }
+
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            await Task.WhenAll(output, error).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Identifies a tunnel service awaiting startup.
+    /// </summary>
+    public bool IsStarting(string name)
+    {
+        return Run("query", TunnelPaths.ServiceName(name)).Output.Contains("START_PENDING", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Stops a tunnel service without printing the service-control output.
     /// </summary>
     public int StopQuiet(string name)

@@ -18,7 +18,7 @@ internal sealed class HttpGetAuthentication
     /// </summary>
     internal HttpGetAuthentication(string credential)
     {
-        if (!Guid.TryParseExact(credential, "D", out var id) || id == Guid.Empty)
+        if (!Guid.TryParse(credential, out var id) || id == Guid.Empty)
         {
             throw new InvalidDataException("The HTTP GET key is invalid.");
         }
@@ -45,16 +45,16 @@ internal sealed class HttpGetAuthentication
     }
 
     internal (byte[] Digest, string Signature) SignRequest(string path, IReadOnlyDictionary<string, string> query,
-        byte[] payload, byte[] epoch, ulong time, byte[] nonce)
+        byte[] payload, byte[] epoch, ulong time, byte[] nonce, string method = "GET")
     {
-        if (epoch.Length != 16 || nonce.Length != 16 || path.Length is 0 or > 1024 || path[0] != '/' || query.Count > 32)
+        if (method is not ("GET" or "POST") || epoch.Length != 16 || nonce.Length != 16 || path.Length is 0 or > 1024 || path[0] != '/' || query.Count > 32)
         {
             throw new InvalidDataException("The HTTP GET signature fields are invalid.");
         }
 
         using var data = new MemoryStream();
         Put(data, "amneziageo.http-get.request.v2");
-        Put(data, "GET");
+        Put(data, method);
         Put(data, path);
         Put(data, _identity);
         Put(data, epoch);

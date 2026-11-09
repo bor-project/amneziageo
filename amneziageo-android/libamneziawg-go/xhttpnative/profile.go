@@ -106,7 +106,7 @@ func validateProfile(data []byte) ([]byte, error) {
 		return nil, ErrProfile
 	}
 	extra := xhttp.Extra
-	if extra.Method != "GET" || extra.Placement != "header" || extra.Key != "X-Data" || extra.Chunk < 1 || extra.Chunk > 2048 || extra.Max < 1 || extra.Max > 2048 || extra.Interval < 1 || extra.Interval > 1000 || extra.Padding != "100-100" {
+	if !(extra.Method == "GET" && extra.Placement == "header" || extra.Method == "POST" && extra.Placement == "body") || extra.Key != "X-Data" || extra.Chunk < 1 || extra.Chunk > 2048 || extra.Max < 1 || extra.Max > 2048 || extra.Interval < 1 || extra.Interval > 1000 || extra.Padding != "100-100" {
 		return nil, ErrProfile
 	}
 	value.Log.LogLevel = "none"

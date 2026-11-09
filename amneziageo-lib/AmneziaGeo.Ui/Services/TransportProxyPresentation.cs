@@ -16,9 +16,11 @@ internal static class TransportProxyPresentation
         ?? summaries.FirstOrDefault(one => !one.Missing && one.Aliases?.Contains(reference!) == true)
         ?? FindExact(summaries, reference);
 
-    public static string Transport(string transport) => transport switch
+    public static string Transport(string transport, string? method = null) => transport switch
     {
         "xhttp" => "XHTTP",
+        "http" => "HTTP" + (method is "GET" or "POST" ? " " + method : ""),
+        "quic" => "QUIC",
         "websocket" => "WebSocket",
         _ => transport,
     };
@@ -27,7 +29,7 @@ internal static class TransportProxyPresentation
         : string.Join(", ", sources.Where(one => one.Length > 0).Distinct(StringComparer.Ordinal)) is { Length: > 0 } text
             ? text : Loc.Instance.Get("Proxies_Server");
 
-    public static string Details(TransportProxySummary summary) => string.Join(" · ", summary.Name, Transport(summary.Transport),
+    public static string Details(TransportProxySummary summary) => string.Join(" · ", summary.Name, Transport(summary.Transport, summary.Http?.Method),
         Source(summary.Local, summary.Sources), TransportProxyWords.Address(summary.Host, summary.Port, summary.Path));
 
     public static string Selected(IReadOnlyList<TransportProxySummary> summaries, ProxyReference? reference) => reference is null
@@ -54,7 +56,7 @@ internal static class TransportProxyPresentation
             return $"{summary?.Name ?? actual.Reference.Id} · {actual.Reference.Source} → {target}";
         }
 
-        return string.Join(" · ", summary?.Name ?? front.Name, Transport(front.Transport), Source(front.Local, [front.Source]),
+        return string.Join(" · ", summary?.Name ?? front.Name, Transport(front.Transport, front.Http?.Method), Source(front.Local, [front.Source]),
             TransportProxyWords.Address(front.Host, front.Port, front.Path)) + $" → {target}";
     }
 

@@ -82,6 +82,20 @@ public sealed class HttpGetProbeTests
         await server.Completion.ConfigureAwait(false);
     }
 
+    [Fact]
+    public async Task APostProbeUsesTheSelectedMethodAndSignedResponses()
+    {
+        await using var server = new Front(true, method: "POST");
+        var record = server.Proxy();
+        var result = await TransportProxyProbes.CheckAsync(record, CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+        Assert.Equal(TransportProxyAvailability.Available, result.Availability);
+        Assert.Equal(2, result.ProtocolVersion);
+        await server.Completion.ConfigureAwait(false);
+        Assert.Equal(2, server.Requests.Count);
+        Assert.All(server.Requests, request => Assert.StartsWith("POST ", request, StringComparison.Ordinal));
+        Assert.All(server.Requests, request => Assert.DoesNotContain(Front.User, request, StringComparison.Ordinal));
+    }
+
     private sealed class Front : IAsyncDisposable
     {
         internal const string User = "ab8e048e-fc1c-4d43-8f5b-82d3d28ea9c3";
@@ -89,6 +103,7 @@ public sealed class HttpGetProbeTests
         private readonly CancellationTokenSource _stop = new(TimeSpan.FromSeconds(10));
         private readonly X509Certificate2 _certificate;
         private readonly bool _plain;
+        private readonly string _method;
         private readonly int _port;
         internal Task Completion { get; }
         internal List<string> Requests { get; } = [];
@@ -98,9 +113,10 @@ public sealed class HttpGetProbeTests
         /// <summary>
         /// ctor
         /// </summary>
-        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200)
+        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET")
         {
             _plain = plain;
+            _method = method;
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var request = new CertificateRequest("CN=tls.example.net", key, HashAlgorithmName.SHA256);
             using var made = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
@@ -116,6 +132,11 @@ public sealed class HttpGetProbeTests
                 new OfferedProxyTls("tls.example.net", _plain ? "" : Convert.ToHexString(SHA256.HashData(_certificate.RawData))),
                 new OfferedProxyAuth("vless", User), DateTimeOffset.MinValue,
                 new OfferedXHttp("packet-up", "GET", "header") { Scheme = _plain ? "http" : "https" });
+            if (_method == "POST")
+            {
+                proxy = ProxyTransportModes.ConfirmGet(proxy) with { Http = new OfferedProxyHttp(2, "POST", "body") };
+            }
+
             return new CatalogTransportProxy(new ProxyReference(Guid.NewGuid().ToString("D"), "probe"), proxy);
         }
 
@@ -177,7 +198,7 @@ public sealed class HttpGetProbeTests
             var auth = new HttpGetAuthentication(User);
             Assert.Equal(auth.KeyId, probe.Headers["X-WG-Key"]);
             var signed = auth.SignRequest(path, query, [], epoch, ulong.Parse(probe.Headers["X-WG-Time"], System.Globalization.CultureInfo.InvariantCulture),
-                Convert.FromHexString(probe.Headers["X-WG-Nonce"]));
+                Convert.FromHexString(probe.Headers["X-WG-Nonce"]), _method);
             Assert.Equal(signed.Signature, probe.Headers["X-WG-Auth"]);
             var nonce = path.Split('/')[^1];
             var body = denied ? JsonSerializer.SerializeToUtf8Bytes(new { error = "proxy-target-denied" })
@@ -205,7 +226,7 @@ public sealed class HttpGetProbeTests
         {
             var line = await reader.ReadLineAsync(ct).ConfigureAwait(false) ?? throw new EndOfStreamException();
             var parts = line.Split(' ');
-            Assert.Equal("GET", parts[0]);
+            Assert.Equal(_method, parts[0]);
             Assert.Equal("HTTP/1.1", parts[2]);
             var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var text = new StringBuilder(line);

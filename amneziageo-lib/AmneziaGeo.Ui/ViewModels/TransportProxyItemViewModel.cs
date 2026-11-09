@@ -12,7 +12,8 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
     public ProxyReference Reference => Summary.Reference;
     public string Name => Summary.Name;
     public string Address => TransportProxyWords.Address(Summary.Host, Summary.Port, Summary.Path);
-    public string Transport => TransportProxyPresentation.Transport(Summary.Transport);
+    public string Transport => TransportProxyPresentation.Transport(Summary.Transport, Summary.Http?.Method);
+    public bool IsHttpGet => Summary.Transport == "http" && Summary.Http is { Version: 2, Method: "GET" };
     public string Source => Summary.Local ? Loc.Instance.Get("Proxies_Local")
         : Summary.Sources.Count > 0 ? string.Join(", ", Summary.Sources) : Loc.Instance.Get("Proxies_Server");
     public string Availability => TransportProxyWords.Availability(Summary.Availability, Summary.Missing);
@@ -66,6 +67,7 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Address));
         OnPropertyChanged(nameof(Transport));
+        OnPropertyChanged(nameof(IsHttpGet));
         OnPropertyChanged(nameof(Source));
         OnPropertyChanged(nameof(Availability));
         OnPropertyChanged(nameof(Fault));
@@ -81,7 +83,7 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
     }
 }
 
-internal sealed record TransportProxyChoice(ProxyReference? Reference, string Label, bool IsSelectable = true) : IAdaptiveSelectOption
+internal sealed record TransportProxyChoice(ProxyReference? Reference, string Label, bool IsSelectable = true, bool IsHttpGet = false) : IAdaptiveSelectOption
 {
     public override string ToString() => Label;
 }

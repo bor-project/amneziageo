@@ -1233,6 +1233,7 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.Unknown);
             }
 
+            var startup = Stopwatch.StartNew();
             Release();
             Past(true);
             var acceptedName = PublishAcceptedTransport(sessionId, RunningTransportProxy.From(transportProxy, config));
@@ -1283,6 +1284,7 @@ public sealed class GeoVpnService : VpnService
                 KeepNames(plan, answers);
             }
 
+            Report($"VPN startup routing ready at {startup.ElapsedMilliseconds} ms");
             _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
@@ -1309,6 +1311,7 @@ public sealed class GeoVpnService : VpnService
                 _reach = (DialledAddress(underlay), ConfigServices.Target(config)?.Port ?? 0);
             }
 
+            Report($"VPN startup carrier prepared at {startup.ElapsedMilliseconds} ms");
             var uapi = WgQuickToUapi.Convert(resolved);
             if (uapi is null)
             {
@@ -1353,6 +1356,7 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.EngineStartFailed, "engine start failed");
             }
 
+            Report($"VPN startup engine started at {startup.ElapsedMilliseconds} ms");
             _handle = handle;
             _verdicts = rules.Verdicts;
             var decided = rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts);
@@ -1408,6 +1412,7 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.NoHandshake, "no handshake");
             }
 
+            Report($"VPN startup WG handshake received at {startup.ElapsedMilliseconds} ms");
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
             // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the far
@@ -1424,6 +1429,7 @@ public sealed class GeoVpnService : VpnService
             // waits for the first byte that came back through it.
             IReadOnlyList<System.Net.IPAddress> echoed = [.. targets.Select(System.Net.IPAddress.Parse)];
             var carried = await WaitForTrafficAsync(loss, () => echo.Reaches(echoed), handle, ct).ConfigureAwait(false);
+            Report($"VPN startup traffic checked at {startup.ElapsedMilliseconds} ms");
             if (_handle != handle || ct.IsCancellationRequested)
             {
                 return DialOutcome.Raised;
@@ -3935,8 +3941,16 @@ public sealed class GeoVpnService : VpnService
             throw new TransportProxyFault("bad-proxy");
         }
 
+        if (proxy.Transport != "websocket" && !ProxyTransportModes.IsGet(proxy))
+        {
+            throw new TransportProxyFault("proxy-platform-unsupported");
+        }
+
+        var preparation = Stopwatch.StartNew();
         var address = ResolvePhysical(proxy.Host);
+        Report($"VPN startup proxy address resolved at {preparation.ElapsedMilliseconds} ms");
         await TransportProxyProbes.EnsureTargetAsync(selected, address, ct, socket => Protect(socket.Handle.ToInt32())).ConfigureAwait(false);
+        Report($"VPN startup proxy target checked at {preparation.ElapsedMilliseconds} ms");
         if (name is not null)
         {
             _reach = (address, proxy.Port);
@@ -3952,7 +3966,7 @@ public sealed class GeoVpnService : VpnService
             return new TransportCarrier(carrier, carrier.LocalPort, carrier);
         }
 
-        if (proxy.Transport == "xhttp")
+        if (proxy.Transport is "http" or "xhttp")
         {
             using var reservation = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, ProtocolType.Udp);
             reservation.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));

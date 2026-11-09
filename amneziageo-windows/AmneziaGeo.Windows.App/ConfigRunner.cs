@@ -744,7 +744,12 @@ internal sealed class ConfigRunner(
         logger.LogInformation("{Member}: starting the tunnel process", member);
         _launched = member;
         var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
-        var started = serviceManager.StartQuiet(member);
+        var started = await StartServiceAsync(member, ct).ConfigureAwait(false);
+        if (ct.IsCancellationRequested)
+        {
+            return ConnectOutcome.Cancelled;
+        }
+
         var startFailed = created != 0 || started != 0;
         if (startFailed)
         {
@@ -761,6 +766,16 @@ internal sealed class ConfigRunner(
             if (ct.IsCancellationRequested)
             {
                 return ConnectOutcome.Cancelled;
+            }
+
+            var failure = await store.GetSettingAsync(TunnelPaths.ConnectReasonKey(member), ct).ConfigureAwait(false);
+            if (Enum.TryParse<ConnectFailureReason>(failure, out var reason))
+            {
+                window.Failure(reason);
+                if (window.Over(DateTimeOffset.UtcNow))
+                {
+                    break;
+                }
             }
 
             if (uapi.TryGetPeerStatus(member) is { } status)
@@ -1370,10 +1385,26 @@ internal sealed class ConfigRunner(
         }
     }
 
-    // Stops the service and waits for it to die. A service still starting refuses the stop, so it is re-issued
-    // until it takes; one that outlives the budget is killed, which drops its WFP kill-switch with the process.
+    private async Task<int> StartServiceAsync(string member, CancellationToken ct)
+    {
+        try
+        {
+            return await serviceManager.StartQuietAsync(member, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return 0;
+        }
+    }
+
+    // Stops the tunnel service.
     private void StopService(string member)
     {
+        if (serviceManager.IsStarting(member))
+        {
+            RuntimeSnapshotPipe.CancelStartupAsync(member, logger).GetAwaiter().GetResult();
+        }
+
         serviceManager.StopQuiet(member);
         var deadline = DateTimeOffset.UtcNow + _stopTimeout;
         var lastStop = DateTimeOffset.UtcNow;
@@ -1387,6 +1418,11 @@ internal sealed class ConfigRunner(
             if (DateTimeOffset.UtcNow - lastStop >= _stopRetry)
             {
                 lastStop = DateTimeOffset.UtcNow;
+                if (serviceManager.IsStarting(member))
+                {
+                    RuntimeSnapshotPipe.CancelStartupAsync(member, logger).GetAwaiter().GetResult();
+                }
+
                 serviceManager.StopQuiet(member);
             }
 
@@ -1411,7 +1447,7 @@ internal sealed class ConfigRunner(
             using (var process = Process.GetProcessById((int)pid))
             {
                 // The tunnel service runs our own image; a recycled pid must not have its tree killed.
-                if (!string.Equals(process.ProcessName, self.ProcessName, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(process.MainModule?.FileName, self.MainModule?.FileName, StringComparison.OrdinalIgnoreCase))
                 {
                     logger.LogWarning("{Member}: process {Pid} is now {Name}, not our tunnel, so it is left alone", member, pid, process.ProcessName);
                     return;

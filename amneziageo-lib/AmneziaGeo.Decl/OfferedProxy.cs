@@ -11,7 +11,7 @@ public sealed record ProxyReference(string Source, string Id);
 /// <summary>
 /// Describes the TLS identity of a proxy.
 /// </summary>
-public sealed record OfferedProxyTls(string ServerName, string Pin);
+public sealed record OfferedProxyTls(string ServerName, string Pin, bool Enabled = true);
 
 /// <summary>
 /// Carries a transport credential.
@@ -30,14 +30,15 @@ public sealed record OfferedXHttp(
     int ScMinPostsIntervalMs = 1,
     int UplinkChunkSize = 2048,
     string XPaddingBytes = "100-100",
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Scheme = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Scheme = null, int Version = 0);
 
 /// <summary>
 /// Describes a public transport proxy.
 /// </summary>
 public sealed record OfferedProxy(
     string Id, string Name, string Transport, string Host, int Port, string Path,
-    OfferedProxyTls Tls, OfferedProxyAuth Auth, DateTimeOffset Updated, OfferedXHttp? Xhttp = null, ProxyTargets? Targets = null);
+    OfferedProxyTls Tls, OfferedProxyAuth Auth, DateTimeOffset Updated, OfferedXHttp? Xhttp = null, ProxyTargets? Targets = null,
+    OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null);
 
 /// <summary>
 /// Describes a complete published proxy catalog.
@@ -59,7 +60,7 @@ public sealed record OfferedProxyCatalog(int Version, string Source, IReadOnlyLi
             }
 
             var catalog = body.Deserialize<OfferedProxyCatalog>(Json);
-            if (catalog is null || catalog.Version != 1 || !Guid.TryParse(catalog.Source, out var source) || source == Guid.Empty
+            if (catalog is null || catalog.Version is not (1 or 2) || !Guid.TryParse(catalog.Source, out var source) || source == Guid.Empty
                 || catalog.Items is null || catalog.Items.Count > 256)
             {
                 return null;
@@ -68,13 +69,14 @@ public sealed record OfferedProxyCatalog(int Version, string Source, IReadOnlyLi
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var proxy in catalog.Items)
             {
-                if (proxy is null || !Valid(proxy) || !seen.Add(proxy.Id))
+                if (proxy is null || !Valid(proxy) || catalog.Version == 1 && proxy.Transport is not ("websocket" or "xhttp")
+                    || catalog.Version == 2 && (proxy.Transport == "xhttp" || !ExplicitTls(body, seen.Count)) || !seen.Add(proxy.Id))
                 {
                     return null;
                 }
             }
 
-            var normalized = catalog with { Source = source.ToString("D") };
+            var normalized = catalog with { Source = source.ToString("D"), Items = [.. catalog.Items.Select(ProxyTransportModes.Normalize)] };
             if (body.TryGetProperty("proof", out var proof))
             {
                 if (proof.ValueKind != JsonValueKind.Object || normalized.Proof is null
@@ -94,7 +96,12 @@ public sealed record OfferedProxyCatalog(int Version, string Source, IReadOnlyLi
         }
     }
 
-    private static bool Valid(OfferedProxy proxy) =>
+    private static bool ExplicitTls(JsonElement body, int index) =>
+        body.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array && index < items.GetArrayLength()
+        && items[index].TryGetProperty("tls", out var tls) && tls.ValueKind == JsonValueKind.Object
+        && tls.TryGetProperty("enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False;
+
+    public static bool Valid(OfferedProxy proxy) =>
         proxy.Id is { Length: > 0 and <= 64 }
         && proxy.Id.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '_')
         && proxy.Name is { Length: > 0 and <= 64 }
@@ -104,18 +111,8 @@ public sealed record OfferedProxyCatalog(int Version, string Source, IReadOnlyLi
         && proxy.Port is >= 1 and <= 65535
         && proxy.Path is { Length: > 0 and <= 64 }
         && proxy.Path.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '_')
-        && proxy.Tls is { ServerName.Length: > 0, Pin: not null }
-        && Uri.CheckHostName(proxy.Tls.ServerName) != UriHostNameType.Unknown
-        && (proxy.Tls.Pin.Length == 0 || proxy.Tls.Pin.Length == 64 && proxy.Tls.Pin.All(char.IsAsciiHexDigit))
-        && proxy.Auth is { Credential.Length: > 0 and <= 512 }
         && ProxyTargetRules.Valid(proxy.Targets)
-        && (proxy.Transport == "websocket" && proxy.Auth.Scheme == "bearer"
-                && proxy.Auth.Credential.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '.' or '_' or '~' or '+' or '/' or '=')
-            || proxy.Transport == "xhttp" && proxy.Auth.Scheme == "vless" && Guid.TryParse(proxy.Auth.Credential, out var user) && user != Guid.Empty
-                && proxy.Xhttp is { Mode: "packet-up", UplinkHttpMethod: "GET", UplinkDataPlacement: "header", HttpVersion: "2",
-                    ScMaxEachPostBytes: > 0 and <= 2048, ScMinPostsIntervalMs: >= 1 and <= 1000,
-                    UplinkChunkSize: > 0 and <= 2048, XPaddingBytes: "100-100", Scheme: null or "https" or "http" }
-                && (proxy.Xhttp.Scheme != "http" || proxy.Tls.Pin.Length == 0));
+        && ProxyTransportModes.Valid(proxy);
 }
 
 /// <summary>

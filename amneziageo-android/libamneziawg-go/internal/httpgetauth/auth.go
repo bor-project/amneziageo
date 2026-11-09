@@ -125,7 +125,7 @@ func (k Keys) VerifyChallenge(path string, nonce, epoch [16]byte, tick uint64, s
 }
 
 func (k Keys) requestMessage(method, path string, query url.Values, payload []byte, stamp Stamp) ([]byte, error) {
-	if method != "GET" || len(path) == 0 || path[0] != '/' || len(path) > 1024 || len(query) > 32 {
+	if (method != "GET" && method != "POST") || len(path) == 0 || path[0] != '/' || len(path) > 1024 || len(query) > 32 {
 		return nil, ErrFields
 	}
 	names := make([]string, 0, len(query))

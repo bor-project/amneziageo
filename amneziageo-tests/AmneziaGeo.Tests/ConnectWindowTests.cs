@@ -1,3 +1,4 @@
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.App;
 using Xunit;
 
@@ -59,6 +60,37 @@ public sealed class ConnectWindowTests
         Assert.False(window.Silent(At(30)));
         Assert.False(window.Over(At(19.9)));
         Assert.True(window.Over(At(20)));
+    }
+
+    [Theory]
+    [InlineData(ConnectFailureReason.TransportRejected)]
+    [InlineData(ConnectFailureReason.EngineStopped)]
+    public void AReportedStartupFailure_EndsTheWaitBeforeTheDeadline(ConnectFailureReason reason)
+    {
+        var window = new ConnectWindow(_start, _launch, _silence);
+        window.Answer(At(0.1));
+
+        window.Failure(reason);
+
+        Assert.True(window.Over(At(0.3)));
+        Assert.False(window.Silent(At(0.3)));
+        window.Answer(At(1));
+        Assert.True(window.Over(At(1)));
+        Assert.False(new ConnectWindow(_start, _launch, _silence).Over(At(0.3)));
+    }
+
+    [Theory]
+    [InlineData(ConnectFailureReason.Unknown)]
+    [InlineData(ConnectFailureReason.UnderlayUnreachable)]
+    [InlineData(ConnectFailureReason.Timeout)]
+    public void ANetworkObservation_KeepsTheLaunchAndHandshakeWindow(ConnectFailureReason reason)
+    {
+        var window = new ConnectWindow(_start, _launch, _silence);
+        window.Failure(reason);
+        window.Answer(At(11));
+
+        Assert.False(window.Over(At(22.9)));
+        Assert.True(window.Over(At(23)));
     }
 
     private static DateTimeOffset At(double seconds)

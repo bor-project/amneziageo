@@ -86,7 +86,8 @@ public sealed record TransportProxyRefresh(string SessionId, string Config, Prox
             && left.Transport == right.Transport && SameHost(left.Host, right.Host) && left.Port == right.Port
             && left.Path == right.Path && SameHost(left.Tls.ServerName, right.Tls.ServerName)
             && string.Equals(left.Tls.Pin, right.Tls.Pin, StringComparison.OrdinalIgnoreCase)
-            && left.Auth == right.Auth && left.Xhttp == right.Xhttp;
+            && left.Auth == right.Auth && left.Xhttp == right.Xhttp && left.Http == right.Http && left.Quic == right.Quic
+            && ProxyTransportModes.UsesCertificate(left) == ProxyTransportModes.UsesCertificate(right);
     }
 
     private static bool SameHost(string first, string second) => string.Equals(first, second, StringComparison.OrdinalIgnoreCase);

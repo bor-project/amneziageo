@@ -57,6 +57,8 @@ type Host struct {
 	client         *http.Client
 	transport      *http.Transport
 	base           url.URL
+	method         string
+	ready          chan struct{}
 	credential     string
 	authentication *authentication
 	targetHost     string
@@ -128,7 +130,7 @@ func StartWithDiagnostics(data []byte, sink udppressure.Sink, reporter func(stri
 		return nil, ErrStart
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &Host{ctx: ctx, cancel: cancel, socket: socket, credential: outbound.Settings.ID, authentication: authState,
+	h := &Host{ctx: ctx, cancel: cancel, socket: socket, method: outbound.Stream.XHTTP.Extra.Method, ready: make(chan struct{}), credential: outbound.Settings.ID, authentication: authState,
 		targetHost: inbound.Settings.Address, targetPort: inbound.Settings.Port,
 		session: hex.EncodeToString(random[:]), queue: make(chan []byte, uploadQueuePackets), done: make(chan struct{}), diagnostic: reporter}
 
@@ -213,8 +215,9 @@ func (h *Host) run() {
 		}
 		return
 	}
+	close(h.ready)
 	if h.diagnostic != nil {
-		h.diagnostic("HTTP GET session opened")
+		h.diagnostic("HTTP " + h.httpMethod() + " session opened")
 	}
 	ended := make(chan error, 3)
 	go func() { ended <- h.receiveUDP() }()
@@ -381,4 +384,30 @@ func (h *Host) reportFault(err error) {
 	if h.diagnostic != nil {
 		h.diagnostic("HTTP GET failure: " + err.Error())
 	}
+}
+
+func (h *Host) httpMethod() string {
+	if h.method == "POST" {
+		return "POST"
+	}
+	return "GET"
+}
+
+func (h *Host) WaitReady(ctx context.Context) error {
+	select {
+	case <-h.ready:
+		return nil
+	case <-h.done:
+		return h.fault
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func ProtectSocket(fd uintptr) error {
+	p := protector.Load()
+	if p == nil || !(*p)(int(fd)) {
+		return ErrProtect
+	}
+	return nil
 }

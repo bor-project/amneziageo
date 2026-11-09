@@ -553,6 +553,54 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         Assert.DoesNotContain(await _catalog.ListAsync().ConfigureAwait(false), one => one.Aliases?.Contains(old) == true);
     }
 
+    [Fact]
+    public async Task OnlyASignedProtocolProofUpgradesAnUnversionedGetRecord()
+    {
+        var legacy = Proxy("get") with
+        {
+            Transport = "xhttp", Auth = new OfferedProxyAuth("vless", "22222222-2222-2222-2222-222222222222"),
+            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "http"),
+        };
+        var reference = await _catalog.SaveLocalAsync(null, legacy).ConfigureAwait(false);
+        await _catalog.ProbeAsync(reference, (_, _) => Task.FromResult(new TransportProxyProbeResult(TransportProxyAvailability.Available))).ConfigureAwait(false);
+        Assert.Equal("xhttp", (await _catalog.LocalAsync(reference).ConfigureAwait(false))!.Proxy.Transport);
+        await _catalog.ProbeAsync(reference, (_, _) => Task.FromResult(new TransportProxyProbeResult(TransportProxyAvailability.Available, ProtocolVersion: 2))).ConfigureAwait(false);
+        var after = (await _catalog.LocalAsync(reference).ConfigureAwait(false))!;
+        Assert.Equal(reference, after.Reference);
+        Assert.Equal("http", after.Proxy.Transport);
+        Assert.Equal(legacy.Auth.Credential, after.Proxy.Auth.Credential);
+        Assert.False(after.Proxy.Tls.Enabled);
+        await _catalog.SaveLocalAsync(reference.Id, legacy with { Name = "Renamed" }).ConfigureAwait(false);
+        Assert.Equal("http", (await _catalog.LocalAsync(reference).ConfigureAwait(false))!.Proxy.Transport);
+    }
+
+    [Fact]
+    public async Task ModernHelloPreservesSelectionAndDestinationRestrictions()
+    {
+        var target = await ConfigAsync("modern", Key("issuer")).ConfigureAwait(false);
+        var item = ProxyTransportModesTests.Http("POST", false) with
+        {
+            Targets = new ProxyTargets(true, [new ProxyDestination(target.Host, 51820)]),
+        };
+        var feature = new OfferedProxyCatalog(2, Source, [item]);
+        var offer = new ServerOffer("new", "phone", new Dictionary<string, JsonElement>
+        {
+            [ServerOffer.ProxiesV2Feature] = JsonSerializer.SerializeToElement(feature, Web),
+        });
+        await _catalog.SynchronizeAsync("modern", target, offer).ConfigureAwait(false);
+        var reference = Assert.Single(await _catalog.ListAsync().ConfigureAwait(false)).Reference;
+        await _catalog.SelectAsync("modern", reference).ConfigureAwait(false);
+        await _catalog.SynchronizeAsync("modern", target, offer).ConfigureAwait(false);
+        var selected = (await _catalog.ResolveAsync("modern").ConfigureAwait(false))!;
+        Assert.Equal(reference, selected.Record.Reference);
+        Assert.Equal("POST", selected.Record.Proxy.Http!.Method);
+        Assert.False(selected.Record.Proxy.Tls.Enabled);
+        Assert.Equal(target.Host, selected.TargetHost);
+        Assert.Equal(51820, selected.TargetPort);
+        Assert.True(selected.Record.Proxy.Targets!.Restricted);
+        Assert.Equal(reference, (await _catalog.SelectionAsync("modern").ConfigureAwait(false)).Reference);
+    }
+
     private async Task<ServiceTarget> ConfigAsync(string name, string issuer, int port = 51820)
     {
         var text = $"""

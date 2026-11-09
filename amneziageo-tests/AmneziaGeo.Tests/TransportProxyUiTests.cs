@@ -27,6 +27,20 @@ public sealed class TransportProxyUiTests
     }
 
     [Fact]
+    public void ReadOnlyLegacyUpdateRetainsItsTransportOption()
+    {
+        var summary = Summary(First);
+        var editor = new TransportProxyEditorViewModel(new Agent(), summary: summary);
+        var notices = new List<string?>();
+        editor.PropertyChanged += (_, change) => notices.Add(change.PropertyName);
+        editor.ApplySummary(summary with { Transport = "xhttp" });
+        Assert.False(editor.Editable);
+        Assert.Equal("XHTTP", editor.Transports[editor.TransportIndex]);
+        Assert.Contains(nameof(editor.Transports), notices);
+        Assert.False(editor.IsDirty);
+    }
+
+    [Fact]
     public void RegisteredProxiesDoNotSelectThemselves()
     {
         var editor = Settings(new Agent());
@@ -138,7 +152,7 @@ public sealed class TransportProxyUiTests
     }
 
     [Fact]
-    public async Task XhttpCarriesTheFixedGetHeaderProfile()
+    public async Task HttpCarriesTheExplicitSignedGetProfile()
     {
         var agent = new Agent();
         var editor = NewEditor(agent);
@@ -147,8 +161,53 @@ public sealed class TransportProxyUiTests
 
         Assert.True(await editor.CommitAsync().ConfigureAwait(false));
         Assert.NotNull(agent.Saved);
-        Assert.Equal("vless", agent.Saved.Auth.Scheme);
-        Assert.Equal(new OfferedXHttp("packet-up", "GET", "header"), agent.Saved.Xhttp);
+        Assert.Equal("hmac-sha256-v2", agent.Saved.Auth.Scheme);
+        Assert.Equal(new OfferedProxyHttp(2, "GET", "header"), agent.Saved.Http);
+        Assert.Null(agent.Saved.Xhttp);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    public async Task HttpMethodAndCertificateAreSavedAndReverted(int method, bool certificate)
+    {
+        var agent = new Agent();
+        var editor = NewEditor(agent);
+        editor.TransportIndex = 1;
+        editor.MethodIndex = method;
+        editor.UseCertificate = certificate;
+        editor.Credential = "63c77f4f-8501-4308-a32d-2a36ea0cb6ed";
+        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.Equal("http", agent.Saved!.Transport);
+        Assert.Equal(method == 1 ? "POST" : "GET", agent.Saved.Http!.Method);
+        Assert.Equal(method == 1 ? "body" : "header", agent.Saved.Http.DataPlacement);
+        Assert.Equal(certificate, agent.Saved.Tls.Enabled);
+        editor.MethodIndex = 1 - method;
+        editor.UseCertificate = !certificate;
+        Assert.True(editor.ConnectionChanged);
+        editor.Revert();
+        Assert.Equal(method, editor.MethodIndex);
+        Assert.Equal(certificate, editor.UseCertificate);
+        Assert.False(editor.IsDirty);
+    }
+
+    [Fact]
+    public async Task QuicUsesBearerAndRequiresACertificate()
+    {
+        var agent = new Agent();
+        var editor = NewEditor(agent);
+        editor.UseCertificate = false;
+        editor.TransportIndex = 2;
+        Assert.True(editor.UseCertificate);
+        Assert.False(editor.CertificateEditable);
+        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.Equal("quic", agent.Saved!.Transport);
+        Assert.Equal(new OfferedProxyQuic(1, "webtransport", "framed-stream"), agent.Saved.Quic);
+        Assert.Equal("bearer", agent.Saved.Auth.Scheme);
+        Assert.Null(agent.Saved.Http);
+        Assert.Null(agent.Saved.Xhttp);
     }
 
     [Theory]

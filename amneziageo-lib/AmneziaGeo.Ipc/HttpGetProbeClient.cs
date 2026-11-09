@@ -13,7 +13,12 @@ internal static class HttpGetProbeClient
     internal static async Task<XHttpProbeClient.Response> SendAsync(OfferedProxy proxy, string nonce,
         Func<DnsEndPoint, CancellationToken, ValueTask<Stream>> connect, CancellationToken ct, ProxyDestination? target)
     {
-        var plain = proxy.Xhttp?.Scheme == "http";
+        if (!OfferedProxyCatalog.Valid(proxy) || !ProxyTransportModes.IsHttp(proxy))
+        {
+            throw new InvalidDataException("The HTTP proxy protocol is invalid.");
+        }
+
+        var plain = !ProxyTransportModes.UsesCertificate(proxy);
         if (plain && proxy.Tls.Pin.Length > 0)
         {
             throw new InvalidDataException("A plain HTTP proxy cannot use a certificate pin.");
@@ -81,7 +86,7 @@ internal static class HttpGetProbeClient
         var path = basePath + "_amneziageo/probe/" + nonce;
         var requestNonce = RandomNumberGenerator.GetBytes(16);
         var time = checked(tick + (ulong)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-        var (digest, signature) = auth.SignRequest(path, query, [], epoch, time, requestNonce);
+        var (digest, signature) = auth.SignRequest(path, query, [], epoch, time, requestNonce, ProxyTransportModes.Method(proxy));
         using var request = Request(proxy, path, query, auth);
         request.Headers.Add("X-WG-Epoch", Convert.ToHexStringLower(epoch));
         request.Headers.Add("X-WG-Time", time.ToString(CultureInfo.InvariantCulture));
@@ -111,11 +116,16 @@ internal static class HttpGetProbeClient
             Query = string.Join("&", query.OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .Select(pair => Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value))),
         };
-        var request = new HttpRequestMessage(HttpMethod.Get, address.Uri)
+        var request = new HttpRequestMessage(new HttpMethod(ProxyTransportModes.Method(proxy)), address.Uri)
         {
             Version = HttpVersion.Version11,
             VersionPolicy = HttpVersionPolicy.RequestVersionExact,
         };
+        if (request.Method == HttpMethod.Post)
+        {
+            request.Content = new ByteArrayContent([]);
+        }
+
         request.Headers.Add("X-WG-Version", HttpGetAuthentication.Version);
         request.Headers.Add("X-WG-Key", auth.KeyId);
         request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };

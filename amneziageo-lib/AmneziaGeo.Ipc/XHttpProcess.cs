@@ -10,12 +10,14 @@ using Microsoft.Win32.SafeHandles;
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
-/// Owns one HTTP GET UDP carrier.
+/// Owns one HTTP or QUIC UDP carrier.
 /// </summary>
 public sealed class XHttpProcess : IDisposable, IAsyncDisposable
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
+    private readonly bool _modern;
+    private string _failureCode = "";
     private readonly Process _process;
     private readonly ProcessJob? _job;
     private readonly Action<string, Exception?>? _note;
@@ -30,8 +32,9 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    private XHttpProcess(Process process, ProcessJob? job, int port, Action<string, Exception?>? note, Action<XHttpPressure>? pressure)
+    private XHttpProcess(Process process, ProcessJob? job, int port, Action<string, Exception?>? note, Action<XHttpPressure>? pressure, bool modern)
     {
+        _modern = modern;
         _process = process;
         _job = job;
         _note = note;
@@ -43,6 +46,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
         Completion = ObserveAsync();
     }
 
+    public string FailureCode => Volatile.Read(ref _failureCode);
     public int LocalPort { get; }
     public int ProcessId { get; }
     public Task<int> Completion { get; }
@@ -78,8 +82,20 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
     internal static Task<XHttpProcess> StartAsync(ResolvedTransportProxy selected, IPAddress dialAddress, string executable,
         CancellationToken ct, Action<string, Exception?>? note = null) => StartAsync(selected, dialAddress, executable, ct, note, null);
 
-    internal static async Task<XHttpProcess> StartAsync(ResolvedTransportProxy selected, IPAddress dialAddress, string executable,
-        CancellationToken ct, Action<string, Exception?>? note, Action<XHttpPressure>? pressure)
+    internal static Task<XHttpProcess> StartAsync(ResolvedTransportProxy selected, IPAddress dialAddress, string executable,
+        CancellationToken ct, Action<string, Exception?>? note, Action<XHttpPressure>? pressure) =>
+        StartCoreAsync(selected, dialAddress, executable, ct, note, pressure, false);
+
+    public static Task<XHttpProcess> StartTransportAsync(ResolvedTransportProxy selected, IPAddress dialAddress, CancellationToken ct,
+        Action<string, Exception?>? note = null, Action<XHttpPressure>? pressure = null) =>
+        StartCoreAsync(selected, dialAddress, ExecutablePath, ct, note, pressure, true);
+
+    internal static Task<XHttpProcess> StartTransportAsync(ResolvedTransportProxy selected, IPAddress dialAddress, string executable,
+        CancellationToken ct, Action<string, Exception?>? note = null, Action<XHttpPressure>? pressure = null) =>
+        StartCoreAsync(selected, dialAddress, executable, ct, note, pressure, true);
+
+    private static async Task<XHttpProcess> StartCoreAsync(ResolvedTransportProxy selected, IPAddress dialAddress, string executable,
+        CancellationToken ct, Action<string, Exception?>? note, Action<XHttpPressure>? pressure, bool modern)
     {
         ArgumentNullException.ThrowIfNull(selected);
         ArgumentNullException.ThrowIfNull(dialAddress);
@@ -87,30 +103,35 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
         using var reservation = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         reservation.Bind(new IPEndPoint(IPAddress.Loopback, 0));
         var port = ((IPEndPoint)reservation.LocalEndPoint!).Port;
-        var profile = XHttpProfile.Create(selected, port, dialAddress);
+        var profile = modern ? ProxyRuntimeProfile.Create(selected, port, dialAddress) : XHttpProfile.Create(selected, port, dialAddress);
         if (!File.Exists(executable))
         {
             throw new TransportProxyFault("xhttp-runtime-missing");
         }
 
-        await CheckVersionAsync(executable, ct).ConfigureAwait(false);
+        await CheckVersionAsync(executable, ct, modern).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         reservation.Dispose();
         var (process, job) = StartOwned(Command(executable));
-        var carrier = new XHttpProcess(process, job, port, note, pressure);
+        var carrier = new XHttpProcess(process, job, port, note, pressure, modern);
         try
         {
             await process.StandardInput.WriteAsync(profile.AsMemory(), ct).ConfigureAwait(false);
             await process.StandardInput.FlushAsync(ct).ConfigureAwait(false);
             process.StandardInput.Close();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            deadline.CancelAfter(StartTimeout);
+            deadline.CancelAfter(modern ? TimeSpan.FromSeconds(60) : StartTimeout);
             try
             {
                 var ready = await Task.WhenAny(carrier._ready.Task, carrier.Completion).WaitAsync(deadline.Token).ConfigureAwait(false);
                 if (ready != carrier._ready.Task || !carrier.IsRunning)
                 {
-                    throw new TransportProxyFault("xhttp-runtime-exited");
+                    if (!carrier.IsRunning)
+                    {
+                        await carrier.Completion.WaitAsync(deadline.Token).ConfigureAwait(false);
+                    }
+
+                    throw new TransportProxyFault(carrier.FailureCode.Length > 0 ? carrier.FailureCode : "xhttp-runtime-exited");
                 }
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -149,7 +170,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
         return start;
     }
 
-    internal static async Task CheckVersionAsync(string executable, CancellationToken ct)
+    internal static async Task CheckVersionAsync(string executable, CancellationToken ct, bool modern = false)
     {
         var (process, job) = StartOwned(Command(executable, "version"));
         using (process)
@@ -164,7 +185,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
                 await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
                 var version = await output.ConfigureAwait(false);
                 await errors.ConfigureAwait(false);
-                if (process.ExitCode != 0 || !version.StartsWith("HTTP GET 1 ", StringComparison.Ordinal))
+                if (process.ExitCode != 0 || (modern ? version.Trim() != ProxyRuntimeProfile.RuntimeVersion : !version.StartsWith("HTTP GET 1 ", StringComparison.Ordinal)))
                 {
                     throw new TransportProxyFault("xhttp-runtime-version");
                 }
@@ -209,12 +230,74 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
     {
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
-            if (line.Contains("HTTP GET 1 started", StringComparison.Ordinal))
+            if (_modern ? line == "PROXY 2 ready" : line.Contains("HTTP GET 1 started", StringComparison.Ordinal))
             {
                 _ready.TrySetResult();
             }
 
+            if (ReadFailure(line) is { Length: > 0 } fault)
+            {
+                Volatile.Write(ref _failureCode, fault);
+            }
+
             XHttpPressure.Forward(line, _pressure, _note, Volatile.Read(ref _stopping) != 0);
+        }
+    }
+
+    internal static string ReadFailure(string line) => line.StartsWith("PROXY 2 failed ", StringComparison.Ordinal)
+        && line[15..] is "bad-proxy" or "proxy-auth" or "proxy-tls" or "proxy-bad-answer" or "proxy-target-denied"
+            or "proxy-datagram-limit" or "proxy-no-answer" or "proxy-rejected" ? line[15..] : "";
+
+    public static async Task<TransportProxyProbeResult> ProbeQuicAsync(OfferedProxy proxy, IPAddress address, CancellationToken ct)
+    {
+        var profile = ProxyRuntimeProfile.Probe(proxy, address);
+        if (!File.Exists(ExecutablePath))
+        {
+            return new TransportProxyProbeResult(TransportProxyAvailability.Unknown, "proxy-probe-unsupported");
+        }
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            await CheckVersionAsync(ExecutablePath, deadline.Token, true).ConfigureAwait(false);
+            var (process, job) = StartOwned(Command(ExecutablePath, "probe"));
+            using (process)
+            using (job)
+            {
+                var output = VersionOutputAsync(process.StandardOutput);
+                var errors = VersionOutputAsync(process.StandardError);
+                try
+                {
+                    await process.StandardInput.WriteAsync(profile.AsMemory(), deadline.Token).ConfigureAwait(false);
+                    await process.StandardInput.FlushAsync(deadline.Token).ConfigureAwait(false);
+                    process.StandardInput.Close();
+                    await process.WaitForExitAsync(deadline.Token).ConfigureAwait(false);
+                    var answer = await output.ConfigureAwait(false);
+                    var messages = await errors.ConfigureAwait(false);
+                    if (process.ExitCode == 0 && answer.Trim() == "PROXY 2 available")
+                    {
+                        return new TransportProxyProbeResult(TransportProxyAvailability.Available, ProtocolVersion: 1);
+                    }
+
+                    var fault = messages.Split('\n').Select(line => ReadFailure(line.TrimEnd('\r'))).LastOrDefault(one => one.Length > 0);
+                    return new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, fault ?? "proxy-bad-answer");
+                }
+                finally
+                {
+                    Kill(process);
+                    await process.WaitForExitAsync().ConfigureAwait(false);
+                    await Task.WhenAll(output, errors).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (TransportProxyFault ex) when (ex.Code == "xhttp-runtime-version")
+        {
+            return new TransportProxyProbeResult(TransportProxyAvailability.Unknown, "proxy-probe-unsupported");
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is IOException or Win32Exception or OperationCanceledException)
+        {
+            return new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, "proxy-no-answer");
         }
     }
 
@@ -252,7 +335,7 @@ public sealed class XHttpProcess : IDisposable, IAsyncDisposable
         await Task.WhenAll(_output, _errors).ConfigureAwait(false);
         if (Volatile.Read(ref _stopping) == 0)
         {
-            _note?.Invoke($"The XHTTP carrier stopped with exit code {code}.", null);
+            _note?.Invoke($"The transport proxy carrier stopped with exit code {code}.", null);
         }
 
         return code;

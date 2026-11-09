@@ -86,7 +86,7 @@ func (h *Host) prepareAuthentication(ctx context.Context) (int, error) {
 	}
 	address := h.base
 	address.RawQuery = url.Values{"op": {"challenge"}, "n": {hex.EncodeToString(nonce[:])}}.Encode()
-	request, err := http.NewRequestWithContext(ctx, "GET", address.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, h.httpMethod(), address.String(), nil)
 	if err != nil {
 		return 0, errProtocol
 	}
@@ -162,11 +162,15 @@ func (h *Host) signedRequest(ctx context.Context, operation string, values url.V
 	a.mu.Unlock()
 	address := h.base
 	address.RawQuery = values.Encode()
-	digest, signature, err := a.keys.SignRequest("GET", address.EscapedPath(), values, payload, stamp)
+	digest, signature, err := a.keys.SignRequest(h.httpMethod(), address.EscapedPath(), values, payload, stamp)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	request, err := http.NewRequestWithContext(ctx, "GET", address.String(), nil)
+	var upload io.Reader
+	if h.httpMethod() == "POST" {
+		upload = bytes.NewReader(payload)
+	}
+	request, err := http.NewRequestWithContext(ctx, h.httpMethod(), address.String(), upload)
 	if err != nil {
 		return nil, 0, 0, errProtocol
 	}
@@ -178,7 +182,7 @@ func (h *Host) signedRequest(ctx context.Context, operation string, values url.V
 	request.Header.Set("X-WG-Auth", signature)
 	request.Header.Set("Cache-Control", "no-store, no-cache")
 	request.Header.Set("Accept", "application/octet-stream")
-	if payload != nil {
+	if payload != nil && h.httpMethod() == "GET" {
 		request.Header.Set("X-WG-Data", base64.StdEncoding.EncodeToString(payload))
 	}
 	response, err := h.client.Do(request)

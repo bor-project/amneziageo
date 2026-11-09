@@ -180,7 +180,7 @@ internal sealed class TunnelController : IDisposable
         var front = options.ProxyChosen
             ? options.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(options.Proxy) : (WsEndpoint?)null
             : options.Transport?.UseWebSocket == true ? WsEndpoint.Of(configText, options.Offer, options.Transport) : null;
-        var carried = front is not null || options.Proxy?.Record.Proxy.Transport == "xhttp";
+        var carried = front is not null || options.Proxy?.Record.Proxy.Transport is "http" or "xhttp";
         var blocker = Preflight(carried);
         if (blocker is { } refused)
         {
@@ -1206,7 +1206,12 @@ internal sealed class TunnelController : IDisposable
     private async Task<PendingCarrier> CarrierAsync(WsEndpoint? offered, ResolvedTransportProxy? selected,
         bool chosen, string configText, CancellationToken ct)
     {
-        if (selected?.Record.Proxy.Transport == "xhttp")
+        if (selected is not null && selected.Record.Proxy.Transport != "websocket" && !ProxyTransportModes.IsGet(selected.Record.Proxy))
+        {
+            return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.TransportRejected, "proxy-platform-unsupported"));
+        }
+
+        if (selected?.Record.Proxy.Transport is "http" or "xhttp")
         {
             var address = await ResolveHostAsync(selected.Record.Proxy.Host, ct).ConfigureAwait(false);
             if (address is null)
@@ -1226,6 +1231,11 @@ internal sealed class TunnelController : IDisposable
                     ? new TunnelFailure(ConnectFailureReason.TransportRejected, fault.Code)
                     : Refused(ex is TransportProxyFault failure ? failure.Code : "xhttp-runtime-start"));
             }
+        }
+
+        if (chosen && selected is { Record.Proxy.Transport: not "websocket" })
+        {
+            return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.TransportRejected, "proxy-platform-unsupported"));
         }
 
         if (offered is not { } front)

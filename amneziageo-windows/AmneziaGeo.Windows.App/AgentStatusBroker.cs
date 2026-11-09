@@ -250,7 +250,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     {
         try
         {
-            if (await TransportProxyCommands.TryExecuteAsync(store, command, ct, running: RunningMembers(), changed: config =>
+            if (await TransportProxyCommands.TryExecuteAsync(store, command, ct,
+                probe: (record, token) => WindowsTransportProxyProbe.CheckAsync(record, store, token), running: RunningMembers(), changed: config =>
                 {
                     if (IsRunningMember(config))
                     {

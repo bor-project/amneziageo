@@ -178,3 +178,13 @@ func TestAmbiguousQueriesAndNoncanonicalSignaturesAreRejected(t *testing.T) {
 		t.Fatal("signing purposes share a key")
 	}
 }
+
+func TestPostUsesItsOwnIndependentMacVector(t *testing.T) {
+ v, keys, stamp, query, data := fixture(t)
+ digest, signature, err := keys.SignRequest("POST", v.Path, query, data, stamp)
+ if err != nil || hex.EncodeToString(digest[:]) != "a51d890efd2829c816c559b06de7b1f9320d261d933e0091e15cfcb0e16c743f" || signature != "rs950giqTjnpWZr6jevoczMOmAcSCTWljLaisJZyMwc=" {
+  t.Fatal("POST vector differs", err)
+ }
+ if _, err := keys.VerifyRequest("GET", v.Path, query, data, stamp, signature); err == nil { t.Fatal("POST signature accepted as GET") }
+ if _, _, err := keys.SignRequest("PUT", v.Path, query, data, stamp); err == nil { t.Fatal("unsupported method accepted") }
+}

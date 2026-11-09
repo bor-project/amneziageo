@@ -855,7 +855,7 @@ public sealed class WsCarrier : IDisposable
         WsEndpoint front, IPAddress address, int targetPort, Func<string>? token, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-        var tls = default(SslStream);
+        var stream = default(Stream);
         var opened = false;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(ConnectTimeoutMs);
@@ -870,11 +870,16 @@ public sealed class WsCarrier : IDisposable
             }
 
             socket.Connect(new IPEndPoint(address, front.Port));
-            tls = new SslStream(new NetworkStream(socket, ownsSocket: true));
-            tls.AuthenticateAsClient(TlsOptions(front, authorization));
+            stream = new NetworkStream(socket, ownsSocket: true);
+            if (front.UseCertificate)
+            {
+                var tls = new SslStream(stream);
+                stream = tls;
+                tls.AuthenticateAsClient(TlsOptions(front, authorization));
+            }
             var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
-            tls.Write(Encoding.ASCII.GetBytes(Handshake(front, targetPort, key, authorization)));
-            var answer = Header(tls);
+            stream.Write(Encoding.ASCII.GetBytes(Handshake(front, targetPort, key, authorization)));
+            var answer = Header(stream);
             if (!Accepted(answer, key))
             {
                 return (null, WsFrontOutcome.Refused, FirstLine(answer), null);
@@ -882,7 +887,7 @@ public sealed class WsCarrier : IDisposable
 
             socket.SendTimeout = WriteTimeoutMs;
             opened = true;
-            return (tls, WsFrontOutcome.Ok, string.Empty, null);
+            return (stream, WsFrontOutcome.Ok, string.Empty, null);
         }
         catch (AuthenticationException ex) when (!deadline.IsCancellationRequested)
         {
@@ -898,7 +903,7 @@ public sealed class WsCarrier : IDisposable
             {
                 try
                 {
-                    tls?.Dispose();
+                    stream?.Dispose();
                 }
                 finally
                 {

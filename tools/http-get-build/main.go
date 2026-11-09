@@ -37,7 +37,7 @@ func build(cache, system, architecture, compiler string) error {
 	}
 	source := filepath.Join(root, "amneziageo-android", "libamneziawg-go")
 	files := map[string]string{}
-	for _, folder := range []string{"cmd/http-get-proxy", "xhttpnative", "internal/udppressure", "internal/httpgetauth"} {
+	for _, folder := range []string{"cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth"} {
 		err := filepath.WalkDir(filepath.Join(source, filepath.FromSlash(folder)), func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -59,6 +59,17 @@ func build(cache, system, architecture, compiler string) error {
 	for _, name := range []string{"go.mod", "go.sum"} {
 		files[name] = filepath.Join(source, name)
 	}
+
+	licenses, err := os.ReadDir(filepath.Join(root, "tools", "http-get-build", "licenses"))
+	if err != nil {
+		return err
+	}
+	for _, entry := range licenses {
+		if !entry.IsDir() {
+			files["licenses/"+entry.Name()] = filepath.Join(root, "tools", "http-get-build", "licenses", entry.Name())
+		}
+	}
+
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)

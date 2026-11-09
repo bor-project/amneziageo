@@ -8,13 +8,13 @@ namespace AmneziaGeo.Decl;
 /// else the one of its settings, with the path token and the basic-auth account of the last two.
 /// </summary>
 public readonly record struct WsEndpoint(string Host, int Port, string PathPrefix = "", string Credentials = "", bool Offered = false,
-    string TargetHost = "127.0.0.1", string Bearer = "", string ServerName = "", string Pin = "")
+    string TargetHost = "127.0.0.1", string Bearer = "", string ServerName = "", string Pin = "", bool UseCertificate = true)
 {
     /// <summary>
     /// Identifies a catalog transport.
     /// </summary>
     public bool Modern => !string.IsNullOrEmpty(Bearer) || !string.IsNullOrEmpty(ServerName)
-        || !string.IsNullOrEmpty(Pin) || TargetHost != "127.0.0.1";
+        || !string.IsNullOrEmpty(Pin) || TargetHost != "127.0.0.1" || !UseCertificate;
 
     /// <inheritdoc/>
     public override string ToString() => Display();
@@ -43,7 +43,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         }
 
         return new WsEndpoint(proxy.Host, proxy.Port, proxy.Path, TargetHost: resolved.TargetHost,
-            Bearer: proxy.Auth.Credential, ServerName: proxy.Tls.ServerName, Pin: proxy.Tls.Pin).Normalize();
+            Bearer: proxy.Auth.Credential, ServerName: proxy.Tls.ServerName, Pin: proxy.Tls.Pin, UseCertificate: proxy.Tls.Enabled).Normalize();
     }
 
     /// <summary>
@@ -70,6 +70,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         if (bearer.Length is < 1 or > 512 || bearer.Any(letter => !char.IsAsciiLetterOrDigit(letter)
                 && letter is not ('-' or '.' or '_' or '~' or '+' or '/' or '='))
             || path.Length is < 1 or > 64 || path.Any(letter => !char.IsAsciiLetterOrDigit(letter) && letter is not ('-' or '_'))
+            || !UseCertificate && pin.Length > 0
             || pin.Length > 0 && (pin.Length != 64 || !pin.All(char.IsAsciiHexDigit)))
         {
             throw new ArgumentException("The catalog WebSocket endpoint is invalid.");
@@ -260,7 +261,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         var host = Host.Contains(':', StringComparison.Ordinal) && !Host.StartsWith('[') ? $"[{Host}]" : Host;
         var path = PathPrefix.Length > 0 ? $"/{PathPrefix}" : string.Empty;
 
-        return string.Create(CultureInfo.InvariantCulture, $"wss://{account}{host}:{Port}{path}");
+        return string.Create(CultureInfo.InvariantCulture, $"{(UseCertificate ? "wss" : "ws")}://{account}{host}:{Port}{path}");
     }
 
     // Reads an address: a bare host, a host with its port, or a ws(s):// URL; null when it names no host to dial.

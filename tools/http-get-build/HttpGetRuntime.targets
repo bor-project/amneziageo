@@ -5,6 +5,7 @@
   <UsingTask TaskName="VerifyHttpGetRuntime" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
     <ParameterGroup>
       <SourceRoot ParameterType="System.String" Required="true" />
+      <LicenseRoot ParameterType="System.String" Required="true" />
       <CacheRoot ParameterType="System.String" Required="true" />
       <TargetOS ParameterType="System.String" Required="true" />
       <TargetArch ParameterType="System.String" Required="true" />
@@ -35,7 +36,7 @@
 
             var root = Path.GetFullPath(SourceRoot);
             var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
-            foreach (var name in new[] { "cmd/http-get-proxy", "xhttpnative", "internal/udppressure", "internal/httpgetauth" })
+            foreach (var name in new[] { "cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth" })
             {
                 foreach (var file in Directory.EnumerateFiles(Path.Combine(root, name), "*.go", SearchOption.AllDirectories))
                 {
@@ -46,6 +47,11 @@
             foreach (var name in new[] { "go.mod", "go.sum" })
             {
                 files[name] = Path.Combine(root, name);
+            }
+
+            foreach (var file in Directory.EnumerateFiles(LicenseRoot))
+            {
+                files["licenses/" + Path.GetFileName(file)] = file;
             }
 
             var source = new StringBuilder("amneziageo.http-get-runtime.v1\n");
@@ -113,8 +119,15 @@
       ]]></Code>
     </Task>
   </UsingTask>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)licenses/*">
+      <Link>licenses/http-get/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
   <Target Name="EnsureXHttpRuntime" BeforeTargets="PrepareForBuild;PrepareForPublish;AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
-    <VerifyHttpGetRuntime SourceRoot="$(_HttpGetSourceRoot)" CacheRoot="$(HttpGetCacheRoot)" TargetOS="$(HttpGetTargetOS)" TargetArch="$(HttpGetTargetArch)">
+    <VerifyHttpGetRuntime SourceRoot="$(_HttpGetSourceRoot)" LicenseRoot="$(MSBuildThisFileDirectory)licenses" CacheRoot="$(HttpGetCacheRoot)" TargetOS="$(HttpGetTargetOS)" TargetArch="$(HttpGetTargetArch)">
       <Output TaskParameter="RuntimeDirectory" PropertyName="_HttpGetDirectory" />
     </VerifyHttpGetRuntime>
     <ItemGroup>

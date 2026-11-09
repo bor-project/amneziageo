@@ -16,14 +16,9 @@ public static class XHttpProfile
     /// </summary>
     public static string Create(ResolvedTransportProxy selected, int localPort, IPAddress dialAddress)
     {
-        var proxy = selected.Record.Proxy;
+        var proxy = ProxyTransportModes.GetRuntime(selected.Record.Proxy);
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
-        {
-            version = 1, source = Guid.NewGuid().ToString("D"), items = new[] { proxy },
-        }, options));
-        if (selected.Record.Legacy || proxy.Transport != "xhttp" || OfferedProxyCatalog.Read(document.RootElement) is null
-            || localPort is < 1 or > 65535 || selected.TargetPort is < 1 or > 65535
+        if (selected.Record.Legacy || localPort is < 1 or > 65535 || selected.TargetPort is < 1 or > 65535
             || Uri.CheckHostName(selected.TargetHost) == UriHostNameType.Unknown)
         {
             throw new TransportProxyFault("bad-proxy");

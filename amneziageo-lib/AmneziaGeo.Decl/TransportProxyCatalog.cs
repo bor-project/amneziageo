@@ -25,7 +25,7 @@ public sealed class TransportProxyFault : InvalidOperationException
 /// <summary>
 /// Reports a transport-level availability check.
 /// </summary>
-public sealed record TransportProxyProbeResult(TransportProxyAvailability Availability, string Fault = "", DateTimeOffset? Checked = null);
+public sealed record TransportProxyProbeResult(TransportProxyAvailability Availability, string Fault = "", DateTimeOffset? Checked = null, int ProtocolVersion = 0);
 
 /// <summary>
 /// Maintains the common proxy catalog and explicit selections.
@@ -205,7 +205,7 @@ public sealed class TransportProxyCatalog
                 throw new TransportProxyFault("bad-proxy-targets");
             }
 
-            var definition = draft with { Id = key, Name = draft.Name.Trim(), Host = draft.Host.Trim().Trim('[', ']'),
+            var definition = ProxyTransportModes.Normalize(draft, held?.Proxy) with { Id = key, Name = draft.Name.Trim(), Host = draft.Host.Trim().Trim('[', ']'),
                 Path = draft.Path.Trim('/'), Updated = DateTimeOffset.UtcNow, Targets = ProxyTargetRules.Normalize(draft.Targets) };
             Check(definition, held?.Legacy == true);
             var reference = new ProxyReference(state.LocalSource, key);
@@ -365,7 +365,8 @@ public sealed class TransportProxyCatalog
                 LegacyIssuer: record.LegacyIssuer, LegacyPort: record.LegacyPort,
                 Aliases: [.. state.Trust.Where(one => one.Kind == "unsigned")
                     .Select(one => new ProxyReference(one.Source, record.Reference.Id))
-                    .Where(one => UpgradedRunning(state, candidates, one, "")?.Record.Reference == record.Reference)]));
+                    .Where(one => UpgradedRunning(state, candidates, one, "")?.Record.Reference == record.Reference)],
+                Http: definition.Http, Quic: definition.Quic, UseCertificate: ProxyTransportModes.UsesCertificate(definition)));
         }
 
         foreach (var reference in state.Selections.Where(one => context.ContainsKey(one.Config)).Select(one => one.Reference).OfType<ProxyReference>().Distinct()
@@ -374,7 +375,8 @@ public sealed class TransportProxyCatalog
             var retired = state.Retired.LastOrDefault(one => one.Reference == reference);
             summaries.Add(new TransportProxySummary(reference, retired?.Name ?? reference.Id, retired?.Transport ?? "",
                 retired?.Host ?? "", retired?.Port ?? 0, retired?.Path ?? "", retired?.Local ?? false, retired?.Sources ?? [],
-                TransportProxyAvailability.Unavailable, "proxy-missing", Missing: true));
+                TransportProxyAvailability.Unavailable, "proxy-missing", Missing: true,
+                Http: retired?.Http, Quic: retired?.Quic, UseCertificate: retired?.UseCertificate ?? true));
         }
 
         return [.. summaries.OrderBy(one => one.Name, StringComparer.OrdinalIgnoreCase).ThenBy(one => one.Reference.Source, StringComparer.Ordinal)];
@@ -391,6 +393,23 @@ public sealed class TransportProxyCatalog
         var candidate = Choose(Candidates(state, context).Where(one => one.Record.Reference == reference), "");
         var result = candidate is null ? new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, "proxy-missing")
             : await probe(candidate.Record, ct).ConfigureAwait(false);
+        if (candidate is not null && ProxyTransportModes.Unconfirmed(candidate.Record.Proxy)
+            && result.Availability == TransportProxyAvailability.Available && result.ProtocolVersion == 2)
+        {
+            var expected = candidate.Record;
+            await ChangeAsync(held =>
+            {
+                CatalogTransportProxy Confirm(CatalogTransportProxy record) => record.Reference == expected.Reference
+                    && Stamp(record) == Stamp(expected) ? record with { Proxy = ProxyTransportModes.ConfirmGet(record.Proxy) } : record;
+                return (held with
+                {
+                    Locals = [.. held.Locals.Select(Confirm)],
+                    Publications = [.. held.Publications.Select(one => one with { Records = [.. one.Records.Select(Confirm)] })],
+                }, true);
+            }, ct).ConfigureAwait(false);
+            candidate = candidate with { Record = expected with { Proxy = ProxyTransportModes.ConfirmGet(expected.Proxy) } };
+        }
+
         result = result with { Checked = DateTimeOffset.UtcNow };
         _probes[reference] = (candidate is null ? "" : Stamp(candidate.Record), result);
         return result;
@@ -521,9 +540,12 @@ public sealed class TransportProxyCatalog
             }
         }
 
+        OfferedProxy KeepProof(OfferedProxy item) => ProxyTransportModes.Normalize(item,
+            previous?.Source == source ? previous.Records.FirstOrDefault(one => one.Proxy.Id == item.Id)?.Proxy : null);
+
         next = next with { Trust = trust };
         return (Replace(next, new TransportProxyPublication(publisher, target.Mark(), target.ServerKey, source,
-            [.. catalog.Items.Select(item => new CatalogTransportProxy(new ProxyReference(source, item.Id), item))], target.Host)), true);
+            [.. catalog.Items.Select(item => new CatalogTransportProxy(new ProxyReference(source, item.Id), KeepProof(item)))], target.Host)), true);
     }
 
     private static TransportProxyState Error(TransportProxyState state, TransportProxyPublication? previous, string publisher, ServiceTarget target, string error) =>
@@ -549,7 +571,8 @@ public sealed class TransportProxyCatalog
                 .Where(one => one.Length > 0).Distinct(StringComparer.Ordinal).OrderBy(one => one, StringComparer.Ordinal).ToArray();
             retired.RemoveAll(one => one.Reference == record.Reference);
             retired.Add(new RetiredTransportProxy(record.Reference, record.Proxy.Name, record.Proxy.Transport, record.Proxy.Host,
-                record.Proxy.Port, record.Legacy ? "" : record.Proxy.Path, record.Local, origins));
+                record.Proxy.Port, record.Legacy ? "" : record.Proxy.Path, record.Local, origins,
+                record.Proxy.Http, record.Proxy.Quic, ProxyTransportModes.UsesCertificate(record.Proxy)));
         }
 
         return state with { Retired = retired };
@@ -620,10 +643,7 @@ public sealed class TransportProxyCatalog
             return;
         }
 
-        var catalog = new OfferedProxyCatalog(1, Guid.NewGuid().ToString("D"), [proxy]);
-        var payload = JsonSerializer.Serialize(new { version = 1, source = catalog.Source, items = catalog.Items }, Json);
-        using var definition = JsonDocument.Parse(payload);
-        if (OfferedProxyCatalog.Read(definition.RootElement) is null)
+        if (!OfferedProxyCatalog.Valid(proxy))
         {
             throw new TransportProxyFault("bad-proxy");
         }

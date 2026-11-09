@@ -126,7 +126,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       # WiX v4/v5 is restored as an MSBuild SDK via the .wixproj PackageReferences during `dotnet build`.
       # If a real run reports a missing extension, add: `dotnet tool install --global wix` here.
@@ -193,7 +193,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -266,7 +266,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Setup Go
         uses: actions/setup-go@v7

@@ -47,7 +47,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Prepare the HTTP GET runtime
         shell: pwsh
@@ -76,7 +76,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -117,7 +117,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Setup Go
         uses: actions/setup-go@v7

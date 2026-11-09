@@ -11,8 +11,7 @@ using AmneziaGeo.Ui.ViewModels;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Карточка каталога настроек: имя, кнопка подключения, замер и настройки. На телевизоре пульт входит
-/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку.
+/// Карточка конфигурации.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
 {
@@ -56,7 +55,12 @@ internal sealed partial class CatalogCard : UserControl
     public CatalogCard()
     {
         InitializeComponent();
-        _reorder = new ListReorder<ConfigItemViewModel>(this, vertical: false);
+        _reorder = new ListReorder<ConfigItemViewModel>(this);
+        _reorder.Requested += () => ShowMenu();
+        _reorder.Changed += ApplyOrderLook;
+        ReorderPart.MoveRequested += Carry;
+        ReorderPart.Completed += () => Settle(undo: false);
+        ReorderPart.Canceled += () => Settle(undo: true);
         _press = new DispatcherTimer { Interval = MenuHold };
         _press.Tick += OnPressHeld;
 
@@ -71,9 +75,9 @@ internal sealed partial class CatalogCard : UserControl
         AddHandler(PointerCaptureLostEvent, OnCardCaptureLost, RoutingStrategies.Tunnel);
         GotFocus += OnCardGotFocus;
 
+        AddHandler(KeyDownEvent, OnCardKeyDown, RoutingStrategies.Tunnel);
         if (UiPlatform.WalksFocus)
         {
-            AddHandler(KeyDownEvent, OnCardKeyDown, RoutingStrategies.Tunnel);
             AddHandler(KeyUpEvent, OnCardKeyUp, RoutingStrategies.Tunnel);
             LostFocus += OnCardLostFocus;
         }
@@ -157,14 +161,34 @@ internal sealed partial class CatalogCard : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _reorder.Attach();
         ApplyOrderLook();
         Dispatcher.UIThread.Post(ApplyStopFocus, DispatcherPriority.Loaded);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _press.Stop();
+        _holding = false;
+        _reorder.Detach();
+        base.OnDetachedFromVisualTree(e);
     }
 
     /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (_reorder is null)
+        {
+            return;
+        }
+
+        if (change.Property == DataContextProperty)
+        {
+            ApplyOrderLook();
+        }
+
         if (change.Property == DropCommandProperty)
         {
             _reorder.Dropped = DropCommand;
@@ -175,15 +199,6 @@ internal sealed partial class CatalogCard : UserControl
     {
         Pick();
         _reorder.Press(e);
-    }
-
-    // Открывает настройки карточки - то же, что кнопка в подвале.
-    private void Open()
-    {
-        if (DataContext is { } item && OpenCommand?.CanExecute(item) == true)
-        {
-            OpenCommand.Execute(item);
-        }
     }
 
     private void OnCardGotFocus(object? sender, FocusChangedEventArgs e)
@@ -235,6 +250,11 @@ internal sealed partial class CatalogCard : UserControl
         if (e.Key is Key.Apps || (e.Key is Key.F10 && e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
         {
             e.Handled = ShowMenu();
+            return;
+        }
+
+        if (!UiPlatform.WalksFocus)
+        {
             return;
         }
 
@@ -304,7 +324,7 @@ internal sealed partial class CatalogCard : UserControl
         }
     }
 
-    // Действия карточки: настройки и перестановка.
+    // Открывает диалог перемещения.
     private bool ShowMenu()
     {
         if (DataContext is not ConfigItemViewModel item)
@@ -312,7 +332,7 @@ internal sealed partial class CatalogCard : UserControl
             return false;
         }
 
-        CardMenu.Present(FacePart, Sheet, item.Name, Open, Take);
+        CardMenu.Present(Sheet, item.Name, Take);
         return true;
     }
 
@@ -330,14 +350,17 @@ internal sealed partial class CatalogCard : UserControl
     private void OnOrderKey(KeyEventArgs e)
     {
         var step = CardGesture.Step(e.Key, _reorder.Columns());
-        if (step != 0)
+        if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
-            Carry(step);
+            if (step != 0)
+            {
+                Carry(step);
+            }
             e.Handled = true;
             return;
         }
 
-        if (e.Key is Key.Enter or Key.Space)
+        if (e.Key is Key.Enter or Key.Space && !ReorderPart.IsKeyboardFocusWithin)
         {
             Settle(undo: false);
             e.Handled = true;
@@ -353,8 +376,7 @@ internal sealed partial class CatalogCard : UserControl
     private void Carry(int delta)
     {
         var list = _reorder.List;
-        var stop = Focused();
-        Land(list, _reorder.Nudge(delta), stop);
+        Land(list, _reorder.Nudge(delta), Stop.Face);
     }
 
     // Отпускает взятую карточку, записав порядок или вернув прежний.
@@ -366,20 +388,16 @@ internal sealed partial class CatalogCard : UserControl
         Land(list, at, Stop.Face);
     }
 
-    private Stop Focused()
-    {
-        if (ConnectPart.IsKeyboardFocusWithin)
-        {
-            return Stop.Action;
-        }
-
-        return SettingsPart.IsKeyboardFocusWithin ? Stop.Settings : Stop.Face;
-    }
-
-    // Взятая в перестановку карточка гаснет так же, как перетаскиваемая.
+    // Показывает кнопки перемещения.
     private void ApplyOrderLook()
     {
-        Opacity = _reorder.Ordering ? 0.6 : 1;
+        var ordering = _reorder.Ordering;
+        FooterPart.IsVisible = !ordering;
+        MoveFramePart.IsVisible = ordering;
+        FacePart.Focusable = ordering || UiPlatform.WalksFocus;
+        ConnectPart.IsHitTestVisible = !ordering;
+        RefreshPart.IsHitTestVisible = !ordering;
+        ReorderPart.Update(ordering, _reorder.Columns(), _reorder.CanNudge);
     }
 
     // Сажает пульт на то же место карточки, вставшей на новое место каталога.
@@ -405,6 +423,7 @@ internal sealed partial class CatalogCard : UserControl
                     Stop.Settings => card.SettingsPart,
                     _ => card.FacePart,
                 };
+                card.BringIntoView();
                 part.Focus(NavigationMethod.Directional);
             },
             DispatcherPriority.Loaded);

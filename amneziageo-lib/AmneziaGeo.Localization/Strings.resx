@@ -2556,7 +2556,7 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
     <value>hours</value>
   </data>
   <data name="Main_CardReorder" xml:space="preserve">
-    <value>Reorder</value>
+    <value>Move</value>
   </data>
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Primary</value>
@@ -3109,4 +3109,19 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Proxies_UseCertificate" xml:space="preserve"><value>Use certificate</value></data>
   <data name="Proxies_HttpMethod" xml:space="preserve"><value>HTTP method</value></data>
   <data name="Proxies_Rejected" xml:space="preserve"><value>Proxy connection rejected</value></data>
+  <data name="Main_ReorderDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="Main_ReorderUp" xml:space="preserve">
+    <value>Move up</value>
+  </data>
+  <data name="Main_ReorderDown" xml:space="preserve">
+    <value>Move down</value>
+  </data>
+  <data name="Main_ReorderLeft" xml:space="preserve">
+    <value>Move left</value>
+  </data>
+  <data name="Main_ReorderRight" xml:space="preserve">
+    <value>Move right</value>
+  </data>
 </root>

@@ -80,7 +80,7 @@ internal static class TransportProxyCommands
             Output.Table(["REFERENCE", "NAME", "TYPE", "ADDRESS", "SOURCE", "STATE", "FAULT"],
                 [.. proxies.Select(one => (IReadOnlyList<string>)
                 [
-                    ReferenceText(one.Reference), one.Name, one.Transport,
+                    ReferenceText(one.Reference), one.Name, one.Transport == "http" ? "HTTP " + one.Http?.Method : one.Transport == "quic" ? "QUIC" : one.Transport,
                     Address(one.Host, one.Port), one.Local ? "local" : string.Join(", ", one.Sources),
                     one.Missing ? "missing" : one.Availability.ToString().ToLowerInvariant(), one.Fault,
                 ])], "no transport proxies yet");

@@ -55,12 +55,14 @@ internal sealed partial class ConfigTransportViewModel
     public string SelectedProxyScope => SelectedSummary is { } summary ? TransportProxyPresentation.Scope(summary) : string.Empty;
     public string SelectedProxyTargets => SelectedSummary is { } summary ? TransportProxyPresentation.ScopeTargets(summary) : string.Empty;
     public string SelectedProxyAvailability => SelectedSummary is { } summary ? TransportProxyWords.Availability(summary.Availability, summary.Missing) : string.Empty;
+    public bool SelectedProxyIsHttpGet => SelectedSummary is { Transport: "http", Http: { Version: 2, Method: "GET" } };
     public bool SelectedProxyAvailable => SelectedSummary is { Missing: false, Availability: TransportProxyAvailability.Available };
     public string SelectedProxyFault => HasSelectedProxy && (SelectedSummary is not { } summary || summary.Missing)
         ? Loc.Instance.Get("Proxies_Missing") : SelectedSummary is { } selected && !ProxyCompatible(selected)
             ? Loc.Instance.Get("Proxies_TargetDenied") : string.Empty;
     public bool CanViewSelectedProxy => SelectedSummary is { Missing: false };
     public bool ShowRunningProxy => _proxyIsRunning;
+    public bool RunningProxyIsHttpGet => _runningProxy?.Front is { Transport: "http", Http: { Version: 2, Method: "GET" } };
     public string RunningProxyDetails => TransportProxyPresentation.Running(_proxySummaries, _runningProxy);
     public bool CanViewRunningProxy => _proxyIsRunning && TransportProxyPresentation.FindRunning(_proxySummaries, _runningProxy?.Reference) is { Missing: false };
     private TransportProxySummary? SelectedSummary => TransportProxyPresentation.FindExact(_proxySummaries, SelectedProxyChoice?.Reference);
@@ -96,7 +98,8 @@ internal sealed partial class ConfigTransportViewModel
     {
         foreach (var name in new[] { nameof(HasSelectedProxy), nameof(SelectedProxyDetails), nameof(SelectedProxyScope),
             nameof(SelectedProxyTargets), nameof(SelectedProxyAvailability), nameof(SelectedProxyAvailable), nameof(SelectedProxyFault),
-            nameof(CanViewSelectedProxy), nameof(ShowRunningProxy), nameof(RunningProxyDetails), nameof(CanViewRunningProxy) })
+            nameof(CanViewSelectedProxy), nameof(SelectedProxyIsHttpGet), nameof(ShowRunningProxy), nameof(RunningProxyDetails),
+            nameof(RunningProxyIsHttpGet), nameof(CanViewRunningProxy) })
         {
             OnPropertyChanged(name);
         }
@@ -128,7 +131,7 @@ internal sealed partial class ConfigTransportViewModel
                 : _proxySources.GetValueOrDefault(summary.Reference) ?? [];
             var source = summary.Local ? Loc.Instance.Get("Proxies_Local")
                 : origins.Count > 0 ? string.Join(", ", origins) : Loc.Instance.Get("Proxies_Server");
-            var transport = summary.Transport == "xhttp" ? "XHTTP" : "WebSocket";
+            var transport = TransportProxyPresentation.Transport(summary.Transport, summary.Http?.Method);
             var label = $"{summary.Name} · {transport} · {source} · {TransportProxyWords.Address(summary.Host, summary.Port, summary.Path)}";
             if (summary.Missing)
             {
@@ -139,7 +142,7 @@ internal sealed partial class ConfigTransportViewModel
                 label += $" · {Loc.Instance.Get("Proxies_TargetDenied")}";
             }
 
-            choices.Add(new TransportProxyChoice(summary.Reference, label, compatible));
+            choices.Add(new TransportProxyChoice(summary.Reference, label, compatible, summary.Transport == "http" && summary.Http is { Version: 2, Method: "GET" }));
         }
 
         if (selected is not null && !choices.Any(one => one.Reference == selected))

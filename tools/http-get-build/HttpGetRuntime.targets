@@ -1,0 +1,138 @@
+<Project>
+  <PropertyGroup>
+    <_HttpGetSourceRoot>$(MSBuildThisFileDirectory)../../amneziageo-android/libamneziawg-go</_HttpGetSourceRoot>
+  </PropertyGroup>
+  <UsingTask TaskName="VerifyHttpGetRuntime" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceRoot ParameterType="System.String" Required="true" />
+      <LicenseRoot ParameterType="System.String" Required="true" />
+      <CacheRoot ParameterType="System.String" Required="true" />
+      <TargetOS ParameterType="System.String" Required="true" />
+      <TargetArch ParameterType="System.String" Required="true" />
+      <RuntimeDirectory ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        string Digest(byte[] value)
+        {
+            using (var hash = SHA256.Create())
+            {
+                return BitConverter.ToString(hash.ComputeHash(value)).Replace("-", "").ToLowerInvariant();
+            }
+        }
+
+        try
+        {
+            if ((TargetOS != "windows" && TargetOS != "linux") || (TargetArch != "amd64" && TargetArch != "arm64"))
+            {
+                throw new InvalidDataException("The HTTP GET target is invalid.");
+            }
+
+            var root = Path.GetFullPath(SourceRoot);
+            var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            foreach (var name in new[] { "cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth" })
+            {
+                foreach (var file in Directory.EnumerateFiles(Path.Combine(root, name), "*.go", SearchOption.AllDirectories))
+                {
+                    files[file.Substring(root.TrimEnd(Path.DirectorySeparatorChar).Length + 1).Replace('\\', '/')] = file;
+                }
+            }
+
+            foreach (var name in new[] { "go.mod", "go.sum" })
+            {
+                files[name] = Path.Combine(root, name);
+            }
+
+            foreach (var file in Directory.EnumerateFiles(LicenseRoot))
+            {
+                files["licenses/" + Path.GetFileName(file)] = file;
+            }
+
+            var source = new StringBuilder("amneziageo.http-get-runtime.v1\n");
+            foreach (var file in files)
+            {
+                var data = Encoding.UTF8.GetBytes(File.ReadAllText(file.Value).Replace("\r\n", "\n"));
+                source.Append(file.Key).Append('\0').Append(Digest(data)).Append('\n');
+            }
+
+            var directory = Path.GetFullPath(Path.Combine(CacheRoot, "v1", TargetOS, TargetArch));
+            var receipt = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var line in File.ReadAllLines(Path.Combine(directory, "runtime.receipt")))
+            {
+                var parts = line.Split(new[] { '=' }, 2);
+                if (parts.Length != 2 || parts.Any(part => part.Length == 0 || part != part.Trim() || part.Any(char.IsControl)) || receipt.ContainsKey(parts[0]))
+                {
+                    throw new InvalidDataException("The HTTP GET receipt is invalid.");
+                }
+
+                receipt.Add(parts[0], parts[1]);
+            }
+
+            var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["schema"] = "amneziageo.http-get-runtime.v1", ["go.version"] = "go1.27.3",
+                ["target.os"] = TargetOS, ["target.arch"] = TargetArch,
+                ["inputs.sha256"] = Digest(Encoding.UTF8.GetBytes(source.ToString()))
+            };
+            var executable = TargetOS == "windows" ? "http-get-proxy.exe" : "http-get-proxy";
+            var binary = File.ReadAllBytes(Path.Combine(directory, executable));
+            expected["binary.sha256"] = Digest(binary);
+            if (receipt.Count != expected.Count || expected.Any(pair => !receipt.TryGetValue(pair.Key, out var value) || pair.Value != value))
+            {
+                throw new InvalidDataException("The HTTP GET runtime differs from its source or target.");
+            }
+
+            if (TargetOS == "windows")
+            {
+                if (binary.Length < 64 || binary[0] != 0x4d || binary[1] != 0x5a)
+                {
+                    throw new InvalidDataException("The HTTP GET PE header is missing.");
+                }
+
+                var offset = BitConverter.ToInt32(binary, 0x3c);
+                if (offset < 0 || offset > binary.Length - 6 || BitConverter.ToUInt32(binary, offset) != 0x00004550
+                    || BitConverter.ToUInt16(binary, offset + 4) != (TargetArch == "arm64" ? 0xaa64 : 0x8664))
+                {
+                    throw new InvalidDataException("The HTTP GET PE architecture differs.");
+                }
+            }
+            else if (binary.Length < 20 || !binary.Take(6).SequenceEqual(new byte[] { 0x7f, 0x45, 0x4c, 0x46, 2, 1 })
+                || BitConverter.ToUInt16(binary, 18) != (TargetArch == "arm64" ? 183 : 62))
+            {
+                throw new InvalidDataException("The HTTP GET ELF architecture differs.");
+            }
+
+            RuntimeDirectory = directory;
+        }
+        catch (Exception ex)
+        {
+            Log.LogErrorFromException(ex, true);
+            Log.LogError("Prepare the HTTP GET runtime with the platform tools/build-http-get script and Go1.27.3.");
+            return false;
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)licenses/*">
+      <Link>licenses/http-get/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+  <Target Name="EnsureXHttpRuntime" BeforeTargets="PrepareForBuild;PrepareForPublish;AssignTargetPaths" Condition="'$(DesignTimeBuild)' != 'true'">
+    <VerifyHttpGetRuntime SourceRoot="$(_HttpGetSourceRoot)" LicenseRoot="$(MSBuildThisFileDirectory)licenses" CacheRoot="$(HttpGetCacheRoot)" TargetOS="$(HttpGetTargetOS)" TargetArch="$(HttpGetTargetArch)">
+      <Output TaskParameter="RuntimeDirectory" PropertyName="_HttpGetDirectory" />
+    </VerifyHttpGetRuntime>
+    <ItemGroup>
+      <None Include="$(_HttpGetDirectory)/$(HttpGetExecutable)" Link="$(HttpGetExecutable)" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+      <None Include="$(_HttpGetDirectory)/runtime.receipt" Link="licenses/http-get/runtime.receipt" CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" />
+    </ItemGroup>
+  </Target>
+</Project>

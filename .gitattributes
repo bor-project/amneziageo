@@ -4,5 +4,5 @@
 amneziageo-linux/packaging/** text eol=lf
 # The container files are read by the image's shell and must stay LF.
 amneziageo-linux/docker/** text eol=lf
-tools/xray-build/** text eol=lf
+tools/http-get-build/** text eol=lf
 amneziageo-android/tools/build-engine-android.ps1 text eol=lf

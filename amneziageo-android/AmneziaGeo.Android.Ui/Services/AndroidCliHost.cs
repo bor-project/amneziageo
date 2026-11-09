@@ -23,7 +23,7 @@ internal sealed class AndroidCliHost : ICliHost
             adb shell am broadcast -a org.amneziageo.android.CLI \
               -n org.amneziageo.android/.CliReceiver --es cmd "status"
           Add --es out <path> to also write the full text to a file.
-          The whole answer is mirrored to logcat under the tag AmneziaGeoCli.
+          The exit code and reply length are logged under the tag AmneziaGeoCli.
           'up' needs the VPN consent the system asks for once, in the app window.
         """;
 

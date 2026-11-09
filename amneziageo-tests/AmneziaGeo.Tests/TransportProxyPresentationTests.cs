@@ -14,6 +14,33 @@ public sealed class TransportProxyPresentationTests
     private static readonly ProxyReference Second = new("a5b67339-b508-4c20-a3c0-6457ea303f59", "second");
 
     [Fact]
+    public void GetIconsFollowSavedAndRunningMethodsIndependently()
+    {
+        var editor = new ConfigTransportViewModel(new Agent(), "vpn", false, 1420, false);
+        var notices = new List<string?>();
+        editor.PropertyChanged += (_, change) => notices.Add(change.PropertyName);
+        var get = Summary(First) with { Transport = "http", Http = new OfferedProxyHttp(2, "GET", "header") };
+        editor.ApplyProxyCatalog([get], First, true);
+        Assert.True(editor.SelectedProxyIsHttpGet);
+        Assert.True(editor.SelectedProxyChoice!.IsHttpGet);
+        Assert.Contains(nameof(editor.SelectedProxyIsHttpGet), notices);
+        editor.ApplyRunningProxy(new(First, "udp.example", 51820, Front:
+            new("front", "http", "cdn.example", 80, "relay", false, "server", get.Http, UseCertificate: false)), true);
+        Assert.True(editor.RunningProxyIsHttpGet);
+        Assert.Contains(nameof(editor.RunningProxyIsHttpGet), notices);
+
+        notices.Clear();
+        editor.ApplyProxyCatalog([get with { Http = new OfferedProxyHttp(2, "POST", "body") }], First, true);
+        Assert.False(editor.SelectedProxyIsHttpGet);
+        Assert.False(editor.SelectedProxyChoice!.IsHttpGet);
+        Assert.True(editor.RunningProxyIsHttpGet);
+        Assert.Contains(nameof(editor.SelectedProxyIsHttpGet), notices);
+        editor.ApplyRunningProxy(new(null, "udp.example", 51820), true);
+        Assert.False(editor.RunningProxyIsHttpGet);
+        Assert.Contains(nameof(editor.RunningProxyIsHttpGet), notices);
+    }
+
+    [Fact]
     public void EqualNamesRetainDifferentSavedAndRunningFronts()
     {
         var current = Summary(First) with { Host = "new.example", Transport = "websocket" };

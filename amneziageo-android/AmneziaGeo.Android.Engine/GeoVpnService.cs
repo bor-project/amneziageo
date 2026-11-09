@@ -849,14 +849,15 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Dials the session until it stands, fails on a cause another attempt does not get past, or is taken back.
-    private void Dial(GeoRoutingPlan plan, VpnRequest request, bool repair, Action? done = null)
+    private void Dial(GeoRoutingPlan plan, VpnRequest request, bool repair, Action? done = null, bool onlyCurrent = false)
     {
         var dial = new CancellationTokenSource();
         var replaced = default(CancellationTokenSource);
         var refused = false;
         lock (_dialGate)
         {
-            if (repair && _dialRequest is { } current && current.SessionId != request.SessionId)
+            if ((repair && _dialRequest is { } current && current.SessionId != request.SessionId)
+                || (onlyCurrent && _dialRequest?.SessionId != request.SessionId))
             {
                 refused = true;
             }
@@ -1232,6 +1233,7 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.Unknown);
             }
 
+            var startup = Stopwatch.StartNew();
             Release();
             Past(true);
             var acceptedName = PublishAcceptedTransport(sessionId, RunningTransportProxy.From(transportProxy, config));
@@ -1246,24 +1248,6 @@ public sealed class GeoVpnService : VpnService
             var resolved = WgConfigEditor.EnsurePersistentKeepalive(transportProxy is null ? ResolveEndpoint(config) : config, KeepaliveSeconds);
             // The size is read off the link to the server, which the carrier is about to hide behind the loopback.
             var underlay = resolved;
-            var carrier = await StartCarrierAsync(config, wsHost, wsPort, wsOffered, ct, name, transportProxy, sessionId).ConfigureAwait(false);
-            if (carrier is not null)
-            {
-                _carrier = carrier.WebSocket;
-                _xhttp = carrier.XHttp;
-                resolved = WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
-            }
-            else
-            {
-                _reach = (DialledAddress(underlay), ConfigServices.Target(config)?.Port ?? 0);
-            }
-
-            var uapi = WgQuickToUapi.Convert(resolved);
-            if (uapi is null)
-            {
-                return DialOutcome.Failed(ConnectFailureReason.ConfigInvalid, "invalid config");
-            }
-
             var servers = vpnDnsNetwork ? [] : DnsServers(vpnDns is { Length: > 0 } picked ? picked : WgConfigEditor.GetDns(resolved));
             // The name servers of the network under the tunnel leave the tun with the network the device sits on.
             IReadOnlyList<string> networkDns = vpnDnsNetwork
@@ -1288,14 +1272,19 @@ public sealed class GeoVpnService : VpnService
             var carveLocal = !localInTunnel || _localCarveForced || !(directTcp || _proxyPort > 0);
             // The names the route table holds are asked of the name servers of the tunnel once it carries; until
             // then the tun stands on the addresses they came back with last time.
-            var late = HeldNames(plan) > 0 && !vpnDnsNetwork;
+            var heldNames = HeldNames(plan);
+            var knownNames = heldNames > 0 ? KnownNames(plan) : null;
+            var cachedNames = knownNames is { Count: > 0 }
+                && plan.DirectDomains.Count == 0 && plan.BlockDomains.Count == 0;
+            var late = heldNames > 0 && (!vpnDnsNetwork || cachedNames);
             var rules = await MaterializeAsync(plan, resolved, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned, !late, networkDns,
-                late ? KnownNames(plan) : null).ConfigureAwait(false);
+                late ? knownNames : null, ct).ConfigureAwait(false);
             if (!late && rules.Answers is { } answers)
             {
                 KeepNames(plan, answers);
             }
 
+            Report($"VPN startup routing ready at {startup.ElapsedMilliseconds} ms");
             _routed = relay is null ? RoutedReport(plan, rules) : null;
             if (_proxyPort == 0 && rules.Tunneled.Count > RouteBudget.Max)
             {
@@ -1308,6 +1297,25 @@ public sealed class GeoVpnService : VpnService
             if (ct.IsCancellationRequested)
             {
                 return DialOutcome.Failed(ConnectFailureReason.Unknown);
+            }
+
+            var carrier = await StartCarrierAsync(config, wsHost, wsPort, wsOffered, ct, name, transportProxy, sessionId).ConfigureAwait(false);
+            if (carrier is not null)
+            {
+                _carrier = carrier.WebSocket;
+                _xhttp = carrier.XHttp;
+                resolved = WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
+            }
+            else
+            {
+                _reach = (DialledAddress(underlay), ConfigServices.Target(config)?.Port ?? 0);
+            }
+
+            Report($"VPN startup carrier prepared at {startup.ElapsedMilliseconds} ms");
+            var uapi = WgQuickToUapi.Convert(resolved);
+            if (uapi is null)
+            {
+                return DialOutcome.Failed(ConnectFailureReason.ConfigInvalid, "invalid config");
             }
 
             // The mode says where the size comes from: the link, the config text, or the one stored for it.
@@ -1348,6 +1356,7 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.EngineStartFailed, "engine start failed");
             }
 
+            Report($"VPN startup engine started at {startup.ElapsedMilliseconds} ms");
             _handle = handle;
             _verdicts = rules.Verdicts;
             var decided = rules.Verdicts.Length > 0 && AwgEngine.SetVerdicts(handle, rules.Verdicts);
@@ -1403,6 +1412,7 @@ public sealed class GeoVpnService : VpnService
                 return DialOutcome.Failed(ConnectFailureReason.NoHandshake, "no handshake");
             }
 
+            Report($"VPN startup WG handshake received at {startup.ElapsedMilliseconds} ms");
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
             // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the far
@@ -1419,6 +1429,7 @@ public sealed class GeoVpnService : VpnService
             // waits for the first byte that came back through it.
             IReadOnlyList<System.Net.IPAddress> echoed = [.. targets.Select(System.Net.IPAddress.Parse)];
             var carried = await WaitForTrafficAsync(loss, () => echo.Reaches(echoed), handle, ct).ConfigureAwait(false);
+            Report($"VPN startup traffic checked at {startup.ElapsedMilliseconds} ms");
             if (_handle != handle || ct.IsCancellationRequested)
             {
                 return DialOutcome.Raised;
@@ -1432,7 +1443,7 @@ public sealed class GeoVpnService : VpnService
                 null => "the peer answered, and the tun takes in none of the addresses an echo would prove it by; the "
                     + "session is reported as up on the handshake alone",
             });
-            if (late && await SettleNamesAsync(plan, resolved, servers, hot, carveLocal, pinned, handle, ct).ConfigureAwait(false) is { } settled)
+            if (late && !cachedNames && await SettleNamesAsync(plan, resolved, servers, hot, carveLocal, pinned, handle, ct, networkDns).ConfigureAwait(false) is { } settled)
             {
                 return settled;
             }
@@ -1476,6 +1487,13 @@ public sealed class GeoVpnService : VpnService
             // The port the user set up: it opens with the tunnel, because everything it carries leaves through it.
             _proxy = new LocalProxyServer((IProxyOutbound?)relay ?? new DirectProxyOutbound(), Report);
             ApplyProxy();
+            if (late && cachedNames)
+            {
+                var refreshToken = reports.Token;
+                _ = Task.Run(() => RefreshNamesAsync(plan, resolved, servers, hot, carveLocal, pinned, handle,
+                    sessionId, networkDns, refreshToken));
+            }
+
             return DialOutcome.Raised;
         }
         catch (Exception ex)
@@ -1491,63 +1509,112 @@ public sealed class GeoVpnService : VpnService
 
     // Asks the name servers of the tunnel for the names the route table holds, puts the tun around their addresses
     // and keeps them for the next connect.
-    private async Task<DialOutcome?> SettleNamesAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, IReadOnlyList<string> hot, bool carveLocal, IReadOnlyList<string> pinned, int handle, CancellationToken ct)
+    private async Task<DialOutcome?> SettleNamesAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, IReadOnlyList<string> hot, bool carveLocal, IReadOnlyList<string> pinned, int handle, CancellationToken ct, IReadOnlyList<string>? networkDns = null, bool keepEmpty = false)
     {
-        var rules = await MaterializeAsync(plan, config, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned).ConfigureAwait(false);
+        var rules = await MaterializeAsync(plan, config, servers, _proxyPort > 0, hot, !_liveTun, carveLocal, pinned,
+            networkDns: networkDns, ct: ct).ConfigureAwait(false);
         if (_handle != handle || ct.IsCancellationRequested)
         {
             return DialOutcome.Raised;
         }
 
-        if (rules.Answers is { } answers)
+        lock (_releaseGate)
         {
-            KeepNames(plan, answers);
-        }
-
-        if (rules.Tunneled.Count > RouteBudget.Max)
-        {
-            Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
-                + "transaction; shorten the routing list");
-            return DialOutcome.Failed(ConnectFailureReason.TooManyRoutes, $"{rules.Tunneled.Count} of {RouteBudget.Max}");
-        }
-
-        lock (_swapGate)
-        {
-            if (_shape is not { } shape)
+            if (_handle != handle || ct.IsCancellationRequested)
             {
                 return DialOutcome.Raised;
             }
 
-            if (!shape.Routes.SequenceEqual(rules.Tunneled, StringComparer.Ordinal))
+            if (keepEmpty && rules.Answers is { Count: 0 } && KnownNames(plan) is { Count: > 0 })
             {
-                var next = shape with { Routes = rules.Tunneled };
-                if (!Swap(handle, next, _excluded, out var error))
+                Report("the name lookup returned no addresses; the tunnel keeps its previous answers");
+                return null;
+            }
+
+            if (rules.Answers is { } answers)
+            {
+                KeepNames(plan, answers);
+            }
+
+            if (rules.Tunneled.Count > RouteBudget.Max)
+            {
+                Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
+                    + "transaction; shorten the routing list");
+                return DialOutcome.Failed(ConnectFailureReason.TooManyRoutes, $"{rules.Tunneled.Count} of {RouteBudget.Max}");
+            }
+
+            lock (_swapGate)
+            {
+                if (_handle != handle || ct.IsCancellationRequested)
                 {
-                    return DialOutcome.Failed(ConnectFailureReason.TunnelSetupFailed, error ?? "the tun could not be rebuilt");
+                    return DialOutcome.Raised;
                 }
 
-                _shape = next;
-                Report($"the tun is rebuilt around the names of the list: {rules.Tunneled.Count} route(s) into the tunnel");
-            }
+                if (_shape is not { } shape)
+                {
+                    return DialOutcome.Raised;
+                }
 
-            var spec = new StringBuilder(rules.Verdicts);
-            foreach (var address in Refused())
-            {
-                spec.Append('\n').Append(address).Append("/32=block");
-            }
+                if (!shape.Routes.SequenceEqual(rules.Tunneled, StringComparer.Ordinal))
+                {
+                    var next = shape with { Routes = rules.Tunneled };
+                    if (!Swap(handle, next, _excluded, out var error))
+                    {
+                        return DialOutcome.Failed(ConnectFailureReason.TunnelSetupFailed, error ?? "the tun could not be rebuilt");
+                    }
 
-            if (spec.Length > 0 && AwgEngine.SetVerdicts(handle, spec.ToString()))
-            {
-                _verdicts = rules.Verdicts;
-            }
+                    _shape = next;
+                    Report($"the tun is rebuilt around the names of the list: {rules.Tunneled.Count} route(s) into the tunnel");
+                }
 
-            if (_proxyPort == 0)
-            {
-                _routed = RoutedReport(plan, rules);
+                var spec = new StringBuilder(rules.Verdicts);
+                foreach (var address in Refused())
+                {
+                    spec.Append('\n').Append(address).Append("/32=block");
+                }
+
+                if (spec.Length > 0 && AwgEngine.SetVerdicts(handle, spec.ToString()))
+                {
+                    _verdicts = rules.Verdicts;
+                }
+
+                if (_proxyPort == 0)
+                {
+                    _routed = RoutedReport(plan, rules);
+                }
             }
         }
 
         return null;
+    }
+
+    private async Task RefreshNamesAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers,
+        IReadOnlyList<string> hot, bool carveLocal, IReadOnlyList<string> pinned, int handle, string sessionId,
+        IReadOnlyList<string> networkDns, CancellationToken ct)
+    {
+        try
+        {
+            var settled = await SettleNamesAsync(plan, config, servers, hot, carveLocal, pinned, handle, ct, networkDns, keepEmpty: true).ConfigureAwait(false);
+            if (settled is { Up: false } && !ct.IsCancellationRequested && _handle == handle && IsCurrentSession(sessionId))
+            {
+                var state = DialState();
+                if (state.Request is { } request && request.SessionId == sessionId)
+                {
+                    Report("the refreshed names need a new tun; the session is dialled again");
+                    Dial(plan, request, repair: true, onlyCurrent: true);
+                }
+            }
+        }
+        catch (System.OperationCanceledException ex) when (ct.IsCancellationRequested)
+        {
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Debug("GeoVpnService", error, "refreshing the session names was cancelled");
+        }
+        catch (Exception ex)
+        {
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("GeoVpnService", error, "refreshing the session names failed");
+        }
     }
 
     // How many names the route table holds.
@@ -2070,7 +2137,7 @@ public sealed class GeoVpnService : VpnService
     // protocols, so the tun there carries every datagram except the direct ranges it leaves out. Of the addresses the
     // last session sent direct, only the ones this list still sends direct are carried over; they leave the route
     // table where the tun cannot leave them out by itself.
-    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool routed, bool carveLocal, IReadOnlyList<string> pinned, bool resolveNames = true, IReadOnlyList<string>? networkDns = null, NameAnswers? known = null)
+    private static async Task<Materialized> MaterializeAsync(GeoRoutingPlan plan, string config, IReadOnlyList<string> servers, bool relayed, IReadOnlyList<string> hot, bool routed, bool carveLocal, IReadOnlyList<string> pinned, bool resolveNames = true, IReadOnlyList<string>? networkDns = null, NameAnswers? known = null, CancellationToken ct = default)
     {
         var proxy = new List<string>(plan.ProxyRoutes);
 
@@ -2196,11 +2263,13 @@ public sealed class GeoVpnService : VpnService
         {
             var clock = Stopwatch.StartNew();
             // The names become addresses under a deadline, so a catalogue of them cannot hold up the connect.
-            using var budget = new CancellationTokenSource(NameBudgetMs);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(NameBudgetMs);
             var resolver = new GeoDomainRouteResolver();
             var named = await resolver.ResolveAsync(heldDirect, budget.Token).ConfigureAwait(false);
             var tunneled = await resolver.ResolveAsync(heldProxy, budget.Token).ConfigureAwait(false);
             var refused = await resolver.ResolveAsync(heldBlock, budget.Token).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
             answers = new NameAnswers(tunneled, named, refused);
             Report($"{heldNames} name rule(s) resolved to addresses in {clock.ElapsedMilliseconds} ms"
                 + (budget.IsCancellationRequested ? ", the rest ran out of their time" : string.Empty)
@@ -3175,10 +3244,17 @@ public sealed class GeoVpnService : VpnService
     // the session is gone.
     private async Task<long> WaitForHandshakeAsync(int handle, bool untilAnswered, CancellationToken ct)
     {
-        for (var attempt = 0; untilAnswered || attempt < HandshakeWaitSeconds * 1000 / HandshakePollMs; attempt++)
+        var waitSeconds = _xhttp is not null || _carrier is not null ? LinkRecovery.CarrierDeadSeconds : HandshakeWaitSeconds;
+        for (var attempt = 0; untilAnswered || attempt < waitSeconds * 1000 / HandshakePollMs; attempt++)
         {
             if (_handle != handle || ct.IsCancellationRequested)
             {
+                return 0;
+            }
+
+            if (_xhttp is { } carrier && !carrier.IsRunning)
+            {
+                Report("the HTTP GET carrier stopped before the peer answered");
                 return 0;
             }
 
@@ -3241,6 +3317,16 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
+            if (_xhttp is { } carrier && !carrier.IsRunning)
+            {
+                if (Reraise("the HTTP GET carrier stopped"))
+                {
+                    return;
+                }
+
+                continue;
+            }
+
             var uapi = AwgEngine.GetConfig(handle);
             RenewAfterSleep(handle, uapi);
             var seen = PeerHandshake(uapi);
@@ -3266,7 +3352,9 @@ public sealed class GeoVpnService : VpnService
             }
 
             // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
-            var step = seen > 0 ? _recovery.Sample(moved, System.Environment.TickCount64) : null;
+            var carried = _xhttp is not null || _carrier is not null;
+            var step = seen > 0 ? _recovery.Sample(moved, System.Environment.TickCount64, rebindOnSilence: !carried,
+                deadSeconds: carried ? LinkRecovery.CarrierDeadSeconds : LinkRecovery.DeadSeconds) : null;
             if (!_recovery.Repairing)
             {
                 causeTold = false;
@@ -3320,7 +3408,7 @@ public sealed class GeoVpnService : VpnService
         // another websocket beside the one in use instead.
         if (_xhttp is not null)
         {
-            return Reraise($"{_recovery.Reason}; raising the XHTTP session again");
+            return Reraise($"{_recovery.Reason}; raising the HTTP GET session again");
         }
 
         if (_carrier is { } carrier)
@@ -3853,8 +3941,16 @@ public sealed class GeoVpnService : VpnService
             throw new TransportProxyFault("bad-proxy");
         }
 
+        if (proxy.Transport != "websocket" && !ProxyTransportModes.IsGet(proxy))
+        {
+            throw new TransportProxyFault("proxy-platform-unsupported");
+        }
+
+        var preparation = Stopwatch.StartNew();
         var address = ResolvePhysical(proxy.Host);
+        Report($"VPN startup proxy address resolved at {preparation.ElapsedMilliseconds} ms");
         await TransportProxyProbes.EnsureTargetAsync(selected, address, ct, socket => Protect(socket.Handle.ToInt32())).ConfigureAwait(false);
+        Report($"VPN startup proxy target checked at {preparation.ElapsedMilliseconds} ms");
         if (name is not null)
         {
             _reach = (address, proxy.Port);
@@ -3870,18 +3966,45 @@ public sealed class GeoVpnService : VpnService
             return new TransportCarrier(carrier, carrier.LocalPort, carrier);
         }
 
-        if (proxy.Transport == "xhttp")
+        if (proxy.Transport is "http" or "xhttp")
         {
             using var reservation = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, ProtocolType.Udp);
             reservation.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
             var localPort = ((System.Net.IPEndPoint)reservation.LocalEndPoint!).Port;
             var profile = XHttpProfile.Create(selected, localPort, address);
             reservation.Close();
-            var carrier = XHttpEngine.Start(profile, localPort, Protect);
+            var carrier = XHttpEngine.Start(profile, localPort, ProtectGetSocket);
             return new TransportCarrier(carrier, localPort, XHttp: carrier);
         }
 
         throw new TransportProxyFault("bad-transport");
+    }
+
+    private bool ProtectGetSocket(int fd)
+    {
+        if (!Protect(fd))
+        {
+            return false;
+        }
+
+        var network = AndroidNetworks.Under(this);
+        if (network is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var descriptor = ParcelFileDescriptor.FromFd(fd)
+                ?? throw new Java.IO.IOException("The GET socket descriptor is missing.");
+            network.BindSocket(descriptor.FileDescriptor!);
+            return true;
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "Binding the GET socket failed", ex);
+            return false;
+        }
     }
 
     private System.Net.IPAddress ResolvePhysical(string host)

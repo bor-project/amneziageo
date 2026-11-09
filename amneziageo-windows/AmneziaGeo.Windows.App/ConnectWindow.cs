@@ -1,3 +1,5 @@
+using AmneziaGeo.Ipc;
+
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
@@ -5,6 +7,8 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class ConnectWindow(DateTimeOffset start, TimeSpan launch, TimeSpan silence)
 {
+    private bool _failed;
+
     /// <summary>
     /// When the attempt started the tunnel process.
     /// </summary>
@@ -32,11 +36,19 @@ internal sealed class ConnectWindow(DateTimeOffset start, TimeSpan launch, TimeS
     }
 
     /// <summary>
-    /// Whether the attempt ran out of time.
+    /// Records a terminal startup failure.
+    /// </summary>
+    public void Failure(ConnectFailureReason reason)
+    {
+        _failed |= reason is ConnectFailureReason.TransportRejected or ConnectFailureReason.EngineStopped;
+    }
+
+    /// <summary>
+    /// Whether the attempt ended.
     /// </summary>
     public bool Over(DateTimeOffset now)
     {
-        return now >= End();
+        return _failed || now >= End();
     }
 
     // The launch deadline, moved out to the end of the server's window.

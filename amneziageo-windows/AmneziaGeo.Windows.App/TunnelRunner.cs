@@ -123,6 +123,10 @@ internal sealed class TunnelRunner(
         {
             await RunInnerAsync(name);
         }
+        catch (OperationCanceledException ex)
+        {
+            logger.LogInformation(ex, "{Name}: tunnel startup was cancelled", name);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "{Name}: setting up the connection failed ({Reason}); the firewall protection is lifted so the machine keeps working, and nothing goes through the tunnel", name, ex.Message);
@@ -670,7 +674,18 @@ internal sealed class TunnelRunner(
             WgConfigEditor.GetAllowedIps(config));
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.
-        _ = Task.Run(() => RuntimeSnapshotPipe.ServeAsync(name, (op, ct) => ServeAsync(op, routing, name, ct), logger, sessionCts.Token));
+        Task<string> HandleRuntimeAsync(string op, CancellationToken ct)
+        {
+            if (op == RuntimeSnapshotPipe.OpCancelStartup)
+            {
+                sessionCts.Cancel();
+                return Task.FromResult("ok");
+            }
+
+            return ServeAsync(op, routing, name, ct);
+        }
+
+        _ = Task.Run(() => RuntimeSnapshotPipe.ServeAsync(name, HandleRuntimeAsync, logger, sessionCts.Token));
         _ = Task.Run(() => routing.RunAsync(sessionCts.Token));
         _ = Task.Run(() => routing.PumpAsync(sessionCts.Token));
         var ranges = routing.RangeCounts;
@@ -1017,7 +1032,7 @@ internal sealed class TunnelRunner(
         var signalOpened = signal is not null && InboundFirewall.AllowSignal(name, signal, logger);
 
         // Permits the selected carrier executable.
-        var underlayAppPath = selectedProxy?.Record.Proxy.Transport == "xhttp" ? XHttpProcess.ExecutablePath
+        var underlayAppPath = selectedProxy?.Record.Proxy.Transport is "http" or "xhttp" or "quic" ? XHttpProcess.ExecutablePath
             : legacyCarrier ? TunnelPaths.WsTunnelExe() : useCarrier ? Environment.ProcessPath : null;
         _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, peers, endpoint, routing, transport?.AllowInbound != true, signal, otherVpns, sessionCts.Token));
 
@@ -1104,10 +1119,11 @@ internal sealed class TunnelRunner(
 
             try
             {
+                sessionCts.Token.ThrowIfCancellationRequested();
                 WireGuardEngine.RunTunnelService(config, TunnelDevice.NameOf(name));
                 await ReportEngineExitAsync(name).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not ConnectFailureException)
+            catch (Exception ex) when (ex is not (ConnectFailureException or OperationCanceledException))
             {
                 throw new ConnectFailureException(ConnectFailureReason.AdapterStartFailed, ex.Message, ex);
             }
@@ -1230,6 +1246,11 @@ internal sealed class TunnelRunner(
             throw new ConnectFailureException(ConnectFailureReason.LoopbackBlocked, "The local UDP carrier is blocked.");
         }
 
+        if (selected.Record.Proxy.Transport is not ("websocket" or "http" or "xhttp" or "quic"))
+        {
+            throw new ConnectFailureException(ConnectFailureReason.TransportRejected, "proxy-platform-unsupported");
+        }
+
         try
         {
             await TransportProxyProbes.EnsureTargetAsync(selected, address, ct).ConfigureAwait(false);
@@ -1239,16 +1260,20 @@ internal sealed class TunnelRunner(
             throw new ConnectFailureException(ConnectFailureReason.TransportRejected, ex.Code, ex);
         }
 
-        if (selected.Record.Proxy.Transport == "xhttp")
+        if (selected.Record.Proxy.Transport is "http" or "xhttp" or "quic")
         {
             try
             {
-                var process = await XHttpProcess.StartAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false);
+                var process = await XHttpProcess.StartTransportAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false);
                 return new TransportCarrier(xhttp: process);
             }
-            catch (Exception ex) when (ex is TransportProxyFault or System.ComponentModel.Win32Exception or IOException)
+            catch (TransportProxyFault ex)
             {
-                throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The XHTTP carrier did not start.", ex);
+                throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Code, ex);
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+            {
+                throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The transport proxy carrier did not start.", ex);
             }
         }
 
@@ -1292,10 +1317,15 @@ internal sealed class TunnelRunner(
 
         void Pressure(XHttpPressure value)
         {
-            logger.LogWarning("{Name}: XHTTP UDP {Stage} queue discarded {Packets} packets ({Bytes} bytes); totals {TotalPackets} packets ({TotalBytes} bytes).",
+            logger.LogWarning("{Name}: Transport proxy UDP {Stage} queue discarded {Packets} packets ({Bytes} bytes); totals {TotalPackets} packets ({TotalBytes} bytes).",
                 name, value.Stage, value.DroppedPackets, value.DroppedBytes, value.TotalPackets, value.TotalBytes);
         }
     }
+
+    internal static ConnectFailureReason ProxyFailureReason(string code) => code is "bad-proxy" or "proxy-auth" or "proxy-tls"
+        or "proxy-bad-answer" or "proxy-target-denied" or "proxy-version-unconfirmed" or "proxy-datagram-limit" or "proxy-rejected"
+        or "xhttp-runtime-version" or "xhttp-runtime-missing"
+        ? ConnectFailureReason.TransportRejected : ConnectFailureReason.UnderlayUnreachable;
 
     private async Task WatchXHttpAsync(string name, XHttpProcess process, CancellationToken ct)
     {
@@ -1303,8 +1333,8 @@ internal sealed class TunnelRunner(
         {
             var code = await process.Completion.WaitAsync(ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
-            await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), $"The XHTTP carrier stopped with exit code {code}.", ct).ConfigureAwait(false);
-            await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(name), nameof(ConnectFailureReason.UnderlayUnreachable), ct).ConfigureAwait(false);
+            await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), $"The transport proxy carrier stopped with exit code {code}.", ct).ConfigureAwait(false);
+            await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(name), ProxyFailureReason(process.FailureCode).ToString(), ct).ConfigureAwait(false);
             var manager = new ServiceManager();
             for (var attempt = 0; attempt < 10 && manager.QueryState(name) is not ("STOPPED" or "ABSENT"); attempt++)
             {
@@ -1318,7 +1348,7 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "{Name}: the stopped XHTTP carrier could not end its tunnel", name);
+            logger.LogWarning(ex, "{Name}: the stopped transport proxy could not end its tunnel", name);
         }
     }
 

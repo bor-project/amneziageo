@@ -99,7 +99,7 @@ jobs:
           submodules: recursive
           fetch-depth: 0   # engine version = `git describe --tags` of the amneziawg-windows submodule
 
-      - name: Setup pinned Xray Go toolchain
+      - name: Setup HTTP GET Go toolchain
         uses: actions/setup-go@v7
         with:
           go-version: '1.27.3'

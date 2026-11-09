@@ -29,7 +29,7 @@ public sealed record TransportProxySelection(string Config, ProxyReference? Refe
 /// Retains the public metadata of a withdrawn proxy.
 /// </summary>
 public sealed record RetiredTransportProxy(ProxyReference Reference, string Name, string Transport, string Host, int Port, string Path, bool Local,
-    IReadOnlyList<string>? Sources = null);
+    IReadOnlyList<string>? Sources = null, OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null, bool UseCertificate = true);
 
 /// <summary>
 /// Stores the common catalog and configuration choices.
@@ -63,7 +63,15 @@ public sealed record TransportProxyState
             throw new InvalidDataException("The transport proxy catalog is invalid.");
         }
 
-        return state;
+        return state with
+        {
+            Locals = [.. state.Locals.Select(Normalize)],
+            Publications = [.. state.Publications.Select(one => one with { Records = [.. one.Records.Select(Normalize)] })],
+        };
+
+        static CatalogTransportProxy Normalize(CatalogTransportProxy record) => record?.Proxy is not null
+            ? record with { Proxy = ProxyTransportModes.Normalize(record.Proxy) }
+            : throw new InvalidDataException("The stored proxy definition is invalid.");
     }
 
     /// <summary>
@@ -79,7 +87,7 @@ public sealed record TransportProxySummary(ProxyReference Reference, string Name
     bool Local, IReadOnlyList<string> Sources, TransportProxyAvailability Availability = TransportProxyAvailability.Unknown,
     string Fault = "", DateTimeOffset? Checked = null, bool Missing = false, ProxyTargets? Targets = null,
     IReadOnlyList<string>? CompatibleConfigs = null, bool Legacy = false, string LegacyIssuer = "", int LegacyPort = 0,
-    IReadOnlyList<ProxyReference>? Aliases = null);
+    IReadOnlyList<ProxyReference>? Aliases = null, OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null, bool UseCertificate = true);
 
 /// <summary>
 /// Describes the proxy selected for a UDP destination.

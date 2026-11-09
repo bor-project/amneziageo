@@ -10,7 +10,6 @@ AmneziaGeo is distributed under GPL-3.0 or later. It is built from the component
 - sing-tun and sing (nekohasekai, SagerNet): GPL-3.0 or later.
 - gVisor (Google): Apache-2.0.
 - wstunnel (Erèbe): BSD-3-Clause.
-- Xray-core 26.10.31 (XTLS): MPL-2.0.
 - Go and golang.org/x (the Go authors): BSD-3-Clause.
 
 ## Window and service

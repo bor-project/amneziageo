@@ -14,10 +14,11 @@ public sealed record RunningTransportProxy(ProxyReference? Reference, string Tar
         ConfigServices.Target(config)?.ServerKey ?? string.Empty,
         proxy is null ? null : new RunningProxyFront(proxy.Record.Proxy.Name, proxy.Record.Proxy.Transport,
             proxy.Record.Proxy.Host, proxy.Record.Proxy.Port, proxy.Record.Legacy ? "" : proxy.Record.Proxy.Path,
-            proxy.Record.Local, proxy.Origin));
+            proxy.Record.Local, proxy.Origin, proxy.Record.Proxy.Http, proxy.Record.Proxy.Quic,
+            ProxyTransportModes.UsesCertificate(proxy.Record.Proxy)));
 }
 
 /// <summary>
 /// Describes the public front of a running proxy.
 /// </summary>
-public sealed record RunningProxyFront(string Name, string Transport, string Host, int Port, string Path, bool Local, string Source);
+public sealed record RunningProxyFront(string Name, string Transport, string Host, int Port, string Path, bool Local, string Source, OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null, bool UseCertificate = true);

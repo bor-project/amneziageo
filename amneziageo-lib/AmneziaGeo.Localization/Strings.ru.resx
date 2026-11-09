@@ -3061,7 +3061,7 @@
   <data name="Proxies_InvalidPath" xml:space="preserve"><value>Введите путь от 1 до 64 латинских букв, цифр, дефисов или подчёркиваний.</value></data>
   <data name="Proxies_InvalidSni" xml:space="preserve"><value>Введите корректное имя хоста SNI.</value></data>
   <data name="Proxies_InvalidPin" xml:space="preserve"><value>Введите 64 шестнадцатеричных символа SHA-256 сертификата.</value></data>
-  <data name="Proxies_InvalidCredential" xml:space="preserve"><value>Проверьте токен доступа или UUID VLESS.</value></data>
+  <data name="Proxies_InvalidCredential" xml:space="preserve"><value>Проверьте ключ доступа</value></data>
   <data name="Proxies_NotLocal" xml:space="preserve"><value>Изменять можно только локальные прокси.</value></data>
   <data name="Proxies_LegacyTarget" xml:space="preserve"><value>Этот прокси привязан к другому назначению VPN.</value></data>
   <data name="Proxies_Busy" xml:space="preserve"><value>Каталог прокси занят. Повторите сохранение.</value></data>
@@ -3076,8 +3076,8 @@
   <data name="Proxies_BadAnswer" xml:space="preserve"><value>Прокси вернул неожиданный ответ.</value></data>
   <data name="Proxies_RequestFailed" xml:space="preserve"><value>Не удалось выполнить запрос к прокси. Повторите попытку.</value></data>
   <data name="Proxies_InvalidCatalog" xml:space="preserve"><value>Не удалось прочитать каталог прокси.</value></data>
-  <data name="Proxies_XhttpUnavailable" xml:space="preserve"><value>Компонент XHTTP недоступен.</value></data>
-  <data name="Proxies_XhttpFailed" xml:space="preserve"><value>Не удалось подключиться через XHTTP. Повторите подключение.</value></data>
+  <data name="Proxies_XhttpUnavailable" xml:space="preserve"><value>Транспорт HTTP недоступен</value></data>
+  <data name="Proxies_XhttpFailed" xml:space="preserve"><value>Не удалось запустить HTTP-прокси</value></data>
   <data name="Proxies_Server" xml:space="preserve"><value>Сервер</value></data>
   <data name="Proxies_RestrictTargets" xml:space="preserve">
     <value>Ограничить назначения</value>
@@ -3106,4 +3106,7 @@
   <data name="Proxies_Loading" xml:space="preserve"><value>Загрузка прокси</value></data>
   <data name="Proxies_ChosenBy" xml:space="preserve"><value>Выбран: {0}</value></data>
   <data name="Proxies_UsedBy" xml:space="preserve"><value>Используется: {0}</value></data>
+  <data name="Proxies_UseCertificate" xml:space="preserve"><value>Использовать сертификат</value></data>
+  <data name="Proxies_HttpMethod" xml:space="preserve"><value>Метод HTTP</value></data>
+  <data name="Proxies_Rejected" xml:space="preserve"><value>Прокси отклонил подключение</value></data>
 </root>

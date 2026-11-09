@@ -339,6 +339,66 @@ public sealed class LinkRecoveryTests
         Assert.Empty(steps);
     }
 
+    [Theory]
+    [InlineData(0, 150)]
+    [InlineData(0, 20_000)]
+    [InlineData(Unknown, 20_000)]
+    public void ATransportCarrier_KeepsItsSessionAcrossTrafficBursts(int lossPercent, long sent)
+    {
+        var recovery = Ladder();
+        var muted = _muted with { LossPercent = lossPercent, Sent = sent };
+
+        var steps = Readings(recovery, 5, 600,
+            second => second % 30 is >= 5 and <= 15 ? _carrying : muted,
+            rebindOnSilence: false);
+
+        Assert.Empty(steps);
+        Assert.Equal(0, recovery.Attempt);
+        Assert.False(recovery.Repairing);
+        Assert.False(recovery.GivenUp);
+    }
+
+    [Theory]
+    [InlineData(100, false, 20)]
+    [InlineData(Unknown, true, 20)]
+    [InlineData(Unknown, false, LinkRecovery.DefaultDeadHandshakeSeconds)]
+    public void AStalledCarrier_StillRunsTheRecoveryLadder(int lossPercent, bool churning, int handshakeAge)
+    {
+        var recovery = Ladder();
+        var silent = _muted with { LossPercent = lossPercent, Churning = churning, HandshakeAgeSeconds = handshakeAge };
+
+        var steps = Readings(recovery, 5, 60, second => second <= 15 ? _carrying : silent,
+            rebindOnSilence: false);
+
+        Assert.Equal(_ladder, steps.Take(4).Select(step => step.Step));
+        Assert.True(recovery.Repairing);
+    }
+
+    [Fact]
+    public void ACarrierThatRecoversWithinItsBudget_KeepsTheTunnelStanding()
+    {
+        var recovery = Ladder();
+
+        var steps = Readings(recovery, 5, 120, second => second <= 15 || second >= 65 ? _carrying : _silent,
+            rebindOnSilence: false, deadSeconds: LinkRecovery.CarrierDeadSeconds);
+
+        Assert.Empty(steps);
+        Assert.False(recovery.Repairing);
+    }
+
+    [Fact]
+    public void ACarrierThatStaysDead_IsRepairedAfterItsBudget()
+    {
+        var recovery = Ladder();
+
+        var steps = Readings(recovery, 5, 120, second => second <= 15 ? _carrying : _silent,
+            rebindOnSilence: false, deadSeconds: LinkRecovery.CarrierDeadSeconds);
+
+        Assert.Equal((80, RecoveryStep.Rebind), steps[0]);
+        Assert.Contains(steps, item => item.Step == RecoveryStep.Restart);
+        Assert.True(recovery.Repairing);
+    }
+
     private static LinkRecovery Ladder()
     {
         return new LinkRecovery(_ladder, jitterPercent: 0);
@@ -354,12 +414,12 @@ public sealed class LinkRecoveryTests
     }
 
     // Reads the link every five seconds and returns the steps asked for with the second each came at.
-    private static List<(int Second, RecoveryStep Step)> Readings(LinkRecovery recovery, int from, int to, Func<int, LinkSample> link)
+    private static List<(int Second, RecoveryStep Step)> Readings(LinkRecovery recovery, int from, int to, Func<int, LinkSample> link, bool rebindOnSilence = true, int deadSeconds = LinkRecovery.DeadSeconds)
     {
         var steps = new List<(int Second, RecoveryStep Step)>();
         for (var second = from; second <= to; second += 5)
         {
-            if (recovery.Sample(link(second), second * 1000L) is { } step)
+            if (recovery.Sample(link(second), second * 1000L, rebindOnSilence, deadSeconds) is { } step)
             {
                 steps.Add((second, step));
             }

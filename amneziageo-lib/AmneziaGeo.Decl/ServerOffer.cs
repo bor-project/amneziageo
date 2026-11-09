@@ -154,6 +154,8 @@ public sealed class ServerOffer
     /// </summary>
     public const string ProxiesFeature = "proxies";
 
+    public const string ProxiesV2Feature = "proxiesV2";
+
     /// <summary>
     /// The feature that measures the speed of the way to the server.
     /// </summary>
@@ -256,7 +258,7 @@ public sealed class ServerOffer
         _features = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var (name, arguments) in features)
         {
-            if (arguments.ValueKind == JsonValueKind.Object || name == ProxiesFeature)
+            if (arguments.ValueKind == JsonValueKind.Object || name is ProxiesFeature or ProxiesV2Feature)
             {
                 _features[name] = arguments.Clone();
             }
@@ -286,13 +288,20 @@ public sealed class ServerOffer
     /// <summary>
     /// Whether the server publishes a proxy catalog.
     /// </summary>
-    public bool HasProxyCatalog => _features.ContainsKey(ProxiesFeature);
+    public bool HasProxyCatalog => _features.ContainsKey(ProxiesV2Feature) || _features.ContainsKey(ProxiesFeature);
 
     /// <summary>
     /// The published proxy catalog.
     /// </summary>
-    public OfferedProxyCatalog? ProxyCatalog =>
-        Arguments(ProxiesFeature) is { } body ? OfferedProxyCatalog.Read(body) : null;
+    public OfferedProxyCatalog? ProxyCatalog
+    {
+        get
+        {
+            var modern = _features.ContainsKey(ProxiesV2Feature);
+            var catalog = Arguments(modern ? ProxiesV2Feature : ProxiesFeature) is { } body ? OfferedProxyCatalog.Read(body) : null;
+            return catalog?.Version == (modern ? 2 : 1) ? catalog : null;
+        }
+    }
 
     /// <summary>
     /// Whether a server of ours answered.

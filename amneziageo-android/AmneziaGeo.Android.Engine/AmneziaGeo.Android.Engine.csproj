@@ -15,15 +15,7 @@
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Routing\AmneziaGeo.Routing.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <AndroidAsset Include="..\libamneziawg-go\third_party\Xray.LICENSE" Link="licenses\Xray.LICENSE" />
-    <AndroidAsset Include="..\libamneziawg-go\XRAY.md" Link="licenses\Xray-source.md" />
-    <AndroidAsset Include="..\..\tools\xray-build\manifest.txt" Link="licenses\xray\manifest.txt" />
-    <AndroidAsset Include="..\..\tools\xray-build\udp-worker-queue.patch" Link="licenses\xray\udp-worker-queue.patch" />
-    <AndroidAsset Include="..\..\tools\xray-build\SOURCE.md" Link="licenses\xray\SOURCE.md" />
-  </ItemGroup>
-
-  <ItemGroup>
+<ItemGroup>
     <AndroidNativeLibrary Include="native\arm64-v8a\libamneziawg-go.so">
       <Abi>arm64-v8a</Abi>
     </AndroidNativeLibrary>

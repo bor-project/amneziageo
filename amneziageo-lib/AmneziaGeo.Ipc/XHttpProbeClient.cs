@@ -30,6 +30,16 @@ internal static class XHttpProbeClient
     internal static async Task<Response> SendAsync(OfferedProxy proxy, string nonce,
         Func<DnsEndPoint, CancellationToken, ValueTask<Stream>> connect, CancellationToken ct, ProxyDestination? target = null)
     {
+        if (ProxyTransportModes.IsHttp(proxy))
+        {
+            return await HttpGetProbeClient.SendAsync(proxy, nonce, connect, ct, target).ConfigureAwait(false);
+        }
+
+        if (!ProxyTransportModes.UsesCertificate(proxy))
+        {
+            return await SendPlainAsync(proxy, nonce, connect, ct, target).ConfigureAwait(false);
+        }
+
         var connection = await connect(new DnsEndPoint(proxy.Host, proxy.Port), ct).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
         using (var tls = new SslStream(connection, leaveInnerStreamOpen: true))
@@ -44,6 +54,44 @@ internal static class XHttpProbeClient
             await tls.FlushAsync(ct).ConfigureAwait(false);
             return await ReadResponseAsync(tls, ct).ConfigureAwait(false);
         }
+    }
+
+    private static async Task<Response> SendPlainAsync(OfferedProxy proxy, string nonce,
+        Func<DnsEndPoint, CancellationToken, ValueTask<Stream>> connect, CancellationToken ct, ProxyDestination? target)
+    {
+        using var handler = new SocketsHttpHandler
+        {
+            UseProxy = false, UseCookies = false, AllowAutoRedirect = false,
+            MaxResponseHeadersLength = 16,
+            ConnectCallback = (_, token) => connect(new DnsEndPoint(proxy.Host, proxy.Port), token),
+        };
+        using var client = new HttpClient(handler);
+        var address = new UriBuilder("http", proxy.Host, proxy.Port, "/" + proxy.Path + "/_amneziageo/probe/" + nonce);
+        if (target is not null)
+        {
+            address.Query = "host=" + Uri.EscapeDataString(target.Host) + "&port=" + target.Port.ToString(CultureInfo.InvariantCulture);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, address.Uri);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", proxy.Auth.Credential);
+        request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        await using var owned = stream.ConfigureAwait(false);
+        var body = new byte[MaxBody + 1];
+        var length = 0;
+        while (length < body.Length)
+        {
+            var read = await stream.ReadAsync(body.AsMemory(length), ct).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return new Response((int)response.StatusCode, body[..length]);
+            }
+
+            length += read;
+        }
+
+        throw new InvalidDataException("The proxy answer is too large.");
     }
 
     internal static SslClientAuthenticationOptions TlsOptions(OfferedProxy proxy)

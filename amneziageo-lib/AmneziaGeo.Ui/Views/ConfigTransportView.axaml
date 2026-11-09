@@ -32,7 +32,10 @@
         </ComboBox.Styles>
         <ComboBox.ItemTemplate>
           <DataTemplate x:DataType="vm:TransportProxyChoice">
-            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="{Binding #ProxySelector.Bounds.Width}" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" MaxWidth="{Binding #ProxySelector.Bounds.Width}">
+              <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding IsHttpGet}" />
+              <TextBlock Grid.Column="1" Text="{Binding Label}" TextWrapping="Wrap" />
+            </Grid>
           </DataTemplate>
         </ComboBox.ItemTemplate>
       </controls:AdaptiveComboBox>
@@ -40,7 +43,10 @@
 
     <Border Classes="sect" IsVisible="{Binding HasSelectedProxy}">
       <StackPanel Spacing="8">
-        <TextBlock Text="{Binding SelectedProxyDetails}" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding SelectedProxyIsHttpGet}" />
+          <TextBlock Grid.Column="1" Text="{Binding SelectedProxyDetails}" TextWrapping="Wrap" />
+        </Grid>
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
           <TextBlock Text="{Binding SelectedProxyAvailability}" Classes="muted" Classes.available="{Binding SelectedProxyAvailable}" />
           <TextBlock Grid.Column="1" Text="{Binding SelectedProxyScope}" Classes="muted" TextWrapping="Wrap" />
@@ -56,7 +62,10 @@
     <Border Classes="sect" IsVisible="{Binding ShowRunningProxy}">
       <StackPanel Spacing="8">
         <TextBlock Text="{l:Tr Proxies_ActuallyUsed}" Classes="label" />
-        <TextBlock Text="{Binding RunningProxyDetails}" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding RunningProxyIsHttpGet}" />
+          <TextBlock Grid.Column="1" Text="{Binding RunningProxyDetails}" TextWrapping="Wrap" />
+        </Grid>
         <Button x:Name="ViewRunningProxy" Classes="linkbtn" Content="{l:Tr Proxies_View}" Command="{Binding ViewRunningProxyCommand}"
                 IsVisible="{Binding CanViewRunningProxy}" HorizontalAlignment="Left" />
       </StackPanel>

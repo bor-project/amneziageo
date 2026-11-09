@@ -1,0 +1,15 @@
+# HTTP GET UDP transport, wire v2
+
+The repository wstunnel get-server subcommand provides the UDP backend. One process listens on loopback HTTP for each catalog proxy. The public front forwards the configured path over HTTP or terminates HTTPS. The transitional xhttp catalog identifier and client profile wrapper remain for existing prototype settings; the protocol does not use Xray, VLESS or XHTTP.
+
+All operations use GET without request bodies, POST, CONNECT or Upgrade. Uplink data is Base64 in X-WG-Data; downlink data is length-prefixed UDP frames in GET responses. A push carries at most 4096 decoded bytes, a datagram at most 2048 bytes. Pull uses a five-second long poll. Sessions, queues and request sizes are bounded, and responses are marked no-store. Sequences and acknowledgements preserve datagram boundaries and suppress duplicate pushes after a lost response.
+
+Wire version 2 requires signed requests and responses. A credential is provisioned through HTTPS hello or local configuration and is not sent as Bearer or included in URLs. HKDF-SHA256 derives request, response and challenge keys. The signed bootstrap binds a random nonce, path, key identity, server boot epoch and monotonic time. Request signatures cover the method, path, query, payload hash and freshness fields; response signatures bind status, body and transport metadata to the request. Replay, stale epochs and incompatible versions are rejected. Query randomness and no-store responses remain necessary through an intermediary.
+
+The server configuration contains httpGet with version 2, port, path, credentials, restricted and destinations. The UDP target comes from the selected VPN. Restricted proxies enforce the allowed list before opening a socket; malformed restrictions deny targets. An unrestricted rule omits inactive destination entries. Credentials, signatures and UDP payloads are excluded from diagnostics.
+
+Queue pressure drops individual datagrams, reports aggregate AG_UDP_PRESSURE counters and keeps the session alive. X-WG-Down-Dropped reports server drops. Temporary network errors have a bounded recovery budget; authentication, signature and version failures do not fall back to another transport. The active CDN carrier uses HTTP/1.1. HTTP works in the tested CDN topology; the earlier HTTPS and intermittent first-push timeouts remain separate diagnostics and are not proof of a general HTTP/2 incompatibility.
+
+Native publishing builds wstunnel from repository source and packages it as wstunnel and wstunnel-get; Docker uses that binary. No Xray archive, executable, library or overlay is needed. Client runtimes use the same custom GET implementation. The client profile wrapper version 1 is separate from authenticated wire version 2.
+
+The canonical HTTP GET catalog type and migration from historical XHTTP records are tracked in AG-730 and AG-731. A genuine Xray configuration must not be silently treated as GET based only on its old type name. UDP and WebSocket retain their existing transports. Apple is outside this iteration.

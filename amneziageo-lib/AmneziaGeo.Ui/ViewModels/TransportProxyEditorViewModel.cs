@@ -25,19 +25,26 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     public bool Editable { get; }
     public bool ModernEditable => Editable && !_legacy;
     public bool ShowCredential => Editable;
-    public bool ShowTls => Editable;
+    public bool ShowTls => Editable && UseCertificate;
+    public bool ShowHttpMethod => TransportIndex == 1;
+    public bool CertificateEditable => ModernEditable && TransportIndex is 0 or 1;
     public bool ShowTargets => !_legacy;
     public string Source => _local ? Loc.Instance.Get("Proxies_Local")
         : _source.Length > 0 ? _source : Loc.Instance.Get("Proxies_Server");
     public string Availability => TransportProxyWords.Availability(_availability, _missing);
-    public string[] Transports { get; } = ["WebSocket", "XHTTP"];
-    public string CredentialLabel => Loc.Instance.Get(_legacy ? "Proxies_BasicCredential" : TransportIndex == 1 ? "Proxies_VlessCredential" : "Proxies_BearerCredential");
+    public string[] Transports { get; private set; } = ["WebSocket", "HTTP", "QUIC"];
+    public string[] Methods { get; } = ["GET", "POST"];
+    public string CredentialLabel => Loc.Instance.Get(_legacy ? "Proxies_BasicCredential" : "Proxies_BearerCredential");
     public string Title => IsNew ? Loc.Instance.Get("Proxies_New") : Name;
 
     [ObservableProperty]
     private string _name = string.Empty;
     [ObservableProperty]
     private int _transportIndex;
+    [ObservableProperty]
+    private int _methodIndex;
+    [ObservableProperty]
+    private bool _useCertificate = true;
     [ObservableProperty]
     private string _host = string.Empty;
     [ObservableProperty]
@@ -65,6 +72,10 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     public TransportProxyEditorViewModel(IAgentConnection connection, CatalogTransportProxy? local = null, TransportProxySummary? summary = null)
     {
         _connection = connection;
+        if (local is not null)
+        {
+            local = local with { Proxy = ProxyTransportModes.Normalize(local.Proxy) };
+        }
         _legacy = local?.Legacy == true || summary?.Legacy == true;
         _original = local?.Proxy;
         Reference = local?.Reference ?? summary?.Reference;
@@ -74,7 +85,13 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
         _availability = summary?.Availability ?? TransportProxyAvailability.Unknown;
         _missing = summary?.Missing == true;
         _name = local?.Proxy.Name ?? summary?.Name ?? string.Empty;
-        _transportIndex = (local?.Proxy.Transport ?? summary?.Transport) == "xhttp" ? 1 : 0;
+        _transportIndex = Index(local?.Proxy.Transport ?? summary?.Transport);
+        if (_transportIndex == 3)
+        {
+            Transports = ["WebSocket", "HTTP", "QUIC", "XHTTP"];
+        }
+        _methodIndex = (local?.Proxy.Http?.Method ?? summary?.Http?.Method) == "POST" ? 1 : 0;
+        _useCertificate = local is not null ? ProxyTransportModes.UsesCertificate(local.Proxy) : summary?.UseCertificate ?? true;
         _host = local?.Proxy.Host ?? summary?.Host ?? string.Empty;
         _port = (local?.Proxy.Port ?? summary?.Port ?? 443).ToString(CultureInfo.InvariantCulture);
         _path = local?.Proxy.Path ?? summary?.Path ?? string.Empty;
@@ -99,7 +116,30 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
         && ProxyTargetRules.Allows(_baseline.Targets, host, port) != ProxyTargetRules.Allows(Draft().Targets, host, port);
 
     partial void OnNameChanged(string value) { Changed(); OnPropertyChanged(nameof(Title)); }
-    partial void OnTransportIndexChanged(int value) { Changed(); OnPropertyChanged(nameof(CredentialLabel)); }
+    partial void OnTransportIndexChanged(int value)
+    {
+        if (value == 3 && Transports.Length == 3)
+        {
+            Transports = ["WebSocket", "HTTP", "QUIC", "XHTTP"];
+            OnPropertyChanged(nameof(Transports));
+        }
+
+        if (value == 2)
+        {
+            UseCertificate = true;
+        }
+
+        Changed();
+        OnPropertyChanged(nameof(CredentialLabel));
+        OnPropertyChanged(nameof(ShowHttpMethod));
+        OnPropertyChanged(nameof(CertificateEditable));
+    }
+    partial void OnMethodIndexChanged(int value) => Changed();
+    partial void OnUseCertificateChanged(bool value)
+    {
+        Changed();
+        OnPropertyChanged(nameof(ShowTls));
+    }
     partial void OnHostChanged(string value) => Changed();
     partial void OnPortChanged(string value) => Changed();
     partial void OnPathChanged(string value) => Changed();
@@ -123,12 +163,25 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
         DirtyChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private OfferedProxy Draft() => new(Reference?.Id ?? "", Name.Trim(), TransportIndex == 1 ? "xhttp" : "websocket",
-        Host.Trim().Trim('[', ']'), int.TryParse(Port, out var port) ? port : 0, Path.Trim().Trim('/'),
-        new OfferedProxyTls(ServerName.Trim().Length == 0 ? Host.Trim().Trim('[', ']') : ServerName.Trim(), Pin.Trim()),
-        new OfferedProxyAuth(_legacy ? _original?.Auth.Scheme ?? "legacy" : TransportIndex == 1 ? "vless" : "bearer", _legacy ? Credential : Credential.Trim()),
-        DateTimeOffset.MinValue, TransportIndex == 1 ? _original?.Xhttp ?? new OfferedXHttp("packet-up", "GET", "header") : null,
-        DraftTargets());
+    private static int Index(string? transport) => transport switch
+    {
+        "http" => 1, "quic" => 2, "xhttp" => 3, _ => 0,
+    };
+
+    private OfferedProxy Draft()
+    {
+        var transport = TransportIndex switch { 1 => "http", 2 => "quic", 3 => "xhttp", _ => "websocket" };
+        var method = MethodIndex == 1 ? "POST" : "GET";
+        return new OfferedProxy(Reference?.Id ?? "", Name.Trim(), transport,
+            Host.Trim().Trim('[', ']'), int.TryParse(Port, out var port) ? port : 0, Path.Trim().Trim('/'),
+            new OfferedProxyTls(ServerName.Trim().Length == 0 ? Host.Trim().Trim('[', ']') : ServerName.Trim(),
+                UseCertificate ? Pin.Trim() : "", UseCertificate),
+            new OfferedProxyAuth(_legacy ? _original?.Auth.Scheme ?? "legacy" : transport switch
+                { "http" => "hmac-sha256-v2", "xhttp" => "vless", _ => "bearer" }, _legacy ? Credential : Credential.Trim()),
+            DateTimeOffset.MinValue, transport == "xhttp" ? _original?.Xhttp : null,
+            DraftTargets(), transport == "http" ? new OfferedProxyHttp(2, method, method == "GET" ? "header" : "body") : null,
+            transport == "quic" ? new OfferedProxyQuic(1, "webtransport", "framed-stream") : null);
+    }
 
     private ProxyTargets? DraftTargets()
     {
@@ -159,11 +212,9 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
             : Uri.CheckHostName(draft.Host) == UriHostNameType.Unknown ? "Proxies_InvalidHost"
             : draft.Port is < 1 or > 65535 ? "Transport_InvalidPort"
             : !_legacy && (draft.Path.Length is < 1 or > 64 || !draft.Path.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '_')) ? "Proxies_InvalidPath"
-            : ModernEditable && Uri.CheckHostName(draft.Tls.ServerName) == UriHostNameType.Unknown ? "Proxies_InvalidSni"
-            : ModernEditable && draft.Tls.Pin.Length != 0 && (draft.Tls.Pin.Length != 64 || !draft.Tls.Pin.All(char.IsAsciiHexDigit)) ? "Proxies_InvalidPin"
-            : !_legacy && (draft.Auth.Credential.Length is < 1 or > 512 || (TransportIndex == 1
-                ? !Guid.TryParse(draft.Auth.Credential, out var user) || user == Guid.Empty
-                : !draft.Auth.Credential.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '.' or '_' or '~' or '+' or '/' or '='))) ? "Proxies_InvalidCredential"
+            : ModernEditable && UseCertificate && Uri.CheckHostName(draft.Tls.ServerName) == UriHostNameType.Unknown ? "Proxies_InvalidSni"
+            : ModernEditable && UseCertificate && draft.Tls.Pin.Length != 0 && (draft.Tls.Pin.Length != 64 || !draft.Tls.Pin.All(char.IsAsciiHexDigit)) ? "Proxies_InvalidPin"
+            : !_legacy && (!ProxyTransportModes.Valid(draft)) ? "Proxies_InvalidCredential"
             : !ProxyTargetRules.Valid(draft.Targets) ? "Proxies_InvalidTargets"
             : string.Empty;
         StatusMessage = key.Length > 0 ? Loc.Instance.Get(key) : string.Empty;
@@ -186,7 +237,9 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
 
         _applying = true;
         Name = baseline.Name;
-        TransportIndex = baseline.Transport == "xhttp" ? 1 : 0;
+        TransportIndex = Index(baseline.Transport);
+        MethodIndex = baseline.Http?.Method == "POST" ? 1 : 0;
+        UseCertificate = ProxyTransportModes.UsesCertificate(baseline);
         Host = baseline.Host;
         Port = baseline.Port.ToString(CultureInfo.InvariantCulture);
         Path = baseline.Path;
@@ -251,7 +304,9 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
             {
                 _applying = true;
                 Name = summary.Name;
-                TransportIndex = summary.Transport == "xhttp" ? 1 : 0;
+                TransportIndex = Index(summary.Transport);
+                MethodIndex = summary.Http?.Method == "POST" ? 1 : 0;
+                UseCertificate = summary.UseCertificate;
                 Host = summary.Host;
                 Port = summary.Port.ToString(CultureInfo.InvariantCulture);
                 Path = summary.Path;

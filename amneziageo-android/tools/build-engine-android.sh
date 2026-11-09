@@ -144,11 +144,7 @@ export GOTOOLCHAIN="local"
 export GOAMD64="v1"
 export GOARM64="v8.0"
 export GOFIPS140="off"
-overlay_dir="$MODULE/.local/xray-overlay"
-"$go_bin" run ./internal/xrayoverlay -output "$overlay_dir"
-overlay="$overlay_dir/overlay.json"
-modfile="$overlay_dir/native.go.mod"
-native_fingerprint="$("$go_bin" run ./internal/xrayoverlay -fingerprint)"
+native_fingerprint="$("$go_bin" run ./internal/nativefingerprint)"
 export GOOS="android"
 # without this a go.mod toolchain bump would silently download another Go
 export GOTOOLCHAIN="local"
@@ -164,7 +160,7 @@ for abi in $ABIS; do
   mkdir -p "$out_dir"
 
   # Go on android keeps the memory it frees until the system takes it back; this makes it leave at once.
-  godebug="$(GOARCH="$(goarch_of "$abi")" "$go_bin" list -modfile "$modfile" -overlay "$overlay" -f '{{.DefaultGODEBUG}}' .)"
+  godebug="$(GOARCH="$(goarch_of "$abi")" "$go_bin" list -f '{{.DefaultGODEBUG}}' .)"
   godebug="${godebug:+$godebug,}madvdontneed=1"
 
   echo "== building $abi/libamneziawg-go.so =="
@@ -172,7 +168,7 @@ for abi in $ABIS; do
   GOARM="$([ "$abi" = "armeabi-v7a" ] && echo 7 || echo '')" \
   CC="$NDK_BIN/$triple$API-clang" \
   CXX="$NDK_BIN/$triple$API-clang++" \
-    "$go_bin" build -modfile "$modfile" -overlay "$overlay" -buildmode c-shared -buildvcs=false -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath \
+    "$go_bin" build -buildmode c-shared -buildvcs=false -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath \
       -o "$out_dir/libamneziawg-go.so"
   printf '%s\n' "$native_fingerprint" > "$out_dir/native-source.sha256"
 
@@ -204,7 +200,7 @@ for abi in $ABIS; do
   missing=""
   for symbol in wgTurnOn wgTurnOff wgGetConfig wgRenew wgSetVerdicts wgPrepareSwap wgSwapTun wgSetVerdictTtl \
     wgTunnelStats wgSetTcpDirect wgSetRelay wgLiveAddresses wgPreloadLive wgRebind wgProbe wgMemory \
-    wgReturnMemory agXHttpStart agXHttpStop; do
+    wgReturnMemory agXHttpStart agXHttpStop agXHttpIsRunning; do
     grep -qa "$symbol" "$so" || missing="$missing $symbol"
   done
   if [ -n "$missing" ]; then

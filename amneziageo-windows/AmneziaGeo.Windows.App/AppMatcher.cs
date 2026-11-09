@@ -193,7 +193,7 @@ internal sealed class AppMatcher
     /// <summary>
     /// Whether a PID matches the app rules.
     /// </summary>
-    internal bool MatchesPid(uint pid) => ResolveServicePids().Contains(pid) || MatchesByImageOrAncestor(pid, SnapshotProcessTree(), new Dictionary<uint, (string? Path, long Created)>());
+    internal bool MatchesPid(uint pid) => HasMatchers && (ResolveServicePids().Contains(pid) || MatchesByImageOrAncestor(pid, SnapshotProcessTree(), new Dictionary<uint, (string? Path, long Created)>()));
 
     /// <summary>
     /// Filters PIDs to those matching the app rules, snapshotting the process tree once.
@@ -201,7 +201,7 @@ internal sealed class AppMatcher
     internal HashSet<uint> MatchPids(IReadOnlyCollection<uint> pids)
     {
         var matched = new HashSet<uint>();
-        if (pids.Count == 0)
+        if (pids.Count == 0 || !HasMatchers)
         {
             return matched;
         }
@@ -394,6 +394,74 @@ internal sealed class AppMatcher
     }
 
     private static readonly Lazy<List<(string Device, string Drive)>> _devices = new(BuildDeviceMap, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>
+    /// Converts a file-system path to an application device path.
+    /// </summary>
+    internal static string? ToDevicePath(string path)
+    {
+        var expanded = Environment.ExpandEnvironmentVariables(path);
+        if (!Path.IsPathFullyQualified(expanded))
+        {
+            return null;
+        }
+
+        var full = Path.GetFullPath(expanded);
+        if (full.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return @"\device\mup\" + full[2..];
+        }
+
+        foreach (var (device, drive) in _devices.Value)
+        {
+            if (full.StartsWith(drive + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                return device + full[drive.Length..];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Lists declared file and directory filter targets.
+    /// </summary>
+    public IReadOnlyList<ApplicationFilterTarget> FilterTargets()
+    {
+        var set = _set;
+        if (set.Services.Count > 0)
+        {
+            throw new NotSupportedException("Service rules cannot be used as application blocks");
+        }
+
+        var packages = new List<ApplicationFilterTarget>();
+        if (set.Packages.Count > 0)
+        {
+            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
+            try
+            {
+                foreach (var folder in Directory.EnumerateDirectories(root))
+                {
+                    var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromFullName(Path.GetFileName(folder));
+                    if (family is not null && set.Packages.Contains(family))
+                    {
+                        packages.Add(new ApplicationFilterTarget(folder, true));
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "package application block targets could not be listed");
+            }
+        }
+
+        return [.. set.Paths.SelectMany(AmneziaGeo.Ipc.AppPathToken.Expand).Select(path => new ApplicationFilterTarget(path, false))
+            .Concat(set.Dirs.SelectMany(AmneziaGeo.Ipc.AppPathToken.Expand).Select(path => new ApplicationFilterTarget(path, true)))
+            .Concat(set.Names.Select(name => new ApplicationFilterTarget(name, false, true)))
+            .Concat(packages)
+            .DistinctBy(target => (target.Path.ToLowerInvariant(), target.Directory, target.Name))
+            .OrderBy(target => target.Path, StringComparer.OrdinalIgnoreCase).ThenBy(target => target.Directory).ThenBy(target => target.Name)];
+    }
 
     // Volume device paths per drive letter, resolved once.
     private static List<(string Device, string Drive)> BuildDeviceMap()

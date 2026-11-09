@@ -459,13 +459,16 @@ public static class VpnBridge
     {
         try
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             using var stream = File.Create(PlanPath());
             JsonSerializer.Serialize(stream, plan);
+            global::Android.Util.Log.Info("VpnBridge", $"routing plan written in {clock.ElapsedMilliseconds} ms, {stream.Length} bytes");
             return true;
         }
         catch (Exception ex)
         {
-            global::Android.Util.Log.Warn("VpnBridge", "writing the routing plan failed: " + ex);
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("VpnBridge", error, "writing the routing plan failed");
             return false;
         }
     }
@@ -527,12 +530,16 @@ public static class VpnBridge
                 return GeoRoutingPlan.Full;
             }
 
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             using var stream = File.OpenRead(path);
-            return JsonSerializer.Deserialize<GeoRoutingPlan>(stream) ?? GeoRoutingPlan.Full;
+            var plan = JsonSerializer.Deserialize<GeoRoutingPlan>(stream) ?? GeoRoutingPlan.Full;
+            global::Android.Util.Log.Info("VpnBridge", $"routing plan read in {clock.ElapsedMilliseconds} ms, {stream.Length} bytes");
+            return plan;
         }
         catch (Exception ex)
         {
-            global::Android.Util.Log.Warn("VpnBridge", "reading the routing plan failed: " + ex);
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("VpnBridge", error, "reading the routing plan failed");
             return GeoRoutingPlan.Full;
         }
     }

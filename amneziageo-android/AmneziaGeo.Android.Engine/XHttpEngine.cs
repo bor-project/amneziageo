@@ -25,6 +25,16 @@ internal sealed partial class XHttpEngine : IDisposable
 
     public int LocalPort { get; }
 
+    public bool IsRunning
+    {
+        get
+        {
+            var handle = Volatile.Read(ref _handle);
+            return handle > 0 && IsRunningNative(handle) != 0;
+        }
+    }
+
+
     public static unsafe XHttpEngine Start(string profile, int localPort, Func<int, bool> protect)
     {
         lock (Gate)
@@ -121,6 +131,9 @@ internal sealed partial class XHttpEngine : IDisposable
 
     [LibraryImport("amneziawg-go", EntryPoint = "agXHttpStart", StringMarshalling = StringMarshalling.Utf8)]
     private static unsafe partial int StartNative(string profile, delegate* unmanaged<int, int> protect);
+
+    [LibraryImport("amneziawg-go", EntryPoint = "agXHttpIsRunning")]
+    private static partial int IsRunningNative(int handle);
 
     [LibraryImport("amneziawg-go", EntryPoint = "agXHttpStop")]
     private static partial int StopNative(int handle, int waitMs);

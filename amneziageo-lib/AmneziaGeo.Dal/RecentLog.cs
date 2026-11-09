@@ -111,10 +111,10 @@ public sealed class RecentLog
     /// </summary>
     public static IReadOnlyList<LogRow> Merge(IReadOnlyList<LogRow> own, IReadOnlyList<LogRow> other)
     {
-        var told = new Dictionary<(string Source, string Message), List<long>>();
+        var told = new Dictionary<(string Level, string Source, string Message), List<long>>();
         foreach (var row in other)
         {
-            var key = (row.Source ?? string.Empty, row.Message);
+            var key = (row.Level ?? string.Empty, row.Source ?? string.Empty, row.Message);
             if (!told.TryGetValue(key, out var times))
             {
                 times = [];
@@ -127,7 +127,7 @@ public sealed class RecentLog
         var rows = new List<LogRow>(own.Count + other.Count);
         foreach (var row in own)
         {
-            if (told.TryGetValue((row.Source ?? string.Empty, row.Message), out var times))
+            if (told.TryGetValue((row.Level ?? string.Empty, row.Source ?? string.Empty, row.Message), out var times))
             {
                 var twin = times.FindIndex(time => Math.Abs(time - row.UnixMs) <= TwinMs);
                 if (twin >= 0)

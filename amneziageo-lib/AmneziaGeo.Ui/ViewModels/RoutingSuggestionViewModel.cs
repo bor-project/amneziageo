@@ -16,11 +16,12 @@ internal sealed class RoutingSuggestionViewModel
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingSuggestionViewModel(string token, string description)
+    public RoutingSuggestionViewModel(string token, string description, bool isWarning = false)
     {
         Token = token;
         Description = description;
         Badge = RuleToken.Badge(token);
+        IsWarning = isWarning;
     }
 
     /// <summary>
@@ -37,4 +38,9 @@ internal sealed class RoutingSuggestionViewModel
     /// The token type, shown at the right of the row.
     /// </summary>
     public string Badge { get; }
+
+    /// <summary>
+    /// Marks a missing path.
+    /// </summary>
+    public bool IsWarning { get; }
 }

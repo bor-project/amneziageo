@@ -3061,7 +3061,7 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Proxies_InvalidPath" xml:space="preserve"><value>Enter a path of 1–64 letters, digits, hyphens or underscores.</value></data>
   <data name="Proxies_InvalidSni" xml:space="preserve"><value>Enter a valid SNI host name.</value></data>
   <data name="Proxies_InvalidPin" xml:space="preserve"><value>Enter the 64 hexadecimal digits of the certificate SHA-256.</value></data>
-  <data name="Proxies_InvalidCredential" xml:space="preserve"><value>Check the access token or VLESS UUID.</value></data>
+  <data name="Proxies_InvalidCredential" xml:space="preserve"><value>Check the access credential</value></data>
   <data name="Proxies_NotLocal" xml:space="preserve"><value>Only local proxies can be edited.</value></data>
   <data name="Proxies_LegacyTarget" xml:space="preserve"><value>This proxy belongs to another VPN destination.</value></data>
   <data name="Proxies_Busy" xml:space="preserve"><value>The proxy catalog is busy. Try saving again.</value></data>
@@ -3076,8 +3076,8 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Proxies_BadAnswer" xml:space="preserve"><value>The proxy returned an unexpected response.</value></data>
   <data name="Proxies_RequestFailed" xml:space="preserve"><value>The proxy request failed. Try again.</value></data>
   <data name="Proxies_InvalidCatalog" xml:space="preserve"><value>The proxy catalog could not be read.</value></data>
-  <data name="Proxies_XhttpUnavailable" xml:space="preserve"><value>The XHTTP component is unavailable.</value></data>
-  <data name="Proxies_XhttpFailed" xml:space="preserve"><value>Could not connect through XHTTP. Try connecting again.</value></data>
+  <data name="Proxies_XhttpUnavailable" xml:space="preserve"><value>HTTP transport unavailable</value></data>
+  <data name="Proxies_XhttpFailed" xml:space="preserve"><value>The HTTP proxy could not start</value></data>
   <data name="Proxies_Server" xml:space="preserve"><value>Server</value></data>
   <data name="Proxies_RestrictTargets" xml:space="preserve">
     <value>Restrict destinations</value>
@@ -3106,4 +3106,7 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Proxies_Loading" xml:space="preserve"><value>Loading proxies</value></data>
   <data name="Proxies_ChosenBy" xml:space="preserve"><value>Selected: {0}</value></data>
   <data name="Proxies_UsedBy" xml:space="preserve"><value>In use: {0}</value></data>
+  <data name="Proxies_UseCertificate" xml:space="preserve"><value>Use certificate</value></data>
+  <data name="Proxies_HttpMethod" xml:space="preserve"><value>HTTP method</value></data>
+  <data name="Proxies_Rejected" xml:space="preserve"><value>Proxy connection rejected</value></data>
 </root>

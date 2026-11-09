@@ -44,7 +44,7 @@ public sealed class OfferedProxyTests
     {
         Assert.Null(Offer(new OfferedProxyCatalog(1, Source, [Proxy("one"), Proxy("one")])).ProxyCatalog);
         Assert.Null(Offer(new OfferedProxyCatalog(1, Source, [Proxy("one") with { Transport = "other" }])).ProxyCatalog);
-        Assert.Null(Offer(new OfferedProxyCatalog(2, Source, [])).ProxyCatalog);
+        Assert.Null(Offer(new OfferedProxyCatalog(3, Source, [])).ProxyCatalog);
     }
 
     [Theory]

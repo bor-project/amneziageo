@@ -601,7 +601,7 @@ internal sealed class DnsProxy
         {
             if (GeoIpRanges.TryToNumeric(address, out var numeric))
             {
-                _routing.Note(numeric, true);
+                _routing.NoteDirectApplication(numeric);
             }
         }
     }
@@ -1270,7 +1270,7 @@ internal sealed class DnsProxy
                     var addresses = DnsMessage.Addresses(response);
                     // A program kept off the tunnel asked: its addresses take their route past the tunnel before it
                     // opens them.
-                    var passed = byName == RouteVerdict.None && name is not null && addresses.Count > 0 && _passDns is not null && await AskedByAsync(_passDns, name, started).ConfigureAwait(false);
+                    var passed = byName != RouteVerdict.Block && name is not null && addresses.Count > 0 && _passDns is not null && await AskedByAsync(_passDns, name, started).ConfigureAwait(false);
                     foreach (var address in addresses)
                     {
                         if (byName is RouteVerdict.Direct or RouteVerdict.Block)
@@ -1279,7 +1279,7 @@ internal sealed class DnsProxy
                         }
                         else if (passed && GeoIpRanges.TryToNumeric(address, out var numeric))
                         {
-                            _routing.Note(numeric, true);
+                            _routing.NoteDirectApplication(numeric);
                         }
                         else
                         {

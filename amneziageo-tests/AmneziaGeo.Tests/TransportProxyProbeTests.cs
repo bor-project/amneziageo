@@ -46,17 +46,21 @@ public sealed class TransportProxyProbeTests
     }
 
     [Theory]
-    [InlineData("08826801", TransportProxyAvailability.Unavailable, "proxy-auth")]
-    [InlineData("8d", TransportProxyAvailability.Unknown, "proxy-probe-unsupported")]
-    [InlineData("08836c0cff", TransportProxyAvailability.Unavailable, "proxy-unavailable")]
-    public async Task HttpFailures_CannotBecomeAnAvailableProxy(string header, TransportProxyAvailability availability, string fault)
+    [InlineData("08826801", 401)]
+    [InlineData("8d", 404)]
+    [InlineData("08836c0cff", 503)]
+    public async Task AWebSocketHttp2ProbeReadsFailureStatuses(string header, int status)
     {
         await using var server = new Front(header);
+        var response = await XHttpProbeClient.SendAsync(server.Record(pin: true).Proxy, Guid.NewGuid().ToString("N"),
+            async (endpoint, ct) =>
+            {
+                var client = new TcpClient();
+                await client.ConnectAsync(IPAddress.Loopback, endpoint.Port, ct).ConfigureAwait(false);
+                return client.GetStream();
+            }, CancellationToken.None).ConfigureAwait(false);
 
-        var result = await TransportProxyProbes.CheckAsync(server.Record(pin: true), CancellationToken.None, Resolve).ConfigureAwait(false);
-
-        Assert.Equal(availability, result.Availability);
-        Assert.Equal(fault, result.Fault);
+        Assert.Equal(status, response.StatusCode);
         Assert.True(await server.Completion.ConfigureAwait(false));
     }
 
@@ -67,7 +71,8 @@ public sealed class TransportProxyProbeTests
     {
         await using var server = new Front("88", oversized: oversized, wrongNonce: wrongNonce);
 
-        var result = await TransportProxyProbes.CheckAsync(server.Record(pin: true), CancellationToken.None, Resolve).ConfigureAwait(false);
+        var result = await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(server.Record(pin: true), "vpn", "vpn.example", 443),
+            CancellationToken.None, Resolve).ConfigureAwait(false);
 
         Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
         Assert.Equal("proxy-bad-answer", result.Fault);
@@ -96,9 +101,9 @@ public sealed class TransportProxyProbeTests
     [Fact]
     public void NormalTlsValidation_UsesTheExplicitNameAndRequiresHttp2()
     {
-        var proxy = new OfferedProxy("probe", "Probe", "xhttp", "cdn.example.net", 443, "relay",
-            new OfferedProxyTls("tls.example.net", ""), new OfferedProxyAuth("vless", Front.User), DateTimeOffset.MinValue,
-            new OfferedXHttp("packet-up", "GET", "header"));
+        var proxy = new OfferedProxy("probe", "Probe", "websocket", "cdn.example.net", 443, "relay",
+            new OfferedProxyTls("tls.example.net", ""), new OfferedProxyAuth("bearer", Front.User), DateTimeOffset.MinValue,
+            null);
 
         var options = XHttpProbeClient.TlsOptions(proxy);
 
@@ -179,7 +184,6 @@ public sealed class TransportProxyProbeTests
     }
 
     [Theory]
-    [InlineData("xhttp")]
     [InlineData("websocket")]
     public async Task ATargetProbeAuthenticatesABodylessGetAndChecksTheExactDestination(string transport)
     {
@@ -259,7 +263,7 @@ public sealed class TransportProxyProbeTests
     {
         await using var server = new Front("88", response: nonce => new
         {
-            nonce, transport = "xhttp", running = true, target = new { host, port }, allowed = true,
+            nonce, transport = "websocket", running = true, target = new { host, port }, allowed = true,
         });
         var result = await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(server.Record(pin: true), "vpn", "vpn.example", 443),
             CancellationToken.None, Resolve).ConfigureAwait(false);
@@ -315,9 +319,9 @@ public sealed class TransportProxyProbeTests
 
         public CatalogTransportProxy Record(bool pin)
         {
-            var proxy = new OfferedProxy("probe", "Probe", "xhttp", "cdn.example.net", Port, "relay",
+            var proxy = new OfferedProxy("probe", "Probe", "websocket", "cdn.example.net", Port, "relay",
                 new OfferedProxyTls("tls.example.net", pin ? Convert.ToHexString(SHA256.HashData(_certificate.RawData)) : ""),
-                new OfferedProxyAuth("vless", User), DateTimeOffset.MinValue, new OfferedXHttp("packet-up", "GET", "header"));
+                new OfferedProxyAuth("bearer", User), DateTimeOffset.MinValue, null);
             return new CatalogTransportProxy(new ProxyReference(Guid.NewGuid().ToString("D"), "probe"), proxy);
         }
 
@@ -377,7 +381,7 @@ public sealed class TransportProxyProbeTests
             var nonce = Headers[":path"].Split('?')[0].Split('/')[^1];
             var body = oversized ? new byte[4097] : response is not null ? JsonSerializer.SerializeToUtf8Bytes(response(nonce)) : JsonSerializer.SerializeToUtf8Bytes(new
             {
-                nonce = wrongNonce ? "other" : nonce, transport = "xhttp", running = true,
+                nonce = wrongNonce ? "other" : nonce, transport = "websocket", running = true,
             });
             await WriteAsync(tls, 0, 1, 1, body, ct).ConfigureAwait(false);
             try

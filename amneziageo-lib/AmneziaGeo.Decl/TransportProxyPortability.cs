@@ -180,7 +180,8 @@ public static class TransportProxyPortability
     }
 
     private static RetiredTransportProxy Metadata(CatalogTransportProxy record) => new(record.Reference, record.Proxy.Name,
-        record.Proxy.Transport, record.Proxy.Host, record.Proxy.Port, record.Legacy ? "" : record.Proxy.Path, record.Local);
+        record.Proxy.Transport, record.Proxy.Host, record.Proxy.Port, record.Legacy ? "" : record.Proxy.Path, record.Local,
+        Http: record.Proxy.Http, Quic: record.Proxy.Quic, UseCertificate: ProxyTransportModes.UsesCertificate(record.Proxy));
 
     private static bool Equivalent(CatalogTransportProxy record, LocalTransportProxyBlock block, string config) =>
         record.Local && record.Legacy == block.Legacy && record.LegacyIssuer == block.LegacyIssuer
@@ -206,7 +207,7 @@ public static class TransportProxyPortability
         if (retired is not null)
         {
             if (Reference(retired.Reference) != reference || retired.Name is null || retired.Name.Length > 64
-                || retired.Transport is not ("" or "websocket" or "xhttp") || retired.Host is null || retired.Host.Length > 253
+                || retired.Transport is not ("" or "websocket" or "xhttp" or "http" or "quic") || retired.Host is null || retired.Host.Length > 253
                 || retired.Host.Length > 0 && Uri.CheckHostName(retired.Host) == UriHostNameType.Unknown
                 || retired.Port is < 0 or > 65535 || retired.Path is null || retired.Path.Length > 64
                 || !retired.Path.All(letter => char.IsAsciiLetterOrDigit(letter) || letter is '-' or '_')
@@ -247,8 +248,7 @@ public static class TransportProxyPortability
             else
             {
                 if (local.LegacyIssuer.Length > 0 || local.LegacyPort != 0 || local.LegacyOffered
-                    || OfferedProxyCatalog.Read(JsonSerializer.SerializeToElement(
-                        new OfferedProxyCatalog(1, reference.Source, [local.Proxy]), Json)) is null)
+                    || !OfferedProxyCatalog.Valid(local.Proxy))
                 {
                     throw Invalid();
                 }
@@ -259,7 +259,8 @@ public static class TransportProxyPortability
             throw Invalid();
         }
 
-        return block with { Reference = reference, Retired = retired, Trust = trust };
+        return block with { Reference = reference, Retired = retired, Trust = trust,
+            Local = block.Local is { } held ? held with { Proxy = ProxyTransportModes.Normalize(held.Proxy) } : null };
     }
 
     private static ProxyReference Reference(ProxyReference? reference)

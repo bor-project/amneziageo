@@ -1,0 +1,23 @@
+{
+  "testFixtureOnly": true,
+  "credential": "40168f45-37b1-4bfa-903c-9904f48489ae",
+  "path": "/native/",
+  "query": {
+    "op": "push",
+    "s": "0123456789abcdef0123456789abcdef",
+    "r": "00112233445566778899aabbccddeeff",
+    "seq": "7"
+  },
+  "dataHex": "000301020300020405",
+  "nonceHex": "000102030405060708090a0b0c0d0e0f",
+  "epochHex": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+  "time": 123456,
+  "keyId": "acb90349082e8e5aca396946e91ff1d03f2fe46606a111384a9f37d9638be42a",
+  "requestKeyHex": "6d0321b1c5897fa5d86ea431515ca6f2eecb0266d7a8a51ff1961d37bc513dc7",
+  "responseKeyHex": "d2772eb8a70c8bd2de9b8898cae4785562db23a1764b157ad184742bc4efbb33",
+  "challengeKeyHex": "92993c93641aad997988874e8bf5920aa4392bdfa56a939035e4a7de52699d2b",
+  "requestHashHex": "7306b51d140c96eaedd028435719ffed6c68aeba1f7726b45ca2872be173007d",
+  "requestMac": "U228VCG4+lJo6vm5IfcPKerYXqa88WVRWoYXCREWT6A=",
+  "responseMac": "ooJLpzEZTT7s55E9gGEqkcWCNOgfR4BuIYS/35iOc7o=",
+  "challengeMac": "ZSuP985Y9omG+i96EECv90e+XpzYQxCHh3tpmxG/n4c="
+}

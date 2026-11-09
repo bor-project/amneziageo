@@ -37,6 +37,9 @@ internal sealed class NetworkFlowTracker : IDisposable
     private static readonly uint OwnProcessId = (uint)Environment.ProcessId;
 
     private readonly AppMatcher? _matcher;
+    private readonly AppMatcher? _directMatcher;
+    private readonly Action<uint>? _noteDirect;
+    private readonly ConcurrentDictionary<uint, (long Expiry, bool Match)> _directMatches = new();
     private readonly DomainTracker? _tracker;
     private readonly bool _allUdp;
     private readonly bool _tunnelV6;
@@ -71,7 +74,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     // emits thousands of datagrams a second - caching the decision for ~1s removes the data plane's worst CPU
     // sink. Single-threaded handler, no lock.
     private const long PidCacheTtlMs = 1000;
-    private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
+    private readonly ConcurrentDictionary<uint, (long Expiry, bool Match)> _pidMatch = new();
 
     // Proactive backstop for a SYN the packet filter dropped: polls the TCP table for half-open attempts and
     // decides their destinations, so the permit is there before the stack repeats the SYN a second later. Own thread.
@@ -87,12 +90,14 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null, IEnumerable<IPAddress>? ownResolvers = null, string? sessionName = null, Func<IPAddress, string?>? neighbour = null)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null, ProcessImages? images = null, Func<IPAddress, bool>? heldElsewhere = null, IEnumerable<IPAddress>? ownResolvers = null, string? sessionName = null, Func<IPAddress, string?>? neighbour = null, AppMatcher? directMatcher = null, Action<uint>? noteDirect = null)
     {
         _ownResolvers = [.. ownResolvers ?? []];
         _sessionName = sessionName ?? WatchSession.Flows;
         _neighbour = neighbour;
         _matcher = matcher;
+        _directMatcher = directMatcher;
+        _noteDirect = noteDirect;
         _tracker = tracker;
         _allUdp = allUdp;
         _tunnelV6 = tunnelV6;
@@ -405,6 +410,11 @@ internal sealed class NetworkFlowTracker : IDisposable
             var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
             NoteDestination(pid, daddr);
 
+            if (MatchesDirect(pid))
+            {
+                return;
+            }
+
             if (_allUdp)
             {
                 // Never tunnel own process: WG underlay and DNS-proxy upstream would loop.
@@ -476,6 +486,11 @@ internal sealed class NetworkFlowTracker : IDisposable
             }
 
             var pid = BitConverter.ToUInt32(data, PidOffset);
+            if (MatchesDirect(pid))
+            {
+                return;
+            }
+
             if (_allUdp)
             {
                 // Never tunnel own process: WG underlay and DNS-proxy upstream would loop.
@@ -645,7 +660,14 @@ internal sealed class NetworkFlowTracker : IDisposable
             return;
         }
 
-        _noteV4(BinaryPrimitives.ReverseEndianness(networkOrderAddress), MatchesPidCached(pid));
+        var address = BinaryPrimitives.ReverseEndianness(networkOrderAddress);
+        if (MatchesDirect(pid) && _noteDirect is not null)
+        {
+            _noteDirect(address);
+            return;
+        }
+
+        _noteV4(address, MatchesPidCached(pid));
     }
 
     // Routes a UDP destination: all-UDP routes it plainly, an app match also promotes its domain.
@@ -742,6 +764,10 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
 
         var matched = _matcher.MatchPids(pids);
+        if (_directMatcher is not null)
+        {
+            matched.ExceptWith(_directMatcher.MatchPids(pids));
+        }
         if (matched.Count == 0)
         {
             return;
@@ -854,13 +880,36 @@ internal sealed class NetworkFlowTracker : IDisposable
             return entry.Match;
         }
 
-        var match = _matcher is not null && _matcher.MatchesPid(pid);
+        var match = !MatchesDirect(pid) && _matcher is not null && _matcher.MatchesPid(pid);
         if (_pidMatch.Count >= 4096)
         {
             _pidMatch.Clear();
         }
 
         _pidMatch[pid] = (now + PidCacheTtlMs, match);
+        return match;
+    }
+
+    private bool MatchesDirect(uint pid)
+    {
+        if (_directMatcher is not { HasMatchers: true })
+        {
+            return false;
+        }
+
+        var now = Environment.TickCount64;
+        if (_directMatches.TryGetValue(pid, out var cached) && cached.Expiry > now)
+        {
+            return cached.Match;
+        }
+
+        var match = _directMatcher.MatchesPid(pid);
+        if (_directMatches.Count >= 4096)
+        {
+            _directMatches.Clear();
+        }
+
+        _directMatches[pid] = (now + PidCacheTtlMs, match);
         return match;
     }
 

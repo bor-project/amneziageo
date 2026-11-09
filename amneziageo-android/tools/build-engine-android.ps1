@@ -93,12 +93,7 @@ try {
     $env:GOFIPS140 = 'off'
     Push-Location $module
     try {
-        $overlayDirectory = Join-Path $module '.local\xray-overlay'
-        & $goExe run ./internal/xrayoverlay -output $overlayDirectory
-        if ($LASTEXITCODE -ne 0) { throw 'Xray overlay preparation failed' }
-        $overlay = Join-Path $overlayDirectory 'overlay.json'
-        $modfile = Join-Path $overlayDirectory 'native.go.mod'
-        $fingerprint = & $goExe run ./internal/xrayoverlay -fingerprint
+        $fingerprint = & $goExe run ./internal/nativefingerprint
         if ($LASTEXITCODE -ne 0) { throw 'Native source fingerprint failed' }
     } finally { Pop-Location }
     $env:GOOS        = 'android'
@@ -126,11 +121,11 @@ try {
             $out = Join-Path $outDir 'libamneziawg-go.so'
 
             # Go on android keeps the memory it frees until the system takes it back; this makes it leave at once.
-            $godebug = (& $goExe list -modfile $modfile -overlay $overlay -f '{{.DefaultGODEBUG}}' .)
+            $godebug = (& $goExe list -f '{{.DefaultGODEBUG}}' .)
             $godebug = $(if ($godebug) { "$godebug,madvdontneed=1" } else { 'madvdontneed=1' })
 
             Write-Host "== building $a\libamneziawg-go.so =="
-            & $goExe build -modfile $modfile -overlay $overlay -buildmode c-shared -buildvcs=false -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath -o $out
+            & $goExe build -buildmode c-shared -buildvcs=false -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath -o $out
             if ($LASTEXITCODE -ne 0) { throw "go build failed for $a ($LASTEXITCODE)" }
             Set-Content -Encoding ascii -LiteralPath (Join-Path $outDir 'native-source.sha256') -Value $fingerprint
 
@@ -168,7 +163,7 @@ Write-Host ''
 Write-Host '== result =='
 $exports = @('wgTurnOn', 'wgTurnOff', 'wgGetConfig', 'wgRenew', 'wgSetVerdicts', 'wgPrepareSwap',
     'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetTcpDirect', 'wgSetRelay', 'wgLiveAddresses',
-    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory', 'agXHttpStart', 'agXHttpStop')
+    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory', 'agXHttpStart', 'agXHttpStop', 'agXHttpIsRunning')
 foreach ($a in $Abi) {
     $so = Join-Path $outRoot "$a\libamneziawg-go.so"
     $b = [IO.File]::ReadAllBytes($so)

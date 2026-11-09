@@ -730,7 +730,9 @@ internal sealed class LinuxAgent : IDisposable
         _lastTxBytes = peer.TxBytes;
 
         // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
-        var asked = peer.HandshakeUnix <= 0 ? null : _recovery.Sample(moved, Environment.TickCount64);
+        var carried = _tunnel.Carried;
+        var asked = peer.HandshakeUnix <= 0 ? null : _recovery.Sample(moved, Environment.TickCount64, rebindOnSilence: !carried,
+            deadSeconds: carried ? LinkRecovery.CarrierDeadSeconds : LinkRecovery.DeadSeconds);
         if (!_recovery.Repairing && _hold.Carries())
         {
             _boundStatus = ConnectionStatus.Connected;

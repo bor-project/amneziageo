@@ -126,7 +126,7 @@ stage_core() {
   local arch="$1" rid="$2" tree="$3"
   local libdir="$tree/usr/lib/amneziageo"
 
-  bash "$HERE/fetch-xray.sh" "$arch"
+  bash "$HERE/build-http-get.sh" "$arch"
 
   mkdir -p "$libdir" "$tree/usr/bin" "$tree/usr/lib/systemd/system" "$tree/etc/default" \
            "$tree/var/lib/amneziageo" "$tree/usr/share/doc/amneziageo"
@@ -188,7 +188,7 @@ normalize() {
   find "$tree" -type f -exec chmod 0644 {} +
 
   for executable in usr/lib/amneziageo/AmneziaGeo.Linux.App usr/lib/amneziageo/amneziageo \
-                    usr/lib/amneziageo/amneziawg-go usr/lib/amneziageo/xray usr/lib/amneziageo/createdump \
+                    usr/lib/amneziageo/amneziawg-go usr/lib/amneziageo/http-get-proxy usr/lib/amneziageo/createdump \
                     usr/lib/amneziageo-gui/AmneziaGeo.Linux.Ui usr/lib/amneziageo-gui/createdump; do
     if [ -f "$tree/$executable" ]; then
       chmod 0755 "$tree/$executable"

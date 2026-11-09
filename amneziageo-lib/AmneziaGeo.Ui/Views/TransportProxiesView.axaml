@@ -44,7 +44,10 @@
                     <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
                       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="14,12,14,0">
                         <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Grid.Column="1" Text="{Binding Transport}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding IsHttpGet}" />
+                          <TextBlock Text="{Binding Transport}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
                       </Grid>
                       <TextBlock Grid.Row="1" Text="{Binding Address}" Classes="muted" FontSize="12.5"
                                  Margin="14,0" TextWrapping="Wrap" />
@@ -103,6 +106,12 @@
                       <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding Transports}" SelectedIndex="{Binding TransportIndex, Mode=TwoWay}"
                                                  IsEnabled="{Binding ModernEditable}" HorizontalAlignment="Stretch" />
                     </StackPanel>
+                    <StackPanel Spacing="2" MaxWidth="620" IsVisible="{Binding ShowHttpMethod}">
+                      <TextBlock Classes="label" Text="{l:Tr Proxies_HttpMethod}" />
+                      <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding Methods}" SelectedIndex="{Binding MethodIndex, Mode=TwoWay}"
+                                                 IsEnabled="{Binding ModernEditable}" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <CheckBox Content="{l:Tr Proxies_UseCertificate}" IsChecked="{Binding UseCertificate}" IsEnabled="{Binding CertificateEditable}" />
                     <Grid ColumnDefinitions="*,100" ColumnSpacing="12" MaxWidth="620">
                       <StackPanel Spacing="2">
                         <TextBlock Classes="label" Text="{l:Tr Proxies_Host}" />

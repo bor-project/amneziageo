@@ -150,7 +150,8 @@ public sealed class TransportProxyLifecycleTests : IAsyncLifetime
             """);
         var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(offer, true)));
 
-        await offers.AskAsync("publisher", text, default).ConfigureAwait(false);
+        await ServerOfferStore.WriteAsync(_store, "publisher", ConfigServices.Target(text)!, offer, DateTimeOffset.UtcNow).ConfigureAwait(false);
+        await TransportProxyCatalog.For(_store).EnsureSelectionAsync("publisher").ConfigureAwait(false);
 
         var state = await _store.GetTransportProxyStateAsync().ConfigureAwait(false);
         var record = Assert.Single(Assert.Single(state.Publications.Where(one => one.Slot == "legacy")).Records);

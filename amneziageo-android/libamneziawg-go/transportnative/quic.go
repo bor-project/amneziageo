@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
@@ -22,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/proxytls"
 	"github.com/bor-project/amneziageo/libamneziawg-go/internal/udppressure"
 	"github.com/bor-project/amneziageo/libamneziawg-go/xhttpnative"
 	"github.com/quic-go/quic-go"
@@ -51,20 +51,9 @@ func (c *quicConnection) close() {
 }
 
 func dialQUIC(ctx context.Context, p Profile) (*quicConnection, error) {
-	tlsConfig := &tls.Config{ServerName: p.Front.TLS.ServerName, MinVersion: tls.VersionTLS13, NextProtos: []string{http3.NextProtoH3}}
-	if p.Front.TLS.Pin != "" {
-		pin, _ := hex.DecodeString(p.Front.TLS.Pin)
-		tlsConfig.InsecureSkipVerify = true
-		tlsConfig.VerifyConnection = func(s tls.ConnectionState) error {
-			if len(s.PeerCertificates) == 0 {
-				return proxyFault("proxy-tls")
-			}
-			actual := sha256.Sum256(s.PeerCertificates[0].Raw)
-			if subtle.ConstantTimeCompare(pin, actual[:]) != 1 {
-				return proxyFault("proxy-tls")
-			}
-			return nil
-		}
+	tlsConfig, err := proxytls.Config(p.Front.TLS.ServerName, p.Front.TLS.Pin, tls.VersionTLS13, []string{http3.NextProtoH3})
+	if err != nil {
+		return nil, err
 	}
 	listen := net.ListenConfig{Control: func(_, _ string, raw syscall.RawConn) error {
 		var result error

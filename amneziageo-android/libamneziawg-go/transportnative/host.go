@@ -5,8 +5,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net/http"
 	"strings"
 
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/httpgetauth"
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/proxytls"
 	"github.com/bor-project/amneziageo/libamneziawg-go/internal/udppressure"
 	"github.com/bor-project/amneziageo/libamneziawg-go/xhttpnative"
 )
@@ -53,14 +56,17 @@ func FaultCode(err error) string {
 		return "bad-proxy"
 	}
 	var verification *tls.CertificateVerificationError
+	var record tls.RecordHeaderError
 	var unknown x509.UnknownAuthorityError
 	var hostname x509.HostnameError
 	var invalid x509.CertificateInvalidError
-	if errors.As(err, &verification) || errors.As(err, &unknown) || errors.As(err, &hostname) || errors.As(err, &invalid) || strings.Contains(err.Error(), "certificate") {
+	if errors.Is(err, proxytls.ErrIdentity) || errors.Is(err, http.ErrSchemeMismatch) || errors.As(err, &record) || errors.As(err, &verification) || errors.As(err, &unknown) || errors.As(err, &hostname) || errors.As(err, &invalid) || strings.Contains(err.Error(), "certificate") {
 		return "proxy-tls"
 	}
 	text := err.Error()
 	switch {
+	case errors.Is(err, httpgetauth.ErrFields):
+		return "proxy-bad-answer"
 	case strings.Contains(text, "open-status-403"):
 		return "proxy-target-denied"
 	case strings.Contains(text, "auth-key"), strings.Contains(text, "status-401"), strings.Contains(text, "status-403"):

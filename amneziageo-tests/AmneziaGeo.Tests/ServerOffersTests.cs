@@ -503,34 +503,47 @@ public sealed class ServerOffersTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task TheFrontOfAConfig_IsTheOneItsServerNamesWhenAskedAgain()
+    public async Task ASelectedProxyWithoutInsidePathKeepsItsCachedOfferAndRejectsDirectRefresh()
     {
         await _store.SetConfigTransportAsync(new ConfigTransport("office", true));
-        var replies = new Queue<HelloReply>([new HelloReply(Fronted(8446, "first"), true), new HelloReply(Fronted(8447, "second"), true), new HelloReply(null, false)]);
-        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
-
-        var first = await offers.FrontAsync("office", Text, CancellationToken.None);
-        var second = await offers.FrontAsync("office", Text, CancellationToken.None);
-        var silent = await offers.FrontAsync("office", Text, CancellationToken.None);
-
-        Assert.Equal(new WsEndpoint("vpn.example", 8446, "first", Offered: true), first);
-        Assert.Equal(new WsEndpoint("vpn.example", 8447, "second", Offered: true), second);
-        Assert.Equal(second, silent);
-        Assert.Equal("second", (await offers.OfferAsync("office", Text, CancellationToken.None)).WebSocketPath);
+        var cached = Fronted(8446, "first");
+        await ServerOfferStore.WriteAsync(_store, "office", ConfigServices.Target(Text)!, cached, DateTimeOffset.UtcNow).ConfigureAwait(false);
+        var asked = 0;
+        var offers = new ServerOffers(_store, ask: (_, _) =>
+        {
+            asked++;
+            return Task.FromResult(new HelloReply(Fronted(8447, "second"), true));
+        });
+        Assert.Equal(8446, (await offers.BeforeConnectAsync("office", Text, null, CancellationToken.None).ConfigureAwait(false)).WebSocketPort);
+        var error = await Assert.ThrowsAsync<TransportProxyFault>(() => offers.FrontAsync("office", Text, CancellationToken.None)).ConfigureAwait(false);
+        Assert.Equal("proxy-service-unavailable", error.Code);
+        Assert.Equal(0, asked);
+        Assert.Equal("first", (await offers.OfferAsync("office", Text, CancellationToken.None).ConfigureAwait(false)).WebSocketPath);
     }
 
     [Fact]
-    public async Task AServerThatOffersNoWebSocketAnyMore_LeavesTheConfigWithoutAFront()
+    public async Task AVerifiedInsidePathCanWithdrawTheLegacyFrontWithoutExternalHello()
     {
         await _store.SetConfigTransportAsync(new ConfigTransport("office", true));
-        var replies = new Queue<HelloReply>([new HelloReply(Fronted(8446, "first"), true), new HelloReply(Fronted(0, string.Empty), true)]);
-        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(replies.Dequeue()));
-
-        var first = await offers.FrontAsync("office", Text, CancellationToken.None);
-        var second = await offers.FrontAsync("office", Text, CancellationToken.None);
-
-        Assert.NotNull(first);
-        Assert.Null(second);
+        var first = Fronted(8446, "first");
+        var features = first.Features.ToDictionary(one => one.Key, one => one.Value);
+        features[ServerOffer.InsideFeature] = System.Text.Json.JsonSerializer.SerializeToElement(new { origin = "http://10.8.0.1:8443" });
+        var cached = new ServerOffer(first.Version, first.Client, features);
+        await ServerOfferStore.WriteAsync(_store, "office", ConfigServices.Target(Text)!, cached, DateTimeOffset.UtcNow).ConfigureAwait(false);
+        var outside = 0;
+        var offers = new ServerOffers(_store, ask: (_, _) =>
+        {
+            outside++;
+            return Task.FromResult(new HelloReply(null, false));
+        }, carried: _ => true, insidePath: (_, _, _) => Task.FromResult(true),
+            askConfined: (_, point, _) =>
+            {
+                Assert.True(point.InsideTunnel);
+                Assert.Equal("http://10.8.0.1:8443", point.Origin);
+                return Task.FromResult(new HelloReply(Fronted(0, ""), true));
+            });
+        Assert.Null(await offers.FrontAsync("office", Text, CancellationToken.None).ConfigureAwait(false));
+        Assert.Equal(0, outside);
     }
 
     [Fact]

@@ -62,7 +62,7 @@ func Parse(data []byte, probe bool) (Profile, error) {
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&p) != nil || decoder.Decode(new(any)) != io.EOF || p.Version != 2 ||
 		!validHost(p.Front.Host) || !validPort(p.Front.Port) || net.ParseIP(p.Front.DialAddress) == nil ||
-		!pathPattern.MatchString(p.Front.Path) || p.Front.TLS.Enabled == nil {
+		!pathPattern.MatchString(p.Front.Path) || p.Front.TLS.Enabled == nil || !*p.Front.TLS.Enabled {
 		return p, ErrProfile
 	}
 	if probe {
@@ -110,14 +110,13 @@ func validHost(host string) bool {
 }
 
 func (p Profile) HTTPProfile() ([]byte, error) {
-	tlsSettings := map[string]any{}
-	security := "none"
-	if *p.Front.TLS.Enabled {
-		security = "tls"
-		tlsSettings = map[string]any{"serverName": p.Front.TLS.ServerName, "alpn": []string{"h2"}, "fingerprint": "unsafe"}
-		if p.Front.TLS.Pin != "" {
-			tlsSettings["pinnedPeerCertSha256"] = p.Front.TLS.Pin
-		}
+	if p.Transport != "http" || p.HTTP == nil || p.Front.TLS.Enabled == nil || !*p.Front.TLS.Enabled {
+		return nil, ErrProfile
+	}
+	security := "tls"
+	tlsSettings := map[string]any{"serverName": p.Front.TLS.ServerName, "alpn": []string{"h2"}, "fingerprint": "unsafe"}
+	if p.Front.TLS.Pin != "" {
+		tlsSettings["pinnedPeerCertSha256"] = p.Front.TLS.Pin
 	}
 	return json.Marshal(map[string]any{
 		"log": map[string]any{"loglevel": "none"},

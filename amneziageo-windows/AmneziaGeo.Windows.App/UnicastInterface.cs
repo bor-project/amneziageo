@@ -15,6 +15,17 @@ internal static class UnicastInterface
     /// </summary>
     public static void Pin(Socket socket, uint index)
     {
+        if (index == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        if (socket.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            socket.SetSocketOption(SocketOptionLevel.IPv6, Option, checked((int)index));
+            return;
+        }
+
         socket.SetSocketOption(SocketOptionLevel.IP, Option, (int)Network(index));
     }
 

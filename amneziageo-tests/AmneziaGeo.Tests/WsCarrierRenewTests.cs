@@ -33,7 +33,7 @@ public sealed class WsCarrierRenewTests : IDisposable
     {
         _engine.Bind(new IPEndPoint(IPAddress.Loopback, 0));
         _carrier = WsCarrier.Start(
-            new WsEndpoint("127.0.0.1", _front.Port, Offered: true), IPAddress.Loopback, 51820, () => "token", null,
+            _front.Endpoint(), IPAddress.Loopback, 51820, () => "token", null,
             (message, _) => _notes.Enqueue(message));
         _carrier.TrialMs = 700;
         _carrier.RetireMs = 200;
@@ -387,27 +387,24 @@ public sealed class WsCarrierRenewTests : IDisposable
     }
 
     [Fact]
-    public void ARefusedFront_HasTheServerAskedAndTheCarrierDialsTheFrontItNamesByNow()
+    public void ARefusedFrontNeverSwitchesToAnotherProxy()
     {
         using var moved = new Front();
         var asked = 0;
         _front.Refuses = true;
         using var carrier = WsCarrier.Start(
-            new WsEndpoint("127.0.0.1", _front.Port, "old", Offered: true), IPAddress.Loopback, 51820, () => "token", null,
+            _front.Endpoint("old"), IPAddress.Loopback, 51820, () => "token", null,
             (message, _) => _notes.Enqueue(message),
             _ =>
             {
                 Interlocked.Increment(ref asked);
-                return Task.FromResult<WsEndpoint?>(new WsEndpoint("127.0.0.1", moved.Port, "new", Offered: true));
+                return Task.FromResult<WsEndpoint?>(moved.Endpoint("new"));
             });
 
-        Flow(carrier, WaitMs, () => moved.Count > 0);
-        var taken = moved.Await(0);
-        SayTo(carrier, "after");
-
-        Assert.Equal("after", Until(taken, "after", WaitMs));
-        Assert.True(Noted("the server names another front by now: port " + moved.Port), Notes());
-        Assert.Equal(1, Volatile.Read(ref asked));
+        Flow(carrier, 1000);
+        Assert.Equal(0, moved.Count);
+        Assert.Equal(0, Volatile.Read(ref asked));
+        Assert.True(Noted("refused"), Notes());
     }
 
     [Fact]
@@ -417,7 +414,7 @@ public sealed class WsCarrierRenewTests : IDisposable
         var told = 0;
         _front.Refuses = true;
         using var carrier = WsCarrier.Start(
-            new WsEndpoint("127.0.0.1", _front.Port, Offered: true), IPAddress.Loopback, 51820, () => "token", null,
+            _front.Endpoint(), IPAddress.Loopback, 51820, () => "token", null,
             (message, _) => _notes.Enqueue(message),
             _ => Task.FromResult<WsEndpoint?>(null),
             () =>
@@ -431,15 +428,15 @@ public sealed class WsCarrierRenewTests : IDisposable
 
         Assert.True(gone.IsSet, Notes());
         Assert.Equal(1, Volatile.Read(ref told));
-        Assert.True(Noted("the server offers no websocket front any more"), Notes());
+        Assert.True(Noted("refused"), Notes());
     }
 
     [Fact]
-    public void ARefusedFrontWhoseServerNamesTheSameOne_IsAskedNoMoreOftenThanTheGap()
+    public void ARefusedFrontDoesNotRefreshOrRepeatTheRejectionCallback()
     {
         var asked = 0;
         var gone = 0;
-        var front = new WsEndpoint("127.0.0.1", _front.Port, Offered: true);
+        var front = _front.Endpoint();
         _front.Refuses = true;
         using var carrier = WsCarrier.Start(
             front, IPAddress.Loopback, 51820, () => "token", null,
@@ -453,8 +450,8 @@ public sealed class WsCarrierRenewTests : IDisposable
 
         Flow(carrier, 3000);
 
-        Assert.Equal(1, Volatile.Read(ref asked));
-        Assert.Equal(0, Volatile.Read(ref gone));
+        Assert.Equal(0, Volatile.Read(ref asked));
+        Assert.Equal(1, Volatile.Read(ref gone));
         Assert.False(Noted("another front"), Notes());
     }
 
@@ -595,6 +592,9 @@ public sealed class WsCarrierRenewTests : IDisposable
         /// </summary>
         public int Port { get; }
 
+        public WsEndpoint Endpoint(string path = "") => new("127.0.0.1", Port, path, Offered: true,
+            ServerName: "front.test", Pin: Convert.ToHexString(SHA256.HashData(_certificate.RawData)), Legacy: true);
+
         /// <summary>
         /// Whether the server behind the websockets opened from now on answers.
         /// </summary>
@@ -659,6 +659,9 @@ public sealed class WsCarrierRenewTests : IDisposable
         {
             using var key = RSA.Create(2048);
             var request = new CertificateRequest("CN=front.test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            var names = new SubjectAlternativeNameBuilder();
+            names.AddDnsName("front.test");
+            request.CertificateExtensions.Add(names.Build());
             using var made = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
             return X509CertificateLoader.LoadPkcs12(made.Export(X509ContentType.Pfx), null);
         }

@@ -19,6 +19,12 @@ public sealed class ProxyTransportModesTests
     {
         var item = Http(method, certificate);
         var catalog = Read(2, item);
+        if (!certificate)
+        {
+            Assert.Null(catalog);
+            return;
+        }
+
         Assert.NotNull(catalog);
         Assert.Equal(item, Assert.Single(catalog.Items));
         Assert.Equal(certificate, ProxyTransportModes.UsesCertificate(item));
@@ -42,17 +48,17 @@ public sealed class ProxyTransportModesTests
     [Fact]
     public void ExplicitGetVersionPreservesIdentityAndCredential()
     {
-        var old = Http("GET", false) with
+        var old = Http("GET", true) with
         {
-            Transport = "xhttp", Http = null, Auth = new OfferedProxyAuth("vless", Http("GET", false).Auth.Credential),
-            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "http", Version: 2),
+            Transport = "xhttp", Http = null, Auth = new OfferedProxyAuth("vless", Http("GET", true).Auth.Credential),
+            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "https", Version: 2),
         };
         var normalized = Assert.Single(Read(1, old)!.Items);
         Assert.Equal("http", normalized.Transport);
         Assert.Equal(old.Id, normalized.Id);
         Assert.Equal(old.Auth.Credential, normalized.Auth.Credential);
         Assert.Equal("hmac-sha256-v2", normalized.Auth.Scheme);
-        Assert.False(normalized.Tls.Enabled);
+        Assert.True(normalized.Tls.Enabled);
         Assert.Equal(new OfferedProxyHttp(2, "GET", "header"), normalized.Http);
         var unknown = Assert.Single(Read(1, old with { Xhttp = old.Xhttp! with { Version = 0 } })!.Items);
         Assert.Equal("xhttp", unknown.Transport);
@@ -91,64 +97,40 @@ public sealed class ProxyTransportModesTests
         Assert.Equal(reference, Assert.Single(after.Locals).Reference);
         Assert.Equal(reference, Assert.Single(after.Selections).Reference);
         Assert.Equal(old.Auth.Credential, after.Locals[0].Proxy.Auth.Credential);
-        Assert.Equal("http", after.Locals[0].Proxy.Transport);
+        Assert.Equal("xhttp", after.Locals[0].Proxy.Transport);
+        Assert.False(after.Locals[0].Proxy.Tls.Enabled);
+        Assert.False(ProxyTransportModes.Valid(after.Locals[0].Proxy));
     }
 
     [Fact]
     public void ActiveTransportKeepsItsOriginalMethod()
     {
-        var old = Http("GET", false);
+        var old = Http("GET", true);
         var reference = new ProxyReference(Guid.NewGuid().ToString("D"), old.Id);
         var resolved = new ResolvedTransportProxy(new CatalogTransportProxy(reference, old), "server", "vpn.example.net", 51820);
         var actual = RunningTransportProxy.From(resolved, "");
         var changed = old with { Http = new OfferedProxyHttp(2, "POST", "body") };
         Assert.Equal("GET", actual.Front!.Http!.Method);
         Assert.False(TransportProxyChanges.SameDefinition(old, changed));
-        Assert.False(TransportProxyChanges.SameDefinition(old, old with { Tls = old.Tls with { Enabled = true } }));
+        Assert.False(TransportProxyChanges.SameDefinition(old, old with { Tls = old.Tls with { Enabled = false } }));
     }
 
     [Fact]
-    public async Task PlainWebSocketUsesTheAuthenticatedUpgradeWithoutTls()
+    public void PlainWebSocketIsRejectedBeforeConnecting()
     {
         using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
         listener.Start();
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
         var proxy = Socket() with { Port = port, Tls = new OfferedProxyTls("proxy.example.net", "", false) };
         var resolved = new ResolvedTransportProxy(new CatalogTransportProxy(new ProxyReference(Guid.NewGuid().ToString("D"), proxy.Id), proxy), "server", "vpn.example.net", 51820);
-        var front = WsEndpoint.From(resolved);
-        Assert.False(front.UseCertificate);
-        var serving = AnswerAsync();
-        var result = await AmneziaGeo.Ipc.WsCarrier.ProbeAsync(front, System.Net.IPAddress.Loopback, 51820, null, null, stop.Token).ConfigureAwait(false);
-        Assert.Equal(AmneziaGeo.Ipc.WsFrontOutcome.Ok, result.Outcome);
-        await serving.ConfigureAwait(false);
-
-        async Task AnswerAsync()
-        {
-            using var client = await listener.AcceptTcpClientAsync(stop.Token).ConfigureAwait(false);
-            var stream = client.GetStream();
-            using var reader = new StreamReader(stream, System.Text.Encoding.ASCII, false, 1024, true);
-            var first = await reader.ReadLineAsync(stop.Token).ConfigureAwait(false);
-            Assert.StartsWith("GET ", first, StringComparison.Ordinal);
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            while (await reader.ReadLineAsync(stop.Token).ConfigureAwait(false) is { Length: > 0 } header)
-            {
-                var pair = header.Split(':', 2);
-                headers[pair[0]] = pair[1].Trim();
-            }
-
-            Assert.Equal("Bearer credential", headers["Authorization"]);
-            var accept = Convert.ToBase64String(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.ASCII.GetBytes(
-                headers["Sec-WebSocket-Key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
-            var response = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n";
-            await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(response), stop.Token).ConfigureAwait(false);
-        }
+        Assert.Throws<ArgumentException>(() => WsEndpoint.From(resolved));
+        Assert.False(listener.Pending());
     }
 
     [Fact]
     public void UnsupportedNativeModesCannotBecomeGetProfiles()
     {
-        var post = Assert.Throws<TransportProxyFault>(() => ProxyTransportModes.GetRuntime(Http("POST", false)));
+        var post = Assert.Throws<TransportProxyFault>(() => ProxyTransportModes.GetRuntime(Http("POST", true)));
         Assert.Equal("proxy-platform-unsupported", post.Code);
         var quic = Socket() with { Transport = "quic", Quic = new OfferedProxyQuic(1, "webtransport", "framed-stream") };
         Assert.Equal("proxy-platform-unsupported", Assert.Throws<TransportProxyFault>(() => ProxyTransportModes.GetRuntime(quic)).Code);

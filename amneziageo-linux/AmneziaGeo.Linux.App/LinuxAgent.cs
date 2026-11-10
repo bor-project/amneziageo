@@ -158,7 +158,9 @@ internal sealed class LinuxAgent : IDisposable
             fetch: FetchOffered,
             take: TakeLater,
             carried: Carries,
-            dialed: (config, _) => Task.FromResult(Carries(config) ? _tunnel.EndpointAddress : null));
+            dialed: (config, _) => Task.FromResult(Carries(config) ? _tunnel.EndpointAddress : null),
+            insidePath: (config, address, ct) => Carries(config) ? _tunnel.CanReachInsideAsync(address, ct) : Task.FromResult(false),
+            askConfined: (config, point, ct) => Carries(config) ? _tunnel.AskInsideAsync(point, ct) : Task.FromResult(new HelloReply(null, false)));
     }
 
     // Whether the tunnel of a config is up now: the hello then goes inside it.
@@ -625,7 +627,8 @@ internal sealed class LinuxAgent : IDisposable
             await GatedAsync(() => FellAsync(ct), ct).ConfigureAwait(false);
         }
 
-        if (!_desiredConnected || _tunnel.Running || (!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc)
+        if (!_desiredConnected || _tunnel.Running || (!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc
+            || _connectFailed && _connectFailReason == nameof(ConnectFailureReason.TransportRejected))
         {
             return;
         }
@@ -1231,8 +1234,8 @@ internal sealed class LinuxAgent : IDisposable
         catch (Exception ex) when (ex is TransportProxyFault or InvalidDataException or JsonException)
         {
             _log.Error("tunnel", "the selected transport proxy could not be resolved", ex);
-            return (null, new TunnelFailure(ConnectFailureReason.UnderlayUnreachable,
-                ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid"));
+            var code = ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid";
+            return (null, new TunnelFailure(TransportProxyProbes.FailureReason(code), code));
         }
     }
 
@@ -1293,7 +1296,7 @@ internal sealed class LinuxAgent : IDisposable
             var config = _boundTarget ?? string.Empty;
             var text = await _store.GetConfigTextAsync(config, CancellationToken.None).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(config, CancellationToken.None).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await _offers.OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, config, Carrier(text, transport, await _offers.OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false)), CancellationToken.None).ConfigureAwait(false);
             var device = await _tunnel.PhysicalDeviceAsync(CancellationToken.None).ConfigureAwait(false);
             var options = new LinkCauseOptions(
                 device is not null,
@@ -2943,7 +2946,7 @@ internal sealed class LinuxAgent : IDisposable
 
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var carrier = Carrier(text, transport, await _offers.OfferAsync(config, text, ct).ConfigureAwait(false));
+        var carrier = await ServerOffers.ProbeEndpointAsync(_store, config, Carrier(text, transport, await _offers.OfferAsync(config, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
         var speed = await _offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
         var peer = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
         var options = new ChannelProbeOptions(
@@ -2992,7 +2995,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, name, Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -3017,7 +3020,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, name, Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),

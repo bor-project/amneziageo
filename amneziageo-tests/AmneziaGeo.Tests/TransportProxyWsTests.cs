@@ -106,7 +106,7 @@ public sealed class TransportProxyWsTests
     }
 
     [Fact]
-    public void LegacyOfferedEndpointKeepsTheOriginalTokenAndCertificateRule()
+    public void LegacyOfferedEndpointKeepsTheOriginalTokenAndValidatesTls()
     {
         var resolved = Resolved("vpn.example.net");
         var definition = resolved.Record.Proxy with { Auth = new OfferedProxyAuth("legacy", "") };
@@ -121,7 +121,7 @@ public sealed class TransportProxyWsTests
         Assert.Contains("Authorization: AmneziaGeo legacy-token\r\n", request, StringComparison.Ordinal);
         Assert.DoesNotContain("X-AmneziaGeo-Target", request, StringComparison.Ordinal);
         Assert.NotNull(options.RemoteCertificateValidationCallback);
-        Assert.True(options.RemoteCertificateValidationCallback(new object(), certificate, null, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.False(options.RemoteCertificateValidationCallback(new object(), certificate, null, SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class TransportProxyWsTests
         var front = WsEndpoint.From(Resolved("vpn.example.net"));
         var options = WsCarrier.TlsOptions(front, "AmneziaGeo ignored-token");
 
-        Assert.Null(options.RemoteCertificateValidationCallback);
+        Assert.NotNull(options.RemoteCertificateValidationCallback);
         Assert.Equal("tls.example.net", options.TargetHost);
     }
 
@@ -162,7 +162,9 @@ public sealed class TransportProxyWsTests
         var options = WsCarrier.TlsOptions(front, null);
         var errors = SslPolicyErrors.RemoteCertificateChainErrors | SslPolicyErrors.RemoteCertificateNameMismatch;
         Assert.NotNull(options.RemoteCertificateValidationCallback);
-        Assert.True(options.RemoteCertificateValidationCallback(new object(), certificate, null, errors));
+        Assert.True(options.RemoteCertificateValidationCallback(new object(), certificate, null, SslPolicyErrors.RemoteCertificateChainErrors));
+        var mismatched = WsCarrier.TlsOptions(front with { ServerName = "wrong.example.net" }, null);
+        Assert.False(mismatched.RemoteCertificateValidationCallback!(new object(), certificate, null, errors));
         var wrong = WsCarrier.TlsOptions(front with { Pin = new string('0', 64) }, null);
         Assert.False(wrong.RemoteCertificateValidationCallback!(new object(), certificate, null, errors));
         Assert.False(options.RemoteCertificateValidationCallback(new object(), null, null, SslPolicyErrors.RemoteCertificateNotAvailable));
@@ -242,8 +244,10 @@ public sealed class TransportProxyWsTests
             "publisher", target, 51820);
     }
 
-    [Fact]
-    public async Task AModernProbeUsesTheTlsNameAndClosesASuccessfulUpgrade()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AProbeUsesTheTlsNameAndClosesASuccessfulUpgrade(bool legacy)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var certificate = Certificate(key);
@@ -252,7 +256,7 @@ public sealed class TransportProxyWsTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var front = WsEndpoint.From(Resolved("vpn.example.net")) with
         {
-            Port = port, Pin = Convert.ToHexString(SHA256.HashData(certificate.RawData)),
+            Host = "127.0.0.1", Port = port, Pin = Convert.ToHexString(SHA256.HashData(certificate.RawData)), Legacy = legacy, Offered = legacy,
         };
         var named = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -260,12 +264,14 @@ public sealed class TransportProxyWsTests
 
         try
         {
-            var result = await WsCarrier.ProbeAsync(front, IPAddress.Loopback, 51820, null, null, deadline.Token).ConfigureAwait(false);
+            var result = await WsCarrier.ProbeAsync(front, IPAddress.Loopback, 51820,
+                legacy ? () => "AmneziaGeo fixture" : null, null, deadline.Token).ConfigureAwait(false);
 
             Assert.True(result.Outcome == WsFrontOutcome.Ok,
                 $"Probe: {result.Outcome} ({result.Detail}); upgrade: {served.Status}; server failure: {served.Exception}");
             Assert.Equal("tls.example.net", await named.Task.WaitAsync(deadline.Token).ConfigureAwait(false));
             Assert.True(await served.ConfigureAwait(false));
+            TestContext.Current.TestOutputHelper?.WriteLine($"WSS legacy={legacy}: tcp:127.0.0.1 -> tls:SNI=tls.example.net -> pin+SAN+dates -> authenticated upgrade -> socket:closed");
         }
         finally
         {

@@ -1998,8 +1998,7 @@ public sealed class GeoVpnService : VpnService
     {
         if (ex is TransportProxyFault fault)
         {
-            return fault.Code is "proxy-dns-failed" or "proxy-network-missing" or "proxy-stopping" or "proxy-start-failed"
-                ? ConnectFailureReason.UnderlayUnreachable : ConnectFailureReason.TransportRejected;
+            return TransportProxyProbes.FailureReason(fault.Code);
         }
 
         return ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException

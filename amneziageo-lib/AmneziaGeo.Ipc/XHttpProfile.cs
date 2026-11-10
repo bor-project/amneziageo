@@ -31,11 +31,6 @@ public static class XHttpProfile
             ["alpn"] = new[] { "h2" },
             ["fingerprint"] = "unsafe",
         };
-        if (profile.Scheme == "http")
-        {
-            tls.Clear();
-        }
-
         if (proxy.Tls.Pin.Length > 0)
         {
             tls["pinnedPeerCertSha256"] = proxy.Tls.Pin.ToLowerInvariant();
@@ -60,7 +55,7 @@ public static class XHttpProfile
                     settings = new { address = dialAddress.ToString(), port = proxy.Port, id = Guid.Parse(proxy.Auth.Credential).ToString("D"), encryption = "none" },
                     streamSettings = new
                     {
-                        network = "xhttp", security = profile.Scheme == "http" ? "none" : "tls", tlsSettings = tls,
+                        network = "xhttp", security = "tls", tlsSettings = tls,
                         xhttpSettings = new
                         {
                             host = proxy.Host, path = "/" + proxy.Path + "/", mode = "packet-up",

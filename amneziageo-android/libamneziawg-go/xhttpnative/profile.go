@@ -85,13 +85,10 @@ func validateProfile(data []byte) ([]byte, error) {
 		return nil, ErrProfile
 	}
 	stream := outbound.Stream
-	if outbound.Protocol != "vless" || net.ParseIP(outbound.Settings.Address) == nil || !validPort(outbound.Settings.Port) || !uuid.MatchString(outbound.Settings.ID) || outbound.Settings.Encryption != "none" || stream.Network != "xhttp" || (stream.Security != "tls" && stream.Security != "none") {
+	if outbound.Protocol != "vless" || net.ParseIP(outbound.Settings.Address) == nil || !validPort(outbound.Settings.Port) || !uuid.MatchString(outbound.Settings.ID) || outbound.Settings.Encryption != "none" || stream.Network != "xhttp" || stream.Security != "tls" {
 		return nil, ErrProfile
 	}
 	tls := stream.TLS
-	if stream.Security == "none" && (tls.Name != "" || len(tls.ALPN) != 0 || tls.Fingerprint != "" || tls.Pin != "") {
-		return nil, ErrProfile
-	}
 	if stream.Security == "tls" && (!validHost(tls.Name) || len(tls.ALPN) != 1 || tls.ALPN[0] != "h2" || tls.Fingerprint != "unsafe") {
 		return nil, ErrProfile
 	}

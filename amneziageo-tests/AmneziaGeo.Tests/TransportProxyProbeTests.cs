@@ -107,7 +107,7 @@ public sealed class TransportProxyProbeTests
 
         var options = XHttpProbeClient.TlsOptions(proxy);
 
-        Assert.Null(options.RemoteCertificateValidationCallback);
+        Assert.NotNull(options.RemoteCertificateValidationCallback);
         Assert.Equal("tls.example.net", options.TargetHost);
         Assert.Equal([SslApplicationProtocol.Http2], options.ApplicationProtocols);
     }

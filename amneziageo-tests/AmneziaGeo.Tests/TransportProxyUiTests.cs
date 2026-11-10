@@ -183,13 +183,13 @@ public sealed class TransportProxyUiTests
         Assert.Equal("http", agent.Saved!.Transport);
         Assert.Equal(method == 1 ? "POST" : "GET", agent.Saved.Http!.Method);
         Assert.Equal(method == 1 ? "body" : "header", agent.Saved.Http.DataPlacement);
-        Assert.Equal(certificate, agent.Saved.Tls.Enabled);
+        Assert.True(agent.Saved.Tls.Enabled);
         editor.MethodIndex = 1 - method;
         editor.UseCertificate = !certificate;
         Assert.True(editor.ConnectionChanged);
         editor.Revert();
         Assert.Equal(method, editor.MethodIndex);
-        Assert.Equal(certificate, editor.UseCertificate);
+        Assert.True(editor.UseCertificate);
         Assert.False(editor.IsDirty);
     }
 
@@ -521,6 +521,25 @@ public sealed class TransportProxyUiTests
         editor.ApplyProxyCatalog([restricted, Summary(Second)], First, true);
         Assert.Equal(First, editor.SelectedProxyChoice!.Reference);
         Assert.Contains(Loc.Instance.Get("Proxies_TargetDenied"), editor.SelectedProxyChoice.Label, StringComparison.Ordinal);
+        Assert.False(editor.IsDirty);
+    }
+
+    [Fact]
+    public void UnsupportedRuntimeRemainsVisibleOnlyForItsExistingSelection()
+    {
+        var editor = Settings(new Agent());
+        var unsupported = Summary(First) with
+        {
+            Availability = TransportProxyAvailability.Unavailable, Fault = "proxy-platform-unsupported", CompatibleConfigs = [],
+        };
+        editor.ApplyProxyCatalog([unsupported, Summary(Second)], null, true);
+        Assert.DoesNotContain(editor.ProxyChoices, one => one.Reference == First);
+        editor.ApplyProxyCatalog([unsupported, Summary(Second)], First, true);
+        Assert.Equal(First, editor.SelectedProxyChoice!.Reference);
+        Assert.False(editor.SelectedProxyChoice.IsSelectable);
+        Assert.False(editor.SelectedProxyAvailable);
+        Assert.Equal(Loc.Instance.Get("Proxies_Unsupported"), editor.SelectedProxyFault);
+        Assert.Contains(Loc.Instance.Get("Proxies_Unsupported"), editor.SelectedProxyChoice.Label, StringComparison.Ordinal);
         Assert.False(editor.IsDirty);
     }
 

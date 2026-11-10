@@ -18,12 +18,6 @@ internal static class HttpGetProbeClient
             throw new InvalidDataException("The HTTP proxy protocol is invalid.");
         }
 
-        var plain = !ProxyTransportModes.UsesCertificate(proxy);
-        if (plain && proxy.Tls.Pin.Length > 0)
-        {
-            throw new InvalidDataException("A plain HTTP proxy cannot use a certificate pin.");
-        }
-
         using var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -33,18 +27,14 @@ internal static class HttpGetProbeClient
             MaxResponseHeadersLength = 16,
             ConnectCallback = async (_, token) =>
             {
-                var connection = await connect(new DnsEndPoint(proxy.Host, proxy.Port), token).ConfigureAwait(false);
-                if (plain)
-                {
-                    return connection;
-                }
-
+                using var pending = CancellationTokenSource.CreateLinkedTokenSource(token, ct);
+                var connection = await connect(new DnsEndPoint(proxy.Host, proxy.Port), pending.Token).ConfigureAwait(false);
                 var tls = new SslStream(connection, leaveInnerStreamOpen: false);
                 try
                 {
                     var options = XHttpProbeClient.TlsOptions(proxy);
                     options.ApplicationProtocols = [SslApplicationProtocol.Http11];
-                    await tls.AuthenticateAsClientAsync(options, token).ConfigureAwait(false);
+                    await tls.AuthenticateAsClientAsync(options, pending.Token).ConfigureAwait(false);
                     return tls;
                 }
                 catch
@@ -65,6 +55,11 @@ internal static class HttpGetProbeClient
         };
         using var challenge = Request(proxy, basePath, challengeQuery, auth);
         using var proof = await client.SendAsync(challenge, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (InfrastructureStatus(proof))
+        {
+            return new XHttpProbeClient.Response((int)proof.StatusCode, []);
+        }
+
         var proofBody = await BodyAsync(proof, ct).ConfigureAwait(false);
         if ((int)proof.StatusCode != 200 || Header(proof, "X-WG-Version") != HttpGetAuthentication.Version)
         {
@@ -93,6 +88,11 @@ internal static class HttpGetProbeClient
         request.Headers.Add("X-WG-Nonce", Convert.ToHexStringLower(requestNonce));
         request.Headers.Add("X-WG-Auth", signature);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (InfrastructureStatus(response))
+        {
+            return new XHttpProbeClient.Response((int)response.StatusCode, []);
+        }
+
         var body = await BodyAsync(response, ct).ConfigureAwait(false);
         var responseEpoch = Epoch(Header(response, "X-WG-Epoch"));
         auth.VerifyResponse(digest, (int)response.StatusCode, responseEpoch,
@@ -107,6 +107,9 @@ internal static class HttpGetProbeClient
 
         return new XHttpProbeClient.Response((int)response.StatusCode, body);
     }
+
+    private static bool InfrastructureStatus(HttpResponseMessage response) => TransportProxyProbes.TransientStatus((int)response.StatusCode)
+        && !response.Headers.Any(header => header.Key.StartsWith("X-WG-", StringComparison.OrdinalIgnoreCase));
 
     private static HttpRequestMessage Request(OfferedProxy proxy, string path, Dictionary<string, string> query,
         HttpGetAuthentication auth)

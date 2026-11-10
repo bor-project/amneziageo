@@ -20,7 +20,7 @@ public sealed class ServerHelloTests
         var dialed = 0;
 
         var reply = await ServerHello.AskAsync(
-            new ServiceTarget("localhost", panel.Port, Key(), Key()),
+            new ServiceTarget("localhost", panel.Port, Key(), Key()) { TlsPin = panel.Pin },
             async (context, ct) =>
             {
                 Interlocked.Increment(ref dialed);
@@ -29,7 +29,7 @@ public sealed class ServerHelloTests
 
                 return new NetworkStream(socket, ownsSocket: true);
             },
-            CancellationToken.None);
+            CancellationToken.None).ConfigureAwait(false);
 
         Assert.True(reply.Heard);
         Assert.Null(reply.Offer);
@@ -42,7 +42,7 @@ public sealed class ServerHelloTests
     {
         using var panel = new TlsPanel(status: 404);
 
-        var reply = await ServerHello.AskAsync(new ServiceTarget("localhost", panel.Port, Key(), Key()), CancellationToken.None);
+        var reply = await ServerHello.AskAsync(new ServiceTarget("localhost", panel.Port, Key(), Key()) { TlsPin = panel.Pin }, CancellationToken.None).ConfigureAwait(false);
 
         Assert.True(reply.Heard);
         Assert.Equal(1, panel.Served);
@@ -67,7 +67,7 @@ public sealed class ServerHelloTests
     {
         using var panel = new TlsPanel(status: 500);
 
-        var reply = await ServerHello.AskAsync(new ServiceTarget("localhost", panel.Port, Key(), Key()), CancellationToken.None);
+        var reply = await ServerHello.AskAsync(new ServiceTarget("localhost", panel.Port, Key(), Key()) { TlsPin = panel.Pin }, CancellationToken.None).ConfigureAwait(false);
 
         Assert.False(reply.Heard);
         Assert.Null(reply.Offer);

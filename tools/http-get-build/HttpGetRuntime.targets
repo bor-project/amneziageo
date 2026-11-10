@@ -36,7 +36,7 @@
 
             var root = Path.GetFullPath(SourceRoot);
             var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
-            foreach (var name in new[] { "cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth" })
+            foreach (var name in new[] { "cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth", "internal/proxytls" })
             {
                 foreach (var file in Directory.EnumerateFiles(Path.Combine(root, name), "*.go", SearchOption.AllDirectories))
                 {

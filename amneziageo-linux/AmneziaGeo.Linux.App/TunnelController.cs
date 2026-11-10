@@ -1095,6 +1095,37 @@ internal sealed class TunnelController : IDisposable
         return exitCode != 0 || SteeringRules.Leading(output, _iface) is null;
     }
 
+    public async Task<bool> CanReachInsideAsync(IPAddress address, CancellationToken ct)
+    {
+        if (!Running)
+        {
+            return false;
+        }
+
+        var (code, output) = await Shell.RunAsync("ip", ct, "-j", "route", "get", address.ToString(), "oif", _iface).ConfigureAwait(false);
+        if (code != 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(output);
+            return json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array && json.RootElement.GetArrayLength() == 1
+                && json.RootElement[0].TryGetProperty("dev", out var device) && device.GetString() == _iface
+                && (!json.RootElement[0].TryGetProperty("type", out var type) || type.GetString() == "unicast");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
+    public Task<HelloReply> AskInsideAsync(ServiceTarget point, CancellationToken ct) =>
+        ServerHello.AskAsync(point, (context, token) => TunnelServiceConnection.ConnectAsync(context.DnsEndPoint,
+            async (address, socket, cancellation) => await CanReachInsideAsync(address, cancellation).ConfigureAwait(false)
+                && DeviceSocket.Bind(socket, _iface), token), ct);
+
     // One counter of the tunnel device as the kernel keeps it; -1 where it cannot be read.
     private long DeviceCount(string counter)
     {
@@ -1216,7 +1247,7 @@ internal sealed class TunnelController : IDisposable
             var address = await ResolveHostAsync(selected.Record.Proxy.Host, ct).ConfigureAwait(false);
             if (address is null)
             {
-                return new PendingCarrier(refusal: Refused("proxy-no-address"));
+                return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.UnderlayUnreachable, "proxy-no-address"));
             }
 
             try
@@ -1227,8 +1258,8 @@ internal sealed class TunnelController : IDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _log.Error("tunnel", "the XHTTP carrier could not start", ex);
-                return new PendingCarrier(refusal: ex is TransportProxyFault { Code: "proxy-target-denied" or "bad-proxy-target" } fault
-                    ? new TunnelFailure(ConnectFailureReason.TransportRejected, fault.Code)
+                return new PendingCarrier(refusal: ex is TransportProxyFault fault
+                    ? new TunnelFailure(TransportProxyProbes.FailureReason(fault.Code), fault.Code)
                     : Refused(ex is TransportProxyFault failure ? failure.Code : "xhttp-runtime-start"));
             }
         }
@@ -1252,7 +1283,7 @@ internal sealed class TunnelController : IDisposable
         var frontAddress = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
         if (frontAddress is null)
         {
-            return new PendingCarrier(refusal: Refused("proxy-no-address"));
+            return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.UnderlayUnreachable, "proxy-no-address"));
         }
 
         if (selected is not null)
@@ -1263,7 +1294,7 @@ internal sealed class TunnelController : IDisposable
             }
             catch (TransportProxyFault ex)
             {
-                return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.TransportRejected, ex.Code));
+                return new PendingCarrier(refusal: new TunnelFailure(TransportProxyProbes.FailureReason(ex.Code), ex.Code));
             }
         }
 

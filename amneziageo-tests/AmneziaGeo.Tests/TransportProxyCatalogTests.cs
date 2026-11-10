@@ -559,7 +559,7 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         var legacy = Proxy("get") with
         {
             Transport = "xhttp", Auth = new OfferedProxyAuth("vless", "22222222-2222-2222-2222-222222222222"),
-            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "http"),
+            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "https"),
         };
         var reference = await _catalog.SaveLocalAsync(null, legacy).ConfigureAwait(false);
         await _catalog.ProbeAsync(reference, (_, _) => Task.FromResult(new TransportProxyProbeResult(TransportProxyAvailability.Available))).ConfigureAwait(false);
@@ -569,7 +569,7 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         Assert.Equal(reference, after.Reference);
         Assert.Equal("http", after.Proxy.Transport);
         Assert.Equal(legacy.Auth.Credential, after.Proxy.Auth.Credential);
-        Assert.False(after.Proxy.Tls.Enabled);
+        Assert.True(after.Proxy.Tls.Enabled);
         await _catalog.SaveLocalAsync(reference.Id, legacy with { Name = "Renamed" }).ConfigureAwait(false);
         Assert.Equal("http", (await _catalog.LocalAsync(reference).ConfigureAwait(false))!.Proxy.Transport);
     }
@@ -578,7 +578,7 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
     public async Task ModernHelloPreservesSelectionAndDestinationRestrictions()
     {
         var target = await ConfigAsync("modern", Key("issuer")).ConfigureAwait(false);
-        var item = ProxyTransportModesTests.Http("POST", false) with
+        var item = ProxyTransportModesTests.Http("POST", true) with
         {
             Targets = new ProxyTargets(true, [new ProxyDestination(target.Host, 51820)]),
         };
@@ -594,11 +594,66 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         var selected = (await _catalog.ResolveAsync("modern").ConfigureAwait(false))!;
         Assert.Equal(reference, selected.Record.Reference);
         Assert.Equal("POST", selected.Record.Proxy.Http!.Method);
-        Assert.False(selected.Record.Proxy.Tls.Enabled);
+        Assert.True(selected.Record.Proxy.Tls.Enabled);
         Assert.Equal(target.Host, selected.TargetHost);
         Assert.Equal(51820, selected.TargetPort);
         Assert.True(selected.Record.Proxy.Targets!.Restricted);
         Assert.Equal(reference, (await _catalog.SelectionAsync("modern").ConfigureAwait(false)).Reference);
+    }
+
+    [Fact]
+    public async Task ExplicitLegacyTlsTrustKeepsTheCachedPublisherAndSelection()
+    {
+        var target = await ConfigAsync("legacy-trust", Key("issuer")).ConfigureAwait(false);
+        var text = (await _store.GetConfigTextAsync("legacy-trust").ConfigureAwait(false))!;
+        await _store.SetConfigTransportAsync(new ConfigTransport("legacy-trust", true)).ConfigureAwait(false);
+        await ServerOfferStore.WriteAsync(_store, "legacy-trust", target, LegacyOffer(9443, "legacy"), DateTimeOffset.UtcNow).ConfigureAwait(false);
+        await _catalog.EnsureSelectionAsync("legacy-trust").ConfigureAwait(false);
+        var before = (await _catalog.ResolveAsync("legacy-trust").ConfigureAwait(false))!;
+        var pin = new string('a', 64);
+        var changed = text + "\n# AmneziaGeo Services TLS Name = tls.example.net\n# AmneziaGeo Services TLS Pin = " + pin + "\n";
+        await _store.SaveConfigAsync("legacy-trust", changed).ConfigureAwait(false);
+        Assert.Equal(target.Mark(), ConfigServices.Target(changed)!.Mark());
+        var after = (await _catalog.ResolveAsync("legacy-trust").ConfigureAwait(false))!;
+        Assert.Equal(before.Record.Reference, after.Record.Reference);
+        Assert.Equal(before.Record.Proxy.Auth, after.Record.Proxy.Auth);
+        Assert.Equal("tls.example.net", after.Record.Proxy.Tls.ServerName);
+        Assert.Equal(pin, after.Record.Proxy.Tls.Pin);
+        Assert.Equal(9443, (await ServerOfferStore.ReadAsync(_store, "legacy-trust", changed).ConfigureAwait(false)).WebSocketPort);
+    }
+
+    [Theory]
+    [InlineData("http")]
+    [InlineData("quic")]
+    public async Task UnsupportedRuntimeKeepsTheRecordAndSelectionWithoutDialing(string transport)
+    {
+        await ConfigAsync("limited", Key("issuer")).ConfigureAwait(false);
+        var proxy = transport == "http" ? ProxyTransportModesTests.Http("POST", true)
+            : Proxy("quic") with { Transport = "quic", Quic = new OfferedProxyQuic(1, "webtransport", "framed-stream") };
+        var full = new TransportProxyCatalog(_store, fullRuntime: true);
+        var reference = await full.SaveLocalAsync(null, proxy).ConfigureAwait(false);
+        await full.SelectAsync("limited", reference).ConfigureAwait(false);
+        var before = await _store.GetTransportProxyStateAsync().ConfigureAwait(false);
+        var limited = new TransportProxyCatalog(_store, fullRuntime: false);
+        var selection = await Assert.ThrowsAsync<TransportProxyFault>(() => limited.SelectAsync("limited", reference)).ConfigureAwait(false);
+        var resolution = await Assert.ThrowsAsync<TransportProxyFault>(() => limited.ResolveAsync("limited")).ConfigureAwait(false);
+        Assert.Equal("proxy-platform-unsupported", selection.Code);
+        Assert.Equal(selection.Code, resolution.Code);
+        var calls = 0;
+        var result = await limited.ProbeAsync(reference, (_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new TransportProxyProbeResult(TransportProxyAvailability.Available));
+        }).ConfigureAwait(false);
+        Assert.Equal(0, calls);
+        Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
+        Assert.Equal(selection.Code, result.Fault);
+        var summary = Assert.Single(await limited.ListAsync().ConfigureAwait(false));
+        Assert.Equal(selection.Code, summary.Fault);
+        Assert.Empty(summary.CompatibleConfigs!);
+        var after = await _store.GetTransportProxyStateAsync().ConfigureAwait(false);
+        Assert.Equal(before.Locals, after.Locals);
+        Assert.Equal(before.Selections, after.Selections);
     }
 
     private async Task<ServiceTarget> ConfigAsync(string name, string issuer, int port = 51820)

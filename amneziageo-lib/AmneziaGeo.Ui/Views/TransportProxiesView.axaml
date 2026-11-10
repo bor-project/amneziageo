@@ -111,7 +111,6 @@
                       <controls:AdaptiveComboBox Classes="field" ItemsSource="{Binding Methods}" SelectedIndex="{Binding MethodIndex, Mode=TwoWay}"
                                                  IsEnabled="{Binding ModernEditable}" HorizontalAlignment="Stretch" />
                     </StackPanel>
-                    <CheckBox Content="{l:Tr Proxies_UseCertificate}" IsChecked="{Binding UseCertificate}" IsEnabled="{Binding CertificateEditable}" />
                     <Grid ColumnDefinitions="*,100" ColumnSpacing="12" MaxWidth="620">
                       <StackPanel Spacing="2">
                         <TextBlock Classes="label" Text="{l:Tr Proxies_Host}" />

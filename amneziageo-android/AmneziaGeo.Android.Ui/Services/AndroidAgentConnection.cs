@@ -257,7 +257,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             fetch: sources => _ = Task.Run(() => FetchOfferedAsync(sources)),
             take: (ids, ct) => Task.Run(() => TakeVersionsAsync(ids), ct),
             carried: Carries,
-            dialed: DialedAsync);
+            dialed: DialedAsync,
+            insidePath: (config, address, _) => Task.FromResult(Carries(config) && TunnelHello.Reaches(_configs.GetValueOrDefault(config, ""), address)),
+            askConfined: (config, point, ct) => Carries(config) ? TunnelHello.AskAsync(_configs.GetValueOrDefault(config, ""), point, ct)
+                : Task.FromResult(new HelloReply(null, false)));
         Current = this;
     }
 
@@ -792,7 +795,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _boundStatus = live ? beforeStatus : ConnectionStatus.Failed;
             _dialWanted = live && beforeDialWanted;
             _restartRequired = restart;
-            SetConnectFailure(nameof(ConnectFailureReason.UnderlayUnreachable), selectedProxy.Fault);
+            SetConnectFailure(TransportProxyProbes.FailureReason(selectedProxy.Fault).ToString(), selectedProxy.Fault);
             Save();
             PushSnapshot();
             return new IpcAck(false, IpcMessage.Key("Proxies_RequestFailed"));
@@ -4367,7 +4370,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var text = _configs.GetValueOrDefault(config, string.Empty);
         var running = VpnBridge.IsRunning(Application.Context);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var carrier = Carrier(text, transport, _offered.GetValueOrDefault(config));
+        var carrier = await ServerOffers.ProbeEndpointAsync(_store, config, Carrier(text, transport, _offered.GetValueOrDefault(config)), ct).ConfigureAwait(false);
         var speed = await _offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
         var options = new ChannelProbeOptions(
             config,
@@ -4457,7 +4460,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             var text = _configs.GetValueOrDefault(name, string.Empty);
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, _offered.GetValueOrDefault(name));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, name, Carrier(text, transport, _offered.GetValueOrDefault(name)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -4502,7 +4505,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             var text = _configs.GetValueOrDefault(name, string.Empty);
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, _offered.GetValueOrDefault(name));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, name, Carrier(text, transport, _offered.GetValueOrDefault(name)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),

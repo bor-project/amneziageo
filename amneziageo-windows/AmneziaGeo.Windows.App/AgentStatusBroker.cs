@@ -52,7 +52,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false),
                 rerouted: () => MarkRestartRequired(),
                 take: (ids, ct) => TakeVersionsAsync(made!, ids, ct),
-                carried: IsRunningMember);
+                carried: IsRunningMember,
+                insidePath: (config, address, _) => Task.FromResult(IsRunningMember(config) && TunnelHello.Reaches(routes, config, address)),
+                askConfined: (config, point, ct) => IsRunningMember(config) ? TunnelHello.AskAsync(routes, config, point, ct)
+                    : Task.FromResult(new HelloReply(null, false)));
             made = new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), scopeGeo, offers);
             return made;
         });

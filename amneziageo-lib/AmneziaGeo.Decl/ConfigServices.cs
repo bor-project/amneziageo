@@ -18,6 +18,10 @@ public sealed record ServiceTarget(string Host, int Port, string PrivateKey, str
     /// </summary>
     public bool TakesSignal { get; init; } = true;
 
+    public string TlsName { get; init; } = string.Empty;
+    public string TlsPin { get; init; } = string.Empty;
+    public bool InsideTunnel { get; init; }
+
     /// <summary>
     /// Where the services answer plain inside the tunnel; empty for the address of the Endpoint.
     /// </summary>
@@ -77,9 +81,13 @@ public static class ConfigServices
         var serverKey = Value(text, "PublicKey");
 
         return host.Length > 0 && port > 0 && privateKey.Length > 0 && serverKey.Length > 0
-            ? new ServiceTarget(host, port, privateKey, serverKey)
+            ? new ServiceTarget(host, port, privateKey, serverKey) { TlsName = TlsName(text), TlsPin = TlsPin(text) }
             : null;
     }
+
+    public static string TlsName(string? text) => Comment(text, "AmneziaGeo Services TLS Name");
+
+    public static string TlsPin(string? text) => Comment(text, "AmneziaGeo Services TLS Pin");
 
     // Reads the value of the first "Key = value" line under that key.
     private static string Value(string? text, string key)

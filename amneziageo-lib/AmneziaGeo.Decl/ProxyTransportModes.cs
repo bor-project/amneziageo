@@ -21,6 +21,8 @@ public static class ProxyTransportModes
     public static string Method(OfferedProxy proxy) => proxy.Http?.Method ?? proxy.Xhttp?.UplinkHttpMethod ?? "";
     public static bool Unconfirmed(OfferedProxy proxy) => proxy.Transport == "xhttp" && proxy.Xhttp?.Version != 2;
     public static bool IsGet(OfferedProxy proxy) => IsHttp(proxy) && Method(proxy) == "GET";
+    public static bool RuntimeSupported(OfferedProxy proxy, bool fullRuntime) => proxy.Transport == "websocket" || IsGet(proxy)
+        || fullRuntime && (IsHttp(proxy) || proxy.Transport == "quic");
 
     public static OfferedProxy Normalize(OfferedProxy proxy) => Normalize(proxy, null);
 
@@ -39,6 +41,7 @@ public static class ProxyTransportModes
     public static bool Valid(OfferedProxy proxy) => proxy is
         { Tls: { ServerName: not null, Pin: not null }, Auth: { Scheme: not null, Credential: not null } }
         && proxy.Auth.Credential.Length is > 0 and <= 512
+        && proxy.Tls.Enabled && UsesCertificate(proxy)
         && (UsesCertificate(proxy)
             ? Uri.CheckHostName(proxy.Tls.ServerName) != UriHostNameType.Unknown
                 && (proxy.Tls.Pin.Length == 0 || proxy.Tls.Pin.Length == 64 && proxy.Tls.Pin.All(char.IsAsciiHexDigit))
@@ -84,7 +87,7 @@ public static class ProxyTransportModes
         return proxy.Transport == "xhttp" ? proxy : proxy with
         {
             Transport = "xhttp", Http = null, Quic = null, Auth = proxy.Auth with { Scheme = "vless" },
-            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: UsesCertificate(proxy) ? "https" : "http", Version: 2),
+            Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "https", Version: 2),
         };
     }
 }

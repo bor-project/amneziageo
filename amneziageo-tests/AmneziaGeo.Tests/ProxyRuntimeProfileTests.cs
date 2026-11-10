@@ -22,6 +22,12 @@ public sealed class ProxyRuntimeProfileTests
     {
         var proxy = ProxyTransportModesTests.Http(method, certificate);
         var selected = Selected(proxy);
+        if (!certificate)
+        {
+            Assert.Equal("bad-proxy", Assert.Throws<TransportProxyFault>(() => ProxyRuntimeProfile.Create(selected, 10222, IPAddress.Loopback)).Code);
+            return;
+        }
+
         using var json = JsonDocument.Parse(ProxyRuntimeProfile.Create(selected, 10222, IPAddress.Parse("192.0.2.10")));
         var root = json.RootElement;
         Assert.Equal(2, root.GetProperty("version").GetInt32());
@@ -39,15 +45,12 @@ public sealed class ProxyRuntimeProfileTests
     }
 
     [Fact]
-    public void LegacyConfirmedGetRetainsThePlainScheme()
+    public void LegacyPlainGetCannotBecomeARuntimeProfile()
     {
         var proxy = ProxyTransportModesTests.Http("GET", true) with { Transport = "xhttp", Http = null,
             Xhttp = new OfferedXHttp("packet-up", "GET", "header", Scheme: "http", Version: 2),
             Auth = new("vless", "22222222222222222222222222222222") };
-        using var json = JsonDocument.Parse(ProxyRuntimeProfile.Create(Selected(proxy), 10222, IPAddress.Loopback));
-        Assert.False(json.RootElement.GetProperty("front").GetProperty("tls").GetProperty("enabled").GetBoolean());
-        Assert.Equal("GET", json.RootElement.GetProperty("http").GetProperty("method").GetString());
-        Assert.Equal("22222222-2222-2222-2222-222222222222", json.RootElement.GetProperty("auth").GetProperty("credential").GetString());
+        Assert.Equal("bad-proxy", Assert.Throws<TransportProxyFault>(() => ProxyRuntimeProfile.Create(Selected(proxy), 10222, IPAddress.Loopback)).Code);
     }
 
     [Fact]

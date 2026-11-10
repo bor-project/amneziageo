@@ -44,6 +44,26 @@ public sealed class ConnectRetryTests
         Assert.True(ConnectRetry.IsTransient(ConnectFailureReason.EngineStopped));
     }
 
+    [Theory]
+    [InlineData("proxy-platform-unsupported", false)]
+    [InlineData("bad-proxy", false)]
+    [InlineData("proxy-tls", false)]
+    [InlineData("proxy-auth", false)]
+    [InlineData("proxy-target-denied", false)]
+    [InlineData("proxy-no-answer", true)]
+    [InlineData("proxy-timeout", true)]
+    [InlineData("proxy-reset", true)]
+    [InlineData("proxy-unavailable", true)]
+    [InlineData("proxy-catalog-busy", true)]
+    public async Task ProxyPolicyRefusalsStopWhileNetworkFailuresRemainRetryable(string code, bool retry)
+    {
+        var reason = TransportProxyProbes.FailureReason(code);
+        var dial = new Dial { Outcomes = { DialOutcome.Failed(reason, code), DialOutcome.Raised } };
+        var end = await ConnectRetry.RunAsync(dial.Steps(), CancellationToken.None).ConfigureAwait(false);
+        Assert.Equal(retry, end?.Up);
+        Assert.Equal(retry ? 2 : 1, dial.Attempts);
+    }
+
     [Fact]
     public async Task AServerThatAnswersOnTheSixthAttempt_IsDialledAfterEachPauseUntilItDoes()
     {

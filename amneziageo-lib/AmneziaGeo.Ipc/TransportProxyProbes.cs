@@ -11,6 +11,18 @@ namespace AmneziaGeo.Ipc;
 /// </summary>
 public static class TransportProxyProbes
 {
+    internal static bool TransientStatus(int status) => status is 408 or 429 or 500 or 502 or 503 or 504;
+
+    /// <summary>
+    /// Classifies a transport proxy refusal.
+    /// </summary>
+    public static ConnectFailureReason FailureReason(string code) => code is "bad-proxy" or "bad-proxy-target" or "bad-proxy-targets"
+        or "bad-endpoint" or "unknown-config" or "proxy-catalog-invalid" or "proxy-missing" or "proxy-legacy-target"
+        or "proxy-platform-unsupported" or "proxy-auth" or "proxy-auth-failed" or "proxy-tls" or "proxy-bad-answer"
+        or "proxy-target-denied" or "proxy-version-unconfirmed" or "proxy-datagram-limit" or "proxy-rejected"
+        or "xhttp-runtime-version" or "xhttp-runtime-missing"
+        ? ConnectFailureReason.TransportRejected : ConnectFailureReason.UnderlayUnreachable;
+
     /// <summary>
     /// Checks the selected UDP destination at the authenticated front.
     /// </summary>
@@ -18,6 +30,11 @@ public static class TransportProxyProbes
         Func<string, CancellationToken, Task<IPAddress?>>? resolve = null, Func<Socket, bool>? bypass = null,
         Func<DnsEndPoint, CancellationToken, ValueTask<Stream>>? connect = null)
     {
+        if (!selected.Record.Legacy && !OfferedProxyCatalog.Valid(selected.Record.Proxy))
+        {
+            return Failed("bad-proxy");
+        }
+
         if (selected.Record.Legacy || selected.Record.Proxy.Transport == "quic")
         {
             return Unsupported();
@@ -39,6 +56,11 @@ public static class TransportProxyProbes
             if (response.StatusCode == 404)
             {
                 return Unsupported();
+            }
+
+            if (TransientStatus(response.StatusCode))
+            {
+                return Failed("proxy-unavailable");
             }
 
             using var document = JsonDocument.Parse(response.Body);
@@ -72,7 +94,7 @@ public static class TransportProxyProbes
         catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
-            return Failed(ex is AuthenticationException ? "proxy-tls"
+            return Failed(TlsFailure(ex) ? "proxy-tls"
                 : ex is InvalidDataException or JsonException ? "proxy-bad-answer" : "proxy-no-answer");
         }
     }
@@ -84,7 +106,7 @@ public static class TransportProxyProbes
         Func<Socket, bool>? bypass = null)
     {
         var result = await CheckTargetAsync(selected, ct, (_, _) => Task.FromResult<IPAddress?>(address), bypass).ConfigureAwait(false);
-        if (result.Fault is "proxy-target-denied" or "bad-proxy-target")
+        if (result.Availability == TransportProxyAvailability.Unavailable)
         {
             throw new TransportProxyFault(result.Fault);
         }
@@ -107,12 +129,17 @@ public static class TransportProxyProbes
         try
         {
             var proxy = record.Proxy;
+            if (!record.Legacy && !OfferedProxyCatalog.Valid(proxy))
+            {
+                return Failed("bad-proxy");
+            }
+
             if (proxy.Transport == "websocket")
             {
                 if (!record.Legacy)
                 {
                     var frontResult = await CheckOptionalHttpFrontAsync(proxy, deadline.Token, resolve, bypass, connect).ConfigureAwait(false);
-                    if (frontResult.Availability == TransportProxyAvailability.Available || frontResult.Fault == "proxy-tls")
+                    if (frontResult.Availability != TransportProxyAvailability.Unknown)
                     {
                         return frontResult;
                     }
@@ -138,16 +165,15 @@ public static class TransportProxyProbes
                     record.LegacyOffered ? ServiceToken.HeaderOf(legacyConfig) : null, bypass, deadline.Token).ConfigureAwait(false);
                 if (!record.Legacy && outcome == WsFrontOutcome.Refused)
                 {
-                    return detail.StartsWith("HTTP/1.1 401", StringComparison.OrdinalIgnoreCase)
-                        || detail.StartsWith("HTTP/1.1 403", StringComparison.OrdinalIgnoreCase) ? Failed("proxy-auth")
-                        : destination is null ? Unsupported() : Failed("proxy-rejected");
+                    var fault = WsCarrier.RefusalFault(detail);
+                    return fault == "proxy-rejected" && destination is null ? Unsupported() : Failed(fault);
                 }
 
                 return outcome == WsFrontOutcome.Ok ? new TransportProxyProbeResult(TransportProxyAvailability.Available)
                     : Failed(outcome switch
                     {
                         WsFrontOutcome.Tls => "proxy-tls", WsFrontOutcome.NoAddress => "proxy-no-address",
-                        WsFrontOutcome.Refused => "proxy-auth", _ => "proxy-no-answer",
+                        WsFrontOutcome.Refused => WsCarrier.RefusalFault(detail), _ => "proxy-no-answer",
                     });
             }
 
@@ -161,9 +187,22 @@ public static class TransportProxyProbes
         catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
-            return Failed(ex is AuthenticationException ? "proxy-tls"
+            return Failed(TlsFailure(ex) ? "proxy-tls"
                 : ex is InvalidDataException or JsonException ? "proxy-bad-answer" : "proxy-no-answer");
         }
+    }
+
+    private static bool TlsFailure(Exception error)
+    {
+        for (var current = error; current is not null; current = current.InnerException)
+        {
+            if (current is AuthenticationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool SameTransport(string? actual, OfferedProxy expected) => actual == expected.Transport
@@ -213,7 +252,7 @@ public static class TransportProxyProbes
         catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
-            return Failed(ex is AuthenticationException ? "proxy-tls"
+            return Failed(TlsFailure(ex) ? "proxy-tls"
                 : ex is InvalidDataException or JsonException ? "proxy-bad-answer" : "proxy-no-answer");
         }
     }

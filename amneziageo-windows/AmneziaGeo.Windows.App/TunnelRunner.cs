@@ -189,7 +189,9 @@ internal sealed class TunnelRunner(
         await RunningTransportState.WriteAsync(store, name, RunningTransportProxy.From(selectedProxy, original), logger).ConfigureAwait(false);
         var useCarrier = selectedProxy is not null;
         var front = selectedProxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy) : default(WsEndpoint?);
-        var legacyCarrier = front is not null && selectedProxy!.Record.Legacy && File.Exists(TunnelPaths.WsTunnelExe());
+        var legacyCarrier = front is not null && selectedProxy!.Record.Legacy && front.Value.Pin.Length == 0
+            && (front.Value.ServerName.Length == 0 || string.Equals(front.Value.ServerName, front.Value.Host, StringComparison.OrdinalIgnoreCase))
+            && File.Exists(TunnelPaths.WsTunnelExe());
         var wsServerIp = useCarrier
             ? await ResolveHostV4Async(selectedProxy!.Record.Proxy.Host).ConfigureAwait(false)
                 ?? throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, "The selected proxy has no reachable IPv4 address.")
@@ -1224,7 +1226,7 @@ internal sealed class TunnelRunner(
         }
         catch (TransportProxyFault ex)
         {
-            throw new ConnectFailureException(ConnectFailureReason.TransportRejected, ex.Code, ex);
+            throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Code, ex);
         }
     }
 
@@ -1257,7 +1259,7 @@ internal sealed class TunnelRunner(
         }
         catch (TransportProxyFault ex)
         {
-            throw new ConnectFailureException(ConnectFailureReason.TransportRejected, ex.Code, ex);
+            throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Code, ex);
         }
 
         if (selected.Record.Proxy.Transport is "http" or "xhttp" or "quic")
@@ -1296,8 +1298,9 @@ internal sealed class TunnelRunner(
         var probe = await WsCarrier.ProbeAsync(named, address, selected.TargetPort, token, null, ct).ConfigureAwait(false);
         if (probe.Outcome != WsFrontOutcome.Ok)
         {
-            var reason = probe.Outcome is WsFrontOutcome.Tls or WsFrontOutcome.Refused
-                ? ConnectFailureReason.TransportRejected : ConnectFailureReason.UnderlayUnreachable;
+            var reason = probe.Outcome == WsFrontOutcome.Tls ? ConnectFailureReason.TransportRejected
+                : probe.Outcome == WsFrontOutcome.Refused ? ProxyFailureReason(WsCarrier.RefusalFault(probe.Detail))
+                : ConnectFailureReason.UnderlayUnreachable;
             throw new ConnectFailureException(reason, $"The WebSocket carrier did not connect: {probe.Outcome}.");
         }
 
@@ -1322,10 +1325,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    internal static ConnectFailureReason ProxyFailureReason(string code) => code is "bad-proxy" or "proxy-auth" or "proxy-tls"
-        or "proxy-bad-answer" or "proxy-target-denied" or "proxy-version-unconfirmed" or "proxy-datagram-limit" or "proxy-rejected"
-        or "xhttp-runtime-version" or "xhttp-runtime-missing"
-        ? ConnectFailureReason.TransportRejected : ConnectFailureReason.UnderlayUnreachable;
+    internal static ConnectFailureReason ProxyFailureReason(string code) => TransportProxyProbes.FailureReason(code);
 
     private async Task WatchXHttpAsync(string name, XHttpProcess process, CancellationToken ct)
     {

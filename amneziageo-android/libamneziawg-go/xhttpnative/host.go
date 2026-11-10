@@ -3,8 +3,6 @@ package xhttpnative
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
@@ -21,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/proxytls"
 	"github.com/bor-project/amneziageo/libamneziawg-go/internal/udppressure"
 )
 
@@ -145,25 +144,12 @@ func StartWithDiagnostics(data []byte, sink udppressure.Sink, reporter func(stri
 	}
 	h.pressureOwner = owner
 	h.pressure = udppressure.New(udppressure.WithSink(ctx, owner.emit), nil)
-	scheme := "https"
-	if outbound.Stream.Security == "none" {
-		scheme = "http"
-	}
-	h.base = url.URL{Scheme: scheme, Host: net.JoinHostPort(outbound.Stream.XHTTP.Host, strconv.Itoa(outbound.Settings.Port)), Path: outbound.Stream.XHTTP.Path}
-	tlsConfig := &tls.Config{ServerName: outbound.Stream.TLS.Name, MinVersion: tls.VersionTLS12, NextProtos: []string{"http/1.1"}}
-	if outbound.Stream.TLS.Pin != "" {
-		pin, _ := hex.DecodeString(outbound.Stream.TLS.Pin)
-		tlsConfig.InsecureSkipVerify = true
-		tlsConfig.VerifyConnection = func(state tls.ConnectionState) error {
-			if len(state.PeerCertificates) == 0 {
-				return errCertificateMissing
-			}
-			digest := sha256.Sum256(state.PeerCertificates[0].Raw)
-			if subtle.ConstantTimeCompare(pin, digest[:]) != 1 {
-				return errCertificatePin
-			}
-			return nil
-		}
+	h.base = url.URL{Scheme: "https", Host: net.JoinHostPort(outbound.Stream.XHTTP.Host, strconv.Itoa(outbound.Settings.Port)), Path: outbound.Stream.XHTTP.Path}
+	tlsConfig, err := proxytls.Config(outbound.Stream.TLS.Name, outbound.Stream.TLS.Pin, tls.VersionTLS12, []string{"http/1.1"})
+	if err != nil {
+		h.cancel()
+		h.socket.Close()
+		return nil, err
 	}
 	dialer := net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second, Control: func(_, _ string, raw syscall.RawConn) error {
 		accepted := false

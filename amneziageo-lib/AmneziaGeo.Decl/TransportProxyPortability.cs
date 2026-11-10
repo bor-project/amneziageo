@@ -236,6 +236,7 @@ public static class TransportProxyPortability
             if (local.Legacy)
             {
                 if (local.LegacyIssuer.Length > 0 && !WgKey(local.LegacyIssuer)
+                    || Uri.CheckHostName(local.Proxy.Tls.ServerName) == UriHostNameType.Unknown
                     || local.Proxy.Transport != "websocket" || local.Proxy.Host is not { Length: > 0 and <= 253 }
                     || local.Proxy.Path is null || local.Proxy.Path.Length > 2048 || local.Proxy.Path.Any(char.IsControl)
                     || local.Proxy.Port is < 1 or > 65535
@@ -248,7 +249,7 @@ public static class TransportProxyPortability
             else
             {
                 if (local.LegacyIssuer.Length > 0 || local.LegacyPort != 0 || local.LegacyOffered
-                    || !OfferedProxyCatalog.Valid(local.Proxy))
+                    || !OfferedProxyCatalog.Valid(local.Proxy) && !StoredPlain(local.Proxy))
                 {
                     throw Invalid();
                 }
@@ -261,6 +262,20 @@ public static class TransportProxyPortability
 
         return block with { Reference = reference, Retired = retired, Trust = trust,
             Local = block.Local is { } held ? held with { Proxy = ProxyTransportModes.Normalize(held.Proxy) } : null };
+    }
+
+    private static bool StoredPlain(OfferedProxy proxy)
+    {
+        if (proxy.Tls.Enabled && !(proxy.Transport == "xhttp" && proxy.Xhttp?.Scheme == "http"))
+        {
+            return false;
+        }
+
+        return OfferedProxyCatalog.Valid(proxy with
+        {
+            Tls = proxy.Tls with { Enabled = true },
+            Xhttp = proxy.Xhttp is { } profile ? profile with { Scheme = "https" } : null,
+        });
     }
 
     private static ProxyReference Reference(ProxyReference? reference)

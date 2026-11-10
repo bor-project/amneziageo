@@ -2556,7 +2556,7 @@
     <value>часов</value>
   </data>
   <data name="Main_CardReorder" xml:space="preserve">
-    <value>Изменить порядок</value>
+    <value>Переместить</value>
   </data>
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Основной</value>
@@ -3109,4 +3109,19 @@
   <data name="Proxies_UseCertificate" xml:space="preserve"><value>Использовать сертификат</value></data>
   <data name="Proxies_HttpMethod" xml:space="preserve"><value>Метод HTTP</value></data>
   <data name="Proxies_Rejected" xml:space="preserve"><value>Прокси отклонил подключение</value></data>
+  <data name="Main_ReorderDone" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="Main_ReorderUp" xml:space="preserve">
+    <value>Переместить вверх</value>
+  </data>
+  <data name="Main_ReorderDown" xml:space="preserve">
+    <value>Переместить вниз</value>
+  </data>
+  <data name="Main_ReorderLeft" xml:space="preserve">
+    <value>Переместить влево</value>
+  </data>
+  <data name="Main_ReorderRight" xml:space="preserve">
+    <value>Переместить вправо</value>
+  </data>
 </root>

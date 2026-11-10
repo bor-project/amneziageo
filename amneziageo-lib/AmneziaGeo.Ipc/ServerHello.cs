@@ -61,13 +61,42 @@ public static class ServerHello
             return new HelloReply(null, false);
         }
 
-        using var handler = new SocketsHttpHandler { ConnectTimeout = timeout, UseProxy = false };
-        if (connect is not null)
+        var origin = new Uri(Origin(point));
+        if (origin.Scheme != "https" && !(point.InsideTunnel && origin.Scheme == "http")
+            || origin.UserInfo.Length > 0 || origin.Query.Length > 0 || origin.Fragment.Length > 0)
         {
-            handler.ConnectCallback = connect;
+            throw new TransportProxyFault("proxy-service-unavailable");
         }
 
-        handler.SslOptions.RemoteCertificateValidationCallback = Presented;
+        var tlsOptions = ProxyTls.Options(point.TlsName.Length > 0 ? point.TlsName : origin.IdnHost, point.TlsPin);
+        var address = new UriBuilder("http", origin.IdnHost, origin.Port, Path).Uri;
+        using var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = timeout, UseProxy = false, AllowAutoRedirect = false,
+            ConnectCallback = async (context, token) =>
+            {
+                using var pending = CancellationTokenSource.CreateLinkedTokenSource(token, ct);
+                var connection = connect is null
+                    ? await ConnectAsync(context.DnsEndPoint, pending.Token).ConfigureAwait(false)
+                    : await connect(context, pending.Token).ConfigureAwait(false);
+                if (origin.Scheme == "http")
+                {
+                    return connection;
+                }
+
+                var tls = new SslStream(connection, leaveInnerStreamOpen: false);
+                try
+                {
+                    await tls.AuthenticateAsClientAsync(tlsOptions, pending.Token).ConfigureAwait(false);
+                    return tls;
+                }
+                catch
+                {
+                    await tls.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
+            },
+        };
         using var client = new HttpClient(handler) { Timeout = timeout };
         var heard = false;
         try
@@ -77,7 +106,7 @@ public static class ServerHello
             {
                 var token = ServiceToken.Make(point.PrivateKey, point.ServerKey, time);
                 using var body = new StringContent(ServiceToken.Hello(token, point), Encoding.UTF8, "application/json");
-                using var response = await client.PostAsync(Origin(point) + Path, body, ct).ConfigureAwait(false);
+                using var response = await client.PostAsync(address, body, ct).ConfigureAwait(false);
                 if ((int)response.StatusCode >= 500)
                 {
                     return new HelloReply(null, false);
@@ -123,9 +152,20 @@ public static class ServerHello
         return string.Create(CultureInfo.InvariantCulture, $"https://{host}:{point.Port}");
     }
 
-    // Takes any certificate the services present: the token proves the client and the answer is sealed for it.
-    private static bool Presented(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors) =>
-        certificate is not null;
+    private static async ValueTask<Stream> ConnectAsync(DnsEndPoint endpoint, CancellationToken ct)
+    {
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+        try
+        {
+            await socket.ConnectAsync(endpoint, ct).ConfigureAwait(false);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
 
     // Opens a sealed answer and reads the offer in it.
     private static ServerOffer? Opened(ServiceTarget point, ServiceProof token, byte[] bytes)

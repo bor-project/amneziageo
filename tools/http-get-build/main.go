@@ -37,7 +37,7 @@ func build(cache, system, architecture, compiler string) error {
 	}
 	source := filepath.Join(root, "amneziageo-android", "libamneziawg-go")
 	files := map[string]string{}
-	for _, folder := range []string{"cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth"} {
+	for _, folder := range []string{"cmd/http-get-proxy", "xhttpnative", "transportnative", "internal/udppressure", "internal/httpgetauth", "internal/proxytls"} {
 		err := filepath.WalkDir(filepath.Join(source, filepath.FromSlash(folder)), func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err

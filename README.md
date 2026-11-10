@@ -23,6 +23,8 @@ Windows 7, 10 and 11 (x64 and ARM64), Linux (deb packages for amd64 and arm64), 
 
 Installation, configuration, command-line reference and build instructions are on the **[documentation site](https://bor-project.github.io/amneziageo/)**.
 
+Build from source with the .NET SDK selected by [global.json](global.json) (10.0.403 or a later patch in the same feature band).
+
 ## Server
 
 **[AmneziaGeo Server](https://github.com/bor-project/amneziageo_server)** is a panel for your own AmneziaWG server on Linux: clients with configurations, QR codes and subscriptions, templates, routing by geo databases and domains through other servers, a resolver for the clients. The client reads the geo sources, routing lists and subscription of such a server by itself; any other AmneziaWG server works as well. Installation and setup are on the **[server documentation site](https://bor-project.github.io/amneziageo_server/)**.

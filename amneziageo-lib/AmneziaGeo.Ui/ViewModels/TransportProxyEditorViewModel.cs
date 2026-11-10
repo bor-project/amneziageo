@@ -25,9 +25,9 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     public bool Editable { get; }
     public bool ModernEditable => Editable && !_legacy;
     public bool ShowCredential => Editable;
-    public bool ShowTls => Editable && UseCertificate;
+    public bool ShowTls => Editable;
     public bool ShowHttpMethod => TransportIndex == 1;
-    public bool CertificateEditable => ModernEditable && TransportIndex is 0 or 1;
+    public bool CertificateEditable => false;
     public bool ShowTargets => !_legacy;
     public string Source => _local ? Loc.Instance.Get("Proxies_Local")
         : _source.Length > 0 ? _source : Loc.Instance.Get("Proxies_Server");
@@ -91,7 +91,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
             Transports = ["WebSocket", "HTTP", "QUIC", "XHTTP"];
         }
         _methodIndex = (local?.Proxy.Http?.Method ?? summary?.Http?.Method) == "POST" ? 1 : 0;
-        _useCertificate = local is not null ? ProxyTransportModes.UsesCertificate(local.Proxy) : summary?.UseCertificate ?? true;
+        _useCertificate = true;
         _host = local?.Proxy.Host ?? summary?.Host ?? string.Empty;
         _port = (local?.Proxy.Port ?? summary?.Port ?? 443).ToString(CultureInfo.InvariantCulture);
         _path = local?.Proxy.Path ?? summary?.Path ?? string.Empty;
@@ -137,6 +137,12 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     partial void OnMethodIndexChanged(int value) => Changed();
     partial void OnUseCertificateChanged(bool value)
     {
+        if (!value)
+        {
+            UseCertificate = true;
+            return;
+        }
+
         Changed();
         OnPropertyChanged(nameof(ShowTls));
     }
@@ -175,7 +181,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
         return new OfferedProxy(Reference?.Id ?? "", Name.Trim(), transport,
             Host.Trim().Trim('[', ']'), int.TryParse(Port, out var port) ? port : 0, Path.Trim().Trim('/'),
             new OfferedProxyTls(ServerName.Trim().Length == 0 ? Host.Trim().Trim('[', ']') : ServerName.Trim(),
-                UseCertificate ? Pin.Trim() : "", UseCertificate),
+                Pin.Trim(), true),
             new OfferedProxyAuth(_legacy ? _original?.Auth.Scheme ?? "legacy" : transport switch
                 { "http" => "hmac-sha256-v2", "xhttp" => "vless", _ => "bearer" }, _legacy ? Credential : Credential.Trim()),
             DateTimeOffset.MinValue, transport == "xhttp" ? _original?.Xhttp : null,

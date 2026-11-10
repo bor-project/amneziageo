@@ -52,7 +52,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false),
                 rerouted: () => MarkRestartRequired(),
                 take: (ids, ct) => TakeVersionsAsync(made!, ids, ct),
-                carried: IsRunningMember);
+                carried: IsRunningMember,
+                insidePath: (config, address, _) => Task.FromResult(IsRunningMember(config) && TunnelHello.Reaches(routes, config, address)),
+                askConfined: (config, point, ct) => IsRunningMember(config) ? TunnelHello.AskAsync(routes, config, point, ct)
+                    : Task.FromResult(new HelloReply(null, false)));
             made = new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), scopeGeo, offers);
             return made;
         });
@@ -1627,12 +1630,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         await scope.Offers.WarmUnaskedAsync(await OfferTargetsAsync(scope, ct).ConfigureAwait(false), OfferChangedAsync, ct).ConfigureAwait(false);
     }
 
-    // A server that offers the tunnel something else now shows it in the next snapshot; a tunnel up whose server
-    // allows none but its own routing lists is put on one of them.
+    // A server that offers the tunnel something else now shows it in the next snapshot; a config whose server allows
+    // none but its own routing lists takes one of them, and a tunnel up on it takes the next connect.
     private async Task OfferChangedAsync(string config)
     {
         FindAppsLater();
-        if (IsRunningMember(config) && await KeepServerListsAsync(activeScope.Store, config, CancellationToken.None).ConfigureAwait(false))
+        if (await KeepServerListsAsync(activeScope.Store, config, CancellationToken.None).ConfigureAwait(false) && IsRunningMember(config))
         {
             MarkRestartRequired();
         }

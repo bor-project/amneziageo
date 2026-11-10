@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Controls.ReorderBar">
+  <StackPanel Spacing="8" Margin="10">
+    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+      <Button x:Name="LeftPart" Classes="methodpick" Content="←" MinWidth="40"
+              ToolTip.Tip="{l:Tr Main_ReorderLeft}" AutomationProperties.Name="{l:Tr Main_ReorderLeft}" />
+      <Button x:Name="UpPart" Classes="methodpick" Content="↑" MinWidth="40"
+              ToolTip.Tip="{l:Tr Main_ReorderUp}" AutomationProperties.Name="{l:Tr Main_ReorderUp}" />
+      <Button x:Name="DownPart" Classes="methodpick" Content="↓" MinWidth="40"
+              ToolTip.Tip="{l:Tr Main_ReorderDown}" AutomationProperties.Name="{l:Tr Main_ReorderDown}" />
+      <Button x:Name="RightPart" Classes="methodpick" Content="→" MinWidth="40"
+              ToolTip.Tip="{l:Tr Main_ReorderRight}" AutomationProperties.Name="{l:Tr Main_ReorderRight}" />
+    </StackPanel>
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+      <Button x:Name="DonePart" Content="{l:Tr Main_ReorderDone}" HorizontalAlignment="Stretch" />
+      <Button x:Name="CancelPart" Grid.Column="1" Content="{l:Tr Main_CancelButton}" HorizontalAlignment="Stretch" />
+    </Grid>
+  </StackPanel>
+</UserControl>

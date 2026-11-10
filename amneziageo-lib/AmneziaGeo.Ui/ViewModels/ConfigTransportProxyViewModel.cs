@@ -58,7 +58,8 @@ internal sealed partial class ConfigTransportViewModel
     public bool SelectedProxyIsHttpGet => SelectedSummary is { Transport: "http", Http: { Version: 2, Method: "GET" } };
     public bool SelectedProxyAvailable => SelectedSummary is { Missing: false, Availability: TransportProxyAvailability.Available };
     public string SelectedProxyFault => HasSelectedProxy && (SelectedSummary is not { } summary || summary.Missing)
-        ? Loc.Instance.Get("Proxies_Missing") : SelectedSummary is { } selected && !ProxyCompatible(selected)
+        ? Loc.Instance.Get("Proxies_Missing") : SelectedSummary is { Fault: "proxy-platform-unsupported" }
+            ? TransportProxyWords.Fault("proxy-platform-unsupported") : SelectedSummary is { } selected && !ProxyCompatible(selected)
             ? Loc.Instance.Get("Proxies_TargetDenied") : string.Empty;
     public bool CanViewSelectedProxy => SelectedSummary is { Missing: false };
     public bool ShowRunningProxy => _proxyIsRunning;
@@ -139,7 +140,7 @@ internal sealed partial class ConfigTransportViewModel
             }
             else if (!compatible)
             {
-                label += $" · {Loc.Instance.Get("Proxies_TargetDenied")}";
+                label += $" · {(summary.Fault == "proxy-platform-unsupported" ? TransportProxyWords.Fault(summary.Fault) : Loc.Instance.Get("Proxies_TargetDenied"))}";
             }
 
             choices.Add(new TransportProxyChoice(summary.Reference, label, compatible, summary.Transport == "http" && summary.Http is { Version: 2, Method: "GET" }));
@@ -208,7 +209,7 @@ internal sealed partial class ConfigTransportViewModel
 
     private bool ProxyCompatible(TransportProxySummary summary)
     {
-        if (summary.Missing)
+        if (summary.Missing || summary.Fault == "proxy-platform-unsupported")
         {
             return false;
         }

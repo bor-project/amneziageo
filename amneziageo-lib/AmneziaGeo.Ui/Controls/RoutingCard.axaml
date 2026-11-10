@@ -12,7 +12,7 @@
        по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick">
     <Panel>
-      <Grid RowDefinitions="Auto,Auto">
+      <Grid RowDefinitions="Auto,Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
           <!-- Имя списка с его режимом и применение: тумблер стоит на месте кнопки подключения карточки сервера,
                на строке имени. -->
@@ -73,7 +73,7 @@
         </Grid>
 
         <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->
-        <Border Grid.Row="1" Classes="cardfoot">
+        <Border x:Name="FooterPart" Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <controls:CardTags x:Name="TagsPart" Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <!-- Шестерёнка встаёт под круг применения: поле повторяет его ширину. -->
@@ -86,6 +86,7 @@
             </Panel>
           </Grid>
         </Border>
+        <controls:ReorderBar x:Name="ReorderPart" Grid.Row="2" IsVisible="False" />
       </Grid>
 
       <!-- Светлая рамка у всякой карточки; поверх неё рамка выбранного в каталоге - цветом его подключения.
@@ -97,6 +98,8 @@
               IsVisible="{Binding IsSelected}" />
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
               BorderBrush="{Binding CardFrameBrush}" IsVisible="{Binding ShowCardFrame}" />
+      <Border x:Name="MoveFramePart" BorderThickness="2" CornerRadius="12" IsHitTestVisible="False"
+              BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="False" />
     </Panel>
   </Button>
 </UserControl>

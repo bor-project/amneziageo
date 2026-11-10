@@ -556,12 +556,8 @@ public static class ChannelProbe
         {
             AutomaticDecompression = System.Net.DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(5),
+            AllowAutoRedirect = false,
         };
-
-        if (own)
-        {
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-        }
 
         if (bypass is not null)
         {
@@ -671,12 +667,8 @@ public static class ChannelProbe
         {
             AutomaticDecompression = System.Net.DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(5),
+            AllowAutoRedirect = false,
         };
-
-        if (own)
-        {
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-        }
 
         if (bypass is not null)
         {

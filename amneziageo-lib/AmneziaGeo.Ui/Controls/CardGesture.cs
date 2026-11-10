@@ -14,8 +14,8 @@ internal static class CardGesture
     {
         return key switch
         {
-            Key.Left => -1,
-            Key.Right => 1,
+            Key.Left when columns > 1 => -1,
+            Key.Right when columns > 1 => 1,
             Key.Up => -columns,
             Key.Down => columns,
             _ => 0,

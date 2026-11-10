@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/proxytls"
 )
 
 type retryRoundTripper func(*http.Request) (*http.Response, error)
@@ -91,6 +93,7 @@ func TestRetryRejectsPermanentFailuresImmediately(t *testing.T) {
 		{"auth", http.StatusUnauthorized, nil},
 		{"session-expired", http.StatusGone, nil},
 		{"certificate", 0, x509.UnknownAuthorityError{Cert: &x509.Certificate{}}},
+		{"plain-first-record", 0, http.ErrSchemeMismatch},
 		{"pin", 0, errCertificatePin},
 		{"protect", 0, ErrProtect},
 	}
@@ -152,5 +155,11 @@ func TestRetryBudgetEventuallyExpires(t *testing.T) {
 	_, _, _, err := host.retry("open", nil, nil)
 	if !errors.Is(err, context.DeadlineExceeded) || attempts.Load() <= 3 || time.Since(started) < recoveryBudget-time.Second {
 		t.Fatalf("recovery budget was not enforced: attempts=%d elapsed=%v err=%v", attempts.Load(), time.Since(started), err)
+	}
+}
+
+func TestPinnedTlsFailureIsNotRetried(t *testing.T) {
+	if retryable(0, &url.Error{Op: "Get", URL: "https://proxy.example/", Err: proxytls.ErrIdentity}) {
+		t.Fatal("pinned TLS failure was retried")
 	}
 }

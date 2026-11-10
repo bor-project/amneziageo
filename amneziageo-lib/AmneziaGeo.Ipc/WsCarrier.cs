@@ -73,7 +73,6 @@ public sealed class WsCarrier : IDisposable
     private const int LoopbackProbeMs = 300;
 
     // How long the carrier waits between two questions to the server about where its front stands.
-    private const int AskGapMs = 5000;
 
     // How long one write to the front may take before the websocket counts as gone.
     private const int WriteTimeoutMs = 15000;
@@ -106,7 +105,6 @@ public sealed class WsCarrier : IDisposable
     // makes up at every start; this keeps that shape.
     private static readonly byte[] Secret = RandomNumberGenerator.GetBytes(32);
 
-    private readonly Func<CancellationToken, Task<WsEndpoint?>>? _ask;
     private readonly Action? _gone;
     private readonly IPAddress _address;
     private readonly int _targetPort;
@@ -134,8 +132,6 @@ public sealed class WsCarrier : IDisposable
     private int _unanswered;
     private int _renewing;
     private StrongBox<WsEndpoint> _held;
-    private long _asked = -AskGapMs;
-    private int _asking;
     private int _told;
     private volatile bool _disposed;
 
@@ -153,7 +149,6 @@ public sealed class WsCarrier : IDisposable
         Action? gone)
     {
         _held = new StrongBox<WsEndpoint>(front);
-        _ask = ask;
         _gone = gone;
         _address = address;
         _targetPort = targetPort;
@@ -849,6 +844,19 @@ public sealed class WsCarrier : IDisposable
         return (dial.Outcome, dial.Detail);
     }
 
+    public static string RefusalFault(string detail)
+    {
+        var parts = detail.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || parts[0] != "HTTP/1.1" || parts[1].Length != 3 || !parts[1].All(char.IsAsciiDigit)
+            || !int.TryParse(parts[1], out var status))
+        {
+            return "proxy-rejected";
+        }
+
+        return status is 401 or 403 ? "proxy-auth"
+            : TransportProxyProbes.TransientStatus(status) ? "proxy-unavailable" : "proxy-rejected";
+    }
+
     // One websocket to the front: a connect to the resolved address, TLS, the upgrade. The socket is never asked
     // for anything asynchronous, so a thread waiting on it is woken by the system itself.
     private static (Stream? Stream, WsFrontOutcome Outcome, string Detail, Exception? Error) Dial(
@@ -917,79 +925,11 @@ public sealed class WsCarrier : IDisposable
     internal static SslClientAuthenticationOptions TlsOptions(WsEndpoint front, string? authorization)
     {
         front = front.Normalize();
-        var options = new SslClientAuthenticationOptions
-        {
-            TargetHost = front.ServerName.Length > 0 ? front.ServerName : front.Host,
-        };
-        if (front.Pin.Length > 0)
-        {
-            var pin = Convert.FromHexString(front.Pin);
-            options.RemoteCertificateValidationCallback = (_, certificate, _, _) => certificate is not null
-                && CryptographicOperations.FixedTimeEquals(SHA256.HashData(certificate.GetRawCertData()), pin);
-        }
-        else if (!front.Modern && authorization is not null)
-        {
-            options.RemoteCertificateValidationCallback = Presented;
-        }
-
-        return options;
+        return ProxyTls.Options(front.ServerName.Length > 0 ? front.ServerName : front.Host, front.Pin);
     }
 
     // The front the carrier dials now.
     private WsEndpoint Front => Volatile.Read(ref _held).Value;
-
-    // Asks the server where its front stands now, no more often than the gap and one question at a time.
-    private void Rethink(WsEndpoint dialled, string refusal)
-    {
-        if (_ask is null || _disposed)
-        {
-            return;
-        }
-
-        var now = Environment.TickCount64;
-        if (now - Interlocked.Read(ref _asked) < AskGapMs || Interlocked.CompareExchange(ref _asking, 1, 0) != 0)
-        {
-            return;
-        }
-
-        Interlocked.Exchange(ref _asked, now);
-        _ = Task.Run(() => AskAsync(_ask, dialled, refusal));
-    }
-
-    // Moves the carrier to the front the server names by now, or tells the caller the server offers none.
-    private async Task AskAsync(Func<CancellationToken, Task<WsEndpoint?>> ask, WsEndpoint dialled, string refusal)
-    {
-        try
-        {
-            var held = await ask(_cts.Token).ConfigureAwait(false);
-            if (FrontRedial.Moved(dialled, held) && held is { } named)
-            {
-                Volatile.Write(ref _held, new StrongBox<WsEndpoint>(named));
-                Interlocked.Exchange(ref _attempted, 0);
-                _note?.Invoke($"the front at {dialled.Host}:{dialled.Port} refused the websocket of the tunnel ({refusal}), and the server names another front by now: port {named.Port}, path token set: {named.PathPrefix.Length > 0}; the carrier dials it now, and the tunnel keeps its session", null);
-            }
-            else if (held is null && Interlocked.Exchange(ref _told, 1) == 0)
-            {
-                _note?.Invoke($"the front at {dialled.Host}:{dialled.Port} refused the websocket of the tunnel ({refusal}), and the server offers no websocket front any more", null);
-                _gone?.Invoke();
-            }
-        }
-        catch (Exception) when (_disposed || _cts.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            _note?.Invoke("the server could not be asked where its websocket front stands now, so the carrier dials the front it knows again", ex);
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _asking, 0);
-        }
-    }
-
-    // Takes any certificate a front presents to a carrier that proves its keys by the token.
-    private static bool Presented(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors) =>
-        certificate is not null;
 
     // The carrier's own dial, with the outcome written to the log the way the tunnel reads it.
     private Stream? Open(bool beside)
@@ -1008,7 +948,10 @@ public sealed class WsCarrier : IDisposable
                 return dial.Stream;
             case WsFrontOutcome.Refused:
                 _note?.Invoke($"the websocket front at {front} refused to carry the tunnel: {dial.Detail}", null);
-                Rethink(dialled, dial.Detail);
+                if (Interlocked.Exchange(ref _told, 1) == 0)
+                {
+                    _gone?.Invoke();
+                }
                 return null;
             case WsFrontOutcome.Tls:
                 _note?.Invoke($"the websocket front at {front} did not come up under TLS", dial.Error);

@@ -23,6 +23,8 @@ Windows 7, 10 и 11 (x64 и ARM64), Linux (пакеты deb для amd64 и arm6
 
 Установка, настройка, команды CLI и сборка из исходников - на **[сайте документации](https://bor-project.github.io/amneziageo/index.ru.html)**.
 
+Для сборки из исходников нужен .NET SDK из [global.json](global.json): 10.0.403 или более новый патч той же feature band.
+
 ## Сервер
 
 **[AmneziaGeo Server](https://github.com/bor-project/amneziageo_server/blob/master/README.ru.md)** - панель управления своим сервером AmneziaWG на Linux: клиенты с конфигурациями, QR-кодами и подписками, шаблоны, маршрутизация по гео-базам и доменам через другие серверы, резолвер для клиентов. Гео-источники, списки маршрутизации и подписку такого сервера клиент читает сам; любой другой сервер AmneziaWG тоже подходит. Установка и настройка - на **[сайте документации сервера](https://bor-project.github.io/amneziageo_server/index.ru.html)**.

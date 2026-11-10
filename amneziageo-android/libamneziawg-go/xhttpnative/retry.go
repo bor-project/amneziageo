@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bor-project/amneziageo/libamneziawg-go/internal/httpgetauth"
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/proxytls"
 )
 
 const recoveryBudget = 45 * time.Second
@@ -36,7 +37,7 @@ func retryable(status int, err error) bool {
 			status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, ErrProtect) || errors.Is(err, errProtocol) ||
-		errors.Is(err, errCertificatePin) || errors.Is(err, errCertificateMissing) {
+		errors.Is(err, errCertificatePin) || errors.Is(err, errCertificateMissing) || errors.Is(err, proxytls.ErrIdentity) || errors.Is(err, http.ErrSchemeMismatch) {
 		return false
 	}
 	var verification *tls.CertificateVerificationError

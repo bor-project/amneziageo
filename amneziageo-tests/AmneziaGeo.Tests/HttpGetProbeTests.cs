@@ -30,6 +30,13 @@ public sealed class HttpGetProbeTests
                 CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false)
             : await TransportProxyProbes.CheckAsync(record, CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
 
+        if (plain)
+        {
+            Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
+            Assert.Empty(server.Requests);
+            return;
+        }
+
         Assert.Equal(TransportProxyAvailability.Available, result.Availability);
         await server.Completion.ConfigureAwait(false);
         Assert.Equal(2, server.Requests.Count);
@@ -43,7 +50,7 @@ public sealed class HttpGetProbeTests
     [InlineData(false)]
     public async Task AnAlteredResponseOrNonceCannotConfirmAvailability(bool alterBody)
     {
-        await using var server = new Front(true, alterBody: alterBody, wrongNonce: !alterBody);
+        await using var server = new Front(false, alterBody: alterBody, wrongNonce: !alterBody);
         var result = alterBody
             ? await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(server.Proxy(), "vpn", "vpn.example", 51820),
                 CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false)
@@ -58,7 +65,7 @@ public sealed class HttpGetProbeTests
     [Fact]
     public async Task ASignedDestinationRefusalRetainsItsReason()
     {
-        await using var server = new Front(true, denied: true);
+        await using var server = new Front(false, denied: true);
         var result = await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(server.Proxy(), "vpn", "vpn.example", 51820),
             CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
 
@@ -73,7 +80,7 @@ public sealed class HttpGetProbeTests
     [InlineData(503, TransportProxyAvailability.Unavailable, "proxy-unavailable")]
     public async Task ASignedStatusCannotBecomeAnAvailableProxy(int status, TransportProxyAvailability availability, string fault)
     {
-        await using var server = new Front(true, responseStatus: status);
+        await using var server = new Front(false, responseStatus: status);
         var result = await TransportProxyProbes.CheckAsync(server.Proxy(), CancellationToken.None,
             connect: server.ConnectAsync).ConfigureAwait(false);
 
@@ -85,7 +92,7 @@ public sealed class HttpGetProbeTests
     [Fact]
     public async Task APostProbeUsesTheSelectedMethodAndSignedResponses()
     {
-        await using var server = new Front(true, method: "POST");
+        await using var server = new Front(false, method: "POST");
         var record = server.Proxy();
         var result = await TransportProxyProbes.CheckAsync(record, CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
         Assert.Equal(TransportProxyAvailability.Available, result.Availability);
@@ -94,6 +101,60 @@ public sealed class HttpGetProbeTests
         Assert.Equal(2, server.Requests.Count);
         Assert.All(server.Requests, request => Assert.StartsWith("POST ", request, StringComparison.Ordinal));
         Assert.All(server.Requests, request => Assert.DoesNotContain(Front.User, request, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(408)]
+    [InlineData(429)]
+    [InlineData(500)]
+    [InlineData(502)]
+    [InlineData(503)]
+    [InlineData(504)]
+    public async Task AnUnsignedBusyChallengeRemainsUnavailableAndRetryable(int status)
+    {
+        foreach (var target in new[] { false, true })
+        {
+            await using var server = new Front(false, challengeStatus: status);
+            var result = target ? await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(server.Proxy(), "qa", "vpn.example", 51820),
+                CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false)
+                : await TransportProxyProbes.CheckAsync(server.Proxy(), CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+            Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
+            Assert.Equal("proxy-unavailable", result.Fault);
+            Assert.True(ConnectRetry.IsTransient(TransportProxyProbes.FailureReason(result.Fault)));
+            await server.Completion.ConfigureAwait(false);
+            Assert.Single(server.Requests);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ABusyProtocolEnvelopeCannotHideAnInvalidProof(bool challenge)
+    {
+        await using var server = challenge ? new Front(false, challengeStatus: 503, partialChallenge: true)
+            : new Front(false, responseStatus: 503, alterBody: true);
+        var result = await TransportProxyProbes.CheckAsync(server.Proxy(), CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+        Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
+        Assert.Equal("proxy-bad-answer", result.Fault);
+        Assert.False(ConnectRetry.IsTransient(TransportProxyProbes.FailureReason(result.Fault)));
+        await server.Completion.ConfigureAwait(false);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("POST")]
+    public async Task RepeatedTlsProbesAuthenticateTheSelectedMethod(string method)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            await using var server = new Front(false, method: method);
+            var result = await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(server.Proxy(), "vpn", "vpn.example", 51820),
+                CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+            Assert.Equal(TransportProxyAvailability.Available, result.Availability);
+            await server.Completion.ConfigureAwait(false);
+            Assert.Equal(["tcp:accepted", "tls:tls.example.net", "http:challenge-key-id", "http:signed-probe"], server.Trace);
+            TestContext.Current.TestOutputHelper?.WriteLine($"{method} attempt {attempt + 1}: {string.Join(" -> ", server.Trace)}; signed response verified");
+        }
     }
 
     private sealed class Front : IAsyncDisposable
@@ -107,23 +168,27 @@ public sealed class HttpGetProbeTests
         private readonly int _port;
         internal Task Completion { get; }
         internal List<string> Requests { get; } = [];
+        internal List<string> Trace { get; } = [];
         internal string ServerName { get; private set; } = "";
         internal bool TargetRequested { get; private set; }
 
         /// <summary>
         /// ctor
         /// </summary>
-        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET")
+        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET", int challengeStatus = 200, bool partialChallenge = false)
         {
             _plain = plain;
             _method = method;
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var request = new CertificateRequest("CN=tls.example.net", key, HashAlgorithmName.SHA256);
+            var names = new SubjectAlternativeNameBuilder();
+            names.AddDnsName("tls.example.net");
+            request.CertificateExtensions.Add(names.Build());
             using var made = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
             _certificate = X509CertificateLoader.LoadPkcs12(made.Export(X509ContentType.Pfx), null);
             _listener.Start();
             _port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-            Completion = ServeAsync(alterBody, wrongNonce, denied, responseStatus);
+            Completion = ServeAsync(alterBody, wrongNonce, denied, responseStatus, challengeStatus, partialChallenge);
         }
 
         internal CatalogTransportProxy Proxy()
@@ -149,10 +214,11 @@ public sealed class HttpGetProbeTests
             return client.GetStream();
         }
 
-        private async Task ServeAsync(bool alterBody, bool wrongNonce, bool denied, int responseStatus)
+        private async Task ServeAsync(bool alterBody, bool wrongNonce, bool denied, int responseStatus, int challengeStatus, bool partialChallenge)
         {
             var ct = _stop.Token;
             using var client = await _listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+            Trace.Add("tcp:accepted");
             using var tls = new SslStream(client.GetStream(), leaveInnerStreamOpen: true);
             if (!_plain)
             {
@@ -165,6 +231,7 @@ public sealed class HttpGetProbeTests
                         return _certificate;
                     },
                 }, ct).ConfigureAwait(false);
+                Trace.Add("tls:" + ServerName);
             }
 
             var stream = _plain ? client.GetStream() : (Stream)tls;
@@ -174,6 +241,13 @@ public sealed class HttpGetProbeTests
             var challenge = await ReadAsync(reader, ct).ConfigureAwait(false);
             var challengeQuery = Query(challenge.Path);
             Assert.Equal("challenge", challengeQuery["op"]);
+            if (challengeStatus != 200)
+            {
+                var protocol = partialChallenge ? "X-WG-Version: 2\r\n" : "";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {challengeStatus} Busy\r\n{protocol}Content-Length: 4\r\nConnection: close\r\n\r\nbusy"), ct).ConfigureAwait(false);
+                return;
+            }
+
             var challengeBody = JsonSerializer.SerializeToUtf8Bytes(new { epoch = Convert.ToHexStringLower(epoch), time = 1000 });
             using var proof = new MemoryStream();
             Put(proof, "amneziageo.http-get.challenge.v2"u8.ToArray());
@@ -241,6 +315,7 @@ public sealed class HttpGetProbeTests
             Assert.False(headers.ContainsKey("Transfer-Encoding"));
             Assert.True(!headers.TryGetValue("Content-Length", out var length) || length == "0");
             Assert.Equal("cdn.example.net:" + _port, headers["Host"]);
+            Trace.Add(Requests.Count == 0 ? "http:challenge-key-id" : "http:signed-probe");
             Requests.Add(text.ToString());
             return (parts[1], headers);
         }

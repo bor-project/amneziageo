@@ -34,6 +34,7 @@ public sealed class TransportProxyCatalog
 {
     private static readonly ConditionalWeakTable<IStateStore, TransportProxyCatalog> Instances = new();
     private readonly IStateStore _store;
+    private readonly bool _fullRuntime;
     private Func<CancellationToken, Task<IReadOnlyDictionary<string, string>>>? _configurations;
     private readonly ConcurrentDictionary<ProxyReference, (string Stamp, TransportProxyProbeResult Result)> _probes = new();
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -41,9 +42,10 @@ public sealed class TransportProxyCatalog
     /// <summary>
     /// ctor
     /// </summary>
-    public TransportProxyCatalog(IStateStore store)
+    public TransportProxyCatalog(IStateStore store, bool? fullRuntime = null)
     {
         _store = store;
+        _fullRuntime = fullRuntime ?? OperatingSystem.IsWindows();
     }
 
     /// <summary>
@@ -94,8 +96,26 @@ public sealed class TransportProxyCatalog
             throw new TransportProxyFault("unknown-config");
         }
 
-        var held = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var target = ConfigServices.Target(text);
+        if (target is not null && (target.TlsName.Length > 0 || target.TlsPin.Length > 0))
+        {
+            await ChangeAsync(state =>
+            {
+                CatalogTransportProxy Trust(CatalogTransportProxy record) => !record.Local && record.Legacy && record.LegacyPublisher == config
+                    && string.Equals(record.Proxy.Host, target.Host, StringComparison.OrdinalIgnoreCase)
+                    ? record with { Proxy = record.Proxy with { Tls = new OfferedProxyTls(
+                        target.TlsName.Length > 0 ? target.TlsName : target.Host, target.TlsPin, record.Proxy.Tls.Enabled) } }
+                    : record;
+                var next = state with
+                {
+                    Locals = [.. state.Locals.Select(Trust)],
+                    Publications = [.. state.Publications.Select(one => one with { Records = [.. one.Records.Select(Trust)] })],
+                };
+                return (next, true);
+            }, ct).ConfigureAwait(false);
+        }
+
+        var held = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         if (held.Selections.Any(one => one.Config == config)
             && (target is null || held.Publications.Any(one => one.Publisher == config && one.Slot == "catalog" && one.Mark == target.Mark())))
         {
@@ -143,6 +163,8 @@ public sealed class TransportProxyCatalog
             {
                 var candidate = Choose(Candidates(state, context).Where(one => one.Record.Reference == reference), config)
                     ?? throw new TransportProxyFault("proxy-missing");
+                Check(candidate.Record.Proxy, candidate.Record.Legacy);
+                CheckRuntime(candidate.Record);
                 if (TargetFault(candidate.Record, context.GetValueOrDefault(config)) is { } fault)
                 {
                     throw new TransportProxyFault(fault);
@@ -296,6 +318,7 @@ public sealed class TransportProxyCatalog
             ?? throw new TransportProxyFault("proxy-missing");
         var record = candidate.Record;
         Check(record.Proxy, record.Legacy);
+        CheckRuntime(record);
         if (TargetFault(record, endpoint) is { } targetFault)
         {
             throw new TransportProxyFault(targetFault);
@@ -355,7 +378,18 @@ public sealed class TransportProxyCatalog
 
             var probe = _probes.TryGetValue(record.Reference, out var remembered) && remembered.Stamp == Stamp(record)
                 ? remembered.Result : new TransportProxyProbeResult(TransportProxyAvailability.Unknown);
+            var invalid = DefinitionFault(record);
+            if (invalid.Length == 0 && !ProxyTransportModes.RuntimeSupported(record.Proxy, _fullRuntime))
+            {
+                invalid = "proxy-platform-unsupported";
+            }
+            if (invalid.Length > 0)
+            {
+                probe = new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, invalid);
+            }
+
             var compatible = context.Where(pair => Choose(group, pair.Key) is { } forConfig
+                && DefinitionFault(forConfig.Record).Length == 0 && ProxyTransportModes.RuntimeSupported(forConfig.Record.Proxy, _fullRuntime)
                 && TargetFault(forConfig.Record, pair.Value) is null).Select(pair => pair.Key).Order(StringComparer.Ordinal).ToArray();
             summaries.Add(new TransportProxySummary(record.Reference, definition.Name, definition.Transport, definition.Host,
                 definition.Port, record.Legacy ? "" : definition.Path, record.Local,
@@ -392,6 +426,9 @@ public sealed class TransportProxyCatalog
         var state = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var candidate = Choose(Candidates(state, context).Where(one => one.Record.Reference == reference), "");
         var result = candidate is null ? new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, "proxy-missing")
+            : DefinitionFault(candidate.Record) is { Length: > 0 } invalid ? new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, invalid)
+            : !ProxyTransportModes.RuntimeSupported(candidate.Record.Proxy, _fullRuntime)
+                ? new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, "proxy-platform-unsupported")
             : await probe(candidate.Record, ct).ConfigureAwait(false);
         if (candidate is not null && ProxyTransportModes.Unconfirmed(candidate.Record.Proxy)
             && result.Availability == TransportProxyAvailability.Available && result.ProtocolVersion == 2)
@@ -453,7 +490,7 @@ public sealed class TransportProxyCatalog
         var legacy = offer.Ours && offer.WebSocketPort > 0
             ? new CatalogTransportProxy(new ProxyReference(ProxySourceIdentity.Legacy(target.ServerKey), "legacy"),
                 new OfferedProxy("legacy", LegacyName(publisher), "websocket", target.Host, offer.WebSocketPort, offer.WebSocketPath,
-                    new OfferedProxyTls(target.Host, ""), new OfferedProxyAuth("legacy", ""), DateTimeOffset.MinValue),
+                    new OfferedProxyTls(target.TlsName.Length > 0 ? target.TlsName : target.Host, target.TlsPin), new OfferedProxyAuth("legacy", ""), DateTimeOffset.MinValue),
                 Legacy: true, LegacyIssuer: target.ServerKey, LegacyPort: endpointPort > 0 ? endpointPort : target.Port,
                 LegacyPublisher: publisher, LegacyOffered: true)
             : null;
@@ -616,7 +653,7 @@ public sealed class TransportProxyCatalog
     }
 
     private static OfferedProxy Definition(string id, string name, WsEndpoint front) => new(id, name.Length > 64 ? name[..64] : name,
-        "websocket", front.Host, front.Port, front.PathPrefix.Trim('/'), new OfferedProxyTls(front.Host, ""),
+        "websocket", front.Host, front.Port, front.PathPrefix.Trim('/'), new OfferedProxyTls(front.ServerName.Length > 0 ? front.ServerName : front.Host, front.Pin, front.UseCertificate),
         new OfferedProxyAuth("legacy", front.Credentials), DateTimeOffset.MinValue);
 
     private static string LegacyName(string publisher)
@@ -625,8 +662,26 @@ public sealed class TransportProxyCatalog
         return name.Length > 64 ? name[..64] : name;
     }
 
+    private static string DefinitionFault(CatalogTransportProxy record)
+    {
+        try
+        {
+            Check(record.Proxy, record.Legacy);
+            return "";
+        }
+        catch (TransportProxyFault ex)
+        {
+            return ex.Code;
+        }
+    }
+
     private static void Check(OfferedProxy proxy, bool legacy)
     {
+        if (proxy is not { Tls: { ServerName: not null, Pin: not null }, Auth: { Scheme: not null, Credential: not null } })
+        {
+            throw new TransportProxyFault("bad-proxy");
+        }
+
         if (!ProxyTargetRules.Valid(proxy.Targets))
         {
             throw new TransportProxyFault("bad-proxy-targets");
@@ -634,7 +689,9 @@ public sealed class TransportProxyCatalog
 
         if (legacy)
         {
-            if (proxy.Transport != "websocket" || !WsEndpoint.Dials(new WsEndpoint(proxy.Host, proxy.Port, proxy.Path, proxy.Auth.Credential).Address())
+            if (!proxy.Tls.Enabled || Uri.CheckHostName(proxy.Tls.ServerName) == UriHostNameType.Unknown
+                || proxy.Tls.Pin.Length != 0 && (proxy.Tls.Pin.Length != 64 || !proxy.Tls.Pin.All(char.IsAsciiHexDigit))
+                || proxy.Transport != "websocket" || !WsEndpoint.Dials(new WsEndpoint(proxy.Host, proxy.Port, proxy.Path, proxy.Auth.Credential).Address())
                 || proxy.Port is < 1 or > 65535)
             {
                 throw new TransportProxyFault("bad-proxy");
@@ -651,6 +708,14 @@ public sealed class TransportProxyCatalog
 
     private sealed record Context(ServiceTarget? Target, int Port);
     private sealed record Candidate(CatalogTransportProxy Record, string Publisher, string Origin, string Error = "");
+
+    private void CheckRuntime(CatalogTransportProxy record)
+    {
+        if (!ProxyTransportModes.RuntimeSupported(record.Proxy, _fullRuntime))
+        {
+            throw new TransportProxyFault("proxy-platform-unsupported");
+        }
+    }
 
     private static string? TargetFault(CatalogTransportProxy record, Context? endpoint)
     {

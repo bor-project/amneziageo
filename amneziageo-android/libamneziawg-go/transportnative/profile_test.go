@@ -2,18 +2,39 @@ package transportnative
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/httpgetauth"
+	"github.com/bor-project/amneziageo/libamneziawg-go/internal/proxytls"
 	"github.com/bor-project/amneziageo/libamneziawg-go/xhttpnative"
 	"github.com/quic-go/quic-go"
 )
+
+func TestTypedPermanentFailuresKeepTheirOuterClassification(t *testing.T) {
+	for _, item := range []struct {
+		err  error
+		code string
+	}{
+		{fmt.Errorf("response: %w", httpgetauth.ErrFields), "proxy-bad-answer"},
+		{fmt.Errorf("TLS: %w", tls.RecordHeaderError{Msg: "first record"}), "proxy-tls"},
+		{fmt.Errorf("HTTPS: %w", http.ErrSchemeMismatch), "proxy-tls"},
+		{errors.New("http-get-challenge-status-503"), "proxy-no-answer"},
+	} {
+		if code := FaultCode(item.err); code != item.code {
+			t.Fatalf("FaultCode(%T) = %s, want %s", item.err, code, item.code)
+		}
+	}
+}
 
 func fixture(method string, certificate bool) map[string]any {
 	return map[string]any{"version": 2, "transport": "http", "listen": map[string]any{"host": "127.0.0.1", "port": 57331},
@@ -37,6 +58,12 @@ func TestExplicitMethodsAndCertificates(t *testing.T) {
 	for _, method := range []string{"GET", "POST"} {
 		for _, certificate := range []bool{false, true} {
 			p, err := Parse(encoded(t, fixture(method, certificate)), false)
+			if !certificate {
+				if !errors.Is(err, ErrProfile) {
+					t.Fatal("plaintext profile accepted", err)
+				}
+				continue
+			}
 			if err != nil {
 				t.Fatal(method, certificate, err)
 			}
@@ -62,8 +89,8 @@ func TestInvalidModesNeverSelectAnotherCarrier(t *testing.T) {
 		"method":                   func(v map[string]any) { v["http"].(map[string]any)["method"] = "PUT" },
 		"get-body":                 func(v map[string]any) { v["http"].(map[string]any)["dataPlacement"] = "body" },
 		"missing-certificate-flag": func(v map[string]any) { delete(v["front"].(map[string]any)["tls"].(map[string]any), "enabled") },
-		"plain-pin": func(v map[string]any) {
-			v["front"].(map[string]any)["tls"].(map[string]any)["pin"] = strings.Repeat("a", 64)
+		"bad-pin": func(v map[string]any) {
+			v["front"].(map[string]any)["tls"].(map[string]any)["pin"] = strings.Repeat("z", 64)
 		},
 		"dial-dns":        func(v map[string]any) { v["front"].(map[string]any)["dialAddress"] = "proxy.example" },
 		"public-listener": func(v map[string]any) { v["listen"].(map[string]any)["host"] = "0.0.0.0" },
@@ -72,7 +99,7 @@ func TestInvalidModesNeverSelectAnotherCarrier(t *testing.T) {
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
-			v := fixture("GET", false)
+			v := fixture("GET", true)
 			change(v)
 			if _, err := Start(encoded(t, v), nil); !errors.Is(err, ErrProfile) {
 				t.Fatal(err)
@@ -143,7 +170,7 @@ func TestCancelledReadinessReleasesTheLocalSocket(t *testing.T) {
 	}
 	port := socket.LocalAddr().(*net.UDPAddr).Port
 	socket.Close()
-	v := fixture("POST", false)
+	v := fixture("POST", true)
 	v["listen"].(map[string]any)["port"] = port
 	host, err := Start(encoded(t, v), nil)
 	if err != nil {
@@ -178,5 +205,11 @@ func TestRemoteConnectRefusalIsDistinctFromNetworkLoss(t *testing.T) {
 	local := &quic.ApplicationError{Remote: false, ErrorCode: 0}
 	if connectFault(local) != local {
 		t.Fatal("local cancellation reclassified")
+	}
+}
+
+func TestPinnedTlsFailureIsReportedAsTls(t *testing.T) {
+	if FaultCode(proxytls.ErrIdentity) != "proxy-tls" {
+		t.Fatal("pinned identity failure changed reason")
 	}
 }

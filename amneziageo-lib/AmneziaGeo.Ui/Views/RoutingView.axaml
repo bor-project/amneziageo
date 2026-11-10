@@ -472,12 +472,6 @@
                 <Border Classes="rowsep" />
               </StackPanel>
 
-              <!-- Добавка к любому набору: реклама уходит в корзину «Блок». -->
-              <controls:SettingSwitchRow Heading="True" Label="{l:Tr Preset_AdsTitle}" Description="{l:Tr Preset_AdsHint}"
-                                         IsChecked="{Binding PresetAds, Mode=TwoWay}" />
-
-              <Border Classes="rowsep" />
-
               <Button Classes="accent" MinWidth="130" HorizontalAlignment="Left"
                       Command="{Binding ApplyPresetCommand}" CommandParameter="{Binding SelectedTemplate}">
                 <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">

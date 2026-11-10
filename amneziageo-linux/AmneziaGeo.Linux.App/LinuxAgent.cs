@@ -3270,11 +3270,7 @@ internal sealed class LinuxAgent : IDisposable
             await GatedAsync(
                 async () =>
                 {
-                    if (_desiredConnected && string.Equals(config, _boundTarget, StringComparison.Ordinal))
-                    {
-                        await KeepServerListsAsync(config, CancellationToken.None).ConfigureAwait(false);
-                    }
-
+                    await KeepServerListsAsync(config, CancellationToken.None).ConfigureAwait(false);
                     await ApplyRoutingAsync(CancellationToken.None).ConfigureAwait(false);
                 },
                 CancellationToken.None).ConfigureAwait(false);

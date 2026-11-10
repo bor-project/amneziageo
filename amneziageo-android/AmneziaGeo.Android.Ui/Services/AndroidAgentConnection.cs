@@ -3401,7 +3401,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         Save();
         await TakeStorePickAsync().ConfigureAwait(false);
         FindAppsLater();
-        if (_active && string.Equals(_boundTarget, config, StringComparison.Ordinal) && await KeepServerListsAsync(config).ConfigureAwait(false))
+        if (await KeepServerListsAsync(config).ConfigureAwait(false) && _active && string.Equals(_boundTarget, config, StringComparison.Ordinal))
         {
             RequireRestart();
             _log.Info("agent", "the routing list the server allows applies on the next connect");

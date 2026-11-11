@@ -233,7 +233,10 @@ internal sealed partial class CatalogCard : UserControl
 
     private void OnCardCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
-        _reorder.Cancel();
+        if (!_reorder.Dragging)
+        {
+            _reorder.Cancel();
+        }
     }
 
     // Центральная кнопка вводит пульт в карточку, стрелки водят по её контролам, «назад» выводит; пока пульт

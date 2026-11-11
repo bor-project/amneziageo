@@ -81,7 +81,7 @@ if ($missing) {
         Push-Location $submodule
         try {
             & cmd.exe /c build.cmd
-            if ($LASTEXITCODE -ne 0) { throw "build.cmd bootstrap failed ($LASTEXITCODE)" }
+            if ($LASTEXITCODE -ne 0 -and (Get-MissingDeps).Count -gt 0) { throw "build.cmd bootstrap failed ($LASTEXITCODE)" }
         } finally { Pop-Location }
     } finally {
         New-Item -ItemType Directory -Force -Path $deps | Out-Null

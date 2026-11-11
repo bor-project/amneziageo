@@ -3940,7 +3940,7 @@ public sealed class GeoVpnService : VpnService
             throw new TransportProxyFault("bad-proxy");
         }
 
-        if (proxy.Transport != "websocket" && !ProxyTransportModes.IsGet(proxy))
+        if (proxy.Transport is not ("websocket" or "http" or "xhttp" or "quic"))
         {
             throw new TransportProxyFault("proxy-platform-unsupported");
         }
@@ -3965,12 +3965,12 @@ public sealed class GeoVpnService : VpnService
             return new TransportCarrier(carrier, carrier.LocalPort, carrier);
         }
 
-        if (proxy.Transport is "http" or "xhttp")
+        if (proxy.Transport is "http" or "xhttp" or "quic")
         {
             using var reservation = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, ProtocolType.Udp);
             reservation.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
             var localPort = ((System.Net.IPEndPoint)reservation.LocalEndPoint!).Port;
-            var profile = XHttpProfile.Create(selected, localPort, address);
+            var profile = ProxyRuntimeProfile.Create(selected, localPort, address);
             reservation.Close();
             var carrier = XHttpEngine.Start(profile, localPort, ProtectGetSocket);
             return new TransportCarrier(carrier, localPort, XHttp: carrier);

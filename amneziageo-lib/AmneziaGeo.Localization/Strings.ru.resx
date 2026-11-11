@@ -2116,12 +2116,6 @@
   <data name="Main_MethodImportHint" xml:space="preserve">
     <value>Готовый список из файла, буфера или QR-кода</value>
   </data>
-  <data name="Preset_AdsTitle" xml:space="preserve">
-    <value>Блокировать рекламу</value>
-  </data>
-  <data name="Preset_AdsHint" xml:space="preserve">
-    <value>Добавляется к любому набору</value>
-  </data>
   <data name="Preset_ClosedName" xml:space="preserve">
     <value>Недоступные сайты</value>
   </data>

@@ -45,7 +45,7 @@ public sealed class TransportProxyCatalog
     public TransportProxyCatalog(IStateStore store, bool? fullRuntime = null)
     {
         _store = store;
-        _fullRuntime = fullRuntime ?? OperatingSystem.IsWindows();
+        _fullRuntime = fullRuntime ?? (OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsAndroid());
     }
 
     /// <summary>

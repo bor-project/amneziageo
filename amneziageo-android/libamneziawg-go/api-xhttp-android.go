@@ -17,14 +17,40 @@ import (
 	"time"
 
 	"github.com/bor-project/amneziageo/libamneziawg-go/internal/udppressure"
+	"github.com/bor-project/amneziageo/libamneziawg-go/transportnative"
 	"github.com/bor-project/amneziageo/libamneziawg-go/xhttpnative"
 )
+
+// A transport the tunnel process drives: HTTP GET, HTTP POST or QUIC.
+type transportHandle struct {
+	carrier transportnative.Carrier
+	once    sync.Once
+	stopped chan struct{}
+}
+
+func (h *transportHandle) IsRunning() bool {
+	select {
+	case <-h.stopped:
+		return false
+	default:
+		return true
+	}
+}
+
+func (h *transportHandle) Stop(ctx context.Context) error {
+	var err error
+	h.once.Do(func() {
+		err = h.carrier.Stop(ctx)
+		close(h.stopped)
+	})
+	return err
+}
 
 var xhttpHandles = struct {
 	sync.Mutex
 	next  int32
-	hosts map[int32]*xhttpnative.Host
-}{hosts: make(map[int32]*xhttpnative.Host)}
+	hosts map[int32]*transportHandle
+}{hosts: make(map[int32]*transportHandle)}
 
 var xhttpProtector struct {
 	sync.Mutex
@@ -51,20 +77,27 @@ func agXHttpStart(profile *C.char, protect C.ag_xhttp_protect_fn) C.int32_t {
 	if !accepted {
 		return -3
 	}
-	host, err := xhttpnative.StartWithDiagnostics([]byte(C.GoString(profile)), func(event udppressure.Event) {
+	carrier, err := transportnative.Start([]byte(C.GoString(profile)), udppressure.Sink(func(event udppressure.Event) {
 		warnXHttpPressure(event.String())
-	}, func(message string) {
-		warnXHttpPressure(message)
-	})
+	}))
 	if err != nil {
+		warnXHttpPressure("transport start failed: " + transportnative.FaultCode(err))
 		return -2
 	}
+	handle := &transportHandle{carrier: carrier, stopped: make(chan struct{})}
+	go func() {
+		_ = carrier.Wait()
+		select {
+		case <-handle.stopped:
+		default:
+			close(handle.stopped)
+		}
+	}()
 	xhttpHandles.Lock()
 	defer xhttpHandles.Unlock()
 	xhttpHandles.next++
-	handle := xhttpHandles.next
-	xhttpHandles.hosts[handle] = host
-	return C.int32_t(handle)
+	xhttpHandles.hosts[xhttpHandles.next] = handle
+	return C.int32_t(xhttpHandles.next)
 }
 
 //export agXHttpStop

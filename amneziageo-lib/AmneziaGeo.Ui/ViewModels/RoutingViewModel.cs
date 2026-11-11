@@ -478,12 +478,6 @@ internal partial class RoutingViewModel : ViewModelBase
     private bool _fillingTemplates;
 
     /// <summary>
-    /// Добавлять ли к набору блокировку рекламы.
-    /// </summary>
-    [ObservableProperty]
-    private bool _presetAds;
-
-    /// <summary>
     /// Whether a live camera QR scanner is available on this platform.
     /// </summary>
     public bool CameraScanAvailable => QrCameraScannerHost.IsAvailable;
@@ -1803,7 +1797,6 @@ internal partial class RoutingViewModel : ViewModelBase
             editor.Name = UniqueName.Resolve(item.Name, RoutingLists.Select(row => row.Name));
             FillBucket(editor.ProxyRules, RoutingPresets.Rules(preset.Proxy, _presetRegions));
             FillBucket(editor.DirectRules, RoutingPresets.Rules(preset.Direct, _presetRegions));
-            FillBucket(editor.BlockRules, PresetAds ? [RoutingPresets.AdsRule] : []);
 
             if (preset.LocalSubnets)
             {

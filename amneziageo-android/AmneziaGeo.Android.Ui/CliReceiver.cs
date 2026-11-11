@@ -65,10 +65,16 @@ public sealed class CliReceiver : BroadcastReceiver
             finally
             {
                 global::Android.Util.Log.Info(Tag, $"command completed: exit={code.ToString(CultureInfo.InvariantCulture)}, chars={text.Length.ToString(CultureInfo.InvariantCulture)}");
+                var masked = CliSecrets.Mask(text);
+                if (!string.Equals(masked, text, StringComparison.Ordinal))
+                {
+                    global::Android.Util.Log.Info(Tag, "the reply carries secrets masked: pass --es out <path> for the whole answer");
+                }
+
                 pending.ResultCode = (Result)code;
-                pending.ResultData = text.Length > ReplyLimit
-                    ? text[..ReplyLimit] + $"\n[cut at {ReplyLimit.ToString(CultureInfo.InvariantCulture)} characters: pass --es out <path> for the whole answer]"
-                    : text;
+                pending.ResultData = masked.Length > ReplyLimit
+                    ? masked[..ReplyLimit] + $"\n[cut at {ReplyLimit.ToString(CultureInfo.InvariantCulture)} characters: pass --es out <path> for the whole answer]"
+                    : masked;
                 pending.Finish();
             }
         });

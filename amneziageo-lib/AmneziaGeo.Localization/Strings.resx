@@ -2116,12 +2116,6 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Main_MethodImportHint" xml:space="preserve">
     <value>A ready list from a file, the clipboard or a QR code</value>
   </data>
-  <data name="Preset_AdsTitle" xml:space="preserve">
-    <value>Block ads</value>
-  </data>
-  <data name="Preset_AdsHint" xml:space="preserve">
-    <value>Adds to any preset</value>
-  </data>
   <data name="Preset_ClosedName" xml:space="preserve">
     <value>Unavailable sites</value>
   </data>

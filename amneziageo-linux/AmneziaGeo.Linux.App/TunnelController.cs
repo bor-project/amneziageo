@@ -468,7 +468,7 @@ internal sealed class TunnelController : IDisposable
             try
             {
                 await TransportProxyProbes.EnsureTargetAsync(selected, address, ct).ConfigureAwait(false);
-                replacement = await XHttpProcess.StartAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false);
+                replacement = await XHttpProcess.StartTransportAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false);
                 var peer = PeerKeyHex(_sessionConfig);
                 if (string.IsNullOrEmpty(peer))
                 {
@@ -1237,12 +1237,12 @@ internal sealed class TunnelController : IDisposable
     private async Task<PendingCarrier> CarrierAsync(WsEndpoint? offered, ResolvedTransportProxy? selected,
         bool chosen, string configText, CancellationToken ct)
     {
-        if (selected is not null && selected.Record.Proxy.Transport != "websocket" && !ProxyTransportModes.IsGet(selected.Record.Proxy))
+        if (selected is not null && selected.Record.Proxy.Transport is not ("websocket" or "http" or "xhttp" or "quic"))
         {
             return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.TransportRejected, "proxy-platform-unsupported"));
         }
 
-        if (selected?.Record.Proxy.Transport is "http" or "xhttp")
+        if (selected?.Record.Proxy.Transport is "http" or "xhttp" or "quic")
         {
             var address = await ResolveHostAsync(selected.Record.Proxy.Host, ct).ConfigureAwait(false);
             if (address is null)
@@ -1253,7 +1253,7 @@ internal sealed class TunnelController : IDisposable
             try
             {
                 await TransportProxyProbes.EnsureTargetAsync(selected, address, ct).ConfigureAwait(false);
-                return new PendingCarrier(xhttp: await XHttpProcess.StartAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false), address: address.ToString());
+                return new PendingCarrier(xhttp: await XHttpProcess.StartTransportAsync(selected, address, ct, Note, Pressure).ConfigureAwait(false), address: address.ToString());
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1262,11 +1262,6 @@ internal sealed class TunnelController : IDisposable
                     ? new TunnelFailure(TransportProxyProbes.FailureReason(fault.Code), fault.Code)
                     : Refused(ex is TransportProxyFault failure ? failure.Code : "xhttp-runtime-start"));
             }
-        }
-
-        if (chosen && selected is { Record.Proxy.Transport: not "websocket" })
-        {
-            return new PendingCarrier(refusal: new TunnelFailure(ConnectFailureReason.TransportRejected, "proxy-platform-unsupported"));
         }
 
         if (offered is not { } front)

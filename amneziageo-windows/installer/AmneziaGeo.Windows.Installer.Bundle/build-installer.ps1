@@ -31,8 +31,7 @@
 
   NOTE: tunnel.dll and wintun.dll are published per arch, so a bundle only runs on the architecture it
   was built for - the x64 build installs on an arm64 machine but never raises a tunnel there, which is
-  why the BA refuses that pairing. wstunnel.exe stays x64-only and is left out of an arm64 build, so a
-  config with WebSocket does not connect on arm64 until an arm64 wstunnel is added.
+  why the BA refuses that pairing. The legacy wstunnel.exe client ships only in the x64 build.
 
   The Version comes from -Version (the release tag), else 0.0.1.<git-commit-count>, and is stamped on
   both the bundle and the MSI; combined with the MSI MajorUpgrade/@AllowDowngrades this makes
@@ -413,6 +412,7 @@ function Build-Variant {
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
+    & (Join-Path $win 'tools\build-http-get.ps1') -Arch $Arch
     Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
     dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=$buildTarget" $updateProps $channelProps $engineProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }

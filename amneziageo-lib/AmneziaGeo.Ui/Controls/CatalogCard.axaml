@@ -12,7 +12,7 @@
        по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick">
     <Panel>
-      <Grid RowDefinitions="Auto,Auto">
+      <Grid RowDefinitions="Auto,Auto,Auto,Auto">
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8"
               Margin="12,10">
           <!-- Имя с адресом занимают строку целиком. -->
@@ -104,7 +104,11 @@
         </Grid>
 
         <!-- Подвал карточки: место режима и метки настроек слева, настройки конфигурации справа. -->
-        <Border Grid.Row="1" Classes="cardfoot">
+        <StackPanel Grid.Row="1" Spacing="5" Margin="12,0,12,10">
+          <TextBlock Text="{Binding SelectedProxyText}" FontSize="12" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasProxySelection}" />
+          <TextBlock Text="{Binding ActualProxyText}" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasRunningProxy}" />
+        </StackPanel>
+        <Border x:Name="FooterPart" Grid.Row="2" Classes="cardfoot">
           <Grid ColumnDefinitions="Auto,*,Auto">
             <!-- Место режима: у машины с одним туннелем пусто и места не занимает. -->
             <ContentControl x:Name="ExtrasPart" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center"
@@ -121,6 +125,7 @@
             </Panel>
           </Grid>
         </Border>
+        <controls:ReorderBar x:Name="ReorderPart" Grid.Row="3" IsVisible="False" />
       </Grid>
 
       <!-- Светлая рамка у всякой карточки; поверх неё рамка выбранной в каталоге - акцентом, за состоянием
@@ -129,6 +134,8 @@
               BorderBrush="{DynamicResource AgBorder2Brush}" />
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
               BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="{Binding ShowCardFrame}" />
+      <Border x:Name="MoveFramePart" BorderThickness="2" CornerRadius="12" IsHitTestVisible="False"
+              BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="False" />
     </Panel>
   </Button>
 </UserControl>

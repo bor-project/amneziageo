@@ -16,6 +16,16 @@ public static class StateKeys
     public const string SelectedRoutingList = "selected-routing-list";
 
     /// <summary>
+    /// Initial routing selection for configurations without an explicit choice.
+    /// </summary>
+    public const string ConfigRoutingDefault = "config-routing-default";
+
+    /// <summary>
+    /// Prefix of configuration routing selections.
+    /// </summary>
+    public const string ConfigRoutingPrefix = "config-routing-list:";
+
+    /// <summary>
     /// The addresses the geo sources took from servers, a source name and an address per line.
     /// </summary>
     public const string OfferedSourceAddresses = "geo-offered-urls";

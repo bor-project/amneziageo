@@ -1011,6 +1011,29 @@ internal sealed partial class RouteManager
         return BestOn(interfaceIndex, IPAddress.Parse("192.0.2.1")) is { } best && best.DestinationPrefix.PrefixLength == 0;
     }
 
+    public static bool ReachesOn(uint interfaceIndex, IPAddress address)
+    {
+        if (interfaceIndex == 0)
+        {
+            return false;
+        }
+
+        var destination = new SOCKADDR_INET { si_family = address.AddressFamily == AddressFamily.InterNetworkV6 ? AfInet6 : AfInet };
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            WriteV6(ref destination, address);
+        }
+        else
+        {
+            destination.sin_addr = ToRouteAddress(address);
+        }
+
+        var route = new MIB_IPFORWARD_ROW2();
+        var source = new SOCKADDR_INET();
+        return GetBestRoute2(IntPtr.Zero, interfaceIndex, IntPtr.Zero, ref destination, 0, ref route, ref source) == NoError
+            && route.InterfaceIndex == interfaceIndex;
+    }
+
     // The best route the adapter has toward the address, null when it has none.
     private static MIB_IPFORWARD_ROW2? BestOn(uint interfaceIndex, IPAddress address)
     {
@@ -1459,6 +1482,9 @@ internal sealed partial class RouteManager
         return FindInterfaceIndex(TunnelDevice.NameOf(tunnelName));
     }
 
+    public uint? FindTunnelIndex(string tunnelName, AddressFamily family) =>
+        FindInterfaceIndex(TunnelDevice.NameOf(tunnelName), family);
+
     /// <summary>
     /// Returns whether the tunnel adapter has addresses and none of them is still in duplicate address detection.
     /// </summary>
@@ -1490,7 +1516,9 @@ internal sealed partial class RouteManager
     /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
-    public uint? FindInterfaceIndex(string adapterName)
+    public uint? FindInterfaceIndex(string adapterName) => FindInterfaceIndex(adapterName, AddressFamily.InterNetwork);
+
+    public uint? FindInterfaceIndex(string adapterName, AddressFamily family)
     {
         foreach (var nic in NetworkAdapters.All())
         {
@@ -1499,14 +1527,21 @@ internal sealed partial class RouteManager
                 continue;
             }
 
-            var index = Ipv4Index(nic);
-            if (index is not null)
-            {
-                return (uint)index.Value;
-            }
+            return FamilyIndex(family, Ipv4Index(nic), Ipv6Index(nic));
         }
 
         return null;
+    }
+
+    internal static uint? FamilyIndex(AddressFamily family, int? ipv4, int? ipv6)
+    {
+        var index = family switch
+        {
+            AddressFamily.InterNetwork => ipv4,
+            AddressFamily.InterNetworkV6 => ipv6,
+            _ => null,
+        };
+        return index is > 0 ? (uint)index.Value : null;
     }
 
     private static MIB_IPFORWARD_ROW2 NewRow(IPAddress destination, byte prefixLength, uint interfaceIndex, IPAddress? nextHop)
@@ -1643,6 +1678,18 @@ internal sealed partial class RouteManager
         try
         {
             return nic.GetIPProperties().GetIPv4Properties()?.Index;
+        }
+        catch (NetworkInformationException)
+        {
+            return null;
+        }
+    }
+
+    private static int? Ipv6Index(NetworkInterface nic)
+    {
+        try
+        {
+            return nic.GetIPProperties().GetIPv6Properties()?.Index;
         }
         catch (NetworkInformationException)
         {

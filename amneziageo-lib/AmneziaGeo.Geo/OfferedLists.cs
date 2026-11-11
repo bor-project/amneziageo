@@ -239,9 +239,9 @@ public static class OfferedLists
             origins.Add(fresh);
             ids.Add(id);
             added++;
-            if (preset.Default && !await InUseAsync(store, ids, ct).ConfigureAwait(false))
+            if (preset.Default && !await InUseAsync(store, config, ids, ct).ConfigureAwait(false))
             {
-                await store.SetSelectedRoutingListAsync(id, ct).ConfigureAwait(false);
+                await ConfigRouting.SelectListAsync(store, config, id, ct).ConfigureAwait(false);
                 inUse = id;
             }
         }
@@ -377,8 +377,8 @@ public static class OfferedLists
     private static DateTimeOffset Newest(RoutingListOrigin origin) =>
         origin.Pending?.Updated is { } waiting && waiting > origin.Updated ? waiting : origin.Updated;
 
-    private static async Task<bool> InUseAsync(IStateStore store, HashSet<long> ids, CancellationToken ct) =>
-        await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } selected && ids.Contains(selected);
+    private static async Task<bool> InUseAsync(IStateStore store, string config, HashSet<long> ids, CancellationToken ct) =>
+        await ConfigRouting.SelectedListAsync(store, config, ct).ConfigureAwait(false) is { } selected && ids.Contains(selected);
 
     // Tells whether a list holds what a version of the server hands out.
     private static async Task<bool> SameAsync(IStateStore store, RoutingList list, OfferedPreset version, CancellationToken ct)

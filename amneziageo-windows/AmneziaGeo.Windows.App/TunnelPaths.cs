@@ -189,6 +189,11 @@ internal static class TunnelPaths
         return Path.Combine(MachineRoot(), "routes-turn.lock");
     }
 
+    public static string LocalDohDirectory()
+    {
+        return Path.Combine(MachineRoot(), "local-doh");
+    }
+
     /// <summary>
     /// Path to a tunnel's persisted LAN-bypass exclusion routes.
     /// </summary>

@@ -53,7 +53,7 @@
          tunnel alone in memory. -->
     <!-- Exports leave through a link to a cached file: an intent carries no bytes of its own. -->
     <provider android:name="androidx.core.content.FileProvider"
-              android:authorities="org.amneziageo.android.files"
+              android:authorities="${applicationId}.files"
               android:exported="false" android:grantUriPermissions="true">
       <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
     </provider>

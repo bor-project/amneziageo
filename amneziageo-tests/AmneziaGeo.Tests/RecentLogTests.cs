@@ -76,6 +76,28 @@ public sealed class RecentLogTests
         Assert.Equal([1000L, 5000L, 90000L], merged.Select(row => row.UnixMs));
     }
 
+    [Fact]
+    public void RowsWithDifferentLevels_AreKept()
+    {
+        var own = new[] { new LogRow(1, 1000, "ERR", "tunnel", "connection failed") };
+        var other = new[] { new LogRow(1, 1100, "WRN", "tunnel", "connection failed") };
+
+        var merged = RecentLog.Merge(own, other);
+
+        Assert.Equal(["ERR", "WRN"], merged.Select(row => row.Level));
+    }
+
+    [Fact]
+    public void RepeatedRows_AreMatchedOneAtATime()
+    {
+        var own = new[] { Row(1000, "tunnel", "retry"), Row(1100, "tunnel", "retry"), Row(1200, "tunnel", "retry") };
+        var other = new[] { Row(1050, "tunnel", "retry"), Row(1150, "tunnel", "retry") };
+
+        var merged = RecentLog.Merge(own, other);
+
+        Assert.Equal([1050L, 1150L, 1200L], merged.Select(row => row.UnixMs));
+    }
+
     private static LogRow Row(long unixMs, string source, string message)
     {
         return new LogRow(0, unixMs, "WRN", source, message);

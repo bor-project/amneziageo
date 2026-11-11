@@ -52,7 +52,10 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 fetch: sources => EnqueueGeoRefresh(sources, forceResolve: false),
                 rerouted: () => MarkRestartRequired(),
                 take: (ids, ct) => TakeVersionsAsync(made!, ids, ct),
-                carried: IsRunningMember);
+                carried: IsRunningMember,
+                insidePath: (config, address, _) => Task.FromResult(IsRunningMember(config) && TunnelHello.Reaches(routes, config, address)),
+                askConfined: (config, point, ct) => IsRunningMember(config) ? TunnelHello.AskAsync(routes, config, point, ct)
+                    : Task.FromResult(new HelloReply(null, false)));
             made = new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), scopeGeo, offers);
             return made;
         });
@@ -250,6 +253,19 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     {
         try
         {
+            if (await TransportProxyCommands.TryExecuteAsync(store, command, ct,
+                probe: (record, token) => WindowsTransportProxyProbe.CheckAsync(record, store, token), running: RunningMembers(), changed: config =>
+                {
+                    if (IsRunningMember(config))
+                    {
+                        MarkRestartRequired(config);
+                    }
+                }, actual: command.Op is IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy
+                    ? await RunningTransportProxiesAsync(ct).ConfigureAwait(false) : null).ConfigureAwait(false) is { } proxyAck)
+            {
+                return proxyAck;
+            }
+
             return command.Op switch
             {
                 IpcContract.OpAddConfig => await AskServersAsync(await AddConfigAsync(command.Args, ct), ct),
@@ -678,6 +694,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         await configRepo.CopyAsync(source, destination, ct);
+        await TransportProxyPortability.ApplyAsync(store, destination,
+            await TransportProxyPortability.ExportAsync(store, source, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         logger.LogInformation("copied config {Source} -> {Dest}", source, destination);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
     }
@@ -802,7 +820,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             var dns = await store.GetConfigDnsAsync(name, ct);
             var exclusions = await store.GetConfigExclusionsAsync(name, ct);
-            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns));
+            configBlocks.Add(await new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions).WithVpnDns(dns).WithTransportProxyAsync(store, name, ct).ConfigureAwait(false));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -1035,6 +1053,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     private async Task ApplyConfigDataAsync(string name, PortableBundle.ConfigBlock block, CancellationToken ct)
     {
         await block.ApplyDnsAsync(store, name, ct);
+        await block.ApplyTransportProxyAsync(store, name, ct).ConfigureAwait(false);
 
         if (block.Exclusions is { } exclusions)
         {
@@ -1192,11 +1211,16 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var updated = new ConfigTransport(args[0], on, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true);
+        var proxies = TransportProxyCatalog.For(store);
+        await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
+        var proxyChanges = await TransportProxyChanges.CaptureAsync(store, IsRunningMember(args[0]) ? [args[0]] : [], ct).ConfigureAwait(false);
         await store.SetConfigTransportAsync(updated, ct);
+        await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy", ct).ConfigureAwait(false);
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
-        if ((previous is null || previous != updated) && IsRunningMember(args[0]))
+        if (IsRunningMember(args[0]) && (ConfigTransportChanges.RequiresRestart(previous, updated)
+            || (await proxyChanges.ChangedAsync(ct).ConfigureAwait(false)).Count > 0))
         {
             MarkRestartRequired(args[0]);
         }
@@ -1380,6 +1404,20 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     protected virtual IReadOnlyCollection<string> RunningMembers()
     {
         return control.Running && BoundTarget is { Length: > 0 } target ? [target] : [];
+    }
+
+    private async Task<IReadOnlyDictionary<string, RunningTransportProxy>> RunningTransportProxiesAsync(CancellationToken ct)
+    {
+        var actual = new Dictionary<string, RunningTransportProxy>(StringComparer.Ordinal);
+        foreach (var name in RunningMembers())
+        {
+            if (await RunningTransportState.ReadAsync(store, name, serviceManager, logger, ct).ConfigureAwait(false) is { } transport)
+            {
+                actual[name] = transport;
+            }
+        }
+
+        return actual;
     }
 
     /// <summary>
@@ -1592,12 +1630,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         await scope.Offers.WarmUnaskedAsync(await OfferTargetsAsync(scope, ct).ConfigureAwait(false), OfferChangedAsync, ct).ConfigureAwait(false);
     }
 
-    // A server that offers the tunnel something else now shows it in the next snapshot; a tunnel up whose server
-    // allows none but its own routing lists is put on one of them.
+    // A server that offers the tunnel something else now shows it in the next snapshot; a config whose server allows
+    // none but its own routing lists takes one of them, and a tunnel up on it takes the next connect.
     private async Task OfferChangedAsync(string config)
     {
         FindAppsLater();
-        if (IsRunningMember(config) && await KeepServerListsAsync(activeScope.Store, config, CancellationToken.None).ConfigureAwait(false))
+        if (await KeepServerListsAsync(activeScope.Store, config, CancellationToken.None).ConfigureAwait(false) && IsRunningMember(config))
         {
             MarkRestartRequired();
         }
@@ -1619,8 +1657,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             logger.LogInformation("{Config}: its server allows none but its own routing lists; the configuration takes the routing list", config);
         }
 
-        var limit = await ServerListsOnly.FirstAsync(scoped, ServerListsOrder(config), ct).ConfigureAwait(false);
-        var inUse = await scoped.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        var limit = await ServerListsOnly.OfAsync(scoped, config, ct).ConfigureAwait(false);
+        var inUse = await ConfigRouting.SelectedListAsync(scoped, config, ct).ConfigureAwait(false);
         if (ServerListsOnly.Switch(limit, inUse) is not { } pick)
         {
             return routed;
@@ -1629,7 +1667,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var from = inUse is { } held ? (await scoped.GetRoutingListStampAsync(held, ct).ConfigureAwait(false))?.Name : null;
         var to = (await scoped.GetRoutingListStampAsync(pick, ct).ConfigureAwait(false))?.Name;
         Journal(SwitchLog.RoutingList(from, to));
-        await scoped.SetSelectedRoutingListAsync(pick, ct).ConfigureAwait(false);
+        await ConfigRouting.SelectListAsync(scoped, config, pick, ct).ConfigureAwait(false);
         logger.LogInformation("{Config}: its server allows none but its own routing lists; routing list {List} is put in use", limit!.Config, pick);
 
         return true;
@@ -1670,14 +1708,14 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             }
 
             logger.LogInformation("programs found again for {Names}", string.Join(", ", search.Changed.Select(name => "app:" + name)));
-            if (activeScope.IsOwnedBy(scope.UserRoot, scope.Sid)
-                && await scope.Store.GetSelectedRoutingListAsync().ConfigureAwait(false) is { } listId
-                && await scope.Store.GetRoutingListStampAsync(listId).ConfigureAwait(false) is { } stamp
-                && AppFinds.NamesOf(stamp.Rules).Intersect(search.Changed, StringComparer.OrdinalIgnoreCase).Any())
+            if (activeScope.IsOwnedBy(scope.UserRoot, scope.Sid))
             {
                 foreach (var member in RunningMembers())
                 {
-                    if (await scope.Store.GetActiveRoutingListIdAsync(member).ConfigureAwait(false) == listId)
+                    if (await scope.Store.GetActiveRoutingListIdAsync(member).ConfigureAwait(false) is { } listId
+                        && await ConfigRouting.SelectedListAsync(scope.Store, member).ConfigureAwait(false) == listId
+                        && await scope.Store.GetRoutingListStampAsync(listId).ConfigureAwait(false) is { } stamp
+                        && AppFinds.NamesOf(stamp.Rules).Intersect(search.Changed, StringComparer.OrdinalIgnoreCase).Any())
                     {
                         await RoutingProjection.ProjectAsync(scope.Store, scope.Geo, Roster, member, logger, CancellationToken.None).ConfigureAwait(false);
                     }
@@ -1836,16 +1874,15 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // The first list applies at once.
         if (id == 0 && lists.Count == 0)
         {
-            await store.SetSelectedRoutingListAsync(resultId, ct);
+            await ConfigRouting.SelectCurrentListAsync(store, resultId, ct).ConfigureAwait(false);
         }
 
         // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
         if (RunningMembers().Count > 0)
         {
-            var listId = await store.GetSelectedRoutingListAsync(ct);
             var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
             var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
-            if (listId == resultId && !newReconnect.SetEquals(previousReconnect))
+            if (await RunningListAsync(resultId, ct).ConfigureAwait(false) && !newReconnect.SetEquals(previousReconnect))
             {
                 MarkRestartRequired();
             }
@@ -1861,18 +1898,27 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // Each tunnel carries its own share of the list, so the shares are cut afresh before the edit is announced.
     private async Task ReprojectAsync(long listId, CancellationToken ct)
     {
-        if (await store.GetSelectedRoutingListAsync(ct) != listId)
-        {
-            return;
-        }
-
         foreach (var member in RunningMembers())
         {
-            if (await store.GetActiveRoutingListIdAsync(member, ct) == listId)
+            if (await store.GetActiveRoutingListIdAsync(member, ct).ConfigureAwait(false) == listId
+                && await ConfigRouting.SelectedListAsync(store, member, ct).ConfigureAwait(false) == listId)
             {
-                await RoutingProjection.ProjectAsync(store, geo, Roster, member, logger, ct);
+                await RoutingProjection.ProjectAsync(store, geo, Roster, member, logger, ct).ConfigureAwait(false);
             }
         }
+    }
+
+    private async Task<bool> RunningListAsync(long listId, CancellationToken ct)
+    {
+        foreach (var member in RunningMembers())
+        {
+            if (await store.GetActiveRoutingListIdAsync(member, ct).ConfigureAwait(false) == listId)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // The tunnel runs in its own process and polls for nothing: a rule change is announced to it here, and it
@@ -2036,7 +2082,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // Settings apply on a fresh tunnel; flag a reconnect when the running tunnel routes through this list.
         if (changed && RunningMembers().Count > 0)
         {
-            if (await store.GetSelectedRoutingListAsync(ct) == id)
+            if (await RunningListAsync(id, ct).ConfigureAwait(false))
             {
                 MarkRestartRequired();
             }
@@ -2092,21 +2138,23 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             listId = id;
         }
 
-        if (ServerListsOnly.Refusal(await ServerListsLimitAsync(ct).ConfigureAwait(false), listId) is { } refusal)
+        var selectedConfig = await store.GetSettingAsync(StateKeys.SelectedTarget, ct).ConfigureAwait(false);
+        var limit = string.IsNullOrEmpty(selectedConfig) ? null : await ServerListsOnly.OfAsync(store, selectedConfig, ct).ConfigureAwait(false);
+        if (ServerListsOnly.Refusal(limit, listId) is { } refusal)
         {
             return refusal;
         }
 
-        var currentList = await store.GetSelectedRoutingListAsync(ct);
+        var currentList = await ConfigRouting.CurrentListAsync(store, ct).ConfigureAwait(false);
         Journal(SwitchLog.RoutingList(await ListNameAsync(currentList, ct), await ListNameAsync(listId, ct)));
-        await store.SetSelectedRoutingListAsync(listId, ct);
-        if (currentList != listId && RunningMembers().Count > 0)
+        await ConfigRouting.SelectCurrentListAsync(store, listId, ct).ConfigureAwait(false);
+        if (currentList != listId && selectedConfig is not null && RunningMembers().Contains(selectedConfig, StringComparer.Ordinal))
         {
             // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
             MarkRestartRequired();
         }
 
-        logger.LogInformation("routing list {List} now applies to every configuration; with none picked, all traffic goes through the tunnel", listId);
+        logger.LogInformation("routing list {List} selected for {Config}", listId, selectedConfig);
         return new IpcAck(true, $"routing: {listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} (applies on reconnect)");
     }
 
@@ -2723,7 +2771,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         // Only refresh when something consumes geo routing.
-        if (await store.GetSelectedRoutingListAsync(ct) is null && !control.Running)
+        if (await ConfigRouting.CurrentListAsync(store, ct) is null && !control.Running)
         {
             return;
         }
@@ -3363,7 +3411,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         // The live connection view belongs to the tunnel owner; other users see their own idle library.
         var owned = activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
         var selectedTarget = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
-        var selectedRouting = await store.GetSelectedRoutingListAsync(ct);
+        var selectedRouting = await ConfigRouting.CurrentListAsync(store, ct).ConfigureAwait(false);
         var boundTarget = owned ? BoundTarget : null;
         var limit = owned ? await ServerListsOnly.FirstAsync(store, RunningMembers(), ct).ConfigureAwait(false) : null;
         var foundApps = await AppFinds.ReadAsync(store, ct).ConfigureAwait(false);
@@ -3378,6 +3426,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var link = boundState is not null ? control.Link : LinkReading.Empty;
         var now = boundState is not null ? control.Now : LinkNow.Unknown;
 
+        var transportProxies = await TransportProxyCatalog.For(store).ListAsync(ct).ConfigureAwait(false);
+        var proxyState = await store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
         var defaultExclusions = default(string);
@@ -3411,7 +3461,9 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var vpnDns = VpnDns.Showing(configDns, offer.Dns(), WgConfigEditor.GetDns(configText), PrivateNetworks.Beside(routes.LocalSubnets()));
             offered.Add((name, offer));
             var offeredSubscription = member is null ? null : offer.Subscription();
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty));
+            var runningTransport = IsRunningMember(name)
+                ? await RunningTransportState.ReadAsync(store, name, serviceManager, logger, ct).ConfigureAwait(false) : null;
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty, proxyState.Selections.Single(one => one.Config == name).Reference, true, runningTransport));
         }
 
         var routingLists = new List<RoutingListEntry>();
@@ -3529,7 +3581,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             UpdateSource: updateRoute.Key,
             UpdateSourceError: updateFault.Text,
             UpdateSourceErrorSince: updateFault.Since,
-            UpdateSetupPin: update?.Route?.Pin ?? string.Empty), scope, states);
+            UpdateSetupPin: update?.Route?.Pin ?? string.Empty,
+            TransportProxies: transportProxies), scope, states);
     }
 
     /// <summary>

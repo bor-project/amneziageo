@@ -463,16 +463,11 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     }
 
     /// <summary>
-    /// Returns the arguments a carrier process is started with. -L udp://(port):127.0.0.1:(target port) forwards to
-    /// the AmneziaWG interface on the server; timeout_sec=0 keeps the UDP association alive. The token in the headers
-    /// file proves the keys of the configuration, so the certificate is taken as it stands; without a token it is
-    /// verified. Optional -P path token and basic-auth credentials.
+    /// Returns the arguments of the TLS WebSocket carrier.
     /// </summary>
     internal static string Arguments(bool token, string headersFile, string pathPrefix, string credentials, int port, int targetPort, string serverHost, int wsPort)
     {
-        var auth = token
-            ? $" --http-headers-file \"{headersFile}\""
-            : " --tls-verify-certificate";
+        var auth = " --tls-verify-certificate" + (token ? $" --http-headers-file \"{headersFile}\"" : "");
         if (pathPrefix.Length > 0)
         {
             auth += $" -P \"{pathPrefix}\"";

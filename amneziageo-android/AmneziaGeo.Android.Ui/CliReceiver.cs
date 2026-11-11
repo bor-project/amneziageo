@@ -28,7 +28,7 @@ public sealed class CliReceiver : BroadcastReceiver
 
     private const string Tag = "AmneziaGeoCli";
 
-    // The reply travels through a Binder transaction; the whole answer goes to logcat and to --es out.
+    // Limits the broadcast reply.
     private const int ReplyLimit = 128 * 1024;
 
     // A background broadcast may take about a minute before the system calls it dead.
@@ -64,11 +64,17 @@ public sealed class CliReceiver : BroadcastReceiver
             }
             finally
             {
-                Mirror(text);
+                global::Android.Util.Log.Info(Tag, $"command completed: exit={code.ToString(CultureInfo.InvariantCulture)}, chars={text.Length.ToString(CultureInfo.InvariantCulture)}");
+                var masked = CliSecrets.Mask(text);
+                if (!string.Equals(masked, text, StringComparison.Ordinal))
+                {
+                    global::Android.Util.Log.Info(Tag, "the reply carries secrets masked: pass --es out <path> for the whole answer");
+                }
+
                 pending.ResultCode = (Result)code;
-                pending.ResultData = text.Length > ReplyLimit
-                    ? text[..ReplyLimit] + $"\n[cut at {ReplyLimit.ToString(CultureInfo.InvariantCulture)} bytes: pass --es out <path> for the whole answer]"
-                    : text;
+                pending.ResultData = masked.Length > ReplyLimit
+                    ? masked[..ReplyLimit] + $"\n[cut at {ReplyLimit.ToString(CultureInfo.InvariantCulture)} characters: pass --es out <path> for the whole answer]"
+                    : masked;
                 pending.Finish();
             }
         });
@@ -169,18 +175,6 @@ public sealed class CliReceiver : BroadcastReceiver
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             global::Android.Util.Log.Warn(Tag, $"could not write {path}: {ex.Message}");
-        }
-    }
-
-    // logcat drops anything past a few kilobytes in one entry.
-    private static void Mirror(string text)
-    {
-        foreach (var line in text.Split('\n'))
-        {
-            for (var start = 0; start < Math.Max(line.Length, 1); start += 2000)
-            {
-                global::Android.Util.Log.Info(Tag, line[start..Math.Min(line.Length, start + 2000)]);
-            }
         }
     }
 }

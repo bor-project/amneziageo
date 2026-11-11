@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -2116,12 +2116,6 @@ Download the ARM64 installer: the x64 version installs, but its tunnel won't wor
   <data name="Main_MethodImportHint" xml:space="preserve">
     <value>A ready list from a file, the clipboard or a QR code</value>
   </data>
-  <data name="Preset_AdsTitle" xml:space="preserve">
-    <value>Block ads</value>
-  </data>
-  <data name="Preset_AdsHint" xml:space="preserve">
-    <value>Adds to any preset</value>
-  </data>
   <data name="Preset_ClosedName" xml:space="preserve">
     <value>Unavailable sites</value>
   </data>
@@ -2556,7 +2550,7 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
     <value>hours</value>
   </data>
   <data name="Main_CardReorder" xml:space="preserve">
-    <value>Reorder</value>
+    <value>Move</value>
   </data>
   <data name="Main_RolePrimary" xml:space="preserve">
     <value>Primary</value>
@@ -3034,5 +3028,94 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Notice_StoppedChannel" xml:space="preserve">
     <value>Tunnel stopped</value>
+  </data>
+  <data name="Proxies_Title" xml:space="preserve"><value>Proxies</value></data>
+  <data name="Proxies_RailSubtitle" xml:space="preserve"><value>VPN transport</value></data>
+  <data name="Proxies_Local" xml:space="preserve"><value>Local</value></data>
+  <data name="Proxies_None" xml:space="preserve"><value>Not used</value></data>
+  <data name="Proxies_Available" xml:space="preserve"><value>Available</value></data>
+  <data name="Proxies_Unavailable" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="Proxies_Unknown" xml:space="preserve"><value>Not checked</value></data>
+  <data name="Proxies_Missing" xml:space="preserve"><value>Proxy is missing</value></data>
+  <data name="Proxies_Empty" xml:space="preserve"><value>No proxies</value></data>
+  <data name="Proxies_New" xml:space="preserve"><value>New proxy</value></data>
+  <data name="Proxies_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Proxies_Transport" xml:space="preserve"><value>Transport</value></data>
+  <data name="Proxies_Host" xml:space="preserve"><value>Host</value></data>
+  <data name="Proxies_Path" xml:space="preserve"><value>Path</value></data>
+  <data name="Proxies_Pin" xml:space="preserve"><value>TLS certificate SHA-256</value></data>
+  <data name="Proxies_BearerCredential" xml:space="preserve"><value>Access token</value></data>
+  <data name="Proxies_VlessCredential" xml:space="preserve"><value>VLESS UUID</value></data>
+  <data name="Proxies_BasicCredential" xml:space="preserve"><value>Authorization</value></data>
+  <data name="Proxies_Check" xml:space="preserve"><value>Check availability</value></data>
+  <data name="Proxies_Delete" xml:space="preserve"><value>Delete proxy</value></data>
+  <data name="Proxies_Invalid" xml:space="preserve"><value>Check the proxy settings.</value></data>
+  <data name="Proxies_InvalidName" xml:space="preserve"><value>Enter a name of 1–64 characters.</value></data>
+  <data name="Proxies_InvalidHost" xml:space="preserve"><value>Enter a host name or IP address.</value></data>
+  <data name="Proxies_InvalidPath" xml:space="preserve"><value>Enter a path of 1–64 letters, digits, hyphens or underscores.</value></data>
+  <data name="Proxies_InvalidSni" xml:space="preserve"><value>Enter a valid SNI host name.</value></data>
+  <data name="Proxies_InvalidPin" xml:space="preserve"><value>Enter the 64 hexadecimal digits of the certificate SHA-256.</value></data>
+  <data name="Proxies_InvalidCredential" xml:space="preserve"><value>Check the access credential</value></data>
+  <data name="Proxies_NotLocal" xml:space="preserve"><value>Only local proxies can be edited.</value></data>
+  <data name="Proxies_LegacyTarget" xml:space="preserve"><value>This proxy belongs to another VPN destination.</value></data>
+  <data name="Proxies_Busy" xml:space="preserve"><value>The proxy catalog is busy. Try saving again.</value></data>
+  <data name="Proxies_Unsupported" xml:space="preserve"><value>Availability checks are not supported by this proxy.</value></data>
+  <data name="Proxies_IdentityFault" xml:space="preserve"><value>The proxy source identity could not be verified.</value></data>
+  <data name="Proxies_AuthFault" xml:space="preserve"><value>The proxy rejected authorization.</value></data>
+  <data name="Proxies_ConfigMissing" xml:space="preserve"><value>The VPN configuration is missing.</value></data>
+  <data name="Proxies_EndpointFault" xml:space="preserve"><value>The VPN destination is invalid.</value></data>
+  <data name="Proxies_NoAddress" xml:space="preserve"><value>The proxy host could not be resolved.</value></data>
+  <data name="Proxies_NoAnswer" xml:space="preserve"><value>The proxy did not respond.</value></data>
+  <data name="Proxies_TlsFault" xml:space="preserve"><value>The TLS certificate could not be verified.</value></data>
+  <data name="Proxies_BadAnswer" xml:space="preserve"><value>The proxy returned an unexpected response.</value></data>
+  <data name="Proxies_RequestFailed" xml:space="preserve"><value>The proxy request failed. Try again.</value></data>
+  <data name="Proxies_InvalidCatalog" xml:space="preserve"><value>The proxy catalog could not be read.</value></data>
+  <data name="Proxies_XhttpUnavailable" xml:space="preserve"><value>HTTP transport unavailable</value></data>
+  <data name="Proxies_XhttpFailed" xml:space="preserve"><value>The HTTP proxy could not start</value></data>
+  <data name="Proxies_Server" xml:space="preserve"><value>Server</value></data>
+  <data name="Proxies_RestrictTargets" xml:space="preserve">
+    <value>Restrict destinations</value>
+  </data>
+  <data name="Proxies_Targets" xml:space="preserve">
+    <value>Allowed servers and UDP ports</value>
+  </data>
+  <data name="Proxies_TargetsTip" xml:space="preserve">
+    <value>host:port or [IPv6]:port, one per line</value>
+  </data>
+  <data name="Proxies_InvalidTargets" xml:space="preserve">
+    <value>Enter valid destination hosts and UDP ports.</value>
+  </data>
+  <data name="Proxies_TargetDenied" xml:space="preserve">
+    <value>This proxy does not allow this configuration.</value>
+  </data>
+  <data name="Proxies_ScopeAny" xml:space="preserve"><value>Any destination</value></data>
+  <data name="Proxies_ScopeRestricted" xml:space="preserve"><value>Restricted destinations</value></data>
+  <data name="Proxies_ScopeLegacy" xml:space="preserve"><value>Original interface</value></data>
+  <data name="Proxies_Selected" xml:space="preserve"><value>Selected</value></data>
+  <data name="Proxies_ActuallyUsed" xml:space="preserve"><value>In use</value></data>
+  <data name="Proxies_ActualUnknown" xml:space="preserve"><value>Transport details unavailable</value></data>
+  <data name="Proxies_View" xml:space="preserve"><value>View</value></data>
+  <data name="Proxies_Settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="Proxies_Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Proxies_Loading" xml:space="preserve"><value>Loading proxies</value></data>
+  <data name="Proxies_ChosenBy" xml:space="preserve"><value>Selected: {0}</value></data>
+  <data name="Proxies_UsedBy" xml:space="preserve"><value>In use: {0}</value></data>
+  <data name="Proxies_UseCertificate" xml:space="preserve"><value>Use certificate</value></data>
+  <data name="Proxies_HttpMethod" xml:space="preserve"><value>HTTP method</value></data>
+  <data name="Proxies_Rejected" xml:space="preserve"><value>Proxy connection rejected</value></data>
+  <data name="Main_ReorderDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="Main_ReorderUp" xml:space="preserve">
+    <value>Move up</value>
+  </data>
+  <data name="Main_ReorderDown" xml:space="preserve">
+    <value>Move down</value>
+  </data>
+  <data name="Main_ReorderLeft" xml:space="preserve">
+    <value>Move left</value>
+  </data>
+  <data name="Main_ReorderRight" xml:space="preserve">
+    <value>Move right</value>
   </data>
 </root>

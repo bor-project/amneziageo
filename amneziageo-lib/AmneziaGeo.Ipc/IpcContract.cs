@@ -50,6 +50,36 @@ public static class IpcContract
     public const string OpSetWebSocket = "set-websocket";
 
     /// <summary>
+    /// Lists the common transport proxy catalog.
+    /// </summary>
+    public const string OpListTransportProxies = "list-transport-proxies";
+
+    /// <summary>
+    /// Reads a local transport proxy definition.
+    /// </summary>
+    public const string OpGetTransportProxy = "get-transport-proxy";
+
+    /// <summary>
+    /// Saves a local transport proxy definition.
+    /// </summary>
+    public const string OpSaveTransportProxy = "save-transport-proxy";
+
+    /// <summary>
+    /// Removes a local transport proxy.
+    /// </summary>
+    public const string OpRemoveTransportProxy = "remove-transport-proxy";
+
+    /// <summary>
+    /// Selects a transport proxy or direct UDP for a configuration.
+    /// </summary>
+    public const string OpSelectTransportProxy = "select-transport-proxy";
+
+    /// <summary>
+    /// Probes a transport proxy.
+    /// </summary>
+    public const string OpProbeTransportProxy = "probe-transport-proxy";
+
+    /// <summary>
     /// Command to set whether a config takes the signal of its server to disconnect. Args: name, on/off. Applies on
     /// the next connect.
     /// </summary>

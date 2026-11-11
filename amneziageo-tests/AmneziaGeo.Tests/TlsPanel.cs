@@ -27,7 +27,7 @@ internal sealed class TlsPanel : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public TlsPanel(string name = "localhost", string body = "", int status = 200)
+    public TlsPanel(string name = "localhost", string body = "", int status = 200, int leafBegins = -1, int leafEnds = 10)
     {
         _body = body;
         _status = status;
@@ -59,7 +59,7 @@ internal sealed class TlsPanel : IDisposable
         leafAsk.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
         leafAsk.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid(ServerAuth)], false));
         leafAsk.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(issuer, true, false));
-        using var leafBare = leafAsk.Create(issuer, now.AddDays(-1), now.AddDays(10), Serial());
+        using var leafBare = leafAsk.Create(issuer, now.AddDays(leafBegins), now.AddDays(leafEnds), Serial());
         using var leafKeyed = leafBare.CopyWithPrivateKey(leafKey);
         var leaf = X509CertificateLoader.LoadPkcs12(leafKeyed.Export(X509ContentType.Pfx), null);
 
@@ -91,6 +91,7 @@ internal sealed class TlsPanel : IDisposable
     /// Requests the panel has answered so far.
     /// </summary>
     public int Served => Volatile.Read(ref _served);
+    public string ServerName { get; private set; } = "";
 
     /// <summary>
     /// Returns the address of a path of the panel under the name localhost.
@@ -170,7 +171,11 @@ internal sealed class TlsPanel : IDisposable
             using (client)
             {
                 using var tls = new SslStream(client.GetStream());
-                tls.AuthenticateAsServer(new SslServerAuthenticationOptions { ServerCertificateContext = _context });
+                tls.AuthenticateAsServerAsync((_, hello, _, _) =>
+                {
+                    ServerName = hello.ServerName;
+                    return ValueTask.FromResult(new SslServerAuthenticationOptions { ServerCertificateContext = _context });
+                }, null, CancellationToken.None).GetAwaiter().GetResult();
                 Read(tls);
                 Interlocked.Increment(ref _served);
                 var body = Encoding.UTF8.GetBytes(_body);

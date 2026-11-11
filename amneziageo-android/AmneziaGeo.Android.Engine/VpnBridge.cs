@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Android.App;
@@ -35,7 +36,11 @@ public sealed record VpnRequest(
     string[]? Bases = null,
     bool HoldTraffic = true,
     string[]? VpnDns = null,
-    bool VpnDnsNetwork = false);
+    bool VpnDnsNetwork = false,
+    ResolvedTransportProxy? TransportProxy = null,
+    string SessionId = "",
+    string TransportProxyFault = "",
+    bool StartClaimed = false);
 
 /// <summary>
 /// One probe the head hands to the tunnel: a socket is excused from the tunnel only inside the process that
@@ -52,7 +57,8 @@ public sealed record CardsRequest(IReadOnlyList<SweepServer> Servers, bool Carri
 /// The configuration the head wants the tunnel to move to while another one is connected. The tunnel asks its
 /// server first: only the process of the tunnel dials past the tunnel.
 /// </summary>
-public sealed record SwitchRequest(string Config, string Name, string? WsHost, int WsPort, bool WsOffered, int EngineLog = 1);
+public sealed record SwitchRequest(string Config, string Name, string? WsHost, int WsPort, bool WsOffered, int EngineLog = 1,
+    ResolvedTransportProxy? TransportProxy = null);
 
 /// <summary>
 /// Carries the routing rules and the tunnel stage between the head and the tunnel, which run in separate
@@ -201,6 +207,16 @@ public static class VpnBridge
     public const string ActionNotice = "org.amneziageo.android.VPN_NOTICE";
 
     /// <summary>
+    /// Broadcast that refreshes a connecting carrier.
+    /// </summary>
+    public const string ActionTransportRefresh = "org.amneziageo.android.VPN_TRANSPORT_REFRESH";
+
+    /// <summary>
+    /// Renames the accepted session.
+    /// </summary>
+    public const string ActionSessionRename = "org.amneziageo.android.VPN_SESSION_RENAME";
+
+    /// <summary>
     /// Shown loss extra: share of the tunnel's latest echoes lost since the link last came back.
     /// </summary>
     public const string ExtraNowLoss = "nowloss";
@@ -221,6 +237,13 @@ public static class VpnBridge
     private const string ProxyStateFile = "proxy-state.json";
     private const string SessionsFile = "sessions.txt";
     private const string RequestFile = "session.json";
+    private const string RunningTransportFile = "running-transport.json";
+    private const string RestartRequiredFile = "restart-required.txt";
+    private const string SessionRenameFile = "session-rename.json";
+    private const string SessionRenameAckFile = "session-rename-ack.json";
+    private const string RequestLockFile = "session.lock";
+    private const int RequestLockWaitMs = 1000;
+    private const string TransportRefreshFile = "transport-refresh.json";
     private const string ProbeFile = "probe.json";
     private const string RouteTtlFile = "route-ttl.txt";
     private const string ProbeResultFile = "probe-result.txt";
@@ -240,6 +263,7 @@ public static class VpnBridge
     private const string ProcessSuffix = ":vpn";
     private static readonly object _stageGate = new();
     private static readonly object _recentGate = new();
+    private static readonly object _requestGate = new();
     private static List<string>? _recent;
 
     /// <summary>
@@ -435,13 +459,16 @@ public static class VpnBridge
     {
         try
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             using var stream = File.Create(PlanPath());
             JsonSerializer.Serialize(stream, plan);
+            global::Android.Util.Log.Info("VpnBridge", $"routing plan written in {clock.ElapsedMilliseconds} ms, {stream.Length} bytes");
             return true;
         }
         catch (Exception ex)
         {
-            global::Android.Util.Log.Warn("VpnBridge", "writing the routing plan failed: " + ex);
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("VpnBridge", error, "writing the routing plan failed");
             return false;
         }
     }
@@ -503,12 +530,16 @@ public static class VpnBridge
                 return GeoRoutingPlan.Full;
             }
 
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             using var stream = File.OpenRead(path);
-            return JsonSerializer.Deserialize<GeoRoutingPlan>(stream) ?? GeoRoutingPlan.Full;
+            var plan = JsonSerializer.Deserialize<GeoRoutingPlan>(stream) ?? GeoRoutingPlan.Full;
+            global::Android.Util.Log.Info("VpnBridge", $"routing plan read in {clock.ElapsedMilliseconds} ms, {stream.Length} bytes");
+            return plan;
         }
         catch (Exception ex)
         {
-            global::Android.Util.Log.Warn("VpnBridge", "reading the routing plan failed: " + ex);
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("VpnBridge", error, "reading the routing plan failed");
             return GeoRoutingPlan.Full;
         }
     }
@@ -516,12 +547,323 @@ public static class VpnBridge
     /// <summary>
     /// Writes the session to raise again without a head.
     /// </summary>
-    public static void WriteRequest(VpnRequest request)
+    public static void WriteRequest(VpnRequest request) => WithRequest(() =>
+    {
+        WriteRequestLocked(request);
+        return true;
+    }, false, "writing");
+
+    public enum StartOutcome
+    {
+        Ready,
+        Missing,
+        Superseded,
+        Duplicate,
+        InvalidProxy,
+        Failed,
+        Unavailable,
+    }
+
+    /// <summary>
+    /// Stages the wanted session.
+    /// </summary>
+    public static (VpnRequest? Request, VpnRequest? Previous, bool Restored) TryStageRequest(VpnRequest carried) => WithRequest(() =>
+    {
+        var previous = ReadRequestLocked();
+        var wanted = RefreshedRequest(carried with
+        {
+            SessionId = TransportProxyRefresh.NewSessionId(),
+            StartClaimed = false,
+        });
+        try
+        {
+            WriteValidatedRequestLocked(wanted);
+            return (wanted, previous, false);
+        }
+        catch (Exception ex)
+        {
+            LogRequestError("staging the wanted session failed", ex);
+            var restored = false;
+            try
+            {
+                restored = SameRequest(ReadRequestLocked(), previous)
+                    || RestoreStagedRequestLocked(wanted.SessionId, previous);
+            }
+            catch (Exception rollbackError)
+            {
+                LogRequestError("restoring the staged session failed", rollbackError);
+            }
+
+            return (null, previous, restored);
+        }
+    }, (default(VpnRequest), default(VpnRequest), false), "staging");
+
+    /// <summary>
+    /// Restores an unconsumed staged session.
+    /// </summary>
+    public static bool TryRestoreStagedRequest(string sessionId, VpnRequest? previous) => WithRequest(() =>
     {
         try
         {
-            using var stream = File.Create(RequestPath());
-            JsonSerializer.Serialize(stream, request);
+            return RestoreStagedRequestLocked(sessionId, previous);
+        }
+        catch (Exception ex)
+        {
+            LogRequestError("restoring the staged session failed", ex);
+            return false;
+        }
+    }, false, "restoring the staged session");
+
+    private static bool RestoreStagedRequestLocked(string sessionId, VpnRequest? previous)
+    {
+        var current = ReadRequestLocked();
+        if (current?.SessionId != sessionId || current.StartClaimed
+            || ReadRunningTransportState()?.SessionId == sessionId)
+        {
+            return false;
+        }
+
+        if (previous is null)
+        {
+            File.Delete(RequestPath());
+            if (ReadRequestLocked() is not null || File.Exists(RequestPath()))
+            {
+                throw new IOException("The staged session was not removed.");
+            }
+        }
+        else
+        {
+            WriteValidatedRequestLocked(previous);
+        }
+
+        return true;
+    }
+
+    private static bool SameRequest(VpnRequest? first, VpnRequest? second) =>
+        JsonSerializer.Serialize(first) == JsonSerializer.Serialize(second);
+
+    private static void WriteValidatedRequestLocked(VpnRequest request)
+    {
+        WriteAtomic(RequestPath(), request);
+        if (!SameRequest(ReadRequestLocked(), request))
+        {
+            throw new IOException("The wanted session was not persisted.");
+        }
+    }
+
+    private static void LogRequestError(string message, Exception error)
+    {
+        using var failure = global::Java.Lang.Throwable.FromException(error);
+        global::Android.Util.Log.Warn("VpnBridge", failure, message);
+    }
+
+    /// <summary>
+    /// Consumes the wanted session.
+    /// </summary>
+    public static (StartOutcome Outcome, VpnRequest? Request) TakeStartRequest(VpnRequest? carried, bool redelivery,
+        string? sessionId = null, string? name = null, bool invalidProxy = false) => WithRequest(() =>
+    {
+        try
+        {
+            var stored = ReadRequestLocked();
+            var tagged = !redelivery && !string.IsNullOrEmpty(sessionId ?? carried?.SessionId);
+            var request = default(VpnRequest);
+            if (tagged)
+            {
+                var expected = sessionId ?? carried!.SessionId;
+                var expectedName = name ?? carried?.Name;
+                if (stored is null || stored.SessionId != expected || stored.Name != expectedName)
+                {
+                    return (StartOutcome.Superseded, null);
+                }
+
+                if (stored.StartClaimed)
+                {
+                    return (StartOutcome.Duplicate, null);
+                }
+
+                request = stored;
+            }
+            else
+            {
+                if (invalidProxy && !redelivery)
+                {
+                    return (StartOutcome.InvalidProxy, null);
+                }
+
+                request = TransportProxyRefresh.RequestForStart(carried, stored, redelivery);
+                if (request is null)
+                {
+                    return (StartOutcome.Missing, null);
+                }
+
+                if (!redelivery && carried is not null || string.IsNullOrEmpty(request.SessionId))
+                {
+                    request = request with { SessionId = TransportProxyRefresh.NewSessionId() };
+                }
+            }
+
+            request = RefreshedRequest(request) with { StartClaimed = true };
+            WriteValidatedRequestLocked(request);
+            return invalidProxy && !redelivery
+                ? (StartOutcome.InvalidProxy, null)
+                : (StartOutcome.Ready, request);
+        }
+        catch (Exception ex)
+        {
+            LogRequestError("consuming the wanted session failed", ex);
+            return (StartOutcome.Failed, null);
+        }
+    }, (StartOutcome.Unavailable, default(VpnRequest)), "starting");
+
+    /// <summary>
+    /// Selects the session delivered to the service.
+    /// </summary>
+    public static VpnRequest? StartRequest(VpnRequest? carried, bool redelivery) =>
+        TakeStartRequest(carried, redelivery).Request;
+
+    /// <summary>
+    /// Prepares the running session for automatic recovery.
+    /// </summary>
+    public static VpnRequest? PrepareRequest() => WithRequest(() =>
+    {
+        var request = ReadRequestLocked();
+        if (request is null)
+        {
+            return null;
+        }
+
+        var refreshed = RefreshedRequest(request);
+        if (refreshed != request)
+        {
+            WriteRequestLocked(refreshed);
+        }
+
+        return refreshed;
+    }, default(VpnRequest), "preparing");
+
+    /// <summary>
+    /// Updates the durable session inside the service.
+    /// </summary>
+    public static void UpdateRequest(Func<VpnRequest, VpnRequest> change) => WithRequest(() =>
+    {
+        if (ReadRequestLocked() is { } request)
+        {
+            WriteRequestLocked(change(request));
+        }
+
+        return true;
+    }, false, "updating");
+
+    private static T WithRequest<T>(Func<T> action, T failure, string operation)
+    {
+        try
+        {
+            var started = Stopwatch.GetTimestamp();
+            if (!Monitor.TryEnter(_requestGate, RequestLockWaitMs))
+            {
+                throw new TimeoutException("The session request gate timed out.");
+            }
+
+            try
+            {
+                using var lease = RequestLease.Acquire(RequestLockPath(), started);
+                return action();
+            }
+            finally
+            {
+                Monitor.Exit(_requestGate);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogRequestError(operation + " the locked session failed", ex);
+            return failure;
+        }
+    }
+
+    private sealed class RequestLease : IDisposable
+    {
+        private readonly Java.IO.RandomAccessFile _file;
+        private readonly Java.Nio.Channels.FileChannel _channel;
+        private readonly Java.Nio.Channels.FileLock _held;
+
+        /// <summary>
+        /// ctor
+        /// </summary>
+        private RequestLease(Java.IO.RandomAccessFile file, Java.Nio.Channels.FileChannel channel, Java.Nio.Channels.FileLock held)
+        {
+            _file = file;
+            _channel = channel;
+            _held = held;
+        }
+
+        public static RequestLease Acquire(string path, long started)
+        {
+            var file = new Java.IO.RandomAccessFile(path, "rw");
+            var channel = default(Java.Nio.Channels.FileChannel);
+            try
+            {
+                channel = file.Channel ?? throw new IOException("The session lock channel is unavailable.");
+                while (true)
+                {
+                    var held = channel.TryLock();
+                    if (held is not null)
+                    {
+                        return new RequestLease(file, channel, held);
+                    }
+
+                    if (Stopwatch.GetElapsedTime(started).TotalMilliseconds >= RequestLockWaitMs)
+                    {
+                        throw new TimeoutException("The session file lock timed out.");
+                    }
+
+                    Thread.Sleep(10);
+                }
+            }
+            catch
+            {
+                try
+                {
+                    file.Close();
+                }
+                finally
+                {
+                    channel?.Dispose();
+                    file.Dispose();
+                }
+
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                _held.Release();
+            }
+            finally
+            {
+                try
+                {
+                    _file.Close();
+                }
+                finally
+                {
+                    _held.Dispose();
+                    _channel.Dispose();
+                    _file.Dispose();
+                }
+            }
+        }
+    }
+
+    private static void WriteRequestLocked(VpnRequest request)
+    {
+        try
+        {
+            WriteAtomic(RequestPath(), request);
         }
         catch (Exception ex)
         {
@@ -530,9 +872,316 @@ public static class VpnBridge
     }
 
     /// <summary>
+    /// Publishes a server definition for the running session.
+    /// </summary>
+    public static bool WriteTransportRefresh(TransportProxyRefresh refresh)
+    {
+        try
+        {
+            WriteAtomic(TransportRefreshPath(), refresh);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the transport refresh failed: " + ex);
+            return false;
+        }
+    }
+
+    private static VpnRequest RefreshedRequest(VpnRequest request)
+    {
+        try
+        {
+            var path = TransportRefreshPath();
+            if (!File.Exists(path))
+            {
+                return request;
+            }
+
+            using var stream = File.OpenRead(path);
+            var refresh = JsonSerializer.Deserialize<TransportProxyRefresh>(stream);
+            if (request.TransportProxy is not { } running)
+            {
+                var legacyFront = TransportProxyRefresh.LegacyFront(request.WsHost, request.WsPort, request.WsOffered);
+                return refresh?.AppliesToLegacy(request.SessionId, request.Name, request.TransportProxy, legacyFront) == true
+                    ? request with { WsHost = refresh.Front?.Address(), WsPort = refresh.Front?.Port ?? 0, WsOffered = refresh.Front?.Offered ?? false }
+                    : request;
+            }
+
+            if (refresh?.AppliesTo(request.SessionId, request.Name, running.Record.Reference) != true)
+            {
+                return request;
+            }
+
+            var (proxy, fault) = refresh.ApplyTo(request.SessionId, request.Name, running, request.TransportProxyFault);
+            if (fault.Length > 0)
+            {
+                return request with { TransportProxyFault = fault };
+            }
+
+            var front = proxy.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(proxy) : (WsEndpoint?)null;
+            return request with
+            {
+                TransportProxy = proxy, TransportProxyFault = "",
+                WsHost = front?.Address(), WsPort = front?.Port ?? 0, WsOffered = front?.Offered ?? false,
+            };
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the transport refresh failed: " + ex);
+            return request;
+        }
+    }
+
+    private static void WriteAtomic<T>(string path, T value)
+    {
+        var fresh = path + "." + Guid.NewGuid().ToString("N") + ".new";
+        try
+        {
+            using (var stream = File.Create(fresh))
+            {
+                JsonSerializer.Serialize(stream, value);
+            }
+
+            File.Move(fresh, path, true);
+        }
+        finally
+        {
+            if (File.Exists(fresh))
+            {
+                File.Delete(fresh);
+            }
+        }
+    }
+
+    /// <summary>
     /// Reads the session the last connect ran on, nothing once the user has taken the tunnel down.
     /// </summary>
-    public static VpnRequest? ReadRequest()
+    public static VpnRequest? ReadRequest() => WithRequest(ReadRequestLocked, default(VpnRequest), "reading");
+
+    private sealed record RunningTransportState(int ProcessId, string SessionId, string Name, RunningTransportProxy Transport);
+
+    /// <summary>
+    /// Publishes the transport accepted by the VPN service.
+    /// </summary>
+    public static void WriteRunningTransport(string sessionId, string name, RunningTransportProxy transport) => WithRequest(() =>
+    {
+        WriteAtomic(RunningTransportPath(), new RunningTransportState(global::Android.OS.Process.MyPid(), sessionId, name, transport));
+        VpnRestartMarker.AcceptSession(RestartRequiredPath(), sessionId);
+        if (ReadMessage<VpnSessionRename>(SessionRenamePath()) is { } rename && rename.SessionId != sessionId)
+        {
+            File.Delete(SessionRenamePath());
+        }
+
+        if (ReadMessage<VpnSessionRenameAck>(SessionRenameAckPath()) is { } ack && ack.SessionId != sessionId)
+        {
+            File.Delete(SessionRenameAckPath());
+        }
+
+        return true;
+    }, false, "publishing the running transport");
+
+    /// <summary>
+    /// Marks the accepted session for reconnect.
+    /// </summary>
+    public static string? MarkRestartRequired(string name) => WithRequest(() =>
+    {
+        var held = ReadRunningTransportState();
+        if (held?.Name != name || held.SessionId.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            VpnRestartMarker.Mark(RestartRequiredPath(), held.SessionId);
+        }
+        catch (Exception ex)
+        {
+            using var error = global::Java.Lang.Throwable.FromException(ex);
+            global::Android.Util.Log.Warn("VpnBridge", error, "writing the accepted reconnect mark failed");
+        }
+
+        return held.SessionId;
+    }, default(string), "marking the accepted session");
+
+    /// <summary>
+    /// Reads the reconnect mark of the accepted session.
+    /// </summary>
+    public static (string SessionId, bool Required)? ReadRestartRequirement(string name) => WithRequest<(string SessionId, bool Required)?>(() =>
+    {
+        var held = ReadRunningTransportState();
+        if (held?.Name != name || held.SessionId.Length == 0)
+        {
+            return null;
+        }
+
+        return (held.SessionId, VpnRestartMarker.Required(RestartRequiredPath(), held.SessionId));
+    }, null, "reading the accepted reconnect mark");
+
+    /// <summary>
+    /// Reads the transport accepted by the VPN service.
+    /// </summary>
+    public static RunningTransportProxy? ReadRunningTransport(string name)
+    {
+        var held = ReadRunningTransportState();
+        return held?.Name == name ? held.Transport : null;
+    }
+
+    /// <summary>
+    /// Removes the transport published by this VPN service.
+    /// </summary>
+    public static void ClearRunningTransport(string? sessionId = null) => WithRequest(() =>
+    {
+        if (ReadRunningTransportState() is { } held && held.ProcessId == global::Android.OS.Process.MyPid()
+            && (sessionId is null || sessionId == held.SessionId))
+        {
+            File.Delete(RunningTransportPath());
+        }
+
+        return true;
+    }, false, "clearing the running transport");
+
+    /// <summary>
+    /// Reads the accepted session by configuration name.
+    /// </summary>
+    public static VpnSessionLabel? ReadRunningSession(string name) => WithRequest(() =>
+    {
+        var held = ReadRunningTransportState();
+        return held?.Name == name && !string.IsNullOrEmpty(held.SessionId)
+            ? new VpnSessionLabel(held.SessionId, held.Name)
+            : null;
+    }, default(VpnSessionLabel), "reading the accepted session");
+
+    /// <summary>
+    /// Reads the accepted session by identifier.
+    /// </summary>
+    public static VpnSessionLabel? ReadRunningSessionById(string sessionId) => WithRequest(() =>
+    {
+        var held = ReadRunningTransportState();
+        return sessionId.Length > 0 && held?.SessionId == sessionId
+            ? new VpnSessionLabel(held.SessionId, held.Name)
+            : null;
+    }, default(VpnSessionLabel), "reading the accepted session identifier");
+
+    /// <summary>
+    /// Writes a session rename command.
+    /// </summary>
+    public static bool WriteSessionRename(VpnSessionRename rename) => WithRequest(() =>
+    {
+        WriteAtomic(SessionRenamePath(), rename);
+        return true;
+    }, false, "writing the session rename");
+
+    /// <summary>
+    /// Sends the session rename command.
+    /// </summary>
+    public static void RequestSessionRename(Context context) => context.SendBroadcast(Broadcast(context, ActionSessionRename));
+
+    /// <summary>
+    /// Reads the session rename command.
+    /// </summary>
+    public static VpnSessionRename? ReadSessionRename() => WithRequest(() => ReadMessage<VpnSessionRename>(SessionRenamePath()),
+        default(VpnSessionRename), "reading the session rename");
+
+    /// <summary>
+    /// Renames the durable and accepted session.
+    /// </summary>
+    public static bool RenameRunningSession(VpnSessionRename rename) => WithRequest(() =>
+    {
+        var held = ReadRunningTransportState();
+        var request = ReadRequestLocked();
+        if (ReadMessage<VpnSessionRename>(SessionRenamePath()) != rename
+            || held is null || held.ProcessId != global::Android.OS.Process.MyPid()
+            || held.SessionId != rename.SessionId || held.Name != rename.OldName
+            || request?.SessionId != rename.SessionId || rename.NewName.Length == 0)
+        {
+            return false;
+        }
+
+        WriteAtomic(RequestPath(), request with { Name = rename.NewName });
+        WriteAtomic(RunningTransportPath(), held with { Name = rename.NewName });
+        return true;
+    }, false, "renaming the accepted session");
+
+    /// <summary>
+    /// Acknowledges the session rename command.
+    /// </summary>
+    public static void WriteSessionRenameAck(VpnSessionRename rename, bool applied) => WithRequest(() =>
+    {
+        if (ReadMessage<VpnSessionRename>(SessionRenamePath()) != rename)
+        {
+            return false;
+        }
+
+        WriteAtomic(SessionRenameAckPath(), new VpnSessionRenameAck(rename.RequestId, rename.SessionId, applied));
+        if (ReadMessage<VpnSessionRename>(SessionRenamePath())?.RequestId == rename.RequestId)
+        {
+            File.Delete(SessionRenamePath());
+        }
+
+        return true;
+    }, false, "acknowledging the session rename");
+
+    /// <summary>
+    /// Reads the acknowledgement of a session rename.
+    /// </summary>
+    public static VpnSessionRenameAck? ReadSessionRenameAck(VpnSessionRename rename) => WithRequest(() =>
+    {
+        var ack = ReadMessage<VpnSessionRenameAck>(SessionRenameAckPath());
+        return ack?.RequestId == rename.RequestId && ack.SessionId == rename.SessionId ? ack : null;
+    }, default(VpnSessionRenameAck), "reading the session rename acknowledgement");
+
+    /// <summary>
+    /// Removes the completed session rename command.
+    /// </summary>
+    public static void ClearSessionRename(VpnSessionRename rename) => WithRequest(() =>
+    {
+        if (ReadMessage<VpnSessionRename>(SessionRenamePath())?.RequestId == rename.RequestId)
+        {
+            File.Delete(SessionRenamePath());
+        }
+
+        if (ReadMessage<VpnSessionRenameAck>(SessionRenameAckPath())?.RequestId == rename.RequestId)
+        {
+            File.Delete(SessionRenameAckPath());
+        }
+
+        return true;
+    }, false, "clearing the session rename");
+
+    private static T? ReadMessage<T>(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return default;
+        }
+
+        using var stream = File.OpenRead(path);
+        return JsonSerializer.Deserialize<T>(stream);
+    }
+
+    private static RunningTransportState? ReadRunningTransportState()
+    {
+        try
+        {
+            var path = RunningTransportPath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            using var stream = File.OpenRead(path);
+            return JsonSerializer.Deserialize<RunningTransportState>(stream);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the running transport failed: " + ex);
+            return null;
+        }
+    }
+
+    private static VpnRequest? ReadRequestLocked()
     {
         try
         {
@@ -556,20 +1205,26 @@ public static class VpnBridge
     /// <summary>
     /// Whether the session of the last connect still waits on disk: nobody has taken the tunnel down.
     /// </summary>
-    public static bool HasRequest() => File.Exists(RequestPath());
+    public static bool HasRequest() => ReadRequest() is not null;
 
     /// <summary>
     /// Drops the session, so a tunnel the user stopped stays down.
     /// </summary>
     public static void ClearRequest()
     {
-        try
+        var cleared = WithRequest(() =>
         {
             File.Delete(RequestPath());
-        }
-        catch (Exception ex)
+            File.Delete(RunningTransportPath());
+            File.Delete(TransportRefreshPath());
+            VpnRestartMarker.Clear(RestartRequiredPath());
+            File.Delete(SessionRenamePath());
+            File.Delete(SessionRenameAckPath());
+            return true;
+        }, false, "dropping");
+        if (cleared)
         {
-            global::Android.Util.Log.Warn("VpnBridge", "dropping the session failed: " + ex);
+            RequestTransportRefresh(Application.Context);
         }
     }
 
@@ -1059,6 +1714,11 @@ public static class VpnBridge
     public static void RequestWatch(Context context) => context.SendBroadcast(Broadcast(context, ActionWatch));
 
     /// <summary>
+    /// Asks the service to read its transport refresh.
+    /// </summary>
+    public static void RequestTransportRefresh(Context context) => context.SendBroadcast(Broadcast(context, ActionTransportRefresh));
+
+    /// <summary>
     /// Leaves the configuration to move to for the tunnel to ask its server.
     /// </summary>
     public static void WriteSwitch(SwitchRequest request)
@@ -1189,6 +1849,24 @@ public static class VpnBridge
 
     private static string RequestPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RequestFile);
+
+    private static string RunningTransportPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RunningTransportFile);
+
+    private static string RestartRequiredPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RestartRequiredFile);
+
+    private static string SessionRenamePath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SessionRenameFile);
+
+    private static string SessionRenameAckPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SessionRenameAckFile);
+
+    private static string RequestLockPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RequestLockFile);
+
+    private static string TransportRefreshPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", TransportRefreshFile);
 
     private static string RouteTtlPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RouteTtlFile);

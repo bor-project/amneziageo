@@ -14,7 +14,8 @@ param(
     [ValidateSet('arm64-v8a', 'x86_64', 'armeabi-v7a', 'x86')]
     [string[]]$Abi = @('arm64-v8a', 'armeabi-v7a', 'x86_64'),
     [int]$ApiLevel = 24,
-    [string]$NdkRoot
+    [string]$NdkRoot,
+    [string]$GoExecutable = 'go.exe'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,16 +75,27 @@ foreach ($a in $Abi) {
     if (-not (Test-Path $cc)) { throw "no compiler for $a at API $ApiLevel`: $cc" }
 }
 
-$goExe = (Get-Command go.exe -ErrorAction SilentlyContinue).Source
+$goExe = (Get-Command $GoExecutable -ErrorAction SilentlyContinue).Source
 if (-not $goExe) { throw 'go.exe not found in PATH' }
+if ((& $goExe env GOVERSION) -ne 'go1.27.3') { throw 'Android native build requires Go 1.27.3' }
 
 # ---- 2. build ----
 $saved = @{}
-foreach ($v in @('GOOS', 'GOARCH', 'GOARM', 'GOCACHE', 'GOTOOLCHAIN', 'GOFLAGS', 'CGO_ENABLED', 'CGO_LDFLAGS', 'CC', 'CXX')) {
+foreach ($v in @('PATH', 'GOOS', 'GOARCH', 'GOARM', 'GOAMD64', 'GOARM64', 'GOFIPS140', 'GOCACHE', 'GOTOOLCHAIN', 'GOFLAGS', 'CGO_ENABLED', 'CGO_LDFLAGS', 'CC', 'CXX')) {
     $saved[$v] = [Environment]::GetEnvironmentVariable($v)
 }
 
 try {
+    $env:PATH = "$(Split-Path $goExe -Parent);$env:PATH"
+    $env:GOTOOLCHAIN = 'local'
+    $env:GOAMD64 = 'v1'
+    $env:GOARM64 = 'v8.0'
+    $env:GOFIPS140 = 'off'
+    Push-Location $module
+    try {
+        $fingerprint = & $goExe run ./internal/nativefingerprint
+        if ($LASTEXITCODE -ne 0) { throw 'Native source fingerprint failed' }
+    } finally { Pop-Location }
     $env:GOOS        = 'android'
     # without this a go.mod toolchain bump would silently download another Go
     $env:GOTOOLCHAIN = 'local'
@@ -113,8 +125,9 @@ try {
             $godebug = $(if ($godebug) { "$godebug,madvdontneed=1" } else { 'madvdontneed=1' })
 
             Write-Host "== building $a\libamneziawg-go.so =="
-            & $goExe build -buildmode c-shared -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath -o $out
+            & $goExe build -buildmode c-shared -buildvcs=false -ldflags "-w -s -X runtime.godebugDefault=$godebug" -trimpath -o $out
             if ($LASTEXITCODE -ne 0) { throw "go build failed for $a ($LASTEXITCODE)" }
+            Set-Content -Encoding ascii -LiteralPath (Join-Path $outDir 'native-source.sha256') -Value $fingerprint
 
             $header = Join-Path $outDir 'libamneziawg-go.h'
             if (Test-Path $header) { Remove-Item -Force $header }
@@ -150,7 +163,7 @@ Write-Host ''
 Write-Host '== result =='
 $exports = @('wgTurnOn', 'wgTurnOff', 'wgGetConfig', 'wgRenew', 'wgSetVerdicts', 'wgPrepareSwap',
     'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetTcpDirect', 'wgSetRelay', 'wgLiveAddresses',
-    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory')
+    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory', 'agXHttpStart', 'agXHttpStop', 'agXHttpIsRunning')
 foreach ($a in $Abi) {
     $so = Join-Path $outRoot "$a\libamneziawg-go.so"
     $b = [IO.File]::ReadAllBytes($so)

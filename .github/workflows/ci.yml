@@ -27,6 +27,12 @@ jobs:
           path: amneziageo-windows/amneziawg-windows/.deps
           key: awg-deps-${{ hashFiles('amneziageo-windows/tools/build-engine-win7.ps1') }}
 
+      - name: Setup HTTP GET Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+
       - name: Build the AmneziaWG engine (tunnel.dll)
         shell: pwsh
         run: ./amneziageo-windows/tools/build-engine-win7.ps1 -Arch x64
@@ -41,7 +47,11 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+
+      - name: Prepare the HTTP GET runtime
+        shell: pwsh
+        run: ./amneziageo-windows/tools/build-http-get.ps1 -Arch x64
 
       - name: Build the solution
         run: dotnet build AmneziaGeo.Windows.slnx -c Release
@@ -66,12 +76,12 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.27.x'
+          go-version: '1.27.3'
           check-latest: true
           cache: false
 
@@ -107,12 +117,12 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.27.x'
+          go-version: '1.27.3'
           check-latest: true
           cache: false
 

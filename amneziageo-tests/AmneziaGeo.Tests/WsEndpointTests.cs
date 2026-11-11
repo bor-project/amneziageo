@@ -23,6 +23,16 @@ public sealed class WsEndpointTests
     private static readonly ConfigTransport Settings = new("c", true, WebSocketHost: "wss://user:pass@own.example:9443/mine", WebSocketPort: 0);
 
     [Fact]
+    public void ServicesTrustDoesNotOverrideAManualProxyOnAnotherHost()
+    {
+        var text = Named + "\n# AmneziaGeo Services TLS Name = service.example\n# AmneziaGeo Services TLS Pin = " + new string('a', 64);
+        var front = WsEndpoint.Of(text, ServerOffer.None, Settings)!.Value;
+        Assert.Equal("front.example", front.Host);
+        Assert.Equal("", front.ServerName);
+        Assert.Equal("", front.Pin);
+    }
+
+    [Fact]
     public void TheFrontTheServerOffers_IsTheHostOfTheEndpointAtThatPort()
     {
         var front = WsEndpoint.Of(Text, Offered, Settings);
@@ -134,10 +144,10 @@ public sealed class WsEndpointTests
     [InlineData("front.example:8443")]
     [InlineData("wss://front.example:8443/secret")]
     [InlineData("wss://user:pass@front.example:8443/secret")]
-    [InlineData("ws://10.99.1.1:8080")]
     public void AnAddressTheTunnelIsCarriedTo_IsTaken(string address) => Assert.True(WsEndpoint.Dials(address));
 
     [Theory]
+    [InlineData("ws://10.99.1.1:8080")]
     [InlineData("https://my.example/p")]
     [InlineData("my.example:99999")]
     [InlineData("wss://my.example/p?x=1")]

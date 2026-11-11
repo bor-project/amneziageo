@@ -28,6 +28,7 @@
           <StackPanel Grid.Column="0" Spacing="1">
             <TextBlock Text="{Binding Token}" Classes="mono" FontSize="12.5" TextTrimming="CharacterEllipsis" />
             <TextBlock Text="{Binding Description}" Classes="muted" FontSize="11"
+                       Classes.warn="{Binding IsWarning}"
                        TextTrimming="CharacterEllipsis" />
           </StackPanel>
           <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="6" Padding="7,2"

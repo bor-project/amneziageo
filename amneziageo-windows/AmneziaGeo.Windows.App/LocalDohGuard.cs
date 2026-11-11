@@ -8,14 +8,14 @@ namespace AmneziaGeo.Windows.App;
 /// Moves the machine's lookups onto HTTPS when they stop reaching the name proxy on plain 53, and puts
 /// everything back when the tunnel goes down.
 /// </summary>
-internal sealed class LocalDohGuard(string mode, IPAddress address, ILogger logger) : IDisposable
+internal sealed class LocalDohGuard(string tunnel, string mode, IPAddress address, ILogger logger) : IDisposable
 {
     // How long Windows is given to pick the HTTPS resolver up before the answer is asked for.
     private static readonly TimeSpan _settle = TimeSpan.FromSeconds(3);
 
     private readonly string _mode = LocalDohModes.Of(mode);
     private LocalDohServer? _server;
-    private bool _registered;
+    private LocalDohOwnership? _ownership;
     private bool _tried;
 
     /// <summary>
@@ -40,22 +40,32 @@ internal sealed class LocalDohGuard(string mode, IPAddress address, ILogger logg
         }
 
         _tried = true;
-        var server = new LocalDohServer(address, logger);
-        if (!server.Start(answer))
+        try
         {
-            server.Dispose();
-            return false;
-        }
+            _ownership = LocalDohOwnership.Take(TunnelPaths.LocalDohDirectory(), tunnel, address,
+                new LocalDohResources(logger), logger);
+            if (_ownership is null)
+            {
+                logger.LogWarning("the local HTTPS resolver address {Address} is held by another owner", address);
+                return false;
+            }
 
-        _server = server;
-        if (!EncryptedNames.Register(address, server.Template, logger))
+            var server = new LocalDohServer(address, _ownership.AppId, logger);
+            _server = server;
+            if (!server.Start(answer) || !EncryptedNames.Register(address, server.Template, logger))
+            {
+                Release();
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
         {
+            logger.LogWarning(ex, "the local HTTPS resolver for {Tunnel} could not be acquired", tunnel);
             Release();
             return false;
         }
-
-        _registered = true;
-        return true;
     }
 
     /// <summary>
@@ -81,14 +91,10 @@ internal sealed class LocalDohGuard(string mode, IPAddress address, ILogger logg
     /// </summary>
     public void Release()
     {
-        if (_registered)
-        {
-            EncryptedNames.Unregister(address, logger);
-            _registered = false;
-        }
-
         _server?.Dispose();
         _server = null;
+        _ownership?.Dispose();
+        _ownership = null;
         State = string.Empty;
     }
 

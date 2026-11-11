@@ -9,8 +9,8 @@ namespace AmneziaGeo.Android.Ui.Services;
 /// </summary>
 internal static class AndroidExport
 {
-    // Provider authority declared in the manifest.
-    private const string Authority = "org.amneziageo.android.files";
+    // Provider authority declared in the manifest under the identifier of the package.
+    private static string Authority => global::Android.App.Application.Context.PackageName + ".files";
 
     /// <summary>
     /// Регистрирует пути отправки в общем UI.

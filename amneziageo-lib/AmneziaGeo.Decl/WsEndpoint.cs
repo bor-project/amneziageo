@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 
 namespace AmneziaGeo.Decl;
 
@@ -6,8 +7,120 @@ namespace AmneziaGeo.Decl;
 /// The websocket front a config carries its tunnel to: the one its server offers, else the one the config names,
 /// else the one of its settings, with the path token and the basic-auth account of the last two.
 /// </summary>
-public readonly record struct WsEndpoint(string Host, int Port, string PathPrefix = "", string Credentials = "", bool Offered = false)
+public readonly record struct WsEndpoint(string Host, int Port, string PathPrefix = "", string Credentials = "", bool Offered = false,
+    string TargetHost = "127.0.0.1", string Bearer = "", string ServerName = "", string Pin = "", bool UseCertificate = true, bool Legacy = false)
 {
+    /// <summary>
+    /// Identifies a catalog transport.
+    /// </summary>
+    public bool Modern => !Legacy && (!string.IsNullOrEmpty(Bearer) || !string.IsNullOrEmpty(ServerName)
+        || !string.IsNullOrEmpty(Pin) || TargetHost != "127.0.0.1" || !UseCertificate);
+
+    /// <inheritdoc/>
+    public override string ToString() => Display();
+
+    /// <summary>
+    /// Creates the WebSocket endpoint of a selected proxy.
+    /// </summary>
+    public static WsEndpoint From(ResolvedTransportProxy resolved)
+    {
+        ArgumentNullException.ThrowIfNull(resolved);
+        var record = resolved.Record;
+        var proxy = record.Proxy;
+        if (proxy.Transport != "websocket" || resolved.TargetPort is < 1 or > 65535)
+        {
+            throw new ArgumentException("The proxy does not carry a WebSocket UDP destination.", nameof(resolved));
+        }
+
+        if (record.Legacy)
+        {
+            return new WsEndpoint(proxy.Host, proxy.Port, proxy.Path, proxy.Auth.Credential, record.LegacyOffered,
+                ServerName: proxy.Tls.ServerName, Pin: proxy.Tls.Pin, UseCertificate: proxy.Tls.Enabled, Legacy: true).Normalize();
+        }
+
+        if (proxy.Auth.Scheme != "bearer")
+        {
+            throw new ArgumentException("The WebSocket proxy requires bearer authorization.", nameof(resolved));
+        }
+
+        return new WsEndpoint(proxy.Host, proxy.Port, proxy.Path, TargetHost: resolved.TargetHost,
+            Bearer: proxy.Auth.Credential, ServerName: proxy.Tls.ServerName, Pin: proxy.Tls.Pin, UseCertificate: proxy.Tls.Enabled).Normalize();
+    }
+
+    /// <summary>
+    /// Validates the transport parameters.
+    /// </summary>
+    public WsEndpoint Normalize()
+    {
+        var host = NormalizeHost(Host);
+        var path = PathPrefix ?? string.Empty;
+        var credentials = Credentials ?? string.Empty;
+        var bearer = Bearer ?? string.Empty;
+        var pin = Pin ?? string.Empty;
+        if (!UseCertificate || Port is < 1 or > 65535
+            || pin.Length != 0 && (pin.Length != 64 || !pin.All(char.IsAsciiHexDigit)) || path.Any(letter => letter <= ' ' || letter >= '\u007f')
+            || path.Contains('?', StringComparison.Ordinal) || path.Contains('#', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The WebSocket endpoint is invalid.");
+        }
+
+        if (!Modern)
+        {
+            return this with { Host = host, PathPrefix = path, Credentials = credentials, Bearer = "",
+                ServerName = string.IsNullOrEmpty(ServerName) ? "" : NormalizeHost(ServerName), Pin = pin.ToLowerInvariant() };
+        }
+
+        if (bearer.Length is < 1 or > 512 || bearer.Any(letter => !char.IsAsciiLetterOrDigit(letter)
+                && letter is not ('-' or '.' or '_' or '~' or '+' or '/' or '='))
+            || path.Length is < 1 or > 64 || path.Any(letter => !char.IsAsciiLetterOrDigit(letter) && letter is not ('-' or '_'))
+            || !UseCertificate && pin.Length > 0
+            || pin.Length > 0 && (pin.Length != 64 || !pin.All(char.IsAsciiHexDigit)))
+        {
+            throw new ArgumentException("The catalog WebSocket endpoint is invalid.");
+        }
+
+        return this with
+        {
+            Host = host, PathPrefix = path, Credentials = credentials, Bearer = bearer,
+            TargetHost = NormalizeHost(TargetHost),
+            ServerName = string.IsNullOrEmpty(ServerName) ? host : NormalizeHost(ServerName),
+            Pin = pin.ToLowerInvariant(),
+        };
+    }
+
+    private static WsEndpoint Trust(WsEndpoint front, string? text) => !front.Offered
+        && !string.Equals(front.Host, ConfigServices.Host(text), StringComparison.OrdinalIgnoreCase) ? front : front with
+    {
+        ServerName = ConfigServices.TlsName(text), Pin = ConfigServices.TlsPin(text),
+        Legacy = ConfigServices.TlsName(text).Length > 0 || ConfigServices.TlsPin(text).Length > 0,
+    };
+
+    private static string NormalizeHost(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || value.Any(char.IsControl) || value.Any(char.IsWhiteSpace))
+        {
+            throw new ArgumentException("The WebSocket host is invalid.");
+        }
+
+        var host = value.StartsWith('[') && value.EndsWith(']') ? value[1..^1] : value;
+        if (IPAddress.TryParse(host, out var address))
+        {
+            if (host.Contains('%', StringComparison.Ordinal))
+            {
+                throw new ArgumentException("The WebSocket host is invalid.");
+            }
+
+            return address.ToString();
+        }
+
+        if (Uri.CheckHostName(host) != UriHostNameType.Dns || host.Length > 253)
+        {
+            throw new ArgumentException("The WebSocket host is invalid.");
+        }
+
+        return new IdnMapping().GetAscii(host).ToLowerInvariant();
+    }
+
     /// <summary>
     /// The port of a front when neither the settings, the config nor its Endpoint name one.
     /// </summary>
@@ -30,7 +143,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
             var host = ConfigServices.Host(text);
 
             return host.Length > 0 && offer.WebSocketPort > 0
-                ? new WsEndpoint(host, offer.WebSocketPort, offer.WebSocketPath, Offered: true)
+                ? Trust(new WsEndpoint(host, offer.WebSocketPort, offer.WebSocketPath, Offered: true), text)
                 : null;
         }
 
@@ -40,7 +153,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
             ? Default(endpoint, named)
             : Of(transport?.WebSocketHost, transport?.WebSocketPort ?? 0, endpoint, string.Empty);
 
-        return front.Host.Length > 0 ? front : null;
+        return front.Host.Length > 0 ? Trust(front, text) : null;
     }
 
     /// <summary>
@@ -126,7 +239,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
     /// Tells whether an address is one the tunnel can be carried to; an empty one leaves the front to the config.
     /// </summary>
     public static bool Dials(string? hostOrUrl) =>
-        (hostOrUrl ?? string.Empty).Trim().Length == 0 || Read(hostOrUrl) is not null;
+        (hostOrUrl ?? string.Empty).Trim().Length == 0 || Read(hostOrUrl) is { UseCertificate: true };
 
     /// <summary>
     /// Host and port for display, without the path token and the basic-auth credentials.
@@ -158,7 +271,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         var host = Host.Contains(':', StringComparison.Ordinal) && !Host.StartsWith('[') ? $"[{Host}]" : Host;
         var path = PathPrefix.Length > 0 ? $"/{PathPrefix}" : string.Empty;
 
-        return string.Create(CultureInfo.InvariantCulture, $"wss://{account}{host}:{Port}{path}");
+        return string.Create(CultureInfo.InvariantCulture, $"{(UseCertificate ? "wss" : "ws")}://{account}{host}:{Port}{path}");
     }
 
     // Reads an address: a bare host, a host with its port, or a ws(s):// URL; null when it names no host to dial.
@@ -190,7 +303,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         // UserInfo is percent-escaped by the UI; unescape back to the literal form wstunnel expects.
         var credentials = uri.UserInfo.Length == 0 ? string.Empty : Uri.UnescapeDataString(uri.UserInfo);
 
-        return new WsEndpoint(uri.Host, port, uri.AbsolutePath.Trim('/'), credentials);
+        return new WsEndpoint(uri.Host, port, uri.AbsolutePath.Trim('/'), credentials, UseCertificate: uri.Scheme == "wss");
     }
 
     // Tells whether a URL names its port rather than leaving it to the scheme.

@@ -1,0 +1,88 @@
+<Project>
+  <UsingTask TaskName="VerifyAndroidNativeFingerprint" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <AndroidRoot ParameterType="System.String" Required="true" />
+      <Libraries ParameterType="System.String[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        byte[] Normalize(byte[] value)
+        {
+            var result = new List<byte>(value.Length);
+            for (var index = 0; index < value.Length; index++)
+            {
+                if (value[index] == 13 && index + 1 < value.Length && value[index + 1] == 10)
+                {
+                    continue;
+                }
+
+                result.Add(value[index]);
+            }
+
+            return result.ToArray();
+        }
+
+        var root = Path.GetFullPath(AndroidRoot);
+        var prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var files = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var directory in new[] { "libamneziawg-go", "amneziawg-go" })
+        {
+            foreach (var file in Directory.EnumerateFiles(Path.Combine(root, directory), "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetFullPath(file).Substring(prefix.Length).Replace('\\', '/');
+                if (relative.Split('/').Any(part => part == ".git" || part == ".local"))
+                {
+                    continue;
+                }
+
+                var extension = Path.GetExtension(file).ToLowerInvariant();
+                var name = Path.GetFileName(file);
+                if (extension != ".go" && extension != ".s" && extension != ".c" && extension != ".h"
+                    && name != "go.mod" && name != "go.sum")
+                {
+                    continue;
+                }
+
+                files[relative] = file;
+            }
+        }
+
+        foreach (var name in new[] { "tools/build-engine-android.ps1", "tools/build-engine-android.sh" })
+        {
+            files[name] = Path.Combine(root, name);
+        }
+
+        var text = new StringBuilder("amneziageo.android-native.v3\n");
+        using (var hash = SHA256.Create())
+        {
+            foreach (var file in files)
+            {
+                var digest = BitConverter.ToString(hash.ComputeHash(Normalize(File.ReadAllBytes(file.Value)))).Replace("-", "").ToLowerInvariant();
+                text.Append(file.Key).Append('\0').Append(digest).Append('\n');
+            }
+
+            var expected = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text.ToString()))).Replace("-", "").ToLowerInvariant();
+            foreach (var library in Libraries)
+            {
+                var stamp = Path.Combine(Path.GetDirectoryName(library), "native-source.sha256");
+                if (!File.Exists(stamp) || File.ReadAllText(stamp).Trim() != expected)
+                {
+                    Log.LogError("Native engine source fingerprint differs: {0}. Run tools/build-engine-android with Go 1.27.3.", library);
+                    return false;
+                }
+            }
+        }
+
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="CheckNativeEngineFingerprint" BeforeTargets="BeforeBuild" DependsOnTargets="CheckNativeEngine" Condition="'$(DesignTimeBuild)' != 'true'">
+    <VerifyAndroidNativeFingerprint AndroidRoot="$(MSBuildThisFileDirectory).." Libraries="@(AndroidNativeLibrary->'%(FullPath)')" />
+  </Target>
+</Project>

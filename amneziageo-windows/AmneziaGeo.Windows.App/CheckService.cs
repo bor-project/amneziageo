@@ -36,7 +36,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         var (_, split) = await ActiveListAsync(store, config, ct).ConfigureAwait(false);
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var offers = new ServerOffers(store);
-        var carrier = Carrier(text, transport, await offers.OfferAsync(config, text, ct).ConfigureAwait(false));
+        var carrier = await ServerOffers.ProbeEndpointAsync(store, config, Carrier(text, transport, await offers.OfferAsync(config, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
         var speed = await offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
         var endpoint = await ResolveAsync(carrier.Host, ct).ConfigureAwait(false);
         // In the mode each server carries its own control.
@@ -84,7 +84,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         {
             var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await ServerOfferStore.ReadAsync(store, name, text, ct).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(store, name, Carrier(text, transport, await ServerOfferStore.ReadAsync(store, name, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -113,7 +113,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
         {
             var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await ServerOfferStore.ReadAsync(store, name, text, ct).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(store, name, Carrier(text, transport, await ServerOfferStore.ReadAsync(store, name, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -379,7 +379,7 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     {
         var listId = await store.GetActiveRoutingListIdAsync(config, ct).ConfigureAwait(false)
             ?? (await ConfigRouting.AllowedAsync(store, config, ct).ConfigureAwait(false)
-                ? await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false)
+                ? await ConfigRouting.SelectedListAsync(store, config, ct).ConfigureAwait(false)
                 : null);
         var list = listId is long id && await store.GetRoutingListAsync(id, ct).ConfigureAwait(false) is { } stored
             ? await AppFinds.ExpandListAsync(store, stored, ct).ConfigureAwait(false)

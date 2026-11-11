@@ -1,5 +1,3 @@
-using System.Net;
-
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -17,7 +15,8 @@ internal sealed class NetworkReconciler(DnsConfigurator dns, RouteManager routes
     public void Reconcile(Func<bool>? abortIf = null, IEnumerable<string>? keep = null)
     {
         Step(() => dns.RestoreSaved(abortIf, keep), "dns restore");
-        Step(() => EncryptedNames.Unregister(IPAddress.Loopback, logger), "encrypted names restore");
+        Step(() => LocalDohOwnership.Reconcile(TunnelPaths.LocalDohDirectory(), new LocalDohResources(logger), logger,
+            keep: keep, abortIf: abortIf), "encrypted names restore");
         Step(() => routes.RestoreSavedExclusions(abortIf, keep), "route exclusion restore");
         Step(() => routes.RestoreSavedLanExclusions(abortIf, keep), "lan exclusion restore");
         logger.LogDebug("network state reconciled");
@@ -29,7 +28,8 @@ internal sealed class NetworkReconciler(DnsConfigurator dns, RouteManager routes
     public void Reconcile(string tunnel)
     {
         Step(() => dns.Restore(tunnel), "dns restore");
-        Step(() => EncryptedNames.Unregister(IPAddress.Loopback, logger), "encrypted names restore");
+        Step(() => LocalDohOwnership.Reconcile(TunnelPaths.LocalDohDirectory(), new LocalDohResources(logger), logger,
+            tunnel: tunnel), "encrypted names restore");
         Step(() => routes.RemoveEndpointExclusions(tunnel), "route exclusion restore");
         Step(() => routes.RemoveLanExclusions(tunnel), "lan exclusion restore");
         logger.LogDebug("network state of {Tunnel} reconciled", tunnel);

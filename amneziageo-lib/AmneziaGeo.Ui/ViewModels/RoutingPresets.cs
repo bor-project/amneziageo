@@ -26,11 +26,6 @@ internal sealed record RoutingPreset(
 internal static class RoutingPresets
 {
     /// <summary>
-    /// Правило переключателя «Резать рекламу».
-    /// </summary>
-    public const string AdsRule = "geosite:category-ads-all";
-
-    /// <summary>
     /// Наборы в порядке показа: сверху точечный, снизу самый грубый.
     /// </summary>
     public static readonly RoutingPreset[] All =

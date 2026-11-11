@@ -158,7 +158,7 @@ public sealed class HelloInsideTests : IAsyncLifetime
         var served = ServeOnceAsync(listener);
 
         var reply = await ServerHello.AskAsync(
-            new ServiceTarget("vpn.example", 51820, Key(), Key()) { Origin = $"http://127.0.0.1:{port}" },
+            new ServiceTarget("vpn.example", 51820, Key(), Key()) { Origin = $"http://127.0.0.1:{port}", InsideTunnel = true },
             CancellationToken.None);
 
         Assert.True(reply.Heard);

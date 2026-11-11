@@ -86,7 +86,7 @@ public sealed class GeoDomainRouteResolver
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(_perLookupTimeout);
-            var addresses = await Dns.GetHostAddressesAsync(host, timeout.Token).ConfigureAwait(false);
+            var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, timeout.Token).ConfigureAwait(false);
             foreach (var address in addresses)
             {
                 if (address.AddressFamily == AddressFamily.InterNetwork)

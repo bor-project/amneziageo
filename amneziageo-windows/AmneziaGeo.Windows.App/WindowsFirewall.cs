@@ -565,6 +565,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     {
         lock (_gate)
         {
+            DisableApplicationBlocksLocked();
             DisableLocked();
         }
     }

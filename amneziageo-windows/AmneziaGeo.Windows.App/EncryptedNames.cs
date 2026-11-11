@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.Logging;
 
@@ -14,10 +13,9 @@ internal static class EncryptedNames
     /// </summary>
     public static bool Register(IPAddress address, string template, ILogger logger)
     {
-        Netsh($"dns delete encryption server={address}", logger);
         var added = Netsh($"dns add encryption server={address} dohtemplate={template} autoupgrade=yes udpfallback=yes", logger);
-        var listed = Netsh($"dns show encryption server={address}", logger);
-        if (listed.Contains(template, StringComparison.OrdinalIgnoreCase))
+        var listed = Template(address, logger);
+        if (string.Equals(listed, template, StringComparison.OrdinalIgnoreCase))
         {
             logger.LogInformation("Windows now asks {Address} over HTTPS by {Template}", address, template);
             return true;
@@ -35,25 +33,16 @@ internal static class EncryptedNames
         Netsh($"dns delete encryption server={address}", logger);
     }
 
+    public static string? Template(IPAddress address, ILogger logger)
+    {
+        return new LocalDohResources(logger).Template(address);
+    }
+
     private static string Netsh(string arguments, ILogger logger)
     {
         try
         {
-            using var process = Process.Start(ChildOutput.OfSystem(new ProcessStartInfo("netsh", arguments)
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            }));
-            if (process is null)
-            {
-                return string.Empty;
-            }
-
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(6000);
-            return output;
+            return LocalDohResources.Run(arguments);
         }
         catch (Exception ex)
         {

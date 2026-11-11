@@ -106,7 +106,7 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Usage, await ConfigCommands.RunAsync(link, ["websocket", "office", "on", "--host", "https://front.example"]));
 
         Assert.Equal([IpcContract.OpSetWebSocket], link.Sent);
-        Assert.Equal(["8443", "front.example"], link.Args[0].Skip(9));
+        Assert.Equal(["8443", "front.example", "legacy"], link.Args[0].Skip(9));
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["websocket", "office", "on"]));
         Assert.Equal([IpcContract.OpSetWebSocket], link.Sent);
         Assert.Equal(["office", "on", "1300", "on"], link.Args[0].Take(4));
-        Assert.Equal(["9443", "wss://own.example:9443/t"], link.Args[0].Skip(9));
+        Assert.Equal(["9443", "wss://own.example:9443/t", "legacy"], link.Args[0].Skip(9));
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal("WEBSOCKET", Cells(lines[0])[3]);
+        Assert.Equal("PROXY", Cells(lines[0])[3]);
         Assert.Equal("10.9.1.1:8446", Cells(lines[1])[3]);
         Assert.Equal("no front", Cells(lines[2])[3]);
         Assert.Equal("-", Cells(lines[3])[3]);
@@ -196,7 +196,7 @@ public sealed class ConfigCommandsTests : IDisposable
         Assert.Equal(Exit.Ok, await ConfigCommands.RunAsync(link, ["list"]));
 
         var lines = _console.ToString().Split('\n');
-        Assert.Equal(["NAME", "ENDPOINT", "GEO", "WEBSOCKET", "DNS", "VPN DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], Cells(lines[0]));
+        Assert.Equal(["NAME", "ENDPOINT", "GEO", "PROXY", "DNS", "VPN DNS", "INBOUND", "ROUTING", "SIGNAL", "HOLD", "STATE"], Cells(lines[0]));
         Assert.Equal("on", Cells(lines[1])[9]);
         Assert.Equal("off", Cells(lines[2])[9]);
     }

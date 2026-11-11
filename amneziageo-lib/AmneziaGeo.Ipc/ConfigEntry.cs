@@ -85,7 +85,10 @@ public sealed record ConfigEntry(
     // Why the server of the config keeps the subscription of the config off, and what the fault is about; empty while
     // it does not.
     string SubscriptionFault = "",
-    string SubscriptionDetail = "");
+    string SubscriptionDetail = "",
+    ProxyReference? TransportProxy = null,
+    bool TransportProxyChosen = false,
+    RunningTransportProxy? RunningTransport = null);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

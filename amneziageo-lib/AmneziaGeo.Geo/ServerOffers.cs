@@ -48,9 +48,12 @@ public sealed class ServerOffers
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _askInside;
     private readonly Func<string, bool>? _carried;
+    private readonly Func<string, IPAddress, CancellationToken, Task<bool>>? _insidePath;
+    private readonly Func<string, ServiceTarget, CancellationToken, Task<HelloReply>>? _askConfined;
     private readonly Func<string, CancellationToken, Task<string?>>? _dialed;
     private readonly Action<string, Exception?>? _note;
     private readonly TimeProvider _time;
+    private readonly TransportProxyCatalog _transportProxies;
     private readonly HashSet<string> _asking = new(StringComparer.Ordinal);
     private readonly object _lock = new();
 
@@ -68,19 +71,25 @@ public sealed class ServerOffers
         Func<IReadOnlyList<long>, CancellationToken, Task>? take = null,
         Func<string, bool>? carried = null,
         Func<ServiceTarget, CancellationToken, Task<HelloReply>>? askInside = null,
-        Func<string, CancellationToken, Task<string?>>? dialed = null)
+        Func<string, CancellationToken, Task<string?>>? dialed = null,
+        TransportProxyCatalog? transportProxies = null,
+        Func<string, IPAddress, CancellationToken, Task<bool>>? insidePath = null,
+        Func<string, ServiceTarget, CancellationToken, Task<HelloReply>>? askConfined = null)
     {
         _store = store;
         _note = note;
         _ask = ask ?? ServerHello.AskAsync;
         _askInside = askInside ?? ServerHello.AskAsync;
         _carried = carried;
+        _insidePath = insidePath;
+        _askConfined = askConfined;
         _dialed = dialed;
         _time = time ?? TimeProvider.System;
         _geo = geo;
         _fetch = fetch;
         _rerouted = rerouted;
         _take = take;
+        _transportProxies = transportProxies ?? TransportProxyCatalog.For(store);
     }
 
     /// <summary>
@@ -123,7 +132,20 @@ public sealed class ServerOffers
             return kept.Offer;
         }
 
-        return (await AskBindingAsync(config, text, true, false, ct).ConfigureAwait(false)).Offer;
+        try
+        {
+            return (await AskBindingAsync(config, text, true, false, ct).ConfigureAwait(false)).Offer;
+        }
+        catch (TransportProxyFault ex) when (ex.Code == "proxy-service-unavailable")
+        {
+            if (await _transportProxies.ResolveAsync(config, ct).ConfigureAwait(false) is null)
+            {
+                throw;
+            }
+
+            _note?.Invoke($"{config}: optional hello has no confined path; the selected proxy keeps its runtime validation", ex);
+            return kept?.Offer ?? ServerOffer.None;
+        }
     }
 
     /// <summary>
@@ -188,6 +210,11 @@ public sealed class ServerOffers
     /// </summary>
     public async Task<ServerOffer?> SpeedAsync(string config, string? text, CancellationToken ct)
     {
+        if (await UsesProxyAsync(_store, config, ct).ConfigureAwait(false))
+        {
+            throw new TransportProxyFault("proxy-service-unavailable");
+        }
+
         var offer = await OfferAsync(config, text, ct).ConfigureAwait(false);
         if (offer.Speed(true) is not null && offer.SpeedExpires - _time.GetUtcNow() > PassMargin)
         {
@@ -221,6 +248,27 @@ public sealed class ServerOffers
     /// </summary>
     public static string Download(ServerOffer? offer, bool inside) => offer?.Speed(inside)?.Down ?? string.Empty;
 
+    public static async Task<bool> UsesProxyAsync(IStateStore store, string config, CancellationToken ct)
+    {
+        var state = await store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
+        var selected = state.Selections.FirstOrDefault(one => one.Config == config);
+        return selected is not null ? selected.Reference is not null
+            : (await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false))?.UseWebSocket == true;
+    }
+
+    public static async Task<(string Host, int Port)> ProbeEndpointAsync(IStateStore store, string config,
+        (string Host, int Port) direct, CancellationToken ct)
+    {
+        if (!await UsesProxyAsync(store, config, ct).ConfigureAwait(false))
+        {
+            return direct;
+        }
+
+        var selected = await TransportProxyCatalog.For(store).ResolveAsync(config, ct).ConfigureAwait(false)
+            ?? throw new TransportProxyFault("proxy-service-unavailable");
+        return (selected.Record.Proxy.Host, selected.Record.Proxy.Port);
+    }
+
     // Asks the server of a config, keeps what it said and binds the config to the subscription it names. Services
     // that never answered are kept as silent, with the connects that waited for them counted; a question that gets
     // no answer, or an answer of another kind short of a series or a refresh, leaves an answer kept before.
@@ -234,8 +282,16 @@ public sealed class ServerOffers
         var kept = await ServerOfferStore.KeptAsync(_store, config, text, ct).ConfigureAwait(false);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var asked = point with { TakesSignal = transport?.AllowSignal ?? true };
-        var reply = await InsideAsync(config, asked, kept, ct).ConfigureAwait(false)
-            ?? await OutsideAsync(config, asked, kept, text, ct).ConfigureAwait(false);
+        var state = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
+        var selected = state.Selections.FirstOrDefault(one => one.Config == config);
+        var proxied = selected is not null ? selected.Reference is not null : transport?.UseWebSocket == true;
+        var inside = await InsideAsync(config, asked, kept, proxied, ct).ConfigureAwait(false);
+        if (proxied && inside is null)
+        {
+            throw new TransportProxyFault("proxy-service-unavailable");
+        }
+
+        var reply = inside ?? await OutsideAsync(config, asked, kept, text, ct).ConfigureAwait(false);
         var now = _time.GetUtcNow();
         if (!reply.Heard)
         {
@@ -273,6 +329,7 @@ public sealed class ServerOffers
             return (kept.Offer, false);
         }
 
+        var proxies = offer.Ours && await KeepProxiesAsync(config, text, point, offer, ct).ConfigureAwait(false);
         await ServerOfferStore.WriteAsync(_store, config, point, offer, now, ct).ConfigureAwait(false);
         if (offer.Ours != (kept?.Offer.Ours ?? false))
         {
@@ -291,12 +348,26 @@ public sealed class ServerOffers
                 : $"{config}: the server allows any routing list again", null);
         }
 
-        return (offer, bound || listed || limited);
+        return (offer, bound || listed || limited || proxies);
+    }
+
+    // Updates the verified proxy catalog.
+    private async Task<bool> KeepProxiesAsync(string config, string? text, ServiceTarget point, ServerOffer offer, CancellationToken ct)
+    {
+        if (!await _transportProxies.HasConfigurationAsync(config, ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var before = (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Revision;
+        await _transportProxies.EnsureSelectionAsync(config, ct).ConfigureAwait(false);
+        var changed = await _transportProxies.SynchronizeAsync(config, point, offer, ConfigServices.EndpointPort(text), ct).ConfigureAwait(false);
+        return changed || before != (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Revision;
     }
 
     // Asks the server inside the tunnel, while the tunnel of the config carries and the server named where it answers
     // there; null when no server of ours answered there, so the question goes past the tunnel.
-    private async Task<HelloReply?> InsideAsync(string config, ServiceTarget point, KeptOffer? kept, CancellationToken ct)
+    private async Task<HelloReply?> InsideAsync(string config, ServiceTarget point, KeptOffer? kept, bool proxied, CancellationToken ct)
     {
         if (kept is null || _carried?.Invoke(config) != true)
         {
@@ -304,12 +375,18 @@ public sealed class ServerOffers
         }
 
         var origin = kept.Offer.Inside() is { Length: > 0 } plain ? plain : kept.Offer.ServicesInside();
-        if (origin.Length == 0)
+        if (origin.Length == 0 || proxied && (_insidePath is null || _askConfined is null
+            || !Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            || !IPAddress.TryParse(uri.Host.Trim('[', ']'), out var address)
+            || !await _insidePath(config, address, ct).ConfigureAwait(false)))
         {
             return null;
         }
 
-        var reply = await _askInside(point with { Origin = origin }, ct).ConfigureAwait(false);
+        var inside = point with { Origin = origin, InsideTunnel = true };
+        var reply = proxied
+            ? await _askConfined!(config, inside, ct).ConfigureAwait(false)
+            : await _askInside(inside, ct).ConfigureAwait(false);
 
         return reply.Offer is { Ours: true } ? reply : null;
     }
@@ -351,7 +428,7 @@ public sealed class ServerOffers
         }
 
         var host = address.AddressFamily == AddressFamily.InterNetworkV6 ? $"[{address}]" : address.ToString();
-        var reply = await _askInside(point with { Origin = string.Create(CultureInfo.InvariantCulture, $"https://{host}:{point.Port}") }, ct)
+        var reply = await _askInside(point with { Origin = string.Create(CultureInfo.InvariantCulture, $"https://{host}:{point.Port}"), InsideTunnel = true }, ct)
             .ConfigureAwait(false);
 
         return reply.Offer is { Ours: true } ? reply : null;

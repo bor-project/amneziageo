@@ -5,7 +5,10 @@ namespace AmneziaGeo.Routing;
 /// set exists because a destination decided without it is decided wrongly: an address an app reached without a
 /// name lookup looks like ordinary traffic and earns a permit out the physical path, which no later contact undoes.
 /// </summary>
-public sealed record LiveDestinations(HashSet<uint> All, HashSet<uint> App);
+public sealed record LiveDestinations(HashSet<uint> All, HashSet<uint> App)
+{
+    public HashSet<uint> DirectApp { get; init; } = [];
+}
 
 /// <summary>
 /// The destinations the host is talking to right now. Separated from the cache because how a platform learns this

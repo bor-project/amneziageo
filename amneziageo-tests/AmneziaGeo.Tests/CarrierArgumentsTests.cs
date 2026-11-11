@@ -18,13 +18,13 @@ public sealed class CarrierArgumentsTests
     }
 
     [Fact]
-    public void AFrontTheServerOffered_IsShownTheTokenAndItsCertificateIsTakenAsItStands()
+    public void AFrontTheServerOffered_IsShownTheTokenAfterCertificateValidation()
     {
         var arguments = WsTunnelTransport.Arguments(true, @"C:\data\ws-headers-home.txt", "v1", string.Empty, 52027, 51820, "vpn.example", 443);
 
         Assert.Contains(@" --http-headers-file ""C:\data\ws-headers-home.txt""", arguments, StringComparison.Ordinal);
         Assert.Contains(@" -P ""v1""", arguments, StringComparison.Ordinal);
-        Assert.DoesNotContain("--tls-verify-certificate", arguments, StringComparison.Ordinal);
+        Assert.Contains("--tls-verify-certificate", arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--http-upgrade-credentials", arguments, StringComparison.Ordinal);
     }
 

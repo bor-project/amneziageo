@@ -158,7 +158,9 @@ internal sealed class LinuxAgent : IDisposable
             fetch: FetchOffered,
             take: TakeLater,
             carried: Carries,
-            dialed: (config, _) => Task.FromResult(Carries(config) ? _tunnel.EndpointAddress : null));
+            dialed: (config, _) => Task.FromResult(Carries(config) ? _tunnel.EndpointAddress : null),
+            insidePath: (config, address, ct) => Carries(config) ? _tunnel.CanReachInsideAsync(address, ct) : Task.FromResult(false),
+            askConfined: (config, point, ct) => Carries(config) ? _tunnel.AskInsideAsync(point, ct) : Task.FromResult(new HelloReply(null, false)));
     }
 
     // Whether the tunnel of a config is up now: the hello then goes inside it.
@@ -423,7 +425,7 @@ internal sealed class LinuxAgent : IDisposable
             BoundStatus: _boundStatus,
             RestartRequired: _restartRequired,
             SelectedTarget: _selectedTarget ?? string.Empty,
-            SelectedRoutingList: await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false),
+            SelectedRoutingList: await ConfigRouting.CurrentListAsync(_store, ct).ConfigureAwait(false),
             Sources: await BuildSourcesAsync(ct).ConfigureAwait(false),
             ConnectFailed: _connectFailed,
             LogLevel: _logLevel,
@@ -486,7 +488,8 @@ internal sealed class LinuxAgent : IDisposable
             DnsTransport: _dnsTransport,
             ServerListsOf: limit?.Config ?? string.Empty,
             ServerLists: limit?.Lists,
-            FoundApps: await AppFinds.ReadAsync(_store, ct).ConfigureAwait(false));
+            FoundApps: await AppFinds.ReadAsync(_store, ct).ConfigureAwait(false),
+            TransportProxies: await TransportProxyCatalog.For(_store).ListAsync(ct).ConfigureAwait(false));
     }
 
     // One proxy setting on top of the ones in force.
@@ -624,7 +627,8 @@ internal sealed class LinuxAgent : IDisposable
             await GatedAsync(() => FellAsync(ct), ct).ConfigureAwait(false);
         }
 
-        if (!_desiredConnected || _tunnel.Running || (!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc)
+        if (!_desiredConnected || _tunnel.Running || (!_periodicReconnect && !_hold.Active) || DateTime.UtcNow < _nextRetryUtc
+            || _connectFailed && _connectFailReason == nameof(ConnectFailureReason.TransportRejected))
         {
             return;
         }
@@ -729,7 +733,9 @@ internal sealed class LinuxAgent : IDisposable
         _lastTxBytes = peer.TxBytes;
 
         // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
-        var asked = peer.HandshakeUnix <= 0 ? null : _recovery.Sample(moved, Environment.TickCount64);
+        var carried = _tunnel.Carried;
+        var asked = peer.HandshakeUnix <= 0 ? null : _recovery.Sample(moved, Environment.TickCount64, rebindOnSilence: !carried,
+            deadSeconds: carried ? LinkRecovery.CarrierDeadSeconds : LinkRecovery.DeadSeconds);
         if (!_recovery.Repairing && _hold.Carries())
         {
             _boundStatus = ConnectionStatus.Connected;
@@ -862,6 +868,21 @@ internal sealed class LinuxAgent : IDisposable
 
     private async Task<IpcAck> RunAsync(IpcCommand command, CancellationToken ct)
     {
+        if (await TransportProxyCommands.TryExecuteAsync(_store, command, ct,
+            running: _tunnel.Running && _boundTarget is { Length: > 0 } ? [_boundTarget] : [],
+            changed: config =>
+            {
+                if (_tunnel.Running && _boundTarget == config)
+                {
+                    _restartRequired = true;
+                }
+            }, actual: _tunnel.Running && _boundTarget is { Length: > 0 } actualTargetName && _tunnel.RunningTransport is { } actualTransport
+                ? new Dictionary<string, RunningTransportProxy>(StringComparer.Ordinal) { [actualTargetName] = actualTransport } : null).ConfigureAwait(false) is { } proxyAck)
+        {
+            await PushAsync(ct).ConfigureAwait(false);
+            return proxyAck;
+        }
+
         var args = command.Args;
         switch (command.Op)
         {
@@ -1139,10 +1160,14 @@ internal sealed class LinuxAgent : IDisposable
         _hold.Dialled();
         _recovery.Held = _hold.Active;
         _heldUnanswered = false;
-        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with { Offer = offer, Dns = configDns };
+        var pickedProxy = await ResolveTransportAsync(configName, ct).ConfigureAwait(false);
+        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport, _dnsTransport) with
+        {
+            Offer = offer, Dns = configDns, Proxy = pickedProxy.Proxy, ProxyChosen = true,
+        };
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         _tunnel.FrontAsker = Asker(configName, config);
-        var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
+        var failure = pickedProxy.Refusal ?? await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is { } refusal)
         {
             _connectFailed = true;
@@ -1193,7 +1218,26 @@ internal sealed class LinuxAgent : IDisposable
 
     // Asks the server of a config where the websocket front of its tunnel stands now.
     private Func<CancellationToken, Task<WsEndpoint?>> Asker(string name, string text) =>
-        session => _offers.FrontAsync(name, text, session);
+        async session =>
+        {
+            await _offers.AskAsync(name, text, session).ConfigureAwait(false);
+            var selected = await TransportProxyCatalog.For(_store).ResolveAsync(name, session).ConfigureAwait(false);
+            return selected?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selected) : null;
+        };
+
+    private async Task<(ResolvedTransportProxy? Proxy, TunnelFailure? Refusal)> ResolveTransportAsync(string name, CancellationToken ct)
+    {
+        try
+        {
+            return (await TransportProxyCatalog.For(_store).ResolveAsync(name, ct).ConfigureAwait(false), null);
+        }
+        catch (Exception ex) when (ex is TransportProxyFault or InvalidDataException or JsonException)
+        {
+            _log.Error("tunnel", "the selected transport proxy could not be resolved", ex);
+            var code = ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid";
+            return (null, new TunnelFailure(TransportProxyProbes.FailureReason(code), code));
+        }
+    }
 
     // Dials the session again when its server offers no websocket front any more, so the tunnel goes without one.
     private Task FrontGoneAsync()
@@ -1252,7 +1296,7 @@ internal sealed class LinuxAgent : IDisposable
             var config = _boundTarget ?? string.Empty;
             var text = await _store.GetConfigTextAsync(config, CancellationToken.None).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(config, CancellationToken.None).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await _offers.OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, config, Carrier(text, transport, await _offers.OfferAsync(config, text, CancellationToken.None).ConfigureAwait(false)), CancellationToken.None).ConfigureAwait(false);
             var device = await _tunnel.PhysicalDeviceAsync(CancellationToken.None).ConfigureAwait(false);
             var options = new LinkCauseOptions(
                 device is not null,
@@ -1460,6 +1504,7 @@ internal sealed class LinuxAgent : IDisposable
             await agent._store.RemoveConfigTransportAsync(name, ct).ConfigureAwait(false);
             await agent._store.RemoveConfigDnsAsync(name, ct).ConfigureAwait(false);
             await agent._store.RemoveConfigExclusionsAsync(name, ct).ConfigureAwait(false);
+            await ConfigForget.CarryAsync(agent._store, name, ct).ConfigureAwait(false);
         }
     }
 
@@ -1661,6 +1706,9 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await _store.SaveConfigAsync(args[1], source, ct).ConfigureAwait(false);
+        await ConfigRouting.SelectListAsync(_store, args[1], await ConfigRouting.SelectedListAsync(_store, args[0], ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+        await TransportProxyPortability.ApplyAsync(_store, args[1],
+            await TransportProxyPortability.ExportAsync(_store, args[0], ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1700,7 +1748,7 @@ internal sealed class LinuxAgent : IDisposable
         return listId is long id ? (await _store.GetRoutingListStampAsync(id, ct).ConfigureAwait(false))?.Name : null;
     }
 
-    // Picks the routing list every config uses; a missing or unparsable id turns routing off.
+    // Stores the selected configuration's routing list.
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var listId = args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
@@ -1711,17 +1759,21 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
-        if (ServerListsOnly.Refusal(await ServerListsLimitAsync(ct).ConfigureAwait(false), listId) is { } refusal)
+        var limit = _selectedTarget is null ? null : await ServerListsOnly.OfAsync(_store, _selectedTarget, ct).ConfigureAwait(false);
+        if (ServerListsOnly.Refusal(limit, listId) is { } refusal)
         {
             return refusal;
         }
 
-        var currentList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        var currentList = await ConfigRouting.CurrentListAsync(_store, ct).ConfigureAwait(false);
         Journal(SwitchLog.RoutingList(
             await ListNameAsync(currentList, ct).ConfigureAwait(false),
             await ListNameAsync(listId, ct).ConfigureAwait(false)));
-        await _store.SetSelectedRoutingListAsync(listId, ct).ConfigureAwait(false);
-        await ApplyRoutingAsync(ct).ConfigureAwait(false);
+        await ConfigRouting.SelectCurrentListAsync(_store, listId, ct).ConfigureAwait(false);
+        if (string.Equals(_selectedTarget, _boundTarget, StringComparison.Ordinal))
+        {
+            await ApplyRoutingAsync(ct).ConfigureAwait(false);
+        }
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1809,13 +1861,23 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true);
+        var proxies = TransportProxyCatalog.For(_store);
+        await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
+        var proxyChanges = await TransportProxyChanges.CaptureAsync(_store,
+            _tunnel.Running && _boundTarget == args[0] ? [args[0]] : [], ct).ConfigureAwait(false);
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
+        await proxies.LegacySettingsAsync(args[0], stored, transport, args.Count > 11 && args[11] == "legacy", ct).ConfigureAwait(false);
         if (stored?.AllowInbound != allowInbound || stored?.InboundNetwork != inboundNetwork)
         {
             await ApplyInboundAsync(args[0], transport, ct).ConfigureAwait(false);
         }
 
         FlagTransportRestart(args[0], stored, transport);
+        if (_tunnel.Running && _boundTarget == args[0] && (await proxyChanges.ChangedAsync(ct).ConfigureAwait(false)).Count > 0)
+        {
+            _restartRequired = true;
+        }
+
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1874,13 +1936,7 @@ internal sealed class LinuxAgent : IDisposable
             return;
         }
 
-        var carried = transport with
-        {
-            AllowInbound = stored?.AllowInbound ?? false,
-            InboundNetwork = stored?.InboundNetwork ?? false,
-            HoldTraffic = stored?.HoldTraffic ?? true,
-        };
-        if (carried == stored)
+        if (!ConfigTransportChanges.RequiresRestart(stored, transport, inboundApplied: true, holdApplied: true))
         {
             return;
         }
@@ -2048,7 +2104,7 @@ internal sealed class LinuxAgent : IDisposable
         // The first list applies at once.
         if (id == 0 && lists.Count == 0)
         {
-            await _store.SetSelectedRoutingListAsync(saved, ct).ConfigureAwait(false);
+            await ConfigRouting.SelectCurrentListAsync(_store, saved, ct).ConfigureAwait(false);
         }
 
         await ApplyRoutingAsync(ct).ConfigureAwait(false);
@@ -2605,7 +2661,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var selectedList = await ConfigRouting.AllowedAsync(_store, configName ?? string.Empty, ct).ConfigureAwait(false)
-            && await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } selectedId
+            && await ConfigRouting.CurrentListAsync(_store, ct).ConfigureAwait(false) is { } selectedId
                 ? await _store.GetRoutingListAsync(selectedId, ct).ConfigureAwait(false)
                 : null;
         report.Append("routing list : ").Append(selectedList?.Name ?? "(off)").Append('\n');
@@ -2890,7 +2946,7 @@ internal sealed class LinuxAgent : IDisposable
 
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        var carrier = Carrier(text, transport, await _offers.OfferAsync(config, text, ct).ConfigureAwait(false));
+        var carrier = await ServerOffers.ProbeEndpointAsync(_store, config, Carrier(text, transport, await _offers.OfferAsync(config, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
         var speed = await _offers.SpeedAsync(config, text, ct).ConfigureAwait(false);
         var peer = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
         var options = new ChannelProbeOptions(
@@ -2939,7 +2995,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, name, Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -2964,7 +3020,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
             var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
-            var carrier = Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false));
+            var carrier = await ServerOffers.ProbeEndpointAsync(_store, name, Carrier(text, transport, await _offers.OfferAsync(name, text, ct).ConfigureAwait(false)), ct).ConfigureAwait(false);
             servers.Add(new SweepServer(
                 name,
                 await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
@@ -2987,7 +3043,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var list = await ConfigRouting.AllowedAsync(_store, _selectedTarget ?? string.Empty, ct).ConfigureAwait(false)
-            && await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
+            && await ConfigRouting.CurrentListAsync(_store, ct).ConfigureAwait(false) is { } listId
             && await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false) is { } stored
                 ? await AppFinds.ExpandListAsync(_store, stored, ct).ConfigureAwait(false)
                 : null;
@@ -3214,11 +3270,7 @@ internal sealed class LinuxAgent : IDisposable
             await GatedAsync(
                 async () =>
                 {
-                    if (_desiredConnected && string.Equals(config, _boundTarget, StringComparison.Ordinal))
-                    {
-                        await KeepServerListsAsync(config, CancellationToken.None).ConfigureAwait(false);
-                    }
-
+                    await KeepServerListsAsync(config, CancellationToken.None).ConfigureAwait(false);
                     await ApplyRoutingAsync(CancellationToken.None).ConfigureAwait(false);
                 },
                 CancellationToken.None).ConfigureAwait(false);
@@ -3239,7 +3291,7 @@ internal sealed class LinuxAgent : IDisposable
             _log.Info("agent", $"{config}: its server allows none but its own routing lists; the configuration takes the routing list");
         }
 
-        var inUse = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        var inUse = await ConfigRouting.SelectedListAsync(_store, config, ct).ConfigureAwait(false);
         if (ServerListsOnly.Switch(await ServerListsOnly.OfAsync(_store, config, ct).ConfigureAwait(false), inUse) is not { } pick)
         {
             return;
@@ -3248,7 +3300,7 @@ internal sealed class LinuxAgent : IDisposable
         Journal(SwitchLog.RoutingList(
             await ListNameAsync(inUse, ct).ConfigureAwait(false),
             await ListNameAsync(pick, ct).ConfigureAwait(false)));
-        await _store.SetSelectedRoutingListAsync(pick, ct).ConfigureAwait(false);
+        await ConfigRouting.SelectListAsync(_store, config, pick, ct).ConfigureAwait(false);
         _log.Info("agent", $"{config}: its server allows none but its own routing lists; routing list {pick} is put in use");
     }
 
@@ -3297,7 +3349,7 @@ internal sealed class LinuxAgent : IDisposable
     private async Task TakeFoundAppsAsync(IReadOnlyList<string> changed)
     {
         if (!_tunnel.Running
-            || await _store.GetSelectedRoutingListAsync(CancellationToken.None).ConfigureAwait(false) is not { } listId
+            || await ConfigRouting.SelectedListAsync(_store, _boundTarget, CancellationToken.None).ConfigureAwait(false) is not { } listId
             || await _store.GetRoutingListStampAsync(listId, CancellationToken.None).ConfigureAwait(false) is not { } stamp
             || !AppFinds.NamesOf(stamp.Rules).Intersect(changed, StringComparer.OrdinalIgnoreCase).Any())
         {
@@ -3557,7 +3609,9 @@ internal sealed class LinuxAgent : IDisposable
             offer.PresetsOnly,
             offer.Ours,
             offered?.Fault ?? string.Empty,
-            offered?.Detail ?? string.Empty);
+            offered?.Detail ?? string.Empty,
+            (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).Reference,
+            true, bound && _tunnel.Running ? _tunnel.RunningTransport : null);
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

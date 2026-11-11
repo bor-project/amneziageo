@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.Json;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
@@ -412,8 +413,19 @@ internal sealed class ConfigRunner(
     {
         while (!ct.IsCancellationRequested)
         {
-            if (!await WaitForNetworkAsync(config, ct).ConfigureAwait(false))
+            try
             {
+                if (!await WaitForNetworkAsync(config, ct).ConfigureAwait(false))
+                {
+                    return (false, config);
+                }
+            }
+            catch (Exception ex) when (ex is TransportProxyFault or InvalidDataException or JsonException)
+            {
+                logger.LogWarning(ex, "{Config}: the selected transport proxy was rejected before the tunnel started", config);
+                Stop(config);
+                await SetStateAsync("disconnected").ConfigureAwait(false);
+                control.FailConnect(ConnectFailureReason.TransportRejected, ex is TransportProxyFault fault ? fault.Code : "proxy-catalog-invalid");
                 return (false, config);
             }
 
@@ -498,19 +510,20 @@ internal sealed class ConfigRunner(
             return true;
         }
 
-        if (server is null)
+        if (server.Address is null)
         {
             logger.LogInformation("{Member}: this machine is not on a network yet, so the tunnel is not started; it is dialled as soon as one is there", member);
         }
         else
         {
-            logger.LogInformation("{Member}: this machine has no way to the server {Server} yet, so the tunnel is not started; it is dialled as soon as there is one", member, server);
+            logger.LogInformation("{Member}: this machine has no way to the server {Server} yet, so the tunnel is not started; it is dialled as soon as there is one", member, server.Address);
         }
 
         var watch = Stopwatch.StartNew();
         while (!ct.IsCancellationRequested)
         {
             await WaitRetryAsync(_networkLook, ct).ConfigureAwait(false);
+            server = await ServerAddressAsync(member, ct).ConfigureAwait(false);
             if (OnNetwork(server))
             {
                 logger.LogInformation("{Member}: a way to the server is there after {Sec}s, so the tunnel is started", member, (int)watch.Elapsed.TotalSeconds);
@@ -523,17 +536,39 @@ internal sealed class ConfigRunner(
 
     // Whether the server is reachable beside the tunnels; with its address unknown, whether this machine is on a
     // network at all.
-    private bool OnNetwork(IPAddress? server)
+    private bool OnNetwork(NetworkTarget server)
     {
-        return server is null ? UnderlayReady() : routes.ReachesBeside(server);
+        return server.Ready(routes.ReachesBeside, UnderlayReady);
     }
 
-    // The address of the member's server, from its configuration or from the last time its name resolved.
-    private async Task<IPAddress?> ServerAddressAsync(string member, CancellationToken ct)
+    // Resolves the network destination of the member's transport.
+    private Task<NetworkTarget> ServerAddressAsync(string member, CancellationToken ct) =>
+        NetworkTargetAsync(store, member, AddressAsync, ct);
+
+    /// <summary>
+    /// Resolves the selected carrier or the direct UDP destination.
+    /// </summary>
+    internal static async Task<NetworkTarget> NetworkTargetAsync(IStateStore source, string member,
+        Func<string, CancellationToken, Task<IPAddress?>> resolve, CancellationToken ct = default)
     {
-        var text = await store.GetConfigTextAsync(member, ct).ConfigureAwait(false) ?? string.Empty;
-        var cached = await store.GetSettingAsync(TunnelPaths.EndpointIpKey(member), ct).ConfigureAwait(false);
-        return ServerAddress(WgConfigEditor.GetEndpoint(text), cached);
+        var selected = await TransportProxyCatalog.For(source).ResolveAsync(member, ct).ConfigureAwait(false);
+        if (selected is not null)
+        {
+            return new NetworkTarget(await resolve(selected.Record.Proxy.Host, ct).ConfigureAwait(false), true);
+        }
+
+        var text = await source.GetConfigTextAsync(member, ct).ConfigureAwait(false) ?? string.Empty;
+        var cached = await source.GetSettingAsync(TunnelPaths.EndpointIpKey(member), ct).ConfigureAwait(false);
+        return new NetworkTarget(ServerAddress(WgConfigEditor.GetEndpoint(text), cached), false);
+    }
+
+    /// <summary>
+    /// Checks the physical path to the transport destination.
+    /// </summary>
+    internal sealed record NetworkTarget(IPAddress? Address, bool Proxied)
+    {
+        internal bool Ready(Func<IPAddress, bool> reaches, Func<bool> underlay) =>
+            Address is { } address ? reaches(address) : !Proxied && underlay();
     }
 
     /// <summary>
@@ -709,7 +744,12 @@ internal sealed class ConfigRunner(
         logger.LogInformation("{Member}: starting the tunnel process", member);
         _launched = member;
         var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
-        var started = serviceManager.StartQuiet(member);
+        var started = await StartServiceAsync(member, ct).ConfigureAwait(false);
+        if (ct.IsCancellationRequested)
+        {
+            return ConnectOutcome.Cancelled;
+        }
+
         var startFailed = created != 0 || started != 0;
         if (startFailed)
         {
@@ -726,6 +766,16 @@ internal sealed class ConfigRunner(
             if (ct.IsCancellationRequested)
             {
                 return ConnectOutcome.Cancelled;
+            }
+
+            var failure = await store.GetSettingAsync(TunnelPaths.ConnectReasonKey(member), ct).ConfigureAwait(false);
+            if (Enum.TryParse<ConnectFailureReason>(failure, out var reason))
+            {
+                window.Failure(reason);
+                if (window.Over(DateTimeOffset.UtcNow))
+                {
+                    break;
+                }
             }
 
             if (uapi.TryGetPeerStatus(member) is { } status)
@@ -986,7 +1036,9 @@ internal sealed class ConfigRunner(
             return null;
         }
 
-        return _recovery.Sample(moved, Environment.TickCount64);
+        var carried = Carried(member);
+        return _recovery.Sample(moved, Environment.TickCount64, rebindOnSilence: !carried,
+            deadSeconds: carried ? LinkRecovery.CarrierDeadSeconds : LinkRecovery.DeadSeconds);
     }
 
     // Repairs the link without taking the session down: another source port for a NAT that has dropped the
@@ -1068,7 +1120,7 @@ internal sealed class ConfigRunner(
                 : null;
             var server = front is { } carrier
                 ? await AddressAsync(carrier.Host, ct).ConfigureAwait(false)
-                : Dialled(config) ?? await ServerAddressAsync(config, ct).ConfigureAwait(false);
+                : Dialled(config) ?? (await ServerAddressAsync(config, ct).ConfigureAwait(false)).Address;
             var age = uapi.TryGetPeerStatus(config) is { HandshakeSec: > 0 } peer
                 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeSec)
                 : -1;
@@ -1333,10 +1385,26 @@ internal sealed class ConfigRunner(
         }
     }
 
-    // Stops the service and waits for it to die. A service still starting refuses the stop, so it is re-issued
-    // until it takes; one that outlives the budget is killed, which drops its WFP kill-switch with the process.
+    private async Task<int> StartServiceAsync(string member, CancellationToken ct)
+    {
+        try
+        {
+            return await serviceManager.StartQuietAsync(member, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return 0;
+        }
+    }
+
+    // Stops the tunnel service.
     private void StopService(string member)
     {
+        if (serviceManager.IsStarting(member))
+        {
+            RuntimeSnapshotPipe.CancelStartupAsync(member, logger).GetAwaiter().GetResult();
+        }
+
         serviceManager.StopQuiet(member);
         var deadline = DateTimeOffset.UtcNow + _stopTimeout;
         var lastStop = DateTimeOffset.UtcNow;
@@ -1350,6 +1418,11 @@ internal sealed class ConfigRunner(
             if (DateTimeOffset.UtcNow - lastStop >= _stopRetry)
             {
                 lastStop = DateTimeOffset.UtcNow;
+                if (serviceManager.IsStarting(member))
+                {
+                    RuntimeSnapshotPipe.CancelStartupAsync(member, logger).GetAwaiter().GetResult();
+                }
+
                 serviceManager.StopQuiet(member);
             }
 
@@ -1374,7 +1447,7 @@ internal sealed class ConfigRunner(
             using (var process = Process.GetProcessById((int)pid))
             {
                 // The tunnel service runs our own image; a recycled pid must not have its tree killed.
-                if (!string.Equals(process.ProcessName, self.ProcessName, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(process.MainModule?.FileName, self.MainModule?.FileName, StringComparison.OrdinalIgnoreCase))
                 {
                     logger.LogWarning("{Member}: process {Pid} is now {Name}, not our tunnel, so it is left alone", member, pid, process.ProcessName);
                     return;

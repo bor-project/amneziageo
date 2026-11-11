@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -13,11 +12,9 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class LocalDohServer : IDisposable
 {
     private const int Port = 443;
-    private const string PathPart = "/dns-query";
     private const string Subject = "CN=AmneziaGeo Local Resolver";
-    private const string AppId = "{b0f0f0a1-5a2d-4d0e-9a1d-0f4a2b6c8d31}";
-
     private readonly IPAddress _address;
+    private readonly string _appId;
     private readonly ILogger _logger;
     private readonly HttpListener _listener = new();
     private CancellationTokenSource? _stopping;
@@ -26,16 +23,17 @@ internal sealed class LocalDohServer : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public LocalDohServer(IPAddress address, ILogger logger)
+    public LocalDohServer(IPAddress address, string appId, ILogger logger)
     {
         _address = address;
+        _appId = appId;
         _logger = logger;
     }
 
     /// <summary>
     /// The template the system is told to ask this resolver by.
     /// </summary>
-    public string Template => $"https://{_address}{PathPart}";
+    public string Template => LocalDohOwnership.TemplateFor(_address, _appId);
 
     /// <summary>
     /// The address this resolver answers on.
@@ -218,18 +216,17 @@ internal sealed class LocalDohServer : IDisposable
     // Hands the port to this certificate, unless another program already holds it.
     private bool Bind(string thumbprint)
     {
-        var held = Netsh($"http show sslcert ipport={_address}:{Port}");
-        if (held.Contains(_address.ToString(), StringComparison.Ordinal)
-            && !held.Contains(AppId, StringComparison.OrdinalIgnoreCase))
+        var resources = new LocalDohResources(_logger);
+        var held = resources.Binding(_address);
+        if (held is not null && !string.Equals(held, _appId, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning("{Address}:{Port} is already held by another program, so names are not served over HTTPS", _address, Port);
             return false;
         }
 
-        Netsh($"http delete sslcert ipport={_address}:{Port}");
-        var added = Netsh($"http add sslcert ipport={_address}:{Port} certhash={thumbprint} appid={AppId} certstorename=MY");
-        _bound = true;
-        if (added.Contains("SSL Certificate successfully added", StringComparison.OrdinalIgnoreCase))
+        var added = Netsh($"http add sslcert ipport={new IPEndPoint(_address, Port)} certhash={thumbprint} appid={_appId} certstorename=MY");
+        _bound = string.Equals(resources.Binding(_address), _appId, StringComparison.OrdinalIgnoreCase);
+        if (_bound)
         {
             return true;
         }
@@ -267,8 +264,22 @@ internal sealed class LocalDohServer : IDisposable
 
         if (_bound)
         {
-            Netsh($"http delete sslcert ipport={_address}:{Port}");
-            _bound = false;
+            try
+            {
+                var resources = new LocalDohResources(_logger);
+                if (string.Equals(resources.Binding(_address), _appId, StringComparison.OrdinalIgnoreCase))
+                {
+                    resources.RemoveBinding(_address);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "the HTTPS resolver binding at {Address} could not be restored", _address);
+            }
+            finally
+            {
+                _bound = false;
+            }
         }
     }
 
@@ -276,21 +287,7 @@ internal sealed class LocalDohServer : IDisposable
     {
         try
         {
-            using var process = Process.Start(ChildOutput.OfSystem(new ProcessStartInfo("netsh", arguments)
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            }));
-            if (process is null)
-            {
-                return string.Empty;
-            }
-
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(6000);
-            return output;
+            return LocalDohResources.Run(arguments);
         }
         catch (Exception ex)
         {

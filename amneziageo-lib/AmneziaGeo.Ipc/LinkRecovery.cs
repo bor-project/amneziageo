@@ -55,6 +55,11 @@ public sealed class LinkRecovery
     public const int DeadSeconds = 12;
 
     /// <summary>
+    /// Waits for carrier recovery before repairing the tunnel.
+    /// </summary>
+    public const int CarrierDeadSeconds = 60;
+
+    /// <summary>
     /// Seconds of arriving traffic that stand the ladder down. Traffic is the only proof a repair worked: a
     /// handshake proves the server answers and nothing more.
     /// </summary>
@@ -172,7 +177,7 @@ public sealed class LinkRecovery
     /// Folds one reading of the link into the ladder and returns the repair to perform now, or null to keep
     /// waiting.
     /// </summary>
-    public RecoveryStep? Sample(LinkSample sample, long nowMs)
+    public RecoveryStep? Sample(LinkSample sample, long nowMs, bool rebindOnSilence = true, int deadSeconds = DeadSeconds)
     {
         Follow(sample, nowMs);
         var reason = Stalling(sample);
@@ -186,7 +191,7 @@ public sealed class LinkRecovery
                 return Carrying(nowMs);
             }
 
-            return Muted(sample, nowMs) ? Rebound(nowMs) : null;
+            return rebindOnSilence && Muted(sample, nowMs) ? Rebound(nowMs) : null;
         }
 
         _healthySinceMs = 0;
@@ -197,7 +202,7 @@ public sealed class LinkRecovery
 
         // A ladder already climbing is paced by the wait between rungs, not by this window: a link trickling one
         // packet through every few seconds would otherwise reset the window forever and never be repaired.
-        if (!Repairing && nowMs - _stalledSinceMs < DeadSeconds * 1000L)
+        if (!Repairing && nowMs - _stalledSinceMs < Math.Max(DeadSeconds, deadSeconds) * 1000L)
         {
             return null;
         }

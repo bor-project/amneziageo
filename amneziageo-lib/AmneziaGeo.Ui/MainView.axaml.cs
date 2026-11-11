@@ -327,6 +327,14 @@ public sealed partial class MainView : UserControl
             ApplySettingsLayout();
         }
 
+        // The detail pane takes the focus off the section rail: with the rail hidden, a remote press
+        // would land on its row and close the pane the user just opened.
+        if (e.PropertyName is nameof(MainWindowViewModel.SettingsDetailOpen) && _vm?.SettingsDetailOpen == true
+            && UiPlatform.WalksFocus)
+        {
+            Dispatcher.UIThread.Post(() => Controls.PaneFocus.FocusFirst(ContentPane), DispatcherPriority.Loaded);
+        }
+
         if (e.PropertyName is nameof(MainWindowViewModel.IsHome)
             or nameof(MainWindowViewModel.IsSettings)
             or nameof(MainWindowViewModel.ShowTermsGate))

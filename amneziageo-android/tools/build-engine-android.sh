@@ -144,7 +144,7 @@ export GOTOOLCHAIN="local"
 export GOAMD64="v1"
 export GOARM64="v8.0"
 export GOFIPS140="off"
-native_fingerprint="$("$go_bin" run ./internal/nativefingerprint)"
+native_fingerprint="$("$go_bin" run -buildvcs=false ./internal/nativefingerprint)"
 export GOOS="android"
 # without this a go.mod toolchain bump would silently download another Go
 export GOTOOLCHAIN="local"

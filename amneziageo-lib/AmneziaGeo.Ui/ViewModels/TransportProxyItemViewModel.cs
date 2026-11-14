@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.Input;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
@@ -14,6 +15,33 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
     public string Address => TransportProxyWords.Address(Summary.Host, Summary.Port, Summary.Path);
     public string Transport => TransportProxyPresentation.Transport(Summary.Transport, Summary.Http?.Method);
     public bool IsHttpGet => Summary.Transport == "http" && Summary.Http is { Version: 2, Method: "GET" };
+    public bool Cdn => Summary.Cdn;
+    private bool _isSelected;
+    private bool _updatingSelection;
+    private bool _selectable;
+    public Action<TransportProxyItemViewModel, bool>? SelectionChanged { get; set; }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (SetProperty(ref _isSelected, value) && !_updatingSelection)
+            {
+                SelectionChanged?.Invoke(this, value);
+            }
+        }
+    }
+    public IRelayCommand ToggleSelectedCommand { get; }
+    public bool SelectionEnabled => _selectable || IsSelected;
+    public void ApplySelection(ProxyReference? reference, bool enabled, bool selectable)
+    {
+        _updatingSelection = true;
+        _selectable = selectable;
+        IsSelected = enabled && reference == Reference;
+        _updatingSelection = false;
+        OnPropertyChanged(nameof(SelectionEnabled));
+        ToggleSelectedCommand.NotifyCanExecuteChanged();
+    }
     public string Source => Summary.Local ? Loc.Instance.Get("Proxies_Local")
         : Summary.Sources.Count > 0 ? string.Join(", ", Summary.Sources) : Loc.Instance.Get("Proxies_Server");
     public string Availability => TransportProxyWords.Availability(Summary.Availability, Summary.Missing);
@@ -48,6 +76,7 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
     public TransportProxyItemViewModel(TransportProxySummary summary)
     {
         Summary = summary;
+        ToggleSelectedCommand = new RelayCommand(() => IsSelected = !IsSelected, () => SelectionEnabled);
     }
 
     public void Apply(TransportProxySummary summary)
@@ -68,6 +97,7 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
         OnPropertyChanged(nameof(Address));
         OnPropertyChanged(nameof(Transport));
         OnPropertyChanged(nameof(IsHttpGet));
+        OnPropertyChanged(nameof(Cdn));
         OnPropertyChanged(nameof(Source));
         OnPropertyChanged(nameof(Availability));
         OnPropertyChanged(nameof(Fault));

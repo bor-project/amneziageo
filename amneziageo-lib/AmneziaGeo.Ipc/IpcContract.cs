@@ -78,6 +78,7 @@ public static class IpcContract
     /// Probes a transport proxy.
     /// </summary>
     public const string OpProbeTransportProxy = "probe-transport-proxy";
+    public const string OpProbeTransportProxyDraft = "probe-transport-proxy-draft";
 
     /// <summary>
     /// Command to set whether a config takes the signal of its server to disconnect. Args: name, on/off. Applies on

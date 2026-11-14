@@ -91,6 +91,9 @@ func (h *Host) prepareAuthentication(ctx context.Context) (int, error) {
 		return 0, errProtocol
 	}
 	request.Header.Set("X-WG-Key", a.keys.ID())
+	if h.authorizationHeader {
+		request.Header.Set("Authorization", "Bearer "+h.credential)
+	}
 	request.Header.Set("X-WG-Version", httpgetauth.Version)
 	request.Header.Set("Cache-Control", "no-store, no-cache")
 	response, err := h.client.Do(request)
@@ -176,6 +179,9 @@ func (h *Host) signedRequest(ctx context.Context, operation string, values url.V
 	}
 	request.Header.Set("X-WG-Version", httpgetauth.Version)
 	request.Header.Set("X-WG-Key", a.keys.ID())
+	if h.authorizationHeader {
+		request.Header.Set("Authorization", "Bearer "+h.credential)
+	}
 	request.Header.Set("X-WG-Epoch", hex.EncodeToString(stamp.Epoch[:]))
 	request.Header.Set("X-WG-Time", strconv.FormatUint(stamp.Time, 10))
 	request.Header.Set("X-WG-Nonce", hex.EncodeToString(nonce[:]))

@@ -43,6 +43,7 @@ public static class ProxyRuntimeProfile
         {
             version = 2,
             transport = proxy.Transport == "xhttp" ? "http" : proxy.Transport,
+            anonymous = proxy.Anonymous,
             listen = new { host = localPort == 0 ? "" : "127.0.0.1", port = localPort },
             target = new { host = targetHost, port = targetPort },
             front = new
@@ -51,7 +52,11 @@ public static class ProxyRuntimeProfile
                 tls = proxy.Tls with { Enabled = ProxyTransportModes.UsesCertificate(proxy) },
             },
             auth = ProxyTransportModes.IsHttp(proxy)
-                ? new OfferedProxyAuth("hmac-sha256-v2", Guid.Parse(proxy.Auth.Credential).ToString("D")) : proxy.Auth,
+                ? proxy.Auth with
+                {
+                    Scheme = "hmac-sha256-v2",
+                    Credential = proxy.Auth.Header is null ? Guid.Parse(proxy.Auth.Credential).ToString("D") : proxy.Auth.Credential,
+                } : proxy.Auth,
             http = ProxyTransportModes.IsHttp(proxy) ? proxy.Http ?? new OfferedProxyHttp(2, "GET", "header") : null,
             quic = proxy.Quic,
         }, IpcJson.Options);

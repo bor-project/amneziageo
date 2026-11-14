@@ -446,24 +446,7 @@
                 </Grid>
               </Button>
 
-              <Button Classes="rowselect" Classes.active="{Binding IsSettingsProxies}" Margin="0,3"
-                      Command="{Binding SelectSettingsCommand}" CommandParameter="proxies">
-                <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
-                    <Ellipse Width="16" Height="16" StrokeThickness="2"
-                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                             IsVisible="{Binding IsSettingsProxies}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Grid>
-                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
-                    <TextBlock Text="{l:Tr Proxies_Title}" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="{l:Tr Proxies_RailSubtitle}" FontSize="11.5" Classes="muted"
-                               TextTrimming="CharacterEllipsis" />
-                  </StackPanel>
-                </Grid>
-              </Button>
+
 
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsConnections}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="connections">
@@ -549,7 +532,10 @@
              viewport's clip and was unreachable even at max scroll. A Grid Margin is applied identically in
              both passes, so the top+bottom inset survives and the last control always scrolls fully into view. -->
         <!-- Never scroll sideways: long values (source URLs) trim/wrap instead of overflowing the card. -->
-        <ScrollViewer Grid.Row="0" x:Name="ContentScroll" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="0" x:Name="ContentScroll" HorizontalScrollBarVisibility="Disabled" Classes.proxies="{Binding IsSettingsProxies}">
+          <ScrollViewer.Styles>
+            <Style Selector="ScrollViewer.proxies"><Setter Property="VerticalScrollBarVisibility" Value="Disabled" /></Style>
+          </ScrollViewer.Styles>
           <Grid Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=paneInset}">
 
             <!-- Each section is built when it is first opened, not when the shell loads: six section trees cost
@@ -756,7 +742,7 @@
                              HorizontalAlignment="Stretch" />
                 <!-- Compact drops the Save / Cancel pair under the unsaved-changes label so they never overlap it. -->
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-                  <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
+                  <Grid IsVisible="{Binding Proxies.HasUnsavedChanges}" Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center"
                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
                     <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top"
                              Margin="0,4,0,0" />

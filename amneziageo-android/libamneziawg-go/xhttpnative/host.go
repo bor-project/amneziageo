@@ -50,30 +50,31 @@ func (p *pressureOwner) close() {
 }
 
 type Host struct {
-	ctx            context.Context
-	cancel         context.CancelFunc
-	socket         *net.UDPConn
-	client         *http.Client
-	transport      *http.Transport
-	base           url.URL
-	method         string
-	ready          chan struct{}
-	credential     string
-	authentication *authentication
-	targetHost     string
-	targetPort     int
-	session        string
-	queue          chan []byte
-	done           chan struct{}
-	stop           sync.Once
-	peerMu         sync.Mutex
-	peer           *net.UDPAddr
-	connections    atomic.Int32
-	fault          error
-	dropped        atomic.Uint64
-	pressure       *udppressure.Reporter
-	pressureOwner  *pressureOwner
-	diagnostic     func(string)
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	socket              *net.UDPConn
+	client              *http.Client
+	transport           *http.Transport
+	base                url.URL
+	method              string
+	ready               chan struct{}
+	credential          string
+	authorizationHeader bool
+	authentication      *authentication
+	targetHost          string
+	targetPort          int
+	session             string
+	queue               chan []byte
+	done                chan struct{}
+	stop                sync.Once
+	peerMu              sync.Mutex
+	peer                *net.UDPAddr
+	connections         atomic.Int32
+	fault               error
+	dropped             atomic.Uint64
+	pressure            *udppressure.Reporter
+	pressureOwner       *pressureOwner
+	diagnostic          func(string)
 }
 
 type trackedConn struct {
@@ -130,7 +131,8 @@ func StartWithDiagnostics(data []byte, sink udppressure.Sink, reporter func(stri
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &Host{ctx: ctx, cancel: cancel, socket: socket, method: outbound.Stream.XHTTP.Extra.Method, ready: make(chan struct{}), credential: outbound.Settings.ID, authentication: authState,
-		targetHost: inbound.Settings.Address, targetPort: inbound.Settings.Port,
+		authorizationHeader: outbound.Stream.XHTTP.Extra.AuthorizationHeader,
+		targetHost:          inbound.Settings.Address, targetPort: inbound.Settings.Port,
 		session: hex.EncodeToString(random[:]), queue: make(chan []byte, uploadQueuePackets), done: make(chan struct{}), diagnostic: reporter}
 
 	owner := &pressureOwner{sink: sink}

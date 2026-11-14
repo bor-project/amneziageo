@@ -99,11 +99,6 @@ public static class ProxyTargetRules
             throw new ArgumentException("The proxy destination policy has too many destinations.", nameof(policy));
         }
 
-        if (policy.Restricted && normalized.Length == 0)
-        {
-            throw new ArgumentException("The proxy destination policy is empty.", nameof(policy));
-        }
-
         return policy with { Destinations = normalized };
     }
 
@@ -191,6 +186,11 @@ public static class ProxyTargetRules
             }
 
             destinations.Add(new ProxyDestination(line[..colon], port));
+        }
+
+        if (restricted && destinations.Count == 0)
+        {
+            throw new ArgumentException("The proxy destination policy is empty.", nameof(text));
         }
 
         return Normalize(new ProxyTargets(restricted, destinations))!;

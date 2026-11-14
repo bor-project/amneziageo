@@ -414,10 +414,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         if (command.Op is IpcContract.OpListTransportProxies or IpcContract.OpGetTransportProxy
             or IpcContract.OpSaveTransportProxy or IpcContract.OpRemoveTransportProxy
-            or IpcContract.OpSelectTransportProxy or IpcContract.OpProbeTransportProxy)
+            or IpcContract.OpSelectTransportProxy or IpcContract.OpProbeTransportProxy or IpcContract.OpProbeTransportProxyDraft)
         {
             await EnsureInitAsync().ConfigureAwait(false);
-            var proxyAck = (await TransportProxyCommands.TryExecuteAsync(_store, command, probe: ProbeTransportAsync,
+            var proxyAck = (await TransportProxyCommands.TryExecuteAsync(_store, command, probe: ProbeTransportAsync, probeTarget: ProbeTransportTargetAsync,
                 running: _active && _boundTarget is { Length: > 0 } ? [_boundTarget] : [],
                 changed: config =>
                 {
@@ -1952,7 +1952,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             SubscriptionDetail: offered?.Detail ?? string.Empty,
             TransportProxy: _transportSelections.GetValueOrDefault(name)?.Reference,
             TransportProxyChosen: _transportSelections.ContainsKey(name),
-            RunningTransport: bound ? VpnBridge.ReadRunningTransport(name) : null);
+            RunningTransport: bound ? VpnBridge.ReadRunningTransport(name) : null,
+            TransportProxyEnabled: _transportSelections.GetValueOrDefault(name)?.Enabled ?? true);
     }
 
     private string StatusFor(string target)
@@ -3062,6 +3063,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await ConfigRouting.SelectListAsync(_store, _selectedTarget, _selectedRoutingList).ConfigureAwait(false);
         Save();
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        await RefreshTransportProxiesAsync().ConfigureAwait(false);
         PushSnapshot();
         _log.Info("agent", $"imported bundle: {bundle.Configs.Count} configs, {bundle.RoutingLists.Count} routing lists");
 
@@ -3523,9 +3525,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    private Task<TransportProxyProbeResult> ProbeTransportAsync(CatalogTransportProxy record, CancellationToken ct) =>
-        TransportProxyProbes.CheckAsync(record, ct, PastTunnel.AddressAsync, PastTunnel.BypassProxy, PastTunnel.ConnectProxyAsync,
-            record.Legacy ? _configs.GetValueOrDefault(record.LegacyPublisher) : null);
+    private async Task<TransportProxyProbeResult> ProbeTransportAsync(CatalogTransportProxy record, CancellationToken ct)
+    {
+        if (!record.Legacy && record.Proxy.Transport == "quic")
+        {
+            var address = await PastTunnel.AddressAsync(record.Proxy.Host, ct).ConfigureAwait(false);
+            return address is null ? new TransportProxyProbeResult(TransportProxyAvailability.Unavailable, "proxy-no-address")
+                : await NativeProxyProbe.CheckAsync(ProxyRuntimeProfile.Probe(record.Proxy, address), PastTunnel.BypassProxyDescriptor, ct).ConfigureAwait(false);
+        }
+
+        return await TransportProxyProbes.CheckAsync(record, ct, PastTunnel.AddressAsync, PastTunnel.BypassProxy, PastTunnel.ConnectProxyAsync,
+            record.Legacy ? _configs.GetValueOrDefault(record.LegacyPublisher) : null).ConfigureAwait(false);
+    }
+
+    private Task<TransportProxyProbeResult> ProbeTransportTargetAsync(ResolvedTransportProxy selected, CancellationToken ct) =>
+        selected.Record.Proxy.Transport == "quic" ? ProbeTransportAsync(selected.Record, ct)
+            : TransportProxyProbes.CheckAsync(selected.Record, ct, PastTunnel.AddressAsync, PastTunnel.BypassProxy, PastTunnel.ConnectProxyAsync,
+                selected.Record.Legacy ? _configs.GetValueOrDefault(selected.Record.LegacyPublisher) : null,
+                new ProxyDestination(selected.TargetHost, selected.TargetPort));
 
     // What the server of the selected configuration offers; it is asked again behind the answer.
     private async Task<IpcAck> ServerOfferAsync()

@@ -787,6 +787,7 @@ internal partial class ConfigViewModel : ViewModelBase
             {
                 existing = NewRow(entry.Name);
                 existing.SaveTransport = SaveTransportAsync;
+                existing.SaveProxy = SaveProxyAsync;
                 Configs.Insert(Math.Min(i, Configs.Count), existing);
             }
             else
@@ -1179,6 +1180,19 @@ internal partial class ConfigViewModel : ViewModelBase
     }
 
     // Плашка режима на карточке: тот же set-websocket, что и в настройках конфигурации.
+    private async Task<bool> SaveProxyAsync(ConfigItemViewModel item)
+    {
+        var ack = await Ask(new IpcCommand(IpcContract.OpSelectTransportProxy,
+            [item.Name, System.Text.Json.JsonSerializer.Serialize(item.SelectedProxyReference, IpcJson.Options), item.ProxyEnabled ? "on" : "off"]));
+        if (ack?.Ok != true)
+        {
+            return false;
+        }
+
+        await _host.Home.ReconnectLiveAsync(item);
+        return true;
+    }
+
     private async Task<bool> SaveTransportAsync(ConfigItemViewModel item)
     {
         var mtu = item.MtuMode == MtuMode.Custom && item.Mtu is >= MtuModes.MinMtu and <= MtuModes.MaxMtu
@@ -1280,7 +1294,7 @@ internal partial class ConfigViewModel : ViewModelBase
     private void SeedProxyChoice(ConfigTransportViewModel transport)
     {
         _transportEntries.TryGetValue(transport.ConfigName, out var entry);
-        transport.ApplyProxyCatalog(_transportProxies, entry?.TransportProxy, entry?.TransportProxyChosen ?? false);
+        transport.ApplyProxyCatalog(_transportProxies, entry?.TransportProxy, entry?.TransportProxyChosen ?? false, entry?.TransportProxyEnabled ?? true);
         transport.ApplyRunningProxy(entry?.RunningTransport, entry is not null && Running(entry.Status));
     }
 
@@ -1327,6 +1341,7 @@ internal partial class ConfigViewModel : ViewModelBase
         {
             oldValue.DirtyChanged -= OnEditScopeDirty;
             oldValue.OpenProxyRequested -= OpenTransportProxy;
+            oldValue.ProxyListRequested -= OpenConfigProxyList;
             oldValue.ProbeChanged -= OnEditScopeDirty;
             oldValue.CancelProbe();
         }
@@ -1335,6 +1350,7 @@ internal partial class ConfigViewModel : ViewModelBase
         {
             newValue.DirtyChanged += OnEditScopeDirty;
             newValue.OpenProxyRequested += OpenTransportProxy;
+            newValue.ProxyListRequested += OpenConfigProxyList;
             newValue.ProbeChanged += OnEditScopeDirty;
         }
 
@@ -1343,12 +1359,14 @@ internal partial class ConfigViewModel : ViewModelBase
 
     private void OpenTransportProxy(ProxyReference reference) => _host.ShowTransportProxy(reference, OpenConfig);
     private void OpenDraftTransportProxy(ProxyReference reference) => _host.ShowTransportProxy(reference, string.Empty);
+    private void OpenConfigProxyList(ConfigTransportViewModel context) => _host.ShowConfigProxies(context);
 
     partial void OnSectionTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
     {
         if (oldValue is not null)
         {
             oldValue.OpenProxyRequested -= OpenDraftTransportProxy;
+            oldValue.ProxyListRequested -= OpenConfigProxyList;
             oldValue.ProbeChanged -= OnEditScopeDirty;
             oldValue.CancelProbe();
         }
@@ -1356,6 +1374,7 @@ internal partial class ConfigViewModel : ViewModelBase
         if (newValue is not null)
         {
             newValue.OpenProxyRequested += OpenDraftTransportProxy;
+            newValue.ProxyListRequested += OpenConfigProxyList;
             newValue.ProbeChanged += OnEditScopeDirty;
         }
 

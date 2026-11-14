@@ -114,7 +114,7 @@ public sealed class TransportProxyPortabilityTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task LocalDefinitionsMoveToTheReceivingNamespaceAndDeduplicateAcrossConfigurations()
+    public async Task LocalDefinitionsMoveToIndependentConfigurationOwners()
     {
         await ConfigAsync(_source, "one", Key("server")).ConfigureAwait(false);
         await ConfigAsync(_source, "two", Key("server")).ConfigureAwait(false);
@@ -131,12 +131,16 @@ public sealed class TransportProxyPortabilityTests : IAsyncLifetime
         await second.ApplyTransportProxyAsync(_target, "imported-two", default).ConfigureAwait(false);
 
         var state = await _target.GetTransportProxyStateAsync().ConfigureAwait(false);
-        var local = Assert.Single(state.Locals);
-        Assert.NotEqual(original.Source, local.Reference.Source);
-        Assert.NotEqual(original.Id, local.Reference.Id);
-        Assert.Equal(state.LocalSource, local.Reference.Source);
-        Assert.All(state.Selections, one => Assert.Equal(local.Reference, one.Reference));
-        Assert.Equal("portable-local-secret", local.Proxy.Auth.Credential);
+        Assert.Equal(2, state.Locals.Count);
+        Assert.Equal(2, state.Locals.Select(one => one.Reference).Distinct().Count());
+        Assert.All(state.Locals, local =>
+        {
+            Assert.NotEqual(original.Source, local.Reference.Source);
+            Assert.NotEqual(original.Id, local.Reference.Id);
+            Assert.Equal(state.LocalSource, local.Reference.Source);
+            Assert.Equal("portable-local-secret", local.Proxy.Auth.Credential);
+            Assert.Equal(local.Reference, state.Selections.Single(one => one.Config == local.OwnerConfig).Reference);
+        });
         var revision = state.Revision;
         await first.ApplyTransportProxyAsync(_target, "imported-one", default).ConfigureAwait(false);
         Assert.Equal(revision, (await _target.GetTransportProxyStateAsync().ConfigureAwait(false)).Revision);
@@ -172,7 +176,7 @@ public sealed class TransportProxyPortabilityTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ConcurrentLocalImportsShareOneDefinitionWithoutLosingEitherChoice()
+    public async Task ConcurrentLocalImportsKeepIndependentOwnersWithoutLosingEitherChoice()
     {
         await ConfigAsync(_source, "one", Key("server")).ConfigureAwait(false);
         var sourceCatalog = TransportProxyCatalog.For(_source);
@@ -187,9 +191,9 @@ public sealed class TransportProxyPortabilityTests : IAsyncLifetime
             Task.Run(() => TransportProxyPortability.ApplyAsync(other, "b", block))).ConfigureAwait(false);
 
         var state = await _target.GetTransportProxyStateAsync().ConfigureAwait(false);
-        var local = Assert.Single(state.Locals);
+        Assert.Equal(2, state.Locals.Count);
         Assert.Equal(2, state.Selections.Count);
-        Assert.All(state.Selections, one => Assert.Equal(local.Reference, one.Reference));
+        Assert.All(state.Selections, one => Assert.Equal(one.Config, state.Locals.Single(local => local.Reference == one.Reference).OwnerConfig));
     }
 
     [Fact]

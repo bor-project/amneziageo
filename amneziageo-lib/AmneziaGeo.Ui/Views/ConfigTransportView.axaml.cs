@@ -48,7 +48,7 @@ internal sealed partial class ConfigTransportView : UserControl
 
     private void OnProxyReturn(bool running) => Dispatcher.UIThread.Post(() =>
     {
-        var target = running ? ViewRunningProxy : ViewSelectedProxy;
+        var target = ViewSelectedProxy;
         if (target.IsEffectivelyVisible && target.IsEffectivelyEnabled)
         {
             target.BringIntoView();

@@ -106,6 +106,87 @@ public sealed class TransportProxyTargetsTests : IAsyncLifetime
         Assert.Equal("proxy-target-denied", error.Code);
     }
 
+    [Fact]
+    public async Task OldSharedLocalsMigrateOnceWithoutChangingCredentialsOrDisabledChoices()
+    {
+        var source = Guid.NewGuid().ToString("D");
+        var reference = new ProxyReference(source, "shared");
+        var record = new CatalogTransportProxy(reference, Proxy(null) with { Id = reference.Id }, Local: true);
+        var orphan = record with { Reference = reference with { Id = "orphan" }, Proxy = record.Proxy with { Id = "orphan" } };
+        var old = new TransportProxyState
+        {
+            Version = 1, Revision = 1, LocalSource = source, Locals = [record, orphan],
+            Selections = [new("a", reference), new("b", reference, Enabled: false)],
+        };
+        Assert.True(await _store.TrySaveTransportProxyStateAsync(old, 0).ConfigureAwait(false));
+        Assert.NotNull(await _catalog.ResolveAsync("a").ConfigureAwait(false));
+        Assert.Null(await _catalog.ResolveAsync("b").ConfigureAwait(false));
+        var migrated = await _store.GetTransportProxyStateAsync().ConfigureAwait(false);
+        Assert.Equal(2, migrated.Version);
+        Assert.Equal(3, migrated.Locals.Count);
+        Assert.Equal(orphan, migrated.Locals.Single(one => one.Reference == orphan.Reference));
+        Assert.All(migrated.Locals.Where(one => one.OwnerConfig is not null), one =>
+        {
+            Assert.Equal(record.Proxy.Auth, one.Proxy.Auth);
+            Assert.Equal(record.Proxy.Tls, one.Proxy.Tls);
+            Assert.Equal(record.Proxy.Host, one.Proxy.Host);
+            Assert.Equal(record.Proxy.Port, one.Proxy.Port);
+            Assert.Equal(one.Reference, migrated.Selections.Single(choice => choice.Config == one.OwnerConfig).Reference);
+        });
+        var own = migrated.Selections.Single(one => one.Config == "b");
+        Assert.False(own.Enabled);
+        Assert.NotEqual(reference, own.Reference);
+        Assert.Equal("proxy-target-denied", (await Assert.ThrowsAsync<TransportProxyFault>(() => _catalog.SelectAsync("a", own.Reference)).ConfigureAwait(false)).Code);
+        await _catalog.ListAsync().ConfigureAwait(false);
+        Assert.Equal(migrated.Revision, (await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).Revision);
+    }
+
+    [Fact]
+    public async Task DraftChecksValidateOwnershipAndDestinationWithoutSavingOrSelecting()
+    {
+        var resolved = await _catalog.ResolveDraftAsync("a", null, Proxy(null)).ConfigureAwait(false);
+        Assert.Equal("vpn-a.example.net", resolved.TargetHost);
+        Assert.Equal("a", resolved.Record.OwnerConfig);
+        Assert.Empty((await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).Locals);
+        var reference = await _catalog.SaveLocalAsync(null, Proxy(null), ownerConfig: "a").ConfigureAwait(false);
+        var denied = await Assert.ThrowsAsync<TransportProxyFault>(() => _catalog.ResolveDraftAsync("b", reference.Id, Proxy(null))).ConfigureAwait(false);
+        Assert.Equal("proxy-target-denied", denied.Code);
+        var incompatible = await Assert.ThrowsAsync<TransportProxyFault>(() => _catalog.ResolveDraftAsync("a", reference.Id,
+            Proxy(new(true, [new("vpn-b.example.net", 443)])))).ConfigureAwait(false);
+        Assert.Equal("proxy-target-denied", incompatible.Code);
+        Assert.All((await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).Selections, one => Assert.Null(one.Reference));
+    }
+
+    [Fact]
+    public async Task AnEmptyRestrictedPublicationDeniesEveryDestinationWithoutDiscardingTheCatalog()
+    {
+        var text = (await _store.GetConfigTextAsync("a").ConfigureAwait(false))!;
+        var denied = Proxy(new(true, [])) with { Scope = "local", Auth = new("bearer", "test", "Authorization") };
+        var catalog = new OfferedProxyCatalog(2, Guid.NewGuid().ToString("D"), [denied]);
+        var body = JsonSerializer.SerializeToElement(catalog, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        });
+        Assert.NotNull(OfferedProxyCatalog.Read(body));
+        await _catalog.SynchronizeAsync("a", ConfigServices.Target(text)!, new ServerOffer("1", "test",
+            new Dictionary<string, JsonElement> { [ServerOffer.ProxiesV2Feature] = body })).ConfigureAwait(false);
+        var summary = Assert.Single(await _catalog.ListAsync().ConfigureAwait(false));
+        Assert.Empty(summary.CompatibleConfigs!);
+        Assert.Equal("local", summary.Scope);
+        Assert.Equal("proxy-target-denied", (await Assert.ThrowsAsync<TransportProxyFault>(() => _catalog.SelectAsync("a", summary.Reference)).ConfigureAwait(false)).Code);
+    }
+
+    [Fact]
+    public async Task AnUnsavedDestinationIsCheckedAgainstTheSameServerPolicy()
+    {
+        var proxy = Proxy(new(true, [new("vpn-b.example.net", 443)]));
+        Assert.Equal("proxy-target-denied", (await Assert.ThrowsAsync<TransportProxyFault>(() => _catalog.ResolveDraftAsync("a", null, proxy)).ConfigureAwait(false)).Code);
+        var result = await _catalog.ResolveDraftAsync("a", null, proxy, target: new("vpn-b.example.net", 443)).ConfigureAwait(false);
+        Assert.Equal("vpn-b.example.net", result.TargetHost);
+        Assert.Equal(443, result.TargetPort);
+        Assert.Equal("vpn-a.example.net", ConfigServices.Host(await _store.GetConfigTextAsync("a").ConfigureAwait(false)));
+    }
+
     private static OfferedProxy Proxy(ProxyTargets? targets) => new("one", "Restricted proxy", "websocket", "relay.example.net", 443, "proxy",
         new OfferedProxyTls("relay.example.net", ""), new OfferedProxyAuth("bearer", "test"), DateTimeOffset.UtcNow, Targets: targets);
 

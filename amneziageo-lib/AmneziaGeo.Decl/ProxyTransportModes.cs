@@ -40,7 +40,11 @@ public static class ProxyTransportModes
 
     public static bool Valid(OfferedProxy proxy) => proxy is
         { Tls: { ServerName: not null, Pin: not null }, Auth: { Scheme: not null, Credential: not null } }
-        && proxy.Auth.Credential.Length is > 0 and <= 512
+        && (proxy.Auth.Header is null or "Authorization")
+        && (proxy.Scope is null or "local" or "selected" or "any")
+        && (proxy.Scope is not ("local" or "selected") || proxy.Targets is { Restricted: true })
+        && (proxy.Scope != "any" || proxy.Targets?.Restricted != true)
+        && (proxy.Auth.Credential.Length is > 0 and <= 512 || proxy.Anonymous && proxy.Transport is "websocket" or "quic")
         && proxy.Tls.Enabled && UsesCertificate(proxy)
         && (UsesCertificate(proxy)
             ? Uri.CheckHostName(proxy.Tls.ServerName) != UriHostNameType.Unknown
@@ -48,13 +52,13 @@ public static class ProxyTransportModes
             : proxy.Tls.Pin.Length == 0)
         && (proxy.Transport switch
         {
-            "websocket" => proxy.Auth.Scheme == "bearer" && Bearer(proxy.Auth.Credential)
+            "websocket" => proxy.Auth.Scheme == "bearer" && (Bearer(proxy.Auth.Credential) || proxy.Anonymous && proxy.Auth.Credential.Length == 0)
                 && proxy.Http is null && proxy.Quic is null && proxy.Xhttp is null,
             "http" => proxy.Auth.Scheme == "hmac-sha256-v2" && Credential(proxy.Auth.Credential)
                 && proxy.Http is { Version: 2, Method: "GET", DataPlacement: "header" }
                     or { Version: 2, Method: "POST", DataPlacement: "body" }
                 && proxy.Quic is null && proxy.Xhttp is null,
-            "quic" => UsesCertificate(proxy) && proxy.Auth.Scheme == "bearer" && Bearer(proxy.Auth.Credential)
+            "quic" => UsesCertificate(proxy) && proxy.Auth.Scheme == "bearer" && (Bearer(proxy.Auth.Credential) || proxy.Anonymous && proxy.Auth.Credential.Length == 0)
                 && proxy.Quic is { Version: 1, Protocol: "webtransport", Datagrams: "framed-stream" }
                 && proxy.Http is null && proxy.Xhttp is null,
             "xhttp" => proxy.Auth.Scheme == "vless" && Credential(proxy.Auth.Credential)

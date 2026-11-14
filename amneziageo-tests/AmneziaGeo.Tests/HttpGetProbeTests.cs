@@ -46,6 +46,55 @@ public sealed class HttpGetProbeTests
     }
 
     [Theory]
+    [InlineData("GET", false)]
+    [InlineData("POST", false)]
+    [InlineData("GET", true)]
+    [InlineData("POST", true)]
+    public async Task ManualBearerIsSentOnBothChallengeAndProbeUnlessExplicitlyAnonymous(string method, bool anonymous)
+    {
+        await using var server = new Front(false, method: method, authorization: !anonymous);
+        var record = server.Proxy();
+        record = record with { Proxy = record.Proxy with { Auth = record.Proxy.Auth with { Header = "Authorization" }, Anonymous = anonymous } };
+        var result = await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(record, "vpn", "vpn.example", 51820),
+            CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+        Assert.Equal(TransportProxyAvailability.Available, result.Availability);
+        await server.Completion.ConfigureAwait(false);
+        Assert.Equal(2, server.Requests.Count);
+        Assert.All(server.Requests, request =>
+        {
+            if (anonymous)
+            {
+                Assert.DoesNotContain("Authorization:", request, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.Contains("Authorization: Bearer " + Front.User, request, StringComparison.Ordinal);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(401, true)]
+    [InlineData(401, false)]
+    [InlineData(403, true)]
+    [InlineData(403, false)]
+    public async Task ARejectedBearerStopsBeforeTheSignedProbe(int status, bool target)
+    {
+        await using var server = new Front(false, challengeStatus: status, authorization: true);
+        var record = server.Proxy();
+        record = record with { Proxy = record.Proxy with { Auth = record.Proxy.Auth with { Header = "Authorization" } } };
+        var result = target
+            ? await TransportProxyProbes.CheckTargetAsync(new ResolvedTransportProxy(record, "vpn", "vpn.example", 51820),
+                CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false)
+            : await TransportProxyProbes.CheckAsync(record, CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+
+        Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
+        Assert.Equal("proxy-auth", result.Fault);
+        await server.Completion.ConfigureAwait(false);
+        Assert.Single(server.Requests);
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task AnAlteredResponseOrNonceCannotConfirmAvailability(bool alterBody)
@@ -164,6 +213,7 @@ public sealed class HttpGetProbeTests
         private readonly CancellationTokenSource _stop = new(TimeSpan.FromSeconds(10));
         private readonly X509Certificate2 _certificate;
         private readonly bool _plain;
+        private readonly bool _authorization;
         private readonly string _method;
         private readonly int _port;
         internal Task Completion { get; }
@@ -175,9 +225,10 @@ public sealed class HttpGetProbeTests
         /// <summary>
         /// ctor
         /// </summary>
-        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET", int challengeStatus = 200, bool partialChallenge = false)
+        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET", int challengeStatus = 200, bool partialChallenge = false, bool authorization = false)
         {
             _plain = plain;
+            _authorization = authorization;
             _method = method;
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var request = new CertificateRequest("CN=tls.example.net", key, HashAlgorithmName.SHA256);
@@ -310,7 +361,14 @@ public sealed class HttpGetProbeTests
                 var pair = header.Split(':', 2);
                 headers.Add(pair[0], pair[1].Trim());
             }
-            Assert.False(headers.ContainsKey("Authorization"));
+            if (_authorization)
+            {
+                Assert.Equal("Bearer " + User, headers["Authorization"]);
+            }
+            else
+            {
+                Assert.False(headers.ContainsKey("Authorization"));
+            }
             Assert.False(headers.ContainsKey("Upgrade"));
             Assert.False(headers.ContainsKey("Transfer-Encoding"));
             Assert.True(!headers.TryGetValue("Content-Length", out var length) || length == "0");

@@ -115,6 +115,7 @@ public sealed class TransportProxyCatalog
             }, ct).ConfigureAwait(false);
         }
 
+        await ChangeAsync(state => (state, false), ct).ConfigureAwait(false);
         var held = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         if (held.Selections.Any(one => one.Config == config)
             && (target is null || held.Publications.Any(one => one.Publisher == config && one.Slot == "catalog" && one.Mark == target.Mark())))
@@ -149,7 +150,7 @@ public sealed class TransportProxyCatalog
     /// <summary>
     /// Selects one registered proxy or direct UDP.
     /// </summary>
-    public async Task SelectAsync(string config, ProxyReference? reference, CancellationToken ct = default)
+    public async Task SelectAsync(string config, ProxyReference? reference, CancellationToken ct = default, bool enabled = true)
     {
         if (!(await ConfigurationsAsync(ct).ConfigureAwait(false)).ContainsKey(config))
         {
@@ -159,7 +160,7 @@ public sealed class TransportProxyCatalog
         var context = await ContextAsync(ct).ConfigureAwait(false);
         await ChangeAsync(state =>
         {
-            if (reference is not null)
+            if (reference is not null && enabled)
             {
                 var candidate = Choose(Candidates(state, context).Where(one => one.Record.Reference == reference), config)
                     ?? throw new TransportProxyFault("proxy-missing");
@@ -171,7 +172,7 @@ public sealed class TransportProxyCatalog
                 }
             }
 
-            var selections = state.Selections.Where(one => one.Config != config).Append(new TransportProxySelection(config, reference)).ToArray();
+            var selections = state.Selections.Where(one => one.Config != config).Append(new TransportProxySelection(config, reference, enabled)).ToArray();
             return (state with { Selections = selections }, true);
         }, ct).ConfigureAwait(false);
     }
@@ -206,7 +207,7 @@ public sealed class TransportProxyCatalog
     /// <summary>
     /// Saves a local proxy definition.
     /// </summary>
-    public async Task<ProxyReference> SaveLocalAsync(string? id, OfferedProxy draft, CancellationToken ct = default)
+    public async Task<ProxyReference> SaveLocalAsync(string? id, OfferedProxy draft, CancellationToken ct = default, string? ownerConfig = null)
     {
         if (draft is not { Name: not null, Host: not null, Path: not null, Tls: not null, Auth: not null })
         {
@@ -214,12 +215,20 @@ public sealed class TransportProxyCatalog
         }
 
         var key = id ?? Guid.NewGuid().ToString("N");
+        if (ownerConfig is not null && !(await ConfigurationsAsync(ct).ConfigureAwait(false)).ContainsKey(ownerConfig))
+        {
+            throw new TransportProxyFault("unknown-config");
+        }
         return await ChangeAsync(state =>
         {
             var held = state.Locals.FirstOrDefault(one => one.Reference.Id == key);
             if (id is not null && held is null)
             {
                 throw new TransportProxyFault("proxy-not-local");
+            }
+            if (held?.OwnerConfig is { } owner && ownerConfig is not null && owner != ownerConfig)
+            {
+                throw new TransportProxyFault("proxy-target-denied");
             }
 
             if (!ProxyTargetRules.Valid(draft.Targets))
@@ -231,7 +240,8 @@ public sealed class TransportProxyCatalog
                 Path = draft.Path.Trim('/'), Updated = DateTimeOffset.UtcNow, Targets = ProxyTargetRules.Normalize(draft.Targets) };
             Check(definition, held?.Legacy == true);
             var reference = new ProxyReference(state.LocalSource, key);
-            var record = held is null ? new CatalogTransportProxy(reference, definition, Local: true) : held with { Proxy = definition };
+            var record = held is null ? new CatalogTransportProxy(reference, definition, Local: true, OwnerConfig: ownerConfig)
+                : held with { Proxy = definition, OwnerConfig = held.OwnerConfig ?? ownerConfig };
             return (state with { Locals = [.. state.Locals.Where(one => one.Reference != reference), record] }, reference);
         }, ct).ConfigureAwait(false);
     }
@@ -241,6 +251,44 @@ public sealed class TransportProxyCatalog
     /// </summary>
     public async Task<CatalogTransportProxy?> LocalAsync(ProxyReference reference, CancellationToken ct = default) =>
         (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Locals.FirstOrDefault(one => one.Reference == reference);
+
+    /// <summary>
+    /// Resolves a proxy for a configuration check.
+    /// </summary>
+    public async Task<ResolvedTransportProxy> ResolveCandidateAsync(string config, ProxyReference reference, CancellationToken ct = default, ProxyDestination? target = null)
+    {
+        var context = await ContextAsync(ct).ConfigureAwait(false);
+        return await ResolveReferenceAsync(config, reference, ProbeContext(context.GetValueOrDefault(config), target), context, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates a local draft against its configuration.
+    /// </summary>
+    public async Task<ResolvedTransportProxy> ResolveDraftAsync(string config, string? id, OfferedProxy draft, CancellationToken ct = default, ProxyDestination? target = null)
+    {
+        var state = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
+        var context = ProbeContext((await ContextAsync(ct).ConfigureAwait(false)).GetValueOrDefault(config), target)
+            ?? throw new TransportProxyFault("unknown-config");
+        var held = id is null ? null : state.Locals.FirstOrDefault(one => one.Reference.Id == id)
+            ?? throw new TransportProxyFault("proxy-not-local");
+        if (held?.OwnerConfig is { } owner && owner != config)
+        {
+            throw new TransportProxyFault("proxy-target-denied");
+        }
+
+        var key = id ?? "draft";
+        var record = held is null
+            ? new CatalogTransportProxy(new ProxyReference(state.LocalSource, key), draft with { Id = key }, Local: true, OwnerConfig: config)
+            : held with { Proxy = draft with { Id = key } };
+        Check(record.Proxy, record.Legacy);
+        CheckRuntime(record);
+        if (TargetFault(record, context) is { } fault)
+        {
+            throw new TransportProxyFault(fault);
+        }
+
+        return new ResolvedTransportProxy(record, "", context.Target!.Host, context.Port);
+    }
 
     /// <summary>
     /// Removes a local proxy without replacing its selections.
@@ -258,7 +306,7 @@ public sealed class TransportProxyCatalog
     public async Task<ResolvedTransportProxy?> ResolveAsync(string config, CancellationToken ct = default)
     {
         var selection = await SelectionAsync(config, ct).ConfigureAwait(false);
-        if (selection.Reference is not { } reference)
+        if (!selection.Enabled || selection.Reference is not { } reference)
         {
             return null;
         }
@@ -279,7 +327,7 @@ public sealed class TransportProxyCatalog
         }
 
         return await ResolveReferenceAsync(config, reference,
-            new Context(ConfigServices.Target(text), ConfigServices.EndpointPort(text)), context, ct, running: true).ConfigureAwait(false);
+            new Context(ConfigServices.Target(text), ConfigServices.EndpointPort(text), config), context, ct, running: true).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -299,7 +347,7 @@ public sealed class TransportProxyCatalog
         }
 
         var target = new ServiceTarget(transport.TargetHost, transport.TargetPort, string.Empty, transport.ServerKey);
-        return await ResolveReferenceAsync(config, reference, new Context(target, transport.TargetPort), context, ct, running: true).ConfigureAwait(false);
+        return await ResolveReferenceAsync(config, reference, new Context(target, transport.TargetPort, config), context, ct, running: true).ConfigureAwait(false);
     }
 
     private async Task<ResolvedTransportProxy> ResolveReferenceAsync(string config, ProxyReference reference, Context? endpoint,
@@ -400,7 +448,9 @@ public sealed class TransportProxyCatalog
                 Aliases: [.. state.Trust.Where(one => one.Kind == "unsigned")
                     .Select(one => new ProxyReference(one.Source, record.Reference.Id))
                     .Where(one => UpgradedRunning(state, candidates, one, "")?.Record.Reference == record.Reference)],
-                Http: definition.Http, Quic: definition.Quic, UseCertificate: ProxyTransportModes.UsesCertificate(definition)));
+                Http: definition.Http, Quic: definition.Quic, UseCertificate: ProxyTransportModes.UsesCertificate(definition),
+                OwnerConfig: record.OwnerConfig, Scope: definition.Scope, Anonymous: definition.Anonymous, Cdn: definition.Cdn,
+                Tls: definition.Tls, HasToken: definition.Auth.Credential.Length > 0, DefinitionStamp: Stamp(record)));
         }
 
         foreach (var reference in state.Selections.Where(one => context.ContainsKey(one.Config)).Select(one => one.Reference).OfType<ProxyReference>().Distinct()
@@ -457,7 +507,7 @@ public sealed class TransportProxyCatalog
     /// </summary>
     public Task<bool> RenameAsync(string oldName, string newName, CancellationToken ct = default) => ChangeAsync(state =>
         oldName == newName || !state.Publications.Any(one => one.Publisher == oldName) && !state.Selections.Any(one => one.Config == oldName)
-            && !state.Locals.Any(one => one.LegacyPublisher == oldName) ? (state, false) : (state with
+            && !state.Locals.Any(one => one.LegacyPublisher == oldName || one.OwnerConfig == oldName) ? (state, false) : (state with
         {
             Publications = [.. state.Publications.Where(one => one.Publisher != newName).Select(one => one.Publisher == oldName ? one with
             {
@@ -466,7 +516,8 @@ public sealed class TransportProxyCatalog
             } : one)],
             Selections = [.. state.Selections.Where(one => one.Config != newName || !state.Selections.Any(other => other.Config == oldName))
                 .Select(one => one.Config == oldName ? one with { Config = newName } : one)],
-            Locals = [.. state.Locals.Select(one => one.LegacyPublisher == oldName ? one with { LegacyPublisher = newName } : one)],
+            Locals = [.. state.Locals.Select(one => one with { LegacyPublisher = one.LegacyPublisher == oldName ? newName : one.LegacyPublisher,
+                OwnerConfig = one.OwnerConfig == oldName ? newName : one.OwnerConfig })],
         }, true), ct);
 
     /// <summary>
@@ -644,7 +695,7 @@ public sealed class TransportProxyCatalog
         var localReference = held?.Reference ?? new ProxyReference(state.LocalSource, Guid.NewGuid().ToString("N"));
         var local = front is null ? null : new CatalogTransportProxy(localReference,
             Definition(localReference.Id, "WebSocket " + name, front.Value), Local: true, Legacy: true,
-            LegacyIssuer: target?.ServerKey ?? "", LegacyPort: ConfigServices.EndpointPort(text), LegacyPublisher: name);
+            LegacyIssuer: target?.ServerKey ?? "", LegacyPort: ConfigServices.EndpointPort(text), LegacyPublisher: name, OwnerConfig: name);
         return (state with
         {
             Locals = local is null ? state.Locals : [.. state.Locals.Where(one => one.Reference != localReference), local],
@@ -706,7 +757,21 @@ public sealed class TransportProxyCatalog
         }
     }
 
-    private sealed record Context(ServiceTarget? Target, int Port);
+    private static Context? ProbeContext(Context? context, ProxyDestination? target)
+    {
+        if (target is null)
+        {
+            return context;
+        }
+        if (ProxyTargetRules.NormalizeHost(target.Host) is not { } host || target.Port is < 1 or > 65535)
+        {
+            throw new TransportProxyFault("bad-proxy-target");
+        }
+
+        return context?.Target is { } endpoint ? context with { Target = endpoint with { Host = host }, Port = target.Port } : context;
+    }
+
+    private sealed record Context(ServiceTarget? Target, int Port, string Config = "");
     private sealed record Candidate(CatalogTransportProxy Record, string Publisher, string Origin, string Error = "");
 
     private void CheckRuntime(CatalogTransportProxy record)
@@ -728,6 +793,10 @@ public sealed class TransportProxyCatalog
         {
             return "proxy-legacy-target";
         }
+        if (record.Local && record.OwnerConfig is { } owner && endpoint.Config != owner)
+        {
+            return "proxy-target-denied";
+        }
 
         if (!ProxyTargetRules.Valid(record.Proxy.Targets))
         {
@@ -743,7 +812,7 @@ public sealed class TransportProxyCatalog
         var context = new Dictionary<string, Context>(StringComparer.Ordinal);
         foreach (var (name, text) in await ConfigurationsAsync(ct).ConfigureAwait(false))
         {
-            context[name] = new Context(ConfigServices.Target(text), ConfigServices.EndpointPort(text));
+            context[name] = new Context(ConfigServices.Target(text), ConfigServices.EndpointPort(text), name);
         }
 
         return context;
@@ -807,7 +876,7 @@ public sealed class TransportProxyCatalog
             ct.ThrowIfCancellationRequested();
             var held = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
             var initialized = held.LocalSource.Length == 0 ? held with { LocalSource = Guid.NewGuid().ToString("D") } : held;
-            var (next, result) = update(initialized);
+            var (next, result) = update(MigrateLocalOwners(initialized));
             next = Normalize(next);
             if (Normalize(held).ToPayload() == next.ToPayload())
             {
@@ -824,6 +893,45 @@ public sealed class TransportProxyCatalog
         }
 
         throw new TransportProxyFault("proxy-catalog-busy");
+    }
+
+    private static TransportProxyState MigrateLocalOwners(TransportProxyState state)
+    {
+        if (state.Version >= 2)
+        {
+            return state;
+        }
+
+        var locals = new List<CatalogTransportProxy>();
+        var selections = state.Selections.ToArray();
+        foreach (var record in state.Locals)
+        {
+            var owners = selections.Where(one => one.Reference == record.Reference).Select(one => one.Config)
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            if (record.OwnerConfig is not null || owners.Length == 0)
+            {
+                locals.Add(record);
+                continue;
+            }
+
+            for (var at = 0; at < owners.Length; at++)
+            {
+                var owner = owners[at];
+                var key = at == 0 ? record.Reference.Id : Convert.ToHexStringLower(SHA256.HashData(
+                    Encoding.UTF8.GetBytes("proxy-owner-v1\n" + record.Reference.Source + "\n" + record.Reference.Id + "\n" + owner)));
+                var reference = record.Reference with { Id = key };
+                locals.Add(record with { Reference = reference, Proxy = record.Proxy with { Id = key }, OwnerConfig = owner });
+                for (var selected = 0; selected < selections.Length; selected++)
+                {
+                    if (selections[selected].Config == owner && selections[selected].Reference == record.Reference)
+                    {
+                        selections[selected] = selections[selected] with { Reference = reference };
+                    }
+                }
+            }
+        }
+
+        return state with { Version = 2, Locals = locals, Selections = selections };
     }
 
     private static TransportProxyState Normalize(TransportProxyState state) => state with

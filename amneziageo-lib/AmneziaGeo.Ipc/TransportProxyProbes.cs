@@ -63,6 +63,11 @@ public static class TransportProxyProbes
                 return Failed("proxy-unavailable");
             }
 
+            if (response.StatusCode is 401 or 403 && response.Body.Length == 0)
+            {
+                return Failed("proxy-auth");
+            }
+
             using var document = JsonDocument.Parse(response.Body);
             var root = document.RootElement;
             if (response.StatusCode != 200)
@@ -133,10 +138,19 @@ public static class TransportProxyProbes
             {
                 return Failed("bad-proxy");
             }
+            if (!record.Legacy && target is not null && proxy.Transport != "quic")
+            {
+                var result = await CheckTargetAsync(new ResolvedTransportProxy(record, "", target.Host, target.Port),
+                    deadline.Token, resolve, bypass, connect).ConfigureAwait(false);
+                if (result.Availability != TransportProxyAvailability.Unknown || proxy.Transport != "websocket")
+                {
+                    return result;
+                }
+            }
 
             if (proxy.Transport == "websocket")
             {
-                if (!record.Legacy)
+                if (!record.Legacy && target is null)
                 {
                     var frontResult = await CheckOptionalHttpFrontAsync(proxy, deadline.Token, resolve, bypass, connect).ConfigureAwait(false);
                     if (frontResult.Availability != TransportProxyAvailability.Unknown)
@@ -175,6 +189,13 @@ public static class TransportProxyProbes
                         WsFrontOutcome.Tls => "proxy-tls", WsFrontOutcome.NoAddress => "proxy-no-address",
                         WsFrontOutcome.Refused => WsCarrier.RefusalFault(detail), _ => "proxy-no-answer",
                     });
+            }
+
+            if (proxy.Transport == "quic")
+            {
+                var address = (await Dns.GetHostAddressesAsync(proxy.Host, deadline.Token).ConfigureAwait(false)).FirstOrDefault();
+                return address is null ? Failed("proxy-no-address")
+                    : await XHttpProcess.ProbeQuicAsync(proxy, address, deadline.Token).ConfigureAwait(false);
             }
 
             if (!ProxyTransportModes.IsHttp(proxy))
@@ -240,7 +261,7 @@ public static class TransportProxyProbes
 
             if (response.StatusCode != 200)
             {
-                return Failed(response.StatusCode == 401 ? "proxy-auth" : "proxy-unavailable");
+                return Failed(response.StatusCode is 401 or 403 ? "proxy-auth" : "proxy-unavailable");
             }
 
             using var result = JsonDocument.Parse(response.Body);

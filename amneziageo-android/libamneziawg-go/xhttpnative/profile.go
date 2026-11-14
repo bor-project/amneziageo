@@ -51,13 +51,14 @@ type profile struct {
 				Path  string `json:"path"`
 				Mode  string `json:"mode"`
 				Extra struct {
-					Method    string `json:"uplinkHTTPMethod"`
-					Placement string `json:"uplinkDataPlacement"`
-					Key       string `json:"uplinkDataKey"`
-					Chunk     int    `json:"uplinkChunkSize"`
-					Max       int    `json:"scMaxEachPostBytes"`
-					Interval  int    `json:"scMinPostsIntervalMs"`
-					Padding   string `json:"xPaddingBytes"`
+					Method              string `json:"uplinkHTTPMethod"`
+					Placement           string `json:"uplinkDataPlacement"`
+					Key                 string `json:"uplinkDataKey"`
+					Chunk               int    `json:"uplinkChunkSize"`
+					Max                 int    `json:"scMaxEachPostBytes"`
+					Interval            int    `json:"scMinPostsIntervalMs"`
+					Padding             string `json:"xPaddingBytes"`
+					AuthorizationHeader bool   `json:"authorizationHeader,omitempty"`
 				} `json:"extra"`
 			} `json:"xhttpSettings"`
 		} `json:"streamSettings"`

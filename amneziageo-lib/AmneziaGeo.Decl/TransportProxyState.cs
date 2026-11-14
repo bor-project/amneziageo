@@ -7,7 +7,8 @@ namespace AmneziaGeo.Decl;
 /// Stores a transport proxy and its destination restrictions.
 /// </summary>
 public sealed record CatalogTransportProxy(ProxyReference Reference, OfferedProxy Proxy,
-    bool Local = false, bool Legacy = false, string LegacyIssuer = "", int LegacyPort = 0, string LegacyPublisher = "", bool LegacyOffered = false);
+    bool Local = false, bool Legacy = false, string LegacyIssuer = "", int LegacyPort = 0, string LegacyPublisher = "", bool LegacyOffered = false,
+    string? OwnerConfig = null);
 
 /// <summary>
 /// Stores a verified publication of one configuration.
@@ -23,7 +24,7 @@ public sealed record TransportProxyTrust(string Source, string Kind, string Publ
 /// <summary>
 /// Stores the explicit proxy choice of a configuration.
 /// </summary>
-public sealed record TransportProxySelection(string Config, ProxyReference? Reference);
+public sealed record TransportProxySelection(string Config, ProxyReference? Reference, bool Enabled = true);
 
 /// <summary>
 /// Retains the public metadata of a withdrawn proxy.
@@ -56,7 +57,7 @@ public sealed record TransportProxyState
     {
         var state = JsonSerializer.Deserialize<TransportProxyState>(payload, Json)
             ?? throw new InvalidDataException("The transport proxy catalog is empty.");
-        if (state.Version != 1 || state.Revision < 0 || state.LocalSource is null
+        if (state.Version is not (1 or 2) || state.Revision < 0 || state.LocalSource is null
             || state.LocalSource.Length > 0 && !Guid.TryParse(state.LocalSource, out _)
             || state.Locals is null || state.Publications is null || state.Trust is null || state.Selections is null || state.Retired is null)
         {
@@ -87,7 +88,9 @@ public sealed record TransportProxySummary(ProxyReference Reference, string Name
     bool Local, IReadOnlyList<string> Sources, TransportProxyAvailability Availability = TransportProxyAvailability.Unknown,
     string Fault = "", DateTimeOffset? Checked = null, bool Missing = false, ProxyTargets? Targets = null,
     IReadOnlyList<string>? CompatibleConfigs = null, bool Legacy = false, string LegacyIssuer = "", int LegacyPort = 0,
-    IReadOnlyList<ProxyReference>? Aliases = null, OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null, bool UseCertificate = true);
+    IReadOnlyList<ProxyReference>? Aliases = null, OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null, bool UseCertificate = true,
+    string? OwnerConfig = null, string? Scope = null, bool Anonymous = false, bool Cdn = false,
+    OfferedProxyTls? Tls = null, bool HasToken = false, string DefinitionStamp = "");
 
 /// <summary>
 /// Describes the proxy selected for a UDP destination.

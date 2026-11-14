@@ -307,7 +307,7 @@ internal partial class ConfigItemViewModel : ViewModelBase
     {
         var built = new List<CardTag>(5)
         {
-            new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket && WebSocketOffered, WebSocketOffered ? ToggleWebSocketCommand : null),
+            new(Loc.Instance.Get("Proxies_Title"), ProxyEnabled, CanToggleProxy ? ToggleProxyCommand : null),
             new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
         };
 

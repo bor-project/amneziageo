@@ -151,7 +151,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Legal = new LegalViewModel(prefs);
         _showTermsGate = !LegalTexts.Accepted(prefs);
         // Seed backing field from prefs without echoing OnChanged.
-        _settingsSection = prefs.SettingsSection;
+        _settingsSection = prefs.SettingsSection == "proxies" ? "config" : prefs.SettingsSection;
         UpdateActiveSection();
         General.PropertyChanged += OnGeneralPropertyChanged;
         Config.PropertyChanged += OnSectionBarChanged;
@@ -333,7 +333,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             {
                 "config" => Config.IsSectionImport || Config.IsConfigManage,
                 "routing" => Routing.IsSectionImport || Routing.EditRoutingList is not null,
-                "proxies" => Proxies.ShowEditor || Proxies.IsLoading,
+                "proxies" => Proxies.ShowEditor || Proxies.IsLoading || Proxies.IsScoped,
                 _ => false,
             }
             || IsSettingsSources
@@ -793,6 +793,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _ = Proxies.OpenReferenceAsync(reference, returnConfig);
     }
 
+    public void ShowConfigProxies(ConfigTransportViewModel context)
+    {
+        Nav = "settings";
+        _openingTransportProxy = true;
+        try
+        {
+            SettingsSection = "proxies";
+        }
+        finally
+        {
+            _openingTransportProxy = false;
+        }
+
+        Proxies.OpenForConfiguration(context);
+        SettingsDetailOpen = true;
+        OnPropertyChanged(nameof(SettingsStepsBack));
+    }
+
     public void ReturnFromTransportProxy(string config)
     {
         Nav = "settings";
@@ -1005,7 +1023,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Re-gate the footer reconnect offer when a section's Save bar takes or frees the strip.
     private void OnSectionBarChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ConfigViewModel.ShowSaveBar) or nameof(TransportProxiesViewModel.ShowEditor) or nameof(TransportProxiesViewModel.IsLoading))
+        if (e.PropertyName is nameof(ConfigViewModel.ShowSaveBar) or nameof(TransportProxiesViewModel.ShowEditor) or nameof(TransportProxiesViewModel.IsLoading)
+            or nameof(TransportProxiesViewModel.IsScoped))
         {
             OnPropertyChanged(nameof(ShowReconnectBar));
             OnPropertyChanged(nameof(SettingsStepsBack));

@@ -18,6 +18,13 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     private int _loadGeneration;
     private IReadOnlyList<ConfigEntry> _configs = [];
     private string? _returnConfig;
+    private ConfigTransportViewModel? _configContext;
+    private string _targetIdentity = string.Empty;
+    private string? _storedEndpoint;
+    public string Title => Editor?.Title ?? Loc.Instance.Get("Proxies_Title");
+    public string ConfigurationName => _returnConfig ?? string.Empty;
+    public bool CanAdd => _configContext is not null && ConfigurationName.Length > 0;
+    public bool IsScoped => _configContext is not null;
     [ObservableProperty]
     private bool _isCatalogueLoading;
     [ObservableProperty]
@@ -32,10 +39,10 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     public bool ShowEditor => Editor is not null;
     public bool HasUnsavedChanges => Editor?.IsDirty == true;
     public string UnsavedName => Editor?.Name ?? string.Empty;
-    public bool ShowSaveBar => IsActiveSection && HasUnsavedChanges;
-    public bool CanSave => HasUnsavedChanges && !IsSaving;
+    public bool ShowSaveBar => IsActiveSection && Editor?.Editable == true;
+    public bool CanSave => Editor is { Editable: true, IsVerified: true } && !IsSaving;
     public bool CanDelete => Editor is { Editable: true, IsNew: false };
-    public bool CanProbe => Editor is { Reference: not null, IsDirty: false } && !IsProbing;
+    public bool CanProbe => Editor is not null && ConfigurationName.Length > 0 && !IsProbing;
     public bool IsEmpty => IsCatalogue && !IsCatalogueLoading && CatalogueError.Length == 0 && Items.Count == 0;
     public int CatalogColumns => PaneWidth > 0 && PaneWidth < UiLayout.CompactWidth ? 1 : 2;
 
@@ -71,11 +78,19 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
             }
 
             Editor?.RefreshWords();
+            OnPropertyChanged(nameof(Title));
         };
     }
 
     partial void OnIsActiveSectionChanged(bool value) => RefreshEditBar();
-    partial void OnPaneWidthChanged(double value) => OnPropertyChanged(nameof(CatalogColumns));
+    partial void OnPaneWidthChanged(double value)
+    {
+        OnPropertyChanged(nameof(CatalogColumns));
+        if (Editor is { } editor)
+        {
+            editor.Compact = value < UiLayout.FieldRowWidth;
+        }
+    }
     partial void OnIsLoadingChanged(bool value) => RefreshSections();
     partial void OnIsSavingChanged(bool value) => RefreshEditBar();
     partial void OnIsProbingChanged(bool value) => OnPropertyChanged(nameof(CanProbe));
@@ -84,12 +99,14 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     {
         if (oldValue is not null)
         {
+            oldValue.InvalidateVerification();
             oldValue.DirtyChanged -= OnDirtyChanged;
             oldValue.PropertyChanged -= OnEditorPropertyChanged;
         }
 
         if (newValue is not null)
         {
+            newValue.Compact = PaneWidth < UiLayout.FieldRowWidth;
             newValue.DirtyChanged += OnDirtyChanged;
             newValue.PropertyChanged += OnEditorPropertyChanged;
         }
@@ -97,6 +114,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         DeletePending = false;
         StatusMessage = string.Empty;
         OnPropertyChanged(nameof(ShowEditor));
+        OnPropertyChanged(nameof(Title));
         RefreshSections();
         RefreshEditBar();
     }
@@ -104,6 +122,14 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     private void OnDirtyChanged(object? sender, EventArgs e) => RefreshEditBar();
     private void OnEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(TransportProxyEditorViewModel.IsVerified))
+        {
+            RefreshEditBar();
+        }
+        if (e.PropertyName == nameof(TransportProxyEditorViewModel.Title))
+        {
+            OnPropertyChanged(nameof(Title));
+        }
         if (e.PropertyName == nameof(TransportProxyEditorViewModel.Name))
         {
             OnPropertyChanged(nameof(UnsavedName));
@@ -135,6 +161,8 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
     public void LeaveSection()
     {
+        Editor?.InvalidateVerification();
+        DetachContext();
         _returnConfig = null;
         DeletePending = false;
         if (Editor?.IsNew == true)
@@ -145,6 +173,15 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
     public void Apply(StatusSnapshot snapshot)
     {
+        if (_configContext is { } context)
+        {
+            var endpoint = snapshot.Configs.FirstOrDefault(one => one.Name == context.ConfigName)?.Endpoint;
+            if (_storedEndpoint is not null && _storedEndpoint != endpoint)
+            {
+                Editor?.InvalidateVerification();
+            }
+            _storedEndpoint = endpoint;
+        }
         _configs = snapshot.Configs;
         if (snapshot.TransportProxies is { } summaries)
         {
@@ -159,6 +196,9 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
     private void Apply(IReadOnlyList<TransportProxySummary> summaries)
     {
+        var offered = summaries;
+        summaries = _configContext is null ? summaries : summaries.Where(one => _configContext.AllowsProxy(one)
+            || one.Reference == _configContext.SelectedProxyChoice?.Reference).ToArray();
         var present = summaries.Select(one => one.Reference).ToHashSet();
         for (var at = Items.Count - 1; at >= 0; at--)
         {
@@ -189,13 +229,15 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
         if (Editor is { Reference: { } reference } editor)
         {
-            editor.ApplySummary(summaries.FirstOrDefault(one => one.Reference == reference));
+            editor.ApplySummary(offered.FirstOrDefault(one => one.Reference == reference));
         }
 
         foreach (var row in Items)
         {
             row.ApplyUsage(_configs, summaries);
+            row.SelectionChanged = SelectProxy;
         }
+        RefreshSelection();
 
         RefreshSections();
     }
@@ -245,11 +287,65 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     [RelayCommand]
     private void Add()
     {
+        if (!CanAdd)
+        {
+            return;
+        }
         _openGeneration++;
         IsLoading = false;
         ReturnReference = null;
-        _returnConfig = null;
-        Editor = new TransportProxyEditorViewModel(_connection);
+        Editor = new TransportProxyEditorViewModel(_connection, ownerConfig: ConfigurationName);
+    }
+
+    public void OpenForConfiguration(ConfigTransportViewModel context)
+    {
+        DetachContext();
+        _configContext = context;
+        _targetIdentity = context.ProxyTargetIdentity;
+        _storedEndpoint = _configs.FirstOrDefault(one => one.Name == context.ConfigName)?.Endpoint;
+        context.PropertyChanged += OnContextPropertyChanged;
+        _returnConfig = context.ConfigName;
+        Editor = null;
+        OnPropertyChanged(nameof(ConfigurationName));
+        OnPropertyChanged(nameof(CanAdd));
+        OnPropertyChanged(nameof(IsScoped));
+        _ = LoadAsync();
+    }
+
+    private void DetachContext()
+    {
+        if (_configContext is { } context)
+        {
+            context.PropertyChanged -= OnContextPropertyChanged;
+        }
+        _configContext = null;
+        _storedEndpoint = null;
+        OnPropertyChanged(nameof(IsScoped));
+        OnPropertyChanged(nameof(CanAdd));
+    }
+
+    private void OnContextPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_configContext is { } context && _targetIdentity != context.ProxyTargetIdentity)
+        {
+            _targetIdentity = context.ProxyTargetIdentity;
+            Editor?.InvalidateVerification();
+        }
+    }
+
+    private void SelectProxy(TransportProxyItemViewModel item, bool enabled)
+    {
+        _configContext?.SelectFromPicker(item.Summary, enabled);
+        RefreshSelection();
+    }
+
+    private void RefreshSelection()
+    {
+        foreach (var row in Items)
+        {
+            row.ApplySelection(_configContext?.SelectedProxyChoice?.Reference, _configContext?.SelectedProxyEnabled == true,
+                _configContext?.AllowsProxy(row.Summary) == true);
+        }
     }
 
     public async Task OpenReferenceAsync(ProxyReference reference, string? returnConfig)
@@ -275,7 +371,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         StatusMessage = string.Empty;
         if (!item.Summary.Local || item.Summary.Missing)
         {
-            Editor = new TransportProxyEditorViewModel(_connection, summary: item.Summary);
+            Editor = new TransportProxyEditorViewModel(_connection, summary: item.Summary, ownerConfig: ConfigurationName);
             return;
         }
 
@@ -290,7 +386,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         IsLoading = false;
         if (TransportProxyWords.Read<CatalogTransportProxy>(ack) is { Local: true } local)
         {
-            Editor = new TransportProxyEditorViewModel(_connection, local, item.Summary);
+            Editor = new TransportProxyEditorViewModel(_connection, local, item.Summary, ConfigurationName);
         }
         else
         {
@@ -302,13 +398,20 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     {
         if (Editor is null && !IsLoading)
         {
-            return false;
+            if (_configContext is null || _returnConfig is not { } owner)
+            {
+                return false;
+            }
+            DetachContext();
+            _returnConfig = null;
+            _host.ReturnFromTransportProxy(owner);
+            return true;
         }
 
         _openGeneration++;
         Editor = null;
         IsLoading = false;
-        if (_returnConfig is { } config)
+        if (_configContext is null && _returnConfig is { } config)
         {
             _returnConfig = null;
             _host.ReturnFromTransportProxy(config);
@@ -339,6 +442,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
                 }
 
                 await LoadAsync();
+                TryNavigateBack();
             }
         }
         finally
@@ -391,7 +495,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     [RelayCommand]
     private async Task Probe()
     {
-        if (Editor is not { Reference: { } reference, IsDirty: false } editor || IsProbing)
+        if (Editor is not { } editor || IsProbing || !CanProbe)
         {
             return;
         }
@@ -399,17 +503,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         IsProbing = true;
         try
         {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeTransportProxy,
-                [JsonSerializer.Serialize(reference, IpcJson.Options)]));
-            if (TransportProxyWords.Read<TransportProxyProbeResult>(ack) is { } result)
-            {
-                editor.ApplyAvailability(result);
-                await LoadAsync();
-            }
-            else
-            {
-                editor.StatusMessage = TransportProxyWords.Fault(ack.Message);
-            }
+            await editor.CheckAsync(ConfigurationName, _configContext?.ProxyDestination);
         }
         finally
         {
@@ -419,6 +513,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
     public void Reset()
     {
+        DetachContext();
         _openGeneration++;
         _loadGeneration++;
         _returnConfig = null;

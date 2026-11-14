@@ -24,6 +24,7 @@ type Address struct {
 type Profile struct {
 	Version   int     `json:"version"`
 	Transport string  `json:"transport"`
+	Anonymous bool    `json:"anonymous,omitempty"`
 	Listen    Address `json:"listen"`
 	Target    Address `json:"target"`
 	Front     struct {
@@ -40,6 +41,7 @@ type Profile struct {
 	Auth struct {
 		Scheme     string `json:"scheme"`
 		Credential string `json:"credential"`
+		Header     string `json:"header,omitempty"`
 	} `json:"auth"`
 	HTTP *struct {
 		Version       int    `json:"version"`
@@ -62,7 +64,8 @@ func Parse(data []byte, probe bool) (Profile, error) {
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&p) != nil || decoder.Decode(new(any)) != io.EOF || p.Version != 2 ||
 		!validHost(p.Front.Host) || !validPort(p.Front.Port) || net.ParseIP(p.Front.DialAddress) == nil ||
-		!pathPattern.MatchString(p.Front.Path) || p.Front.TLS.Enabled == nil || !*p.Front.TLS.Enabled {
+		!pathPattern.MatchString(p.Front.Path) || p.Front.TLS.Enabled == nil || !*p.Front.TLS.Enabled ||
+		(p.Auth.Header != "" && p.Auth.Header != "Authorization") {
 		return p, ErrProfile
 	}
 	if probe {
@@ -93,7 +96,7 @@ func Parse(data []byte, probe bool) (Profile, error) {
 			return p, ErrProfile
 		}
 	case "quic":
-		if !*p.Front.TLS.Enabled || p.Auth.Scheme != "bearer" || !credentialPattern.MatchString(p.Auth.Credential) ||
+		if !*p.Front.TLS.Enabled || p.Auth.Scheme != "bearer" || !(credentialPattern.MatchString(p.Auth.Credential) || p.Anonymous && p.Auth.Credential == "") ||
 			p.HTTP != nil || p.QUIC == nil || p.QUIC.Version != 1 || p.QUIC.Protocol != "webtransport" || p.QUIC.Datagrams != "framed-stream" {
 			return p, ErrProfile
 		}
@@ -127,6 +130,7 @@ func (p Profile) HTTPProfile() ([]byte, error) {
 			"streamSettings": map[string]any{"network": "xhttp", "security": security, "tlsSettings": tlsSettings,
 				"xhttpSettings": map[string]any{"host": p.Front.Host, "path": "/" + p.Front.Path + "/", "mode": "packet-up",
 					"extra": map[string]any{"uplinkHTTPMethod": p.HTTP.Method, "uplinkDataPlacement": p.HTTP.DataPlacement,
-						"uplinkDataKey": "X-Data", "uplinkChunkSize": 2048, "scMaxEachPostBytes": 2048, "scMinPostsIntervalMs": 1, "xPaddingBytes": "100-100"}}}}},
+						"uplinkDataKey": "X-Data", "uplinkChunkSize": 2048, "scMaxEachPostBytes": 2048, "scMinPostsIntervalMs": 1, "xPaddingBytes": "100-100",
+						"authorizationHeader": p.Auth.Header == "Authorization" && !p.Anonymous}}}}},
 	})
 }

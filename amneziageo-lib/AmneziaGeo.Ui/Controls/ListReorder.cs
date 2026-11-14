@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AmneziaGeo.Ui.Services;
 
 namespace AmneziaGeo.Ui.Controls;
 
@@ -19,6 +20,8 @@ internal sealed class ListReorder<TRow>
     private static readonly HashSet<ListReorder<TRow>> Attached = [];
     private static readonly HashSet<Visual> Watched = [];
     private readonly Control _item;
+    private readonly TouchListReorder<TRow>? _touch;
+    private ICommand? _dropped;
     private readonly DispatcherTimer _hold;
     private Point _origin;
     private bool _pressed;
@@ -36,6 +39,7 @@ internal sealed class ListReorder<TRow>
     public ListReorder(Control item)
     {
         _item = item;
+        _touch = UiPlatform.WalksFocus ? null : new TouchListReorder<TRow>(item);
         _hold = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _hold.Tick += OnHeld;
     }
@@ -49,7 +53,20 @@ internal sealed class ListReorder<TRow>
 
     public ItemsControl? List => _item.FindAncestorOfType<ItemsControl>();
 
-    public ICommand? Dropped { get; set; }
+    public bool Dragging => _touch?.Dragging == true;
+
+    public ICommand? Dropped
+    {
+        get => _dropped;
+        set
+        {
+            _dropped = value;
+            if (_touch is not null)
+            {
+                _touch.Dropped = value;
+            }
+        }
+    }
 
     public int Columns() => List?.ItemsPanelRoot is UniformGrid { Columns: > 0 } grid ? grid.Columns : 1;
 
@@ -63,7 +80,10 @@ internal sealed class ListReorder<TRow>
 
     public void Detach()
     {
-        Cancel();
+        if (!Dragging)
+        {
+            Cancel();
+        }
         Attached.Remove(this);
         CheckVisibility();
     }
@@ -96,6 +116,16 @@ internal sealed class ListReorder<TRow>
     {
         Cancel();
         _consumed = false;
+        if (_touch is not null)
+        {
+            if (Session.Row is null && e.GetCurrentPoint(_item).Properties.IsLeftButtonPressed)
+            {
+                _touch.Press(e);
+            }
+
+            return;
+        }
+
         if (Session.Row is not null
             || !e.GetCurrentPoint(_item).Properties.IsLeftButtonPressed
             || e.Source is not Visual source
@@ -111,6 +141,11 @@ internal sealed class ListReorder<TRow>
 
     public bool Move(PointerEventArgs e)
     {
+        if (_touch is not null)
+        {
+            return _touch.Move(e);
+        }
+
         if (_pressed)
         {
             var point = e.GetPosition(_item);
@@ -125,6 +160,11 @@ internal sealed class ListReorder<TRow>
 
     public bool Release()
     {
+        if (_touch is not null)
+        {
+            return _touch.Release();
+        }
+
         Cancel();
         var consumed = _consumed;
         _consumed = false;
@@ -133,6 +173,7 @@ internal sealed class ListReorder<TRow>
 
     public void Cancel()
     {
+        _touch?.Cancel();
         _hold.Stop();
         _pressed = false;
     }

@@ -16,60 +16,32 @@
   </UserControl.Resources>
   <!-- WebSocket, MTU and the switches of a config. Fields stay left, capped so they do not stretch across a wide card. -->
   <StackPanel Spacing="14">
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40">
-      <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr Proxies_Title}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
-      <controls:AdaptiveComboBox x:Name="ProxySelector" Classes="field" ItemsSource="{Binding ProxyChoices}"
-          SelectedItem="{Binding SelectedProxyChoice, Mode=TwoWay}"
-          MaxWidth="620" HorizontalAlignment="Stretch"
-          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-          Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
-        <ComboBox.Styles>
-          <Style Selector="ComboBoxItem" x:DataType="vm:TransportProxyChoice">
-            <Setter Property="IsEnabled" Value="{Binding IsSelectable}" />
-          </Style>
-        </ComboBox.Styles>
-        <ComboBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:TransportProxyChoice">
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" MaxWidth="{Binding #ProxySelector.Bounds.Width}">
-              <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding IsHttpGet}" />
-              <TextBlock Grid.Column="1" Text="{Binding Label}" TextWrapping="Wrap" />
-            </Grid>
-          </DataTemplate>
-        </ComboBox.ItemTemplate>
-      </controls:AdaptiveComboBox>
-    </Grid>
-
-    <Border Classes="sect" IsVisible="{Binding HasSelectedProxy}">
-      <StackPanel Spacing="8">
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding SelectedProxyIsHttpGet}" />
-          <TextBlock Grid.Column="1" Text="{Binding SelectedProxyDetails}" TextWrapping="Wrap" />
-        </Grid>
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-          <TextBlock Text="{Binding SelectedProxyAvailability}" Classes="muted" Classes.available="{Binding SelectedProxyAvailable}" />
-          <TextBlock Grid.Column="1" Text="{Binding SelectedProxyScope}" Classes="muted" TextWrapping="Wrap" />
-        </Grid>
-        <TextBlock Text="{Binding SelectedProxyTargets}" Classes="muted" TextWrapping="Wrap"
-                   IsVisible="{Binding SelectedProxyTargets, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <TextBlock Text="{Binding SelectedProxyFault}" Classes="fieldwarn" TextWrapping="Wrap"
-                   IsVisible="{Binding SelectedProxyFault, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <Button x:Name="ViewSelectedProxy" Classes="linkbtn" Content="{l:Tr Proxies_View}" Command="{Binding ViewSelectedProxyCommand}"
-                IsVisible="{Binding CanViewSelectedProxy}" HorizontalAlignment="Left" />
-      </StackPanel>
-    </Border>
-    <Border Classes="sect" IsVisible="{Binding ShowRunningProxy}">
-      <StackPanel Spacing="8">
-        <TextBlock Text="{l:Tr Proxies_ActuallyUsed}" Classes="label" />
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="20" Height="20" IsVisible="{Binding RunningProxyIsHttpGet}" />
-          <TextBlock Grid.Column="1" Text="{Binding RunningProxyDetails}" TextWrapping="Wrap" />
-        </Grid>
-        <Button x:Name="ViewRunningProxy" Classes="linkbtn" Content="{l:Tr Proxies_View}" Command="{Binding ViewRunningProxyCommand}"
-                IsVisible="{Binding CanViewRunningProxy}" HorizontalAlignment="Left" />
-      </StackPanel>
-    </Border>
+    <StackPanel Spacing="8">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8" MinHeight="40">
+        <TextBlock Text="{l:Tr Proxies_Title}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+        <ToggleSwitch Grid.Column="1" MinWidth="0" IsChecked="{Binding SelectedProxyEnabled, Mode=TwoWay}"
+                      IsEnabled="{Binding CanEnableSelectedProxy}" VerticalAlignment="Center"
+                      AutomationProperties.Name="{l:Tr Proxies_Use}" />
+        <Button x:Name="ViewSelectedProxy" Grid.Column="3" Classes="linkbtn" Command="{Binding ChooseProxyCommand}"
+                VerticalAlignment="Center" Padding="0" HorizontalAlignment="Right">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <TextBlock Text="{l:Tr Proxies_Settings}" />
+            <TextBlock Text="›" />
+          </StackPanel>
+        </Button>
+      </Grid>
+      <TextBlock Text="{Binding SelectedProxyAddress}" Classes="muted" TextWrapping="Wrap" />
+      <WrapPanel ItemSpacing="10" LineSpacing="5" IsVisible="{Binding HasSelectedProxy}">
+        <TextBlock Text="{Binding SelectedProxyProvider}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="5">
+          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="15" Height="15" IsVisible="{Binding SelectedProxyIsHttpGet}" />
+          <TextBlock Text="{Binding SelectedProxyProtocol}" Classes="muted" FontSize="12" />
+        </StackPanel>
+        <TextBlock Text="CDN" Classes="muted" FontSize="12" IsVisible="{Binding SelectedProxyCdn}" />
+      </WrapPanel>
+      <TextBlock Text="{Binding SelectedProxyFault}" Classes="fieldwarn" TextWrapping="Wrap"
+                 IsVisible="{Binding SelectedProxyFault, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    </StackPanel>
 
     <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

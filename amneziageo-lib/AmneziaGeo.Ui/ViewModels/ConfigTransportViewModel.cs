@@ -628,6 +628,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     public void SeedEndpoint(string endpoint, string front = "")
     {
         _endpoint = endpoint;
+        _draftProxyTarget = null;
+        _draftProxyServerKey = string.Empty;
+        OnPropertyChanged(nameof(ProxyTargetIdentity));
         WebSocketOpen = true;
         WebSocketManual = front.Length == 0;
         OnPropertyChanged(nameof(WebSocketHostDefault));

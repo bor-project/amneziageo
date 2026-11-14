@@ -3118,4 +3118,11 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Main_ReorderRight" xml:space="preserve">
     <value>Move right</value>
   </data>
+  <data name="Proxies_EnterCredential" xml:space="preserve"><value>Enter token</value></data>
+  <data name="Proxies_CheckPassed" xml:space="preserve"><value>Check passed</value></data>
+  <data name="Proxies_NotSelected" xml:space="preserve"><value>Not selected</value></data>
+  <data name="Proxies_Use" xml:space="preserve"><value>Use proxy</value></data>
+  <data name="Proxies_Anonymous" xml:space="preserve"><value>Anonymous access</value></data>
+  <data name="Proxies_ScopeLocal" xml:space="preserve"><value>Local interfaces only</value></data>
+  <data name="Proxies_NotSet" xml:space="preserve"><value>Not set</value></data>
 </root>

@@ -163,7 +163,7 @@ Write-Host ''
 Write-Host '== result =='
 $exports = @('wgTurnOn', 'wgTurnOff', 'wgGetConfig', 'wgRenew', 'wgSetVerdicts', 'wgPrepareSwap',
     'wgSwapTun', 'wgSetVerdictTtl', 'wgTunnelStats', 'wgSetTcpDirect', 'wgSetRelay', 'wgLiveAddresses',
-    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory', 'agXHttpStart', 'agXHttpStop', 'agXHttpIsRunning')
+    'wgPreloadLive', 'wgRebind', 'wgProbe', 'wgMemory', 'wgReturnMemory', 'agXHttpStart', 'agXHttpStop', 'agXHttpIsRunning', 'agXHttpProbe')
 foreach ($a in $Abi) {
     $so = Join-Path $outRoot "$a\libamneziawg-go.so"
     $b = [IO.File]::ReadAllBytes($so)

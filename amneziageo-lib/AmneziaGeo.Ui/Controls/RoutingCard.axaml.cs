@@ -191,7 +191,10 @@ internal sealed partial class RoutingCard : UserControl
 
     private void OnCardCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
-        _reorder.Cancel();
+        if (!_reorder.Dragging)
+        {
+            _reorder.Cancel();
+        }
     }
 
     private void OnCardGotFocus(object? sender, FocusChangedEventArgs e)

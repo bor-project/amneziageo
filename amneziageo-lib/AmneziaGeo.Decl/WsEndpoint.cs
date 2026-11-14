@@ -44,7 +44,7 @@ public readonly record struct WsEndpoint(string Host, int Port, string PathPrefi
         }
 
         return new WsEndpoint(proxy.Host, proxy.Port, proxy.Path, TargetHost: resolved.TargetHost,
-            Bearer: proxy.Auth.Credential, ServerName: proxy.Tls.ServerName, Pin: proxy.Tls.Pin, UseCertificate: proxy.Tls.Enabled).Normalize();
+            Bearer: proxy.Anonymous ? "" : proxy.Auth.Credential, ServerName: proxy.Tls.ServerName, Pin: proxy.Tls.Pin, UseCertificate: proxy.Tls.Enabled).Normalize();
     }
 
     /// <summary>

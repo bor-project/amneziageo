@@ -14,6 +14,17 @@ namespace AmneziaGeo.Tests;
 public sealed class ProxyRuntimeProfileTests
 {
     [Theory]
+    [InlineData(null, "22222222222222222222222222222222", "22222222-2222-2222-2222-222222222222")]
+    [InlineData("Authorization", "AB8E048E-FC1C-4D43-8F5B-82D3D28EA9C3", "AB8E048E-FC1C-4D43-8F5B-82D3D28EA9C3")]
+    public void LegacyKeyFormattingPreservesTheManualBearer(string? header, string credential, string expected)
+    {
+        var proxy = ProxyTransportModesTests.Http("GET", true);
+        proxy = proxy with { Auth = proxy.Auth with { Header = header, Credential = credential } };
+        using var json = JsonDocument.Parse(ProxyRuntimeProfile.Create(Selected(proxy), 10222, IPAddress.Loopback));
+        Assert.Equal(expected, json.RootElement.GetProperty("auth").GetProperty("credential").GetString());
+    }
+
+    [Theory]
     [InlineData("GET", false)]
     [InlineData("GET", true)]
     [InlineData("POST", false)]

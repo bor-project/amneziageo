@@ -108,7 +108,8 @@ internal static class HttpGetProbeClient
         return new XHttpProbeClient.Response((int)response.StatusCode, body);
     }
 
-    private static bool InfrastructureStatus(HttpResponseMessage response) => TransportProxyProbes.TransientStatus((int)response.StatusCode)
+    private static bool InfrastructureStatus(HttpResponseMessage response) => (TransportProxyProbes.TransientStatus((int)response.StatusCode)
+        || response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         && !response.Headers.Any(header => header.Key.StartsWith("X-WG-", StringComparison.OrdinalIgnoreCase));
 
     private static HttpRequestMessage Request(OfferedProxy proxy, string path, Dictionary<string, string> query,
@@ -131,6 +132,10 @@ internal static class HttpGetProbeClient
 
         request.Headers.Add("X-WG-Version", HttpGetAuthentication.Version);
         request.Headers.Add("X-WG-Key", auth.KeyId);
+        if (proxy.Auth.Header == "Authorization" && !proxy.Anonymous)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", proxy.Auth.Credential);
+        }
         request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true, NoStore = true };
         return request;
     }

@@ -105,8 +105,6 @@
 
         <!-- Подвал карточки: место режима и метки настроек слева, настройки конфигурации справа. -->
         <StackPanel Grid.Row="1" Spacing="5" Margin="12,0,12,10">
-          <TextBlock Text="{Binding SelectedProxyText}" FontSize="12" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding HasProxySelection}" />
-          <TextBlock Text="{Binding ActualProxyText}" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasRunningProxy}" />
         </StackPanel>
         <Border x:Name="FooterPart" Grid.Row="2" Classes="cardfoot">
           <Grid ColumnDefinitions="Auto,*,Auto">

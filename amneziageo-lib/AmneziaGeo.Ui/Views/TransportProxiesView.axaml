@@ -20,7 +20,8 @@
                IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     <Panel Grid.Row="2" x:Name="Body" KeyDown="OnBodyKeyDown">
       <ScrollViewer x:Name="CatalogueScroll" IsVisible="{Binding IsCatalogue}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="12">
+        <!-- Отводит правый край карточек от полосы прокрутки. -->
+        <StackPanel Spacing="12" Margin="0,0,14,0">
           <ProgressBar IsVisible="{Binding IsCatalogueLoading}" IsIndeterminate="True" MaxWidth="320" />
           <StackPanel Spacing="8" IsVisible="{Binding ShowCatalogueError}">
             <TextBlock Text="{Binding CatalogueError}" Classes="fieldwarn" TextWrapping="Wrap" />
@@ -72,7 +73,8 @@
       </ScrollViewer>
       <ProgressBar IsIndeterminate="{Binding IsLoading}" IsVisible="{Binding IsLoading}" Width="150" HorizontalAlignment="Center" />
       <ScrollViewer x:Name="EditorScroll" IsVisible="{Binding ShowEditor}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="14">
+        <!-- Отводит правый край полей от полосы прокрутки. -->
+        <StackPanel Spacing="14" Margin="0,0,14,0">
           <ContentControl Content="{Binding Editor}" HorizontalContentAlignment="Stretch">
             <ContentControl.ContentTemplate>
               <DataTemplate x:DataType="vm:TransportProxyEditorViewModel">

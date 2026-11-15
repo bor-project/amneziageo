@@ -87,6 +87,26 @@ internal static class PastTunnel
         return true;
     }
 
+    /// <summary>
+    /// Binds a native proxy descriptor to the physical network.
+    /// </summary>
+    public static bool BypassProxyDescriptor(int fd)
+    {
+        if (AndroidNetworks.Under(Application.Context) is not { } network)
+        {
+            return false;
+        }
+
+        using var copy = ParcelFileDescriptor.FromFd(fd);
+        if (copy?.FileDescriptor is not { } descriptor)
+        {
+            return false;
+        }
+
+        network.BindSocket(descriptor);
+        return true;
+    }
+
     // Connects to the first address of a host that takes the connection, on the network given or the usual way.
     private static async Task<Stream> DialAsync(DnsEndPoint point, Network? network, CancellationToken ct)
     {

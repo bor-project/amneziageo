@@ -82,7 +82,10 @@ internal static class XHttpProbeClient
         }
 
         Literal(headers, 1, authority);
-        Literal(headers, 23, "Bearer " + proxy.Auth.Credential, neverIndexed: true);
+        if (!proxy.Anonymous)
+        {
+            Literal(headers, 23, "Bearer " + proxy.Auth.Credential, neverIndexed: true);
+        }
         Literal(headers, 24, "no-store");
         using var request = new MemoryStream();
         request.Write(Preface);

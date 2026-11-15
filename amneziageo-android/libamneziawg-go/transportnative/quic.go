@@ -114,7 +114,10 @@ func dialQUIC(ctx context.Context, p Profile) (*quicConnection, error) {
 	}
 	address := &url.URL{Scheme: "https", Host: net.JoinHostPort(p.Front.Host, strconv.Itoa(p.Front.Port)), Path: "/" + p.Front.Path + "/events"}
 	request := (&http.Request{Method: http.MethodConnect, Proto: "webtransport", Host: address.Host, URL: address,
-		Header: http.Header{"Authorization": []string{"Bearer " + p.Auth.Credential}}}).WithContext(ctx)
+		Header: make(http.Header)}).WithContext(ctx)
+	if !p.Anonymous {
+		request.Header.Set("Authorization", "Bearer "+p.Auth.Credential)
+	}
 	if err := requestStream.SendRequestHeader(request); err != nil {
 		return nil, err
 	}

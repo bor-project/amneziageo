@@ -8,7 +8,7 @@ namespace AmneziaGeo.Decl;
 /// Carries an explicit transport proxy choice between libraries.
 /// </summary>
 public sealed record ProxySelectionBlock(ProxyReference? Reference, RetiredTransportProxy? Retired = null,
-    TransportProxyTrust? Trust = null, LocalTransportProxyBlock? Local = null);
+    TransportProxyTrust? Trust = null, LocalTransportProxyBlock? Local = null, bool Enabled = true);
 
 /// <summary>
 /// Carries a selected local proxy definition.
@@ -52,7 +52,7 @@ public static class TransportProxyPortability
         var definition = local is null ? null : new LocalTransportProxyBlock(local.Proxy, local.Legacy,
             local.LegacyIssuer, local.LegacyPort, local.LegacyOffered);
         var trust = local is null ? state.Trust.SingleOrDefault(one => one.Source == reference.Source) : null;
-        return new ProxySelectionBlock(reference, retired, trust, definition);
+        return new ProxySelectionBlock(reference, retired, trust, definition, selection.Enabled);
     }
 
     /// <summary>
@@ -99,7 +99,7 @@ public static class TransportProxyPortability
     {
         if (block.Reference is not { } reference)
         {
-            return Select(state, config, null);
+            return Select(state, config, null, block.Enabled);
         }
 
         if (block.Local is { } definition)
@@ -107,15 +107,15 @@ public static class TransportProxyPortability
             var equivalent = state.Locals.FirstOrDefault(one => Equivalent(one, definition, config));
             if (equivalent is not null)
             {
-                return Select(state, config, equivalent.Reference);
+                return Select(state, config, equivalent.Reference, block.Enabled);
             }
 
             var fresh = LocalReference(state);
             var proxy = definition.Proxy with { Id = fresh.Id, Updated = DateTimeOffset.UtcNow };
             var record = new CatalogTransportProxy(fresh, proxy, Local: true, Legacy: definition.Legacy,
                 LegacyIssuer: definition.LegacyIssuer, LegacyPort: definition.LegacyPort,
-                LegacyPublisher: definition.Legacy ? config : "", LegacyOffered: definition.LegacyOffered);
-            return Select(state with { Locals = [.. state.Locals, record] }, config, fresh);
+                LegacyPublisher: definition.Legacy ? config : "", LegacyOffered: definition.LegacyOffered, OwnerConfig: config);
+            return Select(state with { Locals = [.. state.Locals, record] }, config, fresh, block.Enabled);
         }
 
         if (block.Retired is { Local: true } missingLocal)
@@ -124,7 +124,7 @@ public static class TransportProxyPortability
                 && !state.Locals.Any(record => record.Reference == one.Reference)
                 && (one with { Reference = missingLocal.Reference }) == missingLocal);
             var fresh = existing?.Reference ?? LocalReference(state);
-            return Select(Retire(state, missingLocal with { Reference = fresh }), config, fresh);
+            return Select(Retire(state, missingLocal with { Reference = fresh }), config, fresh, block.Enabled);
         }
 
         if (reference.Source == state.LocalSource)
@@ -151,12 +151,12 @@ public static class TransportProxyPortability
             state = Retire(state, retired);
         }
 
-        return Select(state, config, reference);
+        return Select(state, config, reference, block.Enabled);
     }
 
-    private static TransportProxyState Select(TransportProxyState state, string config, ProxyReference? reference) => state with
+    private static TransportProxyState Select(TransportProxyState state, string config, ProxyReference? reference, bool enabled = true) => state with
     {
-        Selections = [.. state.Selections.Where(one => one.Config != config).Append(new TransportProxySelection(config, reference))
+        Selections = [.. state.Selections.Where(one => one.Config != config).Append(new TransportProxySelection(config, reference, enabled))
             .OrderBy(one => one.Config, StringComparer.Ordinal)],
     };
 
@@ -184,7 +184,7 @@ public static class TransportProxyPortability
         Http: record.Proxy.Http, Quic: record.Proxy.Quic, UseCertificate: ProxyTransportModes.UsesCertificate(record.Proxy));
 
     private static bool Equivalent(CatalogTransportProxy record, LocalTransportProxyBlock block, string config) =>
-        record.Local && record.Legacy == block.Legacy && record.LegacyIssuer == block.LegacyIssuer
+        record.Local && (record.OwnerConfig is null || record.OwnerConfig == config) && record.Legacy == block.Legacy && record.LegacyIssuer == block.LegacyIssuer
         && record.LegacyPort == block.LegacyPort && record.LegacyOffered == block.LegacyOffered
         && (!record.Legacy || record.LegacyPublisher == config)
         && JsonSerializer.Serialize(record.Proxy with { Id = "", Updated = DateTimeOffset.MinValue }, Json)

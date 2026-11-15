@@ -62,19 +62,7 @@ func agXHttpStart(profile *C.char, protect C.ag_xhttp_protect_fn) C.int32_t {
 	if profile == nil || protect == nil {
 		return -1
 	}
-	xhttpProtector.Lock()
-	if xhttpProtector.callback == nil {
-		xhttpProtector.callback = protect
-		xhttpnative.InstallProtector(func(fd int) bool {
-			accepted := C.ag_xhttp_protect(protect, C.int(fd)) != 0
-			mark, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_MARK)
-			warnXHttpPressure(fmt.Sprintf("HTTP GET socket protected=%t mark=%#x markError=%t", accepted, mark, err != nil))
-			return accepted
-		})
-	}
-	accepted := xhttpProtector.callback == protect
-	xhttpProtector.Unlock()
-	if !accepted {
+	if !installXHttpProtector(protect) {
 		return -3
 	}
 	carrier, err := transportnative.Start([]byte(C.GoString(profile)), udppressure.Sink(func(event udppressure.Event) {
@@ -132,4 +120,45 @@ func agXHttpIsRunning(handle C.int32_t) C.int32_t {
 		return 1
 	}
 	return 0
+}
+
+func installXHttpProtector(protect C.ag_xhttp_protect_fn) bool {
+	xhttpProtector.Lock()
+	if xhttpProtector.callback == nil {
+		xhttpProtector.callback = protect
+		xhttpnative.InstallProtector(func(fd int) bool {
+			accepted := C.ag_xhttp_protect(protect, C.int(fd)) != 0
+			mark, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_MARK)
+			warnXHttpPressure(fmt.Sprintf("HTTP GET socket protected=%t mark=%#x markError=%t", accepted, mark, err != nil))
+			return accepted
+		})
+	}
+	accepted := xhttpProtector.callback == protect
+	xhttpProtector.Unlock()
+	if !accepted {
+		return false
+	}
+	return true
+}
+
+//export agXHttpProbe
+func agXHttpProbe(profile *C.char, protect C.ag_xhttp_protect_fn) C.int32_t {
+	if profile == nil || protect == nil || !installXHttpProtector(protect) {
+		return -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := transportnative.Probe(ctx, []byte(C.GoString(profile))); err != nil {
+		switch transportnative.FaultCode(err) {
+		case "proxy-auth":
+			return -2
+		case "proxy-tls":
+			return -3
+		case "bad-proxy":
+			return -4
+		default:
+			return -1
+		}
+	}
+	return 1
 }

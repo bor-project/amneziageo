@@ -3031,7 +3031,7 @@
   </data>
   <data name="Proxies_Title" xml:space="preserve"><value>Прокси</value></data>
   <data name="Proxies_RailSubtitle" xml:space="preserve"><value>Транспорт VPN</value></data>
-  <data name="Proxies_Local" xml:space="preserve"><value>Локальный</value></data>
+  <data name="Proxies_Local" xml:space="preserve"><value>Локально</value></data>
   <data name="Proxies_None" xml:space="preserve"><value>Не используется</value></data>
   <data name="Proxies_Available" xml:space="preserve"><value>Доступен</value></data>
   <data name="Proxies_Unavailable" xml:space="preserve"><value>Недоступен</value></data>
@@ -3118,4 +3118,11 @@
   <data name="Main_ReorderRight" xml:space="preserve">
     <value>Переместить вправо</value>
   </data>
+  <data name="Proxies_EnterCredential" xml:space="preserve"><value>Введите токен</value></data>
+  <data name="Proxies_CheckPassed" xml:space="preserve"><value>Проверка пройдена</value></data>
+  <data name="Proxies_NotSelected" xml:space="preserve"><value>Не выбран</value></data>
+  <data name="Proxies_Use" xml:space="preserve"><value>Использовать прокси</value></data>
+  <data name="Proxies_Anonymous" xml:space="preserve"><value>Анонимный доступ</value></data>
+  <data name="Proxies_ScopeLocal" xml:space="preserve"><value>Только локальные интерфейсы</value></data>
+  <data name="Proxies_NotSet" xml:space="preserve"><value>Не задан</value></data>
 </root>

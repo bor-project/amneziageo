@@ -16,7 +16,8 @@ public sealed record OfferedProxyTls(string ServerName, string Pin, bool Enabled
 /// <summary>
 /// Carries a transport credential.
 /// </summary>
-public sealed record OfferedProxyAuth(string Scheme, string Credential);
+public sealed record OfferedProxyAuth(string Scheme, string Credential,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Header = null);
 
 /// <summary>
 /// Describes the HTTP requests of an XHTTP proxy.
@@ -38,7 +39,10 @@ public sealed record OfferedXHttp(
 public sealed record OfferedProxy(
     string Id, string Name, string Transport, string Host, int Port, string Path,
     OfferedProxyTls Tls, OfferedProxyAuth Auth, DateTimeOffset Updated, OfferedXHttp? Xhttp = null, ProxyTargets? Targets = null,
-    OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null);
+    OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Scope = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Anonymous = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Cdn = false);
 
 /// <summary>
 /// Describes a complete published proxy catalog.

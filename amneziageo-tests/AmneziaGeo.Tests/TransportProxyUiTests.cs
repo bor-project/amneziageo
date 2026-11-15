@@ -96,9 +96,9 @@ public sealed class TransportProxyUiTests
         editor.ApplyProxyCatalog([Summary(First)], First, true);
         editor.SelectedProxyChoice = editor.ProxyChoices.Single(one => one.Reference is null);
 
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         var command = Assert.Single(agent.Commands.Where(one => one.Op == IpcContract.OpSelectTransportProxy));
-        Assert.Equal(["vpn", "null"], command.Args);
+        Assert.Equal(["vpn", "null", "on"], command.Args);
         Assert.DoesNotContain(agent.Commands, one => one.Args.Contains("explicit-legacy"));
     }
 
@@ -111,7 +111,7 @@ public sealed class TransportProxyUiTests
         editor.MtuMode = (int)MtuMode.Custom;
         editor.Mtu = "1380";
 
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy);
         Assert.Equal(First, editor.SelectedProxyChoice?.Reference);
     }
@@ -141,7 +141,7 @@ public sealed class TransportProxyUiTests
         var agent = new Agent();
         var editor = NewEditor(agent);
 
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.NotNull(agent.Saved);
         Assert.Equal("", agent.SaveId);
         Assert.Equal("bearer", agent.Saved.Auth.Scheme);
@@ -159,7 +159,7 @@ public sealed class TransportProxyUiTests
         editor.TransportIndex = 1;
         editor.Credential = "63c77f4f-8501-4308-a32d-2a36ea0cb6ed";
 
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.NotNull(agent.Saved);
         Assert.Equal("hmac-sha256-v2", agent.Saved.Auth.Scheme);
         Assert.Equal(new OfferedProxyHttp(2, "GET", "header"), agent.Saved.Http);
@@ -179,7 +179,7 @@ public sealed class TransportProxyUiTests
         editor.MethodIndex = method;
         editor.UseCertificate = certificate;
         editor.Credential = "63c77f4f-8501-4308-a32d-2a36ea0cb6ed";
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.Equal("http", agent.Saved!.Transport);
         Assert.Equal(method == 1 ? "POST" : "GET", agent.Saved.Http!.Method);
         Assert.Equal(method == 1 ? "body" : "header", agent.Saved.Http.DataPlacement);
@@ -202,7 +202,7 @@ public sealed class TransportProxyUiTests
         editor.TransportIndex = 2;
         Assert.True(editor.UseCertificate);
         Assert.False(editor.CertificateEditable);
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.Equal("quic", agent.Saved!.Transport);
         Assert.Equal(new OfferedProxyQuic(1, "webtransport", "framed-stream"), agent.Saved.Quic);
         Assert.Equal("bearer", agent.Saved.Auth.Scheme);
@@ -211,7 +211,6 @@ public sealed class TransportProxyUiTests
     }
 
     [Theory]
-    [InlineData("name")]
     [InlineData("host")]
     [InlineData("port")]
     [InlineData("path")]
@@ -233,7 +232,7 @@ public sealed class TransportProxyUiTests
             case "credential": editor.Credential = "a b"; break;
         }
 
-        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.False(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.Empty(agent.Commands);
         Assert.NotEmpty(editor.StatusMessage);
         Assert.True(editor.IsDirty);
@@ -245,7 +244,7 @@ public sealed class TransportProxyUiTests
         var agent = new Agent { RejectSave = true };
         var editor = NewEditor(agent);
 
-        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.False(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.True(editor.IsDirty);
         Assert.Null(editor.Reference);
         Assert.NotEmpty(editor.StatusMessage);
@@ -258,9 +257,9 @@ public sealed class TransportProxyUiTests
         var editor = new TransportProxyEditorViewModel(agent, summary: Summary(First));
 
         Assert.False(editor.Editable);
-        Assert.False(editor.ShowCredential);
+        Assert.True(editor.ShowCredential);
         Assert.Empty(editor.Credential);
-        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.False(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.Empty(agent.Commands);
     }
 
@@ -273,7 +272,7 @@ public sealed class TransportProxyUiTests
         Assert.False(editor.ModernEditable);
         editor.Path = "new-path";
 
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.NotNull(agent.Saved);
         Assert.Equal("legacy", agent.Saved.Auth.Scheme);
         Assert.Equal("websocket", agent.Saved.Transport);
@@ -292,7 +291,8 @@ public sealed class TransportProxyUiTests
         await catalog.OpenCardCommand.ExecuteAsync(catalog.Items[0]).ConfigureAwait(false);
 
         Assert.NotNull(catalog.Editor);
-        Assert.Equal("secret-token", catalog.Editor.Credential);
+        Assert.Empty(catalog.Editor.Credential);
+        Assert.Equal("••••••••", catalog.Editor.CredentialPlaceholder);
         Assert.Single(agent.Commands.Where(one => one.Op == IpcContract.OpGetTransportProxy));
     }
 
@@ -335,7 +335,7 @@ public sealed class TransportProxyUiTests
         Assert.Equal("other vpn", editor.Source);
         Assert.Equal(Loc.Instance.Get("Proxies_Available"), editor.Availability);
         Assert.False(editor.Editable);
-        Assert.False(editor.ShowCredential);
+        Assert.True(editor.ShowCredential);
         Assert.Empty(editor.Credential);
         Assert.False(editor.IsDirty);
     }
@@ -361,11 +361,14 @@ public sealed class TransportProxyUiTests
     public async Task AvailabilityProbeCompletesWithoutReplacingTheEditor()
     {
         var pending = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var agent = new Agent { ProbeReply = pending.Task };
+        var agent = new Agent { ProbeReply = pending.Task, Summaries = [Summary(First)] };
         var catalog = new MainWindowViewModel(agent, new UiPreferences()).Proxies;
         catalog.Apply(Snapshot([Summary(First)]));
         await catalog.OpenCardCommand.ExecuteAsync(catalog.Items[0]).ConfigureAwait(false);
         var editor = catalog.Editor;
+        catalog.OpenForConfiguration(Settings(agent));
+        await catalog.OpenCardCommand.ExecuteAsync(catalog.Items[0]).ConfigureAwait(false);
+        editor = catalog.Editor;
         var probe = catalog.ProbeCommand.ExecuteAsync(null);
         Assert.True(catalog.IsProbing);
         Assert.Same(editor, catalog.Editor);
@@ -406,7 +409,7 @@ public sealed class TransportProxyUiTests
         await shell.Proxies.OpenCardCommand.ExecuteAsync(shell.Proxies.Items[0]).ConfigureAwait(false);
         shell.Proxies.Editor!.Name = "Unused renamed proxy";
 
-        await shell.Proxies.SaveSectionCommand.ExecuteAsync(null).ConfigureAwait(false);
+        await SaveCheckedAsync(shell.Proxies).ConfigureAwait(false);
 
         Assert.NotNull(agent.Saved);
         Assert.True(shell.Home.RestartPending);
@@ -444,7 +447,7 @@ public sealed class TransportProxyUiTests
         await shell.Proxies.OpenCardCommand.ExecuteAsync(shell.Proxies.Items[0]).ConfigureAwait(false);
         shell.Proxies.Editor!.Credential = "changed-token";
 
-        await shell.Proxies.SaveSectionCommand.ExecuteAsync(null).ConfigureAwait(false);
+        await SaveCheckedAsync(shell.Proxies).ConfigureAwait(false);
 
         Assert.NotNull(agent.Saved);
         Assert.True(shell.ShowReconnectBar);
@@ -474,7 +477,7 @@ public sealed class TransportProxyUiTests
         Assert.Equal(Loc.Instance.Get("Proxies_InvalidTargets"), editor.StatusMessage);
         editor.TargetsText = "VPN.EXAMPLE.:443\n[2001:db8::1]:51820";
 
-        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
         Assert.True(agent.Saved!.Targets!.Restricted);
         Assert.Equal([new ProxyDestination("2001:db8::1", 51820), new("vpn.example", 443)], agent.Saved.Targets.Destinations);
     }
@@ -573,7 +576,7 @@ public sealed class TransportProxyUiTests
         shell.Proxies.Editor!.Restricted = true;
         shell.Proxies.Editor.TargetsText = targets;
 
-        await shell.Proxies.SaveSectionCommand.ExecuteAsync(null).ConfigureAwait(false);
+        await SaveCheckedAsync(shell.Proxies).ConfigureAwait(false);
 
         Assert.NotNull(agent.Saved);
         Assert.Equal(rearm, shell.ShowReconnectBar);
@@ -600,10 +603,203 @@ public sealed class TransportProxyUiTests
         shell.Proxies.Editor!.Restricted = true;
         shell.Proxies.Editor.TargetsText = "draft.example:443";
 
-        await shell.Proxies.SaveSectionCommand.ExecuteAsync(null).ConfigureAwait(false);
+        await SaveCheckedAsync(shell.Proxies).ConfigureAwait(false);
 
         Assert.NotNull(agent.Saved);
         Assert.Equal(rearm, shell.ShowReconnectBar);
+    }
+
+    [Fact]
+    public async Task ALocalDraftRequiresACompletedCheckOfItsCurrentFields()
+    {
+        var agent = new Agent();
+        var editor = NewEditor(agent);
+        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSaveTransportProxy);
+        await editor.CheckAsync("vpn").ConfigureAwait(false);
+        Assert.True(editor.IsVerified);
+        editor.Path = "changed";
+        Assert.False(editor.IsVerified);
+        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+        await editor.CheckAsync("vpn").ConfigureAwait(false);
+        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.Equal("changed", agent.Saved!.Path);
+    }
+
+    [Fact]
+    public async Task ADelayedSuccessfulCheckCannotApproveEditedFields()
+    {
+        var reply = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var agent = new Agent { ProbeReply = reply.Task };
+        var editor = NewEditor(agent);
+        var check = editor.CheckAsync("vpn");
+        editor.Host = "other.example";
+        reply.SetResult(Reply(new TransportProxyProbeResult(TransportProxyAvailability.Available)));
+        await check.ConfigureAwait(false);
+        Assert.False(editor.IsVerified);
+        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.Null(agent.Saved);
+    }
+
+    [Fact]
+    public async Task AChangedPublicationInvalidatesASuccessfulCheck()
+    {
+        var agent = new Agent();
+        var summary = Summary(First) with { DefinitionStamp = "first" };
+        var editor = new TransportProxyEditorViewModel(agent, new CatalogTransportProxy(First, Definition(), true), summary, "vpn");
+        await editor.CheckAsync("vpn").ConfigureAwait(false);
+        Assert.True(editor.IsVerified);
+        editor.ApplySummary(summary with { DefinitionStamp = "second", Targets = new(true, [new("other.example", 443)]) });
+        Assert.False(editor.IsVerified);
+        Assert.False(await editor.CommitAsync().ConfigureAwait(false));
+    }
+
+    [Fact]
+    public async Task PickerTogglesAreExclusiveAndRemainInTheList()
+    {
+        var agent = new Agent { Summaries = [Summary(First), Summary(Second)] };
+        var shell = new MainWindowViewModel(agent, new UiPreferences());
+        var context = Settings(agent);
+        context.ApplyProxyCatalog(agent.Summaries, null, true);
+        shell.Proxies.OpenForConfiguration(context);
+        Assert.Equal(2, shell.Proxies.Items.Count);
+        shell.Proxies.Items[0].IsSelected = true;
+        Assert.Null(shell.Proxies.Editor);
+        Assert.True(context.SelectedProxyEnabled);
+        shell.Proxies.Items[1].IsSelected = true;
+        Assert.False(shell.Proxies.Items[0].IsSelected);
+        Assert.True(shell.Proxies.Items[1].IsSelected);
+        Assert.Equal(Second, context.SelectedProxyChoice!.Reference);
+        shell.Proxies.Items[1].IsSelected = false;
+        Assert.False(context.SelectedProxyEnabled);
+        Assert.Equal(Second, context.SelectedProxyChoice.Reference);
+        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy);
+        Assert.True(await context.CommitAsync().ConfigureAwait(false));
+        Assert.Contains(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy && one.Args.SequenceEqual(new[] { "vpn", JsonSerializer.Serialize(Second, IpcJson.Options), "off" }));
+    }
+
+    [Fact]
+    public void LocalsAreVisibleOnlyForTheirOwnerAndCdnUsesTheSameDestinationRules()
+    {
+        var agent = new Agent();
+        var context = Settings(agent);
+        context.SeedProxyTarget("[Peer]\nEndpoint = vpn.example:443");
+        Assert.True(context.AllowsProxy(Summary(First) with { Local = true, OwnerConfig = "vpn" }));
+        Assert.False(context.AllowsProxy(Summary(First) with { Local = true, OwnerConfig = "other" }));
+        Assert.True(context.AllowsProxy(Summary(First) with { Cdn = true, Scope = "selected", Targets = new(true, [new("vpn.example", 443)]) }));
+        Assert.False(context.AllowsProxy(Summary(First) with { Cdn = true, Scope = "selected", Targets = new(true, [new("other.example", 443)]) }));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ExplicitAnonymousDraftsNeverReuseAStoredPrivateToken(int transport)
+    {
+        var agent = new Agent();
+        var editor = NewEditor(agent);
+        editor.TransportIndex = transport;
+        editor.Anonymous = true;
+        await editor.CheckAsync("vpn").ConfigureAwait(false);
+        Assert.True(await editor.CommitAsync().ConfigureAwait(false));
+        Assert.True(agent.Saved!.Anonymous);
+        Assert.Equal(transport == 1 ? "f4514728-b141-4b09-a1fe-4a5a5f83cf51" : "", agent.Saved.Auth.Credential);
+        Assert.Equal("Authorization", agent.Saved.Auth.Header);
+    }
+
+    [Fact]
+    public async Task ChangingTheConfigurationDestinationInvalidatesItsLocalCheck()
+    {
+        var summary = Summary(First) with { Local = true, OwnerConfig = "vpn" };
+        var agent = new Agent { Summaries = [summary], Local = new(First, Definition(), Local: true, OwnerConfig: "vpn") };
+        var shell = new MainWindowViewModel(agent, new UiPreferences());
+        var context = Settings(agent);
+        context.ApplyProxyCatalog([summary], First, true);
+        shell.Proxies.OpenForConfiguration(context);
+        await shell.Proxies.OpenCardCommand.ExecuteAsync(Assert.Single(shell.Proxies.Items)).ConfigureAwait(false);
+        await shell.Proxies.ProbeCommand.ExecuteAsync(null).ConfigureAwait(false);
+        Assert.True(shell.Proxies.CanSave);
+        context.SeedEndpoint("other.example:51820");
+        Assert.False(shell.Proxies.CanSave);
+        Assert.False(shell.Proxies.Editor!.IsVerified);
+    }
+
+    [Fact]
+    public async Task ADraftCheckCarriesTheCurrentConfigurationDestination()
+    {
+        var agent = new Agent();
+        var editor = NewEditor(agent);
+        await editor.CheckAsync("vpn", new("new.example", 51821)).ConfigureAwait(false);
+        var command = Assert.Single(agent.Commands);
+        Assert.Equal(IpcContract.OpProbeTransportProxyDraft, command.Op);
+        Assert.Equal(["new.example", "51821"], command.Args.Skip(3));
+    }
+
+    [Fact]
+    public void AFormerGlobalProxyPageReturnsToConfigurationsOnStartup()
+    {
+        var shell = new MainWindowViewModel(new Agent(), new UiPreferences { SettingsSection = "proxies" });
+        Assert.Equal("config", shell.SettingsSection);
+        Assert.False(shell.Proxies.IsScoped);
+    }
+
+    [Fact]
+    public async Task AWithdrawnProxyCanBeDisabledWithoutForgettingItsReference()
+    {
+        var agent = new Agent();
+        var context = Settings(agent);
+        context.ApplyProxyCatalog([Summary(First) with { Missing = true }], First, true, true);
+        Assert.True(context.CanEnableSelectedProxy);
+        context.SelectedProxyEnabled = false;
+        Assert.False(context.CanEnableSelectedProxy);
+        Assert.Equal(First, context.SelectedProxyChoice!.Reference);
+        Assert.True(await context.CommitAsync().ConfigureAwait(false));
+        Assert.Contains(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy && one.Args[2] == "off");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Authorization")]
+    public async Task ExistingHttpEditsPreserveAuthorizationAndConnectionSettings(string? header)
+    {
+        var proxy = Definition() with
+        {
+            Transport = "http", Port = 8443, Tls = new("cdn.example", new string('a', 64), true),
+            Auth = new("hmac-sha256-v2", "63c77f4f85014308a32d2a36ea0cb6ed", header),
+            Http = new(2, "GET", "header"),
+        };
+        var agent = new Agent();
+        var editor = new TransportProxyEditorViewModel(agent, new CatalogTransportProxy(First, proxy, true));
+        Assert.False(editor.IsDirty);
+        Assert.Empty(editor.Credential);
+        editor.Path = "changed";
+
+        Assert.True(await CommitCheckedAsync(editor).ConfigureAwait(false));
+        Assert.Equal(proxy.Auth, agent.Saved!.Auth);
+        Assert.Equal(proxy.Tls, agent.Saved.Tls);
+        Assert.Equal(proxy.Port, agent.Saved.Port);
+    }
+
+    private static async Task<bool> CommitCheckedAsync(TransportProxyEditorViewModel editor)
+    {
+        if (editor.Editable)
+        {
+            await editor.CheckAsync("vpn").ConfigureAwait(false);
+        }
+
+        return await editor.CommitAsync().ConfigureAwait(false);
+    }
+
+    private static Task<bool> CommitCheckedAsync(ConfigTransportViewModel editor) => editor.CommitAsync();
+
+    private static async Task SaveCheckedAsync(TransportProxiesViewModel catalog)
+    {
+        if (catalog.Editor is { } editor)
+        {
+            await editor.CheckAsync("vpn").ConfigureAwait(false);
+        }
+
+        await catalog.SaveSectionCommand.ExecuteAsync(null).ConfigureAwait(false);
     }
 
     private static TransportProxySummary Summary(ProxyReference reference) => new(reference, "front", "websocket", "cdn.example", 443, "vpn", false, [reference == First ? "office" : "home"]);
@@ -648,8 +844,9 @@ public sealed class TransportProxyUiTests
                 case IpcContract.OpRemoveTransportProxy:
                     Summaries = [];
                     break;
+                case IpcContract.OpProbeTransportProxyDraft:
                 case IpcContract.OpProbeTransportProxy:
-                    return ProbeReply ?? Task.FromResult(Reply(new TransportProxyProbeResult(TransportProxyAvailability.Unknown)));
+                    return ProbeReply ?? Task.FromResult(Reply(new TransportProxyProbeResult(TransportProxyAvailability.Available)));
             }
 
             return Task.FromResult(new IpcAck(true, ""));

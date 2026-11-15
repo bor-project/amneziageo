@@ -59,6 +59,29 @@ public sealed class AndroidUpdateAssetTests
         Assert.Equal(("AmneziaGeo-1.9.15.0-android-arm64.apk", "bb"), (asset?.Name, asset?.Sha256));
     }
 
+    [Theory]
+    [InlineData(Architecture.Arm64, "arm64")]
+    [InlineData(Architecture.Arm, "arm")]
+    public void UniversalInstallationsCanUpdateWithoutAUniversalAsset(Architecture processor, string expected)
+    {
+        var manifest = Manifest(Apk("arm64"), Apk("arm"));
+
+        var asset = UpdateFeed.AndroidAsset(manifest, UpdateFeed.AndroidArch(processor));
+
+        Assert.Equal(Apk(expected), asset);
+        Assert.Equal("00", asset?.Sha256);
+    }
+
+    [Theory]
+    [InlineData(Architecture.X64)]
+    [InlineData(Architecture.X86)]
+    public void EmulatorArchitecturesNeverTakeAnArmPackage(Architecture processor)
+    {
+        var manifest = Manifest(Apk("arm64"), Apk("arm"));
+
+        Assert.Null(UpdateFeed.AndroidAsset(manifest, UpdateFeed.AndroidArch(processor)));
+    }
+
     private static UpdateAsset Universal => new("AmneziaGeo-1.9.15.0-android.apk", "android", "universal", "apk", "00");
 
     private static UpdateAsset Apk(string arch) => new($"AmneziaGeo-1.9.15.0-android-{arch}.apk", "android", arch, "apk", "00");

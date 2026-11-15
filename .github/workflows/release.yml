@@ -1,8 +1,7 @@
 # Builds the selected release branch from a tag or manual run.
 # Windows: a 2x2 matrix {x64, arm64} x {fdd (framework-dependent), scd (self-contained)} = 4 installers.
 # Linux:   the amneziageo and amneziageo-gui Debian packages for amd64 and arm64.
-# Android: one APK carrying arm64-v8a, armeabi-v7a and x86_64, and one APK per ABI that the app's own update
-#          fetches.
+# Android: builds ARM64 and ARMv7 packages for phones, tablets and TVs.
 # Beside every installer and package lies its patch from the release before (job earlier picks that release): the
 # app's update on a machine with that release fetches the patch and makes the installer or the package out of it and
 # the installed files; any other machine downloads the whole file.
@@ -45,7 +44,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Check release policy
-        run: python3 -m unittest discover -s .github/tests -p test_release_policy.py
+        run: python3 -m unittest discover -s .github/tests
       - name: Validate release source
         id: policy
         env:
@@ -248,7 +247,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        abi: ['', android-arm64, android-arm, android-x64]   # '' builds every ABI the project declares
+        abi: [android-arm64, android-arm]
     steps:
       - name: Checkout (submodules + tags)
         uses: actions/checkout@v7
@@ -288,7 +287,7 @@ jobs:
           "$sdkmanager" "platforms;android-35" "platforms;android-36" > /dev/null
 
       - name: Build the native engine
-        run: amneziageo-android/tools/build-engine-android.sh
+        run: amneziageo-android/tools/build-engine-android.sh --abi ${{ matrix.abi == 'android-arm64' && 'arm64-v8a' || 'armeabi-v7a' }}
 
       - name: Build the APK
         shell: bash
@@ -311,13 +310,20 @@ jobs:
           # The kind of the release is baked in: the package stays on its channel, and a beta or a test build carries
           # the console over adb.
           args+=(--channel '${{ needs.earlier.outputs.kind }}')
-          if [ -n "${{ matrix.abi }}" ]; then args+=(--abi "${{ matrix.abi }}"); fi
+          args+=(--abi '${{ matrix.abi }}')
           amneziageo-android/tools/build-apk.sh "${args[@]}"
+
+      - name: Verify the public Android package
+        shell: bash
+        run: |
+          python3 .github/scripts/android_release.py verify --version "$RELEASE_VERSION" \
+            --arch '${{ matrix.abi == 'android-arm64' && 'arm64' || 'arm' }}' \
+            --file 'amneziageo-android/tools/dist/AmneziaGeo-${{ needs.earlier.outputs.version }}-${{ matrix.abi }}.apk'
 
       - name: Upload the APK
         uses: actions/upload-artifact@v7
         with:
-          name: apk${{ matrix.abi && format('-{0}', matrix.abi) || '' }}
+          name: apk-${{ matrix.abi }}
           path: amneziageo-android/tools/dist/*.apk
           if-no-files-found: error
 
@@ -386,7 +392,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.earlier.outputs.source_commit }}
-          sparse-checkout: .github/scripts/release_policy.py
+          sparse-checkout: |
+            .github/scripts/release_policy.py
+            .github/scripts/android_release.py
           sparse-checkout-cone-mode: false
       - name: Verify the release tag still matches
         shell: bash
@@ -459,12 +467,7 @@ jobs:
               rest=$(basename "$f" .deb)                       # <package>_<version>_<arch>
               asset "$f" linux "${rest##*_}" "${rest%%_*}"
             done
-            for f in release/*.apk; do
-              b=$(basename "$f")
-              # AmneziaGeo-<version>-android.apk carries every ABI, AmneziaGeo-<version>-android-<arch>.apk one.
-              arch=${b#AmneziaGeo-${VER}-android}; arch=${arch%.apk}; arch=${arch#-}; arch=${arch:-universal}
-              asset "$f" android "$arch" apk
-            done
+            python3 .github/scripts/android_release.py installers --directory release --version "$VER"
             } | jq -s '.'
           )
           jq -n --arg version "$VER" --arg description "AmneziaGeo $VER" --arg channel "$CHANNEL" \
@@ -496,25 +499,29 @@ jobs:
           }
           group() { GROUP="$1"; }
           row() {
-            if [ "$(cell "$2")$(cell "$3")$(cell "${4:-}")" != '---' ]; then
-              printf '| %s | %s | %s | %s | %s |\n' "$GROUP" "$1" "$(cell "$2")" "$(cell "$3")" "$(cell "${4:-}")"
+            if [ "$(cell "$2")$(cell "$3")" != '--' ]; then
+              printf '| %s | %s | %s | %s |\n' "$GROUP" "$1" "$(cell "$2")" "$(cell "$3")"
               GROUP=''
             fi
           }
           {
             echo "## AmneziaGeo $VER"
             echo
-            echo '| Platform | Package | x64 / amd64 | arm64 | arm (32-bit) |'
-            echo '| --- | --- | --- | --- | --- |'
-            group '**Windows**'
+            echo '| Devices / Устройства | Package / Пакет | Intel/AMD (64-bit) | ARM (64-bit) |'
+            echo '| --- | --- | --- | --- |'
+            group '**Windows PCs / Компьютеры Windows**'
             row 'installer, needs .NET 10 Desktop Runtime' "AmneziaGeo-$VER-win-x64-fdd.exe" "AmneziaGeo-$VER-win-arm64-fdd.exe"
             row 'installer, runtime included' "AmneziaGeo-$VER-win-x64.exe" "AmneziaGeo-$VER-win-arm64.exe"
-            group '**Linux**'
+            group '**Linux PCs and servers / Компьютеры и серверы Linux**'
             row 'service, deb' "amneziageo_${VER}_amd64.deb" "amneziageo_${VER}_arm64.deb"
             row 'application, deb' "amneziageo-gui_${VER}_amd64.deb" "amneziageo-gui_${VER}_arm64.deb"
-            group '**Android**'
-            row 'apk, every ABI in one package' "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk"
-            row 'apk, one ABI' "AmneziaGeo-$VER-android-x64.apk" "AmneziaGeo-$VER-android-arm64.apk" "AmneziaGeo-$VER-android-arm.apk"
+            echo
+            echo '### Android: phones, tablets, TVs and TV boxes / телефоны, планшеты, телевизоры и ТВ-приставки'
+            echo
+            echo '| Devices / Устройства | Download / Скачать |'
+            echo '| --- | --- |'
+            printf '| Phones, tablets and Android TV with 64-bit ARM / Телефоны, планшеты и Android TV с 64-битной ARM | %s |\n' "$(cell "AmneziaGeo-$VER-android-arm64.apk")"
+            printf '| Phones, tablets and Android TV with 32-bit ARM / Телефоны, планшеты и Android TV с 32-битной ARM | %s |\n' "$(cell "AmneziaGeo-$VER-android-arm.apk")"
             echo
             echo '<details><summary>SHA-256</summary>'
             echo

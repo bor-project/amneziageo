@@ -10,7 +10,7 @@
   build stops with the submodule/build-engine instructions.
 
   Usage (on the build machine):
-    pwsh -File build-apk.ps1 [-c Release|Debug] [-v N.N.N.N] [-UpdateUrl <url>] [-Channel stable|beta|test]
+    pwsh -File build-apk.ps1 [-c Release|Debug] [-v N.N.N.N] [-Abi android-arm64|android-arm|android-x64|android-x86] [-UpdateUrl <url>] [-Channel stable|beta|test]
   -Channel is the kind of the release; beta and test carry the console over adb. -Prerelease is -Channel beta.
   The update URL is baked into the package: the application reads it to offer its own update.
   Signing takes the SDK debug key unless ANDROID_KEYSTORE names a keystore, in which case ANDROID_KEY_ALIAS,
@@ -18,17 +18,24 @@
   release. Both configurations install as-is; Release is AOT-compiled and starts
   about twice as fast on a weak TV, so it is the default. Release is not debuggable: run-as cannot reach the
   application's private files, so set the device up through the interface and read results from logcat.
-  Set AndroidRuntimeIdentifiers to one ABI (e.g. android-arm) to cut the Release build to about a minute.
+  -Abi selects one architecture; public releases take android-arm64 or android-arm.
 #>
 param(
   [Alias('c')][ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
   [Alias('v')][string]$Version,
   [string]$UpdateUrl = 'https://github.com/bor-project/amneziageo/releases/latest/download/update.json',
   [ValidateSet('', 'stable', 'beta', 'test')][string]$Channel = '',
+  [ValidateSet('', 'android-arm64', 'android-arm', 'android-x64', 'android-x86')][string]$Abi = '',
   [switch]$Prerelease
 )
 
 $ErrorActionPreference = 'Stop'
+
+$channel = if ($Prerelease -and -not $Channel) { 'beta' } else { $Channel }
+if ($Configuration -eq 'Release' -and $channel) {
+  if ($Abi -notin @('android-arm64', 'android-arm')) { throw 'Public releases require one phone/tablet/TV ABI: android-arm64 or android-arm.' }
+  if (-not $env:ANDROID_KEYSTORE) { throw 'Public releases require the release keystore.' }
+}
 
 $tools = $PSScriptRoot
 $root  = Split-Path $tools -Parent
@@ -74,13 +81,16 @@ else {
 }
 
 Write-Host '== build + sign APK =='
+$runtime = @()
+if ($Abi) { $runtime = @("-p:AndroidRuntimeIdentifiers=$Abi") }
 & dotnet build $ui -c $Configuration -f net10.0-android -t:SignAndroidPackage `
   -p:AndroidPackageFormat=apk `
   -p:EmbedAssembliesIntoApk=true `
   "-p:ApplicationDisplayVersion=$version" `
   "-p:ApplicationVersion=$code" `
   "-p:UpdateUrl=$UpdateUrl" `
-  "-p:ReleaseChannel=$(if ($Prerelease -and -not $Channel) { 'beta' } else { $Channel })" `
+  "-p:ReleaseChannel=$channel" `
+  @runtime `
   @sign `
   -v minimal -nologo
 if ($LASTEXITCODE -ne 0) { throw "APK build failed ($LASTEXITCODE)" }
@@ -94,7 +104,8 @@ if (-not $apk) {
 }
 if (-not $apk) { throw "APK not found under $binDir after build." }
 
-$distName = "AmneziaGeo-$version-android.apk"
+$target = if ($Abi) { $Abi } else { 'android' }
+$distName = "AmneziaGeo-$version-$target.apk"
 Copy-Item -Force $apk.FullName (Join-Path $dist $distName)
 Write-Host "   -> dist\$distName  ($([math]::Round($apk.Length / 1MB, 1)) MB)"
 

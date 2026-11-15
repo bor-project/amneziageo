@@ -26,6 +26,7 @@ usage: build-apk.sh [options]
   --abi <list>        runtime identifiers, comma separated: android-arm, android-arm64, android-x64
                       (default: every ABI the project declares);
                       one ABI names the APK after it: AmneziaGeo-<version>-android-arm64.apk
+                      public releases require android-arm64 or android-arm
   --update-url <url>  update metadata baked into the package (default: $UPDATE_URL)
   --channel <kind>    kind of the release: stable, beta or test; beta and test carry the console over adb
   --prerelease        the same as --channel beta
@@ -59,6 +60,14 @@ case "$CHANNEL" in
   ''|stable|beta|test) ;;
   *) echo "invalid channel '$CHANNEL' (expected stable, beta or test)" >&2; exit 2 ;;
 esac
+
+if [ "$CONFIGURATION" = Release ] && [ -n "$CHANNEL" ]; then
+  case "$ABIS" in
+    android-arm64|android-arm) ;;
+    *) echo 'public releases require one phone/tablet/TV ABI: android-arm64 or android-arm' >&2; exit 2 ;;
+  esac
+  : "${ANDROID_KEYSTORE:?public releases require the release keystore}"
+fi
 
 if [ -z "$VERSION" ]; then
   VERSION="0.0.1.$(git -C "$ANDROID_DIR" rev-list --count HEAD 2>/dev/null || echo 0)"

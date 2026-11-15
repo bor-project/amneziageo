@@ -21,6 +21,15 @@ AmneziaGeo is a cross-platform VPN client for Windows, Linux and Android, built 
 
 Windows 7, 10 and 11 (x64 and ARM64), Linux (deb packages for amd64 and arm64), and Android.
 
+Android releases contain two APKs. Both support phones, tablets, Android TVs and TV boxes:
+
+| Devices | APK filename ending |
+| --- | --- |
+| Phones, tablets and TVs with 64-bit ARM | `android-arm64.apk` |
+| Phones, tablets and TVs with 32-bit ARM | `android-arm.apk` |
+
+Automatic updates select the matching APK, including upgrades from an older universal installation. Universal and x86 builds are reserved for internal testing.
+
 Installation, configuration, command-line reference and build instructions are on the **[documentation site](https://bor-project.github.io/amneziageo/)**.
 
 Build from source with the .NET SDK selected by [global.json](global.json) (10.0.403 or a later patch in the same feature band).

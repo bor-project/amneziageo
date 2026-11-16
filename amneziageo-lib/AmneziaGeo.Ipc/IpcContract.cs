@@ -450,8 +450,7 @@ public static class IpcContract
     public const string OpServerOffer = "server-offer";
 
     /// <summary>
-    /// Command to ask the servers of every config what they offer now. Takes no args. The ack comes back at once;
-    /// the answers reach the window in the next snapshots.
+    /// Requests background server offers or a completed proxy refresh for the configuration argument.
     /// </summary>
     public const string OpAskServers = "ask-servers";
 

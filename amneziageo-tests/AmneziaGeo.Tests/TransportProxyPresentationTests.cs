@@ -153,7 +153,7 @@ public sealed class TransportProxyPresentationTests
     public void ConfigViewAndBackKeepTheSameDirtyConfigEditor()
     {
         var agent = new Agent { Summaries = [Summary(First)] };
-        var shell = new MainWindowViewModel(agent, new UiPreferences()) { Nav = "settings", SettingsSection = "config" };
+        var shell = new MainWindowViewModel(agent, new UiPreferences(persist: false)) { Nav = "settings", SettingsSection = "config" };
         var snapshot = new StatusSnapshot("1", "vpn", [Entry(First, new(First, "udp.example", 51820))], [], TransportProxies: agent.Summaries);
         shell.Config.Apply(snapshot);
         shell.Proxies.Apply(snapshot);
@@ -179,7 +179,7 @@ public sealed class TransportProxyPresentationTests
     {
         var reply = new TaskCompletionSource<IpcAck>();
         var agent = new Agent { ListReply = reply.Task };
-        var shell = new MainWindowViewModel(agent, new UiPreferences());
+        var shell = new MainWindowViewModel(agent, new UiPreferences(persist: false));
         shell.Proxies.EnterSection();
         Assert.True(shell.Proxies.IsCatalogueLoading);
         Assert.False(shell.Proxies.IsEmpty);
@@ -200,7 +200,7 @@ public sealed class TransportProxyPresentationTests
     public void ViewingAProxyKeepsTheImportDraftAndItsUnsavedSelection()
     {
         var agent = new Agent { Summaries = [Summary(First)] };
-        var shell = new MainWindowViewModel(agent, new UiPreferences()) { Nav = "settings", SettingsSection = "config" };
+        var shell = new MainWindowViewModel(agent, new UiPreferences(persist: false)) { Nav = "settings", SettingsSection = "config" };
         var snapshot = new StatusSnapshot("1", null, [], [], TransportProxies: agent.Summaries);
         shell.Config.Apply(snapshot);
         shell.Proxies.Apply(snapshot);

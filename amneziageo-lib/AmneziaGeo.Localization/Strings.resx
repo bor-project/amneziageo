@@ -1397,7 +1397,7 @@
     <value>UDP on the loopback (lo) is blocked on this computer, and WebSocket hands the tunnel to the engine through it. Allow UDP on lo.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
-    <value>The transport refused the connection: check the server TLS certificate ({0}).</value>
+    <value>Could not connect through the proxy: {0}</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>The connection timed out.</value>
@@ -3125,4 +3125,51 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Proxies_Anonymous" xml:space="preserve"><value>Anonymous access</value></data>
   <data name="Proxies_ScopeLocal" xml:space="preserve"><value>Local interfaces only</value></data>
   <data name="Proxies_NotSet" xml:space="preserve"><value>Not set</value></data>
+  <data name="Proxies_Refresh" xml:space="preserve"><value>Refresh proxies</value></data>
+  <data name="Proxies_Protocol" xml:space="preserve"><value>Protocol</value></data>
+  <data name="Proxies_ServerName" xml:space="preserve"><value>Server name (SNI)</value></data>
+  <data name="Proxies_EditorTitle" xml:space="preserve"><value>Proxy</value></data>
+
+  <data name="Proxies_Diagnostic" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="Proxies_DetailHttp" xml:space="preserve"><value>HTTP {0} ({1}).</value></data>
+  <data name="Proxies_Stage_connect" xml:space="preserve"><value>Proxy connection</value></data>
+  <data name="Proxies_Stage_tls" xml:space="preserve"><value>Proxy TLS</value></data>
+  <data name="Proxies_Stage_challenge" xml:space="preserve"><value>Proxy authentication challenge</value></data>
+  <data name="Proxies_Stage_probe" xml:space="preserve"><value>Proxy destination check</value></data>
+  <data name="Proxies_Reason_version" xml:space="preserve"><value>Unsupported protocol version in {0}; version 2 is required.</value></data>
+  <data name="Proxies_Reason_missing-header" xml:space="preserve"><value>The response is missing {0}.</value></data>
+  <data name="Proxies_Reason_duplicate-header" xml:space="preserve"><value>The response repeats {0}.</value></data>
+  <data name="Proxies_Reason_signature" xml:space="preserve"><value>The response signature could not be verified ({0}).</value></data>
+  <data name="Proxies_Reason_invalid-json" xml:space="preserve"><value>The response is not valid JSON.</value></data>
+  <data name="Proxies_Reason_invalid-field" xml:space="preserve"><value>The response contains an invalid {0} field.</value></data>
+  <data name="Proxies_Reason_nonce" xml:space="preserve"><value>The response does not match this request.</value></data>
+  <data name="Proxies_Reason_transport" xml:space="preserve"><value>The server reported a different proxy protocol.</value></data>
+  <data name="Proxies_Reason_not-running" xml:space="preserve"><value>The server did not confirm that the proxy is running.</value></data>
+  <data name="Proxies_Reason_target" xml:space="preserve"><value>The server did not confirm the requested UDP destination.</value></data>
+  <data name="Proxies_Reason_restarted" xml:space="preserve"><value>The server session changed during the check.</value></data>
+  <data name="Proxies_Reason_body-limit" xml:space="preserve"><value>The response exceeds 4096 bytes.</value></data>
+  <data name="Proxies_Reason_timeout" xml:space="preserve"><value>The operation timed out.</value></data>
+  <data name="Proxies_Reason_dns" xml:space="preserve"><value>The proxy hostname could not be resolved.</value></data>
+  <data name="Proxies_Reason_connection-refused" xml:space="preserve"><value>The server refused the TCP connection.</value></data>
+  <data name="Proxies_Reason_network" xml:space="preserve"><value>The proxy network is unreachable.</value></data>
+  <data name="Proxies_Reason_certificate-missing" xml:space="preserve"><value>The server did not provide a certificate.</value></data>
+  <data name="Proxies_Reason_certificate-name" xml:space="preserve"><value>The certificate does not match the TLS server name.</value></data>
+  <data name="Proxies_Reason_certificate-date" xml:space="preserve"><value>The certificate has expired or is not yet valid.</value></data>
+  <data name="Proxies_Reason_certificate-chain" xml:space="preserve"><value>The certificate chain could not be verified.</value></data>
+  <data name="Proxies_Reason_certificate-usage" xml:space="preserve"><value>The certificate does not permit server authentication.</value></data>
+  <data name="Proxies_Reason_certificate-pin" xml:space="preserve"><value>The certificate fingerprint does not match the configured SHA-256.</value></data>
+  <data name="Proxies_Reason_handshake" xml:space="preserve"><value>The TLS handshake failed.</value></data>
+  <data name="Proxies_Http_400" xml:space="preserve"><value>bad request</value></data>
+  <data name="Proxies_Http_401" xml:space="preserve"><value>authentication required</value></data>
+  <data name="Proxies_Http_403" xml:space="preserve"><value>access denied</value></data>
+  <data name="Proxies_Http_404" xml:space="preserve"><value>not found</value></data>
+  <data name="Proxies_Http_405" xml:space="preserve"><value>method not allowed</value></data>
+  <data name="Proxies_Http_408" xml:space="preserve"><value>request timed out</value></data>
+  <data name="Proxies_Http_426" xml:space="preserve"><value>protocol upgrade required</value></data>
+  <data name="Proxies_Http_429" xml:space="preserve"><value>too many requests</value></data>
+  <data name="Proxies_Http_500" xml:space="preserve"><value>internal server error</value></data>
+  <data name="Proxies_Http_502" xml:space="preserve"><value>bad gateway</value></data>
+  <data name="Proxies_Http_503" xml:space="preserve"><value>service unavailable</value></data>
+  <data name="Proxies_Http_504" xml:space="preserve"><value>gateway timed out</value></data>
+  <data name="Proxies_Http_other" xml:space="preserve"><value>unexpected status</value></data>
 </root>

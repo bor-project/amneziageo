@@ -18,7 +18,7 @@
   <StackPanel Spacing="14">
     <StackPanel Spacing="8">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8" MinHeight="40">
-        <TextBlock Text="{l:Tr Proxies_Title}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+        <TextBlock Text="{l:Tr Proxies_Use}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
         <ToggleSwitch Grid.Column="1" MinWidth="0" IsChecked="{Binding SelectedProxyEnabled, Mode=TwoWay}"
                       IsEnabled="{Binding CanEnableSelectedProxy}" VerticalAlignment="Center"
                       AutomationProperties.Name="{l:Tr Proxies_Use}" />
@@ -31,14 +31,22 @@
         </Button>
       </Grid>
       <TextBlock Text="{Binding SelectedProxyAddress}" Classes="muted" TextWrapping="Wrap" />
-      <WrapPanel ItemSpacing="10" LineSpacing="5" IsVisible="{Binding HasSelectedProxy}">
-        <TextBlock Text="{Binding SelectedProxyProvider}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-        <StackPanel Orientation="Horizontal" Spacing="5">
-          <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="15" Height="15" IsVisible="{Binding SelectedProxyIsHttpGet}" />
-          <TextBlock Text="{Binding SelectedProxyProtocol}" Classes="muted" FontSize="12" />
-        </StackPanel>
-        <TextBlock Text="CDN" Classes="muted" FontSize="12" IsVisible="{Binding SelectedProxyCdn}" />
-      </WrapPanel>
+      <controls:TagStrip Spacing="6" RowSpacing="6" IsVisible="{Binding HasSelectedProxy}">
+        <Border Classes="cardchip cardtag" ToolTip.Tip="{Binding SelectedProxyProvider}">
+          <TextBlock Text="{Binding SelectedProxyProvider}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+        </Border>
+        <Border Classes="cardchip cardtag">
+          <Grid ColumnDefinitions="Auto,*">
+            <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="13" Height="13" Margin="0,0,4,0"
+                   VerticalAlignment="Center" IsVisible="{Binding SelectedProxyIsHttpGet}" />
+            <TextBlock Grid.Column="1" Text="{Binding SelectedProxyProtocol}" FontSize="11.5" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+        <Border Classes="cardchip cardtag" IsVisible="{Binding SelectedProxyCdn}">
+          <TextBlock Text="CDN" FontSize="11.5" FontWeight="SemiBold" />
+        </Border>
+      </controls:TagStrip>
       <TextBlock Text="{Binding SelectedProxyFault}" Classes="fieldwarn" TextWrapping="Wrap"
                  IsVisible="{Binding SelectedProxyFault, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>

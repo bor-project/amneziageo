@@ -1066,7 +1066,7 @@ internal sealed class LinuxAgent : IDisposable
                 return await ServerOfferAsync(ct).ConfigureAwait(false);
 
             case IpcContract.OpAskServers:
-                return await AskServersAsync(new IpcAck(true, string.Empty), ct).ConfigureAwait(false);
+                return await RefreshProxyCatalogAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
@@ -3212,6 +3212,31 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         return targets;
+    }
+
+    // Refreshes the proxy catalog from server offers.
+    private async Task<IpcAck> RefreshProxyCatalogAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return await AskServersAsync(new IpcAck(true, string.Empty), ct).ConfigureAwait(false);
+        }
+
+        if (args.Count != 1)
+        {
+            return new IpcAck(false, "bad-proxy-command");
+        }
+
+        try
+        {
+            var proxies = await _offers.RefreshProxiesAsync(args[0], await OfferTargetsAsync(ct).ConfigureAwait(false),
+                OfferChangedAsync, ct).ConfigureAwait(false);
+            return new IpcAck(true, JsonSerializer.Serialize(proxies, IpcJson.Options));
+        }
+        catch (TransportProxyFault ex)
+        {
+            return new IpcAck(false, ex.Code);
+        }
     }
 
     // Asks the servers again behind a configuration that was stored.

@@ -24,6 +24,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     private string _definitionStamp = string.Empty;
     public string OwnerConfig { get; }
     public bool IsVerified => _verified;
+    public TransportProxyProbeResult? LastProbeResult { get; private set; }
     public bool ShowOwner => Editable && OwnerConfig.Length > 0;
     public bool HasCredential => (_baseline ?? _original)?.Auth.Credential.Length > 0 || _summaryHasCredential;
     private bool _summaryHasCredential;
@@ -43,13 +44,19 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     public bool ShowHttpMethod => TransportIndex == 1;
     public bool CertificateEditable => false;
     public bool ShowTargets => !Editable && !_legacy;
+    public bool LocalSource => _local;
+    public bool ShowAnonymous => ModernEditable || Anonymous;
+    public string Protocol => TransportProxyPresentation.Transport(TransportIndex switch
+        { 1 => "http", 2 => "quic", 3 => "xhttp", _ => "websocket" }, MethodIndex == 1 ? "POST" : "GET");
+    public bool IsHttpGet => (TransportIndex is 1 or 3) && MethodIndex == 0;
+    public bool Cdn => _cdn;
     public string Source => _local ? Loc.Instance.Get("Proxies_Local")
         : _source.Length > 0 ? _source : Loc.Instance.Get("Proxies_Server");
     public string Availability => TransportProxyWords.Availability(_availability, _missing);
     public string[] Transports { get; private set; } = ["WebSocket", "HTTP", "QUIC"];
     public string[] Methods { get; } = ["GET", "POST"];
     public string CredentialLabel => Loc.Instance.Get(_legacy ? "Proxies_BasicCredential" : "Proxies_BearerCredential");
-    public string Title => _cdn ? "CDN" : Loc.Instance.Get("Proxies_Title");
+    public string Title => _cdn ? "CDN" : Loc.Instance.Get("Proxies_EditorTitle");
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -158,8 +165,15 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
         OnPropertyChanged(nameof(CredentialLabel));
         OnPropertyChanged(nameof(ShowHttpMethod));
         OnPropertyChanged(nameof(CertificateEditable));
+        OnPropertyChanged(nameof(Protocol));
+        OnPropertyChanged(nameof(IsHttpGet));
     }
-    partial void OnMethodIndexChanged(int value) => Changed();
+    partial void OnMethodIndexChanged(int value)
+    {
+        Changed();
+        OnPropertyChanged(nameof(Protocol));
+        OnPropertyChanged(nameof(IsHttpGet));
+    }
     partial void OnUseCertificateChanged(bool value)
     {
         if (!value)
@@ -183,6 +197,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     {
         Changed();
         OnPropertyChanged(nameof(CredentialPlaceholder));
+        OnPropertyChanged(nameof(ShowAnonymous));
     }
 
     private void Changed()
@@ -332,7 +347,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     {
         _availability = result.Availability;
         OnPropertyChanged(nameof(Availability));
-        StatusMessage = result.Fault.Length == 0 ? string.Empty : TransportProxyWords.Fault(result.Fault);
+        StatusMessage = result.Fault.Length == 0 ? string.Empty : TransportProxyWords.Fault(result.Fault, result.Diagnostic);
     }
 
     public void ApplySummary(TransportProxySummary? summary)
@@ -379,6 +394,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
     {
         _checkRevision++;
         _verified = false;
+        LastProbeResult = null;
         StatusMessage = string.Empty;
         OnPropertyChanged(nameof(IsVerified));
     }
@@ -411,6 +427,7 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
             return;
         }
 
+        LastProbeResult = result;
         ApplyAvailability(result);
         _verified = result.Availability == TransportProxyAvailability.Available && result.Fault.Length == 0;
         if (_verified)
@@ -429,5 +446,9 @@ internal sealed partial class TransportProxyEditorViewModel : ViewModelBase, IEd
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(CredentialPlaceholder));
         OnPropertyChanged(nameof(ScopeText));
+        OnPropertyChanged(nameof(Protocol));
+        OnPropertyChanged(nameof(IsHttpGet));
+        OnPropertyChanged(nameof(Cdn));
+        OnPropertyChanged(nameof(ShowAnonymous));
     }
 }

@@ -45,7 +45,7 @@ internal sealed class TransportProxyItemViewModel : ViewModelBase
     public string Source => Summary.Local ? Loc.Instance.Get("Proxies_Local")
         : Summary.Sources.Count > 0 ? string.Join(", ", Summary.Sources) : Loc.Instance.Get("Proxies_Server");
     public string Availability => TransportProxyWords.Availability(Summary.Availability, Summary.Missing);
-    public string Fault => Summary.Fault.Length > 0 && !Summary.Missing ? TransportProxyWords.Fault(Summary.Fault) : string.Empty;
+    public string Fault => Summary.Fault.Length > 0 && !Summary.Missing ? TransportProxyWords.Fault(Summary.Fault, Summary.Diagnostic) : string.Empty;
     public string Scope => TransportProxyPresentation.Scope(Summary);
     public string ScopeTargets => TransportProxyPresentation.ScopeTargets(Summary);
     public string ActionText => Loc.Instance.Get(Summary.Local && !Summary.Missing ? "Proxies_Settings" : "Proxies_View");

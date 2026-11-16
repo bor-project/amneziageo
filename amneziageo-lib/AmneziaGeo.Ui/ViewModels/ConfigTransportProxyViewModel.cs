@@ -19,8 +19,8 @@ internal sealed partial class ConfigTransportViewModel
     private IReadOnlyList<TransportProxySummary> _proxySummaries = [];
     private ProxyDestination? _draftProxyTarget;
     private string _draftProxyServerKey = string.Empty;
-    private bool _selectedProxyEnabled = true;
-    private bool _baseProxyEnabled = true;
+    private bool _selectedProxyEnabled;
+    private bool _baseProxyEnabled;
     public event Action<ConfigTransportViewModel>? ProxyListRequested;
     public ProxyDestination? ProxyDestination => _draftProxyTarget ?? (ProxyTargetRules.NormalizeHost(ConfigServices.Host("[Peer]\nEndpoint = " + _endpoint)) is { } host
         ? new ProxyDestination(host, ConfigServices.EndpointPort("[Peer]\nEndpoint = " + _endpoint)) : null);
@@ -36,7 +36,7 @@ internal sealed partial class ConfigTransportViewModel
         get => HasSelectedProxy && _selectedProxyEnabled;
         set
         {
-            if (_choosingProxy || value && !CanEnableSelectedProxy || _selectedProxyEnabled == value)
+            if (_choosingProxy || !HasSelectedProxy || value && !CanEnableSelectedProxy || _selectedProxyEnabled == value)
             {
                 return;
             }
@@ -53,17 +53,19 @@ internal sealed partial class ConfigTransportViewModel
 
     public bool AllowsProxy(TransportProxySummary summary) => ProxyCompatible(summary);
 
-    public void SelectFromPicker(TransportProxySummary summary, bool enabled)
+    public void SelectFromPicker(TransportProxySummary summary, bool selected)
     {
-        if (enabled && !ProxyCompatible(summary))
+        if (selected && !ProxyCompatible(summary) || !selected && SelectedProxyChoice?.Reference != summary.Reference)
         {
             return;
         }
 
+        var enabled = SelectedProxyEnabled;
         _choosingProxy = true;
-        SelectedProxyChoice = ProxyChoices.FirstOrDefault(one => one.Reference == summary.Reference)
-            ?? new TransportProxyChoice(summary.Reference, summary.Host);
-        _selectedProxyEnabled = enabled;
+        SelectedProxyChoice = selected
+            ? ProxyChoices.FirstOrDefault(one => one.Reference == summary.Reference) ?? new TransportProxyChoice(summary.Reference, summary.Host)
+            : ProxyChoices.FirstOrDefault(one => one.Reference is null) ?? new TransportProxyChoice(null, Loc.Instance.Get("Proxies_None"));
+        _selectedProxyEnabled = selected && enabled;
         _proxyChosen = true;
         _choosingProxy = false;
         RefreshProxyDetails();
@@ -82,11 +84,13 @@ internal sealed partial class ConfigTransportViewModel
                 return;
             }
 
-            if (!SetProperty(ref _selectedProxyChoice, value) || _choosingProxy || value is null)
+            var enabled = SelectedProxyEnabled;
+            if (!SetProperty(ref _selectedProxyChoice, value) || _choosingProxy)
             {
                 return;
             }
 
+            _selectedProxyEnabled = value?.Reference is not null && enabled;
             RefreshProxyDetails();
             _proxyChosen = true;
             MarkDirty();
@@ -159,6 +163,9 @@ internal sealed partial class ConfigTransportViewModel
 
     private bool ProxySelectionDirty => _proxyChosen != _baseProxyChosen || SelectedProxyChoice?.Reference != _baseProxyReference
         || _selectedProxyEnabled != _baseProxyEnabled;
+
+    private bool ProxyConnectionChanged => (_selectedProxyEnabled ? SelectedProxyChoice?.Reference : null) != (_baseProxyEnabled ? _baseProxyReference : null)
+        || (!_proxyChosen && UseWebSocket && WebSocketOpen) != (!_baseProxyChosen && _baseUseWebSocket && WebSocketOpen);
 
     public void ApplyProxyCatalog(IReadOnlyList<TransportProxySummary> summaries, ProxyReference? reference, bool chosen, bool enabled = true)
     {
@@ -240,12 +247,29 @@ internal sealed partial class ConfigTransportViewModel
         {
             _baseProxyReference = reference;
             _baseProxyChosen = chosen;
-            _selectedProxyEnabled = enabled;
-            _baseProxyEnabled = enabled;
+            _selectedProxyEnabled = reference is not null && enabled;
+            _baseProxyEnabled = _selectedProxyEnabled;
         }
 
         _choosingProxy = false;
         RefreshProxyDetails();
+    }
+
+    public void RefreshProxyCatalog(IReadOnlyList<TransportProxySummary> summaries) =>
+        ApplyProxyCatalog(summaries, SelectedProxyChoice?.Reference, _proxyChosen, _selectedProxyEnabled);
+
+    public void RefreshProxyEndpoint(string endpoint)
+    {
+        if (_endpoint == endpoint)
+        {
+            return;
+        }
+
+        _endpoint = endpoint;
+        RefreshProxyCatalog(_proxySummaries);
+        OnPropertyChanged(nameof(ProxyTargetIdentity));
+        OnPropertyChanged(nameof(WebSocketHostDefault));
+        OnPropertyChanged(nameof(WebSocketPortDefault));
     }
 
     /// <summary>
@@ -324,5 +348,5 @@ internal sealed partial class ConfigTransportViewModel
     }
 
     private Task<IpcAck> CommitProxyChoiceAsync() => _connection.SendCommandAsync(new IpcCommand(
-        IpcContract.OpSelectTransportProxy, [ConfigName, JsonSerializer.Serialize(SelectedProxyChoice?.Reference, IpcJson.Options), _selectedProxyEnabled ? "on" : "off"]));
+        IpcContract.OpSelectTransportProxy, [ConfigName, JsonSerializer.Serialize(SelectedProxyChoice?.Reference, IpcJson.Options), SelectedProxyEnabled ? "on" : "off"]));
 }

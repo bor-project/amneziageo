@@ -60,12 +60,12 @@ public static class TransportProxyProbes
 
             if (TransientStatus(response.StatusCode))
             {
-                return Failed("proxy-unavailable");
+                return Failed("proxy-unavailable", new("probe", "http-status", response.StatusCode));
             }
 
             if (response.StatusCode is 401 or 403 && response.Body.Length == 0)
             {
-                return Failed("proxy-auth");
+                return Failed("proxy-auth", new("probe", "http-status", response.StatusCode));
             }
 
             using var document = JsonDocument.Parse(response.Body);
@@ -75,14 +75,14 @@ public static class TransportProxyProbes
                 var error = root.TryGetProperty("error", out var code) && code.ValueKind == JsonValueKind.String ? code.GetString() : null;
                 return Failed(response.StatusCode == 403 && error == "proxy-target-denied" ? error
                     : response.StatusCode == 400 && error == "bad-proxy-target" ? error
-                    : response.StatusCode is 401 or 403 ? "proxy-auth" : "proxy-unavailable");
+                    : response.StatusCode is 401 or 403 ? "proxy-auth" : "proxy-unavailable", new("probe", "http-status", response.StatusCode));
             }
 
-            if (!root.TryGetProperty("nonce", out var echoed) || echoed.GetString() != nonce
-                || !root.TryGetProperty("transport", out var transport) || !SameTransport(transport.GetString(), selected.Record.Proxy)
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("nonce", out var echoed) || echoed.ValueKind != JsonValueKind.String || echoed.GetString() != nonce
+                || !root.TryGetProperty("transport", out var transport) || transport.ValueKind != JsonValueKind.String || !SameTransport(transport.GetString(), selected.Record.Proxy)
                 || !root.TryGetProperty("running", out var running) || running.ValueKind != JsonValueKind.True)
             {
-                return Failed("proxy-bad-answer");
+                return ProbeMismatch(root, nonce, selected.Record.Proxy);
             }
 
             if (!root.TryGetProperty("target", out var answer) || !root.TryGetProperty("allowed", out var allowed))
@@ -94,13 +94,12 @@ public static class TransportProxyProbes
                 && answer.TryGetProperty("host", out var echoedHost) && echoedHost.ValueKind == JsonValueKind.String
                 && ProxyTargetRules.NormalizeHost(echoedHost.GetString()) == host
                 && answer.TryGetProperty("port", out var echoedPort) && echoedPort.TryGetInt32(out var port) && port == target.Port
-                ? new TransportProxyProbeResult(TransportProxyAvailability.Available, ProtocolVersion: ProxyTransportModes.IsHttp(selected.Record.Proxy) ? 2 : 0) : Failed("proxy-bad-answer");
+                ? new TransportProxyProbeResult(TransportProxyAvailability.Available, ProtocolVersion: ProxyTransportModes.IsHttp(selected.Record.Proxy) ? 2 : 0) : Failed("proxy-bad-answer", new("probe", "target"));
         }
         catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
-            return Failed(TlsFailure(ex) ? "proxy-tls"
-                : ex is InvalidDataException or JsonException ? "proxy-bad-answer" : "proxy-no-answer");
+            return ExceptionResult(ex);
         }
     }
 
@@ -113,7 +112,7 @@ public static class TransportProxyProbes
         var result = await CheckTargetAsync(selected, ct, (_, _) => Task.FromResult<IPAddress?>(address), bypass).ConfigureAwait(false);
         if (result.Availability == TransportProxyAvailability.Unavailable)
         {
-            throw new TransportProxyFault(result.Fault);
+            throw new TransportProxyFault(result.Fault, result.Diagnostic);
         }
 
         if (ProxyTransportModes.Unconfirmed(selected.Record.Proxy) && result.Availability != TransportProxyAvailability.Available)
@@ -208,8 +207,7 @@ public static class TransportProxyProbes
         catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
-            return Failed(TlsFailure(ex) ? "proxy-tls"
-                : ex is InvalidDataException or JsonException ? "proxy-bad-answer" : "proxy-no-answer");
+            return ExceptionResult(ex);
         }
     }
 
@@ -261,20 +259,19 @@ public static class TransportProxyProbes
 
             if (response.StatusCode != 200)
             {
-                return Failed(response.StatusCode is 401 or 403 ? "proxy-auth" : "proxy-unavailable");
+                return Failed(response.StatusCode is 401 or 403 ? "proxy-auth" : "proxy-unavailable", new("probe", "http-status", response.StatusCode));
             }
 
             using var result = JsonDocument.Parse(response.Body);
-            return result.RootElement.TryGetProperty("nonce", out var echoed) && echoed.GetString() == nonce
-                && result.RootElement.TryGetProperty("transport", out var transport) && SameTransport(transport.GetString(), proxy)
+            return result.RootElement.ValueKind == JsonValueKind.Object && result.RootElement.TryGetProperty("nonce", out var echoed) && echoed.ValueKind == JsonValueKind.String && echoed.GetString() == nonce
+                && result.RootElement.TryGetProperty("transport", out var transport) && transport.ValueKind == JsonValueKind.String && SameTransport(transport.GetString(), proxy)
                 && result.RootElement.TryGetProperty("running", out var running) && running.ValueKind == JsonValueKind.True
-                ? new TransportProxyProbeResult(TransportProxyAvailability.Available, ProtocolVersion: ProxyTransportModes.IsHttp(proxy) ? 2 : 0) : Failed("proxy-bad-answer");
+                ? new TransportProxyProbeResult(TransportProxyAvailability.Available, ProtocolVersion: ProxyTransportModes.IsHttp(proxy) ? 2 : 0) : ProbeMismatch(result.RootElement, nonce, proxy);
         }
         catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or IOException or InvalidDataException or SocketException
             or AuthenticationException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or ArgumentException)
         {
-            return Failed(TlsFailure(ex) ? "proxy-tls"
-                : ex is InvalidDataException or JsonException ? "proxy-bad-answer" : "proxy-no-answer");
+            return ExceptionResult(ex);
         }
     }
 
@@ -307,7 +304,37 @@ public static class TransportProxyProbes
         }
     }
 
-    private static TransportProxyProbeResult Failed(string fault) => new(TransportProxyAvailability.Unavailable, fault);
+    private static TransportProxyProbeResult Failed(string fault, TransportProxyDiagnostic? diagnostic = null) =>
+        new(TransportProxyAvailability.Unavailable, fault, Diagnostic: diagnostic);
+
+    private static TransportProxyProbeResult ProbeMismatch(JsonElement root, string nonce, OfferedProxy proxy) =>
+        Failed("proxy-bad-answer", new("probe", root.ValueKind != JsonValueKind.Object ? "invalid-json"
+            : !root.TryGetProperty("nonce", out var echoed) || echoed.ValueKind != JsonValueKind.String || echoed.GetString() != nonce ? "nonce"
+            : !root.TryGetProperty("transport", out var transport) || transport.ValueKind != JsonValueKind.String || !SameTransport(transport.GetString(), proxy) ? "transport"
+            : "not-running"));
+
+    private static TransportProxyProbeResult ExceptionResult(Exception error)
+    {
+        for (var current = error; current is not null; current = current.InnerException)
+        {
+            if (current is TransportProxyFault fault)
+            {
+                return Failed(fault.Code, fault.Diagnostic);
+            }
+
+            if (current is SocketException socket)
+            {
+                var reason = socket.SocketErrorCode is SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain ? "dns"
+                    : socket.SocketErrorCode == SocketError.ConnectionRefused ? "connection-refused" : "network";
+                return Failed("proxy-no-answer", new("connect", reason));
+            }
+        }
+
+        return TlsFailure(error) ? Failed("proxy-tls", new("tls", "handshake"))
+            : error is OperationCanceledException ? Failed("proxy-no-answer", new("connect", "timeout"))
+            : error is InvalidDataException or JsonException ? Failed("proxy-bad-answer", new("probe", "invalid-json"))
+            : Failed("proxy-no-answer");
+    }
 
     private static TransportProxyProbeResult Unsupported() => new(TransportProxyAvailability.Unknown, "proxy-probe-unsupported");
 }

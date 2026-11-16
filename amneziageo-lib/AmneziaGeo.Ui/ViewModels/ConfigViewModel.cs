@@ -1282,6 +1282,7 @@ internal partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        transport.RefreshProxyEndpoint(item.Endpoint);
         SeedProxyChoice(transport);
         transport.WebSocketOpen = item.WebSocketOffered;
         transport.WebSocketManual = item.WebSocketManual;

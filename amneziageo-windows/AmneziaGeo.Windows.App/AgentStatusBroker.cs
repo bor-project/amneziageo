@@ -270,7 +270,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             {
                 IpcContract.OpAddConfig => await AskServersAsync(await AddConfigAsync(command.Args, ct), ct),
                 IpcContract.OpServerOffer => await ServerOfferAsync(ct),
-                IpcContract.OpAskServers => await AskServersAsync(new IpcAck(true, string.Empty), ct),
+                IpcContract.OpAskServers => await RefreshProxyCatalogAsync(command.Args, ct).ConfigureAwait(false),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
                 IpcContract.OpSetSignal => await SetSignalAsync(command.Args, ct),
@@ -1603,6 +1603,32 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         return targets;
+    }
+
+    // Refreshes the proxy catalog from server offers.
+    private async Task<IpcAck> RefreshProxyCatalogAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return await AskServersAsync(new IpcAck(true, string.Empty), ct).ConfigureAwait(false);
+        }
+
+        if (args.Count != 1)
+        {
+            return new IpcAck(false, "bad-proxy-command");
+        }
+
+        var scope = CurrentScope;
+        try
+        {
+            var proxies = await scope.Offers.RefreshProxiesAsync(args[0], await OfferTargetsAsync(scope, ct).ConfigureAwait(false),
+                OfferChangedAsync, ct).ConfigureAwait(false);
+            return new IpcAck(true, JsonSerializer.Serialize(proxies, IpcJson.Options));
+        }
+        catch (TransportProxyFault ex)
+        {
+            return new IpcAck(false, ex.Code);
+        }
     }
 
     // Asks the servers again behind a configuration that was stored.

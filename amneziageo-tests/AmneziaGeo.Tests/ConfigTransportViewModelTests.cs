@@ -142,7 +142,7 @@ public sealed class ConfigTransportViewModelTests
     }
 
     [Fact]
-    public async Task TheFieldsLeftEmpty_AreSavedEmpty()
+    public async Task UnchangedEmptyFields_DoNotReplaceTheStoredFront()
     {
         var agent = new Recorder();
         var transport = Manual(agent, string.Empty, 0);
@@ -150,11 +150,11 @@ public sealed class ConfigTransportViewModelTests
         transport.UseIpv6 = true;
         await transport.CommitAsync();
 
-        Assert.Equal(["0", string.Empty], agent.Args.Skip(9));
+        Assert.Equal(9, agent.Args.Count);
     }
 
     [Fact]
-    public async Task AStoredAccount_IsReadIntoTheFieldsAndSavedBackAsItWas()
+    public async Task AStoredAccount_IsReadIntoTheFieldsAndLeftUnchangedByOtherEdits()
     {
         var agent = new Recorder();
         var transport = Manual(agent, "wss://us%20er:p%40ss@own.example:9443", 9443);
@@ -168,7 +168,7 @@ public sealed class ConfigTransportViewModelTests
         transport.UseIpv6 = true;
         await transport.CommitAsync();
 
-        Assert.Equal(["9443", "wss://us%20er:p%40ss@own.example:9443"], agent.Args.Skip(9));
+        Assert.Equal(9, agent.Args.Count);
     }
 
     [Fact]

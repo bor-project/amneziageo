@@ -15,6 +15,22 @@ namespace AmneziaGeo.Ui.Services;
 internal sealed class UiPreferences
 {
     private const string Scope = "ui";
+    private readonly bool _persist;
+
+    /// <summary>
+    /// ctor
+    /// </summary>
+    public UiPreferences() : this(true)
+    {
+    }
+
+    /// <summary>
+    /// ctor
+    /// </summary>
+    public UiPreferences(bool persist)
+    {
+        _persist = persist;
+    }
 
     /// <summary>
     /// Theme: empty = follow the system, otherwise "light" or "dark".
@@ -163,6 +179,11 @@ internal sealed class UiPreferences
     /// </summary>
     public void Save()
     {
+        if (!_persist)
+        {
+            return;
+        }
+
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);

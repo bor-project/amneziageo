@@ -90,7 +90,7 @@ public sealed record TransportProxySummary(ProxyReference Reference, string Name
     IReadOnlyList<string>? CompatibleConfigs = null, bool Legacy = false, string LegacyIssuer = "", int LegacyPort = 0,
     IReadOnlyList<ProxyReference>? Aliases = null, OfferedProxyHttp? Http = null, OfferedProxyQuic? Quic = null, bool UseCertificate = true,
     string? OwnerConfig = null, string? Scope = null, bool Anonymous = false, bool Cdn = false,
-    OfferedProxyTls? Tls = null, bool HasToken = false, string DefinitionStamp = "");
+    OfferedProxyTls? Tls = null, bool HasToken = false, string DefinitionStamp = "", TransportProxyDiagnostic? Diagnostic = null);
 
 /// <summary>
 /// Describes the proxy selected for a UDP destination.

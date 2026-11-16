@@ -33,8 +33,21 @@ internal static class HttpGetProbeClient
                 try
                 {
                     var options = XHttpProbeClient.TlsOptions(proxy);
+                    var tlsFailure = "";
+                    options.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
+                    {
+                        tlsFailure = ProxyTls.Failure(certificate, chain, errors, proxy.Tls.Pin, proxy.Tls.ServerName);
+                        return tlsFailure.Length == 0;
+                    };
                     options.ApplicationProtocols = [SslApplicationProtocol.Http11];
-                    await tls.AuthenticateAsClientAsync(options, pending.Token).ConfigureAwait(false);
+                    try
+                    {
+                        await tls.AuthenticateAsClientAsync(options, pending.Token).ConfigureAwait(false);
+                    }
+                    catch (System.Security.Authentication.AuthenticationException ex)
+                    {
+                        throw new TransportProxyFault("proxy-tls", new("tls", tlsFailure.Length > 0 ? tlsFailure : "handshake"), ex);
+                    }
                     return tls;
                 }
                 catch
@@ -55,21 +68,35 @@ internal static class HttpGetProbeClient
         };
         using var challenge = Request(proxy, basePath, challengeQuery, auth);
         using var proof = await client.SendAsync(challenge, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        if (InfrastructureStatus(proof))
+        if (InfrastructureStatus(proof) || (int)proof.StatusCode != 200 && !HasProtocolHeaders(proof))
         {
-            return new XHttpProbeClient.Response((int)proof.StatusCode, []);
+            throw StatusFailure(proof, "challenge");
         }
 
-        var proofBody = await BodyAsync(proof, ct).ConfigureAwait(false);
-        if ((int)proof.StatusCode != 200 || Header(proof, "X-WG-Version") != HttpGetAuthentication.Version)
+        var proofBody = await BodyAsync(proof, "challenge", ct).ConfigureAwait(false);
+        if ((int)proof.StatusCode != 200)
         {
-            throw new InvalidDataException("The proxy requires signed HTTP GET version 2.");
+            throw Failure("challenge", "http-status", status: (int)proof.StatusCode);
         }
 
-        using var json = JsonDocument.Parse(proofBody);
-        var epoch = Epoch(json.RootElement.GetProperty("epoch").GetString() ?? "");
-        var tick = json.RootElement.GetProperty("time").GetUInt64();
-        auth.VerifyChallenge(basePath, challengeNonce, epoch, tick, Header(proof, "X-WG-Auth"));
+        if (Header(proof, "X-WG-Version", "challenge") != HttpGetAuthentication.Version)
+        {
+            throw Failure("challenge", "version", "X-WG-Version");
+        }
+
+        using var json = Parse(proofBody, "challenge");
+        var epoch = ChallengeEpoch(json.RootElement);
+        var tick = ChallengeTime(json.RootElement);
+        var challengeSignature = Header(proof, "X-WG-Auth", "challenge");
+        try
+        {
+            auth.VerifyChallenge(basePath, challengeNonce, epoch, tick, challengeSignature);
+        }
+        catch (InvalidDataException ex)
+        {
+            throw Failure("challenge", "signature", "X-WG-Auth", inner: ex);
+        }
+
         var started = Stopwatch.GetTimestamp();
         var query = new Dictionary<string, string> { ["r"] = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)) };
         if (target is not null)
@@ -90,27 +117,78 @@ internal static class HttpGetProbeClient
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (InfrastructureStatus(response))
         {
-            return new XHttpProbeClient.Response((int)response.StatusCode, []);
+            throw StatusFailure(response, "probe");
         }
 
-        var body = await BodyAsync(response, ct).ConfigureAwait(false);
-        var responseEpoch = Epoch(Header(response, "X-WG-Epoch"));
-        auth.VerifyResponse(digest, (int)response.StatusCode, responseEpoch,
-            ulong.Parse(Header(response, "X-WG-Time"), NumberStyles.None, CultureInfo.InvariantCulture),
-            Header(response, "X-WG-Version"), Header(response, "X-WG-Seq", optional: true),
-            Header(response, "X-WG-Down-Dropped", optional: true), Header(response, "X-WG-Auth-Error", optional: true),
-            body, Header(response, "X-WG-Auth"));
-        if (!epoch.AsSpan().SequenceEqual(responseEpoch) || Header(response, "X-WG-Version") != HttpGetAuthentication.Version)
+        var body = await BodyAsync(response, "probe", ct).ConfigureAwait(false);
+        var responseEpoch = Epoch(Header(response, "X-WG-Epoch", "probe"), "probe", "X-WG-Epoch");
+        var responseTime = HeaderTime(response);
+        var version = Header(response, "X-WG-Version", "probe");
+        var sequence = Header(response, "X-WG-Seq", "probe", optional: true);
+        var dropped = Header(response, "X-WG-Down-Dropped", "probe", optional: true);
+        var authError = Header(response, "X-WG-Auth-Error", "probe", optional: true);
+        var responseSignature = Header(response, "X-WG-Auth", "probe");
+        try
         {
-            throw new InvalidDataException("The HTTP GET server restarted.");
+            auth.VerifyResponse(digest, (int)response.StatusCode, responseEpoch,
+                responseTime, version, sequence, dropped, authError, body, responseSignature);
+        }
+        catch (InvalidDataException ex)
+        {
+            throw Failure("probe", "signature", "X-WG-Auth", inner: ex);
+        }
+
+        if (!epoch.AsSpan().SequenceEqual(responseEpoch))
+        {
+            throw Failure("probe", "restarted");
+        }
+
+        if (version != HttpGetAuthentication.Version)
+        {
+            throw Failure("probe", "version", "X-WG-Version");
         }
 
         return new XHttpProbeClient.Response((int)response.StatusCode, body);
     }
 
+    private static TransportProxyFault Failure(string stage, string reason, string field = "", int status = 0, Exception? inner = null) =>
+        new("proxy-bad-answer", new(stage, reason, status, field), inner);
+
+    private static bool HasProtocolHeaders(HttpResponseMessage response) =>
+        response.Headers.Any(header => header.Key.StartsWith("X-WG-", StringComparison.OrdinalIgnoreCase));
+
+    private static TransportProxyFault StatusFailure(HttpResponseMessage response, string stage) =>
+        new(response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? "proxy-auth"
+            : TransportProxyProbes.TransientStatus((int)response.StatusCode) ? "proxy-unavailable" : "proxy-bad-answer",
+            new(stage, "http-status", (int)response.StatusCode));
+
+    private static JsonDocument Parse(byte[] body, string stage)
+    {
+        try
+        {
+            return JsonDocument.Parse(body);
+        }
+        catch (JsonException ex)
+        {
+            throw Failure(stage, "invalid-json", inner: ex);
+        }
+    }
+
+    private static byte[] ChallengeEpoch(JsonElement root) => root.ValueKind == JsonValueKind.Object
+        && root.TryGetProperty("epoch", out var value) && value.ValueKind == JsonValueKind.String
+        ? Epoch(value.GetString() ?? "", "challenge", "epoch") : throw Failure("challenge", "invalid-field", "epoch");
+
+    private static ulong ChallengeTime(JsonElement root) => root.ValueKind == JsonValueKind.Object
+        && root.TryGetProperty("time", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetUInt64(out var tick)
+        ? tick : throw Failure("challenge", "invalid-field", "time");
+
+    private static ulong HeaderTime(HttpResponseMessage response) =>
+        ulong.TryParse(Header(response, "X-WG-Time", "probe"), NumberStyles.None, CultureInfo.InvariantCulture, out var tick)
+            ? tick : throw Failure("probe", "invalid-field", "X-WG-Time");
+
     private static bool InfrastructureStatus(HttpResponseMessage response) => (TransportProxyProbes.TransientStatus((int)response.StatusCode)
         || response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-        && !response.Headers.Any(header => header.Key.StartsWith("X-WG-", StringComparison.OrdinalIgnoreCase));
+        && !HasProtocolHeaders(response);
 
     private static HttpRequestMessage Request(OfferedProxy proxy, string path, Dictionary<string, string> query,
         HttpGetAuthentication auth)
@@ -140,28 +218,28 @@ internal static class HttpGetProbeClient
         return request;
     }
 
-    private static string Header(HttpResponseMessage response, string name, bool optional = false)
+    private static string Header(HttpResponseMessage response, string name, string stage, bool optional = false)
     {
         if (!response.Headers.TryGetValues(name, out var values))
         {
-            return optional ? "" : throw new InvalidDataException("An HTTP GET signature header is missing.");
+            return optional ? "" : throw Failure(stage, "missing-header", name);
         }
 
         var items = values.Take(2).ToArray();
-        return items.Length == 1 ? items[0] : throw new InvalidDataException("An HTTP GET signature header is duplicated.");
+        return items.Length == 1 ? items[0] : throw Failure(stage, "duplicate-header", name);
     }
 
-    private static byte[] Epoch(string value)
+    private static byte[] Epoch(string value, string stage, string field)
     {
-        if (value.Length != 32)
+        if (value.Length != 32 || !value.All(char.IsAsciiHexDigit))
         {
-            throw new InvalidDataException("The HTTP GET epoch is invalid.");
+            throw Failure(stage, "invalid-field", field);
         }
 
         return Convert.FromHexString(value);
     }
 
-    private static async Task<byte[]> BodyAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task<byte[]> BodyAsync(HttpResponseMessage response, string stage, CancellationToken ct)
     {
         var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         await using var owned = stream.ConfigureAwait(false);
@@ -178,6 +256,6 @@ internal static class HttpGetProbeClient
             length += count;
         }
 
-        throw new InvalidDataException("The HTTP GET probe body is too large.");
+        throw Failure(stage, "body-limit");
     }
 }

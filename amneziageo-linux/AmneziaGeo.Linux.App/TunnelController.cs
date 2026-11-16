@@ -1259,7 +1259,7 @@ internal sealed class TunnelController : IDisposable
             {
                 _log.Error("tunnel", "the XHTTP carrier could not start", ex);
                 return new PendingCarrier(refusal: ex is TransportProxyFault fault
-                    ? new TunnelFailure(TransportProxyProbes.FailureReason(fault.Code), fault.Code)
+                    ? new TunnelFailure(TransportProxyProbes.FailureReason(fault.Code), fault.Message)
                     : Refused(ex is TransportProxyFault failure ? failure.Code : "xhttp-runtime-start"));
             }
         }
@@ -1289,7 +1289,7 @@ internal sealed class TunnelController : IDisposable
             }
             catch (TransportProxyFault ex)
             {
-                return new PendingCarrier(refusal: new TunnelFailure(TransportProxyProbes.FailureReason(ex.Code), ex.Code));
+                return new PendingCarrier(refusal: new TunnelFailure(TransportProxyProbes.FailureReason(ex.Code), ex.Message));
             }
         }
 

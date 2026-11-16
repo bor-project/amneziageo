@@ -108,6 +108,7 @@ public sealed class HttpGetProbeTests
 
         Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
         Assert.Equal("proxy-bad-answer", result.Fault);
+        Assert.Equal(new TransportProxyDiagnostic("probe", alterBody ? "signature" : "nonce", Field: alterBody ? "X-WG-Auth" : ""), result.Diagnostic);
         await server.Completion.ConfigureAwait(false);
     }
 
@@ -206,6 +207,61 @@ public sealed class HttpGetProbeTests
         }
     }
 
+    [Theory]
+    [InlineData(404, "proxy-bad-answer", false)]
+    [InlineData(404, "proxy-bad-answer", true)]
+    [InlineData(426, "proxy-bad-answer", true)]
+    [InlineData(401, "proxy-auth", true)]
+    [InlineData(403, "proxy-auth", false)]
+    [InlineData(503, "proxy-unavailable", true)]
+    public async Task AChallengeRefusalReportsItsStatusAndStage(int status, string code, bool target)
+    {
+        await using var server = new Front(false, challengeStatus: status);
+        var result = target ? await TransportProxyProbes.CheckTargetAsync(new(server.Proxy(), "vpn", "vpn.example", 51820),
+            CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false)
+            : await TransportProxyProbes.CheckAsync(server.Proxy(), CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+        Assert.Equal(code, result.Fault);
+        Assert.Equal(new TransportProxyDiagnostic("challenge", "http-status", status), result.Diagnostic);
+        Assert.Equal(TransportProxyAvailability.Unavailable, result.Availability);
+        await server.Completion.ConfigureAwait(false);
+        Assert.Single(server.Requests);
+    }
+
+    [Fact]
+    public async Task AConnectionRefusalRetainsTheDiagnosticWithoutChangingClassification()
+    {
+        await using var server = new Front(false, challengeStatus: 404);
+        var selected = new ResolvedTransportProxy(server.Proxy(), "vpn", "vpn.example", 51820);
+        var error = await Assert.ThrowsAsync<TransportProxyFault>(() =>
+            TransportProxyProbes.EnsureTargetAsync(selected, IPAddress.Loopback, CancellationToken.None)).ConfigureAwait(false);
+        Assert.Equal("proxy-bad-answer", error.Code);
+        Assert.Equal(new TransportProxyDiagnostic("challenge", "http-status", 404), error.Diagnostic);
+        Assert.Equal((error.Code, error.Diagnostic), TransportProxyDiagnostic.Decode(error.Message));
+        Assert.Equal(ConnectFailureReason.TransportRejected, TransportProxyProbes.FailureReason(error.Code));
+        Assert.DoesNotContain(Front.User, error.Message, StringComparison.Ordinal);
+        await server.Completion.ConfigureAwait(false);
+    }
+
+    [Theory]
+    [InlineData("missing-header", "X-WG-Version")]
+    [InlineData("duplicate-header", "X-WG-Version")]
+    [InlineData("version", "X-WG-Version")]
+    [InlineData("signature", "X-WG-Auth")]
+    [InlineData("invalid-field", "epoch")]
+    [InlineData("invalid-json", "")]
+    [InlineData("body-limit", "")]
+    public async Task AnInvalidChallengeReportsTheRejectedPart(string reason, string field)
+    {
+        await using var server = new Front(false, challengeFault: reason);
+        var result = await TransportProxyProbes.CheckTargetAsync(new(server.Proxy(), "vpn", "vpn.example", 51820),
+            CancellationToken.None, connect: server.ConnectAsync).ConfigureAwait(false);
+        Assert.Equal("proxy-bad-answer", result.Fault);
+        Assert.Equal(new TransportProxyDiagnostic("challenge", reason, Field: field), result.Diagnostic);
+        await server.Completion.ConfigureAwait(false);
+        Assert.Single(server.Requests);
+        Assert.DoesNotContain(Front.User, JsonSerializer.Serialize(result), StringComparison.Ordinal);
+    }
+
     private sealed class Front : IAsyncDisposable
     {
         internal const string User = "ab8e048e-fc1c-4d43-8f5b-82d3d28ea9c3";
@@ -225,7 +281,7 @@ public sealed class HttpGetProbeTests
         /// <summary>
         /// ctor
         /// </summary>
-        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET", int challengeStatus = 200, bool partialChallenge = false, bool authorization = false)
+        internal Front(bool plain, bool alterBody = false, bool wrongNonce = false, bool denied = false, int responseStatus = 200, string method = "GET", int challengeStatus = 200, bool partialChallenge = false, bool authorization = false, string challengeFault = "")
         {
             _plain = plain;
             _authorization = authorization;
@@ -239,7 +295,7 @@ public sealed class HttpGetProbeTests
             _certificate = X509CertificateLoader.LoadPkcs12(made.Export(X509ContentType.Pfx), null);
             _listener.Start();
             _port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-            Completion = ServeAsync(alterBody, wrongNonce, denied, responseStatus, challengeStatus, partialChallenge);
+            Completion = ServeAsync(alterBody, wrongNonce, denied, responseStatus, challengeStatus, partialChallenge, challengeFault);
         }
 
         internal CatalogTransportProxy Proxy()
@@ -265,7 +321,7 @@ public sealed class HttpGetProbeTests
             return client.GetStream();
         }
 
-        private async Task ServeAsync(bool alterBody, bool wrongNonce, bool denied, int responseStatus, int challengeStatus, bool partialChallenge)
+        private async Task ServeAsync(bool alterBody, bool wrongNonce, bool denied, int responseStatus, int challengeStatus, bool partialChallenge, string challengeFault)
         {
             var ct = _stop.Token;
             using var client = await _listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
@@ -296,6 +352,16 @@ public sealed class HttpGetProbeTests
             {
                 var protocol = partialChallenge ? "X-WG-Version: 2\r\n" : "";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {challengeStatus} Busy\r\n{protocol}Content-Length: 4\r\nConnection: close\r\n\r\nbusy"), ct).ConfigureAwait(false);
+                return;
+            }
+
+            if (challengeFault.Length > 0)
+            {
+                var data = challengeFault == "invalid-json" ? "not-json" : challengeFault == "body-limit" ? new string('x', 4097)
+                    : challengeFault == "invalid-field" ? "{\"epoch\":\"not-hex\",\"time\":1000}" : "{\"epoch\":\"00000000000000000000000000000000\",\"time\":1000}";
+                var version = challengeFault == "missing-header" ? "" : challengeFault == "duplicate-header" ? "X-WG-Version: 2\r\nX-WG-Version: 2\r\n"
+                    : challengeFault == "version" ? "X-WG-Version: 1\r\n" : "X-WG-Version: 2\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\n{version}X-WG-Auth: invalid\r\nContent-Length: {data.Length}\r\nConnection: close\r\n\r\n{data}"), ct).ConfigureAwait(false);
                 return;
             }
 

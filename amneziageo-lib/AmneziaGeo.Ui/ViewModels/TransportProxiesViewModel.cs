@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
@@ -21,10 +22,22 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     private ConfigTransportViewModel? _configContext;
     private string _targetIdentity = string.Empty;
     private string? _storedEndpoint;
+    private int _contextGeneration;
+    private CancellationTokenSource? _catalogueCancellation;
+    private IReadOnlyList<TransportProxySummary> _catalogue = [];
+    private readonly Dictionary<ProxyReference, ScopedProbe> _scopedProbes = [];
+    private sealed record ScopedProbe(string Definition, string Target, TransportProxyProbeResult Result);
     public string Title => Editor?.Title ?? Loc.Instance.Get("Proxies_Title");
     public string ConfigurationName => _returnConfig ?? string.Empty;
-    public bool CanAdd => _configContext is not null && ConfigurationName.Length > 0;
+    public bool CanAdd => _configContext is not null && ConfigurationName.Length > 0 && !IsRefreshing && !IsCheckingAll;
     public bool IsScoped => _configContext is not null;
+    public bool IsCompact => PaneWidth > 0 && PaneWidth < UiLayout.CompactWidth;
+    public bool CanRefresh => IsCatalogue && IsScoped && ConfigurationName.Length > 0 && !IsCatalogueLoading && !IsRefreshing && !IsCheckingAll;
+    public bool CanCheckAll => CanRefresh && Items.Any(one => _configContext?.AllowsProxy(one.Summary) == true);
+    [ObservableProperty]
+    private bool _isRefreshing;
+    [ObservableProperty]
+    private bool _isCheckingAll;
     [ObservableProperty]
     private bool _isCatalogueLoading;
     [ObservableProperty]
@@ -42,9 +55,9 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     public bool ShowSaveBar => IsActiveSection && Editor?.Editable == true;
     public bool CanSave => Editor is { Editable: true, IsVerified: true } && !IsSaving;
     public bool CanDelete => Editor is { Editable: true, IsNew: false };
-    public bool CanProbe => Editor is not null && ConfigurationName.Length > 0 && !IsProbing;
+    public bool CanProbe => Editor is not null && ConfigurationName.Length > 0 && !IsProbing && !IsRefreshing && !IsCheckingAll;
     public bool IsEmpty => IsCatalogue && !IsCatalogueLoading && CatalogueError.Length == 0 && Items.Count == 0;
-    public int CatalogColumns => PaneWidth > 0 && PaneWidth < UiLayout.CompactWidth ? 1 : 2;
+    public int CatalogColumns => IsCompact ? 1 : 2;
 
     [ObservableProperty]
     private TransportProxyEditorViewModel? _editor;
@@ -86,6 +99,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     partial void OnPaneWidthChanged(double value)
     {
         OnPropertyChanged(nameof(CatalogColumns));
+        OnPropertyChanged(nameof(IsCompact));
         if (Editor is { } editor)
         {
             editor.Compact = value < UiLayout.FieldRowWidth;
@@ -94,6 +108,8 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     partial void OnIsLoadingChanged(bool value) => RefreshSections();
     partial void OnIsSavingChanged(bool value) => RefreshEditBar();
     partial void OnIsProbingChanged(bool value) => OnPropertyChanged(nameof(CanProbe));
+    partial void OnIsRefreshingChanged(bool value) => RefreshActions();
+    partial void OnIsCheckingAllChanged(bool value) => RefreshActions();
 
     partial void OnEditorChanged(TransportProxyEditorViewModel? oldValue, TransportProxyEditorViewModel? newValue)
     {
@@ -151,6 +167,37 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsCatalogue));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(ShowCatalogueError));
+        RefreshActions();
+    }
+
+    private void RefreshActions()
+    {
+        OnPropertyChanged(nameof(CanAdd));
+        OnPropertyChanged(nameof(CanRefresh));
+        OnPropertyChanged(nameof(CanCheckAll));
+        OnPropertyChanged(nameof(CanProbe));
+        RefreshCommand.NotifyCanExecuteChanged();
+        CheckAllCommand.NotifyCanExecuteChanged();
+    }
+
+    private void CancelCatalogueOperation()
+    {
+        _catalogueCancellation?.Cancel();
+        _catalogueCancellation = null;
+        IsRefreshing = false;
+        IsCheckingAll = false;
+        IsProbing = false;
+    }
+
+    private void InvalidateProbeScope()
+    {
+        _contextGeneration++;
+        CancelCatalogueOperation();
+        _scopedProbes.Clear();
+        if (_catalogue.Count > 0)
+        {
+            Apply(_catalogue);
+        }
     }
 
     public void EnterSection()
@@ -179,6 +226,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
             if (_storedEndpoint is not null && _storedEndpoint != endpoint)
             {
                 Editor?.InvalidateVerification();
+                InvalidateProbeScope();
             }
             _storedEndpoint = endpoint;
         }
@@ -196,6 +244,17 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
     private void Apply(IReadOnlyList<TransportProxySummary> summaries)
     {
+        _catalogue = summaries;
+        foreach (var probeReference in _scopedProbes.Keys.ToArray())
+        {
+            if (!summaries.Any(one => one.Reference == probeReference && !one.Missing
+                && Definition(one) == _scopedProbes[probeReference].Definition && _scopedProbes[probeReference].Target == _targetIdentity))
+            {
+                _scopedProbes.Remove(probeReference);
+            }
+        }
+        summaries = summaries.Select(WithScopedProbe).ToArray();
+        _configContext?.RefreshProxyCatalog(summaries);
         var offered = summaries;
         summaries = _configContext is null ? summaries : summaries.Where(one => _configContext.AllowsProxy(one)
             || one.Reference == _configContext.SelectedProxyChoice?.Reference).ToArray();
@@ -240,6 +299,168 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         RefreshSelection();
 
         RefreshSections();
+    }
+
+    private static string Definition(TransportProxySummary summary) => summary.DefinitionStamp.Length > 0
+        ? summary.DefinitionStamp
+        : JsonSerializer.Serialize(summary with { Availability = TransportProxyAvailability.Unknown, Fault = string.Empty, Checked = null, Diagnostic = null }, IpcJson.Options);
+
+    private TransportProxySummary WithScopedProbe(TransportProxySummary summary) => _scopedProbes.TryGetValue(summary.Reference, out var probe)
+        ? summary with { Availability = probe.Result.Availability, Fault = probe.Result.Fault, Checked = probe.Result.Checked, Diagnostic = probe.Result.Diagnostic }
+        : summary;
+
+    private void KeepScopedProbe(TransportProxySummary summary, TransportProxyProbeResult result, int generation, string target)
+    {
+        if (generation != _contextGeneration || target != _targetIdentity
+            || Items.FirstOrDefault(one => one.Reference == summary.Reference) is not { } row
+            || row.Summary.Missing || Definition(row.Summary) != Definition(summary))
+        {
+            return;
+        }
+
+        var checkedResult = result with { Checked = result.Checked ?? DateTimeOffset.UtcNow };
+        _scopedProbes[summary.Reference] = new(Definition(summary), target, checkedResult);
+        row.Apply(WithScopedProbe(row.Summary));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRefresh))]
+    private async Task Refresh()
+    {
+        if (!CanRefresh)
+        {
+            return;
+        }
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        _catalogueCancellation = cancellation;
+        var generation = _contextGeneration;
+        IsRefreshing = true;
+        CatalogueError = string.Empty;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAskServers, [ConfigurationName])).WaitAsync(cancellation.Token);
+            if (generation != _contextGeneration || cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+            if (TransportProxyWords.Read<List<TransportProxySummary>>(ack) is { } summaries)
+            {
+                Apply(summaries);
+            }
+            else
+            {
+                await LoadAsync();
+                if (generation == _contextGeneration)
+                {
+                    CatalogueError = Loc.Instance.Get("Proxies_RequestFailed");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            if (generation == _contextGeneration)
+            {
+                CatalogueError = Loc.Instance.Get("Proxies_RequestFailed");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceError("{0}", ex);
+            if (generation == _contextGeneration)
+            {
+                CatalogueError = Loc.Instance.Get("Proxies_RequestFailed");
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_catalogueCancellation, cancellation))
+            {
+                _catalogueCancellation = null;
+                IsRefreshing = false;
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCheckAll))]
+    private async Task CheckAll()
+    {
+        if (!CanCheckAll || _configContext is not { } context)
+        {
+            return;
+        }
+
+        var candidates = Items.Where(one => context.AllowsProxy(one.Summary)).Select(one => one.Summary).ToArray();
+        var config = ConfigurationName;
+        var target = context.ProxyDestination;
+        var identity = _targetIdentity;
+        var generation = _contextGeneration;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var slots = new SemaphoreSlim(2, 2);
+        _catalogueCancellation = cancellation;
+        IsCheckingAll = true;
+        CatalogueError = string.Empty;
+        try
+        {
+            var results = await Task.WhenAll(candidates.Select(CheckOneAsync));
+            foreach (var (summary, result) in results)
+            {
+                if (result is not null)
+                {
+                    KeepScopedProbe(summary, result, generation, identity);
+                }
+            }
+            if (cancellation.IsCancellationRequested && generation == _contextGeneration)
+            {
+                CatalogueError = Loc.Instance.Get("Proxies_RequestFailed");
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_catalogueCancellation, cancellation))
+            {
+                _catalogueCancellation = null;
+                IsCheckingAll = false;
+            }
+        }
+
+        async Task<(TransportProxySummary Summary, TransportProxyProbeResult? Result)> CheckOneAsync(TransportProxySummary summary)
+        {
+            try
+            {
+                await slots.WaitAsync(cancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return (summary, null);
+            }
+
+            try
+            {
+                var args = new List<string> { JsonSerializer.Serialize(summary.Reference, IpcJson.Options), config };
+                if (target is not null)
+                {
+                    args.Add(target.Host);
+                    args.Add(target.Port.ToString(CultureInfo.InvariantCulture));
+                }
+                var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeTransportProxy, args)).WaitAsync(cancellation.Token).ConfigureAwait(false);
+                var result = TransportProxyWords.Read<TransportProxyProbeResult>(ack)
+                    ?? new(TransportProxyAvailability.Unavailable, ack.Ok ? "proxy-bad-answer" : ack.Message);
+                return (summary, result);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return (summary, null);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.TraceError("{0}", ex);
+                return (summary, new(TransportProxyAvailability.Unavailable, "proxy-no-answer"));
+            }
+            finally
+            {
+                slots.Release();
+            }
+        }
     }
 
     [RelayCommand]
@@ -309,6 +530,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         OnPropertyChanged(nameof(ConfigurationName));
         OnPropertyChanged(nameof(CanAdd));
         OnPropertyChanged(nameof(IsScoped));
+        Apply(_catalogue);
         _ = LoadAsync();
     }
 
@@ -320,6 +542,9 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         }
         _configContext = null;
         _storedEndpoint = null;
+        _loadGeneration++;
+        IsCatalogueLoading = false;
+        InvalidateProbeScope();
         OnPropertyChanged(nameof(IsScoped));
         OnPropertyChanged(nameof(CanAdd));
     }
@@ -330,6 +555,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         {
             _targetIdentity = context.ProxyTargetIdentity;
             Editor?.InvalidateVerification();
+            InvalidateProbeScope();
         }
     }
 
@@ -343,7 +569,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
     {
         foreach (var row in Items)
         {
-            row.ApplySelection(_configContext?.SelectedProxyChoice?.Reference, _configContext?.SelectedProxyEnabled == true,
+            row.ApplySelection(_configContext?.SelectedProxyChoice?.Reference, true,
                 _configContext?.AllowsProxy(row.Summary) == true);
         }
     }
@@ -409,6 +635,7 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         }
 
         _openGeneration++;
+        CancelCatalogueOperation();
         Editor = null;
         IsLoading = false;
         if (_configContext is null && _returnConfig is { } config)
@@ -501,18 +728,35 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
         }
 
         IsProbing = true;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        _catalogueCancellation = cancellation;
+        var generation = _contextGeneration;
+        var identity = _targetIdentity;
+        var summary = Items.FirstOrDefault(one => one.Reference == editor.Reference)?.Summary;
         try
         {
-            await editor.CheckAsync(ConfigurationName, _configContext?.ProxyDestination);
+            await editor.CheckAsync(ConfigurationName, _configContext?.ProxyDestination).WaitAsync(cancellation.Token);
+            if (Editor == editor && !editor.IsDirty && summary is not null && editor.LastProbeResult is { } result)
+            {
+                KeepScopedProbe(summary, result, generation, identity);
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
         }
         finally
         {
-            IsProbing = false;
+            if (ReferenceEquals(_catalogueCancellation, cancellation))
+            {
+                _catalogueCancellation = null;
+                IsProbing = false;
+            }
         }
     }
 
     public void Reset()
     {
+        _catalogue = [];
         DetachContext();
         _openGeneration++;
         _loadGeneration++;

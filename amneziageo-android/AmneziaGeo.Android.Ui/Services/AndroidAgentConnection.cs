@@ -678,7 +678,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpAskServers:
                 await EnsureInitAsync().ConfigureAwait(false);
-                return AskServers(new IpcAck(true, string.Empty));
+                return await RefreshProxyCatalogAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -3368,6 +3368,32 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Every configuration with its text, for their servers to be asked what they offer.
     private IReadOnlyList<(string Config, string? Text)> OfferTargets() =>
         [.. _configs.ToList().Select(entry => (entry.Key, (string?)entry.Value))];
+
+    // Refreshes the proxy catalog from server offers.
+    private async Task<IpcAck> RefreshProxyCatalogAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return AskServers(new IpcAck(true, string.Empty));
+        }
+
+        if (args.Count != 1)
+        {
+            return new IpcAck(false, "bad-proxy-command");
+        }
+
+        try
+        {
+            var proxies = await _offers.RefreshProxiesAsync(args[0], OfferTargets(), OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
+            await RefreshTransportProxiesAsync().ConfigureAwait(false);
+            PushSnapshot();
+            return new IpcAck(true, JsonSerializer.Serialize(proxies, IpcJson.Options));
+        }
+        catch (TransportProxyFault ex)
+        {
+            return new IpcAck(false, ex.Code);
+        }
+    }
 
     // Asks the servers again behind a configuration that was stored.
     private IpcAck AskServers(IpcAck ack)

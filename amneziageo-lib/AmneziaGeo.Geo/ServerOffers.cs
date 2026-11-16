@@ -206,6 +206,31 @@ public sealed class ServerOffers
     }
 
     /// <summary>
+    /// Refreshes the proxy catalog from registered configuration servers.
+    /// </summary>
+    public async Task<IReadOnlyList<TransportProxySummary>> RefreshProxiesAsync(string owner,
+        IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        var configurations = targets.DistinctBy(target => target.Config, StringComparer.Ordinal).ToArray();
+        if (!configurations.Any(target => target.Config == owner)
+            || !await _transportProxies.HasConfigurationAsync(owner, ct).ConfigureAwait(false))
+        {
+            throw new TransportProxyFault("unknown-config");
+        }
+
+        await Parallel.ForEachAsync(configurations, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
+            async (target, token) =>
+            {
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(15));
+                await AskOneAsync(target.Config, target.Text, changed, true, deadline.Token).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        return await _transportProxies.ListAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Returns an offer whose pass for a speed run still stands, or null when the server does not measure.
     /// </summary>
     public async Task<ServerOffer?> SpeedAsync(string config, string? text, CancellationToken ct)
@@ -252,7 +277,7 @@ public sealed class ServerOffers
     {
         var state = await store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var selected = state.Selections.FirstOrDefault(one => one.Config == config);
-        return selected is not null ? selected.Reference is not null
+        return selected is not null ? selected.Reference is not null && selected.Enabled
             : (await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false))?.UseWebSocket == true;
     }
 
@@ -284,7 +309,7 @@ public sealed class ServerOffers
         var asked = point with { TakesSignal = transport?.AllowSignal ?? true };
         var state = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var selected = state.Selections.FirstOrDefault(one => one.Config == config);
-        var proxied = selected is not null ? selected.Reference is not null : transport?.UseWebSocket == true;
+        var proxied = selected is not null ? selected.Reference is not null && selected.Enabled : transport?.UseWebSocket == true;
         var inside = await InsideAsync(config, asked, kept, proxied, ct).ConfigureAwait(false);
         if (proxied && inside is null)
         {

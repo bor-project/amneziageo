@@ -18,7 +18,29 @@ internal static class TransportProxyWords
             _ => "Proxies_Unknown",
         });
 
-    public static string Fault(string code) => Loc.Instance.Get(code switch
+    public static string Fault(string code, TransportProxyDiagnostic? diagnostic = null)
+    {
+        var decoded = TransportProxyDiagnostic.Decode(code);
+        if ((diagnostic ?? decoded.Diagnostic) is { Valid: true } detail)
+        {
+            var stage = Loc.Instance.Get("Proxies_Stage_" + detail.Stage);
+            var reason = detail.Reason == "http-status" ? HttpFailure(decoded.Code, detail.Status)
+                : Loc.Instance.Get("Proxies_Reason_" + detail.Reason, detail.Field);
+            return Loc.Instance.Get("Proxies_Diagnostic", stage, reason);
+        }
+
+        return BasicFault(decoded.Code);
+    }
+
+    private static string HttpFailure(string code, int status)
+    {
+        var key = status is 400 or 401 or 403 or 404 or 405 or 408 or 426 or 429 or 500 or 502 or 503 or 504
+            ? "Proxies_Http_" + status : "Proxies_Http_other";
+        var result = Loc.Instance.Get("Proxies_DetailHttp", status, Loc.Instance.Get(key));
+        return code is "proxy-target-denied" or "bad-proxy-target" ? BasicFault(code) + " " + result : result;
+    }
+
+    private static string BasicFault(string code) => Loc.Instance.Get(code switch
     {
         "bad-proxy" or "bad-proxy-command" or "bad-proxy-reference" => "Proxies_Invalid",
         "proxy-missing" or "proxy-withdrawn" => "Proxies_Missing",

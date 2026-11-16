@@ -1397,7 +1397,7 @@
     <value>На этом компьютере закрыт UDP на локальном интерфейсе lo, а через него WebSocket передаёт туннель движку. Разрешите UDP на lo.</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
-    <value>Транспорт отклонил соединение: проверьте TLS-сертификат сервера ({0}).</value>
+    <value>Не удалось подключиться через прокси: {0}</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>Время ожидания подключения истекло.</value>
@@ -3125,4 +3125,51 @@
   <data name="Proxies_Anonymous" xml:space="preserve"><value>Анонимный доступ</value></data>
   <data name="Proxies_ScopeLocal" xml:space="preserve"><value>Только локальные интерфейсы</value></data>
   <data name="Proxies_NotSet" xml:space="preserve"><value>Не задан</value></data>
+  <data name="Proxies_Refresh" xml:space="preserve"><value>Обновить прокси</value></data>
+  <data name="Proxies_Protocol" xml:space="preserve"><value>Протокол</value></data>
+  <data name="Proxies_ServerName" xml:space="preserve"><value>Имя сервера (SNI)</value></data>
+  <data name="Proxies_EditorTitle" xml:space="preserve"><value>Прокси</value></data>
+
+  <data name="Proxies_Diagnostic" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="Proxies_DetailHttp" xml:space="preserve"><value>HTTP {0} ({1}).</value></data>
+  <data name="Proxies_Stage_connect" xml:space="preserve"><value>Подключение к прокси</value></data>
+  <data name="Proxies_Stage_tls" xml:space="preserve"><value>TLS прокси</value></data>
+  <data name="Proxies_Stage_challenge" xml:space="preserve"><value>Запрос авторизации прокси</value></data>
+  <data name="Proxies_Stage_probe" xml:space="preserve"><value>Проверка назначения прокси</value></data>
+  <data name="Proxies_Reason_version" xml:space="preserve"><value>Неверная версия протокола в {0}; требуется версия 2.</value></data>
+  <data name="Proxies_Reason_missing-header" xml:space="preserve"><value>В ответе отсутствует заголовок {0}.</value></data>
+  <data name="Proxies_Reason_duplicate-header" xml:space="preserve"><value>В ответе повторяется заголовок {0}.</value></data>
+  <data name="Proxies_Reason_signature" xml:space="preserve"><value>Подпись ответа не прошла проверку ({0}).</value></data>
+  <data name="Proxies_Reason_invalid-json" xml:space="preserve"><value>Ответ не является корректным JSON.</value></data>
+  <data name="Proxies_Reason_invalid-field" xml:space="preserve"><value>В ответе некорректное поле {0}.</value></data>
+  <data name="Proxies_Reason_nonce" xml:space="preserve"><value>Ответ не соответствует текущему запросу.</value></data>
+  <data name="Proxies_Reason_transport" xml:space="preserve"><value>Сервер сообщил другой протокол прокси.</value></data>
+  <data name="Proxies_Reason_not-running" xml:space="preserve"><value>Сервер не подтвердил, что прокси запущен.</value></data>
+  <data name="Proxies_Reason_target" xml:space="preserve"><value>Сервер не подтвердил запрошенное UDP-назначение.</value></data>
+  <data name="Proxies_Reason_restarted" xml:space="preserve"><value>Сессия сервера изменилась во время проверки.</value></data>
+  <data name="Proxies_Reason_body-limit" xml:space="preserve"><value>Ответ превышает 4096 байт.</value></data>
+  <data name="Proxies_Reason_timeout" xml:space="preserve"><value>Истекло время ожидания.</value></data>
+  <data name="Proxies_Reason_dns" xml:space="preserve"><value>Не удалось определить IP-адрес прокси.</value></data>
+  <data name="Proxies_Reason_connection-refused" xml:space="preserve"><value>Сервер отклонил TCP-соединение.</value></data>
+  <data name="Proxies_Reason_network" xml:space="preserve"><value>Сеть прокси недоступна.</value></data>
+  <data name="Proxies_Reason_certificate-missing" xml:space="preserve"><value>Сервер не предоставил сертификат.</value></data>
+  <data name="Proxies_Reason_certificate-name" xml:space="preserve"><value>Сертификат не соответствует TLS-имени сервера.</value></data>
+  <data name="Proxies_Reason_certificate-date" xml:space="preserve"><value>Сертификат просрочен или ещё не вступил в силу.</value></data>
+  <data name="Proxies_Reason_certificate-chain" xml:space="preserve"><value>Цепочка сертификата не прошла проверку.</value></data>
+  <data name="Proxies_Reason_certificate-usage" xml:space="preserve"><value>Сертификат не разрешает аутентификацию сервера.</value></data>
+  <data name="Proxies_Reason_certificate-pin" xml:space="preserve"><value>Отпечаток сертификата не совпадает с указанным SHA-256.</value></data>
+  <data name="Proxies_Reason_handshake" xml:space="preserve"><value>Не удалось выполнить TLS-рукопожатие.</value></data>
+  <data name="Proxies_Http_400" xml:space="preserve"><value>неверный запрос</value></data>
+  <data name="Proxies_Http_401" xml:space="preserve"><value>требуется авторизация</value></data>
+  <data name="Proxies_Http_403" xml:space="preserve"><value>доступ запрещён</value></data>
+  <data name="Proxies_Http_404" xml:space="preserve"><value>не найдено</value></data>
+  <data name="Proxies_Http_405" xml:space="preserve"><value>метод запрещён</value></data>
+  <data name="Proxies_Http_408" xml:space="preserve"><value>истекло время запроса</value></data>
+  <data name="Proxies_Http_426" xml:space="preserve"><value>требуется другой протокол</value></data>
+  <data name="Proxies_Http_429" xml:space="preserve"><value>слишком много запросов</value></data>
+  <data name="Proxies_Http_500" xml:space="preserve"><value>внутренняя ошибка сервера</value></data>
+  <data name="Proxies_Http_502" xml:space="preserve"><value>ошибка шлюза</value></data>
+  <data name="Proxies_Http_503" xml:space="preserve"><value>сервис недоступен</value></data>
+  <data name="Proxies_Http_504" xml:space="preserve"><value>шлюз не дождался ответа</value></data>
+  <data name="Proxies_Http_other" xml:space="preserve"><value>неожиданный статус</value></data>
 </root>

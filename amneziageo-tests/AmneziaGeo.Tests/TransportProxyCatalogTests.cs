@@ -45,6 +45,56 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnrelatedSettingsPreserveADisabledLegacySelection(bool advertised)
+    {
+        var target = await ConfigAsync("old", Key("server")).ConfigureAwait(false);
+        var original = new ConfigTransport("old", true, WebSocketHost: "wss://account:password@relay.example.net/old", WebSocketPort: 9443);
+        await _store.SetConfigTransportAsync(original).ConfigureAwait(false);
+        if (advertised)
+        {
+            await ServerOfferStore.WriteAsync(_store, "old", target, LegacyOffer(8443, "offered"), Updated).ConfigureAwait(false);
+        }
+        var choice = await _catalog.SelectionAsync("old").ConfigureAwait(false);
+        Assert.NotNull(choice.Reference);
+        await _catalog.SelectAsync("old", choice.Reference, enabled: false).ConfigureAwait(false);
+        var before = (await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).ToPayload();
+        var updated = original with { Mtu = 1380, UseRouting = false };
+        await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
+
+        await _catalog.LegacySettingsAsync("old", original, updated).ConfigureAwait(false);
+
+        Assert.Equal(choice with { Enabled = false }, await _catalog.SelectionAsync("old").ConfigureAwait(false));
+        Assert.Equal(before, (await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).ToPayload());
+        Assert.Null(await _catalog.ResolveAsync("old").ConfigureAwait(false));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChangedLegacySettingsStillRefreshTheMigratedFront(bool portOnly)
+    {
+        await ConfigAsync("old", Key("server")).ConfigureAwait(false);
+        var original = new ConfigTransport("old", true, WebSocketHost: "wss://account:password@old.example.net/front", WebSocketPort: 9443);
+        await _store.SetConfigTransportAsync(original).ConfigureAwait(false);
+        var choice = await _catalog.SelectionAsync("old").ConfigureAwait(false);
+        var updated = portOnly ? original with { WebSocketPort = 9554 }
+            : original with { WebSocketHost = "wss://account:password@new.example.net/front" };
+        await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
+
+        await _catalog.LegacySettingsAsync("old", original, updated).ConfigureAwait(false);
+
+        var resolved = await _catalog.ResolveAsync("old").ConfigureAwait(false);
+        Assert.NotNull(resolved);
+        Assert.Equal(choice.Reference, resolved.Record.Reference);
+        Assert.Equal(portOnly ? "old.example.net" : "new.example.net", resolved.Record.Proxy.Host);
+        Assert.Equal(portOnly ? 9554 : 9443, resolved.Record.Proxy.Port);
+        Assert.Equal(new OfferedProxyAuth("legacy", "account:password"), resolved.Record.Proxy.Auth);
+        Assert.True((await _catalog.SelectionAsync("old").ConfigureAwait(false)).Enabled);
+    }
+
     [Fact]
     public async Task ManualLegacyMigrationPreservesTheChosenFrontAndCredentials()
     {

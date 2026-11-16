@@ -12,20 +12,24 @@ namespace AmneziaGeo.Decl;
 public sealed class TransportProxyFault : InvalidOperationException
 {
     public string Code { get; }
+    public TransportProxyDiagnostic? Diagnostic { get; }
 
     /// <summary>
     /// ctor
     /// </summary>
-    public TransportProxyFault(string code) : base(code)
+    public TransportProxyFault(string code, TransportProxyDiagnostic? diagnostic = null, Exception? inner = null)
+        : base(diagnostic?.Encode(code) ?? code, inner)
     {
         Code = code;
+        Diagnostic = diagnostic?.Valid == true ? diagnostic : null;
     }
 }
 
 /// <summary>
 /// Reports a transport-level availability check.
 /// </summary>
-public sealed record TransportProxyProbeResult(TransportProxyAvailability Availability, string Fault = "", DateTimeOffset? Checked = null, int ProtocolVersion = 0);
+public sealed record TransportProxyProbeResult(TransportProxyAvailability Availability, string Fault = "", DateTimeOffset? Checked = null, int ProtocolVersion = 0,
+    TransportProxyDiagnostic? Diagnostic = null);
 
 /// <summary>
 /// Maintains the common proxy catalog and explicit selections.
@@ -195,7 +199,10 @@ public sealed class TransportProxyCatalog
             var selection = state.Selections.FirstOrDefault(one => one.Config == config);
             var legacy = selection?.Reference is { } reference
                 && state.Locals.Concat(state.Publications.SelectMany(one => one.Records)).Any(one => one.Reference == reference && one.Legacy);
-            if (!explicitChoice && (previous?.UseWebSocket ?? false) == updated.UseWebSocket && !legacy)
+            var legacyChanged = (previous?.UseWebSocket ?? false) != updated.UseWebSocket
+                || legacy && (!string.Equals(previous?.WebSocketHost ?? string.Empty, updated.WebSocketHost, StringComparison.Ordinal)
+                    || (previous?.WebSocketPort ?? 0) != updated.WebSocketPort);
+            if (!explicitChoice && !legacyChanged)
             {
                 return (state, false);
             }
@@ -450,7 +457,7 @@ public sealed class TransportProxyCatalog
                     .Where(one => UpgradedRunning(state, candidates, one, "")?.Record.Reference == record.Reference)],
                 Http: definition.Http, Quic: definition.Quic, UseCertificate: ProxyTransportModes.UsesCertificate(definition),
                 OwnerConfig: record.OwnerConfig, Scope: definition.Scope, Anonymous: definition.Anonymous, Cdn: definition.Cdn,
-                Tls: definition.Tls, HasToken: definition.Auth.Credential.Length > 0, DefinitionStamp: Stamp(record)));
+                Tls: definition.Tls, HasToken: definition.Auth.Credential.Length > 0, DefinitionStamp: Stamp(record), Diagnostic: probe.Diagnostic));
         }
 
         foreach (var reference in state.Selections.Where(one => context.ContainsKey(one.Config)).Select(one => one.Reference).OfType<ProxyReference>().Distinct()

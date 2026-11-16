@@ -490,7 +490,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
-    public bool ConnectionChanged => SelectedProxyChoice?.Reference != _baseProxyReference
+    public bool ConnectionChanged => ProxyConnectionChanged
         || UseWebSocket != _baseUseWebSocket
         || MtuMode != _baseMtuMode
         || MtuMode == (int)Decl.MtuMode.Custom && !string.Equals(Mtu.Trim(), _baseMtu.Trim(), StringComparison.Ordinal)
@@ -509,6 +509,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
                 || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
                 || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
                 || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal));
+
+    private bool WebSocketAddressChanged => !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
+        || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
+        || AuthMode != _baseAuthMode
+        || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
+        || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
+        || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal);
 
     /// <inheritdoc />
     public event EventHandler? DirtyChanged;
@@ -725,7 +732,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
                 network ? "on" : "off",
                 UseRouting ? "on" : "off",
             };
-            if (WebSocketManual)
+            if (WebSocketManual && WebSocketAddressChanged)
             {
                 // Fold the host + auth mode / inputs into the stored address string.
                 var wsPort = Math.Max(ConfigTransport.PortOf(WebSocketPort), 0);

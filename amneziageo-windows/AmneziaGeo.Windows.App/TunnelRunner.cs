@@ -1226,7 +1226,7 @@ internal sealed class TunnelRunner(
         }
         catch (TransportProxyFault ex)
         {
-            throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Code, ex);
+            throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Message, ex);
         }
     }
 
@@ -1259,7 +1259,7 @@ internal sealed class TunnelRunner(
         }
         catch (TransportProxyFault ex)
         {
-            throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Code, ex);
+            throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Message, ex);
         }
 
         if (selected.Record.Proxy.Transport is "http" or "xhttp" or "quic")
@@ -1271,7 +1271,7 @@ internal sealed class TunnelRunner(
             }
             catch (TransportProxyFault ex)
             {
-                throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Code, ex);
+                throw new ConnectFailureException(ProxyFailureReason(ex.Code), ex.Message, ex);
             }
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
             {

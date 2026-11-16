@@ -67,6 +67,16 @@ class AndroidReleaseTests(unittest.TestCase):
             with self.subTest(output=output), self.assertRaises(release.Refusal):
                 release.inspect_signer(output)
 
+    def test_build_tools_37_format_preserves_pin_v2_and_single_signer(self):
+        good = f"Verified using v2 scheme (APK Signature Scheme v2): true\nV3.0 Signer: certificate SHA-256 digest: {release.CERTIFICATE}\n"
+        release.inspect_signer(good)
+        outputs = [good.replace(release.CERTIFICATE, "a" * 64), good.replace("true", "false"),
+            good + good, good + f"Signer #2 certificate SHA-256 digest: {release.CERTIFICATE}\n",
+            good.replace("V3.0 Signer:", "Source Stamp Signer"), good.replace("V3.0 Signer:", "Unknown Signer:")]
+        for output in outputs:
+            with self.subTest(output=output), self.assertRaises(release.Refusal):
+                release.inspect_signer(output)
+
     def test_package_identity_version_and_both_launchers_are_required(self):
         good = f"package: name='org.amneziageo.android' versionCode='{release.version_code(self.version)}' versionName='{self.version}'\nlaunchable-activity: name='main'\nleanback-launchable-activity: name='main'\n"
         release.inspect_manifest(good, self.version)

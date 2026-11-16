@@ -39,7 +39,7 @@ def inspect_apk(path, arch):
 
 
 def inspect_signer(output, expected=CERTIFICATE):
-    digests = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$", output, re.MULTILINE)
+    digests = re.findall(r"^(?:Signer #\d+|V3\.0 Signer:) certificate SHA-256 digest: ([0-9a-fA-F]{64})$", output, re.MULTILINE)
     if [digest.lower() for digest in digests] != [expected]:
         observed = "; ".join(line.strip() for line in output.splitlines()
             if "certificate" in line.lower() and "sha-256" in line.lower()) or "no certificate SHA-256 line"

@@ -41,7 +41,9 @@ def inspect_apk(path, arch):
 def inspect_signer(output, expected=CERTIFICATE):
     digests = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$", output, re.MULTILINE)
     if [digest.lower() for digest in digests] != [expected]:
-        raise Refusal("APK signer differs from the published release certificate")
+        observed = "; ".join(line.strip() for line in output.splitlines()
+            if "certificate" in line.lower() and "sha-256" in line.lower()) or "no certificate SHA-256 line"
+        raise Refusal(f"APK signer differs from the published release certificate: expected {expected}; observed {observed}")
     if "Verified using v2 scheme (APK Signature Scheme v2): true" not in output:
         raise Refusal("APK Signature Scheme v2 did not verify")
 

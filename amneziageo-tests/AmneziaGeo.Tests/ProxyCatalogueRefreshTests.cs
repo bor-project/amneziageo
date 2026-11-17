@@ -56,14 +56,14 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
             }
 
             return Task.FromResult(new HelloReply(target.ServerKey == ConfigServices.Target(other)!.ServerKey
-                ? Offer(source, target.ServerKey, key, "new.example.net") : ServerOffer.None, true));
+                ? Offer(source, target.ServerKey, key, "new.example.net") : new ServerOffer("1", "fixture", new Dictionary<string, JsonElement>()), true));
         });
 
         var result = await offers.RefreshProxiesAsync("owner", [("owner", owner), ("other", other)], null, default).ConfigureAwait(false);
 
         Assert.Contains(ConfigServices.Target(owner)!.ServerKey, calls);
         Assert.Contains(ConfigServices.Target(other)!.ServerKey, calls);
-        Assert.Equal("new.example.net", Assert.Single(result).Host);
+        Assert.Equal("new.example.net", Assert.Single(result.Items).Host);
         Assert.Null((await TransportProxyCatalog.For(_store).SelectionAsync("owner").ConfigureAwait(false)).Reference);
     }
 
@@ -106,7 +106,7 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
             try
             {
                 await release.Task.WaitAsync(ct).ConfigureAwait(false);
-                return new HelloReply(ServerOffer.None, true);
+                return new HelloReply(new ServerOffer("1", "fixture", new Dictionary<string, JsonElement>()), true);
             }
             finally
             {
@@ -178,9 +178,10 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
         var result = await offers.RefreshProxiesAsync("owner", [("owner", text)], null, default).ConfigureAwait(false);
 
         Assert.True(calls > 0);
+        Assert.Equal(new ProxyCatalogRefreshFailure("owner", "hello-no-answer"), Assert.Single(result.Failures));
         Assert.Equal(before, (await _store.GetTransportProxyStateAsync().ConfigureAwait(false)).ToPayload());
-        Assert.Contains(result, one => one.Reference == reference && !one.Missing);
-        Assert.Contains(result, one => one.Reference == localReference && one.Local);
+        Assert.Contains(result.Items, one => one.Reference == reference && !one.Missing);
+        Assert.Contains(result.Items, one => one.Reference == localReference && one.Local);
         var selected = await catalog.SelectionAsync("owner").ConfigureAwait(false);
         Assert.Equal(reference, selected.Reference);
         Assert.False(selected.Enabled);
@@ -217,8 +218,8 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
         var result = await offers.RefreshProxiesAsync("owner", [("owner", owner), ("other", other)], null, default).ConfigureAwait(false);
 
         Assert.Equal(2, called.Count);
-        Assert.Contains(result, one => one.Host == "owner-relay.example.net");
-        Assert.Contains(result, one => one.Host == "other-relay.example.net");
+        Assert.Contains(result.Items, one => one.Host == "owner-relay.example.net");
+        Assert.Contains(result.Items, one => one.Host == "other-relay.example.net");
         Assert.Empty(await _store.ListConfigNamesAsync().ConfigureAwait(false));
     }
 
@@ -260,8 +261,123 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
 
         var result = await offers.RefreshProxiesAsync("owner", [("owner", text)], null, default).ConfigureAwait(false);
 
-        Assert.Equal(before, Assert.Single(result).Reference);
-        Assert.False(result[0].Missing);
+        Assert.Equal(before, Assert.Single(result.Items).Reference);
+        Assert.False(result.Items[0].Missing);
+        Assert.Equal(heard ? "hello-bad-answer" : "hello-no-answer", Assert.Single(result.Failures).Code);
+    }
+
+    [Fact]
+    public async Task ManualRefreshUsesPublicHttpsForAnInactiveProxiedProfileAlone()
+    {
+        var text = Text("vpn.example.net") + "# AmneziaGeo Services TLS Name = hello.example.net\n# AmneziaGeo Services TLS Pin = fixture-pin\n";
+        await _store.SaveConfigAsync("owner", text).ConfigureAwait(false);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var source = Guid.NewGuid().ToString("D");
+        var point = ConfigServices.Target(text)!;
+        var old = Offer(source, point.ServerKey, key, "old.example.net");
+        var catalog = TransportProxyCatalog.For(_store);
+        await new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(old, true)))
+            .AskAsync("owner", text, default).ConfigureAwait(false);
+        var reference = Assert.Single(await catalog.ListAsync().ConfigureAwait(false)).Reference;
+        await catalog.SelectAsync("owner", reference, enabled: true).ConfigureAwait(false);
+        var manual = new List<ServiceTarget>();
+        var ordinary = 0;
+        var confined = 0;
+        var offers = new ServerOffers(_store, carried: _ => false,
+            ask: (_, _) =>
+            {
+                Interlocked.Increment(ref ordinary);
+                return Task.FromResult(new HelloReply(null, false));
+            },
+            askConfined: (_, _, _) =>
+            {
+                Interlocked.Increment(ref confined);
+                return Task.FromResult(new HelloReply(null, false));
+            },
+            askManual: (target, _) =>
+            {
+                manual.Add(target);
+                return Task.FromResult(new HelloReply(Offer(source, point.ServerKey, key, "new.example.net"), true));
+            });
+
+        var result = await offers.RefreshProxiesAsync("owner", [("owner", text)], null, default).ConfigureAwait(false);
+
+        Assert.Empty(result.Failures);
+        Assert.Equal("new.example.net", Assert.Single(result.Items).Host);
+        var asked = Assert.Single(manual);
+        Assert.False(asked.InsideTunnel);
+        Assert.Equal("", asked.Origin);
+        Assert.Equal("https://vpn.example.net:8443", ServerHello.Origin(asked));
+        Assert.Equal("hello.example.net", asked.TlsName);
+        Assert.Equal("fixture-pin", asked.TlsPin);
+        Assert.Equal(point.PrivateKey, asked.PrivateKey);
+        Assert.Equal(point.ServerKey, asked.ServerKey);
+        var selection = await catalog.SelectionAsync("owner").ConfigureAwait(false);
+        Assert.Equal(reference, selection.Reference);
+        Assert.True(selection.Enabled);
+        var denied = await Assert.ThrowsAsync<TransportProxyFault>(() => offers.AskAsync("owner", text, default)).ConfigureAwait(false);
+        Assert.Equal("proxy-service-unavailable", denied.Code);
+        await offers.AskEachAsync([("owner", text)], null, default).ConfigureAwait(false);
+        Assert.Equal(0, ordinary);
+        Assert.Equal(0, confined);
+        Assert.Single(manual);
+    }
+
+    [Fact]
+    public async Task PartialRefreshWithdrawsOnlyTheSuccessfulPublicationAndKeepsTheFailedOne()
+    {
+        var owner = Text("owner.example.net");
+        var other = Text("other.example.net");
+        await _store.SaveConfigAsync("owner", owner).ConfigureAwait(false);
+        await _store.SaveConfigAsync("other", other).ConfigureAwait(false);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var ownerPoint = ConfigServices.Target(owner)!;
+        var otherPoint = ConfigServices.Target(other)!;
+        var source = Guid.NewGuid().ToString("D");
+        var ownerOffer = Offer(source, ownerPoint.ServerKey, key, "old-owner.example.net");
+        var otherOffer = Offer(Guid.NewGuid().ToString("D"), otherPoint.ServerKey, key, "old-other.example.net");
+        var catalog = TransportProxyCatalog.For(_store);
+        await new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(ownerOffer, true)))
+            .AskAsync("owner", owner, default).ConfigureAwait(false);
+        await new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(otherOffer, true)))
+            .AskAsync("other", other, default).ConfigureAwait(false);
+        var reference = Assert.Single(await catalog.ListAsync().ConfigureAwait(false), one => one.Host == "old-other.example.net").Reference;
+        await catalog.SelectAsync("owner", reference, enabled: false).ConfigureAwait(false);
+        var withdrawn = Offer(source, ownerPoint.ServerKey, key, "unused.example.net", empty: true);
+        var offers = new ServerOffers(_store, ask: (target, _) => Task.FromResult(target.ServerKey == ownerPoint.ServerKey
+            ? new HelloReply(withdrawn, true) : new HelloReply(null, false, "hello-tls")));
+
+        var result = await offers.RefreshProxiesAsync("owner", [("owner", owner), ("other", other)], null, default).ConfigureAwait(false);
+
+        Assert.Equal(new ProxyCatalogRefreshFailure("other", "hello-tls"), Assert.Single(result.Failures));
+        Assert.DoesNotContain(result.Items, one => one.Host == "old-owner.example.net");
+        Assert.Contains(result.Items, one => one.Reference == reference && !one.Missing);
+        Assert.Equal(otherOffer.Features.Keys, (await offers.OfferAsync("other", other, default).ConfigureAwait(false)).Features.Keys);
+        var selected = await catalog.SelectionAsync("owner").ConfigureAwait(false);
+        Assert.Equal(reference, selected.Reference);
+        Assert.False(selected.Enabled);
+    }
+
+    [Fact]
+    public async Task RejectedSourceProofReportsFailureAndRetainsThePreviousRecords()
+    {
+        var text = Text("owner.example.net");
+        await _store.SaveConfigAsync("owner", text).ConfigureAwait(false);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var source = Guid.NewGuid().ToString("D");
+        var point = ConfigServices.Target(text)!;
+        var old = Offer(source, point.ServerKey, key, "old.example.net");
+        await new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(old, true)))
+            .AskAsync("owner", text, default).ConfigureAwait(false);
+        using var wrong = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var rejected = Offer(source, point.ServerKey, wrong, "untrusted.example.net", empty: true);
+        var offers = new ServerOffers(_store, ask: (_, _) => Task.FromResult(new HelloReply(rejected, true)));
+
+        var result = await offers.RefreshProxiesAsync("owner", [("owner", text)], null, default).ConfigureAwait(false);
+
+        Assert.NotEmpty(result.Failures);
+        Assert.StartsWith("proxy-source-", result.Failures[0].Code);
+        Assert.Equal("old.example.net", Assert.Single(result.Items).Host);
     }
 
     [Fact]
@@ -294,7 +410,7 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
             + "\nEndpoint = " + host + ":51820\nAllowedIPs = 0.0.0.0/0\n";
     }
 
-    private static ServerOffer Offer(string source, string issuer, ECDsa key, string host)
+    private static ServerOffer Offer(string source, string issuer, ECDsa key, string host, bool empty = false)
     {
         var message = Encoding.UTF8.GetBytes("amneziageo.proxy-source.v1\n" + source + "\n" + issuer);
         var proof = new OfferedProxySourceProof(Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()), issuer,
@@ -304,7 +420,7 @@ public sealed class ProxyCatalogueRefreshTests : IAsyncLifetime
         return ServerOffer.Parse(JsonSerializer.Serialize(new
         {
             server = "amneziageo", version = "1", client = "client",
-            features = new { proxies = new OfferedProxyCatalog(1, source, [item], proof) },
+            features = new { proxies = new OfferedProxyCatalog(1, source, empty ? [] : [item], proof) },
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
 }

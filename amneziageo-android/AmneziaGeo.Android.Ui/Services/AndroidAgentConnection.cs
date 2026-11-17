@@ -260,7 +260,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             dialed: DialedAsync,
             insidePath: (config, address, _) => Task.FromResult(Carries(config) && TunnelHello.Reaches(_configs.GetValueOrDefault(config, ""), address)),
             askConfined: (config, point, ct) => Carries(config) ? TunnelHello.AskAsync(_configs.GetValueOrDefault(config, ""), point, ct)
-                : Task.FromResult(new HelloReply(null, false)));
+                : Task.FromResult(new HelloReply(null, false)),
+            askManual: (point, ct) => ServerHello.AskAsync(point,
+                (context, token) => PastTunnel.ConnectProxyAsync(context.DnsEndPoint, token), ct));
         Current = this;
     }
 
@@ -3387,7 +3389,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             var proxies = await _offers.RefreshProxiesAsync(args[0], OfferTargets(), OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
             await RefreshTransportProxiesAsync().ConfigureAwait(false);
             PushSnapshot();
-            return new IpcAck(true, JsonSerializer.Serialize(proxies, IpcJson.Options));
+            return new IpcAck(proxies.Failures.Count == 0, JsonSerializer.Serialize(
+                proxies.Failures.Count == 0 ? (object)proxies.Items : proxies, IpcJson.Options));
         }
         catch (TransportProxyFault ex)
         {

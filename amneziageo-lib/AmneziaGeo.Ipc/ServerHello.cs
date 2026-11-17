@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 using AmneziaGeo.Decl;
@@ -15,7 +16,7 @@ namespace AmneziaGeo.Ipc;
 /// <param name="Offer">The offer of a server of ours, null when none answered.</param>
 /// <param name="Heard">Whether the services told what the server is: they answered, or their port refused the
 /// connection; a timeout, a name or TLS that failed and an error of the server tell nothing.</param>
-public sealed record HelloReply(ServerOffer? Offer, bool Heard);
+public sealed record HelloReply(ServerOffer? Offer, bool Heard, string Fault = "");
 
 /// <summary>
 /// Asks the services of a server what it offers the client holding a config.
@@ -58,7 +59,7 @@ public static class ServerHello
 
         if (!Curve25519.IsKey(point.PrivateKey) || !Curve25519.IsKey(point.ServerKey))
         {
-            return new HelloReply(null, false);
+            return new HelloReply(null, false, "hello-auth");
         }
 
         var origin = new Uri(Origin(point));
@@ -109,29 +110,35 @@ public static class ServerHello
                 using var response = await client.PostAsync(address, body, ct).ConfigureAwait(false);
                 if ((int)response.StatusCode >= 500)
                 {
-                    return new HelloReply(null, false);
+                    return new HelloReply(null, false, "hello-unavailable");
                 }
 
                 heard = true;
                 var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
-                    return new HelloReply(Opened(point, token, bytes), true);
+                    var offer = Opened(point, token, bytes);
+                    return new HelloReply(offer, true, offer is { Ours: true } ? "" : "hello-bad-answer");
                 }
 
-                if (Clock(response.StatusCode, bytes) is not { } server)
+                if (ClockOrNone(response.StatusCode, bytes) is not { } server)
                 {
-                    break;
+                    return new HelloReply(null, true, response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                        ? "hello-auth" : "hello-bad-answer");
                 }
 
                 time = server;
             }
 
-            return new HelloReply(null, true);
+            return new HelloReply(null, true, "hello-auth");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex) when (Refused(ex))
         {
-            return new HelloReply(null, heard || Closed(ex));
+            return new HelloReply(null, heard || Closed(ex), Failure(ex));
         }
     }
 
@@ -187,6 +194,19 @@ public static class ServerHello
     }
 
     // Reads the clock of a server that refused a token for its time.
+    private static long? ClockOrNone(HttpStatusCode status, byte[] bytes)
+    {
+        try
+        {
+            return Clock(status, bytes);
+        }
+        catch (JsonException ex)
+        {
+            System.Diagnostics.Trace.TraceError("{0}", ex);
+            return null;
+        }
+    }
+
     private static long? Clock(HttpStatusCode status, byte[] bytes)
     {
         if (status != HttpStatusCode.Forbidden)
@@ -223,7 +243,26 @@ public static class ServerHello
     // Tells whether a failure means the services answered nothing of ours.
     private static bool Refused(Exception ex) =>
         ex is HttpRequestException or IOException or SocketException or OperationCanceledException
-            or JsonException or FormatException or ArgumentException or InvalidOperationException or NotSupportedException or UriFormatException;
+            or JsonException or FormatException or ArgumentException or InvalidOperationException or NotSupportedException or UriFormatException or AuthenticationException;
+
+    // Names a failed hello stage.
+    private static string Failure(Exception ex)
+    {
+        for (var inner = ex; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is AuthenticationException)
+            {
+                return "hello-tls";
+            }
+        }
+
+        return ex switch
+        {
+            OperationCanceledException => "hello-timeout",
+            JsonException or FormatException or ArgumentException or InvalidOperationException => "hello-bad-answer",
+            _ => "hello-no-answer",
+        };
+    }
 }
 
 /// <summary>

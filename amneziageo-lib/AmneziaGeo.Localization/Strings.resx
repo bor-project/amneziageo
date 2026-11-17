@@ -3172,4 +3172,11 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Proxies_Http_503" xml:space="preserve"><value>service unavailable</value></data>
   <data name="Proxies_Http_504" xml:space="preserve"><value>gateway timed out</value></data>
   <data name="Proxies_Http_other" xml:space="preserve"><value>unexpected status</value></data>
+  <data name="Proxies_HelloNoAnswer" xml:space="preserve"><value>The configuration server could not be reached.</value></data>
+  <data name="Proxies_HelloTimeout" xml:space="preserve"><value>The configuration server did not respond in time.</value></data>
+  <data name="Proxies_HelloAuth" xml:space="preserve"><value>The configuration server rejected authorization.</value></data>
+  <data name="Proxies_HelloBadAnswer" xml:space="preserve"><value>The configuration server response could not be verified.</value></data>
+  <data name="Proxies_HelloUnavailable" xml:space="preserve"><value>The configuration server returned a service error.</value></data>
+  <data name="Proxies_HelloFailed" xml:space="preserve"><value>The configuration server catalog could not be updated.</value></data>
+  <data name="Proxies_RefreshSourceFailed" xml:space="preserve"><value>{0}: {1}</value></data>
 </root>

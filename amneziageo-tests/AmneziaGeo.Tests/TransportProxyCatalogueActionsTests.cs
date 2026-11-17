@@ -286,6 +286,44 @@ public sealed class TransportProxyCatalogueActionsTests
         Assert.True(Assert.Single(catalog.Items).Available);
     }
 
+    [Fact]
+    public async Task PartialRefreshAppliesFreshItemsAndShowsTheFailedSourceWithoutChangingTheDraft()
+    {
+        var result = new ProxyCatalogRefreshResult([Summary(First), Summary(Second)],
+            [new ProxyCatalogRefreshFailure("other-profile", "hello-auth")]);
+        var agent = new Agent
+        {
+            Summaries = [Summary(First)],
+            RefreshReply = Task.FromResult(new IpcAck(false, JsonSerializer.Serialize(result, IpcJson.Options))),
+        };
+        var context = Settings(agent);
+        context.SelectFromPicker(Summary(First), true);
+        context.SelectedProxyEnabled = true;
+        var catalog = Catalogue(agent, context);
+
+        await catalog.RefreshCommand.ExecuteAsync(null).ConfigureAwait(false);
+
+        Assert.Equal(2, catalog.Items.Count);
+        Assert.Contains("other-profile", catalog.CatalogueError);
+        Assert.DoesNotContain("hello-auth", catalog.CatalogueError);
+        Assert.Equal(First, context.SelectedProxyChoice?.Reference);
+        Assert.True(context.SelectedProxyEnabled);
+        Assert.DoesNotContain(agent.Commands, one => one.Op is IpcContract.OpRefreshSubscription or IpcContract.OpSelectTransportProxy);
+        Assert.True(catalog.CanRefresh);
+    }
+
+    [Fact]
+    public async Task MalformedRefreshFailureKeepsTheCurrentList()
+    {
+        var agent = new Agent { Summaries = [Summary(First)], RefreshReply = Task.FromResult(new IpcAck(false, "{\"failures\":[")) };
+        var catalog = Catalogue(agent, Settings(agent));
+
+        await catalog.RefreshCommand.ExecuteAsync(null).ConfigureAwait(false);
+
+        Assert.Equal(First, Assert.Single(catalog.Items).Reference);
+        Assert.NotEmpty(catalog.CatalogueError);
+    }
+
     private static ConfigTransportViewModel Settings(Agent agent, string name = "vpn", string endpoint = "vpn.example:51820")
     {
         var context = new ConfigTransportViewModel(agent, name, false, 1420, false, endpoint: endpoint);

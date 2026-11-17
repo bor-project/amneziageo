@@ -3172,4 +3172,11 @@
   <data name="Proxies_Http_503" xml:space="preserve"><value>сервис недоступен</value></data>
   <data name="Proxies_Http_504" xml:space="preserve"><value>шлюз не дождался ответа</value></data>
   <data name="Proxies_Http_other" xml:space="preserve"><value>неожиданный статус</value></data>
+  <data name="Proxies_HelloNoAnswer" xml:space="preserve"><value>Сервер конфигурации недоступен.</value></data>
+  <data name="Proxies_HelloTimeout" xml:space="preserve"><value>Сервер конфигурации не ответил вовремя.</value></data>
+  <data name="Proxies_HelloAuth" xml:space="preserve"><value>Сервер конфигурации отклонил авторизацию.</value></data>
+  <data name="Proxies_HelloBadAnswer" xml:space="preserve"><value>Не удалось проверить ответ сервера конфигурации.</value></data>
+  <data name="Proxies_HelloUnavailable" xml:space="preserve"><value>Сервер конфигурации вернул ошибку сервиса.</value></data>
+  <data name="Proxies_HelloFailed" xml:space="preserve"><value>Не удалось обновить каталог сервера конфигурации.</value></data>
+  <data name="Proxies_RefreshSourceFailed" xml:space="preserve"><value>{0}: {1}</value></data>
 </root>

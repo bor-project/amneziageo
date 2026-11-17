@@ -46,6 +46,7 @@ public sealed class ServerOffers
     private readonly Action? _rerouted;
     private readonly Func<IReadOnlyList<long>, CancellationToken, Task>? _take;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _ask;
+    private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _askManual;
     private readonly Func<ServiceTarget, CancellationToken, Task<HelloReply>> _askInside;
     private readonly Func<string, bool>? _carried;
     private readonly Func<string, IPAddress, CancellationToken, Task<bool>>? _insidePath;
@@ -74,11 +75,13 @@ public sealed class ServerOffers
         Func<string, CancellationToken, Task<string?>>? dialed = null,
         TransportProxyCatalog? transportProxies = null,
         Func<string, IPAddress, CancellationToken, Task<bool>>? insidePath = null,
-        Func<string, ServiceTarget, CancellationToken, Task<HelloReply>>? askConfined = null)
+        Func<string, ServiceTarget, CancellationToken, Task<HelloReply>>? askConfined = null,
+        Func<ServiceTarget, CancellationToken, Task<HelloReply>>? askManual = null)
     {
         _store = store;
         _note = note;
         _ask = ask ?? ServerHello.AskAsync;
+        _askManual = askManual ?? _ask;
         _askInside = askInside ?? ServerHello.AskAsync;
         _carried = carried;
         _insidePath = insidePath;
@@ -208,7 +211,7 @@ public sealed class ServerOffers
     /// <summary>
     /// Refreshes the proxy catalog from registered configuration servers.
     /// </summary>
-    public async Task<IReadOnlyList<TransportProxySummary>> RefreshProxiesAsync(string owner,
+    public async Task<ProxyCatalogRefreshResult> RefreshProxiesAsync(string owner,
         IEnumerable<(string Config, string? Text)> targets, Func<string, Task>? changed, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(targets);
@@ -219,15 +222,40 @@ public sealed class ServerOffers
             throw new TransportProxyFault("unknown-config");
         }
 
+        var failures = new System.Collections.Concurrent.ConcurrentDictionary<string, ProxyCatalogRefreshFailure>(StringComparer.Ordinal);
         await Parallel.ForEachAsync(configurations, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
             async (target, token) =>
             {
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 deadline.CancelAfter(TimeSpan.FromSeconds(15));
-                await AskOneAsync(target.Config, target.Text, changed, true, deadline.Token).ConfigureAwait(false);
+                try
+                {
+                    var before = await OfferAsync(target.Config, target.Text, deadline.Token).ConfigureAwait(false);
+                    var (after, bound) = await AskBindingAsync(target.Config, target.Text, false, true, deadline.Token, manual: true).ConfigureAwait(false);
+                    if (changed is not null && (bound || !before.Settles(after)))
+                    {
+                        await changed(target.Config).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _note?.Invoke($"{target.Config}: the proxy catalog could not be refreshed", ex);
+                    failures[target.Config] = new(target.Config, ex switch
+                    {
+                        TransportProxyFault fault => fault.Code,
+                        OperationCanceledException => "hello-timeout",
+                        IOException or SocketException => "hello-no-answer",
+                        _ => "hello-refresh-failed",
+                    });
+                }
             }).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
-        return await _transportProxies.ListAsync(ct).ConfigureAwait(false);
+        return new(await _transportProxies.ListAsync(ct).ConfigureAwait(false),
+            [.. configurations.Where(target => failures.ContainsKey(target.Config)).Select(target => failures[target.Config])]);
     }
 
     /// <summary>
@@ -297,10 +325,15 @@ public sealed class ServerOffers
     // Asks the server of a config, keeps what it said and binds the config to the subscription it names. Services
     // that never answered are kept as silent, with the connects that waited for them counted; a question that gets
     // no answer, or an answer of another kind short of a series or a refresh, leaves an answer kept before.
-    private async Task<(ServerOffer Offer, bool Bound)> AskBindingAsync(string config, string? text, bool waited, bool refresh, CancellationToken ct)
+    private async Task<(ServerOffer Offer, bool Bound)> AskBindingAsync(string config, string? text, bool waited, bool refresh, CancellationToken ct, bool manual = false)
     {
         if (ConfigServices.Target(text) is not { } point)
         {
+            if (manual)
+            {
+                throw new TransportProxyFault("bad-endpoint");
+            }
+
             return (ServerOffer.None, false);
         }
 
@@ -310,13 +343,18 @@ public sealed class ServerOffers
         var state = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
         var selected = state.Selections.FirstOrDefault(one => one.Config == config);
         var proxied = selected is not null ? selected.Reference is not null && selected.Enabled : transport?.UseWebSocket == true;
-        var inside = await InsideAsync(config, asked, kept, proxied, ct).ConfigureAwait(false);
-        if (proxied && inside is null)
+        var inside = manual ? null : await InsideAsync(config, asked, kept, proxied, ct).ConfigureAwait(false);
+        if (!manual && proxied && inside is null)
         {
             throw new TransportProxyFault("proxy-service-unavailable");
         }
 
-        var reply = inside ?? await OutsideAsync(config, asked, kept, text, ct).ConfigureAwait(false);
+        var reply = inside ?? await OutsideAsync(config, asked, kept, text, ct, manual).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        if (manual && (!reply.Heard || reply.Offer is not { Ours: true }))
+        {
+            throw new TransportProxyFault(reply.Fault.Length > 0 ? reply.Fault : reply.Heard ? "hello-bad-answer" : "hello-no-answer");
+        }
         var now = _time.GetUtcNow();
         if (!reply.Heard)
         {
@@ -355,6 +393,12 @@ public sealed class ServerOffers
         }
 
         var proxies = offer.Ours && await KeepProxiesAsync(config, text, point, offer, ct).ConfigureAwait(false);
+        if (manual && (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Publications
+            .FirstOrDefault(one => one.Publisher == config && one.Slot == "catalog") is { Error.Length: > 0 } rejected)
+        {
+            throw new TransportProxyFault(rejected.Error);
+        }
+
         await ServerOfferStore.WriteAsync(_store, config, point, offer, now, ct).ConfigureAwait(false);
         if (offer.Ours != (kept?.Offer.Ours ?? false))
         {
@@ -419,21 +463,23 @@ public sealed class ServerOffers
     // Asks the services past the tunnel at the port the server last named, then at the one of the text, then at the
     // port of the Endpoint, and once inside the tunnel at the address it dials where none answered as a server of
     // ours. The first answer of a server of ours holds, else the first that told anything.
-    private async Task<HelloReply> OutsideAsync(string config, ServiceTarget point, KeptOffer? kept, string? text, CancellationToken ct)
+    private async Task<HelloReply> OutsideAsync(string config, ServiceTarget point, KeptOffer? kept, string? text, CancellationToken ct, bool manual = false)
     {
         var told = default(HelloReply);
+        var failed = default(HelloReply);
         foreach (var port in Ports(kept, point, text))
         {
-            var reply = await _ask(point with { Port = port }, ct).ConfigureAwait(false);
+            var reply = await (manual ? _askManual : _ask)(point with { Port = port }, ct).ConfigureAwait(false);
             if (reply.Offer is { Ours: true })
             {
                 return reply;
             }
 
             told ??= reply.Heard ? reply : null;
+            failed ??= reply.Fault.Length > 0 ? reply : null;
         }
 
-        return await DialedAsync(config, point, ct).ConfigureAwait(false) ?? told ?? new HelloReply(null, false);
+        return (manual ? null : await DialedAsync(config, point, ct).ConfigureAwait(false)) ?? told ?? failed ?? new HelloReply(null, false);
     }
 
     // The ports the services are asked at past the tunnel, the one the server last named first.

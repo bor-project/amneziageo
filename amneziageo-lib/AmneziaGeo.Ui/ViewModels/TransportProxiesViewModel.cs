@@ -347,12 +347,17 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
             {
                 Apply(summaries);
             }
+            else if (TransportProxyWords.RefreshResult(ack) is { } result)
+            {
+                Apply(result.Items);
+                CatalogueError = TransportProxyWords.RefreshFault(result);
+            }
             else
             {
                 await LoadAsync();
                 if (generation == _contextGeneration)
                 {
-                    CatalogueError = Loc.Instance.Get("Proxies_RequestFailed");
+                    CatalogueError = TransportProxyWords.Fault(ack.Message);
                 }
             }
         }

@@ -63,8 +63,37 @@ internal static class TransportProxyWords
         "proxy-bad-answer" => "Proxies_BadAnswer",
         "unknown-config" => "Proxies_ConfigMissing",
         "bad-endpoint" => "Proxies_EndpointFault",
+        "hello-no-answer" => "Proxies_HelloNoAnswer",
+        "hello-timeout" => "Proxies_HelloTimeout",
+        "hello-auth" => "Proxies_HelloAuth",
+        "hello-bad-answer" => "Proxies_HelloBadAnswer",
+        "hello-unavailable" => "Proxies_HelloUnavailable",
+        "hello-tls" => "Proxies_TlsFault",
+        "hello-refresh-failed" => "Proxies_HelloFailed",
         _ => "Proxies_RequestFailed",
     });
+
+    public static ProxyCatalogRefreshResult? RefreshResult(IpcAck ack)
+    {
+        if (ack.Ok || !ack.Message.StartsWith('{'))
+        {
+            return null;
+        }
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<ProxyCatalogRefreshResult>(ack.Message, IpcJson.Options);
+            return result is { Items: not null, Failures.Count: > 0 } ? result : null;
+        }
+        catch (JsonException ex)
+        {
+            System.Diagnostics.Trace.TraceError("{0}", ex);
+            return null;
+        }
+    }
+
+    public static string RefreshFault(ProxyCatalogRefreshResult result) => string.Join(Environment.NewLine,
+        result.Failures.Select(one => Loc.Instance.Get("Proxies_RefreshSourceFailed", one.Config, Fault(one.Code))));
 
     public static T? Read<T>(IpcAck ack)
     {

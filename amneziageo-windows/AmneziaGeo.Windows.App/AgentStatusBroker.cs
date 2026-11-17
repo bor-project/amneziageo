@@ -1623,7 +1623,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             var proxies = await scope.Offers.RefreshProxiesAsync(args[0], await OfferTargetsAsync(scope, ct).ConfigureAwait(false),
                 OfferChangedAsync, ct).ConfigureAwait(false);
-            return new IpcAck(true, JsonSerializer.Serialize(proxies, IpcJson.Options));
+            return new IpcAck(proxies.Failures.Count == 0, JsonSerializer.Serialize(
+                proxies.Failures.Count == 0 ? (object)proxies.Items : proxies, IpcJson.Options));
         }
         catch (TransportProxyFault ex)
         {

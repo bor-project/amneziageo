@@ -3020,18 +3020,12 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateUrlNotSet"));
         }
 
-        // A manual check drives a checking state on the snapshot, so the tray shows "Checking…" and, once done,
-        // announces the up-to-date result (#15). Silent (#22) and background (UpdateCheckService) checks never
-        // set it, so the notice fires only for a user-initiated check.
-        if (!silent)
+        lock (_updateStateGate)
         {
-            lock (_updateStateGate)
+            if (!updateState.TryBeginCheck(silent))
             {
-                updateState.Checking = true;
-                updateState.CheckFailed = false;
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
             }
-
-            await BroadcastIfChangedAsync(ct);
         }
 
         // The checking flag is always cleared, even if the check is cancelled (agent shutdown), so the tray
@@ -3039,18 +3033,19 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var result = (Info: (UpdateInfo?)null, Faulted: true);
         try
         {
-            result = await TryCheckUpdateAsync(ct);
+            if (!silent)
+            {
+                await BroadcastIfChangedAsync(ct).ConfigureAwait(false);
+            }
+
+            result = await TryCheckUpdateAsync(ct).ConfigureAwait(false);
         }
         finally
         {
             var faulted = result.Faulted || result.Info is null;
             lock (_updateStateGate)
             {
-                if (!silent)
-                {
-                    updateState.Checking = false;
-                    updateState.CheckFailed = faulted;
-                }
+                updateState.EndCheck(faulted);
 
                 if (!faulted)
                 {
@@ -3097,19 +3092,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     /// </summary>
     public async Task CheckUpdateOnTimerAsync(CancellationToken ct)
     {
-        var settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
-        {
-            return;
-        }
-
-        var info = await FindUpdateAsync(settings, CurrentScope, ct).ConfigureAwait(false);
-        lock (_updateStateGate)
-        {
-            updateState.Latest = info;
-        }
-
-        await BroadcastIfChangedAsync(ct).ConfigureAwait(false);
+        await CheckUpdateAsync(["silent"], ct).ConfigureAwait(false);
     }
 
     // Reads the release the picked source offers on the channel and keeps what kept a server from answering.
@@ -3229,7 +3212,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             "downloading" => UpdateDownloadPhase.Downloading,
             "downloaded" => UpdateDownloadPhase.Downloaded,
-            "installing" => UpdateDownloadPhase.Installing,
+            "installing" or "preparing" => UpdateDownloadPhase.Installing,
             _ => UpdateDownloadPhase.Idle,
         };
         var newFailed = phase == "failed";
@@ -3243,6 +3226,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         bool hadCancel;
         lock (_updateStateGate)
         {
+            if (updateState.CheckRunning && newPhase is UpdateDownloadPhase.Downloading or UpdateDownloadPhase.Installing)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
+            if (newPhase is UpdateDownloadPhase.Downloading or UpdateDownloadPhase.Installing
+                && updateState.Latest is { } current
+                && !string.Equals(version, current.Version, StringComparison.Ordinal))
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOfferChanged"));
+            }
+
             hadCancel = updateState.CancelRequested;
             phaseChanged = updateState.DownloadPhase != newPhase || updateState.DownloadFailed != newFailed;
             percentChanged = updateState.DownloadPercent != percent;

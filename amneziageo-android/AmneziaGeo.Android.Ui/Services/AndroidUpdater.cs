@@ -44,6 +44,7 @@ internal sealed class AndroidUpdater : IDisposable
     private CancellationTokenSource? _download;
     private bool _disposed;
     private bool _applying;
+    private bool _checking;
 
     /// <summary>
     /// ctor
@@ -206,16 +207,29 @@ internal sealed class AndroidUpdater : IDisposable
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateUrlNotSet"));
         }
 
-        if (!silent)
+        lock (_gate)
         {
-            Checking = true;
-            CheckFailed = false;
-            _push();
+            if (_checking || Downloading || Installing || _applying)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
+            _checking = true;
+            if (!silent)
+            {
+                Checking = true;
+                CheckFailed = false;
+            }
         }
 
         var faulted = true;
         try
         {
+            if (!silent)
+            {
+                _push();
+            }
+
             var ack = await ResolveAsync(ct).ConfigureAwait(false);
             faulted = !ack.Ok;
             return ack;
@@ -227,10 +241,14 @@ internal sealed class AndroidUpdater : IDisposable
         }
         finally
         {
-            if (!silent)
+            lock (_gate)
             {
-                Checking = false;
-                CheckFailed = faulted;
+                _checking = false;
+                if (!silent)
+                {
+                    Checking = false;
+                    CheckFailed = faulted;
+                }
             }
 
             _push();
@@ -245,6 +263,11 @@ internal sealed class AndroidUpdater : IDisposable
         var source = default(CancellationTokenSource);
         lock (_gate)
         {
+            if (_checking || Installing || _applying)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
             if (Downloading)
             {
                 return new IpcAck(true, IpcMessage.Key("Agent_UpdateDownloadRunning"));
@@ -296,6 +319,11 @@ internal sealed class AndroidUpdater : IDisposable
     {
         lock (_gate)
         {
+            if (_checking || Downloading)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
             if (Installing || _applying)
             {
                 return new IpcAck(true, IpcMessage.Key("Agent_UpdateInstallRunning"));

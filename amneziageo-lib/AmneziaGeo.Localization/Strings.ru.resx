@@ -3179,4 +3179,19 @@
   <data name="Proxies_HelloUnavailable" xml:space="preserve"><value>Сервер конфигурации вернул ошибку сервиса.</value></data>
   <data name="Proxies_HelloFailed" xml:space="preserve"><value>Не удалось обновить каталог сервера конфигурации.</value></data>
   <data name="Proxies_RefreshSourceFailed" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="Main_RecheckUpdatesButton" xml:space="preserve">
+    <value>Проверить снова</value>
+  </data>
+  <data name="MainVm_UpdateUnchanged" xml:space="preserve">
+    <value>Более новой версии нет</value>
+  </data>
+  <data name="MainVm_UpdateFound" xml:space="preserve">
+    <value>Найдена новая версия</value>
+  </data>
+  <data name="Agent_UpdateOperationRunning" xml:space="preserve">
+    <value>Другая операция обновления уже выполняется</value>
+  </data>
+  <data name="Agent_UpdateOfferChanged" xml:space="preserve">
+    <value>Предложение обновления изменилось; повторите проверку</value>
+  </data>
 </root>

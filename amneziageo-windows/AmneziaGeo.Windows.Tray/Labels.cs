@@ -98,6 +98,8 @@ internal static class Labels
     /// </summary>
     public static string CheckUpdate { get; private set; } = "Check for updates";
 
+    public static string RecheckUpdate { get; private set; } = "Check again";
+
     /// <summary>
     /// «Проверка обновления…» / "Checking for updates…": inactive menu item while a check runs (#15).
     /// </summary>
@@ -216,6 +218,7 @@ internal static class Labels
             DisconnectedInfo = "Отключено";
             DisconnectFailedInfo = "Не удалось завершить отключение";
             CheckUpdate = "Проверить обновление";
+            RecheckUpdate = "Проверить снова";
             CheckingUpdate = "Проверка обновления…";
             UpToDateInfo = "У вас последняя версия";
             DownloadUpdate = "Скачать обновление";

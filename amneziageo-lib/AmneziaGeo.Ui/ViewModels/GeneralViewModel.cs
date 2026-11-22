@@ -48,6 +48,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     // Windows: set while this window verifies and starts the setup.
     private bool _applying;
+    private bool _manualChecking;
+    private bool _agentChecking;
+    private bool _agentUpdateBusy;
 
     // Set by the host to run the byte-pump under the process-alive pin, so closing a window mid-download neither
     // quits the app nor aborts the download (#21). Falls back to a direct download when unset.
@@ -110,10 +113,26 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateUrl))]
+    [NotifyPropertyChangedFor(nameof(CanCheckUpdate))]
+    [NotifyCanExecuteChangedFor(nameof(CheckUpdateCommand))]
     private string _updateUrl = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CheckUpdateText))]
     private bool _updateAvailable;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CheckUpdateText))]
+    [NotifyPropertyChangedFor(nameof(CanCheckUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanInstallUpdate))]
+    [NotifyCanExecuteChangedFor(nameof(CheckUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyUpdateCommand))]
+    private bool _updateChecking;
+
+    [ObservableProperty]
+    private bool _updateCheckFailed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UpdateVersionBadgeText))]
@@ -128,20 +147,35 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
-    [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
+    [NotifyPropertyChangedFor(nameof(CanCheckUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanInstallUpdate))]
+    [NotifyCanExecuteChangedFor(nameof(CheckUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyUpdateCommand))]
     [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private bool _updateDownloading;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
-    [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
+    [NotifyPropertyChangedFor(nameof(CanCheckUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanInstallUpdate))]
+    [NotifyCanExecuteChangedFor(nameof(CheckUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyUpdateCommand))]
     [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private bool _updateDownloaded;
 
     // The system installer holds the package: the download step is over and must not be offered again.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
-    [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
+    [NotifyPropertyChangedFor(nameof(CanCheckUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanDownloadUpdate))]
+    [NotifyPropertyChangedFor(nameof(CanInstallUpdate))]
+    [NotifyCanExecuteChangedFor(nameof(CheckUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DownloadUpdateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyUpdateCommand))]
     private bool _updateInstalling;
 
     [ObservableProperty]
@@ -303,10 +337,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// </summary>
     public bool ShowDownloadButton => !UpdateDownloading && !UpdateDownloaded && !UpdateInstalling;
 
-    /// <summary>
-    /// Hide the check-update button while a setup is downloading, downloaded or being installed (#6).
-    /// </summary>
-    public bool ShowCheckUpdateButton => !UpdateDownloading && !UpdateDownloaded && !UpdateInstalling;
+    public bool CanCheckUpdate => HasUpdateUrl && !UpdateChecking && !_agentUpdateBusy && !UpdateDownloading && !UpdateInstalling;
+
+    public bool CanDownloadUpdate => !UpdateChecking && !_agentUpdateBusy && !UpdateInstalling && !UpdateDownloading && !UpdateDownloaded;
+
+    public bool CanInstallUpdate => UpdateDownloaded && !UpdateChecking && !_agentUpdateBusy && !UpdateInstalling;
+
+    public string CheckUpdateText => Loc.Instance.Get(UpdateChecking
+        ? "MainVm_UpdateChecking"
+        : UpdateAvailable ? "Main_RecheckUpdatesButton" : "Main_CheckUpdatesButton");
 
     /// <summary>
     /// Whether a download is actively streaming and not yet ready. Drives the percent label and the cancel
@@ -339,7 +378,18 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _suppressSettingPush = false;
         NoticeChoice?.Apply(snapshot.TunnelNotice);
 
+        var completedCheck = _agentChecking && !snapshot.UpdateChecking && !_manualChecking;
+        var previousVersion = UpdateVersion;
         UpdateUrl = snapshot.UpdateUrl;
+        _agentChecking = snapshot.UpdateChecking;
+        _agentUpdateBusy = snapshot.UpdateDownloading || snapshot.UpdateInstalling;
+        OnPropertyChanged(nameof(CanCheckUpdate));
+        OnPropertyChanged(nameof(CanDownloadUpdate));
+        OnPropertyChanged(nameof(CanInstallUpdate));
+        CheckUpdateCommand.NotifyCanExecuteChanged();
+        DownloadUpdateCommand.NotifyCanExecuteChanged();
+        ApplyUpdateCommand.NotifyCanExecuteChanged();
+        UpdateChecking = _manualChecking || _agentChecking;
 
         // Fire the open check once the agent has reported an update URL, then leave the hourly timer to it (#22).
         if (_autoCheckArmed && HasUpdateUrl)
@@ -360,6 +410,19 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         else
         {
             ApplyOwnDownloadState(snapshot);
+        }
+
+        if (UpdateChecking)
+        {
+            UpdateCheckFailed = false;
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateChecking");
+        }
+        else if (completedCheck)
+        {
+            UpdateCheckFailed = snapshot.UpdateCheckFailed;
+            UpdateStatus = Loc.Instance.Get(snapshot.UpdateCheckFailed ? "Agent_UpdateCheckFailed"
+                : !snapshot.UpdateAvailable ? "MainVm_UpToDate"
+                : string.Equals(previousVersion, snapshot.UpdateVersion, StringComparison.Ordinal) ? "MainVm_UpdateUnchanged" : "MainVm_UpdateFound");
         }
 
         if (snapshot.UpdateAvailable && !string.IsNullOrEmpty(snapshot.UpdateVersion))
@@ -561,9 +624,18 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanCheckUpdate))]
     private async Task CheckUpdate()
     {
+        if (!CanCheckUpdate)
+        {
+            return;
+        }
+
+        var previous = UpdateVersion;
+        _manualChecking = true;
+        UpdateCheckFailed = false;
+        UpdateChecking = true;
         CancelUpToDateAutoHide();
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateChecking");
         // The URL is baked into the build (installer config), not user-entered; just ask for a check. The raw reply
@@ -571,18 +643,25 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         try
         {
             var ack = await _connection.SendCommandRawAsync(new IpcCommand(IpcContract.OpCheckUpdate, []));
-            ApplyCheckResult(ack);
+            ApplyCheckResult(ack, previous);
         }
         catch
         {
+            UpdateCheckFailed = true;
             UpdateStatus = Loc.Instance.Get("Agent_UpdateCheckFailed");
+        }
+        finally
+        {
+            _manualChecking = false;
+            UpdateChecking = _agentChecking;
         }
     }
 
     // Maps the check reply to the status line: up-to-date shows a transient notice, an offer clears the line for
     // the badge and download button, an error leaves a message the Check button retries (#3).
-    private void ApplyCheckResult(IpcAck ack)
+    private void ApplyCheckResult(IpcAck ack, string previous)
     {
+        UpdateCheckFailed = !ack.Ok;
         IpcMessage.TryParse(ack.Message, out var key, out var args);
         switch (key)
         {
@@ -591,7 +670,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 StartUpToDateAutoHide(UpdateStatus);
                 break;
             case "Agent_UpdateAvailable":
-                UpdateStatus = string.Empty;
+                UpdateStatus = Loc.Instance.Get(args.Length > 0 && string.Equals(previous, args[0], StringComparison.Ordinal)
+                    ? "MainVm_UpdateUnchanged"
+                    : "MainVm_UpdateFound");
                 break;
             default:
                 UpdateStatus = string.IsNullOrEmpty(key) ? Loc.Instance.Get("Agent_UpdateCheckFailed") : Loc.Instance.Get(key, args);
@@ -636,7 +717,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Downloads the setup and stops. Installing is a separate, explicit step (#154). Routed through the host so
     /// the byte-pump runs under the process-alive pin: closing a window then cannot abort it (#21).
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanDownloadUpdate))]
     private void DownloadUpdate()
     {
         if (_agentUpdates)
@@ -660,7 +741,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // the next attempt.
     private async Task DownloadCoreAsync()
     {
-        if (_offer.Url.Length == 0 || UpdateDownloading || UpdateDownloaded)
+        if (_offer.Url.Length == 0 || !CanDownloadUpdate)
         {
             return;
         }
@@ -669,11 +750,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         CancelUpToDateAutoHide();
         using var cts = new CancellationTokenSource();
         _downloadCts = cts;
+        UpdateCheckFailed = false;
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
         _reportedPercent = 0;
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
-        await ReportDownloadAsync("downloading", 0, string.Empty, _offer.Version);
+        if (!await ReportDownloadAsync("downloading", 0, string.Empty, _offer.Version))
+        {
+            _downloadCts = null;
+            UpdateDownloading = false;
+            return;
+        }
 
         // Takes the offer the whole download goes by.
         var offer = _offer;
@@ -732,11 +819,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     // Reports the setup download phase to the agent so the tray and every window share one state.
-    private async Task ReportDownloadAsync(string phase, int percent, string path, string version, int installer = 0)
+    private async Task<bool> ReportDownloadAsync(string phase, int percent, string path, string version, int installer = 0)
     {
         try
         {
-            await _connection.SendCommandAsync(new IpcCommand(
+            var ack = await _connection.SendCommandAsync(new IpcCommand(
                 IpcContract.OpReportUpdateDownload,
                 [
                     phase,
@@ -745,10 +832,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                     version,
                     installer.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ]));
+            if (!ack.Ok)
+            {
+                UpdateStatus = ack.Message;
+            }
+
+            return ack.Ok;
         }
         catch
         {
-            // Best-effort: the agent's copy of the download state only drives the tray.
+            UpdateStatus = Loc.Instance.Get("Agent_UpdateCheckFailed");
+            return false;
         }
     }
 
@@ -800,16 +894,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// <summary>
     /// Verifies the already-downloaded setup against the published hash, then launches it and quits the app.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanInstallUpdate))]
     private async Task ApplyUpdate()
     {
-        if (!UpdateDownloaded || UpdateInstalling || string.IsNullOrEmpty(_downloadedSetupPath))
+        if (!CanInstallUpdate || string.IsNullOrEmpty(_downloadedSetupPath))
         {
             return;
         }
 
         // The Linux packages are installed by the agent: it holds root and outlives the restart the install
         // triggers, so the window only asks for it and waits for the version to change.
+        UpdateCheckFailed = false;
         if (_agentUpdates)
         {
             _installingVersion = UpdateVersion;
@@ -838,6 +933,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         _applying = true;
         UpdateInstalling = true;
+        if (!await ReportDownloadAsync("preparing", 100, setupPath, version))
+        {
+            _applying = false;
+            UpdateInstalling = false;
+            return;
+        }
 
         // Verify integrity before running the installer; a mismatch drops the file and returns to the download
         // step. A manifest without a hash (legacy) verifies as trusted so the flow still works.
@@ -883,6 +984,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             _applying = false;
             UpdateInstalling = false;
+            await ReportDownloadAsync("downloaded", 100, setupPath, version);
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
         }
     }

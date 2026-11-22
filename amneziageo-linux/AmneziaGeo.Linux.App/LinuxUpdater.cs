@@ -46,6 +46,7 @@ internal sealed class LinuxUpdater : IDisposable
     private string _downloadedVersion = string.Empty;
     private bool _disposed;
     private bool _applying;
+    private bool _checking;
 
     /// <summary>
     /// ctor
@@ -247,16 +248,29 @@ internal sealed class LinuxUpdater : IDisposable
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateUrlNotSet"));
         }
 
-        if (!silent)
+        lock (_gate)
         {
-            Checking = true;
-            CheckFailed = false;
-            await _push(ct).ConfigureAwait(false);
+            if (_checking || Downloading || Installing || _applying)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
+            _checking = true;
+            if (!silent)
+            {
+                Checking = true;
+                CheckFailed = false;
+            }
         }
 
         var faulted = true;
         try
         {
+            if (!silent)
+            {
+                await _push(ct).ConfigureAwait(false);
+            }
+
             var ack = await ResolveAsync(ct).ConfigureAwait(false);
             faulted = !ack.Ok;
             return ack;
@@ -268,10 +282,14 @@ internal sealed class LinuxUpdater : IDisposable
         }
         finally
         {
-            if (!silent)
+            lock (_gate)
             {
-                Checking = false;
-                CheckFailed = faulted;
+                _checking = false;
+                if (!silent)
+                {
+                    Checking = false;
+                    CheckFailed = faulted;
+                }
             }
 
             await _push(CancellationToken.None).ConfigureAwait(false);
@@ -283,16 +301,20 @@ internal sealed class LinuxUpdater : IDisposable
     /// </summary>
     public IpcAck StartDownload(CancellationToken ct)
     {
-        var assets = _assets;
         var source = default(CancellationTokenSource);
         lock (_gate)
         {
+            if (_checking || Installing || _applying)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
             if (Downloading)
             {
                 return new IpcAck(true, IpcMessage.Key("Agent_UpdateDownloadRunning"));
             }
 
-            if (!Available || assets.Count == 0)
+            if (!Available || _assets.Count == 0)
             {
                 return new IpcAck(false, IpcMessage.Key("Agent_UpdateNothingToDownload"));
             }
@@ -306,6 +328,7 @@ internal sealed class LinuxUpdater : IDisposable
             _download = source;
         }
 
+        var assets = _assets;
         var version = Version;
         _ = Task.Run(() => RunDownloadAsync(assets, version, source.Token), CancellationToken.None);
         return new IpcAck(true, IpcMessage.Key("Agent_UpdateDownloadStarted", version));
@@ -337,15 +360,19 @@ internal sealed class LinuxUpdater : IDisposable
     /// </summary>
     public async Task<IpcAck> InstallAsync(CancellationToken ct)
     {
-        var assets = _assets;
         lock (_gate)
         {
+            if (_checking || Downloading)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_UpdateOperationRunning"));
+            }
+
             if (Installing || _applying)
             {
                 return new IpcAck(true, IpcMessage.Key("Agent_UpdateInstallRunning"));
             }
 
-            if (!Downloaded || assets.Count == 0)
+            if (!Downloaded || _assets.Count == 0)
             {
                 return new IpcAck(false, IpcMessage.Key("Agent_UpdateNothingDownloaded"));
             }
@@ -355,7 +382,7 @@ internal sealed class LinuxUpdater : IDisposable
 
         try
         {
-            return await ApplyAsync(assets, ct).ConfigureAwait(false);
+            return await ApplyAsync(_assets, ct).ConfigureAwait(false);
         }
         finally
         {

@@ -48,6 +48,36 @@ internal sealed class UpdateState
     /// </summary>
     public bool CheckFailed { get; set; }
 
+    public bool CheckRunning { get; private set; }
+
+    public bool TryBeginCheck(bool silent)
+    {
+        if (CheckRunning || DownloadPhase is UpdateDownloadPhase.Downloading or UpdateDownloadPhase.Installing)
+        {
+            return false;
+        }
+
+        CheckRunning = true;
+        Checking = !silent;
+        if (!silent)
+        {
+            CheckFailed = false;
+        }
+
+        return true;
+    }
+
+    public void EndCheck(bool failed)
+    {
+        if (Checking)
+        {
+            CheckFailed = failed;
+        }
+
+        Checking = false;
+        CheckRunning = false;
+    }
+
     /// <summary>
     /// Process id of the setup the window started, set while the phase is Installing.
     /// </summary>

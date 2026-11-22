@@ -916,19 +916,15 @@ internal static unsafe class Program
             Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_DISCONNECT, Labels.Disconnect);
         }
 
-        // Update items only on builds with an update channel configured, matching the settings window which
-        // hides its whole update section without one. The items reflect the update state: an inactive "Checking…"
-        // while a check runs (#15); a progress line plus Cancel while a download runs (#17); an inactive
-        // "Installing…" while the setup runs; Install once a setup is downloaded; Download when an update is
-        // available (#16); else Check.
+        // Добавляет операции обновления.
         if (AgentLink.HasUpdateUrl)
         {
             Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
-            if (AgentLink.CheckInProgress)
-            {
-                Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, (nuint)Native.ID_CHECKUPDATE, Labels.CheckingUpdate);
-            }
-            else if (AgentLink.DownloadInProgress)
+            var checkFlags = Native.MF_STRING | (AgentLink.CheckInProgress || AgentLink.DownloadInProgress || AgentLink.UpdateInstalling ? Native.MF_GRAYED : 0);
+            var checkLabel = AgentLink.CheckInProgress ? Labels.CheckingUpdate
+                : AgentLink.UpdateAvailable ? Labels.RecheckUpdate : Labels.CheckUpdate;
+            Native.AppendMenuW(menu, checkFlags, (nuint)Native.ID_CHECKUPDATE, checkLabel);
+            if (AgentLink.DownloadInProgress)
             {
                 Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, 0, string.Format(Labels.DownloadingUpdate, AgentLink.DownloadPercent));
                 Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CANCELDOWNLOAD, Labels.CancelDownload);
@@ -939,15 +935,11 @@ internal static unsafe class Program
             }
             else if (AgentLink.UpdateDownloaded)
             {
-                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_INSTALL, Labels.InstallUpdate);
+                Native.AppendMenuW(menu, Native.MF_STRING | (AgentLink.CheckInProgress ? Native.MF_GRAYED : 0), (nuint)Native.ID_INSTALL, Labels.InstallUpdate);
             }
             else if (AgentLink.UpdateAvailable)
             {
-                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
-            }
-            else
-            {
-                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CHECKUPDATE, Labels.CheckUpdate);
+                Native.AppendMenuW(menu, Native.MF_STRING | (AgentLink.CheckInProgress ? Native.MF_GRAYED : 0), (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
             }
         }
 

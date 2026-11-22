@@ -54,7 +54,11 @@ func retryable(status int, err error) bool {
 }
 
 func (h *Host) retry(operation string, values url.Values, payload []byte) ([]byte, uint64, int, error) {
-	ctx, cancel := context.WithTimeout(h.ctx, recoveryBudget)
+	return h.retryContext(h.ctx, operation, values, payload)
+}
+
+func (h *Host) retryContext(parent context.Context, operation string, values url.Values, payload []byte) ([]byte, uint64, int, error) {
+	ctx, cancel := context.WithTimeout(parent, recoveryBudget)
 	defer cancel()
 	delay := time.Second
 	for attempt := 1; ; attempt++ {
@@ -65,14 +69,14 @@ func (h *Host) retry(operation string, values url.Values, payload []byte) ([]byt
 		if h.ctx.Err() != nil {
 			return nil, 0, 0, h.ctx.Err()
 		}
+		if !retryable(status, err) {
+			return data, sequence, status, err
+		}
 		timedOut := func() ([]byte, uint64, int, error) {
 			return nil, 0, 0, fmt.Errorf("http-get-%s-recovery-timeout: %w (%v)", operation, ctx.Err(), err)
 		}
 		if ctx.Err() != nil {
 			return timedOut()
-		}
-		if !retryable(status, err) {
-			return data, sequence, status, err
 		}
 		if h.diagnostic != nil {
 			deadline, _ := ctx.Deadline()

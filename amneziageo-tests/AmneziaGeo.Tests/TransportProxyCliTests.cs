@@ -86,14 +86,30 @@ public sealed class TransportProxyCliTests : IDisposable
         TextInput.StandardInput = new StringReader(JsonSerializer.Serialize(draft, IpcJson.Options));
         var link = new Link((_, _) => new IpcAck(true, JsonSerializer.Serialize(Reference, IpcJson.Options)));
 
-        Assert.Equal(Exit.Ok, await Commands.RunAsync(link, ["save", "--stdin"]));
+        Assert.Equal(Exit.Ok, await Commands.RunAsync(link, ["save", "--config", "Office VPN", "--stdin"]).ConfigureAwait(false));
 
         var call = Assert.Single(link.Calls);
         Assert.Equal(IpcContract.OpSaveTransportProxy, call.Op);
         Assert.Equal("", call.Args[0]);
         Assert.Equal(draft, JsonSerializer.Deserialize<OfferedProxy>(call.Args[1], IpcJson.Options));
+        Assert.Equal("Office VPN", call.Args[2]);
         Assert.Contains(Source + "/front", _console.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain(draft.Auth.Credential, _console.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("save|--stdin")]
+    [InlineData("save|--config=|--stdin")]
+    [InlineData("save|--config|  |--stdin")]
+    [InlineData("save|--config|office|--config|other|--stdin")]
+    [InlineData("save|front|--config=|--stdin")]
+    public async Task MissingOrAmbiguousOwnerDoesNotReachTheAgent(string arguments)
+    {
+        TextInput.StandardInput = new StringReader(JsonSerializer.Serialize(Definition(), IpcJson.Options));
+        var link = new Link((_, _) => new IpcAck(true, JsonSerializer.Serialize(Reference, IpcJson.Options)));
+
+        Assert.Equal(Exit.Usage, await Commands.RunAsync(link, arguments.Split('|')).ConfigureAwait(false));
+        Assert.Empty(link.Calls);
     }
 
     [Fact]

@@ -16,6 +16,10 @@ internal sealed class UiPreferences
 {
     private const string Scope = "ui";
     private readonly bool _persist;
+    private readonly string _storageDirectory;
+
+    internal static string StorageDirectory { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AmneziaGeo");
 
     /// <summary>
     /// ctor
@@ -27,9 +31,17 @@ internal sealed class UiPreferences
     /// <summary>
     /// ctor
     /// </summary>
-    public UiPreferences(bool persist)
+    public UiPreferences(bool persist) : this(persist, StorageDirectory)
+    {
+    }
+
+    /// <summary>
+    /// ctor
+    /// </summary>
+    internal UiPreferences(bool persist, string storageDirectory)
     {
         _persist = persist;
+        _storageDirectory = Path.GetFullPath(storageDirectory);
     }
 
     /// <summary>
@@ -137,40 +149,35 @@ internal sealed class UiPreferences
     /// </summary>
     public string AcceptedTermsOn { get; set; } = string.Empty;
 
-    private static string DbPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "AmneziaGeo",
-        "state.db");
+    internal string DbPath => Path.Combine(_storageDirectory, "state.db");
 
-    private static string LegacyFilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "AmneziaGeo",
-        "ui-prefs.json");
+    internal string LegacyFilePath => Path.Combine(_storageDirectory, "ui-prefs.json");
 
-    private static string LegacyMarkerPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "AmneziaGeo",
-        "tray-lang");
+    internal string LegacyMarkerPath => Path.Combine(_storageDirectory, "tray-lang");
 
     /// <summary>
     /// Loads the saved preferences, or defaults when absent.
     /// </summary>
-    public static UiPreferences Load()
+    public static UiPreferences Load() => Load(StorageDirectory);
+
+    internal static UiPreferences Load(string storageDirectory)
     {
+        var prefs = new UiPreferences(true, storageDirectory);
         try
         {
-            var store = new LocalKeyValueStore(DbPath);
+            Directory.CreateDirectory(storageDirectory);
+            var store = new LocalKeyValueStore(prefs.DbPath);
             var values = store.Load(Scope);
-            if (values.Count == 0 && TryImportLegacy(store, out var imported))
+            if (values.Count == 0 && prefs.TryImportLegacy(store))
             {
-                return imported;
+                return prefs;
             }
 
-            return FromValues(values);
+            return FromValues(values, prefs);
         }
         catch
         {
-            return new UiPreferences();
+            return prefs;
         }
     }
 
@@ -225,9 +232,8 @@ internal sealed class UiPreferences
         };
     }
 
-    private static UiPreferences FromValues(IReadOnlyDictionary<string, string> values)
+    private static UiPreferences FromValues(IReadOnlyDictionary<string, string> values, UiPreferences prefs)
     {
-        var prefs = new UiPreferences();
         if (values.TryGetValue("theme", out var theme))
         {
             prefs.Theme = theme;
@@ -346,9 +352,8 @@ internal sealed class UiPreferences
     }
 
     // One-time import of the pre-DB ui-prefs.json, then delete it so the settings folder is left clean.
-    private static bool TryImportLegacy(LocalKeyValueStore store, out UiPreferences prefs)
+    private bool TryImportLegacy(LocalKeyValueStore store)
     {
-        prefs = new UiPreferences();
         var path = LegacyFilePath;
         if (!File.Exists(path))
         {
@@ -363,13 +368,13 @@ internal sealed class UiPreferences
                 return false;
             }
 
-            prefs.Theme = ResolveTheme(legacy);
-            prefs.Width = legacy.Width > 0 ? legacy.Width : prefs.Width;
-            prefs.Height = legacy.Height > 0 ? legacy.Height : prefs.Height;
-            prefs.SettingsSection = string.IsNullOrEmpty(legacy.SettingsSection) ? prefs.SettingsSection : legacy.SettingsSection;
-            prefs.Language = legacy.Language ?? string.Empty;
+            Theme = ResolveTheme(legacy);
+            Width = legacy.Width > 0 ? legacy.Width : Width;
+            Height = legacy.Height > 0 ? legacy.Height : Height;
+            SettingsSection = string.IsNullOrEmpty(legacy.SettingsSection) ? SettingsSection : legacy.SettingsSection;
+            Language = legacy.Language ?? string.Empty;
 
-            store.Save(Scope, prefs.ToValues());
+            store.Save(Scope, ToValues());
             TryDelete(path);
             return true;
         }

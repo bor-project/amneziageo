@@ -62,7 +62,18 @@ reported separately; editing a saved method does not relabel an active session.
 
 ## Local CLI and editor
 
-`transport-proxy save [local-id] --file path.json` accepts the same item shape.
+`transport-proxy save --config "Office VPN" --file path.json` creates a local
+proxy using the same item shape. The configuration must already exist. Its exact
+name becomes the local proxy's owner, so the UI can offer that proxy for the
+configuration. Destination restrictions still apply; creating a proxy does not
+select or enable it.
+
+`transport-proxy save local-id --file path.json` updates an existing local proxy
+and keeps its owner and `source/id`. An optional `--config "Office VPN"` must
+match the existing owner. For an older entry without an owner, that option binds
+the entry explicitly; an update without it keeps the entry unowned and unavailable
+in the UI. Entries are never assigned to other configurations automatically.
+
 `transport-proxy list` lists public metadata. `showlocal source/id` includes the
 local credential and must be treated as private output.
 

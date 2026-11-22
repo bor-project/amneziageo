@@ -191,7 +191,8 @@ public static class CliRunner
             transport proxies
               transport-proxy list
               transport-proxy showlocal <source/id>   local definition with its credential
-              transport-proxy save [<local-id>] (--file <path> | --stdin)
+              transport-proxy save --config <name> (--file <path> | --stdin)
+              transport-proxy save <local-id> [--config <name>] (--file <path> | --stdin)
               transport-proxy remove <source/id>
               transport-proxy probe <source/id>
 

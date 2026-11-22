@@ -200,6 +200,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private DateTimeOffset _geoCheckedAt;
     private readonly GeoRecheck _geoRecheck = new(TimeSpan.FromMinutes(GeoRecheckMinutes), GeoRechecks);
     private readonly CancellationTokenSource _geoChecks = new();
+    private readonly ConnectionPreparation _connectionPreparation = new();
     private bool _alwaysOn;
     private bool _alwaysOnLockdown;
     private LocalProxyOptions _proxyOptions = new();
@@ -373,6 +374,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _disposed = true;
+        _connectionPreparation.Cancel();
         _geoChecks.Cancel();
         MainActivity.Resumed -= SyncTunnelState;
         MainActivity.ShownChanged -= PaceWatch;
@@ -701,6 +703,34 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         if (desired == "disconnect")
         {
+            _connectionPreparation.Cancel();
+            return await ChangeConnectionAsync(desired, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (desired != "connect")
+        {
+            return new IpcAck(false, $"unknown connection state: {desired}");
+        }
+
+        var attempt = _connectionPreparation.Begin(_geoChecks.Token);
+        try
+        {
+            return await ChangeConnectionAsync(desired, attempt.Token).ConfigureAwait(false);
+        }
+        catch (System.OperationCanceledException) when (attempt.IsCancellationRequested)
+        {
+            return new IpcAck(true, "cancelled");
+        }
+        finally
+        {
+            _connectionPreparation.End(attempt);
+        }
+    }
+
+    private async Task<IpcAck> ChangeConnectionAsync(string desired, CancellationToken ct)
+    {
+        if (desired == "disconnect")
+        {
             _dialWanted = false;
             _raiseOwed = false;
             _watch.Dropped();
@@ -712,6 +742,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             if (VpnBridge.IsRunning(Application.Context))
             {
                 VpnBridge.RequestStop(Application.Context);
+                if (VpnBridge.ReadStage() is { Stage: VpnStage.Connecting or VpnStage.Connected })
+                {
+                    _active = false;
+                    _boundStatus = ConnectionStatus.Disconnecting;
+                    PushSnapshot();
+                }
+                else
+                {
+                    OnVpnStateChanged(VpnStage.Disconnected, null);
+                }
             }
             else
             {
@@ -730,7 +770,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "nothing selected");
         }
 
-        await EnsureInitAsync().ConfigureAwait(false);
+        await EnsureInitAsync().WaitAsync(ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         var configName = _selectedTarget;
         if (configName is null)
         {
@@ -751,7 +792,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, $"configuration '{configName}' not found");
         }
 
-        var granted = await EnsureVpnPermissionAsync();
+        var granted = await EnsureVpnPermissionAsync().WaitAsync(ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         if (!granted)
         {
             SetConnectFailure(nameof(ConnectFailureReason.PermissionDenied), string.Empty);
@@ -787,9 +829,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         PushSnapshot();
 
         // The server is asked what it offers before the plan and the tunnel take its word.
-        var offer = await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, CancellationToken.None).ConfigureAwait(false);
+        var offer = await _offers.BeforeConnectAsync(configName, configText, OfferChangedAsync, ct).WaitAsync(ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         await RefreshOffersAsync().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         var selectedProxy = await SelectedProxyAsync(configName).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         if (selectedProxy.Fault.Length > 0)
         {
             _active = live;
@@ -809,11 +854,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _restartRequired = false;
         }
 
+        ct.ThrowIfCancellationRequested();
         await KeepServerListsAsync(configName).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
 
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
-        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText, selectedProxy.Proxy).ConfigureAwait(false)))
+        ct.ThrowIfCancellationRequested();
+        if (standing is not null && SwitchGuard.Keeps(await AskedAsync(configName, configText, selectedProxy.Proxy, ct).ConfigureAwait(false)))
         {
             return Kept(configName, standing, restart);
         }
@@ -822,14 +871,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         // Правила разворачиваются в пуле: агент живёт в процессе UI, и план большого списка держит поток.
         var planStarted = System.Environment.TickCount64;
-        var session = await Task.Run(() => RaiseSessionPlanAsync(useRouter)).ConfigureAwait(false);
+        var session = await Task.Run(() => RaiseSessionPlanAsync(useRouter), ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
 
         _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(session.Mode, session.Packages.Length, AttributedNow())}"
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         var words = await NoticeWordsAsync().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         _downNotice = DownKey(configName, words);
         var front = selectedProxy.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy.Proxy) : (WsEndpoint?)null;
         var dns = VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true));
+        ct.ThrowIfCancellationRequested();
         if (_selectedTarget != configName || claimed.Read(configName) != configText)
         {
             if (_boundTarget == configName && _boundStatus == ConnectionStatus.Connecting)
@@ -846,13 +898,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Fail();
         }
 
-        var started = StartService(GeoVpnService.ActionConnect, configText, configName,
+        var started = _connectionPreparation.Start(ct, () => StartService(GeoVpnService.ActionConnect, configText, configName,
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, words,
             TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
             [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase],
-            dns, selectedProxy: selectedProxy.Proxy);
+            dns, selectedProxy: selectedProxy.Proxy));
         if (!started.Started)
         {
             if (started.Restored && _boundTarget == configName && _boundStatus == ConnectionStatus.Connecting)
@@ -877,18 +929,23 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Hands the server of a configuration to the tunnel, which dials it past itself, and waits for its word; a
     // tunnel that says nothing leaves the verdict unknown.
-    private async Task<string> AskedAsync(string name, string text, ResolvedTransportProxy? selectedProxy)
+    private async Task<string> AskedAsync(string name, string text, ResolvedTransportProxy? selectedProxy, CancellationToken ct = default)
     {
         var front = selectedProxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy) : (WsEndpoint?)null;
         VpnBridge.ClearSwitchResult();
         VpnBridge.WriteSwitch(new SwitchRequest(text, name, front?.Address(), front?.Port ?? 0, front?.Offered ?? false, EngineLogLevel(_logLevel), selectedProxy));
         VpnBridge.RequestSwitch(Application.Context);
-        var said = await SwitchGuard
-            .AwaitAsync(VpnBridge.ReadSwitchResult, SwitchWaitMs, ProbePollMs, pause => Task.Delay(pause))
-            .ConfigureAwait(false);
-        VpnBridge.ClearSwitchResult();
-        VpnBridge.ClearSwitch();
-        return said;
+        try
+        {
+            return await SwitchGuard
+                .AwaitAsync(VpnBridge.ReadSwitchResult, SwitchWaitMs, ProbePollMs, pause => Task.Delay(pause, ct))
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            VpnBridge.ClearSwitchResult();
+            VpnBridge.ClearSwitch();
+        }
     }
 
     // Puts the head back on the configuration the tunnel stands on: the server of the one asked for kept silent.
@@ -1413,6 +1470,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null, int retry = 0)
     {
+        if (stage is VpnStage.Connecting or VpnStage.Connected && !_dialWanted && !VpnBridge.HasRequest())
+        {
+            VpnBridge.RequestStop(Application.Context);
+            return;
+        }
+
         // The session name comes back from the tunnel, so a head that started after it still names what runs.
         var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
         var again = stage == VpnStage.Connecting && retry > _retryAttempt;

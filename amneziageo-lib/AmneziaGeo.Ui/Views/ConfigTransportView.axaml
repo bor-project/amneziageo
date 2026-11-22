@@ -17,9 +17,13 @@
   <!-- WebSocket, MTU and the switches of a config. Fields stay left, capped so they do not stretch across a wide card. -->
   <StackPanel Spacing="14">
     <StackPanel Spacing="8">
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8" MinHeight="40">
-        <TextBlock Text="{l:Tr Proxies_Use}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
-        <ToggleSwitch Grid.Column="1" MinWidth="0" IsChecked="{Binding SelectedProxyEnabled, Mode=TwoWay}"
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" MinHeight="40">
+        <TextBlock Text="{l:Tr Proxies_Use}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" TextWrapping="Wrap"
+                   Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}" />
+        <ToggleSwitch MinWidth="0" IsChecked="{Binding SelectedProxyEnabled, Mode=TwoWay}"
+                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                      Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop8}"
                       IsEnabled="{Binding CanEnableSelectedProxy}" VerticalAlignment="Center"
                       AutomationProperties.Name="{l:Tr Proxies_Use}" />
         <Button x:Name="ViewSelectedProxy" Grid.Column="3" Classes="linkbtn" Command="{Binding ChooseProxyCommand}"

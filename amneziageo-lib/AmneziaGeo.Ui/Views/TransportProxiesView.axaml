@@ -51,14 +51,14 @@
                IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     <Panel Grid.Row="3" x:Name="Body" KeyDown="OnBodyKeyDown" Margin="0,12,0,0">
       <ScrollViewer x:Name="CatalogueScroll" IsVisible="{Binding IsCatalogue}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="12" Margin="0,0,14,0">
+        <StackPanel Spacing="12">
           <ProgressBar IsVisible="{Binding IsCatalogueLoading}" IsIndeterminate="True" MaxWidth="320" />
           <StackPanel Spacing="8" IsVisible="{Binding ShowCatalogueError}">
             <TextBlock Text="{Binding CatalogueError}" Classes="fieldwarn" TextWrapping="Wrap" />
             <Button Classes="methodpick" Content="{l:Tr Proxies_Retry}" Command="{Binding RetryCommand}" HorizontalAlignment="Left" />
           </StackPanel>
           <TextBlock Text="{l:Tr Proxies_Empty}" Classes="muted" IsVisible="{Binding IsEmpty}" />
-          <ItemsControl x:Name="Cards" ItemsSource="{Binding Items}">
+          <ItemsControl x:Name="Cards" ItemsSource="{Binding Items}" Margin="0,0,-8,0">
             <ItemsControl.ItemContainerTheme>
               <ControlTheme TargetType="ContentPresenter">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />

@@ -243,8 +243,8 @@ internal sealed class NetworkFlowTracker : IDisposable
                 _session.Source.AllEvents += evt => Handle(evt, ct);
                 _logger.LogInformation("watching app connections (session {Name}, IPv6 {V6}); connections of the applications the rules name are routed as they appear", sessionName, _tunnelV6);
 
-                // Backstop scan for matched apps' SYN_SENT remotes; only meaningful with a TCP app matcher.
-                if (_matcher is not null)
+                // Scans pending TCP destinations.
+                if (_matcher is not null || _noteV4 is not null)
                 {
                     _ = Task.Run(() => ScanLoopAsync(ct), CancellationToken.None);
                 }

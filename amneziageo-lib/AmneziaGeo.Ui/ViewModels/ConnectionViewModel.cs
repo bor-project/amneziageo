@@ -39,6 +39,7 @@ internal partial class ConnectionViewModel : ViewModelBase
 
     // The configuration a dial is heading for, until the tunnel binds it.
     private string? _dialTarget;
+    private int _connectionRequest;
     private CancellationTokenSource? _probeCts;
     private bool _probedOnce;
     private string? _lastNotice;
@@ -88,6 +89,8 @@ internal partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private string _boundStatus = ConnectionStatus.Disconnected;
 
@@ -383,7 +386,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         ? ConnState switch
         {
             2 => StatusLabels.Text(BoundStatus),
-            1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
+            1 => StatusLabels.Text(ConnectionRequested ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
             _ => StatusLabels.Text(ConnectFailed ? ConnectionStatus.Failed : ConnectionStatus.Disconnected),
         }
         : Loc.Instance.Get(IsReady ? "MainVm_NoAgentConnection" : "Main_RoutingLoading");
@@ -393,7 +396,10 @@ internal partial class ConnectionViewModel : ViewModelBase
     // In always-on mode the button only leads to the system screen, so nothing about the tunnel bars it.
     public bool CanToggleConnection => AlwaysOnRouting
         ? IsConnected
-        : !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || ActiveConfig is not null);
+        : !Reconnecting && !DisconnectFailed && IsConnected
+            && BoundStatus != ConnectionStatus.Disconnecting && (ConnectionRequested || ActiveConfig is not null);
+
+    protected bool ConnectionRequested => IsTunnelActive || BoundStatus == ConnectionStatus.Connecting;
 
     // Kept off the screen for now; the switch and everything it drives stay in place.
     private const bool AlwaysOnToggleOffered = false;
@@ -440,9 +446,9 @@ internal partial class ConnectionViewModel : ViewModelBase
 
     public bool IsConnecting => ConnState == 1;
 
-    public bool IsConnectingOut => IsConnecting && IsTunnelActive;
+    public bool IsConnectingOut => IsConnecting && ConnectionRequested;
 
-    public bool IsConnectingIn => IsConnecting && !IsTunnelActive;
+    public bool IsConnectingIn => IsConnecting && !ConnectionRequested;
 
     // The row the tunnel runs on, the only one carrying live link numbers.
     private ConfigItemViewModel? BoundRow =>
@@ -885,7 +891,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     private string CardStatus => ConnState switch
     {
         2 => ConnectionStatus.Connected,
-        1 => IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting,
+        1 => ConnectionRequested ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting,
         _ => ConnectionStatus.Disconnected,
     };
 
@@ -1134,6 +1140,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     // header power control does not flicker while the command is in flight.
     private async Task<bool> DisconnectAsync()
     {
+        _connectionRequest++;
         AskActive(false);
         BoundStatus = ConnectionStatus.Disconnecting;
         ToggleInFlight = true;
@@ -1169,10 +1176,22 @@ internal partial class ConnectionViewModel : ViewModelBase
     /// уходит целиком перед сменой цели там, где агент поднимать новую поверх живой не умеет; где умеет, туннель
     /// переносит агент.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanDialConfig))]
+    [RelayCommand(CanExecute = nameof(CanDialConfig), AllowConcurrentExecutions = true)]
     protected virtual async Task ConnectConfig(ConfigItemViewModel? item)
     {
-        if (item is null || SwitchingConfig)
+        if (item is null)
+        {
+            return;
+        }
+
+        if (IsLiveConfig(item))
+        {
+            ActiveConfig = item;
+            await ToggleConfigConnectionAsync(item.Name, false);
+            return;
+        }
+
+        if (SwitchingConfig)
         {
             return;
         }
@@ -1180,13 +1199,6 @@ internal partial class ConnectionViewModel : ViewModelBase
         SwitchingConfig = true;
         try
         {
-            if (IsLiveConfig(item))
-            {
-                ActiveConfig = item;
-                await ToggleConfigConnectionAsync(item.Name, false);
-                return;
-            }
-
             // Снос не удался: цель остаётся прежней, иначе выбор уехал бы на конфигурацию, которую поднять
             // всё равно не вышло.
             if (ConnState != 0 && !UiPlatform.AgentMovesTunnel && !await StopTunnelAsync())
@@ -1205,7 +1217,8 @@ internal partial class ConnectionViewModel : ViewModelBase
 
     // Стоит ли туннель на этой конфигурации.
     private bool IsLiveConfig(ConfigItemViewModel item) =>
-        IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
+        ConnectionRequested
+        && string.Equals(_dialTarget ?? BoundTarget ?? ActiveConfig?.Name, item.Name, StringComparison.Ordinal);
 
     /// <summary>
     /// Reconnects a live configuration after a transport edit: the setting reaches the tunnel only on a fresh dial.
@@ -1227,7 +1240,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         && IsConnected
         && !Reconnecting
         && !DisconnectFailed
-        && !SwitchingConfig
+        && (!SwitchingConfig || IsLiveConfig(item))
         && (IsLiveConfig(item) || ConnState != 1);
 
     /// <summary>
@@ -1472,7 +1485,7 @@ internal partial class ConnectionViewModel : ViewModelBase
         });
     }
 
-    [RelayCommand(CanExecute = nameof(CanToggleConnection))]
+    [RelayCommand(CanExecute = nameof(CanToggleConnection), AllowConcurrentExecutions = true)]
     protected virtual async Task ToggleConnection()
     {
         // The switch is on: the button leads to the system screen carrying always-on, and dials nothing.
@@ -1482,24 +1495,31 @@ internal partial class ConnectionViewModel : ViewModelBase
             return;
         }
 
-        var connect = !IsTunnelActive;
+        await ChangeConnectionAsync(ActiveConfig?.Name, !ConnectionRequested);
+    }
+
+    private async Task ChangeConnectionAsync(string? config, bool connect)
+    {
+        var request = ++_connectionRequest;
         AskActive(connect);
         BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
         ToggleInFlight = true;
         try
         {
-            // Select the config shown in the combo BEFORE dialing, so the agent's target is the one the user
-            // sees - not its previously-latched/persisted target (which may be empty, a different config, or
-            // a deleted one). Idempotent if already selected. Mirrors ToggleConfigConnectionAsync.
-            if (connect && ActiveConfig is not null)
+            // Выбирает конфигурацию перед подключением.
+            if (connect && config is not null)
             {
-                SetDialTarget(ActiveConfig.Name);
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
+                SetDialTarget(config);
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
+                if (request != _connectionRequest)
+                {
+                    return;
+                }
             }
 
             var ack = await _connection.SendCommandAsync(
                 new IpcCommand(IpcContract.OpSetConnection, [connect ? "connect" : "disconnect"]));
-            if (!ack.Ok)
+            if (request == _connectionRequest && !ack.Ok)
             {
                 SetDialTarget(null);
                 SettleActive(!connect);
@@ -1511,7 +1531,10 @@ internal partial class ConnectionViewModel : ViewModelBase
         }
         finally
         {
-            ToggleInFlight = false;
+            if (request == _connectionRequest)
+            {
+                ToggleInFlight = false;
+            }
         }
     }
 
@@ -1520,48 +1543,8 @@ internal partial class ConnectionViewModel : ViewModelBase
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
     }
 
-    // Per-config connect/disconnect from a config's detail. Connecting first selects the config, then
-    // connects: the agent latches the new target on connect and the supervisor switches a live tunnel to
-    // it (tears the old one down, brings this one up). Optimistic state mirrors ToggleConnection so the
-    // header power control does not flicker while the switch is in flight.
-    internal async Task ToggleConfigConnectionAsync(string config, bool connect)
-    {
-        IsTunnelActive = connect;
-        BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
-        ToggleInFlight = true;
-        try
-        {
-            if (connect)
-            {
-                SetDialTarget(config);
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
-                var ack = await _connection.SendCommandAsync(
-                    new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
-                if (!ack.Ok)
-                {
-                    SetDialTarget(null);
-                    IsTunnelActive = false;
-                    if (OwnedByOtherAck(ack))
-                    {
-                        PromptTakeover();
-                    }
-                }
-            }
-            else
-            {
-                var ack = await _connection.SendCommandAsync(
-                    new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
-                if (!ack.Ok)
-                {
-                    IsTunnelActive = true;
-                }
-            }
-        }
-        finally
-        {
-            ToggleInFlight = false;
-        }
-    }
+    // Меняет подключение конфигурации.
+    internal Task ToggleConfigConnectionAsync(string config, bool connect) => ChangeConnectionAsync(config, connect);
 
     // True when the selected config and the running (bound) one differ, so the live tunnel does not match
     // what the card shows.

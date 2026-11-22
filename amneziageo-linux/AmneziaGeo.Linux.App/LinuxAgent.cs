@@ -60,6 +60,8 @@ internal sealed class LinuxAgent : IDisposable
     private readonly LinuxUpdater _updater;
     private readonly AgentLog _log;
     private readonly SemaphoreSlim _commandGate = new(1, 1);
+    private readonly ConnectionPreparation _connectionPreparation = new();
+    private Task _connectWork = Task.CompletedTask;
 
     // One download of rule databases at a time among those that do not hold the gate of the commands.
     private readonly SemaphoreSlim _sourcesGate = new(1, 1);
@@ -325,6 +327,12 @@ internal sealed class LinuxAgent : IDisposable
     /// </summary>
     public async Task<IpcAck> DispatchAsync(IpcCommand command, CancellationToken ct)
     {
+        if (command.Op == IpcContract.OpSetConnection && command.Args.Count > 0
+            && command.Args[0] is "connect" or "disconnect")
+        {
+            _connectionPreparation.Cancel();
+        }
+
         try
         {
             if (command.Op == IpcContract.OpLinkNow)
@@ -1105,6 +1113,72 @@ internal sealed class LinuxAgent : IDisposable
 
     private async Task<IpcAck> SetConnectionAsync(string desired, CancellationToken ct)
     {
+        if (desired != "connect")
+        {
+            if (desired == "disconnect")
+            {
+                _connectionPreparation.Cancel();
+            }
+
+            return await ChangeConnectionAsync(desired, ct).ConfigureAwait(false);
+        }
+
+        var attempt = _connectionPreparation.Begin(ct);
+        _desiredConnected = true;
+        _boundTarget = _selectedTarget;
+        _boundStatus = ConnectionStatus.Connecting;
+        _connectFailed = false;
+        _connectWork = ConnectInBackgroundAsync(_connectWork, attempt);
+        await PushAsync(ct).ConfigureAwait(false);
+        return new IpcAck(true, "connecting");
+    }
+
+    private async Task ConnectInBackgroundAsync(Task previous, CancellationTokenSource attempt)
+    {
+        await Task.Yield();
+        try
+        {
+            await previous.ConfigureAwait(false);
+            await GatedAsync(async () =>
+            {
+                try
+                {
+                    attempt.Token.ThrowIfCancellationRequested();
+                    await ChangeConnectionAsync("connect", attempt.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (attempt.IsCancellationRequested)
+                {
+                    _desiredConnected = false;
+                    await _tunnel.DownAsync(CancellationToken.None).ConfigureAwait(false);
+                    StopLossProbe();
+                    _session.Closed();
+                    _boundTarget = null;
+                    _boundStatus = ConnectionStatus.Disconnected;
+                    await PushAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error("agent", "connection preparation failed", ex);
+                    _connectFailed = true;
+                    _connectFailReason = nameof(ConnectFailureReason.TunnelSetupFailed);
+                    _connectFailDetail = ex.Message;
+                    _boundStatus = ConnectionStatus.Failed;
+                    await PushAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+            }, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "connection preparation stopped", ex);
+        }
+        finally
+        {
+            _connectionPreparation.End(attempt);
+        }
+    }
+
+    private async Task<IpcAck> ChangeConnectionAsync(string desired, CancellationToken ct)
+    {
         if (desired == "disconnect")
         {
             _hold.Released();
@@ -1130,6 +1204,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var configName = _selectedTarget;
+        ct.ThrowIfCancellationRequested();
         var config = configName is null ? null : await _store.GetConfigTextAsync(configName, ct).ConfigureAwait(false);
         if (configName is null || config is null)
         {
@@ -1151,7 +1226,8 @@ internal sealed class LinuxAgent : IDisposable
         _boundStatus = ConnectionStatus.Connecting;
         await PushAsync(ct).ConfigureAwait(false);
 
-        var offer = await _offers.BeforeConnectAsync(configName, config, OfferChangedAsync, ct).ConfigureAwait(false);
+        var offer = await _offers.BeforeConnectAsync(configName, config, OfferChangedAsync, ct).WaitAsync(ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         await KeepServerListsAsync(configName, ct).ConfigureAwait(false);
         var routing = await TunnelRouting.LoadAsync(_store, configName, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
@@ -1168,6 +1244,7 @@ internal sealed class LinuxAgent : IDisposable
         _tunnel.SetRouteMemory(new StoredRouteMemory(_store, configName, routing.TunnelApps, routing.ProxyDomains, routing.DirectDomains, routing.BlockDomains));
         _tunnel.FrontAsker = Asker(configName, config);
         var failure = pickedProxy.Refusal ?? await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
         if (failure is { } refusal)
         {
             _connectFailed = true;
@@ -1191,6 +1268,7 @@ internal sealed class LinuxAgent : IDisposable
             return Ok();
         }
 
+        ct.ThrowIfCancellationRequested();
         // The interface stands from the moment the engine starts, and nothing has answered on it yet; the
         // supervisor carries the state from here.
         _handshakeDueUtc = DateTime.UtcNow.AddSeconds(HandshakeWaitSeconds);
@@ -3787,6 +3865,8 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _disposed = true;
+        _connectionPreparation.Cancel();
+        _connectWork.GetAwaiter().GetResult();
         StopLossProbe();
         _proxy.Dispose();
         _hotspot.Dispose();

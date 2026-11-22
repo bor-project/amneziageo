@@ -95,15 +95,25 @@ internal static class TransportProxyCommands
     private static async Task<int> SaveAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "stdin");
-        if (!flags.Allowed("file", "stdin") || flags.Positional.Count > 1)
+        if (!flags.Allowed("file", "stdin", "config") || flags.Positional.Count > 1)
         {
-            return Reply.Usage(flags.Error ?? "usage: amneziageo transport-proxy save [<local-id>] (--file <path> | --stdin)");
+            return Reply.Usage(flags.Error ?? "usage: amneziageo transport-proxy save [<local-id>] [--config <name>] (--file <path> | --stdin)");
         }
 
         var id = flags.Positional.Count == 0 ? "" : flags.Positional[0];
         if (id.Length > 0 && !ValidId(id))
         {
             return Reply.Usage("local-id contains letters, digits, '-' or '_'");
+        }
+
+        var owner = flags.Value("config");
+        if (flags.Has("config") && (string.IsNullOrWhiteSpace(owner) || flags.Values("config").Count != 1))
+        {
+            return Reply.Usage("pass --config once with a nonempty configuration name");
+        }
+        if (id.Length == 0 && owner is null)
+        {
+            return Reply.Usage("--config <name> is required when creating a local proxy");
         }
 
         if (!TextInput.TryRead(flags, out var text, out var error))
@@ -119,8 +129,9 @@ internal static class TransportProxyCommands
                 return Reply.Usage("the proxy JSON must contain a proxy definition");
             }
 
-            var ack = await agent.SendAsync(IpcContract.OpSaveTransportProxy, id,
-                JsonSerializer.Serialize(draft, IpcJson.Options)).ConfigureAwait(false);
+            var payload = JsonSerializer.Serialize(draft, IpcJson.Options);
+            var ack = await agent.SendAsync(IpcContract.OpSaveTransportProxy,
+                owner is null ? [id, payload] : [id, payload, owner]).ConfigureAwait(false);
             if (!ack.Ok)
             {
                 return Reply.Report(ack);

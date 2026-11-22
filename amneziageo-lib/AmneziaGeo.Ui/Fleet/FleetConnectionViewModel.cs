@@ -122,7 +122,7 @@ internal sealed partial class FleetConnectionViewModel : ConnectionViewModel
 
         // Кнопка в шапке - рубильник машины: снимает весь набор разом и поднимает его тем же составом.
         // Отдельный сервер водит его карточка.
-        MarkSet(!IsTunnelActive);
+        MarkSet(!ConnectionRequested);
         await base.ToggleConnection();
     }
 

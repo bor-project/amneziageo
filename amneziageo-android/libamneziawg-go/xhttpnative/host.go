@@ -26,6 +26,8 @@ import (
 const Version = "1"
 const maxDatagram = 2048
 const maxUpload = 4096
+const maxPostUpload = 32768
+const maxUploadWindow = 4
 const uploadQueuePackets = 1024
 
 var ioEOF = io.EOF
@@ -57,6 +59,8 @@ type Host struct {
 	transport           *http.Transport
 	base                url.URL
 	method              string
+	uploadLimit         int
+	uploadWindow        int
 	ready               chan struct{}
 	credential          string
 	authorizationHeader bool
@@ -170,7 +174,7 @@ func StartWithDiagnostics(data []byte, sink udppressure.Sink, reporter func(stri
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	h.transport = &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig, Protocols: protocols, ForceAttemptHTTP2: false,
-		MaxResponseHeaderBytes: 16384, MaxConnsPerHost: 3, MaxIdleConns: 3, MaxIdleConnsPerHost: 3, IdleConnTimeout: 30 * time.Second,
+		MaxResponseHeaderBytes: 16384, MaxConnsPerHost: maxUploadWindow + 1, MaxIdleConns: maxUploadWindow + 1, MaxIdleConnsPerHost: maxUploadWindow + 1, IdleConnTimeout: 30 * time.Second,
 		TLSHandshakeTimeout: tlsHandshakeTimeout, ResponseHeaderTimeout: 8 * time.Second, DisableCompression: true,
 		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			connection, err := dialer.DialContext(ctx, network, dialAddress)
@@ -196,7 +200,10 @@ func (h *Host) run() {
 	defer h.transport.CloseIdleConnections()
 	defer h.socket.Close()
 	defer h.cancel()
-	_, _, _, err := h.retry("open", url.Values{"host": {h.targetHost}, "port": {strconv.Itoa(h.targetPort)}}, nil)
+	data, _, _, err := h.retry("open", url.Values{"host": {h.targetHost}, "port": {strconv.Itoa(h.targetPort)}, "caps": {"1"}}, nil)
+	if err == nil {
+		err = h.capabilities(data)
+	}
 	if err != nil {
 		if h.ctx.Err() == nil {
 			h.reportFault(err)
@@ -257,7 +264,7 @@ func (h *Host) receiveUDP() error {
 	}
 }
 
-func (h *Host) upload() error {
+func (h *Host) uploadSerial() error {
 	var carry []byte
 	for sequence := uint64(1); ; sequence++ {
 		packet := carry
@@ -269,13 +276,13 @@ func (h *Host) upload() error {
 				return h.ctx.Err()
 			}
 		}
-		batch := appendFrame(make([]byte, 0, maxUpload), packet)
+		batch := appendFrame(make([]byte, 0, h.batchLimit()), packet)
 		timer := time.NewTimer(time.Millisecond)
 	collect:
 		for {
 			select {
 			case packet = <-h.queue:
-				if len(batch)+len(packet)+2 > maxUpload {
+				if len(batch)+len(packet)+2 > h.batchLimit() {
 					carry = packet
 					break collect
 				}

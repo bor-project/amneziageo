@@ -706,6 +706,57 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         Assert.Equal(before.Selections, after.Selections);
     }
 
+    [Fact]
+    public async Task AnUnchosenConfigurationTakesItsOwnPublishedProxy()
+    {
+        var target = await ConfigAsync("fresh", Key("server")).ConfigureAwait(false);
+        var initial = await _catalog.SelectionAsync("fresh").ConfigureAwait(false);
+        Assert.Null(initial.Reference);
+        Assert.False(initial.UserChosen);
+        await _catalog.SynchronizeAsync("fresh", target, Offer(new OfferedProxyCatalog(1, Source, [Proxy("own")])), 51820).ConfigureAwait(false);
+        var selected = await _catalog.SelectionAsync("fresh").ConfigureAwait(false);
+        Assert.Equal("own", selected.Reference!.Id);
+        Assert.True(selected.Enabled);
+        Assert.False(selected.UserChosen);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitDisableSurvivesHelloAndCatalogueReload(bool clearReference)
+    {
+        var target = await ConfigAsync("fresh", Key("server")).ConfigureAwait(false);
+        await _catalog.EnsureSelectionAsync("fresh").ConfigureAwait(false);
+        var offer = Offer(new OfferedProxyCatalog(1, Source, [Proxy("own")]));
+        await _catalog.SynchronizeAsync("fresh", target, offer, 51820).ConfigureAwait(false);
+        var reference = (await _catalog.SelectionAsync("fresh").ConfigureAwait(false)).Reference;
+        await _catalog.SelectAsync("fresh", clearReference ? null : reference, enabled: false).ConfigureAwait(false);
+        await _catalog.SynchronizeAsync("fresh", target, offer, 51820).ConfigureAwait(false);
+        var reopened = new TransportProxyCatalog(_store);
+        var selected = await reopened.SelectionAsync("fresh").ConfigureAwait(false);
+        Assert.True(selected.UserChosen);
+        Assert.False(selected.Enabled);
+        Assert.Equal(clearReference ? null : reference, selected.Reference);
+    }
+
+    [Fact]
+    public async Task AnotherPublishersProxyDoesNotBecomeADefault()
+    {
+        var target = await ConfigAsync("other", Key("server")).ConfigureAwait(false);
+        await ConfigAsync("fresh", Key("server")).ConfigureAwait(false);
+        await _catalog.SynchronizeAsync("other", target, Offer(new OfferedProxyCatalog(1, Source, [Proxy("foreign")])), 51820).ConfigureAwait(false);
+        Assert.Null((await _catalog.SelectionAsync("fresh").ConfigureAwait(false)).Reference);
+    }
+
+    [Fact]
+    public void AnOldSavedDecisionRemainsExplicit()
+    {
+        var state = TransportProxyState.Parse("{\"version\":2,\"selections\":[{\"config\":\"vpn\",\"reference\":null,\"enabled\":false}]}");
+        var decision = Assert.Single(state.Selections);
+        Assert.True(decision.UserChosen);
+        Assert.False(decision.Enabled);
+    }
+
     private async Task<ServiceTarget> ConfigAsync(string name, string issuer, int port = 51820)
     {
         var text = $"""

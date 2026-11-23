@@ -18,6 +18,7 @@ public static class ConfigTransportChanges
         UseWebSocket = false,
         WebSocketHost = string.Empty,
         WebSocketPort = 0,
+        ServicesPort = 0,
         Mtu = transport.MtuMode == MtuMode.Custom ? transport.Mtu : 0,
         AllowInbound = !inboundApplied && transport.AllowInbound,
         InboundNetwork = !inboundApplied && transport.AllowInbound && transport.InboundNetwork,

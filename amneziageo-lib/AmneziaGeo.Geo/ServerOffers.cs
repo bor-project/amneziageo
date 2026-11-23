@@ -467,7 +467,8 @@ public sealed class ServerOffers
     {
         var told = default(HelloReply);
         var failed = default(HelloReply);
-        foreach (var port in Ports(kept, point, text))
+        var configured = (await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false))?.ServicesPort ?? 0;
+        foreach (var port in configured > 0 ? new[] { configured } : Ports(kept, point, text))
         {
             var reply = await (manual ? _askManual : _ask)(point with { Port = port }, ct).ConfigureAwait(false);
             if (reply.Offer is { Ours: true })
@@ -479,7 +480,7 @@ public sealed class ServerOffers
             failed ??= reply.Fault.Length > 0 ? reply : null;
         }
 
-        return (manual ? null : await DialedAsync(config, point, ct).ConfigureAwait(false)) ?? told ?? failed ?? new HelloReply(null, false);
+        return (manual || configured > 0 ? null : await DialedAsync(config, point, ct).ConfigureAwait(false)) ?? told ?? failed ?? new HelloReply(null, false);
     }
 
     // The ports the services are asked at past the tunnel, the one the server last named first.

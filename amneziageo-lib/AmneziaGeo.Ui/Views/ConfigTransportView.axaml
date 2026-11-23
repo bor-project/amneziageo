@@ -55,6 +55,15 @@
                  IsVisible="{Binding SelectedProxyFault, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>
 
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40">
+      <TextBlock Text="{l:Tr Transport_ServicesPort}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" TextWrapping="Wrap" />
+      <TextBox Classes="field" Width="110" HorizontalAlignment="Left" Text="{Binding ServicesPort}" PlaceholderText="{Binding ServicesPortDefault}"
+               ToolTip.Tip="{l:Tr Transport_ServicesPortTip}" controls:NumericInput.Minimum="1" controls:NumericInput.Maximum="65535"
+               Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+               Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+               Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop8}" />
+    </Grid>
+
     <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 

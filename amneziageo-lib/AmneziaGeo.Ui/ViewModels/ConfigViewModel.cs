@@ -1295,6 +1295,7 @@ internal partial class ConfigViewModel : ViewModelBase
     private void SeedProxyChoice(ConfigTransportViewModel transport)
     {
         _transportEntries.TryGetValue(transport.ConfigName, out var entry);
+        transport.ApplyServicesPort(entry?.ServicesPort ?? 0, entry?.DefaultServicesPort ?? 0);
         transport.ApplyProxyCatalog(_transportProxies, entry?.TransportProxy, entry?.TransportProxyChosen ?? false, entry?.TransportProxyEnabled ?? true);
         transport.ApplyRunningProxy(entry?.RunningTransport, entry is not null && Running(entry.Status));
     }

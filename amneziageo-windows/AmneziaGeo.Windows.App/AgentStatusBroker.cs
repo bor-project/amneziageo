@@ -273,6 +273,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpAskServers => await RefreshProxyCatalogAsync(command.Args, ct).ConfigureAwait(false),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
+                IpcContract.OpSetServicesPort => await ConfigServicePortCommands.SetAsync(store, command.Args,
+                    command.Args.Count > 0 && await configRepo.ExistsAsync(command.Args[0], ct).ConfigureAwait(false), ct).ConfigureAwait(false),
                 IpcContract.OpSetSignal => await SetSignalAsync(command.Args, ct),
                 IpcContract.OpSetHoldTraffic => await SetHoldTrafficAsync(command.Args, ct),
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
@@ -808,7 +810,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var tr = await store.GetConfigTransportAsync(name, ct);
             if (tr is not null)
             {
-                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.AllowSignal, tr.HoldTraffic);
+                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.AllowSignal, tr.HoldTraffic, tr.ServicesPort);
             }
 
             PortableBundle.GeoBlock? geoBlock = null;
@@ -928,7 +930,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 await configRepo.EditFromTextAsync(incoming, block.ConfigText, ct);
                 if (block.Transport is { } trE)
                 {
-                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter, trE.AllowInbound, trE.InboundNetwork, trE.UseRouting, trE.Host, trE.Port, trE.AllowSignal, trE.HoldTraffic), ct);
+                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter, trE.AllowInbound, trE.InboundNetwork, trE.UseRouting, trE.Host, trE.Port, trE.AllowSignal, trE.HoldTraffic) { ServicesPort = trE.ServicesPort }, ct);
                 }
 
                 await ApplyConfigDataAsync(incoming, block, ct);
@@ -963,7 +965,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             if (block.Transport is { } tr)
             {
-                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.Host, tr.Port, tr.AllowSignal, tr.HoldTraffic), ct);
+                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.Host, tr.Port, tr.AllowSignal, tr.HoldTraffic) { ServicesPort = tr.ServicesPort }, ct);
             }
 
             await ApplyConfigDataAsync(finalName, block, ct);
@@ -1210,7 +1212,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "invalid websocket host");
         }
 
-        var updated = new ConfigTransport(args[0], on, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true);
+        var updated = new ConfigTransport(args[0], on, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true) { ServicesPort = previous?.ServicesPort ?? 0 };
         var proxies = TransportProxyCatalog.For(store);
         await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
         var proxyChanges = await TransportProxyChanges.CaptureAsync(store, IsRunningMember(args[0]) ? [args[0]] : [], ct).ConfigureAwait(false);
@@ -3485,7 +3487,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var offeredSubscription = member is null ? null : offer.Subscription();
             var runningTransport = IsRunningMember(name)
                 ? await RunningTransportState.ReadAsync(store, name, serviceManager, logger, ct).ConfigureAwait(false) : null;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty, proxyState.Selections.Single(one => one.Config == name).Reference, true, runningTransport, proxyState.Selections.Single(one => one.Config == name).Enabled));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty, proxyState.Selections.Single(one => one.Config == name).Reference, proxyState.Selections.Single(one => one.Config == name).UserChosen, runningTransport, proxyState.Selections.Single(one => one.Config == name).Enabled,
+                ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer.ServicesPort() > 0 ? offer.ServicesPort() : ConfigServices.Port(configText)));
         }
 
         var routingLists = new List<RoutingListEntry>();

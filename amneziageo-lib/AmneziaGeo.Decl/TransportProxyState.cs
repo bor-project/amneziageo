@@ -24,7 +24,7 @@ public sealed record TransportProxyTrust(string Source, string Kind, string Publ
 /// <summary>
 /// Stores the explicit proxy choice of a configuration.
 /// </summary>
-public sealed record TransportProxySelection(string Config, ProxyReference? Reference, bool Enabled = true);
+public sealed record TransportProxySelection(string Config, ProxyReference? Reference, bool Enabled = true, bool UserChosen = true);
 
 /// <summary>
 /// Retains the public metadata of a withdrawn proxy.

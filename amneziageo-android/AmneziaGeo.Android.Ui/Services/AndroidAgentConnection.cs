@@ -591,6 +591,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetWebSocket:
                 return await SetWebSocketAsync(args);
 
+            case IpcContract.OpSetServicesPort:
+                await EnsureInitAsync().ConfigureAwait(false);
+                var servicesAck = await ConfigServicePortCommands.SetAsync(_store, args, args.Count > 0 && _configs.ContainsKey(args[0])).ConfigureAwait(false);
+                await RefreshTransportsAsync().ConfigureAwait(false);
+                PushSnapshot();
+                return servicesAck;
+
             case IpcContract.OpSetSignal:
                 return await SetSignalAsync(args).ConfigureAwait(false);
 
@@ -2016,9 +2023,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             SubscriptionFault: offered?.Fault ?? string.Empty,
             SubscriptionDetail: offered?.Detail ?? string.Empty,
             TransportProxy: _transportSelections.GetValueOrDefault(name)?.Reference,
-            TransportProxyChosen: _transportSelections.ContainsKey(name),
+            TransportProxyChosen: _transportSelections.GetValueOrDefault(name)?.UserChosen ?? false,
             RunningTransport: bound ? VpnBridge.ReadRunningTransport(name) : null,
-            TransportProxyEnabled: _transportSelections.GetValueOrDefault(name)?.Enabled ?? true);
+            TransportProxyEnabled: _transportSelections.GetValueOrDefault(name)?.Enabled ?? true,
+            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer?.ServicesPort() is > 0 ? offer.ServicesPort() : ConfigServices.Port(config));
     }
 
     private string StatusFor(string target)
@@ -2948,7 +2956,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.InboundNetwork,
                         transport.UseRouting,
                         transport.AllowSignal,
-                        transport.HoldTraffic),
+                        transport.HoldTraffic, transport.ServicesPort),
                 null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)).WithTransportProxyAsync(_store, name).ConfigureAwait(false));
         }
 
@@ -3207,7 +3215,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic)).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic) { ServicesPort = transport.ServicesPort }).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -3270,7 +3278,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await proxies.EnsureSelectionAsync(args[0]).ConfigureAwait(false);
         var proxyChanges = await TransportProxyChanges.CaptureAsync(_store,
             _active && _boundTarget == args[0] ? [args[0]] : []).ConfigureAwait(false);
-        var updated = new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true);
+        var updated = new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true) { ServicesPort = previous?.ServicesPort ?? 0 };
         await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
         await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy").ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal)

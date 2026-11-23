@@ -48,6 +48,94 @@ public sealed class HelloServicesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ALocalPortWinsOverTheAdvertisedPortAndEndpoint()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("home", false) { ServicesPort = 9443 }).ConfigureAwait(false);
+        var asked = new List<ServiceTarget>();
+        var offers = new ServerOffers(_store, ask: (point, _) =>
+        {
+            asked.Add(point);
+            return Task.FromResult(new HelloReply(Offer(9080, string.Empty), true));
+        });
+        await offers.AskAsync("home", Moved, default).ConfigureAwait(false);
+        await offers.AskAsync("home", Moved, default).ConfigureAwait(false);
+        Assert.Equal(new[] { 9443, 9443 }, asked.Select(point => point.Port));
+        Assert.All(asked, point => Assert.Equal("vpn.example", point.Host));
+        Assert.True((await ServerOfferStore.ReadAsync(_store, "home", Moved).ConfigureAwait(false)).Ours);
+    }
+
+    [Fact]
+    public async Task AFailedLocalPortDoesNotFallBackToOtherExternalPorts()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("home", false) { ServicesPort = 9443 }).ConfigureAwait(false);
+        var asked = new List<int>();
+        var offers = new ServerOffers(_store, ask: (point, _) =>
+        {
+            asked.Add(point.Port);
+            return Task.FromResult(new HelloReply(null, false));
+        });
+        await offers.AskAsync("home", Moved, default).ConfigureAwait(false);
+        Assert.Equal(new[] { 9443 }, asked);
+    }
+
+    [Theory]
+    [InlineData("vpn.example")]
+    [InlineData("192.0.2.5")]
+    [InlineData("[2001:db8::5]")]
+    public async Task ALocalPortKeepsTheHostKeysAndCertificateIdentity(string host)
+    {
+        var text = Moved.Replace("vpn.example", host) + "# AmneziaGeo Services TLS Name = cert.example\n# AmneziaGeo Services TLS Pin = pinned\n";
+        var original = ConfigServices.Target(text)!;
+        await _store.SetConfigTransportAsync(new ConfigTransport("home", false) { ServicesPort = 9443 }).ConfigureAwait(false);
+        var asked = new List<ServiceTarget>();
+        var offers = new ServerOffers(_store, ask: (point, _) =>
+        {
+            asked.Add(point);
+            return Task.FromResult(new HelloReply(Offer(9080, string.Empty), true));
+        });
+        await offers.AskAsync("home", text, default).ConfigureAwait(false);
+        Assert.Equal(original with { Port = 9443 }, Assert.Single(asked));
+    }
+
+    [Fact]
+    public async Task ResettingTheLocalPortUsesTheAdvertisedPortAgain()
+    {
+        await _store.SetConfigTransportAsync(new ConfigTransport("home", false) { ServicesPort = 9443 }).ConfigureAwait(false);
+        var asked = new List<int>();
+        var offers = new ServerOffers(_store, ask: (point, _) =>
+        {
+            asked.Add(point.Port);
+            return Task.FromResult(new HelloReply(Offer(9080, string.Empty), true));
+        });
+        await offers.AskAsync("home", Moved, default).ConfigureAwait(false);
+        await ConfigServicePortCommands.SetAsync(_store, ["home", "0"], true).ConfigureAwait(false);
+        await offers.AskAsync("home", Moved, default).ConfigureAwait(false);
+        Assert.Equal(new[] { 9443, 9080 }, asked);
+    }
+
+    [Fact]
+    public async Task ChangingTheLocalPortRefreshesHelloWithoutLosingItsInsideAddress()
+    {
+        var original = Offer(9080, Inside);
+        await ServerOfferStore.WriteAsync(_store, "home", ConfigServices.Target(Text)!, original, DateTimeOffset.UtcNow).ConfigureAwait(false);
+        Assert.True((await ServerOfferStore.KeptAsync(_store, "home", Text).ConfigureAwait(false))!.Heard);
+        await ConfigServicePortCommands.SetAsync(_store, ["home", "9443"], true).ConfigureAwait(false);
+        var pending = (await ServerOfferStore.KeptAsync(_store, "home", Text).ConfigureAwait(false))!;
+        Assert.False(pending.Heard);
+        Assert.Equal(Inside, pending.Offer.ServicesInside());
+        Assert.True(pending.Offer.Ours);
+        var requests = new List<int>();
+        var offers = new ServerOffers(_store, ask: (point, _) =>
+        {
+            requests.Add(point.Port);
+            return Task.FromResult(new HelloReply(original, true));
+        });
+        await offers.AskAsync("home", Text, default).ConfigureAwait(false);
+        Assert.Equal(new[] { 9443 }, requests);
+        Assert.True((await ServerOfferStore.KeptAsync(_store, "home", Text).ConfigureAwait(false))!.Heard);
+    }
+
+    [Fact]
     public async Task TheNextQuestion_GoesToThePortTheServerNamed_AndTheAnswerStaysUnderThePointOfTheFile()
     {
         var asked = new List<int>();

@@ -30,6 +30,7 @@ public sealed class TransportProxyRefreshTests : IAsyncLifetime
         await _store.SaveConfigAsync("A", _publisher).ConfigureAwait(false);
         await _store.SaveConfigAsync("B", _consumer).ConfigureAwait(false);
         _catalog = TransportProxyCatalog.For(_store);
+        await _catalog.SelectAsync("A", null).ConfigureAwait(false);
         await PublishAsync("original", FirstCredential).ConfigureAwait(false);
         var reference = Assert.Single(await _catalog.ListAsync().ConfigureAwait(false)).Reference;
         await _catalog.SelectAsync("B", reference).ConfigureAwait(false);

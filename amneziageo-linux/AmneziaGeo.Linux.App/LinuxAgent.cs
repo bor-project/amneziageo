@@ -955,6 +955,10 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpSetWebSocket:
                 return await SetTransportAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpSetServicesPort:
+                return await ConfigServicePortCommands.SetAsync(_store, args,
+                    args.Count > 0 && await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+
             case IpcContract.OpSetSignal:
                 return await SetSignalAsync(args, ct).ConfigureAwait(false);
 
@@ -1938,7 +1942,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
         }
 
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true);
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true) { ServicesPort = stored?.ServicesPort ?? 0 };
         var proxies = TransportProxyCatalog.For(_store);
         await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
         var proxyChanges = await TransportProxyChanges.CaptureAsync(_store,
@@ -3714,7 +3718,9 @@ internal sealed class LinuxAgent : IDisposable
             offered?.Fault ?? string.Empty,
             offered?.Detail ?? string.Empty,
             (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).Reference,
-            true, bound && _tunnel.Running ? _tunnel.RunningTransport : null);
+            (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).UserChosen, bound && _tunnel.Running ? _tunnel.RunningTransport : null,
+            TransportProxyEnabled: (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).Enabled,
+            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer.ServicesPort() > 0 ? offer.ServicesPort() : ConfigServices.Port(text));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

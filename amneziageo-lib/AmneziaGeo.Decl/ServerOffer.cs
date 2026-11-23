@@ -873,7 +873,10 @@ public static class ServerOfferStore
                 ? DateTimeOffset.FromUnixTimeSeconds(at)
                 : DateTimeOffset.MinValue;
 
-            return new KeptOffer(offer, asked, heard, waits, Count(root, "misses"), Count(root, "foreign"), tried);
+            var servicesPort = (await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false))?.ServicesPort ?? 0;
+            var changed = servicesPort != Count(root, "servicesPort");
+            return new KeptOffer(offer, changed ? DateTimeOffset.MinValue : asked, heard && !changed,
+                changed ? 0 : waits, Count(root, "misses"), Count(root, "foreign"), tried);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentOutOfRangeException)
         {
@@ -896,18 +899,20 @@ public static class ServerOfferStore
     /// <summary>
     /// Keeps an offer of a config with what came of the questions after it.
     /// </summary>
-    public static Task KeepAsync(IStateStore store, string config, ServiceTarget point, KeptOffer kept, CancellationToken ct = default)
+    public static async Task KeepAsync(IStateStore store, string config, ServiceTarget point, KeptOffer kept, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(point);
         ArgumentNullException.ThrowIfNull(kept);
 
         var offer = kept.Offer;
+        var servicesPort = (await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false))?.ServicesPort ?? 0;
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteString("mark", point.Mark());
+            writer.WriteNumber("servicesPort", servicesPort);
             writer.WriteNumber("asked", kept.Asked.ToUnixTimeSeconds());
             if (!kept.Heard)
             {
@@ -936,7 +941,7 @@ public static class ServerOfferStore
             writer.WriteEndObject();
         }
 
-        return store.SetSettingAsync(Key(config), Encoding.UTF8.GetString(buffer.ToArray()), ct);
+        await store.SetSettingAsync(Key(config), Encoding.UTF8.GetString(buffer.ToArray()), ct).ConfigureAwait(false);
     }
 
     /// <summary>

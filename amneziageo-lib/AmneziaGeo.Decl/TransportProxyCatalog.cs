@@ -85,7 +85,11 @@ public sealed class TransportProxyCatalog
         }
 
         var before = (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Revision;
-        await ChangeAsync(state => Synchronize(state, publisher, target, offer, endpointPort), ct).ConfigureAwait(false);
+        await ChangeAsync(state =>
+        {
+            var synchronized = Synchronize(state, publisher, target, offer, endpointPort).State;
+            return (DefaultSelection(synchronized, publisher, new Context(target, endpointPort, publisher)), true);
+        }, ct).ConfigureAwait(false);
         return before != (await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false)).Revision;
     }
 
@@ -121,7 +125,7 @@ public sealed class TransportProxyCatalog
 
         await ChangeAsync(state => (state, false), ct).ConfigureAwait(false);
         var held = await _store.GetTransportProxyStateAsync(ct).ConfigureAwait(false);
-        if (held.Selections.Any(one => one.Config == config)
+        if (held.Selections.Any(one => one.Config == config && (one.UserChosen || one.Reference is not null))
             && (target is null || held.Publications.Any(one => one.Publisher == config && one.Slot == "catalog" && one.Mark == target.Mark())))
         {
             return;
@@ -138,7 +142,7 @@ public sealed class TransportProxyCatalog
                 next = Synchronize(next, config, target, kept.Offer, ConfigServices.EndpointPort(text)).State;
             }
 
-            return (next, true);
+            return (DefaultSelection(next, config, new Context(target, ConfigServices.EndpointPort(text), config)), true);
         }, ct).ConfigureAwait(false);
     }
 
@@ -207,7 +211,8 @@ public sealed class TransportProxyCatalog
                 return (state, false);
             }
 
-            return Migrate(state with { Selections = [.. state.Selections.Where(one => one.Config != config)] }, config, text, updated, offer);
+            var migrated = Migrate(state with { Selections = [.. state.Selections.Where(one => one.Config != config)] }, config, text, updated, offer).State;
+            return (migrated with { Selections = [.. migrated.Selections.Select(one => one.Config == config ? one with { UserChosen = true } : one)] }, true);
         }, ct).ConfigureAwait(false);
     }
 
@@ -673,6 +678,26 @@ public sealed class TransportProxyCatalog
         return state with { Retired = retired };
     }
 
+    private TransportProxyState DefaultSelection(TransportProxyState state, string config, Context endpoint)
+    {
+        var selection = state.Selections.FirstOrDefault(one => one.Config == config);
+        if (selection is null || selection.UserChosen || selection.Reference is not null || endpoint.Target is null)
+        {
+            return state;
+        }
+
+        var candidate = state.Publications.Where(one => one.Publisher == config && one.Mark == endpoint.Target.Mark() && one.Error.Length == 0)
+            .SelectMany(one => one.Records).Where(one => !one.Local && DefinitionFault(one).Length == 0
+                && ProxyTransportModes.RuntimeSupported(one.Proxy, _fullRuntime) && TargetFault(one, endpoint) is null
+                && (!_probes.TryGetValue(one.Reference, out var probe) || probe.Stamp != Stamp(one)
+                    || probe.Result.Availability != TransportProxyAvailability.Unavailable))
+            .OrderBy(one => one.Legacy).ThenBy(one => one.Reference.Id, StringComparer.Ordinal).FirstOrDefault();
+        return candidate is null ? state : state with
+        {
+            Selections = [.. state.Selections.Select(one => one.Config == config ? one with { Reference = candidate.Reference, Enabled = true } : one)],
+        };
+    }
+
     private static (TransportProxyState State, bool Changed) Migrate(TransportProxyState state, string name, string? text, ConfigTransport? transport, ServerOffer? offer)
     {
         if (state.Selections.Any(one => one.Config == name))
@@ -682,7 +707,7 @@ public sealed class TransportProxyCatalog
 
         if (transport?.UseWebSocket != true)
         {
-            return (state with { Selections = [.. state.Selections, new TransportProxySelection(name, null)] }, true);
+            return (state with { Selections = [.. state.Selections, new TransportProxySelection(name, null, UserChosen: transport is not null)] }, true);
         }
 
         var target = ConfigServices.Target(text);

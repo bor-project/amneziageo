@@ -88,7 +88,8 @@ public sealed record ConfigEntry(
     string SubscriptionDetail = "",
     ProxyReference? TransportProxy = null,
     bool TransportProxyChosen = false,
-    RunningTransportProxy? RunningTransport = null, bool TransportProxyEnabled = true);
+    RunningTransportProxy? RunningTransport = null, bool TransportProxyEnabled = true,
+    int ServicesPort = 0, int DefaultServicesPort = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

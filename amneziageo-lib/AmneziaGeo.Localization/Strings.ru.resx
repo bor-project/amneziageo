@@ -3194,4 +3194,6 @@
   <data name="Agent_UpdateOfferChanged" xml:space="preserve">
     <value>Предложение обновления изменилось; повторите проверку</value>
   </data>
+  <data name="Transport_ServicesPort" xml:space="preserve"><value>Порт сервисов</value></data>
+  <data name="Transport_ServicesPortTip" xml:space="preserve"><value>Пустое поле использует порт сервера.</value></data>
 </root>

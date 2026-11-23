@@ -20,6 +20,8 @@ public sealed record ConfigTransport(
     bool AllowSignal = true,
     bool HoldTraffic = true)
 {
+    public int ServicesPort { get; init; }
+
     /// <summary>
     /// Returns the port a text names: zero for an empty text, minus one for a text that is not a port.
     /// </summary>

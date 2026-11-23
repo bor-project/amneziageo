@@ -250,6 +250,44 @@ public sealed class ConfigTransportViewModelTests
         Assert.Contains("dns.example", transport.StatusMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task TheServicePortCanBeSavedClearedAndReverted()
+    {
+        var agent = new Recorder();
+        var editor = Transport(agent, false, false);
+        editor.ApplyServicesPort(0, 8443);
+        Assert.Equal("8443", editor.ServicesPortDefault);
+        editor.ServicesPort = "9443";
+        editor.ApplyServicesPort(0, 8080);
+        Assert.Equal("9443", editor.ServicesPort);
+        Assert.True(editor.IsDirty);
+        Assert.True(await editor.CommitAsync());
+        Assert.Equal(IpcContract.OpSetServicesPort, agent.Ops.Last());
+        Assert.Equal(new[] { "e2e", "9443" }, agent.Args);
+        editor.CaptureBaseline();
+        editor.ServicesPort = "";
+        editor.Revert();
+        Assert.Equal("9443", editor.ServicesPort);
+        Assert.False(editor.IsDirty);
+        editor.ServicesPort = "";
+        Assert.True(await editor.CommitAsync());
+        Assert.Equal(new[] { "e2e", "0" }, agent.Args);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("65536")]
+    [InlineData("invalid")]
+    public async Task InvalidServicePortsStayInTheEditor(string value)
+    {
+        var agent = new Recorder();
+        var editor = Transport(agent, false, false);
+        editor.ServicesPort = value;
+        Assert.False(await editor.CommitAsync());
+        Assert.Empty(agent.Ops);
+        Assert.True(editor.IsDirty);
+    }
+
     private static ConfigTransportViewModel Transport(IAgentConnection agent, bool allow, bool network) =>
         new(agent, "e2e", false, 1420, false, allowInbound: allow, inboundNetwork: network);
 
@@ -288,7 +326,7 @@ public sealed class ConfigTransportViewModelTests
         {
             Ops.Add(command.Op);
             Args = command.Args;
-            if (command.Op == IpcContract.OpSetConfigVpnDns)
+            if (command.Op is IpcContract.OpSetConfigVpnDns or IpcContract.OpSetServicesPort)
             {
                 return Task.FromResult(new IpcAck(true, string.Empty));
             }

@@ -11,6 +11,7 @@ public sealed class ConfigTransportChangesTests
         var transport = new ConfigTransport("vpn", false, 0);
 
         Assert.False(ConfigTransportChanges.RequiresRestart(null, transport));
+        Assert.False(ConfigTransportChanges.RequiresRestart(transport, transport with { ServicesPort = 9443 }));
         Assert.False(ConfigTransportChanges.RequiresRestart(transport, transport with
         {
             UseWebSocket = true,

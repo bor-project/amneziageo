@@ -180,14 +180,15 @@
                </Grid>
                <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold"
                           IsVisible="{Binding UpdateAvailable}" />
-               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="0">
                  <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Center" Spacing="2">
                    <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                               IsVisible="{Binding UpdateAvailable}" />
                    <TextBlock Text="{Binding UpdateStatus}" Classes="muted" Classes.update-check-failed="{Binding UpdateCheckFailed}"
-                              FontSize="12" TextWrapping="Wrap" MinHeight="18" />
+                              FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
+                              IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                  </StackPanel>
-                 <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+                 <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="0">
                    <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="0" VerticalAlignment="Center"
                          Grid.ColumnSpan="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
                                HorizontalAlignment="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}" IsVisible="{Binding UpdateAvailable}">
@@ -207,6 +208,7 @@
                    <Button Grid.Column="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
                            Grid.Row="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
                            Classes="softbtn" Command="{Binding CheckUpdateCommand}" AutomationProperties.Name="{Binding CheckUpdateText}"
+                           Margin="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop8}"
                            Grid.ColumnSpan="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
                            HorizontalAlignment="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

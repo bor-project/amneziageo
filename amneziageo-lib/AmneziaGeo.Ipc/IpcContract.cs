@@ -85,6 +85,7 @@ public static class IpcContract
     /// the next connect.
     /// </summary>
     public const string OpSetSignal = "set-signal";
+    public const string OpSetServicesPort = "set-services-port";
 
     /// <summary>
     /// Command to set whether a config holds its traffic while its tunnel is repaired. Args: name, on/off. On keeps a

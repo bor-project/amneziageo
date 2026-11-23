@@ -44,6 +44,16 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ImportedIpv6DefaultDoesNotBecomeAnExplicitProxyRefusal()
+    {
+        var key = Convert.ToBase64String(new byte[32]);
+        var text = $"[Interface]\nPrivateKey = {key}\nAddress = fd00::2/128\n\n[Peer]\nPublicKey = {key}\nEndpoint = vpn.example:51820\nAllowedIPs = ::/0\n";
+        await _repo.AddFromTextAsync("ipv6", text).ConfigureAwait(false);
+        Assert.True((await _store.GetConfigTransportAsync("ipv6").ConfigureAwait(false))!.UseIpv6);
+        Assert.False((await TransportProxyCatalog.For(_store).SelectionAsync("ipv6").ConfigureAwait(false)).UserChosen);
+    }
+
+    [Fact]
     public async Task Rename_CarriesTheSelectionAndTheTunnelState()
     {
         await _store.SaveConfigAsync("old", "conf");

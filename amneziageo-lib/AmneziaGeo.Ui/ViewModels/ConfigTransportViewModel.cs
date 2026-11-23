@@ -530,7 +530,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         // Any edit clears a stale validation / status line (#3).
         StatusMessage = string.Empty;
 
-        var dirty = ProxySelectionDirty || UseWebSocket != _baseUseWebSocket
+        var dirty = ServicePortDirty || ProxySelectionDirty || UseWebSocket != _baseUseWebSocket
             || !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
             || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
             || AuthMode != _baseAuthMode
@@ -558,6 +558,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     public void CaptureBaseline()
     {
         CaptureProxyBaseline();
+        _baseServicesPort = ServicesPort;
         _baseUseWebSocket = UseWebSocket;
         _baseWebSocketHost = WebSocketHost ?? string.Empty;
         _baseWebSocketPort = WebSocketPort ?? string.Empty;
@@ -589,6 +590,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         try
         {
             RevertProxyChoice();
+            ServicesPort = _baseServicesPort;
             UseWebSocket = _baseUseWebSocket;
             WebSocketHost = _baseWebSocketHost;
             WebSocketPort = _baseWebSocketPort;
@@ -672,6 +674,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public bool CanCommit()
     {
+        if (ConfigTransport.PortOf(ServicesPort) < 0)
+        {
+            StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
+            return false;
+        }
+
         if (UseWebSocket && WebSocketManual && ConfigTransport.PortOf(WebSocketPort) < 0)
         {
             StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
@@ -776,6 +784,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             }
 
             // Only a failure reason stays inline; a reconnect need shows as the mark by the connect control (RestartRequired).
+            if (ack.Ok && ServicePortDirty)
+            {
+                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetServicesPort,
+                    [ConfigName, ConfigTransport.PortOf(ServicesPort).ToString(CultureInfo.InvariantCulture)]));
+            }
+
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
         }

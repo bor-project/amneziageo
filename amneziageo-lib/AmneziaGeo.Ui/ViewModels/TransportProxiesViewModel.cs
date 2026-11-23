@@ -556,6 +556,14 @@ internal sealed partial class TransportProxiesViewModel : ViewModelBase
 
     private void OnContextPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(ConfigTransportViewModel.StatusMessage))
+        {
+            CatalogueError = _configContext?.StatusMessage ?? string.Empty;
+        }
+        if (e.PropertyName is nameof(ConfigTransportViewModel.SelectedProxyChoice) or nameof(ConfigTransportViewModel.SelectedProxyEnabled))
+        {
+            RefreshSelection();
+        }
         if (_configContext is { } context && _targetIdentity != context.ProxyTargetIdentity)
         {
             _targetIdentity = context.ProxyTargetIdentity;

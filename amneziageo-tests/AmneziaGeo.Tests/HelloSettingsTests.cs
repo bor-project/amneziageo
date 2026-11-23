@@ -79,7 +79,10 @@ public sealed class HelloSettingsTests : IAsyncLifetime
         var state = await _store.GetTransportProxyStateAsync(CancellationToken.None);
         var published = Assert.Single(state.Publications, publication => publication.Publisher == "office" && publication.Slot == "catalog");
         Assert.Equal("proxy.example", Assert.Single(published.Records).Proxy.Host);
-        Assert.Contains(state.Selections, selection => selection.Config == "office" && selection.Reference is null);
+        var selected = Assert.Single(state.Selections, selection => selection.Config == "office");
+        Assert.Equal(Assert.Single(published.Records).Reference, selected.Reference);
+        Assert.True(selected.Enabled);
+        Assert.False(selected.UserChosen);
 
         var list = Assert.Single(await _store.ListRoutingListsAsync());
         var origin = Assert.Single(await _store.ListRoutingListOriginsAsync());

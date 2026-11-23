@@ -21,6 +21,8 @@ internal sealed partial class ConfigTransportViewModel
     private string _draftProxyServerKey = string.Empty;
     private bool _selectedProxyEnabled;
     private bool _baseProxyEnabled;
+    private bool _savingProxy;
+    private Task _proxySave = Task.CompletedTask;
     public event Action<ConfigTransportViewModel>? ProxyListRequested;
     public ProxyDestination? ProxyDestination => _draftProxyTarget ?? (ProxyTargetRules.NormalizeHost(ConfigServices.Host("[Peer]\nEndpoint = " + _endpoint)) is { } host
         ? new ProxyDestination(host, ConfigServices.EndpointPort("[Peer]\nEndpoint = " + _endpoint)) : null);
@@ -45,6 +47,7 @@ internal sealed partial class ConfigTransportViewModel
             _proxyChosen = true;
             RefreshProxyDetails();
             MarkDirty();
+            _ = SaveProxySelectionAsync();
         }
     }
 
@@ -70,6 +73,7 @@ internal sealed partial class ConfigTransportViewModel
         _choosingProxy = false;
         RefreshProxyDetails();
         MarkDirty();
+        _ = SaveProxySelectionAsync();
     }
 
     public ObservableCollection<TransportProxyChoice> ProxyChoices { get; } = [];
@@ -94,7 +98,7 @@ internal sealed partial class ConfigTransportViewModel
             RefreshProxyDetails();
             _proxyChosen = true;
             MarkDirty();
-            FireAutoSave();
+            _ = SaveProxySelectionAsync();
         }
     }
 
@@ -332,6 +336,11 @@ internal sealed partial class ConfigTransportViewModel
 
     private void RevertProxyChoice()
     {
+        if (_savingProxy)
+        {
+            return;
+        }
+
         _choosingProxy = true;
         var choice = ProxyChoices.FirstOrDefault(one => one.Reference == _baseProxyReference);
         if (choice is null)
@@ -347,6 +356,48 @@ internal sealed partial class ConfigTransportViewModel
         RefreshProxyDetails();
     }
 
-    private Task<IpcAck> CommitProxyChoiceAsync() => _connection.SendCommandAsync(new IpcCommand(
-        IpcContract.OpSelectTransportProxy, [ConfigName, JsonSerializer.Serialize(SelectedProxyChoice?.Reference, IpcJson.Options), SelectedProxyEnabled ? "on" : "off"]));
+    public Task SaveProxySelectionAsync()
+    {
+        if (!_applying && ConfigName.Length > 0 && !_savingProxy)
+        {
+            _proxySave = WriteProxySelectionAsync();
+        }
+
+        return _proxySave;
+    }
+
+    private async Task WriteProxySelectionAsync()
+    {
+        _savingProxy = true;
+        try
+        {
+            while (ProxySelectionDirty)
+            {
+                var reference = SelectedProxyChoice?.Reference;
+                var enabled = SelectedProxyEnabled;
+                var chosen = _proxyChosen;
+                var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectTransportProxy,
+                    [ConfigName, JsonSerializer.Serialize(reference, IpcJson.Options), enabled ? "on" : "off"]));
+                if (!ack.Ok)
+                {
+                    StatusMessage = TransportProxyWords.Fault(ack.Message);
+                    return;
+                }
+
+                _baseProxyReference = reference;
+                _baseProxyEnabled = enabled;
+                _baseProxyChosen = chosen;
+                MarkDirty();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceError("{0}", ex);
+            StatusMessage = Loc.Instance.Get("Proxies_RequestFailed");
+        }
+        finally
+        {
+            _savingProxy = false;
+        }
+    }
 }

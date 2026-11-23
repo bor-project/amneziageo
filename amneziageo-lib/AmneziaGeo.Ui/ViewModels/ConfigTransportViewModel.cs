@@ -775,10 +775,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
             if (ack.Ok && ProxySelectionDirty)
             {
-                ack = await CommitProxyChoiceAsync();
-                if (!ack.Ok)
+                await SaveProxySelectionAsync();
+                if (ProxySelectionDirty)
                 {
-                    StatusMessage = TransportProxyWords.Fault(ack.Message);
                     return false;
                 }
             }

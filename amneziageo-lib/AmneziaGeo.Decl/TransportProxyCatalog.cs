@@ -707,7 +707,7 @@ public sealed class TransportProxyCatalog
 
         if (transport?.UseWebSocket != true)
         {
-            return (state with { Selections = [.. state.Selections, new TransportProxySelection(name, null, UserChosen: transport is not null)] }, true);
+            return (state with { Selections = [.. state.Selections, new TransportProxySelection(name, null, Enabled: false, UserChosen: false)] }, true);
         }
 
         var target = ConfigServices.Target(text);

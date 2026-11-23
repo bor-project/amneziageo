@@ -344,7 +344,7 @@ public sealed class ServerOffers
         var selected = state.Selections.FirstOrDefault(one => one.Config == config);
         var proxied = selected is not null ? selected.Reference is not null && selected.Enabled : transport?.UseWebSocket == true;
         var inside = manual ? null : await InsideAsync(config, asked, kept, proxied, ct).ConfigureAwait(false);
-        if (!manual && proxied && inside is null)
+        if (!manual && proxied && inside is null && selected?.UserChosen != false)
         {
             throw new TransportProxyFault("proxy-service-unavailable");
         }

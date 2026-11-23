@@ -64,10 +64,20 @@ public sealed record TransportProxyState
             throw new InvalidDataException("The transport proxy catalog is invalid.");
         }
 
+        using var document = JsonDocument.Parse(payload);
+        var selections = document.RootElement.EnumerateObject().FirstOrDefault(one =>
+            string.Equals(one.Name, "selections", StringComparison.OrdinalIgnoreCase)).Value;
+        var oldChoices = selections.ValueKind == JsonValueKind.Array
+            ? selections.EnumerateArray().Where(one => !one.EnumerateObject().Any(property =>
+                string.Equals(property.Name, "userChosen", StringComparison.OrdinalIgnoreCase)))
+                .Select(one => one.Deserialize<TransportProxySelection>(Json)!.Config).ToHashSet(StringComparer.Ordinal)
+            : [];
         return state with
         {
             Locals = [.. state.Locals.Select(Normalize)],
             Publications = [.. state.Publications.Select(one => one with { Records = [.. one.Records.Select(Normalize)] })],
+            Selections = [.. state.Selections.Select(one => oldChoices.Contains(one.Config) && one.Reference is null
+                ? one with { UserChosen = false } : one)],
         };
 
         static CatalogTransportProxy Normalize(CatalogTransportProxy record) => record?.Proxy is not null

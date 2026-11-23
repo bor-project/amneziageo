@@ -177,14 +177,17 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AnOffLegacyChoiceStaysExplicitNoneWhenTheServerAdvertisesAFront()
+    public async Task AnUninitializedLegacySwitchTakesThePublishedFront()
     {
         var target = await ConfigAsync("direct", Key("server")).ConfigureAwait(false);
         await _store.SetConfigTransportAsync(new ConfigTransport("direct", false)).ConfigureAwait(false);
         await _catalog.SynchronizeAsync("direct", target, LegacyOffer(8443, "legacy"), 51820).ConfigureAwait(false);
 
-        Assert.Null((await _catalog.SelectionAsync("direct").ConfigureAwait(false)).Reference);
-        Assert.Null(await _catalog.ResolveAsync("direct").ConfigureAwait(false));
+        var choice = await _catalog.SelectionAsync("direct").ConfigureAwait(false);
+        Assert.NotNull(choice.Reference);
+        Assert.True(choice.Enabled);
+        Assert.False(choice.UserChosen);
+        Assert.NotNull(await _catalog.ResolveAsync("direct").ConfigureAwait(false));
         Assert.Single(await _catalog.ListAsync().ConfigureAwait(false));
     }
 
@@ -568,7 +571,7 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
         Assert.Equal(expected, records.Count);
         Assert.Contains(records, one => one.Reference == SignedReference("one"));
         var selection = await _catalog.SelectionAsync("a").ConfigureAwait(false);
-        Assert.Equal(useLegacy, selection.Reference is not null);
+        Assert.NotNull(selection.Reference);
     }
 
     [Fact]
@@ -749,12 +752,43 @@ public sealed class TransportProxyCatalogTests : IAsyncLifetime
     }
 
     [Fact]
-    public void AnOldSavedDecisionRemainsExplicit()
+    public void AnOldEmptySelectionCanReceiveTheProviderDefault()
     {
         var state = TransportProxyState.Parse("{\"version\":2,\"selections\":[{\"config\":\"vpn\",\"reference\":null,\"enabled\":false}]}");
         var decision = Assert.Single(state.Selections);
-        Assert.True(decision.UserChosen);
+        Assert.False(decision.UserChosen);
         Assert.False(decision.Enabled);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnOldEmptySelectionTakesTheProviderProxyAfterReload(bool enabled)
+    {
+        var target = await ConfigAsync("old", Key("issuer")).ConfigureAwait(false);
+        var old = TransportProxyState.Parse("{\"version\":2,\"selections\":[{\"config\":\"old\",\"reference\":null,\"enabled\":"
+            + (enabled ? "true" : "false") + "}]}");
+        Assert.True(await _store.TrySaveTransportProxyStateAsync(old with { Revision = 1 }, 0).ConfigureAwait(false));
+        var offer = Offer(new OfferedProxyCatalog(1, Source, [Proxy("provider")]));
+        await _catalog.SynchronizeAsync("old", target, offer, 51820).ConfigureAwait(false);
+        var selected = await new TransportProxyCatalog(_store).SelectionAsync("old").ConfigureAwait(false);
+        Assert.Equal("provider", selected.Reference!.Id);
+        Assert.True(selected.Enabled);
+        Assert.False(selected.UserChosen);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnOldConcreteSelectionRetainsItsUsage(bool enabled)
+    {
+        var payload = "{\"version\":2,\"selections\":[{\"config\":\"old\",\"reference\":{\"source\":\"source\",\"id\":\"proxy\"},\"enabled\":"
+            + (enabled ? "true" : "false") + "}]}";
+        var state = TransportProxyState.Parse(payload);
+        var selected = Assert.Single(TransportProxyState.Parse(state.ToPayload()).Selections);
+        Assert.Equal(new ProxyReference("source", "proxy"), selected.Reference);
+        Assert.Equal(enabled, selected.Enabled);
+        Assert.True(selected.UserChosen);
     }
 
     private async Task<ServiceTarget> ConfigAsync(string name, string issuer, int port = 51820)

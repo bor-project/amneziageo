@@ -22,6 +22,7 @@ public sealed class TransportProxyCatalogueActionsTests
         var context = Settings(agent);
         context.SelectFromPicker(Summary(Second), true);
         context.SeedProxyTarget("[Peer]\nEndpoint = draft.example:51823");
+        agent.Commands.Clear();
         var catalog = Catalogue(agent, context);
 
         await catalog.CheckAllCommand.ExecuteAsync(null).ConfigureAwait(false);
@@ -31,7 +32,7 @@ public sealed class TransportProxyCatalogueActionsTests
         Assert.All(calls, one => Assert.Equal(["vpn", "draft.example", "51823"], one.Args.Skip(1)));
         Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
         Assert.False(context.SelectedProxyEnabled);
-        Assert.True(context.IsDirty);
+        Assert.False(context.IsDirty);
         Assert.DoesNotContain(agent.Commands, one => one.Op is IpcContract.OpSelectTransportProxy or IpcContract.OpSetConnection);
     }
 
@@ -109,6 +110,7 @@ public sealed class TransportProxyCatalogueActionsTests
         var pending = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
         var agent = new Agent { Summaries = [Summary(First)], Probe = _ => pending.Task };
         var context = Settings(agent);
+        agent.Commands.Clear();
         var catalog = Catalogue(agent, context);
         var check = catalog.CheckAllCommand.ExecuteAsync(null);
 
@@ -142,7 +144,7 @@ public sealed class TransportProxyCatalogueActionsTests
         host.Proxies.OpenForConfiguration(context);
         await host.Proxies.CheckAllCommand.ExecuteAsync(null).ConfigureAwait(false);
         Assert.All(host.Proxies.Items, one => Assert.True(one.Available));
-        var moved = new StatusSnapshot("1", null, [entry with { Endpoint = "changed.example:51821" }], [], TransportProxies: agent.Summaries);
+        var moved = new StatusSnapshot("1", null, [entry with { Endpoint = "changed.example:51821", TransportProxy = Second, TransportProxyEnabled = true }], [], TransportProxies: agent.Summaries);
 
         host.Config.Apply(moved);
         host.Proxies.Apply(moved);
@@ -162,8 +164,8 @@ public sealed class TransportProxyCatalogueActionsTests
         Assert.All(probes, one => Assert.Equal(["vpn", "changed.example", "51821"], one.Args.Skip(1)));
         Assert.DoesNotContain(agent.Commands, one => one.Op is IpcContract.OpSelectTransportProxy or IpcContract.OpSetWebSocket or IpcContract.OpEditConfig);
         context.Revert();
-        Assert.Equal(First, context.SelectedProxyChoice?.Reference);
-        Assert.False(context.SelectedProxyEnabled);
+        Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
+        Assert.True(context.SelectedProxyEnabled);
         Assert.Equal("1420", context.Mtu);
         Assert.False(context.IsDirty);
         Assert.Equal(new ProxyDestination("changed.example", 51821), context.ProxyDestination);
@@ -183,7 +185,7 @@ public sealed class TransportProxyCatalogueActionsTests
         Assert.Equal(new ProxyDestination("draft.example", 51823), context.ProxyDestination);
         Assert.Equal(First, context.SelectedProxyChoice?.Reference);
         Assert.True(context.SelectedProxyEnabled);
-        Assert.True(context.IsDirty);
+        Assert.False(context.IsDirty);
     }
 
     [Fact]
@@ -212,6 +214,7 @@ public sealed class TransportProxyCatalogueActionsTests
         var agent = new Agent { Summaries = [Summary(First), Summary(Second), local], RefreshReply = pending.Task };
         var context = Settings(agent);
         context.SelectFromPicker(Summary(Second), true);
+        agent.Commands.Clear();
         var catalog = Catalogue(agent, context);
         var refresh = catalog.RefreshCommand.ExecuteAsync(null);
         Assert.True(catalog.IsRefreshing);
@@ -227,7 +230,7 @@ public sealed class TransportProxyCatalogueActionsTests
         Assert.Contains(catalog.Items, one => one.Reference == local.Reference);
         Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
         Assert.False(context.SelectedProxyEnabled);
-        Assert.True(context.IsDirty);
+        Assert.False(context.IsDirty);
         Assert.DoesNotContain(agent.Commands, one => one.Op is IpcContract.OpRefreshSubscription or IpcContract.OpSelectTransportProxy);
         Assert.False(catalog.IsRefreshing);
         Assert.True(catalog.CanRefresh);
@@ -240,6 +243,7 @@ public sealed class TransportProxyCatalogueActionsTests
         var context = Settings(agent);
         context.SelectFromPicker(Summary(First), true);
         context.SelectedProxyEnabled = true;
+        agent.Commands.Clear();
         var catalog = Catalogue(agent, context);
 
         await catalog.RefreshCommand.ExecuteAsync(null).ConfigureAwait(false);
@@ -273,6 +277,7 @@ public sealed class TransportProxyCatalogueActionsTests
     {
         var agent = new Agent { Summaries = [Summary(First)] };
         var context = Settings(agent);
+        agent.Commands.Clear();
         var catalog = Catalogue(agent, context);
         await catalog.OpenCardCommand.ExecuteAsync(Assert.Single(catalog.Items)).ConfigureAwait(false);
 
@@ -299,6 +304,7 @@ public sealed class TransportProxyCatalogueActionsTests
         var context = Settings(agent);
         context.SelectFromPicker(Summary(First), true);
         context.SelectedProxyEnabled = true;
+        agent.Commands.Clear();
         var catalog = Catalogue(agent, context);
 
         await catalog.RefreshCommand.ExecuteAsync(null).ConfigureAwait(false);

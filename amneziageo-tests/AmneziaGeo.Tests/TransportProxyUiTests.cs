@@ -74,17 +74,22 @@ public sealed class TransportProxyUiTests
     }
 
     [Fact]
-    public void AnIncomingSnapshotPreservesAnUnsavedChoice()
+    public async Task AnIncomingSnapshotPreservesAChoiceBeingSaved()
     {
-        var editor = Settings(new Agent());
+        var reply = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var agent = new Agent { SelectionReply = reply.Task };
+        var editor = Settings(agent);
         editor.ApplyProxyCatalog([Summary(First), Summary(Second)], First, true);
         editor.SelectedProxyChoice = editor.ProxyChoices.Single(one => one.Reference == Second);
-        editor.ApplyProxyCatalog([Summary(First)], First, true);
-
+        editor.ApplyProxyCatalog([Summary(First), Summary(Second)], First, true);
         Assert.Equal(Second, editor.SelectedProxyChoice?.Reference);
         Assert.True(editor.IsDirty);
         editor.Revert();
-        Assert.Equal(First, editor.SelectedProxyChoice?.Reference);
+        Assert.Equal(Second, editor.SelectedProxyChoice?.Reference);
+        reply.SetResult(new IpcAck(true, ""));
+        await editor.SaveProxySelectionAsync().ConfigureAwait(false);
+        editor.Revert();
+        Assert.Equal(Second, editor.SelectedProxyChoice?.Reference);
         Assert.False(editor.IsDirty);
     }
 
@@ -686,84 +691,64 @@ public sealed class TransportProxyUiTests
     }
 
     [Fact]
-    public async Task PickerTogglesAreExclusiveAndRemainInTheList()
+    public async Task PickerTogglesAreExclusiveAndSaveWithoutLeavingTheList()
     {
         var agent = new Agent { Summaries = [Summary(First), Summary(Second)] };
         var shell = new MainWindowViewModel(agent, new UiPreferences(persist: false));
         var context = Settings(agent);
         context.ApplyProxyCatalog(agent.Summaries, null, true);
         shell.Proxies.OpenForConfiguration(context);
-        Assert.Equal(2, shell.Proxies.Items.Count);
         shell.Proxies.Items[0].IsSelected = true;
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
         Assert.Null(shell.Proxies.Editor);
         Assert.True(shell.Proxies.Items[0].IsSelected);
         Assert.False(context.SelectedProxyEnabled);
         Assert.True(context.CanEnableSelectedProxy);
         shell.Proxies.Items[1].IsSelected = true;
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
         Assert.False(shell.Proxies.Items[0].IsSelected);
         Assert.True(shell.Proxies.Items[1].IsSelected);
         Assert.Equal(Second, context.SelectedProxyChoice!.Reference);
         shell.Proxies.Items[1].IsSelected = false;
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
         Assert.False(context.SelectedProxyEnabled);
         Assert.Null(context.SelectedProxyChoice?.Reference);
         Assert.False(context.CanEnableSelectedProxy);
-        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy);
+        Assert.Equal(3, agent.Commands.Count(one => one.Op == IpcContract.OpSelectTransportProxy));
+        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSetWebSocket);
         Assert.False(context.IsDirty);
-        Assert.False(context.ConnectionChanged);
-        Assert.True(await context.CommitAsync().ConfigureAwait(false));
-        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy);
     }
 
     [Fact]
-    public async Task AnEmptySelectionDoesNotEnableOrOverrideLegacyTransport()
+    public async Task AnEmptySelectionDisablesUsageUntilAProxyIsChosen()
     {
         var agent = new Agent();
-        var context = new ConfigTransportViewModel(agent, "vpn", true, 1420, false, webSocketOpen: true);
+        var context = Settings(agent);
         context.ApplyProxyCatalog([Summary(First)], null, false, true);
-        context.SeedProxyTarget("[Peer]\nEndpoint = vpn.example:51820");
         context.SelectedProxyEnabled = true;
-        context.SelectedProxyEnabled = false;
-
         Assert.False(context.SelectedProxyEnabled);
         Assert.False(context.CanEnableSelectedProxy);
-        Assert.False(context.IsDirty);
-        Assert.False(context.ConnectionChanged);
-        Assert.True(await context.CommitAsync().ConfigureAwait(false));
-        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy);
-
+        Assert.Empty(agent.Commands);
         context.SelectFromPicker(Summary(First), true);
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
         Assert.False(context.SelectedProxyEnabled);
-        Assert.True(context.ConnectionChanged);
-        context.Revert();
-        Assert.Null(context.SelectedProxyChoice?.Reference);
-        Assert.True(context.UseWebSocket);
-        Assert.False(context.ConnectionChanged);
+        Assert.True(context.CanEnableSelectedProxy);
         Assert.False(context.IsDirty);
+        context.Revert();
+        Assert.Equal(First, context.SelectedProxyChoice?.Reference);
     }
 
     [Fact]
-    public async Task TheFirstChoiceStaysDisabledAcrossSnapshotsAndSave()
+    public async Task TheFirstChoiceSavesWhileUsageRemainsDisabled()
     {
         var agent = new Agent();
         var context = Settings(agent);
         context.ApplyProxyCatalog([Summary(First)], null, true, true);
         context.SelectFromPicker(Summary(First), true);
-        context.ApplyProxyCatalog([Summary(First)], null, true, true);
-
-        Assert.Equal(First, context.SelectedProxyChoice?.Reference);
-        Assert.False(context.SelectedProxyEnabled);
-        Assert.True(context.CanEnableSelectedProxy);
-        Assert.True(context.IsDirty);
-        Assert.False(context.ConnectionChanged);
-        Assert.DoesNotContain(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy);
-        Assert.True(await context.CommitAsync().ConfigureAwait(false));
-        Assert.Contains(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy
-            && one.Args.SequenceEqual(new[] { "vpn", JsonSerializer.Serialize(First, IpcJson.Options), "off" }));
-        context.CaptureBaseline();
-        context.ApplyProxyCatalog([Summary(First)], First, true, false);
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        Assert.Equal(["vpn", JsonSerializer.Serialize(First, IpcJson.Options), "off"],
+            Assert.Single(agent.Commands).Args);
         Assert.False(context.IsDirty);
-        Assert.False(context.SelectedProxyEnabled);
-
         var reopened = Settings(agent);
         reopened.ApplyProxyCatalog([Summary(First)], First, true, false);
         Assert.Equal(First, reopened.SelectedProxyChoice?.Reference);
@@ -774,41 +759,37 @@ public sealed class TransportProxyUiTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void UsageChangesRequireReconnectAndCanBeCancelled(bool enabled)
+    public async Task SavedUsageIsNotUndoneByCancellingOtherSettings(bool enabled)
     {
-        var context = Settings(new Agent());
+        var agent = new Agent();
+        var context = Settings(agent);
         context.ApplyProxyCatalog([Summary(First)], First, true, enabled);
+        context.MtuMode = (int)MtuMode.Custom;
+        context.Mtu = "1300";
         context.SelectedProxyEnabled = !enabled;
-
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
         Assert.Equal(First, context.SelectedProxyChoice?.Reference);
         Assert.True(context.IsDirty);
-        Assert.True(context.ConnectionChanged);
-        context.ApplyProxyCatalog([Summary(First)], First, true, enabled);
-        Assert.Equal(!enabled, context.SelectedProxyEnabled);
+        Assert.All(agent.Commands, one => Assert.Equal(IpcContract.OpSelectTransportProxy, one.Op));
         context.Revert();
-        Assert.Equal(enabled, context.SelectedProxyEnabled);
+        Assert.Equal(!enabled, context.SelectedProxyEnabled);
         Assert.Equal(First, context.SelectedProxyChoice?.Reference);
         Assert.False(context.IsDirty);
-        Assert.False(context.ConnectionChanged);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task UsageIsSavedWithoutChangingTheSelectedReference(bool enabled)
+    public async Task UsageIsSavedImmediatelyWithoutChangingTheSelectedReference(bool enabled)
     {
         var agent = new Agent();
         var context = Settings(agent);
         context.ApplyProxyCatalog([Summary(First)], First, true, !enabled);
         context.SelectedProxyEnabled = enabled;
-
-        Assert.True(await context.CommitAsync().ConfigureAwait(false));
-        Assert.Contains(agent.Commands, one => one.Op == IpcContract.OpSelectTransportProxy
-            && one.Args.SequenceEqual(new[] { "vpn", JsonSerializer.Serialize(First, IpcJson.Options), enabled ? "on" : "off" }));
-        context.CaptureBaseline();
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        Assert.Equal(["vpn", JsonSerializer.Serialize(First, IpcJson.Options), enabled ? "on" : "off"],
+            Assert.Single(agent.Commands).Args);
         Assert.False(context.IsDirty);
-        Assert.False(context.ConnectionChanged);
-
         var reopened = Settings(agent);
         reopened.ApplyProxyCatalog([Summary(First)], First, true, enabled);
         Assert.Equal(First, reopened.SelectedProxyChoice?.Reference);
@@ -818,23 +799,20 @@ public sealed class TransportProxyUiTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ChangingTheChoicePreservesItsUsageAndReconnectsOnlyWhenEnabled(bool enabled)
+    public async Task ChangingTheChoiceImmediatelyPreservesItsUsage(bool enabled)
     {
-        var context = Settings(new Agent());
+        var agent = new Agent();
+        var context = Settings(agent);
         context.ApplyProxyCatalog([Summary(First), Summary(Second)], First, true, enabled);
         context.SelectFromPicker(Summary(Second), true);
-
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
         Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
         Assert.Equal(enabled, context.SelectedProxyEnabled);
-        Assert.Equal(enabled, context.ConnectionChanged);
-        context.ApplyProxyCatalog([Summary(First), Summary(Second)], First, true, enabled);
-        Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
-        Assert.Equal(enabled, context.SelectedProxyEnabled);
-        context.Revert();
-        Assert.Equal(First, context.SelectedProxyChoice?.Reference);
-        Assert.Equal(enabled, context.SelectedProxyEnabled);
-        Assert.False(context.ConnectionChanged);
+        Assert.Equal(["vpn", JsonSerializer.Serialize(Second, IpcJson.Options), enabled ? "on" : "off"],
+            Assert.Single(agent.Commands).Args);
         Assert.False(context.IsDirty);
+        context.Revert();
+        Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
     }
 
     [Fact]
@@ -850,7 +828,8 @@ public sealed class TransportProxyUiTests
         Assert.Null(context.SelectedProxyChoice?.Reference);
         Assert.False(context.SelectedProxyEnabled);
         Assert.False(context.CanEnableSelectedProxy);
-        Assert.True(context.ConnectionChanged);
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        Assert.False(context.IsDirty);
         context.SelectedProxyEnabled = true;
         Assert.False(context.SelectedProxyEnabled);
 
@@ -890,6 +869,89 @@ public sealed class TransportProxyUiTests
         Assert.False(context.AllowsProxy(Summary(First) with { Local = true, OwnerConfig = "other" }));
         Assert.True(context.AllowsProxy(Summary(First) with { Cdn = true, Scope = "selected", Targets = new(true, [new("vpn.example", 443)]) }));
         Assert.False(context.AllowsProxy(Summary(First) with { Cdn = true, Scope = "selected", Targets = new(true, [new("other.example", 443)]) }));
+    }
+
+    [Fact]
+    public async Task ChangesDuringAProxySavePersistTheLastChoiceAndUsage()
+    {
+        var reply = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var agent = new Agent { SelectionReply = reply.Task };
+        var context = Settings(agent);
+        context.ApplyProxyCatalog([Summary(First), Summary(Second)], First, true, false);
+        context.SelectedProxyEnabled = true;
+        context.SelectFromPicker(Summary(Second), true);
+        context.SelectedProxyEnabled = false;
+        context.ApplyProxyCatalog([Summary(First), Summary(Second)], First, true, false);
+        Assert.Equal(Second, context.SelectedProxyChoice?.Reference);
+        Assert.False(context.SelectedProxyEnabled);
+        agent.SelectionReply = null;
+        reply.SetResult(new IpcAck(true, ""));
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        Assert.Equal(2, agent.Commands.Count);
+        Assert.Equal(["vpn", JsonSerializer.Serialize(Second, IpcJson.Options), "off"], agent.Commands.Last().Args);
+        Assert.False(context.IsDirty);
+    }
+
+    [Fact]
+    public async Task AFailedImmediateSaveIsVisibleInTheCatalogue()
+    {
+        var agent = new Agent { RejectSelection = true, Summaries = [Summary(First)] };
+        var shell = new MainWindowViewModel(agent, new UiPreferences(persist: false));
+        var context = Settings(agent);
+        context.ApplyProxyCatalog(agent.Summaries, null, true, false);
+        shell.Proxies.OpenForConfiguration(context);
+        shell.Proxies.Items[0].IsSelected = true;
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        Assert.NotEmpty(shell.Proxies.CatalogueError);
+        Assert.True(context.IsDirty);
+    }
+
+    [Fact]
+    public async Task ProxyChangesInAnUnsavedConfigurationDoNotSendCommands()
+    {
+        var agent = new Agent();
+        var context = new ConfigTransportViewModel(agent, "", false, 1420, false);
+        context.ApplyProxyCatalog([Summary(First)], null, false, false);
+        context.SelectFromPicker(Summary(First), true);
+        context.SelectedProxyEnabled = true;
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        Assert.Empty(agent.Commands);
+        Assert.True(context.IsDirty);
+    }
+
+    [Fact]
+    public async Task TheSavedSelectionControlsUsageInSettingsAndTheConfigurationCard()
+    {
+        var agent = new Agent();
+        var host = new MainWindowViewModel(agent, new UiPreferences(persist: false));
+        var summary = Summary(First) with { CompatibleConfigs = ["vpn"] };
+        var entry = new ConfigEntry("vpn", "vpn.example:51820", false, ConnectionStatus.Disconnected, [],
+            TransportProxyChosen: true, TransportProxyEnabled: false);
+        host.Config.Apply(new StatusSnapshot("1", null, [entry], [], TransportProxies: [summary]));
+        host.Config.OpenConfig = "vpn";
+        var context = Assert.IsType<ConfigTransportViewModel>(host.Config.ConfigTransport);
+        var card = Assert.Single(host.Config.Configs);
+        Assert.False(context.CanEnableSelectedProxy);
+        Assert.False(card.CanToggleProxy);
+        context.SelectFromPicker(summary, true);
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        entry = entry with { TransportProxy = First };
+        host.Config.Apply(new StatusSnapshot("1", null, [entry], [], TransportProxies: [summary]));
+        Assert.True(context.CanEnableSelectedProxy);
+        Assert.True(card.CanToggleProxy);
+        await card.ToggleProxyCommand.ExecuteAsync(null).ConfigureAwait(false);
+        Assert.True(card.ProxyEnabled);
+        Assert.Equal("on", agent.Commands.Last(one => one.Op == IpcContract.OpSelectTransportProxy).Args[2]);
+        entry = entry with { TransportProxyEnabled = true };
+        host.Config.Apply(new StatusSnapshot("1", null, [entry], [], TransportProxies: [summary]));
+        Assert.True(context.SelectedProxyEnabled);
+        context.SelectFromPicker(summary, false);
+        await context.SaveProxySelectionAsync().ConfigureAwait(false);
+        host.Config.Apply(new StatusSnapshot("1", null, [entry with { TransportProxy = null, TransportProxyEnabled = false }], [], TransportProxies: [summary]));
+        Assert.False(context.CanEnableSelectedProxy);
+        Assert.False(context.SelectedProxyEnabled);
+        Assert.False(card.CanToggleProxy);
+        Assert.False(card.ProxyEnabled);
     }
 
     [Theory]
@@ -1023,6 +1085,7 @@ public sealed class TransportProxyUiTests
         public string SaveId { get; private set; } = "";
         public bool RejectSave { get; init; }
         public bool RejectSelection { get; init; }
+        public Task<IpcAck>? SelectionReply { get; set; }
         public Task<IpcAck>? ProbeReply { get; init; }
         public event Action? Connected { add { } remove { } }
         public event Action? Disconnected { add { } remove { } }
@@ -1045,7 +1108,7 @@ public sealed class TransportProxyUiTests
                     Saved = JsonSerializer.Deserialize<OfferedProxy>(command.Args[1], IpcJson.Options);
                     return Task.FromResult(RejectSave ? new IpcAck(false, "bad-proxy") : Reply(First));
                 case IpcContract.OpSelectTransportProxy:
-                    return Task.FromResult(new IpcAck(!RejectSelection, RejectSelection ? "proxy-target-denied" : ""));
+                    return SelectionReply ?? Task.FromResult(new IpcAck(!RejectSelection, RejectSelection ? "proxy-target-denied" : ""));
                 case IpcContract.OpRemoveTransportProxy:
                     Summaries = [];
                     break;

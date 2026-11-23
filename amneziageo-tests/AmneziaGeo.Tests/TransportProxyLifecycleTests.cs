@@ -58,7 +58,10 @@ public sealed class TransportProxyLifecycleTests : IAsyncLifetime
 
         Assert.Equal(["publisher"], changed);
         Assert.Single(await catalog.ListAsync().ConfigureAwait(false));
-        Assert.Null((await catalog.SelectionAsync("publisher").ConfigureAwait(false)).Reference);
+        var selection = await catalog.SelectionAsync("publisher").ConfigureAwait(false);
+        Assert.NotNull(selection.Reference);
+        Assert.True(selection.Enabled);
+        Assert.False(selection.UserChosen);
         Assert.True((await ServerOfferStore.ReadAsync(_store, "publisher", text).ConfigureAwait(false)).Settles(offer));
     }
 

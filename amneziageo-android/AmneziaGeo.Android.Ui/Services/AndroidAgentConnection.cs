@@ -909,7 +909,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             session.Mode == "off" ? null : session.Mode, session.Mode == "off" ? null : session.Packages,
             _transports.GetValueOrDefault(configName), front, foreground: true, EngineLogLevel(_logLevel), _directTcp,
             _excludeRoutes, session.Bypass, _localInTunnel, words,
-            TunnelSignal.Of(offer, configText, _transports.GetValueOrDefault(configName)?.UseIpv6 == true, _transports.GetValueOrDefault(configName)?.AllowSignal != false),
+            TunnelSignal.Of(offer, configText, Ipv6Plan.Enabled(_transports.GetValueOrDefault(configName), configText), _transports.GetValueOrDefault(configName)?.AllowSignal != false),
             [.. _geoSources.Select(source => source.Url), LinkCause.UpdateBase],
             dns, selectedProxy: selectedProxy.Proxy));
         if (!started.Started)
@@ -1057,11 +1057,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraVpnDnsNetwork, vpnDns.Network);
         }
 
+        intent.PutExtra(GeoVpnService.ExtraIpv6, Ipv6Plan.Enabled(transport, config ?? string.Empty));
         if (transport is not null)
         {
             intent.PutExtra(GeoVpnService.ExtraMtu, transport.Mtu);
             intent.PutExtra(GeoVpnService.ExtraMtuMode, (int)transport.MtuMode);
-            intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
             intent.PutExtra(GeoVpnService.ExtraHoldTraffic, transport.HoldTraffic);
         }
 
@@ -1080,7 +1080,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var requested = new VpnRequest(config ?? string.Empty, name ?? "AmneziaGeo",
             appMode is not null && appPkgs is { Length: > 0 } ? appMode : null,
             appMode is not null && appPkgs is { Length: > 0 } ? appPkgs : null,
-            transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, front?.Address(), front?.Port ?? 0,
+            transport?.Mtu ?? 0, Ipv6Plan.Enabled(transport, config ?? string.Empty), front?.Address(), front?.Port ?? 0,
             engineLog, transport is null ? 0 : (int)transport.MtuMode, directTcp, excludeRoutes,
             bypassPkgs is { Length: > 0 } ? bypassPkgs : null, localInTunnel, front?.Offered ?? false,
             notice, signal?.Port ?? 0, signal is null ? null : [.. signal.Sources],
@@ -1984,7 +1984,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: transport?.UseWebSocket ?? false,
             Mtu: transport?.Mtu ?? 0,
-            UseIpv6: transport?.UseIpv6 ?? false,
+            UseIpv6: Ipv6Plan.Enabled(transport, config),
             UseRouter: transport?.UseRouter ?? true,
             AllowInbound: transport?.AllowInbound ?? false,
             InboundNetwork: transport?.InboundNetwork ?? false,
@@ -2026,7 +2026,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             TransportProxyChosen: _transportSelections.GetValueOrDefault(name)?.UserChosen ?? false,
             RunningTransport: bound ? VpnBridge.ReadRunningTransport(name) : null,
             TransportProxyEnabled: _transportSelections.GetValueOrDefault(name)?.Enabled ?? true,
-            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer?.ServicesPort() is > 0 ? offer.ServicesPort() : ConfigServices.Port(config));
+            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer?.ServicesPort() is > 0 ? offer.ServicesPort() : ConfigServices.Port(config), Ipv6Mode: Ipv6Modes.Of(transport), Ipv6Available: Ipv6Plan.Available(config));
     }
 
     private string StatusFor(string target)
@@ -2949,14 +2949,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                         transport.WebSocketHost,
                         transport.WebSocketPort,
                         transport.Mtu,
-                        transport.UseIpv6,
+                        Ipv6Plan.Enabled(transport, text),
                         transport.MtuMode,
                         transport.UseRouter,
                         transport.AllowInbound,
                         transport.InboundNetwork,
                         transport.UseRouting,
                         transport.AllowSignal,
-                        transport.HoldTraffic, transport.ServicesPort),
+                        transport.HoldTraffic, transport.ServicesPort, transport.Ipv6Mode),
                 null).WithVpnDns(await _store.GetConfigDnsAsync(name).ConfigureAwait(false)).WithTransportProxyAsync(_store, name).ConfigureAwait(false));
         }
 
@@ -3215,7 +3215,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await _store.SetConfigTransportAsync(
-            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic) { ServicesPort = transport.ServicesPort }).ConfigureAwait(false);
+            new ConfigTransport(config, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic) { ServicesPort = transport.ServicesPort, Ipv6Mode = transport.Ipv6Mode }).ConfigureAwait(false);
     }
 
     private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
@@ -3247,7 +3247,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false);
-        var useIpv6 = args.Count > 3 ? IsOn(args[3]) : previous?.UseIpv6 ?? false;
+        var ipv6Mode = args.Count > 3 ? Ipv6Modes.Read(args[3]) : Ipv6Modes.Of(previous);
+        if (ipv6Mode is null)
+        {
+            return new IpcAck(false, "invalid IPv6 mode (auto/on/off)");
+        }
+        var useIpv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto
+            && Ipv6Plan.Available(_configs.GetValueOrDefault(args[0]));
 
         // A size sent without a mode stands for a choice of its own.
         var mode = args.Count > 4
@@ -3278,7 +3284,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await proxies.EnsureSelectionAsync(args[0]).ConfigureAwait(false);
         var proxyChanges = await TransportProxyChanges.CaptureAsync(_store,
             _active && _boundTarget == args[0] ? [args[0]] : []).ConfigureAwait(false);
-        var updated = new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true) { ServicesPort = previous?.ServicesPort ?? 0 };
+        var updated = new ConfigTransport(args[0], IsOn(args[1]), mtu, useIpv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true) { ServicesPort = previous?.ServicesPort ?? 0, Ipv6Mode = ipv6Mode };
         await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
         await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy").ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal)
@@ -3303,7 +3309,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         var allowed = IsOn(args[1]);
         await _store.SetConfigTransportAsync(previous with { AllowSignal = allowed }).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && allowed != previous.AllowSignal)
@@ -3361,7 +3367,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         var hold = IsOn(args[1]);
         await _store.SetConfigTransportAsync(previous with { HoldTraffic = hold }).ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal) && hold != previous.HoldTraffic)

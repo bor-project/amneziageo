@@ -251,7 +251,7 @@ public sealed class DiagnosticsBundle(IStateStore store, SqliteLogStore logs)
                 sb.AppendLine("    websocket:  off (plain UDP)");
             }
 
-            sb.AppendLine($"    ipv6:       {(transport?.UseIpv6 == true ? "on" : "off")}");
+            sb.AppendLine($"    ipv6:       {Ipv6Modes.Text(Ipv6Modes.Of(transport))} -> {(Ipv6Plan.Enabled(transport, text) ? "on" : "off")}");
             sb.AppendLine($"    router:     {(transport?.UseRouter != false ? "on" : "off")}");
             sb.AppendLine($"    routing:    {(transport?.UseRouting != false ? "on" : "off")}");
             sb.AppendLine($"    inbound:    {(transport?.AllowInbound != true ? "off" : transport.InboundNetwork ? "tunnel network" : "server only")}");

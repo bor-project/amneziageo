@@ -14,46 +14,56 @@
   <UserControl.Resources>
     <StreamGeometry x:Key="AgEyeGeometry">M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z</StreamGeometry>
   </UserControl.Resources>
-  <!-- WebSocket, MTU and the switches of a config. Fields stay left, capped so they do not stretch across a wide card. -->
+  <!-- Настройки транспорта конфигурации. -->
   <StackPanel Spacing="14">
     <StackPanel Spacing="8">
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" MinHeight="40">
-        <TextBlock Text="{l:Tr Proxies_Use}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" TextWrapping="Wrap"
-                   Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}" />
-        <ToggleSwitch MinWidth="0" IsChecked="{Binding SelectedProxyEnabled, Mode=TwoWay}"
-                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                      Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop8}"
-                      IsEnabled="{Binding CanEnableSelectedProxy}" VerticalAlignment="Center"
-                      AutomationProperties.Name="{l:Tr Proxies_Use}" />
-        <Button x:Name="ViewSelectedProxy" Grid.Column="3" Classes="linkbtn" Command="{Binding ChooseProxyCommand}"
-                VerticalAlignment="Center" Padding="0" HorizontalAlignment="Right">
-          <StackPanel Orientation="Horizontal" Spacing="5">
-            <TextBlock Text="{l:Tr Proxies_Settings}" />
-            <TextBlock Text="›" />
-          </StackPanel>
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" MinHeight="34">
+        <TextBlock Text="{l:Tr Proxies_Title}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="cardpick" ClickMode="Press" Command="{Binding ToggleSelectedProxyCommand}"
+                IsEnabled="{Binding CanEnableSelectedProxy}" VerticalAlignment="Center"
+                AutomationProperties.Name="{l:Tr Proxies_Use}">
+          <Panel Width="42">
+            <Border Classes="cardswitch" Classes.on="{Binding SelectedProxyEnabled}" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Ellipse />
+            </Border>
+          </Panel>
         </Button>
       </Grid>
-      <TextBlock Text="{Binding SelectedProxyAddress}" Classes="muted" TextWrapping="Wrap" />
-      <controls:TagStrip Spacing="6" RowSpacing="6" IsVisible="{Binding HasSelectedProxy}">
-        <Border Classes="cardchip cardtag" ToolTip.Tip="{Binding SelectedProxyProvider}">
-          <TextBlock Text="{Binding SelectedProxyProvider}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-        </Border>
-        <Border Classes="cardchip cardtag">
-          <Grid ColumnDefinitions="Auto,*">
-            <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="13" Height="13" Margin="0,0,4,0"
-                   VerticalAlignment="Center" IsVisible="{Binding SelectedProxyIsHttpGet}" />
-            <TextBlock Grid.Column="1" Text="{Binding SelectedProxyProtocol}" FontSize="11.5" FontWeight="SemiBold"
-                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+      <Grid RowDefinitions="Auto,Auto" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="7" Margin="0,4,0,10">
+          <TextBlock Text="{Binding SelectedProxyAddress}" FontSize="13" TextWrapping="Wrap"
+                     MinHeight="18" LineHeight="18" MaxLines="2" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding SelectedProxyFault}" Classes="fieldwarn" TextWrapping="Wrap" FontSize="12"
+                     IsVisible="{Binding SelectedProxyFault, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+        <Border Grid.Row="1" Classes="cardfoot" BorderThickness="0" CornerRadius="0" Padding="0,0,0,8">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <controls:TagStrip Spacing="6" RowSpacing="6" IsVisible="{Binding HasSelectedProxy}">
+              <Border Classes="cardchip cardtag" ToolTip.Tip="{Binding SelectedProxyProvider}">
+                <TextBlock Text="{Binding SelectedProxyProvider}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+              </Border>
+              <Border Classes="cardchip cardtag">
+                <Grid ColumnDefinitions="Auto,*">
+                  <Image Source="avares://AmneziaGeo.Ui/Assets/amneziageo.png" Width="13" Height="13" Margin="0,0,4,0"
+                         VerticalAlignment="Center" IsVisible="{Binding SelectedProxyIsHttpGet}" />
+                  <TextBlock Grid.Column="1" Text="{Binding SelectedProxyProtocol}" FontSize="11.5" FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </Grid>
+              </Border>
+              <Border Classes="cardchip cardtag" IsVisible="{Binding SelectedProxyCdn}">
+                <TextBlock Text="CDN" FontSize="11.5" FontWeight="SemiBold" />
+              </Border>
+            </controls:TagStrip>
+            <Button Grid.Column="1" x:Name="ViewSelectedProxy" Classes="methodpick cardgear" Command="{Binding ChooseProxyCommand}"
+                    ToolTip.Tip="{l:Tr Proxies_Settings}" AutomationProperties.Name="{l:Tr Proxies_Settings}">
+              <PathIcon Data="{DynamicResource AgGearGeometry}" Width="15" Height="15" />
+            </Button>
           </Grid>
         </Border>
-        <Border Classes="cardchip cardtag" IsVisible="{Binding SelectedProxyCdn}">
-          <TextBlock Text="CDN" FontSize="11.5" FontWeight="SemiBold" />
-        </Border>
-      </controls:TagStrip>
-      <TextBlock Text="{Binding SelectedProxyFault}" Classes="fieldwarn" TextWrapping="Wrap"
-                 IsVisible="{Binding SelectedProxyFault, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </Grid>
     </StackPanel>
+
+    <Border Classes="rowsep" />
 
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40">
       <TextBlock Text="{l:Tr Transport_ServicesPort}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" TextWrapping="Wrap" />
@@ -64,36 +74,29 @@
                Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop8}" />
     </Grid>
 
-    <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
 
-    <!-- The box stands beside its heading, where a switch stands in the rows around it. A narrow card has no
-         width for both, so the pair drops under the heading. -->
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
-      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-        <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
-        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
-      </StackPanel>
-      <!-- Узкому телефону список тянется, поле числа остаётся своей ширины. -->
-      <Grid Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-            Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}"
-            ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center"
-            HorizontalAlignment="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-        <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
-                                   Width="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w132}"
-                                   SelectedIndex="{Binding MtuMode, Mode=TwoWay}">
+    <StackPanel Spacing="8">
+      <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
+      <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" HorizontalAlignment="Left">
+        <controls:AdaptiveComboBox x:Name="MtuMode" Classes="field" Width="160"
+                                  SelectedIndex="{Binding MtuMode, Mode=TwoWay}" AutomationProperties.Name="{l:Tr Main_TunnelMtuLabel}">
           <ComboBoxItem Content="{l:Tr Main_MtuModeAuto}" />
           <ComboBoxItem Content="{l:Tr Main_MtuModeConfig}" />
           <ComboBoxItem Content="{l:Tr Main_MtuModeCustom}" />
         </controls:AdaptiveComboBox>
-        <TextBox Grid.Column="1" Classes="field" Width="90" IsEnabled="{Binding !IsMtuReadOnly}"
-                 controls:NumericInput.Minimum="{x:Static decl:MtuModes.MinMtu}" controls:NumericInput.Maximum="{x:Static decl:MtuModes.MaxMtu}" Text="{Binding Mtu}" />
+        <TextBox Grid.Column="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                 Grid.Row="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                 Margin="{Binding IsSlim, Source={x:Static svc:UiLayout.Instance}, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop8}"
+                 Classes="field" Width="90" HorizontalAlignment="Left" IsVisible="{Binding !IsMtuReadOnly}"
+                 controls:NumericInput.Minimum="{x:Static decl:MtuModes.MinMtu}" controls:NumericInput.Maximum="{x:Static decl:MtuModes.MaxMtu}"
+                 Text="{Binding Mtu}" AutomationProperties.Name="{l:Tr Main_TunnelMtuLabel}" />
       </Grid>
-    </Grid>
+      <TextBlock Text="{Binding ResolvedMtuText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                 IsVisible="{Binding ShowResolvedMtu}" />
+    </StackPanel>
 
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Classes="rowsep" />
 
     <!-- DNS для имён через VPN: выбор и его серверы. -->
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
@@ -125,12 +128,20 @@
       </Grid>
     </Grid>
 
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
 
-    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
-                               IsChecked="{Binding UseIpv6, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+    <StackPanel Spacing="8">
+      <TextBlock Text="{l:Tr Main_UseIpv6Title}" FontWeight="SemiBold" FontSize="15" />
+      <controls:AdaptiveComboBox x:Name="Ipv6Mode" Classes="field" Width="160" HorizontalAlignment="Left"
+                                SelectedIndex="{Binding Ipv6Mode, Mode=TwoWay}" AutomationProperties.Name="{l:Tr Main_UseIpv6Title}">
+        <ComboBoxItem Content="{l:Tr Main_MtuModeAuto}" />
+        <ComboBoxItem Content="{l:Tr Transport_Ipv6Yes}" />
+        <ComboBoxItem Content="{l:Tr Transport_Ipv6No}" />
+      </controls:AdaptiveComboBox>
+      <TextBlock Text="{Binding Ipv6Status}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+    </StackPanel>
 
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
 
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseRoutingTitle}" Description="{l:Tr Main_UseRoutingHint}"
                                IsChecked="{Binding RoutingSwitch, Mode=TwoWay}"
@@ -141,14 +152,14 @@
       </controls:SettingSwitchRow.Mark>
     </controls:SettingSwitchRow>
 
-    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
 
     <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_HoldTrafficTitle}" Description="{l:Tr Main_HoldTrafficHint}"
                                IsChecked="{Binding HoldTraffic, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
     <!-- Приём входящих по адресу этой машины в туннеле. -->
     <StackPanel Spacing="14" IsVisible="{Binding InboundAvailable}">
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
 
       <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_InboundTitle}" Description="{l:Tr Main_InboundHint}"
                                  IsChecked="{Binding AllowInbound, Mode=TwoWay}" HorizontalAlignment="Stretch" />
@@ -161,7 +172,7 @@
 
     <!-- Сигнал сервера на отключение: тумблер доступен, пока сервер оставляет выбор устройству. -->
     <StackPanel Spacing="14">
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
 
       <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_SignalTitle}" Description="{l:Tr Main_SignalHint}"
                                  IsChecked="{Binding SignalSwitch, Mode=TwoWay}" SwitchEnabled="{Binding SignalOffered}"

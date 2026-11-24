@@ -337,6 +337,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
 
             // Per-config IPv6 opt-in; off keeps the tunnel v4-only. Moved off the routing list (was per-list #149).
             await AddColumnAsync(connection, schema, "config_transport", "use_ipv6", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
+            await AddColumnAsync(connection, schema, "config_transport", "ipv6_mode", "INTEGER", ct).ConfigureAwait(false);
 
             // How the MTU is picked: 0 auto, 1 from the config text, 2 the stored size. A row that already carries
             // a size kept it as a choice of its own, so it becomes custom; an empty one follows the path.
@@ -1082,7 +1083,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, ws_host, ws_port, allow_signal, hold_traffic, services_port FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, ws_host, ws_port, allow_signal, hold_traffic, services_port, ipv6_mode FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1093,7 +1094,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9), reader.GetInt32(10) != 0, reader.GetInt32(11) != 0) { ServicesPort = reader.GetInt32(12) };
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9), reader.GetInt32(10) != 0, reader.GetInt32(11) != 0) { ServicesPort = reader.GetInt32(12), Ipv6Mode = reader.IsDBNull(13) ? null : Enum.IsDefined((Ipv6Mode)reader.GetInt32(13)) ? (Ipv6Mode)reader.GetInt32(13) : Ipv6Mode.Off };
                 }
             }
         }
@@ -1112,8 +1113,8 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, allow_signal, hold_traffic, services_port, updated_at)
-                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $routing, $signal, $hold, $services, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, mtu_mode, use_router, allow_inbound, inbound_network, use_routing, allow_signal, hold_traffic, services_port, ipv6_mode, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $v6, $mode, $router, $inbound, $network, $routing, $signal, $hold, $services, $ipv6mode, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
                         ws_host    = excluded.ws_host,
@@ -1128,6 +1129,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
                         allow_signal = excluded.allow_signal,
                         hold_traffic = excluded.hold_traffic,
                         services_port = excluded.services_port,
+                        ipv6_mode = excluded.ipv6_mode,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
@@ -1144,6 +1146,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$signal", transport.AllowSignal ? 1 : 0);
                 command.Parameters.AddWithValue("$hold", transport.HoldTraffic ? 1 : 0);
                 command.Parameters.AddWithValue("$services", transport.ServicesPort);
+                command.Parameters.AddWithValue("$ipv6mode", transport.Ipv6Mode is { } ipv6Mode ? (object)(int)ipv6Mode : DBNull.Value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

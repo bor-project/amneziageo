@@ -188,7 +188,8 @@ internal sealed class TunnelController : IDisposable
             return refused;
         }
 
-        var (resolved, endpointIp) = await ResolveEndpointAsync(configText, _log, ct).ConfigureAwait(false);
+        var ipv6 = Ipv6Plan.Enabled(options.Transport, configText);
+        var (resolved, endpointIp) = await ResolveEndpointAsync(Ipv6Plan.ForTunnel(configText, ipv6), _log, ct).ConfigureAwait(false);
         using var carrier = await CarrierAsync(front, options.Proxy, options.ProxyChosen, configText, ct).ConfigureAwait(false);
         if (carrier.Refusal is { } refusal)
         {
@@ -241,7 +242,7 @@ internal sealed class TunnelController : IDisposable
 
         // The server takes the tunnel down by a signal from its own address inside it: the way back to that
         // address stands from the start.
-        var signal = TunnelSignal.Of(options.Offer, resolved, options.Transport?.UseIpv6 == true, options.Transport?.AllowSignal != false);
+        var signal = TunnelSignal.Of(options.Offer, resolved, ipv6, options.Transport?.AllowSignal != false);
         IReadOnlyList<string> signalRoutes = signal?.Routes ?? [];
         foreach (var route in signalRoutes)
         {
@@ -267,7 +268,8 @@ internal sealed class TunnelController : IDisposable
 
         var inboundReturn = standing.Return;
 
-        var allowedIps = AllowedIpsResolver.Build(split, WgConfigEditor.GetAllowedIps(resolved), startupRoutes);
+        var allowedIps = AllowedIpsResolver.Build(split, WgConfigEditor.GetAllowedIps(resolved), startupRoutes)
+            .Where(range => ipv6 || !range.Contains(':', StringComparison.Ordinal)).ToList();
         // Split advertises almost nothing at first, so without a keepalive the peer would only be greeted once
         // some destination had already earned its route - and the name rules that earn it need the tunnel first.
         var config = WgConfigEditor.EnsurePersistentKeepalive(WgConfigEditor.ApplyAllowedIps(resolved, allowedIps), KeepaliveSeconds);

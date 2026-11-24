@@ -228,7 +228,7 @@
                          IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
 
-            <Border Classes="hairline" />
+            <Border Classes="rowsep" />
 
             <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
                  until asked for - it carries the private key - and hidden again on every entry into the section. -->
@@ -264,7 +264,7 @@
                          IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
 
-            <Border Classes="hairline" />
+            <Border Classes="rowsep" />
 
             <!-- Proxy (WebSocket). -->
             <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />

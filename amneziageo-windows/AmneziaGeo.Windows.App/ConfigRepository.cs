@@ -289,13 +289,13 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         WgConfigValidator.Validate(text);
     }
 
-    // Defaults IPv6 on when the imported config has an IPv6 interface Address.
+    // Выбирает IPv6 для новой конфигурации.
     private async Task SeedIpv6DefaultAsync(string name, string text, CancellationToken ct)
     {
-        if (WgConfigEditor.GetAddresses(text).Any(a => a.Contains(':')))
+        await TransportProxyCatalog.For(store).EnsureSelectionAsync(name, ct).ConfigureAwait(false);
+        await store.SetConfigTransportAsync(new ConfigTransport(name, false, UseIpv6: Ipv6Plan.Available(text))
         {
-            await TransportProxyCatalog.For(store).EnsureSelectionAsync(name, ct).ConfigureAwait(false);
-            await store.SetConfigTransportAsync(new ConfigTransport(name, false, UseIpv6: true), ct);
-        }
+            Ipv6Mode = Ipv6Mode.Auto,
+        }, ct).ConfigureAwait(false);
     }
 }

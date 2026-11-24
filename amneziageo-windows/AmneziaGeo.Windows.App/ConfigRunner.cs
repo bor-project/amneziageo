@@ -1285,7 +1285,7 @@ internal sealed class ConfigRunner(
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var offer = await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false);
         var transport = await store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
-        if (TunnelSignal.Of(offer, text, transport?.UseIpv6 ?? false, transport?.AllowSignal ?? true) is not { } place)
+        if (TunnelSignal.Of(offer, text, Ipv6Plan.Enabled(transport, text), transport?.AllowSignal ?? true) is not { } place)
         {
             return;
         }

@@ -54,6 +54,9 @@ internal sealed partial class ConfigTransportViewModel
     [RelayCommand]
     private void ChooseProxy() => ProxyListRequested?.Invoke(this);
 
+    [RelayCommand]
+    private void ToggleSelectedProxy() => SelectedProxyEnabled = !SelectedProxyEnabled;
+
     public bool AllowsProxy(TransportProxySummary summary) => ProxyCompatible(summary);
 
     public void SelectFromPicker(TransportProxySummary summary, bool selected)
@@ -281,6 +284,7 @@ internal sealed partial class ConfigTransportViewModel
     /// </summary>
     public void SeedProxyTarget(string text)
     {
+        RefreshNetworkValues(_resolvedMtu, Ipv6Plan.Available(text));
         var host = ConfigServices.Host(text);
         var port = ConfigServices.EndpointPort(text);
         _draftProxyTarget = ProxyTargetRules.NormalizeHost(host) is { } normalized && port is >= 1 and <= 65535

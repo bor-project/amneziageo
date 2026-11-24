@@ -1915,7 +1915,13 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidMtu"));
         }
 
-        var ipv6 = args.Count > 3 ? IsOn(args[3]) : stored?.UseIpv6 ?? false;
+        var ipv6Mode = args.Count > 3 ? Ipv6Modes.Read(args[3]) : Ipv6Modes.Of(stored);
+        if (ipv6Mode is null)
+        {
+            return new IpcAck(false, "invalid IPv6 mode (auto/on/off)");
+        }
+        var ipv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto
+            && Ipv6Plan.Available(await _store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false));
 
         // A size sent without a mode stands for a choice of its own.
         var mode = args.Count > 4
@@ -1942,7 +1948,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Transport_InvalidHost"));
         }
 
-        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true) { ServicesPort = stored?.ServicesPort ?? 0 };
+        var transport = new ConfigTransport(args[0], IsOn(args[1]), mtu, ipv6, mode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, stored?.AllowSignal ?? true, stored?.HoldTraffic ?? true) { ServicesPort = stored?.ServicesPort ?? 0, Ipv6Mode = ipv6Mode };
         var proxies = TransportProxyCatalog.For(_store);
         await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
         var proxyChanges = await TransportProxyChanges.CaptureAsync(_store,
@@ -1976,7 +1982,7 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
-        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         var transport = stored with { AllowSignal = IsOn(args[1]) };
         await _store.SetConfigTransportAsync(transport, ct).ConfigureAwait(false);
         FlagTransportRestart(args[0], stored, transport);
@@ -1996,7 +2002,7 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
-        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var stored = await _store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         var hold = IsOn(args[1]);
         await _store.SetConfigTransportAsync(stored with { HoldTraffic = hold }, ct).ConfigureAwait(false);
         if (string.Equals(args[0], _boundTarget, StringComparison.Ordinal))
@@ -3679,7 +3685,7 @@ internal sealed class LinuxAgent : IDisposable
             dns?.Servers ?? string.Empty,
             exclusions?.Exclusions ?? string.Empty,
             transport?.Mtu ?? 0,
-            transport?.UseIpv6 ?? false,
+            Ipv6Plan.Enabled(transport, text),
             handshake,
             reading.RxBitsPerSecond,
             reading.TxBitsPerSecond,
@@ -3720,7 +3726,7 @@ internal sealed class LinuxAgent : IDisposable
             (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).Reference,
             (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).UserChosen, bound && _tunnel.Running ? _tunnel.RunningTransport : null,
             TransportProxyEnabled: (await TransportProxyCatalog.For(_store).SelectionAsync(name, ct).ConfigureAwait(false)).Enabled,
-            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer.ServicesPort() > 0 ? offer.ServicesPort() : ConfigServices.Port(text));
+            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer.ServicesPort() > 0 ? offer.ServicesPort() : ConfigServices.Port(text), Ipv6Mode: Ipv6Modes.Of(transport), Ipv6Available: Ipv6Plan.Available(text));
     }
 
     // Which subscription brought which configuration, read once for the whole snapshot.

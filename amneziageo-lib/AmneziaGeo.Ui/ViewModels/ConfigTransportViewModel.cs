@@ -29,7 +29,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private string _baseWebSocketToken = string.Empty;
     private string _baseMtu = string.Empty;
     private int _baseMtuMode;
-    private bool _baseUseIpv6;
+    private int _baseIpv6Mode;
     private bool _baseUseRouter;
     private bool _baseAllowInbound;
     private bool _baseUseRouting;
@@ -107,10 +107,32 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     // Where the size comes from: 0 the link, 1 the config text, 2 this field.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMtuReadOnly))]
+    [NotifyPropertyChangedFor(nameof(ShowResolvedMtu))]
     private int _mtuMode;
 
     [ObservableProperty]
     private bool _useIpv6;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Ipv6Status))]
+    private int _ipv6Mode;
+
+    private bool? _ipv6Available;
+    private int _resolvedMtu;
+    public string Ipv6Status => Loc.Instance.Get(_ipv6Available is null && Ipv6Mode == 0
+        ? "Transport_Ipv6Unknown"
+        : Ipv6Mode == 1 || Ipv6Mode == 0 && _ipv6Available == true ? "Transport_Ipv6On" : "Transport_Ipv6Off");
+    public string ResolvedMtuText => _resolvedMtu > 0
+        ? Loc.Instance.Get("Transport_MtuResolved", _resolvedMtu) : Loc.Instance.Get("Transport_MtuPending");
+    public bool ShowResolvedMtu => IsMtuReadOnly;
+
+    public void RefreshNetworkValues(int resolvedMtu, bool? ipv6Available)
+    {
+        _resolvedMtu = resolvedMtu;
+        _ipv6Available = ipv6Available;
+        OnPropertyChanged(nameof(ResolvedMtuText));
+        OnPropertyChanged(nameof(Ipv6Status));
+    }
 
     [ObservableProperty]
     private bool _useRouter = true;
@@ -310,7 +332,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false, bool holdTraffic = true, VpnDnsMode vpnDnsMode = Decl.VpnDnsMode.Default, string vpnDns = "", string vpnDnsShown = "", bool vpnDnsNetwork = false, string serverDns = "", string defaultDns = "", bool defaultDnsNetwork = false)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, bool useWebSocket, int mtu, bool useIpv6, MtuMode mtuMode = AmneziaGeo.Decl.MtuMode.Auto, int resolvedMtu = 0, bool useRouter = true, bool allowInbound = false, bool inboundNetwork = false, string address = "", bool webSocketOpen = false, bool useRouting = true, bool webSocketManual = false, string endpoint = "", string webSocketHost = "", int webSocketPort = 0, bool allowSignal = true, bool signalOffered = false, bool holdTraffic = true, VpnDnsMode vpnDnsMode = Decl.VpnDnsMode.Default, string vpnDns = "", string vpnDnsShown = "", bool vpnDnsNetwork = false, string serverDns = "", string defaultDns = "", bool defaultDnsNetwork = false, Decl.Ipv6Mode? ipv6Mode = null, bool? ipv6Available = null)
     {
         _connection = connection;
         ConfigName = name;
@@ -319,6 +341,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _webSocketOpen = webSocketOpen;
         _webSocketManual = webSocketManual;
         _useIpv6 = useIpv6;
+        _ipv6Mode = (int)(ipv6Mode ?? (useIpv6 ? Decl.Ipv6Mode.On : Decl.Ipv6Mode.Off));
+        _ipv6Available = ipv6Available;
+        _resolvedMtu = resolvedMtu;
         _useRouter = useRouter;
         _allowInbound = allowInbound;
         _inboundNetwork = inboundNetwork;
@@ -426,8 +451,11 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// </summary>
     public bool IsMtuReadOnly => MtuModes.IsReadOnly(MtuModes.From(MtuMode));
 
-    partial void OnUseIpv6Changed(bool value)
+    partial void OnUseIpv6Changed(bool value) => Ipv6Mode = (int)(value ? Decl.Ipv6Mode.On : Decl.Ipv6Mode.Off);
+
+    partial void OnIpv6ModeChanged(int value)
     {
+        SetProperty(ref _useIpv6, value == 1 || value == 0 && _ipv6Available == true, nameof(UseIpv6));
         MarkDirty();
         FireAutoSave();
     }
@@ -494,7 +522,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         || UseWebSocket != _baseUseWebSocket
         || MtuMode != _baseMtuMode
         || MtuMode == (int)Decl.MtuMode.Custom && !string.Equals(Mtu.Trim(), _baseMtu.Trim(), StringComparison.Ordinal)
-        || UseIpv6 != _baseUseIpv6
+        || Ipv6Mode != _baseIpv6Mode
         || UseRouter != _baseUseRouter
         || AllowInbound != _baseAllowInbound
         || UseRouting != _baseUseRouting
@@ -539,7 +567,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal)
             || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal)
             || MtuMode != _baseMtuMode
-            || UseIpv6 != _baseUseIpv6
+            || Ipv6Mode != _baseIpv6Mode
             || UseRouter != _baseUseRouter
             || AllowInbound != _baseAllowInbound
             || UseRouting != _baseUseRouting
@@ -568,7 +596,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseWebSocketToken = WebSocketToken ?? string.Empty;
         _baseMtu = Mtu ?? string.Empty;
         _baseMtuMode = MtuMode;
-        _baseUseIpv6 = UseIpv6;
+        _baseIpv6Mode = Ipv6Mode;
         _baseUseRouter = UseRouter;
         _baseAllowInbound = AllowInbound;
         _baseUseRouting = UseRouting;
@@ -600,7 +628,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             WebSocketToken = _baseWebSocketToken;
             Mtu = _baseMtu;
             MtuMode = _baseMtuMode;
-            UseIpv6 = _baseUseIpv6;
+            Ipv6Mode = _baseIpv6Mode;
             UseRouter = _baseUseRouter;
             AllowInbound = _baseAllowInbound;
             UseRouting = _baseUseRouting;
@@ -733,7 +761,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
                 ConfigName,
                 UseWebSocket ? "on" : "off",
                 mtuVal,
-                UseIpv6 ? "on" : "off",
+                Ipv6Modes.Text((Decl.Ipv6Mode)Ipv6Mode),
                 MtuModes.Text(MtuModes.From(MtuMode)),
                 UseRouter ? "on" : "off",
                 AllowInbound ? "on" : "off",

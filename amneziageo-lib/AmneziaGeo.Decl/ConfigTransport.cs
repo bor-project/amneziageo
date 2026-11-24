@@ -21,6 +21,7 @@ public sealed record ConfigTransport(
     bool HoldTraffic = true)
 {
     public int ServicesPort { get; init; }
+    public Ipv6Mode? Ipv6Mode { get; init; }
 
     /// <summary>
     /// Returns the port a text names: zero for an empty text, minus one for a text that is not a port.

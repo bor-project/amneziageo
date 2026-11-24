@@ -811,6 +811,8 @@ internal partial class ConfigViewModel : ViewModelBase
             existing.MtuMode = entry.MtuMode;
             existing.ResolvedMtu = entry.ResolvedMtu;
             existing.UseIpv6 = entry.UseIpv6;
+            existing.Ipv6Mode = entry.Ipv6Mode;
+            existing.Ipv6Available = entry.Ipv6Available;
             existing.UseRouter = entry.UseRouter;
             existing.UseRouting = entry.UseRouting;
             existing.AllowInbound = entry.AllowInbound;
@@ -1204,7 +1206,7 @@ internal partial class ConfigViewModel : ViewModelBase
             item.Name,
             item.UseWebSocket ? "on" : "off",
             mtu,
-            item.UseIpv6 ? "on" : "off",
+            Ipv6Modes.Text(item.Ipv6Mode ?? (item.UseIpv6 ? Ipv6Mode.On : Ipv6Mode.Off)),
             MtuModes.Text(item.MtuMode),
             item.UseRouter ? "on" : "off",
             item.AllowInbound ? "on" : "off",
@@ -1261,7 +1263,7 @@ internal partial class ConfigViewModel : ViewModelBase
         _ = export.LoadAsync();
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false, item?.HoldTraffic ?? true, item?.VpnDnsMode ?? VpnDnsMode.Default, item?.VpnDns ?? string.Empty, item?.VpnDnsShown ?? string.Empty, item?.VpnDnsNetwork ?? false, item?.ServerDns ?? string.Empty, item?.DefaultDns ?? string.Empty, item?.DefaultDnsNetwork ?? false);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.UseWebSocket ?? false, item?.Mtu ?? 0, item?.UseIpv6 ?? false, item?.MtuMode ?? MtuMode.Auto, item?.ResolvedMtu ?? 0, item?.UseRouter ?? true, item?.AllowInbound ?? false, item?.InboundNetwork ?? false, item?.Address ?? string.Empty, item?.WebSocketOffered ?? false, item?.UseRouting ?? true, item?.WebSocketManual ?? false, item?.Endpoint ?? string.Empty, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 0, item?.AllowSignal ?? true, item?.SignalOffered ?? false, item?.HoldTraffic ?? true, item?.VpnDnsMode ?? VpnDnsMode.Default, item?.VpnDns ?? string.Empty, item?.VpnDnsShown ?? string.Empty, item?.VpnDnsNetwork ?? false, item?.ServerDns ?? string.Empty, item?.DefaultDns ?? string.Empty, item?.DefaultDnsNetwork ?? false, item?.Ipv6Mode, item?.Ipv6Available);
         ConfigTransport.ServerListsOnly = item?.ServerListsOnly ?? false;
         ConfigTransport.ServerOurs = item?.ServerOurs ?? false;
         SeedProxyChoice(ConfigTransport);
@@ -1282,6 +1284,7 @@ internal partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        transport.RefreshNetworkValues(item.ResolvedMtu, item.Ipv6Available);
         transport.RefreshProxyEndpoint(item.Endpoint);
         SeedProxyChoice(transport);
         transport.WebSocketOpen = item.WebSocketOffered;
@@ -1688,7 +1691,7 @@ internal partial class ConfigViewModel : ViewModelBase
     // server is asked.
     private ConfigTransportViewModel NewSectionTransport()
     {
-        var transport = new ConfigTransportViewModel(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true);
+        var transport = new ConfigTransportViewModel(_connection, string.Empty, false, 0, false, webSocketOpen: true, webSocketManual: true, ipv6Mode: Ipv6Mode.Auto);
         transport.ApplyProxyCatalog(_transportProxies, null, false);
         return transport;
     }

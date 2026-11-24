@@ -18,10 +18,8 @@ internal partial class ConfigItemViewModel : ViewModelBase
     private readonly ObservableCollection<CardTag> _tags = [];
 
     private AsyncRelayCommand? _toggleWebSocket;
-    private AsyncRelayCommand? _toggleIpv6;
     private AsyncRelayCommand? _toggleRouter;
 
-    private AsyncRelayCommand? _toggleMtu;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -68,6 +66,9 @@ internal partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
+
+    public Ipv6Mode? Ipv6Mode { get; set; }
+    public bool? Ipv6Available { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Tags))]
@@ -271,26 +272,13 @@ internal partial class ConfigItemViewModel : ViewModelBase
         _toggleWebSocket ??= new AsyncRelayCommand(() => ToggleAsync(() => UseWebSocket = !UseWebSocket));
 
     /// <summary>
-    /// Переключает IPv6 с плашки карточки.
-    /// </summary>
-    public IAsyncRelayCommand ToggleIpv6Command =>
-        _toggleIpv6 ??= new AsyncRelayCommand(() => ToggleAsync(() => UseIpv6 = !UseIpv6));
-
-    /// <summary>
     /// Переключает роутер с плашки карточки.
     /// </summary>
     public IAsyncRelayCommand ToggleRouterCommand =>
         _toggleRouter ??= new AsyncRelayCommand(() => ToggleAsync(() => UseRouter = !UseRouter));
 
     /// <summary>
-    /// Переключает MTU с плашки карточки: подбор против зафиксированного размера.
-    /// </summary>
-    public IAsyncRelayCommand ToggleMtuCommand =>
-        _toggleMtu ??= new AsyncRelayCommand(() => ToggleAsync(() => MtuMode = NextMtuMode()));
-
-    /// <summary>
-    /// Метки настроек карточки: прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край первым, когда
-    /// ширины не хватает.
+    /// Метки настроек карточки.
     /// </summary>
     public IReadOnlyList<CardTag> Tags
     {
@@ -301,14 +289,11 @@ internal partial class ConfigItemViewModel : ViewModelBase
         }
     }
 
-    // Ряд, каким он должен стать. Плашка роутера скрыта. MTU переключается, только когда есть на что:
-    // свой размер либо объявленный конфигурацией.
     private List<CardTag> Built()
     {
-        var built = new List<CardTag>(5)
+        var built = new List<CardTag>(2)
         {
             new(Loc.Instance.Get("Proxies_Title"), ProxyEnabled, CanToggleProxy ? ToggleProxyCommand : null),
-            new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6, ToggleIpv6Command),
         };
 
         if (ConfigTransportViewModel.RouterVisible && OperatingSystem.IsAndroid())
@@ -316,10 +301,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
             built.Add(new(Loc.Instance.Get("Main_RouterTitle"), UseRouter, ToggleRouterCommand));
         }
 
-        built.Add(new(
-            MtuSet ? Loc.Instance.Get("Main_CardTagMtu", MtuShown) : Loc.Instance.Get("Main_CardTagMtuAuto"),
-            MtuMode != MtuMode.Auto,
-            Mtu > 0 || ConfigMtu > 0 ? ToggleMtuCommand : null));
         return built;
     }
 
@@ -337,16 +318,6 @@ internal partial class ConfigItemViewModel : ViewModelBase
             flip();
         }
     }
-
-    // Куда ведёт нажатие на плашку MTU: из подбора - в свой размер, а без своего - в размер конфигурации.
-    private MtuMode NextMtuMode() =>
-        MtuMode != MtuMode.Auto ? MtuMode.Auto : Mtu > 0 ? MtuMode.Custom : MtuMode.Config;
-
-    // MTU, с которым встанет туннель: подобранный агентом, иначе свой, иначе объявленный в конфигурации.
-    private int MtuShown => ResolvedMtu > 0 ? ResolvedMtu : Mtu > 0 ? Mtu : ConfigMtu;
-
-    // Есть ли что показывать: нулём приходит настройка по умолчанию, и о нём ничего не говорит и конфигурация.
-    private bool MtuSet => MtuShown > 0;
 
     /// <summary>
     /// Re-raises the localized computed labels after a language change.

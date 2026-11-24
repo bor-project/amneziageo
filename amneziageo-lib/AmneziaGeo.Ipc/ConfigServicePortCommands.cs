@@ -20,7 +20,7 @@ public static class ConfigServicePortCommands
             return new IpcAck(false, "invalid services port (1-65535)");
         }
 
-        var previous = await store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var previous = await store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         if (previous.ServicesPort != port)
         {
             await store.SetConfigTransportAsync(previous with { ServicesPort = port }, ct).ConfigureAwait(false);

@@ -81,7 +81,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         Row(text, "carrier", Carrier(configText, transport, await ServerOfferStore.ReadAsync(store, config, configText, ct)));
         Row(text, "mtu", MtuPlan.ResolveForLink(transport, configText).ToString(CultureInfo.InvariantCulture)
             + " (" + MtuModes.Text(transport?.MtuMode ?? MtuMode.Auto) + ")");
-        Row(text, "ipv6", (transport?.UseIpv6 ?? false) ? "on" : "off");
+        Row(text, "ipv6", Ipv6Modes.Text(Ipv6Modes.Of(transport)) + " -> " + (Ipv6Plan.Enabled(transport, configText) ? "on" : "off"));
         Row(text, "endpoint", WgConfigEditor.GetEndpoint(configText) ?? "-");
         Row(text, "config dns", Join(WgConfigEditor.GetDns(configText)));
         Row(text, "config allowed", Join(WgConfigEditor.GetAllowedIps(configText)));
@@ -358,7 +358,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     // runtime - the pinned or carrier-rewritten endpoint and the prefixes actually loaded.
     private static string Effective(string configText, ConfigTransport? transport, TunnelGeo? geo, bool split, string? device)
     {
-        var stripV6 = !(transport?.UseIpv6 ?? false);
+        var stripV6 = !Ipv6Plan.Enabled(transport, configText);
         var text = configText.Replace("\r\n", "\n", StringComparison.Ordinal);
         var live = DeviceAllowedIps(device);
         var allowed = live.Count > 0
@@ -368,7 +368,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
 
         if (stripV6)
         {
-            text = WgConfigEditor.StripIpv6Addresses(text);
+            text = Ipv6Plan.ForTunnel(text, false);
         }
 
         text = WgConfigEditor.ApplyAllowedIps(text, shown);

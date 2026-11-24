@@ -275,7 +275,7 @@ internal sealed class TunnelRunner(
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
         // A partial dual stack would open a v6 leak/blackhole, so the whole v6 path is gated on this one flag.
         // The config owns this because the server behind it may or may not have an IPv6 address.
-        var stripV6 = !(transport?.UseIpv6 ?? false);
+        var stripV6 = !Ipv6Plan.Enabled(transport, original);
 
         // Domain tracking in split mode, and on a tunnel of the set that carries only what names it: there the
         // full tunnel belongs to another one, and a name its own rule matched reaches it by route alone.
@@ -452,7 +452,7 @@ internal sealed class TunnelRunner(
             // v4-only tunnel: strip IPv6 routes and the IPv6 interface Address so the adapter is purely v4
             // (a dangling v6 adapter address with no v6 routes is exactly the blackhole this mode avoids).
             allowedIps = [.. allowedIps.Where(a => !a.Contains(':'))];
-            config = WgConfigEditor.StripIpv6Addresses(config);
+            config = Ipv6Plan.ForTunnel(config, false);
         }
 
         // Split /0 into /1 halves so the engine's blanket kill-switch isn't armed.

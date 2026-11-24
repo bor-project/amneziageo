@@ -300,10 +300,10 @@ internal static class ConfigCommands
         }
 
         var mode = sized ? MtuMode.Custom : stored?.MtuMode ?? MtuMode.Auto;
-        var ipv6 = flags.Value("ipv6") ?? ((stored?.UseIpv6 ?? false) ? "on" : "off");
-        if (!Toggle.TryParse(ipv6, out var useIpv6))
+        var ipv6 = flags.Value("ipv6") ?? Ipv6Modes.Text(stored?.Ipv6Mode ?? (stored is null ? Ipv6Mode.Auto : stored.UseIpv6 ? Ipv6Mode.On : Ipv6Mode.Off));
+        if (Ipv6Modes.Read(ipv6) is not { } ipv6Mode)
         {
-            return Reply.Usage("--ipv6 takes on or off");
+            return Reply.Usage("--ipv6 takes auto, on or off");
         }
 
         var router = flags.Value("router") ?? ((stored?.UseRouter ?? true) ? "on" : "off");
@@ -317,7 +317,7 @@ internal static class ConfigCommands
             flags.Positional[0],
             Toggle.Text(on),
             mtu,
-            Toggle.Text(useIpv6),
+            Ipv6Modes.Text(ipv6Mode),
             MtuModes.Text(mode),
             Toggle.Text(useRouter),
             Toggle.Text(stored?.AllowInbound ?? false),
@@ -349,7 +349,7 @@ internal static class ConfigCommands
             args[0],
             stored.WebSocket ? "on" : "off",
             size,
-            stored.UseIpv6 ? "on" : "off",
+            Ipv6Modes.Text(stored.Ipv6Mode ?? (stored.UseIpv6 ? Ipv6Mode.On : Ipv6Mode.Off)),
             MtuModes.Text(mode),
             stored.UseRouter ? "on" : "off").ConfigureAwait(false));
     }
@@ -373,7 +373,7 @@ internal static class ConfigCommands
             args[0],
             stored.WebSocket ? "on" : "off",
             stored.Mtu > 0 ? stored.Mtu.ToString(CultureInfo.InvariantCulture) : string.Empty,
-            stored.UseIpv6 ? "on" : "off",
+            Ipv6Modes.Text(stored.Ipv6Mode ?? (stored.UseIpv6 ? Ipv6Mode.On : Ipv6Mode.Off)),
             MtuModes.Text(stored.MtuMode),
             stored.UseRouter ? "on" : "off",
             scope.Allow ? "on" : "off",
@@ -399,7 +399,7 @@ internal static class ConfigCommands
             args[0],
             stored.WebSocket ? "on" : "off",
             stored.Mtu > 0 ? stored.Mtu.ToString(CultureInfo.InvariantCulture) : string.Empty,
-            stored.UseIpv6 ? "on" : "off",
+            Ipv6Modes.Text(stored.Ipv6Mode ?? (stored.UseIpv6 ? Ipv6Mode.On : Ipv6Mode.Off)),
             MtuModes.Text(stored.MtuMode),
             stored.UseRouter ? "on" : "off",
             stored.AllowInbound ? "on" : "off",

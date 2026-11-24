@@ -3196,4 +3196,11 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   </data>
   <data name="Transport_ServicesPort" xml:space="preserve"><value>Services port</value></data>
   <data name="Transport_ServicesPortTip" xml:space="preserve"><value>Leave empty to use the server's port.</value></data>
+  <data name="Transport_Ipv6Yes" xml:space="preserve"><value>Yes</value></data>
+  <data name="Transport_Ipv6No" xml:space="preserve"><value>No</value></data>
+  <data name="Transport_Ipv6On" xml:space="preserve"><value>IPv6 will be used for the connection</value></data>
+  <data name="Transport_Ipv6Off" xml:space="preserve"><value>IPv6 will not be used for the connection</value></data>
+  <data name="Transport_Ipv6Unknown" xml:space="preserve"><value>IPv6 availability is not known yet</value></data>
+  <data name="Transport_MtuResolved" xml:space="preserve"><value>MTU for the connection: {0}</value></data>
+  <data name="Transport_MtuPending" xml:space="preserve"><value>MTU will be determined when connecting</value></data>
 </root>

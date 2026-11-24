@@ -10,7 +10,8 @@ public sealed class ConfigTransportChangesTests
     {
         var transport = new ConfigTransport("vpn", false, 0);
 
-        Assert.False(ConfigTransportChanges.RequiresRestart(null, transport));
+        Assert.False(ConfigTransportChanges.RequiresRestart(null, transport with { Ipv6Mode = Ipv6Mode.Auto }));
+        Assert.True(ConfigTransportChanges.RequiresRestart(null, transport));
         Assert.False(ConfigTransportChanges.RequiresRestart(transport, transport with { ServicesPort = 9443 }));
         Assert.False(ConfigTransportChanges.RequiresRestart(transport, transport with
         {

@@ -810,7 +810,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var tr = await store.GetConfigTransportAsync(name, ct);
             if (tr is not null)
             {
-                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.AllowSignal, tr.HoldTraffic, tr.ServicesPort);
+                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, Ipv6Plan.Enabled(tr, configText), tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.AllowSignal, tr.HoldTraffic, tr.ServicesPort, tr.Ipv6Mode);
             }
 
             PortableBundle.GeoBlock? geoBlock = null;
@@ -930,7 +930,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 await configRepo.EditFromTextAsync(incoming, block.ConfigText, ct);
                 if (block.Transport is { } trE)
                 {
-                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter, trE.AllowInbound, trE.InboundNetwork, trE.UseRouting, trE.Host, trE.Port, trE.AllowSignal, trE.HoldTraffic) { ServicesPort = trE.ServicesPort }, ct);
+                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Mtu, trE.UseIpv6, trE.MtuMode, trE.UseRouter, trE.AllowInbound, trE.InboundNetwork, trE.UseRouting, trE.Host, trE.Port, trE.AllowSignal, trE.HoldTraffic) { ServicesPort = trE.ServicesPort, Ipv6Mode = trE.Ipv6Mode }, ct);
                 }
 
                 await ApplyConfigDataAsync(incoming, block, ct);
@@ -965,7 +965,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
             if (block.Transport is { } tr)
             {
-                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.Host, tr.Port, tr.AllowSignal, tr.HoldTraffic) { ServicesPort = tr.ServicesPort }, ct);
+                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.Host, tr.Port, tr.AllowSignal, tr.HoldTraffic) { ServicesPort = tr.ServicesPort, Ipv6Mode = tr.Ipv6Mode }, ct);
             }
 
             await ApplyConfigDataAsync(finalName, block, ct);
@@ -1166,9 +1166,13 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var previous = await store.GetConfigTransportAsync(args[0], ct);
 
         // Optional 4th arg: route IPv6 for this config; absent keeps the stored value.
-        var useIpv6 = args.Count > 3
-            ? args[3].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes"
-            : previous?.UseIpv6 ?? false;
+        var ipv6Mode = args.Count > 3 ? Ipv6Modes.Read(args[3]) : Ipv6Modes.Of(previous);
+        if (ipv6Mode is null)
+        {
+            return new IpcAck(false, "invalid IPv6 mode (auto/on/off)");
+        }
+        var useIpv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto
+            && Ipv6Plan.Available(await store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false));
 
         // Optional 5th arg: how the MTU is picked; a size sent without it stands for a choice of its own.
         var mtuMode = args.Count > 4
@@ -1212,7 +1216,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             return new IpcAck(false, "invalid websocket host");
         }
 
-        var updated = new ConfigTransport(args[0], on, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true) { ServicesPort = previous?.ServicesPort ?? 0 };
+        var updated = new ConfigTransport(args[0], on, mtu, useIpv6, mtuMode, useRouter, allowInbound, inboundNetwork, useRouting, host, port, previous?.AllowSignal ?? true, previous?.HoldTraffic ?? true) { ServicesPort = previous?.ServicesPort ?? 0, Ipv6Mode = ipv6Mode };
         var proxies = TransportProxyCatalog.For(store);
         await proxies.EnsureSelectionAsync(args[0], ct).ConfigureAwait(false);
         var proxyChanges = await TransportProxyChanges.CaptureAsync(store, IsRunningMember(args[0]) ? [args[0]] : [], ct).ConfigureAwait(false);
@@ -1252,7 +1256,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var on = args[1].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes";
-        var previous = await store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var previous = await store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         await store.SetConfigTransportAsync(previous with { AllowSignal = on }, ct).ConfigureAwait(false);
         if (previous.AllowSignal != on && IsRunningMember(args[0]))
         {
@@ -1276,7 +1280,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         }
 
         var on = args[1].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes";
-        var previous = await store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0);
+        var previous = await store.GetConfigTransportAsync(args[0], ct).ConfigureAwait(false) ?? new ConfigTransport(args[0], false, 0) { Ipv6Mode = Ipv6Mode.Auto };
         await store.SetConfigTransportAsync(previous with { HoldTraffic = on }, ct).ConfigureAwait(false);
         logger.LogInformation("{Name}: a tunnel that has stood is taken down by the user alone: {On}", args[0], on);
         return new IpcAck(true, string.Empty);
@@ -3487,8 +3491,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var offeredSubscription = member is null ? null : offer.Subscription();
             var runningTransport = IsRunningMember(name)
                 ? await RunningTransportState.ReadAsync(store, name, serviceManager, logger, ct).ConfigureAwait(false) : null;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty, proxyState.Selections.Single(one => one.Config == name).Reference, proxyState.Selections.Single(one => one.Config == name).UserChosen, runningTransport, proxyState.Selections.Single(one => one.Config == name).Enabled,
-                ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer.ServicesPort() > 0 ? offer.ServicesPort() : ConfigServices.Port(configText)));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, Ipv6Plan.Enabled(transport, configText), handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute, shown.LossPercent, shown.RttMs, member?.Subscription ?? string.Empty, member is { Present: false }, WgConfigEditor.GetMtu(configText), transport?.MtuMode ?? MtuMode.Auto, MtuPlan.ResolveForLearnedLink(transport, configText), transport?.UseRouter ?? true, transport?.AllowInbound ?? false, transport?.InboundNetwork ?? false, string.Join(", ", WgConfigEditor.GetAddresses(configText)), WsEndpoint.Of(configText, offer, transport)?.Display() ?? string.Empty, transport?.UseRouting ?? true, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 0, WsEndpoint.SourceOf(configText, offer) == WsSource.Settings, member is not null && stale.Contains(member.Subscription), reading.Churning, shown.LossStreak, transport?.AllowSignal ?? true, offer.SignalAllowed, transport?.HoldTraffic ?? true, configDns?.VpnMode ?? VpnDnsMode.Default, configDns?.VpnServers ?? string.Empty, vpnDns.Shown, vpnDns.Network, vpnDns.Server, vpnDns.Default, vpnDns.DefaultNetwork, offer.PresetsOnly, offer.Ours, offeredSubscription?.Fault ?? string.Empty, offeredSubscription?.Detail ?? string.Empty, proxyState.Selections.Single(one => one.Config == name).Reference, proxyState.Selections.Single(one => one.Config == name).UserChosen, runningTransport, proxyState.Selections.Single(one => one.Config == name).Enabled,
+                ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer.ServicesPort() > 0 ? offer.ServicesPort() : ConfigServices.Port(configText), Ipv6Mode: Ipv6Modes.Of(transport), Ipv6Available: Ipv6Plan.Available(configText)));
         }
 
         var routingLists = new List<RoutingListEntry>();

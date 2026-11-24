@@ -3196,4 +3196,11 @@
   </data>
   <data name="Transport_ServicesPort" xml:space="preserve"><value>Порт сервисов</value></data>
   <data name="Transport_ServicesPortTip" xml:space="preserve"><value>Пустое поле использует порт сервера.</value></data>
+  <data name="Transport_Ipv6Yes" xml:space="preserve"><value>Да</value></data>
+  <data name="Transport_Ipv6No" xml:space="preserve"><value>Нет</value></data>
+  <data name="Transport_Ipv6On" xml:space="preserve"><value>Для подключения используется IPv6</value></data>
+  <data name="Transport_Ipv6Off" xml:space="preserve"><value>Для подключения IPv6 не используется</value></data>
+  <data name="Transport_Ipv6Unknown" xml:space="preserve"><value>Доступность IPv6 ещё не определена</value></data>
+  <data name="Transport_MtuResolved" xml:space="preserve"><value>MTU подключения: {0}</value></data>
+  <data name="Transport_MtuPending" xml:space="preserve"><value>MTU определится при подключении</value></data>
 </root>

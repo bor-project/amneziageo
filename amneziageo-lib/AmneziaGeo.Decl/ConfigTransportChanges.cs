@@ -10,11 +10,13 @@ public static class ConfigTransportChanges
     /// </summary>
     public static bool RequiresRestart(ConfigTransport? previous, ConfigTransport updated,
         bool inboundApplied = false, bool holdApplied = false) =>
-        Session(previous ?? new ConfigTransport(updated.Name, false, 0), inboundApplied, holdApplied)
+        Session(previous ?? new ConfigTransport(updated.Name, false, 0) { Ipv6Mode = Ipv6Mode.Auto }, inboundApplied, holdApplied)
         != Session(updated, inboundApplied, holdApplied);
 
     private static ConfigTransport Session(ConfigTransport transport, bool inboundApplied, bool holdApplied) => transport with
     {
+        Ipv6Mode = Ipv6Modes.Of(transport),
+        UseIpv6 = false,
         UseWebSocket = false,
         WebSocketHost = string.Empty,
         WebSocketPort = 0,

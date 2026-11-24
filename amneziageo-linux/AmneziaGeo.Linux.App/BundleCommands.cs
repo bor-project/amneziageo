@@ -58,7 +58,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             }
 
             var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false) is { } tr
-                ? new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6, tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.AllowSignal, tr.HoldTraffic, tr.ServicesPort)
+                ? new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, Ipv6Plan.Enabled(tr, configText), tr.MtuMode, tr.UseRouter, tr.AllowInbound, tr.InboundNetwork, tr.UseRouting, tr.AllowSignal, tr.HoldTraffic, tr.ServicesPort, tr.Ipv6Mode)
                 : null;
 
             var ownGeo = await store.GetTunnelGeoAsync(name, ct).ConfigureAwait(false);
@@ -235,7 +235,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
     {
         if (block.Transport is { } transport)
         {
-            await store.SetConfigTransportAsync(new ConfigTransport(name, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic) { ServicesPort = transport.ServicesPort }, ct).ConfigureAwait(false);
+            await store.SetConfigTransportAsync(new ConfigTransport(name, transport.UseWebSocket, transport.Mtu, transport.UseIpv6, transport.MtuMode, transport.UseRouter, transport.AllowInbound, transport.InboundNetwork, transport.UseRouting, transport.Host, transport.Port, transport.AllowSignal, transport.HoldTraffic) { ServicesPort = transport.ServicesPort, Ipv6Mode = transport.Ipv6Mode }, ct).ConfigureAwait(false);
         }
 
         await block.ApplyDnsAsync(store, name, ct).ConfigureAwait(false);

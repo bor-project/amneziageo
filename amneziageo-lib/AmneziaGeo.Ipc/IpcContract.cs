@@ -229,6 +229,8 @@ public static class IpcContract
     /// </summary>
     public const string OpRefreshSubscription = "refresh-subscription";
 
+    public const string OpApplyConfigUpdate = "apply-config-update";
+
     /// <summary>
     /// Drops a subscription; the second argument "configs" drops what it brought in as well.
     /// </summary>

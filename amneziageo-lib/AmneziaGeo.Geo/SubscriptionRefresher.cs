@@ -77,7 +77,7 @@ public interface ISubscriptionLibrary
 /// Читает подписку и приводит к ней библиотеку: новые узлы заводит, изменившиеся переписывает, пропавшие
 /// снимает. Текст конфигурации меняется, имя и все настройки пользователя остаются на месте.
 /// </summary>
-public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library, TimeSpan? fetchTimeout = null)
+public sealed partial class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubscriptionLibrary library, TimeSpan? fetchTimeout = null)
 {
     // Сколько ждать ответа панели.
     private readonly TimeSpan _fetchTimeout = fetchTimeout ?? TimeSpan.FromSeconds(25);
@@ -138,7 +138,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
             return Task.FromResult(new SubscriptionResult(0, 0, 0, [], reason));
         }
 
-        return MergeAsync(subscription, null, false, ct);
+        return LockedAsync(() => MergeAsync(subscription, null, false, ct), ct);
     }
 
     /// <summary>
@@ -147,7 +147,7 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
     /// </summary>
     public Task<SubscriptionResult> FirstReadAsync(Subscription subscription, string? soleName, CancellationToken ct)
     {
-        return MergeAsync(subscription, soleName, true, ct);
+        return LockedAsync(() => MergeAsync(subscription, soleName, true, ct), ct);
     }
 
     // Читает подписку и приводит к ней библиотеку.
@@ -211,6 +211,8 @@ public sealed class SubscriptionRefresher(GeoHttp http, IStateStore store, ISubs
                         await library.EditAsync(change.ConfigName, change.ConfText, ct).ConfigureAwait(false);
                         rewritten.Add(change.ConfigName);
                     }
+
+                    await ConfigurationUpdates.ClearAsync(store, change.ConfigName, ct).ConfigureAwait(false);
 
                     // Переименованный узел переезжает на новое имя, а не заводится вторым.
                     if (change.PreviousRemark.Length > 0

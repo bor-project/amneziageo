@@ -3203,4 +3203,7 @@ an address is downloaded; Ctrl+Shift+V pastes from the terminal</value>
   <data name="Transport_Ipv6Unknown" xml:space="preserve"><value>IPv6 availability is not known yet</value></data>
   <data name="Transport_MtuResolved" xml:space="preserve"><value>MTU for the connection: {0}</value></data>
   <data name="Transport_MtuPending" xml:space="preserve"><value>MTU will be determined when connecting</value></data>
+  <data name="Main_ConfigurationUpdateTitle" xml:space="preserve"><value>Update configuration {0}?</value></data>
+  <data name="Main_ConfigurationUpdateLater" xml:space="preserve"><value>Later</value></data>
+  <data name="Main_ConfigurationUpdateFailed" xml:space="preserve"><value>The configuration could not be updated. Check for updates and try again.</value></data>
 </root>

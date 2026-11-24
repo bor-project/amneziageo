@@ -421,6 +421,7 @@ internal partial class ConfigViewModel : ViewModelBase
 
     private void RefreshEditBar()
     {
+        OnPropertyChanged(nameof(CanApplyOpenConfigurationUpdate));
         OnPropertyChanged(nameof(IsEditDirty));
         OnPropertyChanged(nameof(ShowSaveBar));
         OnPropertyChanged(nameof(ShowSaveButton));
@@ -878,6 +879,7 @@ internal partial class ConfigViewModel : ViewModelBase
             OpenConfig = null;
         }
 
+        DescribeConfigurationUpdates(entries);
         NotifyHasConfigsChanged();
         NotifyOpenConfigSubscriptionChanged();
         MarkCatalogueKnown();
@@ -1237,6 +1239,8 @@ internal partial class ConfigViewModel : ViewModelBase
 
     partial void OnOpenConfigChanged(string? value)
     {
+        NotifyConfigurationUpdate();
+        ConfigurationUpdateError = string.Empty;
         // Возврат из настроек в каталог - то же открытие списка.
         if (value is null)
         {

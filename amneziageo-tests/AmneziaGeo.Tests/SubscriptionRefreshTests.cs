@@ -12,7 +12,7 @@ namespace AmneziaGeo.Tests;
 /// <summary>
 /// Обновление подписки целиком: чтение по HTTP, сведение с библиотекой и запись в базу.
 /// </summary>
-public sealed class SubscriptionRefreshTests : IAsyncLifetime
+public sealed partial class SubscriptionRefreshTests : IAsyncLifetime
 {
     private const string ClientKeySeed = "AmneziaGeo refresh client key ";
 

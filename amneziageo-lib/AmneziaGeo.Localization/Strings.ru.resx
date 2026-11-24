@@ -3203,4 +3203,7 @@
   <data name="Transport_Ipv6Unknown" xml:space="preserve"><value>Доступность IPv6 ещё не определена</value></data>
   <data name="Transport_MtuResolved" xml:space="preserve"><value>MTU подключения: {0}</value></data>
   <data name="Transport_MtuPending" xml:space="preserve"><value>MTU определится при подключении</value></data>
+  <data name="Main_ConfigurationUpdateTitle" xml:space="preserve"><value>Обновить конфигурацию «{0}»?</value></data>
+  <data name="Main_ConfigurationUpdateLater" xml:space="preserve"><value>Позже</value></data>
+  <data name="Main_ConfigurationUpdateFailed" xml:space="preserve"><value>Не удалось обновить конфигурацию. Проверьте обновления и повторите попытку.</value></data>
 </root>

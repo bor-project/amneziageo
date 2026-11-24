@@ -427,7 +427,7 @@ internal sealed class LinuxAgent : IDisposable
         return new StatusSnapshot(
             AgentVersion: AgentBuild.Version,
             BoundTarget: _boundTarget,
-            Configs: configs,
+            Configs: await ConfigurationUpdates.DescribeAsync(_store, configs, ct).ConfigureAwait(false),
             RoutingLists: routingLists,
             Active: _tunnel.Running,
             BoundStatus: _boundStatus,
@@ -934,6 +934,8 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpListSubscriptions:
                 return await Subscriptions().ListAsync(ct).ConfigureAwait(false);
 
+            case IpcContract.OpApplyConfigUpdate:
+                return await ApplyConfigurationUpdateAsync(args, ct).ConfigureAwait(false);
             case IpcContract.OpRefreshSubscription:
                 return await AskNewServersAsync(await RefreshSubscriptionAsync(args, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
@@ -1440,6 +1442,27 @@ internal sealed class LinuxAgent : IDisposable
         return outcome.Ack;
     }
 
+    private async Task<IpcAck> ApplyConfigurationUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var outcome = await Subscriptions().ApplyAsync(args, ct).ConfigureAwait(false);
+        await FlagRewrittenAsync(outcome, ct).ConfigureAwait(false);
+        await PushAsync(ct).ConfigureAwait(false);
+        return outcome.Ack;
+    }
+
+    private async Task CheckConfigurationUpdatesAsync(string config)
+    {
+        try
+        {
+            await Subscriptions().CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            await PushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("sub", "configuration updates could not be checked", ex);
+        }
+    }
+
     private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var every = await OfferTargetsAsync(ct).ConfigureAwait(false);
@@ -1480,7 +1503,7 @@ internal sealed class LinuxAgent : IDisposable
                 var due = await service.DueAsync(_subscriptionIntervalHours, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
                 foreach (var subscription in due)
                 {
-                    var outcome = await service.RefreshAsync([subscription.Name], ct).ConfigureAwait(false);
+                    var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
                     // Taking the running tunnel down or dialling it again is the controller's work, done under the
                     // gate the commands hold, as the re-read asked for by hand is.
                     await GatedAsync(() => FlagRewrittenAsync(outcome, ct), ct).ConfigureAwait(false);
@@ -3370,6 +3393,7 @@ internal sealed class LinuxAgent : IDisposable
     // asked is done.
     private Task OfferChangedAsync(string config)
     {
+        _ = CheckConfigurationUpdatesAsync(config);
         _ = Task.Run(() => ReapplyRoutingAsync(config));
         FindAppsLater();
 

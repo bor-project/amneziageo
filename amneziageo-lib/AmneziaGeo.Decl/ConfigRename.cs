@@ -28,6 +28,9 @@ public static class ConfigRename
         }
 
         await ServerOfferStore.MoveAsync(store, oldName, newName, ct).ConfigureAwait(false);
+        var update = await store.GetSettingAsync(ConfigurationUpdate.Key(oldName), ct).ConfigureAwait(false);
+        await store.SetSettingAsync(ConfigurationUpdate.Key(newName), update ?? string.Empty, ct).ConfigureAwait(false);
+        await store.SetSettingAsync(ConfigurationUpdate.Key(oldName), string.Empty, ct).ConfigureAwait(false);
         await TransportProxyCatalog.For(store).RenameAsync(oldName, newName, ct).ConfigureAwait(false);
 
         var dns = await store.GetConfigDnsAsync(oldName, ct).ConfigureAwait(false);

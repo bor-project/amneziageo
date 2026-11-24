@@ -1095,5 +1095,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Connections.Apply(snapshot);
         General.Apply(snapshot);
         Diagnostics.Apply(snapshot);
+        OfferConfigurationUpdates(snapshot.Configs);
     }
 }

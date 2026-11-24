@@ -490,6 +490,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpListSubscriptions:
                 return await ListSubscriptionsAsync().ConfigureAwait(false);
 
+            case IpcContract.OpApplyConfigUpdate:
+                return await ApplyConfigurationUpdateAsync(args).ConfigureAwait(false);
             case IpcContract.OpRefreshSubscription:
                 return await AskNewServersAsync(await RefreshSubscriptionAsync(args).ConfigureAwait(false)).ConfigureAwait(false);
 
@@ -2026,7 +2028,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             TransportProxyChosen: _transportSelections.GetValueOrDefault(name)?.UserChosen ?? false,
             RunningTransport: bound ? VpnBridge.ReadRunningTransport(name) : null,
             TransportProxyEnabled: _transportSelections.GetValueOrDefault(name)?.Enabled ?? true,
-            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer?.ServicesPort() is > 0 ? offer.ServicesPort() : ConfigServices.Port(config), Ipv6Mode: Ipv6Modes.Of(transport), Ipv6Available: Ipv6Plan.Available(config));
+            ServicesPort: transport?.ServicesPort ?? 0, DefaultServicesPort: offer?.ServicesPort() is > 0 ? offer.ServicesPort() : ConfigServices.Port(config), Ipv6Mode: Ipv6Modes.Of(transport), Ipv6Available: Ipv6Plan.Available(config), Update: _configurationUpdates.GetValueOrDefault(name));
     }
 
     private string StatusFor(string target)
@@ -3497,6 +3499,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Refreshes the publications and the running transport.
     private async Task OfferChangedAsync(string config)
     {
+        _ = CheckConfigurationUpdatesAsync(config);
         await RefreshOffersAsync().ConfigureAwait(false);
         await RefreshRunningTransportAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
@@ -3691,6 +3694,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    private IReadOnlyDictionary<string, ConfigurationUpdate?> _configurationUpdates = new Dictionary<string, ConfigurationUpdate?>();
+
     private async Task RefreshSubscriptionMembersAsync()
     {
         var members = new Dictionary<string, SubscriptionMember>(StringComparer.Ordinal);
@@ -3699,6 +3704,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             members[member.ConfigName] = member;
         }
 
+        var updates = new Dictionary<string, ConfigurationUpdate?>(StringComparer.Ordinal);
+        foreach (var name in members.Keys)
+        {
+            updates[name] = await ConfigurationUpdates.ReadAsync(_store, name, CancellationToken.None).ConfigureAwait(false);
+        }
+        _configurationUpdates = updates;
         _members = members;
         _stale = await SubscriptionBinding.StaleAsync(_store, CancellationToken.None).ConfigureAwait(false);
     }
@@ -5185,6 +5196,32 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return await Subscriptions().ListAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
+    private async Task<IpcAck> ApplyConfigurationUpdateAsync(IReadOnlyList<string> args)
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var outcome = await Subscriptions().ApplyAsync(args, CancellationToken.None).ConfigureAwait(false);
+        FlagRewritten(outcome);
+        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        Save();
+        PushSnapshot();
+        return outcome.Ack;
+    }
+
+    private async Task CheckConfigurationUpdatesAsync(string config)
+    {
+        try
+        {
+            await Subscriptions().CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+            PushSnapshot();
+        }
+        catch (Exception ex)
+        {
+            _log.Error("sub", "configuration updates could not be checked", ex);
+        }
+    }
+
     private async Task<IpcAck> RefreshSubscriptionAsync(IReadOnlyList<string> args)
     {
         await EnsureInitAsync().ConfigureAwait(false);
@@ -5235,7 +5272,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     var due = await service.DueAsync(_subscriptionIntervalHours, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
                     foreach (var subscription in due)
                     {
-                        var outcome = await service.RefreshAsync([subscription.Name], ct).ConfigureAwait(false);
+                        var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
                         FlagRewritten(outcome);
                         if (!outcome.Ack.Ok)
                         {
@@ -5245,6 +5282,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
                     if (due.Count > 0)
                     {
+                        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
                         Save();
                         PushSnapshot();
                         await _offers.WarmUnaskedAsync(OfferTargets(), OfferChangedAsync, ct).ConfigureAwait(false);

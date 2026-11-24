@@ -11,6 +11,7 @@ public static class ConfigForget
     public static async Task CarryAsync(IStateStore store, string name, CancellationToken ct = default)
     {
         await ConfigRouting.ForgetListAsync(store, name, ct).ConfigureAwait(false);
+        await store.SetSettingAsync(ConfigurationUpdate.Key(name), string.Empty, ct).ConfigureAwait(false);
         await ServerOfferStore.ForgetAsync(store, name, ct).ConfigureAwait(false);
         await TransportProxyCatalog.For(store).ForgetAsync(name, ct).ConfigureAwait(false);
         var members = await store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false);

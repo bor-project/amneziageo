@@ -299,6 +299,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
                 IpcContract.OpSelectConfig => await SelectConfigAsync(command.Args, ct),
                 IpcContract.OpAddSubscription => await AskNewServersAsync(await AddSubscriptionAsync(command.Args, ct), ct),
                 IpcContract.OpListSubscriptions => await ListSubscriptionsAsync(ct),
+                IpcContract.OpApplyConfigUpdate => await ApplyConfigurationUpdateAsync(command.Args, ct),
                 IpcContract.OpRefreshSubscription => await AskNewServersAsync(await RefreshSubscriptionAsync(command.Args, ct), ct),
                 IpcContract.OpRemoveSubscription => await RemoveSubscriptionAsync(command.Args, ct),
                 IpcContract.OpConfigSubscription => await ConfigSubscriptionAsync(command.Args, ct),
@@ -508,7 +509,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
             var before = refreshed;
             foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
             {
-                var outcome = await service.RefreshAsync([subscription.Name], ct);
+                var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
                 TakeRefreshed(outcome);
 
                 refreshed++;
@@ -524,6 +525,28 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     }
 
     // Подписки того пользователя, чьё соединение обслуживается.
+    private async Task<IpcAck> ApplyConfigurationUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var outcome = await Subscriptions().ApplyAsync(args, ct).ConfigureAwait(false);
+        TakeRefreshed(outcome);
+        await BroadcastIfChangedAsync(ct).ConfigureAwait(false);
+        return outcome.Ack;
+    }
+
+    private async Task CheckConfigurationUpdatesAsync(string config)
+    {
+        try
+        {
+            var scope = CurrentScope;
+            await new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope)).CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            await BroadcastIfChangedAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "configuration updates could not be checked");
+        }
+    }
+
     private SubscriptionService Subscriptions()
     {
         var scope = CurrentScope;
@@ -1667,6 +1690,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     // none but its own routing lists takes one of them, and a tunnel up on it takes the next connect.
     private async Task OfferChangedAsync(string config)
     {
+        _ = CheckConfigurationUpdatesAsync(config);
         FindAppsLater();
         if (await KeepServerListsAsync(activeScope.Store, config, CancellationToken.None).ConfigureAwait(false) && IsRunningMember(config))
         {
@@ -3532,7 +3556,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         var installing = downloadedForCurrent && updateState.DownloadPhase == UpdateDownloadPhase.Installing;
         var connectFailed = owned && control.ConnectFailed;
         var disconnectFailed = owned && control.DisconnectFailed;
-        return Describe(new StatusSnapshot(Version(), boundTarget, configs, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
+        return Describe(new StatusSnapshot(Version(), boundTarget, await ConfigurationUpdates.DescribeAsync(store, configs, ct).ConfigureAwait(false), routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,

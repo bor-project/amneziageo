@@ -1286,7 +1286,7 @@ internal partial class ConnectionViewModel : ViewModelBase
     {
         _prefs.SkippedConfigUpdates = ConfigUpdateSkips.Skip(_host.Config.Configs
             .Where(row => row.SubscriptionStale)
-            .Select(row => (row.Subscription, _host.Config.OfferedRevision(row.Subscription))));
+            .Select(row => (row.Subscription, _host.Config.OfferedRevision(row.Subscription))), _prefs.SkippedConfigUpdates);
         _prefs.Save();
         NotifyConfigUpdate();
     }

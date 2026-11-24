@@ -154,6 +154,75 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
     }
 
     /// <summary>
+    /// Checks the revision offered to one configuration.
+    /// </summary>
+    public async Task CheckForConfigAsync(string config, CancellationToken ct)
+    {
+        var member = (await store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false)).FirstOrDefault(one => one.ConfigName == config);
+        var subscription = (await store.ListSubscriptionsAsync(ct).ConfigureAwait(false)).FirstOrDefault(one => one.Name == member?.Subscription);
+        if (subscription is null)
+        {
+            return;
+        }
+        var text = await library.TextAsync(config, ct).ConfigureAwait(false);
+        var specific = (await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false)).Subscription()?.ConfigurationRevision;
+        if (specific is { Length: 64 })
+        {
+            var pending = await ConfigurationUpdates.ReadAsync(store, config, ct).ConfigureAwait(false);
+            if (specific == ConfigurationRevision.Of(text ?? string.Empty) || pending?.Revision == specific)
+            {
+                return;
+            }
+        }
+        else if (!subscription.Stale || subscription.CheckedAt is { } at && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+        await CheckAsync([subscription.Name], ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Checks subscription configuration updates.
+    /// </summary>
+    public async Task<SubscriptionOutcome> CheckAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var subscriptions = await store.ListSubscriptionsAsync(ct).ConfigureAwait(false);
+        var wanted = subscriptions.Where(one => args.Count == 0 || one.Name == args[0]).ToArray();
+        if (wanted.Length == 0)
+        {
+            return SubscriptionOutcome.Of(new IpcAck(false, "unknown-subscription"));
+        }
+        foreach (var subscription in wanted)
+        {
+            var result = await Refresher().CheckAsync(subscription, ct).ConfigureAwait(false);
+            if (!result.Ok)
+            {
+                return SubscriptionOutcome.Of(new IpcAck(false, result.Error));
+            }
+        }
+        return SubscriptionOutcome.Of(new IpcAck(true, string.Empty));
+    }
+
+    /// <summary>
+    /// Applies a confirmed configuration update.
+    /// </summary>
+    public async Task<SubscriptionOutcome> ApplyAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count != 2)
+        {
+            return SubscriptionOutcome.Of(new IpcAck(false, "apply-config-update requires a configuration and revision"));
+        }
+        var member = (await store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false)).SingleOrDefault(one => one.ConfigName == args[0]);
+        var subscription = (await store.ListSubscriptionsAsync(ct).ConfigureAwait(false)).SingleOrDefault(one => one.Name == member?.Subscription);
+        if (subscription is null)
+        {
+            return SubscriptionOutcome.Of(new IpcAck(false, "unknown-subscription"));
+        }
+        var result = await Refresher().ApplyAsync(subscription, args[0], args[1], ct).ConfigureAwait(false);
+        return new(new IpcAck(result.Ok, result.Error), result.Added, result.Updated, result.Gone, result.Rewritten);
+    }
+
+    /// <summary>
     /// Снимает подписку, а со вторым аргументом "configs" - и приведённые ею конфигурации. Имена
     /// работающих конфигураций отбивают снос вместе с ними.
     /// </summary>

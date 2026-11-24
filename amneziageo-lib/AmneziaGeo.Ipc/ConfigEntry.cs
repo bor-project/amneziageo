@@ -89,7 +89,7 @@ public sealed record ConfigEntry(
     ProxyReference? TransportProxy = null,
     bool TransportProxyChosen = false,
     RunningTransportProxy? RunningTransport = null, bool TransportProxyEnabled = true,
-    int ServicesPort = 0, int DefaultServicesPort = 0, Ipv6Mode? Ipv6Mode = null, bool? Ipv6Available = null);
+    int ServicesPort = 0, int DefaultServicesPort = 0, Ipv6Mode? Ipv6Mode = null, bool? Ipv6Available = null, ConfigurationUpdate? Update = null);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

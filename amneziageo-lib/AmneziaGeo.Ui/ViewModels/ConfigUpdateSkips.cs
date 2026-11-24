@@ -16,11 +16,13 @@ internal static class ConfigUpdateSkips
     /// <summary>
     /// Запись пропуска названных ревизий подписок.
     /// </summary>
-    public static string Skip(IEnumerable<(string Subscription, string Offered)> revisions)
+    public static string Skip(IEnumerable<(string Subscription, string Offered)> revisions, string skipped = "")
     {
-        return string.Join('\n', revisions
-            .Where(item => item.Offered.Length > 0)
-            .Select(item => Line(item.Subscription, item.Offered))
+        var entries = revisions.Where(item => item.Offered.Length > 0).ToArray();
+        var keys = entries.Select(item => item.Subscription + "\t").ToArray();
+        return string.Join('\n', Lines(skipped)
+            .Where(line => !keys.Any(key => line.StartsWith(key, StringComparison.Ordinal)))
+            .Concat(entries.Select(item => Line(item.Subscription, item.Offered)))
             .Distinct(StringComparer.Ordinal));
     }
 

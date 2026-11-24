@@ -230,6 +230,19 @@
 
             <Border Classes="rowsep" />
 
+            <StackPanel Spacing="6" IsVisible="{Binding HasOpenConfigurationUpdate}">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{l:Tr Main_ConfigUpdateAvailable}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ApplyOpenConfigurationUpdateCommand}"
+                        IsEnabled="{Binding CanApplyOpenConfigurationUpdate}">
+                  <TextBlock Text="{l:Tr Main_ConfigUpdateApply}" />
+                </Button>
+              </Grid>
+              <TextBlock Text="{Binding OpenConfigurationUpdateFields}" Classes="muted" TextWrapping="Wrap" FontSize="11.5" />
+            </StackPanel>
+            <TextBlock Text="{Binding ConfigurationUpdateError}" Classes="fieldwarn" TextWrapping="Wrap"
+                       IsVisible="{Binding ConfigurationUpdateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
             <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
                  until asked for - it carries the private key - and hidden again on every entry into the section. -->
             <StackPanel Spacing="2">

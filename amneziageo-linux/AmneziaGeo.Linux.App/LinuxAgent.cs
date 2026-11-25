@@ -141,7 +141,7 @@ internal sealed class LinuxAgent : IDisposable
     public LinuxAgent(AgentLog log, string enginePath, string interfaceName)
     {
         _log = log;
-        _store = new SqliteStateStore(AgentPaths.StateDb);
+        _store = new SqliteStateStore(AgentPaths.StateDb, legacyIpv6Auto: true);
         _geoFiles = new LinuxGeoFileStore(AgentPaths.GeoDirectory);
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, _geoFiles);
@@ -1454,7 +1454,8 @@ internal sealed class LinuxAgent : IDisposable
     {
         try
         {
-            await Subscriptions().CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            var outcome = await Subscriptions().CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            await GatedAsync(() => FlagRewrittenAsync(outcome, CancellationToken.None), CancellationToken.None).ConfigureAwait(false);
             await PushAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1943,8 +1944,8 @@ internal sealed class LinuxAgent : IDisposable
         {
             return new IpcAck(false, "invalid IPv6 mode (auto/on/off)");
         }
-        var ipv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto
-            && Ipv6Plan.Available(await _store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false));
+        var ipv6Available = Ipv6Plan.Available(await _store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false));
+        var ipv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto && ipv6Available;
 
         // A size sent without a mode stands for a choice of its own.
         var mode = args.Count > 4
@@ -1983,7 +1984,7 @@ internal sealed class LinuxAgent : IDisposable
             await ApplyInboundAsync(args[0], transport, ct).ConfigureAwait(false);
         }
 
-        FlagTransportRestart(args[0], stored, transport);
+        FlagTransportRestart(args[0], stored, transport, ipv6Available);
         if (_tunnel.Running && _boundTarget == args[0] && (await proxyChanges.ChangedAsync(ct).ConfigureAwait(false)).Count > 0)
         {
             _restartRequired = true;
@@ -2040,14 +2041,14 @@ internal sealed class LinuxAgent : IDisposable
 
     // Raises the reconnect banner for a running configuration; access from the tunnel and the hold of the traffic
     // are left out, they apply on the spot.
-    private void FlagTransportRestart(string name, ConfigTransport? stored, ConfigTransport transport)
+    private void FlagTransportRestart(string name, ConfigTransport? stored, ConfigTransport transport, bool? ipv6Available = null)
     {
         if (!_tunnel.Running || !string.Equals(name, _boundTarget, StringComparison.Ordinal))
         {
             return;
         }
 
-        if (!ConfigTransportChanges.RequiresRestart(stored, transport, inboundApplied: true, holdApplied: true))
+        if (!ConfigTransportChanges.RequiresRestart(stored, transport, inboundApplied: true, holdApplied: true, ipv6Available: ipv6Available))
         {
             return;
         }

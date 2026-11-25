@@ -538,7 +538,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         try
         {
             var scope = CurrentScope;
-            await new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope)).CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            var outcome = await new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope)).CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            TakeRefreshed(outcome);
             await BroadcastIfChangedAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1194,8 +1195,8 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
         {
             return new IpcAck(false, "invalid IPv6 mode (auto/on/off)");
         }
-        var useIpv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto
-            && Ipv6Plan.Available(await store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false));
+        var ipv6Available = Ipv6Plan.Available(await store.GetConfigTextAsync(args[0], ct).ConfigureAwait(false));
+        var useIpv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto && ipv6Available;
 
         // Optional 5th arg: how the MTU is picked; a size sent without it stands for a choice of its own.
         var mtuMode = args.Count > 4
@@ -1248,7 +1249,7 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
-        if (IsRunningMember(args[0]) && (ConfigTransportChanges.RequiresRestart(previous, updated)
+        if (IsRunningMember(args[0]) && (ConfigTransportChanges.RequiresRestart(previous, updated, ipv6Available: ipv6Available)
             || (await proxyChanges.ChangedAsync(ct).ConfigureAwait(false)).Count > 0))
         {
             MarkRestartRequired(args[0]);

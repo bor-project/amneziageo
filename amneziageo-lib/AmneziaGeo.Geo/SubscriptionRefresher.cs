@@ -233,6 +233,7 @@ public sealed partial class SubscriptionRefresher(GeoHttp http, IStateStore stor
                         dropped.Add(change.ConfigName);
                     }
 
+                    await ConfigurationUpdates.ClearAsync(store, change.ConfigName, ct).ConfigureAwait(false);
                     await store.SaveSubscriptionMemberAsync(
                         new SubscriptionMember(subscription.Name, change.Remark, change.ConfigName, false),
                         ct).ConfigureAwait(false);

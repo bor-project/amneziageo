@@ -43,7 +43,7 @@ internal partial class ConfigViewModel
     /// <summary>
     /// Applies one confirmed configuration update.
     /// </summary>
-    public async Task ApplyConfigurationUpdateAsync(string name, string revision)
+    public async Task ApplyConfigurationUpdateAsync(string name, string revision, string baseRevision)
     {
         if (ApplyingConfigurationUpdate || HasUnsavedChanges)
         {
@@ -53,14 +53,14 @@ internal partial class ConfigViewModel
         ConfigurationUpdateError = string.Empty;
         try
         {
-            var ack = await Ask(new IpcCommand(IpcContract.OpApplyConfigUpdate, [name, revision]));
+            var ack = await Ask(new IpcCommand(IpcContract.OpApplyConfigUpdate, [name, revision, baseRevision]));
             if (ack is not { Ok: true })
             {
                 ConfigurationUpdateError = Loc.Instance.Get("Main_ConfigurationUpdateFailed");
             }
             else
             {
-                if (_configurationUpdates.TryGetValue(name, out var pending) && pending.Revision == revision)
+                if (_configurationUpdates.TryGetValue(name, out var pending) && pending.Revision == revision && pending.BaseRevision == baseRevision)
                 {
                     _configurationUpdates.Remove(name);
                 }
@@ -82,5 +82,5 @@ internal partial class ConfigViewModel
 
     [RelayCommand]
     private Task ApplyOpenConfigurationUpdate() => OpenConfig is { } name && _configurationUpdates.TryGetValue(name, out var update)
-        ? ApplyConfigurationUpdateAsync(name, update.Revision) : Task.CompletedTask;
+        ? ApplyConfigurationUpdateAsync(name, update.Revision, update.BaseRevision) : Task.CompletedTask;
 }

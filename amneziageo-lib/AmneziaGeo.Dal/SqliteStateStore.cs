@@ -10,7 +10,7 @@ namespace AmneziaGeo.Dal;
 /// <summary>
 /// SQLite-backed state store.
 /// </summary>
-public sealed partial class SqliteStateStore(string databasePath) : IStateStore
+public sealed partial class SqliteStateStore(string databasePath, bool legacyIpv6Auto = false) : IStateStore
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
     {
@@ -18,6 +18,8 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
     }.ToString();
 
     private readonly ConnectionGate _gate = new();
+
+    private Ipv6Mode? LegacyIpv6Mode => legacyIpv6Auto ? Ipv6Mode.Auto : null;
 
     private const int SchemaVersion = 1;
 
@@ -338,6 +340,17 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
             // Per-config IPv6 opt-in; off keeps the tunnel v4-only. Moved off the routing list (was per-list #149).
             await AddColumnAsync(connection, schema, "config_transport", "use_ipv6", "INTEGER NOT NULL DEFAULT 0", ct).ConfigureAwait(false);
             await AddColumnAsync(connection, schema, "config_transport", "ipv6_mode", "INTEGER", ct).ConfigureAwait(false);
+
+            if (LegacyIpv6Mode is { } legacyMode)
+            {
+                var ipv6Command = connection.CreateCommand();
+                await using (ipv6Command.ConfigureAwait(false))
+                {
+                    ipv6Command.CommandText = "UPDATE config_transport SET ipv6_mode = $mode WHERE ipv6_mode IS NULL;";
+                    ipv6Command.Parameters.AddWithValue("$mode", (int)legacyMode);
+                    await ipv6Command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+            }
 
             // How the MTU is picked: 0 auto, 1 from the config text, 2 the stored size. A row that already carries
             // a size kept it as a choice of its own, so it becomes custom; an empty one follows the path.
@@ -1094,7 +1107,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9), reader.GetInt32(10) != 0, reader.GetInt32(11) != 0) { ServicesPort = reader.GetInt32(12), Ipv6Mode = reader.IsDBNull(13) ? null : Enum.IsDefined((Ipv6Mode)reader.GetInt32(13)) ? (Ipv6Mode)reader.GetInt32(13) : Ipv6Mode.Off };
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetInt32(1), reader.GetInt32(2) != 0, MtuModes.From(reader.GetInt32(3)), reader.GetInt32(4) != 0, reader.GetInt32(5) != 0, reader.GetInt32(6) != 0, reader.GetInt32(7) != 0, reader.GetString(8), reader.GetInt32(9), reader.GetInt32(10) != 0, reader.GetInt32(11) != 0) { ServicesPort = reader.GetInt32(12), Ipv6Mode = reader.IsDBNull(13) ? LegacyIpv6Mode : Enum.IsDefined((Ipv6Mode)reader.GetInt32(13)) ? (Ipv6Mode)reader.GetInt32(13) : Ipv6Mode.Off };
                 }
             }
         }
@@ -1146,7 +1159,7 @@ public sealed partial class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$signal", transport.AllowSignal ? 1 : 0);
                 command.Parameters.AddWithValue("$hold", transport.HoldTraffic ? 1 : 0);
                 command.Parameters.AddWithValue("$services", transport.ServicesPort);
-                command.Parameters.AddWithValue("$ipv6mode", transport.Ipv6Mode is { } ipv6Mode ? (object)(int)ipv6Mode : DBNull.Value);
+                command.Parameters.AddWithValue("$ipv6mode", (transport.Ipv6Mode ?? LegacyIpv6Mode) is { } ipv6Mode ? (object)(int)ipv6Mode : DBNull.Value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

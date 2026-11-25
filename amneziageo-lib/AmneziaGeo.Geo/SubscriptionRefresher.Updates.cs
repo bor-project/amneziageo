@@ -27,6 +27,38 @@ public sealed partial class SubscriptionRefresher
     public Task<SubscriptionResult> CheckAsync(Subscription subscription, CancellationToken ct) =>
         LockedAsync(() => CheckCoreAsync(subscription, ct), ct);
 
+    /// <summary>
+    /// Reconciles the configuration revision announced by hello.
+    /// </summary>
+    public Task<SubscriptionResult> CheckForConfigAsync(Subscription subscription, string config, CancellationToken ct) =>
+        LockedAsync(() => CheckRevisionAsync(subscription, config, ct), ct);
+
+    private async Task<SubscriptionResult> CheckRevisionAsync(Subscription subscription, string config, CancellationToken ct)
+    {
+        var text = await library.TextAsync(config, ct).ConfigureAwait(false);
+        var specific = (await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false)).Subscription()?.ConfigurationRevision;
+        var pending = await ConfigurationUpdates.ReadAsync(store, config, ct).ConfigureAwait(false);
+        var current = ConfigurationRevision.Of(text ?? string.Empty);
+        if (specific is { Length: 64 })
+        {
+            if (text is not null && specific == current)
+            {
+                await ConfigurationUpdates.ClearAsync(store, config, ct).ConfigureAwait(false);
+                return new(0, 0, 0, []);
+            }
+            if (pending?.Revision == specific && pending.BaseRevision == current)
+            {
+                return new(0, 0, 0, []);
+            }
+        }
+        else if ((pending is null || pending.BaseRevision == current)
+            && (!subscription.Stale || subscription.CheckedAt is { } at && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(30)))
+        {
+            return new(0, 0, 0, []);
+        }
+        return await CheckCoreAsync(subscription, ct).ConfigureAwait(false);
+    }
+
     private async Task<SubscriptionResult> CheckCoreAsync(Subscription subscription, CancellationToken ct)
     {
         if (subscription.Fault.Length > 0)
@@ -36,45 +68,82 @@ public sealed partial class SubscriptionRefresher
         try
         {
             var fetched = await FetchAsync(subscription.Url, subscription.Pin, ct).ConfigureAwait(false);
-            var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
-            if (fetched.Configs.Count == 0 && members.Count > 0)
+            var result = await ReconcileAsync(subscription, fetched, ct).ConfigureAwait(false);
+            if (!result.Ok)
             {
-                return new(0, 0, 0, [], "the subscription holds no nodes");
+                await CheckFailedAsync(subscription.Name, result.Error, ct).ConfigureAwait(false);
             }
-            var names = await library.NamesAsync(ct).ConfigureAwait(false);
-            var texts = await TextsAsync(members, names, ct).ConfigureAwait(false);
-            var plan = SubscriptionMerge.Plan(fetched.Configs, members, names, texts);
-            foreach (var change in plan.Where(one => one.Kind == SubscriptionChangeKind.Update))
-            {
-                if (texts.TryGetValue(change.ConfigName, out var current))
-                {
-                    await ConfigurationUpdates.SaveAsync(store, change.ConfigName, current, change.ConfText, ct).ConfigureAwait(false);
-                }
-            }
-            var synchronized = plan.All(one => one.Kind == SubscriptionChangeKind.Update
-                && SubscriptionMerge.SameText(texts.GetValueOrDefault(one.ConfigName), one.ConfText));
-            await CheckedAsync(subscription, fetched, synchronized, ct).ConfigureAwait(false);
-            return new(0, 0, 0, []);
+            return result;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or TimeoutException or UriFormatException or InvalidOperationException)
         {
             var reason = Reason(ex);
-            var latest = (await store.ListSubscriptionsAsync(ct).ConfigureAwait(false)).FirstOrDefault(one => one.Name == subscription.Name);
-            if (latest is not null)
-            {
-                await store.SaveSubscriptionAsync(latest with { CheckedAt = DateTimeOffset.UtcNow, LastError = reason }, ct).ConfigureAwait(false);
-            }
+            await CheckFailedAsync(subscription.Name, reason, ct).ConfigureAwait(false);
             return new(0, 0, 0, [], reason);
+        }
+    }
+
+    private async Task<SubscriptionResult> ReconcileAsync(Subscription subscription, SubscriptionSnapshot fetched, CancellationToken ct)
+    {
+        var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
+        if (fetched.Configs.Count == 0 && members.Count > 0)
+        {
+            return new(0, 0, 0, [], "the subscription holds no nodes");
+        }
+        var names = await library.NamesAsync(ct).ConfigureAwait(false);
+        var texts = await TextsAsync(members, names, ct).ConfigureAwait(false);
+        var plan = SubscriptionMerge.Plan(fetched.Configs, members, names, texts);
+        var dropped = new List<string>();
+        try
+        {
+            foreach (var change in plan)
+            {
+                if (change.Kind == SubscriptionChangeKind.Update && texts.TryGetValue(change.ConfigName, out var current))
+                {
+                    await ConfigurationUpdates.SaveAsync(store, change.ConfigName, current, change.ConfText, ct).ConfigureAwait(false);
+                }
+                else if (change.Kind == SubscriptionChangeKind.Gone)
+                {
+                    if (names.Contains(change.ConfigName, StringComparer.Ordinal))
+                    {
+                        await library.DropAsync(change.ConfigName, ct).ConfigureAwait(false);
+                        dropped.Add(change.ConfigName);
+                    }
+                    await ConfigurationUpdates.ClearAsync(store, change.ConfigName, ct).ConfigureAwait(false);
+                    await store.SaveSubscriptionMemberAsync(new SubscriptionMember(subscription.Name, change.Remark, change.ConfigName, false), ct).ConfigureAwait(false);
+                }
+            }
+            var synchronized = plan.All(one => one.Kind == SubscriptionChangeKind.Gone
+                || one.Kind == SubscriptionChangeKind.Update && SubscriptionMerge.SameText(texts.GetValueOrDefault(one.ConfigName), one.ConfText));
+            await CheckedAsync(subscription, fetched, synchronized, ct).ConfigureAwait(false);
+            return new(0, 0, dropped.Count, []) { Dropped = dropped };
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            return new(0, 0, dropped.Count, [], Reason(ex)) { Dropped = dropped };
+        }
+    }
+
+    private async Task CheckFailedAsync(string subscription, string reason, CancellationToken ct)
+    {
+        var latest = (await store.ListSubscriptionsAsync(ct).ConfigureAwait(false)).FirstOrDefault(one => one.Name == subscription);
+        if (latest is not null)
+        {
+            await store.SaveSubscriptionAsync(latest with { CheckedAt = DateTimeOffset.UtcNow, LastError = reason }, ct).ConfigureAwait(false);
         }
     }
 
     /// <summary>
     /// Applies one confirmed configuration revision.
     /// </summary>
-    public Task<SubscriptionResult> ApplyAsync(Subscription subscription, string config, string revision, CancellationToken ct) =>
-        LockedAsync(() => ApplyCoreAsync(subscription, config, revision, ct), ct);
+    public async Task<SubscriptionResult> ApplyAsync(Subscription subscription, string config, string revision, CancellationToken ct, string? expectedBaseRevision = null)
+    {
+        var pending = await ConfigurationUpdates.ReadAsync(store, config, ct).ConfigureAwait(false);
+        var expectedBase = expectedBaseRevision ?? pending?.BaseRevision;
+        return await LockedAsync(() => ApplyCoreAsync(subscription, config, revision, expectedBase, ct), ct).ConfigureAwait(false);
+    }
 
-    private async Task<SubscriptionResult> ApplyCoreAsync(Subscription subscription, string config, string revision, CancellationToken ct)
+    private async Task<SubscriptionResult> ApplyCoreAsync(Subscription subscription, string config, string revision, string? expectedBase, CancellationToken ct)
     {
         if (subscription.Fault.Length > 0)
         {
@@ -82,12 +151,17 @@ public sealed partial class SubscriptionRefresher
         }
         var pending = await ConfigurationUpdates.ReadAsync(store, config, ct).ConfigureAwait(false);
         var current = await library.TextAsync(config, ct).ConfigureAwait(false);
-        if (pending is null || pending.Revision != revision || current is null || ConfigurationRevision.Of(current) != pending.BaseRevision)
+        if (pending is null || pending.Revision != revision || pending.BaseRevision != expectedBase)
         {
             return new(0, 0, 0, [], "configuration-update-stale");
         }
         try
         {
+            if (current is null || ConfigurationRevision.Of(current) != pending.BaseRevision)
+            {
+                var checkedUpdate = await CheckCoreAsync(subscription, ct).ConfigureAwait(false);
+                return checkedUpdate with { Error = "configuration-update-stale" };
+            }
             var fetched = await FetchAsync(subscription.Url, subscription.Pin, ct).ConfigureAwait(false);
             var members = await store.ListSubscriptionMembersAsync(subscription.Name, ct).ConfigureAwait(false);
             var names = await library.NamesAsync(ct).ConfigureAwait(false);
@@ -96,13 +170,14 @@ public sealed partial class SubscriptionRefresher
                 .SingleOrDefault(one => one.Kind == SubscriptionChangeKind.Update && one.ConfigName == config);
             if (change is null || ConfigurationRevision.Of(change.ConfText) != revision)
             {
-                await CheckCoreAsync(subscription, ct).ConfigureAwait(false);
-                return new(0, 0, 0, [], "configuration-update-stale");
+                var checkedUpdate = await ReconcileAsync(subscription, fetched, ct).ConfigureAwait(false);
+                return checkedUpdate with { Error = "configuration-update-stale" };
             }
             var latest = await library.TextAsync(config, ct).ConfigureAwait(false);
             if (latest is null || ConfigurationRevision.Of(latest) != pending.BaseRevision)
             {
-                return new(0, 0, 0, [], "configuration-update-stale");
+                var checkedUpdate = await ReconcileAsync(subscription, fetched, ct).ConfigureAwait(false);
+                return checkedUpdate with { Error = "configuration-update-stale" };
             }
             await library.EditAsync(config, change.ConfText, ct).ConfigureAwait(false);
             await ConfigurationUpdates.ClearAsync(store, config, ct).ConfigureAwait(false);

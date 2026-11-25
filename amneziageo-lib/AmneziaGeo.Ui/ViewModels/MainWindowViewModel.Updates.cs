@@ -23,7 +23,7 @@ internal sealed partial class MainWindowViewModel
         Sheet.Show(Loc.Instance.Get("Main_ConfigurationUpdateTitle", next.Name), string.Join(", ", offered.Fields),
         [
             new ActionOption(Loc.Instance.Get("Main_ConfigUpdateApply"), () => Glyphs.Refresh,
-                () => { _ = Config.ApplyConfigurationUpdateAsync(next.Name, offered.Revision); }),
+                () => { _ = Config.ApplyConfigurationUpdateAsync(next.Name, offered.Revision, offered.BaseRevision); }),
             new ActionOption(Loc.Instance.Get("Main_ConfigurationUpdateLater"), () => Glyphs.Close, () => { }),
         ]);
     }

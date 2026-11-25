@@ -156,29 +156,16 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
     /// <summary>
     /// Checks the revision offered to one configuration.
     /// </summary>
-    public async Task CheckForConfigAsync(string config, CancellationToken ct)
+    public async Task<SubscriptionOutcome> CheckForConfigAsync(string config, CancellationToken ct)
     {
         var member = (await store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false)).FirstOrDefault(one => one.ConfigName == config);
         var subscription = (await store.ListSubscriptionsAsync(ct).ConfigureAwait(false)).FirstOrDefault(one => one.Name == member?.Subscription);
         if (subscription is null)
         {
-            return;
+            return SubscriptionOutcome.Of(new IpcAck(true, string.Empty));
         }
-        var text = await library.TextAsync(config, ct).ConfigureAwait(false);
-        var specific = (await ServerOfferStore.ReadAsync(store, config, text, ct).ConfigureAwait(false)).Subscription()?.ConfigurationRevision;
-        if (specific is { Length: 64 })
-        {
-            var pending = await ConfigurationUpdates.ReadAsync(store, config, ct).ConfigureAwait(false);
-            if (specific == ConfigurationRevision.Of(text ?? string.Empty) || pending?.Revision == specific)
-            {
-                return;
-            }
-        }
-        else if (!subscription.Stale || subscription.CheckedAt is { } at && DateTimeOffset.UtcNow - at < TimeSpan.FromSeconds(30))
-        {
-            return;
-        }
-        await CheckAsync([subscription.Name], ct).ConfigureAwait(false);
+        var result = await Refresher().CheckForConfigAsync(subscription, config, ct).ConfigureAwait(false);
+        return new(new IpcAck(result.Ok, result.Error), result.Added, result.Updated, result.Gone, result.Rewritten) { Dropped = result.Dropped };
     }
 
     /// <summary>
@@ -192,15 +179,19 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         {
             return SubscriptionOutcome.Of(new IpcAck(false, "unknown-subscription"));
         }
+        var dropped = new List<string>();
+        var error = string.Empty;
         foreach (var subscription in wanted)
         {
             var result = await Refresher().CheckAsync(subscription, ct).ConfigureAwait(false);
+            dropped.AddRange(result.Dropped);
             if (!result.Ok)
             {
-                return SubscriptionOutcome.Of(new IpcAck(false, result.Error));
+                error = result.Error;
+                break;
             }
         }
-        return SubscriptionOutcome.Of(new IpcAck(true, string.Empty));
+        return new(new IpcAck(error.Length == 0, error), 0, 0, dropped.Count, []) { Dropped = dropped };
     }
 
     /// <summary>
@@ -208,7 +199,7 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
     /// </summary>
     public async Task<SubscriptionOutcome> ApplyAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        if (args.Count != 2)
+        if (args.Count is not (2 or 3))
         {
             return SubscriptionOutcome.Of(new IpcAck(false, "apply-config-update requires a configuration and revision"));
         }
@@ -218,8 +209,8 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         {
             return SubscriptionOutcome.Of(new IpcAck(false, "unknown-subscription"));
         }
-        var result = await Refresher().ApplyAsync(subscription, args[0], args[1], ct).ConfigureAwait(false);
-        return new(new IpcAck(result.Ok, result.Error), result.Added, result.Updated, result.Gone, result.Rewritten);
+        var result = await Refresher().ApplyAsync(subscription, args[0], args[1], ct, args.Count == 3 ? args[2] : null).ConfigureAwait(false);
+        return new(new IpcAck(result.Ok, result.Error), result.Added, result.Updated, result.Gone, result.Rewritten) { Dropped = result.Dropped };
     }
 
     /// <summary>

@@ -119,9 +119,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     private bool? _ipv6Available;
     private int _resolvedMtu;
-    public string Ipv6Status => Loc.Instance.Get(_ipv6Available is null && Ipv6Mode == 0
+    public string Ipv6Status => Loc.Instance.Get(_ipv6Available is null && Ipv6Mode != (int)Decl.Ipv6Mode.Off
         ? "Transport_Ipv6Unknown"
-        : Ipv6Mode == 1 || Ipv6Mode == 0 && _ipv6Available == true ? "Transport_Ipv6On" : "Transport_Ipv6Off");
+        : Ipv6Mode != (int)Decl.Ipv6Mode.Off && _ipv6Available == true ? "Transport_Ipv6On" : "Transport_Ipv6Off");
     public string ResolvedMtuText => _resolvedMtu > 0
         ? Loc.Instance.Get("Transport_MtuResolved", _resolvedMtu) : Loc.Instance.Get("Transport_MtuPending");
     public bool ShowResolvedMtu => IsMtuReadOnly;
@@ -455,7 +455,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     partial void OnIpv6ModeChanged(int value)
     {
-        SetProperty(ref _useIpv6, value == 1 || value == 0 && _ipv6Available == true, nameof(UseIpv6));
+        SetProperty(ref _useIpv6, UsesIpv6(value), nameof(UseIpv6));
         MarkDirty();
         FireAutoSave();
     }
@@ -522,7 +522,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         || UseWebSocket != _baseUseWebSocket
         || MtuMode != _baseMtuMode
         || MtuMode == (int)Decl.MtuMode.Custom && !string.Equals(Mtu.Trim(), _baseMtu.Trim(), StringComparison.Ordinal)
-        || Ipv6Mode != _baseIpv6Mode
+        || Ipv6Mode != _baseIpv6Mode && (_ipv6Available is null || UsesIpv6(Ipv6Mode) != UsesIpv6(_baseIpv6Mode))
         || UseRouter != _baseUseRouter
         || AllowInbound != _baseAllowInbound
         || UseRouting != _baseUseRouting
@@ -544,6 +544,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
         || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
         || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal);
+
+    private bool UsesIpv6(int mode) => mode == (int)Decl.Ipv6Mode.On
+        || mode == (int)Decl.Ipv6Mode.Auto && _ipv6Available == true;
 
     /// <inheritdoc />
     public event EventHandler? DirtyChanged;

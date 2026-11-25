@@ -3254,8 +3254,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             return new IpcAck(false, "invalid IPv6 mode (auto/on/off)");
         }
-        var useIpv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto
-            && Ipv6Plan.Available(_configs.GetValueOrDefault(args[0]));
+        var ipv6Available = Ipv6Plan.Available(_configs.GetValueOrDefault(args[0]));
+        var useIpv6 = ipv6Mode == Ipv6Mode.On || ipv6Mode == Ipv6Mode.Auto && ipv6Available;
 
         // A size sent without a mode stands for a choice of its own.
         var mode = args.Count > 4
@@ -3290,7 +3290,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await _store.SetConfigTransportAsync(updated).ConfigureAwait(false);
         await proxies.LegacySettingsAsync(args[0], previous, updated, args.Count > 11 && args[11] == "legacy").ConfigureAwait(false);
         if (_active && string.Equals(_boundTarget, args[0], StringComparison.Ordinal)
-            && (ConfigTransportChanges.RequiresRestart(previous, updated)
+            && (ConfigTransportChanges.RequiresRestart(previous, updated, ipv6Available: ipv6Available)
                 || (await proxyChanges.ChangedAsync().ConfigureAwait(false)).Count > 0))
         {
             RequireRestart();
@@ -5201,6 +5201,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await EnsureInitAsync().ConfigureAwait(false);
         var outcome = await Subscriptions().ApplyAsync(args, CancellationToken.None).ConfigureAwait(false);
         FlagRewritten(outcome);
+        DropRunningIfGone();
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         Save();
@@ -5212,8 +5213,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         try
         {
-            await Subscriptions().CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            var outcome = await Subscriptions().CheckForConfigAsync(config, CancellationToken.None).ConfigureAwait(false);
+            FlagRewritten(outcome);
+            DropRunningIfGone();
             await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+            Save();
             PushSnapshot();
         }
         catch (Exception ex)
@@ -5274,6 +5278,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     {
                         var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
                         FlagRewritten(outcome);
+                        DropRunningIfGone();
                         if (!outcome.Ack.Ok)
                         {
                             _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");

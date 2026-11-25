@@ -50,10 +50,84 @@ public sealed class ConfigurationUpdateUiTests
         var window = new MainWindowViewModel(link, new UiPreferences(false));
         var entries = Entries("second");
         window.Config.Apply(entries);
-        await window.Config.ApplyConfigurationUpdateAsync("phone", "second");
+        await window.Config.ApplyConfigurationUpdateAsync("phone", "second", "first").ConfigureAwait(false);
         var command = Assert.Single(link.Commands.Where(one => one.Op == IpcContract.OpApplyConfigUpdate));
-        Assert.Equal(["phone", "second"], command.Args);
+        Assert.Equal(["phone", "second", "first"], command.Args);
         Assert.DoesNotContain(link.Commands, one => one.Op == IpcContract.OpRefreshSubscription);
+    }
+
+    [Fact]
+    public async Task TheOpenSettingsActionIncludesTheDisplayedBaseRevision()
+    {
+        var link = new Link();
+        var window = new MainWindowViewModel(link, new UiPreferences(false));
+        window.Config.Apply(Entries("second"));
+        window.Config.OpenConfig = "phone";
+        await window.Config.ApplyOpenConfigurationUpdateCommand.ExecuteAsync(null).ConfigureAwait(false);
+        var command = Assert.Single(link.Commands.Where(one => one.Op == IpcContract.OpApplyConfigUpdate));
+        Assert.Equal(["phone", "second", "first"], command.Args);
+    }
+
+    [Fact]
+    public async Task AConfirmationKeepsTheBaseRevisionShownWhenTheSheetOpened()
+    {
+        var response = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var link = new Link { ApplyResponse = response };
+        var window = new MainWindowViewModel(link, new UiPreferences(false));
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        window.Config.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(window.Config.ApplyingConfigurationUpdate) && !window.Config.ApplyingConfigurationUpdate)
+            {
+                completed.TrySetResult();
+            }
+        };
+        var original = Entries("second");
+        window.Config.Apply(original);
+        window.OfferConfigurationUpdates(original);
+        window.Config.Apply(Entries("second", "edited"));
+        window.Sheet.Options[0].Run();
+        var command = await link.ApplyCommand.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        Assert.Equal(["phone", "second", "first"], command.Args);
+        response.SetResult(new IpcAck(false, "configuration-update-stale"));
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+    }
+
+    [Fact]
+    public async Task ACompletedRequestKeepsAnOfferRebasedDuringTheRequest()
+    {
+        var response = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var link = new Link { ApplyResponse = response };
+        var window = new MainWindowViewModel(link, new UiPreferences(false));
+        window.Config.Apply(Entries("second"));
+        window.Config.OpenConfig = "phone";
+        var applying = window.Config.ApplyConfigurationUpdateAsync("phone", "second", "first");
+        await link.ApplyCommand.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        Assert.True(window.Config.ApplyingConfigurationUpdate);
+        await window.Config.ApplyConfigurationUpdateAsync("phone", "second", "first").ConfigureAwait(false);
+        Assert.Single(link.Commands.Where(one => one.Op == IpcContract.OpApplyConfigUpdate));
+        window.Config.Apply(Entries("second", "edited"));
+        response.SetResult(new IpcAck(true, string.Empty));
+        await applying.ConfigureAwait(false);
+        Assert.True(window.Config.HasOpenConfigurationUpdate);
+        Assert.False(window.Config.ApplyingConfigurationUpdate);
+    }
+
+    [Fact]
+    public async Task ARejectedConfirmationKeepsTheOfferAndReleasesTheBusyState()
+    {
+        var response = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var link = new Link { ApplyResponse = response };
+        var window = new MainWindowViewModel(link, new UiPreferences(false));
+        window.Config.Apply(Entries("second"));
+        window.Config.OpenConfig = "phone";
+        var applying = window.Config.ApplyConfigurationUpdateAsync("phone", "second", "first");
+        await link.ApplyCommand.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        response.SetResult(new IpcAck(false, "configuration-update-stale"));
+        await applying.ConfigureAwait(false);
+        Assert.True(window.Config.HasOpenConfigurationUpdate);
+        Assert.NotEmpty(window.Config.ConfigurationUpdateError);
+        Assert.False(window.Config.ApplyingConfigurationUpdate);
     }
 
     [Fact]
@@ -85,15 +159,17 @@ public sealed class ConfigurationUpdateUiTests
         Assert.NotEqual("existing", window.Sheet.Title);
     }
 
-    private static ConfigEntry[] Entries(string revision) =>
+    private static ConfigEntry[] Entries(string revision, string baseRevision = "first") =>
     [
         new("phone", "vpn.example:443", false, ConnectionStatus.Disconnected, [], Subscription: "ours",
-            Update: new ConfigurationUpdate(revision, "first", ["[Interface].RekeyTimeout", "[Interface].I1"])),
+            Update: new ConfigurationUpdate(revision, baseRevision, ["[Interface].RekeyTimeout", "[Interface].I1"])),
     ];
 
     private sealed class Link : IAgentConnection
     {
         public List<IpcCommand> Commands { get; } = [];
+        public TaskCompletionSource<IpcAck>? ApplyResponse { get; init; }
+        public TaskCompletionSource<IpcCommand> ApplyCommand { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public event Action? Connected { add { } remove { } }
         public event Action? Disconnected { add { } remove { } }
         public event Action<StatusSnapshot>? SnapshotReceived { add { } remove { } }
@@ -102,6 +178,14 @@ public sealed class ConfigurationUpdateUiTests
         public Task<IpcAck> SendCommandAsync(IpcCommand command)
         {
             Commands.Add(command);
+            if (command.Op == IpcContract.OpApplyConfigUpdate)
+            {
+                ApplyCommand.TrySetResult(command);
+                if (ApplyResponse is { } response)
+                {
+                    return response.Task;
+                }
+            }
             return Task.FromResult(new IpcAck(true, command.Op == IpcContract.OpListSubscriptions ? "[]" : string.Empty));
         }
         public Task<IpcAck> SendCommandRawAsync(IpcCommand command) => SendCommandAsync(command);

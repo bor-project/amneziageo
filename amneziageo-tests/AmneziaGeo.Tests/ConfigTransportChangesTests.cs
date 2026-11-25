@@ -54,4 +54,18 @@ public sealed class ConfigTransportChangesTests
         Assert.True(ConfigTransportChanges.RequiresRestart(transport, updated));
         Assert.False(ConfigTransportChanges.RequiresRestart(transport, updated, inboundApplied: true, holdApplied: true));
     }
+
+    [Theory]
+    [InlineData(true, Ipv6Mode.On, false)]
+    [InlineData(true, Ipv6Mode.Off, true)]
+    [InlineData(false, Ipv6Mode.On, true)]
+    [InlineData(false, Ipv6Mode.Off, false)]
+    [InlineData(null, Ipv6Mode.On, true)]
+    public void Ipv6PolicyChangesOnlyRestartWhenTheEffectiveSettingChanges(bool? available, Ipv6Mode mode, bool restart)
+    {
+        var transport = new ConfigTransport("vpn", false, 0) { Ipv6Mode = Ipv6Mode.Auto };
+        var updated = transport with { Ipv6Mode = mode };
+        Assert.Equal(restart, ConfigTransportChanges.RequiresRestart(transport, updated, ipv6Available: available));
+        Assert.Equal(restart, ConfigTransportChanges.RequiresRestart(updated, transport, ipv6Available: available));
+    }
 }

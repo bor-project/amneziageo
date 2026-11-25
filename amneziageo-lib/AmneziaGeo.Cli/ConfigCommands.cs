@@ -271,7 +271,7 @@ internal static class ConfigCommands
 
         if (flags.Positional.Count != 2 || !Toggle.TryParse(flags.Positional[1], out var on))
         {
-            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off] [--router on|off]");
+            return Reply.Usage("usage: amneziageo config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 auto|on|off] [--router on|off]");
         }
 
         if (flags.Value("port") is { } named && ConfigTransport.PortSent(named) < 0)

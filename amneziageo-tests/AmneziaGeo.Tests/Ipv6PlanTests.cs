@@ -133,6 +133,137 @@ public sealed class Ipv6PlanTests
         }
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task LinuxMigrationSetsAutoForLegacyRows(bool enabled, bool columnExists)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ipv6-linux-{Guid.NewGuid():N}.db");
+        var original = new SqliteStateStore(path);
+        var linux = new SqliteStateStore(path, legacyIpv6Auto: true);
+        try
+        {
+            await original.InitializeAsync().ConfigureAwait(false);
+            var transport = new ConfigTransport("legacy", true, 1380, enabled, MtuMode.Custom,
+                WebSocketHost: "wss://proxy.example.test", WebSocketPort: 9443) { ServicesPort = 8443 };
+            await original.SetConfigTransportAsync(transport).ConfigureAwait(false);
+            if (!columnExists)
+            {
+                await using var connection = new SqliteConnection($"Data Source={path}");
+                await connection.OpenAsync().ConfigureAwait(false);
+                await using var command = connection.CreateCommand();
+                command.CommandText = "ALTER TABLE config_transport DROP COLUMN ipv6_mode";
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+
+            await linux.InitializeAsync().ConfigureAwait(false);
+            var restored = await linux.GetConfigTransportAsync("legacy").ConfigureAwait(false);
+            Assert.Equal(transport with { Ipv6Mode = Ipv6Mode.Auto }, restored);
+            Assert.True(Ipv6Plan.Enabled(restored, DualStack));
+            Assert.False(Ipv6Plan.Enabled(restored, DualStack.Replace("fd00::2/128", "10.0.0.3/32")));
+
+            var restarted = new SqliteStateStore(path, legacyIpv6Auto: true);
+            await restarted.InitializeAsync().ConfigureAwait(false);
+            Assert.Equal(restored, await restarted.GetConfigTransportAsync("legacy").ConfigureAwait(false));
+            Assert.Equal(Ipv6Mode.Auto, (await original.GetConfigTransportAsync("legacy").ConfigureAwait(false))!.Ipv6Mode);
+        }
+        finally
+        {
+            original.ClearPool();
+            linux.ClearPool();
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(Ipv6Mode.Auto)]
+    [InlineData(Ipv6Mode.On)]
+    [InlineData(Ipv6Mode.Off)]
+    public async Task LinuxMigrationPreservesModernChoicesAcrossRestartsAndEdits(Ipv6Mode mode)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ipv6-linux-choice-{Guid.NewGuid():N}.db");
+        var store = new SqliteStateStore(path, legacyIpv6Auto: true);
+        try
+        {
+            await store.InitializeAsync().ConfigureAwait(false);
+            var transport = new ConfigTransport("modern", false, UseIpv6: mode != Ipv6Mode.On) { Ipv6Mode = mode };
+            await store.SetConfigTransportAsync(transport).ConfigureAwait(false);
+            await store.InitializeAsync().ConfigureAwait(false);
+            await ConfigServicePortCommands.SetAsync(store, ["modern", "9443"], true).ConfigureAwait(false);
+            var restarted = new SqliteStateStore(path, legacyIpv6Auto: true);
+            await restarted.InitializeAsync().ConfigureAwait(false);
+            Assert.Equal(transport with { ServicesPort = 9443 }, await restarted.GetConfigTransportAsync("modern").ConfigureAwait(false));
+        }
+        finally
+        {
+            store.ClearPool();
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LinuxStoresIncomingLegacySettingsAsAuto(bool enabled)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ipv6-linux-import-{Guid.NewGuid():N}.db");
+        var store = new SqliteStateStore(path, legacyIpv6Auto: true);
+        try
+        {
+            await store.InitializeAsync().ConfigureAwait(false);
+            var block = JsonSerializer.Deserialize<PortableBundle.TransportBlock>(
+                "{\"UseWebSocket\":false,\"Host\":\"\",\"Port\":0,\"Mtu\":1420,\"UseIpv6\":" + (enabled ? "true" : "false") + "}");
+            var transport = new ConfigTransport("imported", block!.UseWebSocket, block.Mtu, block.UseIpv6) { Ipv6Mode = block.Ipv6Mode };
+            await store.SetConfigTransportAsync(transport).ConfigureAwait(false);
+            Assert.Equal(transport with { Ipv6Mode = Ipv6Mode.Auto }, await store.GetConfigTransportAsync("imported").ConfigureAwait(false));
+        }
+        finally
+        {
+            store.ClearPool();
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void RemovingIpv6OnlyEntriesDoesNotLeaveEmptyAssignments()
+    {
+        var config = "[Interface]\nAddress = fd00::2/128\nDNS = fd00::1\n[Peer]\nEndpoint = [2001:db8::1]:443\nAllowedIPs = ::/0\n";
+        var filtered = Ipv6Plan.ForTunnel(config, false);
+        Assert.DoesNotContain("Address =", filtered);
+        Assert.DoesNotContain("DNS =", filtered);
+        Assert.DoesNotContain("AllowedIPs =", filtered);
+        Assert.Contains("Endpoint = [2001:db8::1]:443", filtered);
+    }
+
+    [Theory]
+    [InlineData(Ipv6Mode.On, false, "Transport_Ipv6Off")]
+    [InlineData(Ipv6Mode.On, null, "Transport_Ipv6Unknown")]
+    [InlineData(Ipv6Mode.On, true, "Transport_Ipv6On")]
+    [InlineData(Ipv6Mode.Off, null, "Transport_Ipv6Off")]
+    public void StatusReflectsTunnelAvailability(Ipv6Mode mode, bool? available, string key)
+    {
+        var editor = new ConfigTransportViewModel(new Recorder(), "sample", false, 1420, mode == Ipv6Mode.On,
+            ipv6Mode: mode, ipv6Available: available);
+        Assert.Equal(Loc.Instance.Get(key), editor.Ipv6Status);
+        Assert.False(editor.IsDirty);
+    }
+
+    [Theory]
+    [InlineData(true, Ipv6Mode.On, false)]
+    [InlineData(true, Ipv6Mode.Off, true)]
+    [InlineData(false, Ipv6Mode.On, true)]
+    [InlineData(false, Ipv6Mode.Off, false)]
+    public void SavingAnEquivalentPolicyDoesNotRequestReconnect(bool available, Ipv6Mode mode, bool restart)
+    {
+        var editor = new ConfigTransportViewModel(new Recorder(), "sample", false, 1420, available,
+            ipv6Mode: Ipv6Mode.Auto, ipv6Available: available);
+        editor.Ipv6Mode = (int)mode;
+        Assert.True(editor.IsDirty);
+        Assert.Equal(restart, editor.ConnectionChanged);
+    }
+
     [Fact]
     public void OldIpcAndBundlesRetainTheirBooleanChoice()
     {

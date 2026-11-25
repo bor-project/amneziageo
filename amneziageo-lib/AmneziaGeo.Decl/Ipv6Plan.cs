@@ -42,9 +42,9 @@ public static class Ipv6Plan
             }
 
             var kept = text[(separator + 1)..].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Where(entry => !entry.Contains(':', StringComparison.Ordinal));
-            return $"{text[..separator].Trim()} = {string.Join(", ", kept)}";
-        }));
+                .Where(entry => !entry.Contains(':', StringComparison.Ordinal)).ToArray();
+            return kept.Length == 0 ? null : $"{text[..separator].Trim()} = {string.Join(", ", kept)}";
+        }).Where(line => line is not null));
     }
 
     private static bool Unicast(string entry) => Address(entry) is { } address

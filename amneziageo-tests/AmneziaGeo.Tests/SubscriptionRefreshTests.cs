@@ -22,7 +22,7 @@ public sealed partial class SubscriptionRefreshTests : IAsyncLifetime
         var text = (node + " " + ClientKeySeed).PadRight(32)[..32];
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
     }
-    private const string ServerKey = "QW1uZXppYUdlbyByZWZyZXNoIHNlcnZlciBrZXkhIQ==";
+    private const string ServerKey = "QW1uZXppYUdlbyByZWZyZXNoIHNlcnZlciBrZXkhISE=";
 
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"ageo-refresh-{Guid.NewGuid():N}.db");
     private readonly Feed _feed = new();
@@ -368,9 +368,11 @@ public sealed partial class SubscriptionRefreshTests : IAsyncLifetime
         public string? Tag { get; set; }
 
         public bool Silent { get; set; }
+        public int Requests { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            Requests++;
             if (Silent)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct);

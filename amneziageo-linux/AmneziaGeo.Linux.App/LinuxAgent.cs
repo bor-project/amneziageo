@@ -1117,7 +1117,7 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    private async Task<IpcAck> SetConnectionAsync(string desired, CancellationToken ct)
+    private async Task<IpcAck> SetConnectionAsync(string desired, CancellationToken ct, string? target = null)
     {
         if (desired != "connect")
         {
@@ -1131,15 +1131,15 @@ internal sealed class LinuxAgent : IDisposable
 
         var attempt = _connectionPreparation.Begin(ct);
         _desiredConnected = true;
-        _boundTarget = _selectedTarget;
+        _boundTarget = target ?? _selectedTarget;
         _boundStatus = ConnectionStatus.Connecting;
         _connectFailed = false;
-        _connectWork = ConnectInBackgroundAsync(_connectWork, attempt);
+        _connectWork = ConnectInBackgroundAsync(_connectWork, attempt, target);
         await PushAsync(ct).ConfigureAwait(false);
         return new IpcAck(true, "connecting");
     }
 
-    private async Task ConnectInBackgroundAsync(Task previous, CancellationTokenSource attempt)
+    private async Task ConnectInBackgroundAsync(Task previous, CancellationTokenSource attempt, string? target)
     {
         await Task.Yield();
         try
@@ -1150,7 +1150,7 @@ internal sealed class LinuxAgent : IDisposable
                 try
                 {
                     attempt.Token.ThrowIfCancellationRequested();
-                    await ChangeConnectionAsync("connect", attempt.Token).ConfigureAwait(false);
+                    await ChangeConnectionAsync("connect", attempt.Token, target).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (attempt.IsCancellationRequested)
                 {
@@ -1183,7 +1183,7 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    private async Task<IpcAck> ChangeConnectionAsync(string desired, CancellationToken ct)
+    private async Task<IpcAck> ChangeConnectionAsync(string desired, CancellationToken ct, string? target = null)
     {
         if (desired == "disconnect")
         {
@@ -1209,7 +1209,7 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, $"unknown connection state '{desired}'");
         }
 
-        var configName = _selectedTarget;
+        var configName = target ?? _selectedTarget;
         ct.ThrowIfCancellationRequested();
         var config = configName is null ? null : await _store.GetConfigTextAsync(configName, ct).ConfigureAwait(false);
         if (configName is null || config is null)
@@ -1228,7 +1228,7 @@ internal sealed class LinuxAgent : IDisposable
         _gaveUpLogged = false;
         _connectFailReason = string.Empty;
         _connectFailDetail = string.Empty;
-        _boundTarget = _selectedTarget;
+        _boundTarget = configName;
         _boundStatus = ConnectionStatus.Connecting;
         await PushAsync(ct).ConfigureAwait(false);
 
@@ -1486,52 +1486,48 @@ internal sealed class LinuxAgent : IDisposable
         return ack;
     }
 
-    // Re-reads the subscriptions whose interval has run out. A subscription lives on the open internet, so this
-    // runs whether or not a tunnel is up.
+    // Refreshes configurations while the agent runs.
     private async Task RefreshSubscriptionsAsync(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(SubscriptionTickSeconds));
+        var initial = true;
         try
         {
-            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            do
             {
-                if (!_subscriptionAutoRefresh)
+                if (_subscriptionAutoRefresh)
                 {
-                    continue;
-                }
-
-                var service = Subscriptions();
-                var due = await service.DueAsync(_subscriptionIntervalHours, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
-                foreach (var subscription in due)
-                {
-                    var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
-                    // Taking the running tunnel down or dialling it again is the controller's work, done under the
-                    // gate the commands hold, as the re-read asked for by hand is.
-                    await GatedAsync(() => FlagRewrittenAsync(outcome, ct), ct).ConfigureAwait(false);
-                    if (!outcome.Ack.Ok)
+                    try
                     {
-                        _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");
+                        var targets = await OfferTargetsAsync(ct).ConfigureAwait(false);
+                        await Subscriptions().AutoRefreshAsync(_subscriptionIntervalHours, initial, _offers, targets,
+                            OfferSettingsChangedAsync, async outcome =>
+                            {
+                                if (!outcome.Ack.Ok)
+                                {
+                                    _log.Warn("sub", $"subscription {outcome.Name} could not be refreshed");
+                                }
+
+                                await GatedAsync(() => FlagRewrittenAsync(outcome, ct, automatic: true), ct).ConfigureAwait(false);
+                                await PushAsync(ct).ConfigureAwait(false);
+                            }, ct).ConfigureAwait(false);
+                        initial = false;
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        _log.Error("sub", "automatic configuration refresh failed", ex);
                     }
                 }
-
-                if (due.Count > 0)
-                {
-                    await PushAsync(ct).ConfigureAwait(false);
-                    await WarmUnaskedAsync(ct).ConfigureAwait(false);
-                }
             }
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false));
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-        }
-        catch (Exception ex)
-        {
-            _log.Error("sub", "the scheduled re-read of the subscriptions stopped", ex);
         }
     }
 
     // A rewritten text applies on a fresh tunnel; dial the running target again as soon as it is rewritten.
-    private async Task FlagRewrittenAsync(SubscriptionOutcome outcome, CancellationToken ct)
+    private async Task FlagRewrittenAsync(SubscriptionOutcome outcome, CancellationToken ct, bool automatic = false)
     {
         // Подписка снесла работающую конфигурацию - держать туннель не на чем.
         if (_tunnel.Running && _boundTarget is { Length: > 0 } bound
@@ -1554,7 +1550,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         // Выбор успели увести на другую конфигурацию - переподключение остаётся за пользователем.
-        if (!string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
+        if (!automatic && !string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
         {
             _restartRequired = true;
             _log.Info("sub", "the subscription rewrote the running configuration; it applies on the next connect");
@@ -1563,7 +1559,7 @@ internal sealed class LinuxAgent : IDisposable
 
         _log.Info("sub", "the subscription rewrote the running configuration; dialling it again");
         await SetConnectionAsync("disconnect", ct).ConfigureAwait(false);
-        await SetConnectionAsync("connect", ct).ConfigureAwait(false);
+        await SetConnectionAsync("connect", ct, automatic ? dialled : null).ConfigureAwait(false);
     }
 
     private SubscriptionService Subscriptions()
@@ -3395,6 +3391,11 @@ internal sealed class LinuxAgent : IDisposable
     private Task OfferChangedAsync(string config)
     {
         _ = CheckConfigurationUpdatesAsync(config);
+        return OfferSettingsChangedAsync(config);
+    }
+
+    private Task OfferSettingsChangedAsync(string config)
+    {
         _ = Task.Run(() => ReapplyRoutingAsync(config));
         FindAppsLater();
 

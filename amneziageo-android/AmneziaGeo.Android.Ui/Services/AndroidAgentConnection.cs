@@ -196,6 +196,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _geoAutoCheck = true;
     private int _geoCheckIntervalHours = 24;
     private bool _subscriptionAutoRefresh = true;
+    private CancellationTokenSource? _subscriptionChecks;
     private int _subscriptionIntervalHours = DefaultSubscriptionIntervalHours;
     private DateTimeOffset _geoCheckedAt;
     private readonly GeoRecheck _geoRecheck = new(TimeSpan.FromMinutes(GeoRecheckMinutes), GeoRechecks);
@@ -325,6 +326,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         MainActivity.Resumed += SyncTunnelState;
         MainActivity.ShownChanged += PaceWatch;
         MainActivity.ShownChanged += WatchLinks;
+        MainActivity.ShownChanged += WatchSubscriptions;
         WatchLinks(MainActivity.Shown);
         TakeTunnelStage();
         Connected?.Invoke();
@@ -333,7 +335,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _ticks.PostDelayed(WatchTick, HeadPace.WatchMs(MainActivity.Shown));
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
         _ = CheckGeoUpdatesAsync(_geoChecks.Token);
-        _ = RefreshSubscriptionsAsync(_geoChecks.Token);
+        WatchSubscriptions(MainActivity.Shown);
     }
 
     /// <summary>
@@ -379,6 +381,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         MainActivity.Resumed -= SyncTunnelState;
         MainActivity.ShownChanged -= PaceWatch;
         MainActivity.ShownChanged -= WatchLinks;
+        MainActivity.ShownChanged -= WatchSubscriptions;
+        WatchSubscriptions(false);
         WatchLinks(false);
         _ticks.RemoveCallbacksAndMessages(null);
         if (_events is not null)
@@ -708,7 +712,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    private async Task<IpcAck> SetConnectionAsync(string desired)
+    private async Task<IpcAck> SetConnectionAsync(string desired, string? target = null)
     {
         if (desired == "disconnect")
         {
@@ -724,7 +728,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var attempt = _connectionPreparation.Begin(_geoChecks.Token);
         try
         {
-            return await ChangeConnectionAsync(desired, attempt.Token).ConfigureAwait(false);
+            return await ChangeConnectionAsync(desired, attempt.Token, target).ConfigureAwait(false);
         }
         catch (System.OperationCanceledException) when (attempt.IsCancellationRequested)
         {
@@ -736,7 +740,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    private async Task<IpcAck> ChangeConnectionAsync(string desired, CancellationToken ct)
+    private async Task<IpcAck> ChangeConnectionAsync(string desired, CancellationToken ct, string? target = null)
     {
         if (desired == "disconnect")
         {
@@ -771,7 +775,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         // Two different refusals: nothing to connect to, and a selection whose config is gone.
-        if (_selectedTarget is not { Length: > 0 })
+        if ((target ?? _selectedTarget) is not { Length: > 0 })
         {
             SetConnectFailure(nameof(ConnectFailureReason.NoTargetSelected), string.Empty);
             _log.Error("agent", "connect refused: no configuration selected");
@@ -781,7 +785,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().WaitAsync(ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
-        var configName = _selectedTarget;
+        var configName = target ?? _selectedTarget;
         if (configName is null)
         {
             return Fail();
@@ -811,7 +815,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, "vpn permission denied");
         }
 
-        if (_selectedTarget != configName)
+        if (target is null && _selectedTarget != configName)
         {
             return Fail();
         }
@@ -834,7 +838,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // then a snapshot would pull the card back to disconnected.
         _active = true;
         _boundStatus = ConnectionStatus.Connecting;
-        _boundTarget = _selectedTarget;
+        _boundTarget = configName;
         PushSnapshot();
 
         // The server is asked what it offers before the plan and the tunnel take its word.
@@ -883,7 +887,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var session = await Task.Run(() => RaiseSessionPlanAsync(useRouter), ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
 
-        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(session.Mode, session.Packages.Length, AttributedNow())}"
+        _log.Info("agent", $"connect requested: config '{configName}', app rules {AppRulesLine(session.Mode, session.Packages.Length, AttributedNow())}"
             + $"{BypassLine(session.Bypass.Length)}, plan {(session.Rebuilt ? "ready" : "unchanged")} in {System.Environment.TickCount64 - planStarted} ms");
         var words = await NoticeWordsAsync().ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
@@ -891,7 +895,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var front = selectedProxy.Proxy?.Record.Proxy.Transport == "websocket" ? WsEndpoint.From(selectedProxy.Proxy) : (WsEndpoint?)null;
         var dns = VpnDns.Pick(await _store.GetConfigDnsAsync(configName).ConfigureAwait(false), offer.Dns(), WgConfigEditor.GetDns(configText), Beside(true));
         ct.ThrowIfCancellationRequested();
-        if (_selectedTarget != configName || claimed.Read(configName) != configText)
+        if ((target is null && _selectedTarget != configName) || claimed.Read(configName) != configText)
         {
             if (_boundTarget == configName && _boundStatus == ConnectionStatus.Connecting)
             {
@@ -3497,9 +3501,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Refreshes the publications and the running transport.
-    private async Task OfferChangedAsync(string config)
+    private Task OfferChangedAsync(string config)
     {
         _ = CheckConfigurationUpdatesAsync(config);
+        return OfferSettingsChangedAsync(config);
+    }
+
+    private async Task OfferSettingsChangedAsync(string config)
+    {
         await RefreshOffersAsync().ConfigureAwait(false);
         await RefreshRunningTransportAsync().ConfigureAwait(false);
         await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
@@ -4268,7 +4277,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 builder.Append(",\"SelectedRouting\":").Append(saved.Routing?.ToString(CultureInfo.InvariantCulture) ?? "null");
                 builder.Append(",\"ConfigRouting\":").Append(JsonSerializer.Serialize(saved.Choices));
                 builder.Append('}');
-                System.IO.File.WriteAllText(_storePath, builder.ToString());
+                var next = _storePath + ".tmp";
+                System.IO.File.WriteAllText(next, builder.ToString());
+                System.IO.File.Move(next, _storePath, overwrite: true);
                 return true;
             }
             catch (Exception ex)
@@ -5260,59 +5271,66 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return await Subscriptions().ConfigUrlAsync(args, CancellationToken.None).ConfigureAwait(false);
     }
 
-    // Re-reads the subscriptions whose interval has run out. A subscription lives on the open internet, so this
-    // runs whether or not the interface is up; a document of a couple of kilobytes needs no free link either.
+    // Checks configurations while the activity is visible.
+    private void WatchSubscriptions(bool shown)
+    {
+        if (!shown)
+        {
+            _subscriptionChecks?.Cancel();
+            _subscriptionChecks?.Dispose();
+            _subscriptionChecks = null;
+        }
+        else if (!_disposed && _subscriptionChecks is null)
+        {
+            _subscriptionChecks = CancellationTokenSource.CreateLinkedTokenSource(_geoChecks.Token);
+            _ = RefreshSubscriptionsAsync(_subscriptionChecks.Token);
+        }
+    }
+
     private async Task RefreshSubscriptionsAsync(CancellationToken ct)
     {
+        var initial = true;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(SubscriptionTickSeconds));
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(GeoStartDelaySeconds), ct).ConfigureAwait(false);
-            while (!ct.IsCancellationRequested)
+            await EnsureInitAsync().WaitAsync(ct).ConfigureAwait(false);
+            do
             {
                 if (_subscriptionAutoRefresh)
                 {
-                    await EnsureInitAsync().ConfigureAwait(false);
-                    var service = Subscriptions();
-                    var due = await service.DueAsync(_subscriptionIntervalHours, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
-                    foreach (var subscription in due)
+                    try
                     {
-                        var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
-                        FlagRewritten(outcome);
-                        DropRunningIfGone();
-                        if (!outcome.Ack.Ok)
-                        {
-                            _log.Warn("sub", $"subscription {subscription.Name} could not be re-read");
-                        }
-                    }
+                        await Subscriptions().AutoRefreshAsync(_subscriptionIntervalHours, initial, _offers, OfferTargets(),
+                            OfferSettingsChangedAsync, async outcome =>
+                            {
+                                if (!outcome.Ack.Ok)
+                                {
+                                    _log.Warn("sub", $"subscription {outcome.Name} could not be refreshed");
+                                }
 
-                    if (due.Count > 0)
+                                FlagRewritten(outcome, automatic: true);
+                                await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
+                                PushSnapshot();
+                            }, ct).ConfigureAwait(false);
+                        initial = false;
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
                     {
-                        await RefreshSubscriptionMembersAsync().ConfigureAwait(false);
-                        Save();
-                        PushSnapshot();
-                        await _offers.WarmUnaskedAsync(OfferTargets(), OfferChangedAsync, ct).ConfigureAwait(false);
+                        _log.Error("sub", "automatic configuration refresh failed", ex);
                     }
                 }
-
-                await Task.Delay(TimeSpan.FromSeconds(SubscriptionTickSeconds), ct).ConfigureAwait(false);
             }
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false));
         }
-        catch (System.OperationCanceledException)
+        catch (System.OperationCanceledException) when (ct.IsCancellationRequested)
         {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (Exception ex)
-        {
-            _log.Error("sub", "the scheduled re-read of the subscriptions stopped", ex);
         }
     }
 
     // A rewritten text applies on a fresh interface; flag a reconnect when the running target is affected.
     // Переписанный подпиской текст встаёт сразу: туннель поднимается заново на нём же. Упавший от смены
     // адреса поднимается так же - подписка чинит именно его.
-    private void FlagRewritten(SubscriptionOutcome outcome)
+    private void FlagRewritten(SubscriptionOutcome outcome, bool automatic = false)
     {
         if (!_dialWanted)
         {
@@ -5327,14 +5345,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         // Выбор успели увести на другую конфигурацию - переподключение остаётся за пользователем.
-        if (!string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
+        if (!automatic && !string.Equals(dialled, _selectedTarget, StringComparison.Ordinal))
         {
             RequireRestart();
             return;
         }
 
         _log.Info("sub", "the subscription rewrote the configuration it dials; dialling it again");
-        _ = RestartTunnelAsync();
+        _ = RestartTunnelAsync(automatic ? dialled : null);
     }
 
     // Подписка снесла работающую конфигурацию - держать туннель не на чем.
@@ -5348,7 +5366,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Движок читает конфигурацию на старте: новый текст встаёт только на поднятом заново туннеле.
-    private async Task RestartTunnelAsync()
+    private async Task RestartTunnelAsync(string? target)
     {
         await SetConnectionAsync("disconnect").ConfigureAwait(false);
         for (var attempt = 0; attempt < RestartWaitTicks && _active; attempt++)
@@ -5356,7 +5374,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             await Task.Delay(RestartTickMs).ConfigureAwait(false);
         }
 
-        await SetConnectionAsync("connect").ConfigureAwait(false);
+        await SetConnectionAsync("connect", target).ConfigureAwait(false);
     }
 
     private SubscriptionService Subscriptions()
@@ -5391,10 +5409,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         public Task EditAsync(string name, string confText, CancellationToken ct)
         {
+            ct.ThrowIfCancellationRequested();
             using var claimed = agent.ClaimConfigNamesOrThrow(name);
-            if (!claimed.Write(name, confText))
+            var previous = claimed.Read(name);
+            if (previous is null || !claimed.Write(name, confText))
             {
                 throw new InvalidOperationException(Loc.Instance.Get("Agent_NameTaken", name));
+            }
+
+            if (!agent.TrySave())
+            {
+                claimed.Write(name, previous);
+                throw new IOException("configuration-update-write-failed");
             }
 
             return Task.CompletedTask;

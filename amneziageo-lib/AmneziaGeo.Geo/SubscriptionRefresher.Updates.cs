@@ -33,6 +33,122 @@ public sealed partial class SubscriptionRefresher
     public Task<SubscriptionResult> CheckForConfigAsync(Subscription subscription, string config, CancellationToken ct) =>
         LockedAsync(() => CheckRevisionAsync(subscription, config, ct), ct);
 
+    /// <summary>
+    /// Applies changes to installed configurations.
+    /// </summary>
+    public Task<SubscriptionResult> AutoRefreshAsync(string name, DateTimeOffset started, CancellationToken ct) =>
+        LockedAsync(() => AutoRefreshCoreAsync(name, started, ct), ct);
+
+    private async Task<SubscriptionResult> AutoRefreshCoreAsync(string name, DateTimeOffset started, CancellationToken ct)
+    {
+        var subscription = (await store.ListSubscriptionsAsync(ct).ConfigureAwait(false)).FirstOrDefault(one => one.Name == name);
+        if (subscription is null || subscription.Fault.Length > 0)
+        {
+            return new(0, 0, 0, [], subscription?.Fault ?? string.Empty);
+        }
+
+        var rewritten = new List<string>();
+        try
+        {
+            var members = (await store.ListSubscriptionMembersAsync(name, ct).ConfigureAwait(false))
+                .Where(one => one.Present).ToArray();
+            var names = await library.NamesAsync(ct).ConfigureAwait(false);
+            var texts = await TextsAsync(members, names, ct).ConfigureAwait(false);
+            if (texts.Count == 0)
+            {
+                return new(0, 0, 0, []);
+            }
+
+            var revisions = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (config, text) in texts)
+            {
+                var kept = await ServerOfferStore.KeptAsync(store, config, text, ct).ConfigureAwait(false);
+                if (kept is { Heard: true, Misses: 0 } && kept.Asked >= started
+                    && kept.Offer.Subscription() is { Fault.Length: 0, ConfigurationRevision.Length: 64 } offer
+                    && offer.Url == subscription.Url)
+                {
+                    revisions.Add(config, offer.ConfigurationRevision);
+                }
+            }
+
+            if (revisions.Count == texts.Count && texts.All(one => revisions[one.Key] == ConfigurationRevision.Of(one.Value)))
+            {
+                foreach (var config in texts.Keys)
+                {
+                    await ConfigurationUpdates.ClearAsync(store, config, ct).ConfigureAwait(false);
+                }
+
+                await store.SaveSubscriptionAsync(subscription with
+                {
+                    CheckedAt = DateTimeOffset.UtcNow,
+                    LastError = string.Empty,
+                    Revision = subscription.Offered.Length > 0 ? subscription.Offered : subscription.Revision,
+                }, ct).ConfigureAwait(false);
+                return new(0, 0, 0, []);
+            }
+
+            var fetched = await FetchAsync(subscription.Url, subscription.Pin, ct).ConfigureAwait(false);
+            if (fetched.Configs.Count == 0)
+            {
+                throw new InvalidOperationException("the subscription holds no nodes");
+            }
+
+            var changes = SubscriptionMerge.Plan(fetched.Configs, members, names, texts)
+                .Where(one => one.Kind == SubscriptionChangeKind.Update && texts.ContainsKey(one.ConfigName)).ToArray();
+            foreach (var change in changes)
+            {
+                if (revisions.TryGetValue(change.ConfigName, out var revision)
+                    && revision != ConfigurationRevision.Of(change.ConfText))
+                {
+                    throw new InvalidOperationException("configuration-update-stale");
+                }
+
+                if (!SubscriptionMerge.SameText(texts[change.ConfigName], change.ConfText))
+                {
+                    WgConfigValidator.Validate(change.ConfText);
+                }
+            }
+
+            foreach (var change in changes)
+            {
+                ct.ThrowIfCancellationRequested();
+                var config = change.ConfigName;
+                var current = await library.TextAsync(config, ct).ConfigureAwait(false);
+                if (!SubscriptionMerge.SameText(current, texts[config]))
+                {
+                    throw new InvalidOperationException("configuration-update-stale");
+                }
+
+                if (!SubscriptionMerge.SameText(current, change.ConfText))
+                {
+                    await library.EditAsync(config, change.ConfText, ct).ConfigureAwait(false);
+                    rewritten.Add(config);
+                }
+
+                await ConfigurationUpdates.ClearAsync(store, config, ct).ConfigureAwait(false);
+                if (change.PreviousRemark.Length > 0 && change.PreviousRemark != change.Remark)
+                {
+                    await store.SaveSubscriptionMemberAsync(new SubscriptionMember(name, change.Remark, config), ct).ConfigureAwait(false);
+                    await store.RemoveSubscriptionMemberAsync(name, change.PreviousRemark, ct).ConfigureAwait(false);
+                }
+            }
+
+            await CheckedAsync(subscription, fetched, changes.Length == texts.Count, ct).ConfigureAwait(false);
+            return new(0, rewritten.Count, 0, rewritten);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested && rewritten.Count > 0)
+        {
+            return new(0, rewritten.Count, 0, rewritten);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested
+            && ex is HttpRequestException or OperationCanceledException or TimeoutException or UriFormatException
+                or InvalidOperationException or WgConfigFormatException or IOException)
+        {
+            var reason = ex is WgConfigFormatException ? "configuration-update-invalid" : Reason(ex);
+            await CheckFailedAsync(name, reason, ct).ConfigureAwait(false);
+            return new(0, rewritten.Count, 0, rewritten, reason);
+        }
+    }
     private async Task<SubscriptionResult> CheckRevisionAsync(Subscription subscription, string config, CancellationToken ct)
     {
         var text = await library.TextAsync(config, ct).ConfigureAwait(false);

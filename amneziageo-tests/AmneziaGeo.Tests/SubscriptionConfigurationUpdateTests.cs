@@ -9,6 +9,78 @@ namespace AmneziaGeo.Tests;
 public sealed partial class SubscriptionRefreshTests
 {
     [Fact]
+    public async Task AutomaticRefreshDownloadsChangedRevisionOnlyOnce()
+    {
+        _feed.Body = Body(Config("phone"), Config("laptop"));
+        await _refresher.RefreshAsync(Fresh(), default).ConfigureAwait(false);
+        var names = _library.Names;
+        var changed = Config("phone").Replace("PersistentKeepalive = 25", "PersistentKeepalive = 20");
+        var started = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var before = _feed.Requests;
+        await HelloRevisionAsync(names[0], changed).ConfigureAwait(false);
+        await HelloRevisionAsync(names[1], _library.Text(names[1])).ConfigureAwait(false);
+        _feed.Tag = "revision-2";
+        _feed.Body = Body(changed, Config("laptop"));
+
+        var updated = await _refresher.AutoRefreshAsync(Fresh().Name, started, default).ConfigureAwait(false);
+        var repeated = await _refresher.AutoRefreshAsync(Fresh().Name, started, default).ConfigureAwait(false);
+
+        Assert.True(updated.Ok, updated.Error);
+        Assert.True(repeated.Ok, repeated.Error);
+        Assert.Equal([names[0]], updated.Rewritten);
+        Assert.Empty(repeated.Rewritten);
+        Assert.Equal(before + 1, _feed.Requests);
+        Assert.True(SubscriptionMerge.SameText(_library.Text(names[0]), changed));
+        Assert.Equal("revision-2", (await Stored().ConfigureAwait(false)).Revision);
+    }
+
+    [Fact]
+    public async Task AutomaticRefreshKeepsProfilesOnInvalidOrStaleDownload()
+    {
+        _feed.Body = Body(Config("phone"), Config("laptop"));
+        await _refresher.RefreshAsync(Fresh(), default).ConfigureAwait(false);
+        var names = _library.Names;
+        var originals = names.Select(_library.Text).ToArray();
+        var changed = Config("phone", "next.example:1234");
+        var invalid = Config("laptop").Replace("PersistentKeepalive = 25", "PersistentKeepalive = invalid");
+        _feed.Body = Body(changed, invalid);
+        var result = await _refresher.AutoRefreshAsync(Fresh().Name, DateTimeOffset.UtcNow, default).ConfigureAwait(false);
+        Assert.False(result.Ok);
+        Assert.Equal(originals, names.Select(_library.Text));
+
+        var started = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        await HelloRevisionAsync(names[0], changed).ConfigureAwait(false);
+        _feed.Body = Body(Config("phone"), Config("laptop"));
+        var stale = await _refresher.AutoRefreshAsync(Fresh().Name, started, default).ConfigureAwait(false);
+        Assert.Equal("configuration-update-stale", stale.Error);
+        Assert.Equal(originals, names.Select(_library.Text));
+    }
+
+    [Fact]
+    public async Task AutomaticRefreshFallsBackToLegacyFeedAndRetainsLocalOverrides()
+    {
+        _feed.Body = Body(Config("phone"));
+        await _refresher.RefreshAsync(Fresh(), default).ConfigureAwait(false);
+        var name = Assert.Single(_library.Names);
+        await _store.SetConfigDnsAsync(new ConfigDns(name, "1.1.1.1")).ConfigureAwait(false);
+        await _library.AddAsync("local", Config("local"), default).ConfigureAwait(false);
+        _feed.Status = System.Net.HttpStatusCode.ServiceUnavailable;
+        var failed = await _refresher.AutoRefreshAsync(Fresh().Name, DateTimeOffset.UtcNow, default).ConfigureAwait(false);
+        Assert.False(failed.Ok);
+        Assert.Empty(failed.Rewritten);
+        Assert.Contains("51821", _library.Text(name));
+
+        _feed.Status = System.Net.HttpStatusCode.OK;
+        _feed.Body = Body(Config("phone", "next.example:1234"), Config("another"));
+        var result = await _refresher.AutoRefreshAsync(Fresh().Name, DateTimeOffset.UtcNow, default).ConfigureAwait(false);
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal([name], result.Rewritten);
+        Assert.Equal([name, "local"], _library.Names);
+        Assert.Equal("1.1.1.1", (await _store.GetConfigDnsAsync(name).ConfigureAwait(false))?.Servers);
+        Assert.Contains("next.example:1234", _library.Text(name));
+    }
+
+    [Fact]
     public async Task CheckingAllAwgParametersRetainsTheRunningFileUntilConfirmation()
     {
         var original = Config("phone");

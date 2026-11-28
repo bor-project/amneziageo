@@ -327,6 +327,41 @@ public sealed class SubscriptionService(GeoHttp http, IStateStore store, ISubscr
         return hours > 0 && now - checkedAt >= TimeSpan.FromHours(hours);
     }
 
+    /// <summary>
+    /// Refreshes installed configurations from their providers.
+    /// </summary>
+    public async Task AutoRefreshAsync(
+        int fallbackHours,
+        bool initial,
+        ServerOffers offers,
+        IReadOnlyList<(string Config, string? Text)> targets,
+        Func<string, Task> offerChanged,
+        Func<SubscriptionOutcome, Task> applied,
+        CancellationToken ct)
+    {
+        var subscriptions = await store.ListSubscriptionsAsync(ct).ConfigureAwait(false);
+        var members = await store.ListSubscriptionMembersAsync(null, ct).ConfigureAwait(false);
+        var due = subscriptions.Where(one => initial || Due(one, fallbackHours, DateTimeOffset.UtcNow))
+            .Select(one => one.Name).ToHashSet(StringComparer.Ordinal);
+        var bindings = members.Where(one => one.Present)
+            .ToLookup(one => one.ConfigName, StringComparer.Ordinal);
+        var wanted = targets.Where(one => bindings[one.Config].Any(member => due.Contains(member.Subscription))
+            || initial && !bindings.Contains(one.Config));
+        var started = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        await offers.AskEachAsync(wanted, offerChanged, ct).ConfigureAwait(false);
+
+        var refresher = Refresher();
+        foreach (var subscription in await store.ListSubscriptionsAsync(ct).ConfigureAwait(false))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (initial || due.Contains(subscription.Name))
+            {
+                var result = await refresher.AutoRefreshAsync(subscription.Name, started, ct).ConfigureAwait(false);
+                await applied(new SubscriptionOutcome(new IpcAck(result.Ok, result.Error),
+                    result.Added, result.Updated, result.Gone, result.Rewritten, subscription.Name)).ConfigureAwait(false);
+            }
+        }
+    }
     private static bool Belongs(SubscriptionMember member, string subscription)
     {
         return string.Equals(member.Subscription, subscription, StringComparison.Ordinal);

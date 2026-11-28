@@ -611,11 +611,6 @@ internal partial class ConnectionsViewModel : ViewModelBase
         UpdateSourceErrorText = IpcMessage.TryParse(snapshot.UpdateSourceError, out var faultKey, out var faultArgs)
             ? Loc.Instance.Get(faultKey, faultArgs)
             : snapshot.UpdateSourceError;
-        if (!SubscriptionsShown && !SubscriptionAutoRefresh)
-        {
-            SubscriptionAutoRefresh = true;
-        }
-
         ApplyProxyEndpoints(snapshot);
         ApplyProxyClients(snapshot);
         ProxyErrorText = snapshot.ProxyEnabled ? snapshot.ProxyError : string.Empty;

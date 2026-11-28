@@ -493,35 +493,41 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
     }
 
     /// <summary>
-    /// Обновляет подписки, которым пора, у каждой открытой библиотеки, и поднимает туннель заново, если
-    /// переписана работающая конфигурация. Подписки живут у пользователя, поэтому обходятся все известные корни.
+    /// Refreshes configurations in the known user libraries.
     /// </summary>
-    public async Task<int> RefreshDueSubscriptionsAsync(int fallbackHours, CancellationToken ct)
+    public async Task AutoRefreshConfigurationsAsync(int fallbackHours, bool initial, CancellationToken ct)
     {
-        var roots = registry.OpenedRoots().Append(AppDataRoot.Base()).Distinct(StringComparer.OrdinalIgnoreCase);
-        var refreshed = 0;
-        foreach (var root in roots)
+        var roots = registry.OpenedRoots().Append(AppDataRoot.Base()).Append(activeScope.OwnerRoot)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var previous = _connectionScope.Value;
+        try
         {
-            var scope = ScopeFor(root);
-            // Removing a config of this library acts on this library.
-            _connectionScope.Value = scope;
-            var service = new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope));
-            var before = refreshed;
-            foreach (var subscription in await service.DueAsync(fallbackHours, DateTimeOffset.UtcNow, ct))
+            foreach (var root in roots)
             {
-                var outcome = await service.CheckAsync([subscription.Name], ct).ConfigureAwait(false);
-                TakeRefreshed(outcome);
+                var scope = ScopeFor(root);
+                _connectionScope.Value = scope;
+                var service = new SubscriptionService(geoHttp, scope.Store, new ScopeLibrary(this, scope));
+                var targets = await OfferTargetsAsync(scope, ct).ConfigureAwait(false);
+                await service.AutoRefreshAsync(fallbackHours, initial, scope.Offers, targets, OfferSettingsChangedAsync, outcome =>
+                {
+                    if (activeScope.IsOwnedBy(scope.UserRoot, scope.Sid))
+                    {
+                        TakeRefreshed(outcome);
+                    }
 
-                refreshed++;
-            }
+                    if (!outcome.Ack.Ok)
+                    {
+                        logger.LogWarning("subscription {Name} could not be refreshed", outcome.Name);
+                    }
 
-            if (refreshed > before)
-            {
-                await WarmUnaskedAsync(scope, ct).ConfigureAwait(false);
+                    return BroadcastIfChangedAsync(ct);
+                }, ct).ConfigureAwait(false);
             }
         }
-
-        return refreshed;
+        finally
+        {
+            _connectionScope.Value = previous;
+        }
     }
 
     // Подписки того пользователя, чьё соединение обслуживается.
@@ -1689,11 +1695,18 @@ internal class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker
 
     // A server that offers the tunnel something else now shows it in the next snapshot; a config whose server allows
     // none but its own routing lists takes one of them, and a tunnel up on it takes the next connect.
-    private async Task OfferChangedAsync(string config)
+    private Task OfferChangedAsync(string config)
     {
         _ = CheckConfigurationUpdatesAsync(config);
-        FindAppsLater();
-        if (await KeepServerListsAsync(activeScope.Store, config, CancellationToken.None).ConfigureAwait(false) && IsRunningMember(config))
+        return OfferSettingsChangedAsync(config);
+    }
+
+    private async Task OfferSettingsChangedAsync(string config)
+    {
+        var scope = CurrentScope;
+        FindAppsLater(scope);
+        if (await KeepServerListsAsync(scope.Store, config, CancellationToken.None).ConfigureAwait(false)
+            && activeScope.IsOwnedBy(scope.UserRoot, scope.Sid) && IsRunningMember(config))
         {
             MarkRestartRequired();
         }

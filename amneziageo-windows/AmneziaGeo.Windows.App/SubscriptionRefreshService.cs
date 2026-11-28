@@ -12,36 +12,23 @@ internal sealed class SubscriptionRefreshService(
     AgentStatusBroker broker,
     ILogger<SubscriptionRefreshService> logger) : BackgroundService
 {
-    private static readonly TimeSpan _initialDelay = TimeSpan.FromMinutes(3);
-
     // The timer only asks whose interval has run out; the interval itself is the panel's or the setting's.
     private static readonly TimeSpan _tick = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan _afterFailure = TimeSpan.FromHours(1);
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        try
-        {
-            await Task.Delay(_initialDelay, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
+        var initial = true;
         while (!ct.IsCancellationRequested)
         {
             var delay = _tick;
             try
             {
-                var settings = await settingsStore.LoadAsync(ct);
+                var settings = await settingsStore.LoadAsync(ct).ConfigureAwait(false);
                 if (settings.SubscriptionAutoRefresh)
                 {
-                    var refreshed = await broker.RefreshDueSubscriptionsAsync(settings.SubscriptionRefreshIntervalHours, ct);
-                    if (refreshed > 0)
-                    {
-                        logger.LogInformation("re-read {Count} subscription(s); a rewritten configuration takes effect on the next connect", refreshed);
-                    }
+                    await broker.AutoRefreshConfigurationsAsync(settings.SubscriptionRefreshIntervalHours, initial, ct).ConfigureAwait(false);
+                    initial = false;
                 }
             }
             catch (OperationCanceledException)
@@ -56,7 +43,7 @@ internal sealed class SubscriptionRefreshService(
 
             try
             {
-                await Task.Delay(delay, ct);
+                await Task.Delay(delay, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
